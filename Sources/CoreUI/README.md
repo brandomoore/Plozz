@@ -183,6 +183,11 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   independent of the page theme; coloured logos retain their palette. Home/detail
   and Spotlight heroes still adapt monochrome ink to their own background, so
   Light keeps dark hero logos.
+  Continue Watching cards and focus-driven hero titles keep their text fallback
+  invisible during logo lookup and decoding, preserving its layout space.
+  Text appears only after resolution finds no usable logo (or there are no logo
+  sources); cached logos still paint immediately. Completion is request-scoped,
+  so a cancelled or missing logo for one title cannot reveal text for the next.
 - **Series artwork identity** — episode-backed cards normalize through
   `MetadataQuery.seriesScoped` before creating a series artwork subject. Child
   IDs and Plex episode GUIDs must not become show IDs. Explicit series IDs,

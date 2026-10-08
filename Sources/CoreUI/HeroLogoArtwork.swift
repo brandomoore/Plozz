@@ -25,19 +25,21 @@ public struct HeroBackgroundSample: Equatable, Sendable {
     }
 }
 
-/// Controls whether a hero may replace its readable text title after asynchronous
-/// logo work completes.
+/// Controls when a logo or its text fallback becomes visible.
 public enum HeroLogoPresentationPolicy: Sendable, Equatable {
     /// Show the logo whenever it finishes. Best for a detail page that does not
     /// transition between many titles in place.
     case whenReady
+    /// Keep the title area empty during resolution; show text only when no usable
+    /// logo is available.
+    case whenResolved
     /// Adopt the logo only if it is ready within the arrival window. A later result
     /// still warms the shared cache, but the current title remains visually stable.
     case onArrival(maximumWait: TimeInterval)
 
     func shouldAdopt(elapsed: TimeInterval) -> Bool {
         switch self {
-        case .whenReady:
+        case .whenReady, .whenResolved:
             return true
         case .onArrival(let maximumWait):
             return elapsed <= max(0, maximumWait)
@@ -45,7 +47,11 @@ public enum HeroLogoPresentationPolicy: Sendable, Equatable {
     }
 
     var animatesResolvedLogo: Bool {
-        self == .whenReady
+        self == .whenReady || self == .whenResolved
+    }
+
+    var showsTextWhileLoading: Bool {
+        self != .whenResolved
     }
 }
 
@@ -56,8 +62,8 @@ public enum HeroLogoPresentationPolicy: Sendable, Equatable {
 ///   1. `primaryURL` — the provider's own `Logo` image (e.g. Jellyfin).
 ///   2. `asyncFallbackURL` — a TMDb logo lookup, used only when the provider has
 ///      no usable logo.
-///   3. `textFallback` — the caller's styled title `Text`, shown immediately while
-///      artwork resolves and retained when no logo can be found.
+///   3. `textFallback` — the caller's styled title `Text`, retained when no logo
+///      can be found. `.whenResolved` keeps it invisible while artwork resolves.
 ///
 /// The logo is fit (never cropped) inside a `maxWidth` × `maxHeight` box and
 /// defaults to leading alignment, while callers presenting a centered logo can
@@ -331,8 +337,8 @@ private struct LoadedLogo<TextFallback: View>: View {
     @Environment(\.heroArtworkDisplayState) private var displayedArtwork
 
     @State private var image: ProcessedLogo?
-    /// The `taskKey` the current `image` was resolved for, so a re-resolve for the
-    /// SAME subject can keep it on screen while a different subject clears it.
+    /// The completed request, including a confirmed miss. A different subject
+    /// must neither show its image nor inherit its text-fallback readiness.
     @State private var resolvedKey: HeroLogoMemo.Key?
 
     var body: some View {
@@ -350,10 +356,11 @@ private struct LoadedLogo<TextFallback: View>: View {
                 logo(processed)
                     .transition(.opacity)
             } else {
-                // A cache miss may include a network lookup plus decode/analysis.
-                // Keep the title readable throughout; identity must never depend
-                // on optional artwork finishing first.
                 textFallback()
+                    .opacity(
+                        presentationPolicy.showsTextWhileLoading || resolvedKey == taskKey
+                            || (references.isEmpty && asyncFallbackURL == nil) ? 1 : 0
+                    )
                     .transition(.opacity)
             }
         }
@@ -461,16 +468,17 @@ private struct LoadedLogo<TextFallback: View>: View {
         // `HeroLogoPipeline` caches the processed result by URL and runs the heavy
         // pixel work off the main actor, so re-appears / scheme changes / fast
         // scrolling reuse the prepared logo instead of reprocessing it.
-        guard let prepared = await loadPreparedHeroLogo(
+        let prepared = await loadPreparedHeroLogo(
             references: references,
             asyncFallbackURL: asyncFallbackURL?.resolve,
             priority: .userInitiated,
             prefersOnlineArtwork: prefersOnlineArtwork
-        ) else { return }
+        )
         guard !Task.isCancelled else { return }
+        resolvedKey = key
+        guard let prepared else { return }
         let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
         guard presentationPolicy.shouldAdopt(elapsed: elapsed) else { return }
-        resolvedKey = key
 
         // Draw the logo the moment it is decoded, BEFORE the backdrop is sampled.
         //

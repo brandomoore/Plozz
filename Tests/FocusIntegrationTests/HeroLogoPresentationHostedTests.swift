@@ -28,13 +28,15 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
                     constrainsToBounds: true,
                     presentationPolicy: FocusHeroLayout.logoPresentationPolicy
                 ) {
-                    Text(verbatim: item.title)
+                    Text(verbatim: item.title).foregroundStyle(.green)
                 }
             }
             .ignoresSafeArea()
         )
         try await Task.sleep(for: .milliseconds(200))
         XCTAssertNil(try redBounds(in: fixture.window), "This must exercise a genuinely cold lookup.")
+        XCTAssertNil(try colorBounds(in: fixture.window, channel: 1),
+                     "Showcase must not flash a text title before the logo arrives.")
         try await waitUntil { (try? redBounds(in: fixture.window)) != nil }
         XCTAssertNotNil(try redBounds(in: fixture.window),
                         "A slow first lookup must not require a focus change to adopt the logo.")
@@ -70,11 +72,6 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
             )
             fixture.window.rootViewController = host
             fixture.window.layoutIfNeeded()
-            let key = HeroLogoMemo.key(
-                for: [.remote(url)], fallback: HeroLogoFallback(for: series) { url },
-                prefersOnlineArtwork: MetadataProviderSettingsStore().load().preferOnlineArtwork
-            )
-            try await waitUntil { HeroLogoMemo.value(for: key) != nil }
             try await waitUntil { (try? redBounds(in: fixture.window)) != nil }
             let bounds = try XCTUnwrap(redBounds(in: fixture.window))
             XCTAssertGreaterThan(bounds.height, 50, "A missing or clipped logo is not a spacing fix.")

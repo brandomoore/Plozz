@@ -83,7 +83,7 @@ enum FocusHeroLayout {
     /// row is short, and the description needs its lines more than the logo needs
     /// the extra size.
     static let logoBox = CGSize(width: 440, height: 124)
-    static let logoPresentationPolicy = HeroLogoPresentationPolicy.whenReady
+    static let logoPresentationPolicy = HeroLogoPresentationPolicy.whenResolved
     /// How much closer a row's title sits to its cards than on the classic Home.
     static let rowTitleTightening: CGFloat = 22
     /// With the top tab bar the column starts below it: nothing scrolls here, so

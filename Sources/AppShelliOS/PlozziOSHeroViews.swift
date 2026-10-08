@@ -2573,6 +2573,7 @@ private struct PlozziOSHeroMetadata: View {
                         displayedArtworkID: displayedArtworkID ?? presentation.itemID,
                         maxWidth: logoBox.width,
                         maxHeight: logoBox.height,
+                        presentationPolicy: mode == .home ? .whenResolved : .whenReady,
                         alignment: style == .compactPortrait ? .center : .leading
                     ) {
                         Text(presentation.title)

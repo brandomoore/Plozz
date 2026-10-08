@@ -1292,6 +1292,7 @@ struct ContinueWatchingSeriesLogo: View {
                     asyncFallbackURL: asyncFallbackURL,
                     maxWidth: box.width,
                     maxHeight: box.height,
+                    presentationPolicy: .whenResolved,
                     alignment: .center,
                     haloStyle: .gentle,
                     logoNeedsHelp: logoNeedsHelp,

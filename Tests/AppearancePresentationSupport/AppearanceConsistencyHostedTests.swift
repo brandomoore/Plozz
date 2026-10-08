@@ -7,6 +7,152 @@ import XCTest
 
 @MainActor
 final class AppearanceConsistencyHostedTests: XCTestCase {
+    func testBrowsingLogoWaitsForResolutionBeforeShowingText() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let logo = try seedLogo(monochrome: false, color: .red)
+        defer { ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: logo)) }
+
+        for isCard in [false, true] {
+            for animationsDisabled in [false, true] {
+                let missing = PendingLogoLookup()
+                let available = PendingLogoLookup()
+                defer {
+                    missing.finish(nil)
+                    available.finish(nil)
+                }
+                let model = PendingLogoModel(fallback: HeroLogoFallback(
+                    for: MediaItem(id: UUID().uuidString, title: "Missing logo", kind: .series)
+                ) { await missing.resolve() })
+                let content = PendingLogoFixture(model: model, isCard: isCard)
+                    .transaction { $0.disablesAnimations = animationsDisabled }
+                fixture.host.rootView = AnyView(content)
+                try await waitUntil { missing.calls > 0 }
+                XCTAssertEqual(try logoPixelCounts(fixture.window).text, 0,
+                               "Do not show text during the initial lookup.")
+
+                missing.finish(nil)
+                try await waitUntil { (try? self.logoPixelCounts(fixture.window).text) ?? 0 > 100 }
+                XCTAssertEqual(try logoPixelCounts(fixture.window).logo, 0)
+
+                model.fallback = HeroLogoFallback(
+                    for: MediaItem(id: UUID().uuidString, title: "Available logo", kind: .series)
+                ) { await available.resolve() }
+                try await waitUntil { available.calls > 0 }
+                XCTAssertEqual(try logoPixelCounts(fixture.window).text, 0,
+                               "The previous title's missing-logo result must not reveal the new title.")
+                available.finish(logo)
+                try await waitUntil { (try? self.logoPixelCounts(fixture.window).logo) ?? 0 > 100 }
+                XCTAssertEqual(try logoPixelCounts(fixture.window).text, 0,
+                               "A usable logo must never transition through the text fallback.")
+
+                fixture.host.rootView = AnyView(content.id(UUID()))
+                fixture.window.layoutIfNeeded()
+                XCTAssertGreaterThan(try logoPixelCounts(fixture.window).logo, 100,
+                                     "A cached logo must render immediately on a fresh view.")
+                XCTAssertEqual(try logoPixelCounts(fixture.window).text, 0)
+                attach(try capture(fixture.window), name: "resolved-logo-card-\(isCard)-animations-disabled-\(animationsDisabled)")
+
+                model.fallback = nil
+                try await waitUntil { (try? self.logoPixelCounts(fixture.window).text) ?? 0 > 100 }
+                XCTAssertEqual(try logoPixelCounts(fixture.window).logo, 0,
+                               "A title with no logo sources must use text, not a stale image.")
+            }
+        }
+    }
+
+    func testCancelledLogoMissCannotRevealTextForTheNextPendingTitle() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        for isCard in [false, true] {
+            let previous = PendingLogoLookup()
+            let current = PendingLogoLookup()
+            defer {
+                previous.finish(nil)
+                current.finish(nil)
+            }
+            let model = PendingLogoModel(fallback: HeroLogoFallback(
+                for: MediaItem(id: UUID().uuidString, title: "Previous title", kind: .series)
+            ) { await previous.resolve() })
+            fixture.host.rootView = AnyView(PendingLogoFixture(model: model, isCard: isCard))
+            try await waitUntil { previous.calls > 0 }
+            model.fallback = HeroLogoFallback(
+                for: MediaItem(id: UUID().uuidString, title: "Current title", kind: .series)
+            ) { await current.resolve() }
+            try await waitUntil { current.calls > 0 }
+            previous.finish(nil)
+            try await waitUntil { previous.completed }
+            XCTAssertEqual(try logoPixelCounts(fixture.window).text, 0)
+            current.finish(nil)
+            try await waitUntil { (try? self.logoPixelCounts(fixture.window).text) ?? 0 > 100 }
+        }
+    }
+
+    @MainActor
+    @Observable
+    fileprivate final class PendingLogoModel {
+        var fallback: HeroLogoFallback?
+
+        init(fallback: HeroLogoFallback?) {
+            self.fallback = fallback
+        }
+    }
+
+    private struct PendingLogoFixture: View {
+        let model: PendingLogoModel
+        let isCard: Bool
+
+        var body: some View {
+            Color.black.overlay {
+                if isCard {
+                    ContinueWatchingSeriesLogo(
+                        title: Text(verbatim: "Fallback title"), logoReferences: [],
+                        artworkReferences: [], artworkVariant: .landscapeCard,
+                        asyncFallbackURL: model.fallback
+                    )
+                    .frame(width: 300, height: 190)
+                } else {
+                    HeroLogoArtwork(
+                        references: [], asyncFallbackURL: model.fallback,
+                        maxWidth: 300, maxHeight: 120, constrainsToBounds: true,
+                        presentationPolicy: .whenResolved
+                    ) {
+                        Text(verbatim: "Fallback title").foregroundStyle(.white)
+                    }
+                }
+            }
+            .environment(\.plozzArtworkArea, .continueWatching)
+            .ignoresSafeArea()
+        }
+    }
+
+    @MainActor
+    private final class PendingLogoLookup {
+        var calls = 0
+        var completed = false
+        private var continuation: CheckedContinuation<URL?, Never>?
+
+        func resolve() async -> URL? {
+            calls += 1
+            let result = await withCheckedContinuation { continuation = $0 }
+            completed = true
+            return result
+        }
+
+        func finish(_ result: URL?) {
+            continuation?.resume(returning: result)
+            continuation = nil
+        }
+    }
+
+    private func logoPixelCounts(_ window: UIWindow) throws -> (text: Int, logo: Int) {
+        let pixels = try rgba(capture(window))
+        return (
+            countPixels(pixels) { $0 > 200 && $1 > 200 && $2 > 200 },
+            countPixels(pixels) { $0 > 100 && $1 < 30 && $2 < 30 }
+        )
+    }
+
     func testSharedHeroAppearanceReevaluatesChangedProviderPolicy() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

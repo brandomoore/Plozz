@@ -150,6 +150,8 @@ fallback when the user's server has no attached trailer.
   Showcase preserves the Home-sized details footprint under that header,
   keeping the same metadata-to-heading clearance as Home. A cold logo is adopted
   when it finishes for the still-current title, without requiring a focus round trip.
+  Its title slot stays visually empty while the logo resolves; text appears only
+  after no usable logo is found, never as a temporary title before the wordmark.
   Showcase gates lower rows only until the first row actually receives native
   focus, so an already-ready Discover row cannot win cold-start entry while
   Continue Watching is still realizing. Once entered, normal navigation and
