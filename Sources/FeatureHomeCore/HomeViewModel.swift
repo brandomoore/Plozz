@@ -961,7 +961,6 @@ public final class HomeViewModel {
         guard !Task.isCancelled, generation == loadGeneration, currentVisibility() == visibility else { return }
         loadFailures = progress.failures
         guard publishesProgress else { return }
-        rowFailures = progress.failures
         let ready = Set(HomeRowKind.allCases).subtracting(progress.loadingRows)
         let newlyReady = ready.subtracting(publishedLoadRows)
         var resume: [MediaItem]?
@@ -1021,6 +1020,9 @@ public final class HomeViewModel {
         }
         content = applyingLoadMutations(to: content)
         publishedLoadRows.formUnion(ready)
+        // Publish failures with reconciled content, never across an await that
+        // could replace a focused loading row before its usable cards arrive.
+        rowFailures = progress.failures
         loadingRows = progress.loadingRows
         if state.value != content { state = .loaded(content) }
         let libraryRowCount = content.librarySections.reduce(0) { $0 + $1.sections.count }

@@ -297,6 +297,11 @@ needed to start other row types. Each global row arrives
 once its own sources are complete, preserving cross-server deduplication and
 ordering. A slow Continue Watching feed therefore retains its own skeleton
 without holding up Watchlist, Recently Added, or per-library rows.
+Progressive publication keeps failures, reconciled content, and loading state
+together after pending watch-state reads finish. A partial server failure must
+not replace Continue Watching's focusable loading slot with an error while
+healthy cards are still reconciling. Usable cards retain focus; a settled empty
+failed row still presents its error.
 
 Adding an owned library title to Watchlist retains its verified source and full
 presentation in memory, even when Search is the only place that loaded it.

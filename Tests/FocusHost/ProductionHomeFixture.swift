@@ -36,6 +36,7 @@ struct ProductionHomeFixture: View {
     @State private var expectedNativeDestination: NavigationRailDestination?
     @State private var prematureNativeHomeFocusCount = 0
     @State private var nativeSidebarFocus = NavigationDestinationFocusHandoff()
+    @State private var nativeFocusHistory: [String] = []
 
     private var isPinned: Bool { ProcessInfo.processInfo.arguments.contains("--pinned-home") }
     /// `--focus-style=<name>` picks a card focus style; native system focus otherwise.
@@ -121,6 +122,12 @@ struct ProductionHomeFixture: View {
                 .overlay(alignment: .topTrailing) {
                     VStack {
                         Text("Production Home ready")
+                        if ProcessInfo.processInfo.arguments.contains("--partial-home-failure") {
+                            Text(verbatim: fixture.resumePublication.isWaiting ? "waiting" : "ready")
+                                .accessibilityIdentifier("home-resume-publication")
+                            Text(verbatim: nativeFocusHistory.joined(separator: "|"))
+                                .accessibilityIdentifier("home-native-focus-history")
+                        }
                         if ProcessInfo.processInfo.arguments.contains("--held-home-artwork") {
                             Text(verbatim: "\(HeldHomeArtworkState.shared.started)")
                                 .accessibilityIdentifier("home-held-artwork-started")
@@ -157,6 +164,14 @@ struct ProductionHomeFixture: View {
         .environment(\.gradientBackgroundsEnabled, !ProcessInfo.processInfo.arguments.contains("--gradient-off"))
         .environment(\.themePalette, ProcessInfo.processInfo.arguments.contains("--gradient-black") ? .pureBlack : .dark)
         .environment(\.plozzCardStyle, ProcessInfo.processInfo.arguments.contains("--framed-cards") ? .framed : .borderless)
+        .onReceive(NotificationCenter.default.publisher(for: UIFocusSystem.didUpdateNotification)) { notification in
+            guard ProcessInfo.processInfo.arguments.contains("--partial-home-failure"),
+                  let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
+                    as? UIFocusUpdateContext,
+                  let item = context.nextFocusedItem as? NSObject,
+                  let label = item.accessibilityLabel else { return }
+            nativeFocusHistory.append(label)
+        }
         .task {
             guard fixture == nil else { return }
             fixture = await ProductionHomeState.load()
@@ -289,6 +304,16 @@ private final class ProductionDiscoveryLoadState {
     var isReady = false
 }
 
+@MainActor @Observable
+private final class ProductionResumePublicationState {
+    var isWaiting = false
+}
+
+private actor ProductionHomeReadCounter {
+    private var count = 0
+    func next() -> Int { count += 1; return count }
+}
+
 @MainActor
 private final class ProductionHomeState {
     let model: HomeViewModel
@@ -303,6 +328,7 @@ private final class ProductionHomeState {
     let chrome = NavigationChromeModel()
     let actions = ProductionHomeActions()
     let discoveryLoad = ProductionDiscoveryLoadState()
+    let resumePublication = ProductionResumePublicationState()
     private let provider: ProductionHomeProvider
     private var details: [String: ItemDetailViewModel] = [:]
 
@@ -334,11 +360,35 @@ private final class ProductionHomeState {
                 )
             }
         }
+        let partialFailure = ProcessInfo.processInfo.arguments.contains("--partial-home-failure")
+        var accounts = [ResolvedAccount(account: account, provider: provider)]
+        if partialFailure {
+            accounts = (0..<5).map { index in
+                var source = provider
+                source.isOffline = index == 4
+                let account = Account(
+                    id: "home-fixture-\(index)", server: source.session.server,
+                    userID: "fixture", userName: "Fixture", deviceID: "fixture"
+                )
+                return ResolvedAccount(account: account, provider: source)
+            }
+        }
+        let reads = ProductionHomeReadCounter()
+        let resumePublication = self.resumePublication
         model = HomeViewModel(
-            accounts: [ResolvedAccount(account: account, provider: provider)],
+            accounts: accounts,
             layoutStore: InMemoryHomeLayoutStore(),
             contentStore: InMemoryHomeContentStore(),
-            currentVisibility: { visibility.visibility }
+            currentVisibility: { visibility.visibility },
+            recentlyAppliedRecency: {
+                // Four successful detail feeds reconcile before the merged row.
+                if partialFailure, await reads.next() > 4 {
+                    await MainActor.run { resumePublication.isWaiting = true }
+                    await provider.waitForResumePublication()
+                    await MainActor.run { resumePublication.isWaiting = false }
+                }
+                return [:]
+            }
         )
         var settings = heroSettings.settings
         settings.isEnabled = !ProcessInfo.processInfo.arguments.contains("--hero-disabled-home")
@@ -528,14 +578,18 @@ private struct ProductionHomeProvider: MediaProvider {
     let poster: URL
     let backdrop: URL
     let logo: URL
+    var isOffline = false
     private let heldArtworkRevision = CredentialRevision()
     private let progressiveGate = ProductionHomeRowsGate()
     private let recentGate = ProductionHomeRowsGate(notificationKey: "PLOZZ_HOME_RECENT_RELEASE_NOTIFICATION")
     private let discoverGate = ProductionHomeRowsGate(notificationKey: "PLOZZ_HOME_DISCOVER_RELEASE_NOTIFICATION")
+    private let resumePublicationGate = ProductionHomeRowsGate(notificationKey: "PLOZZ_HOME_RESUME_PUBLICATION_NOTIFICATION")
     private var rowCount: Int {
         ProcessInfo.processInfo.arguments.contains("--home-performance-fixture") ? 75 : 24
     }
     var heroSeed: MediaItem { movie(rowCount + 10) }
+
+    func waitForResumePublication() async { await resumePublicationGate.wait() }
 
     func featuredContent(limit: Int) async -> [MediaItem] {
         await discoverGate.wait()
@@ -608,6 +662,7 @@ private struct ProductionHomeProvider: MediaProvider {
         if ProcessInfo.processInfo.arguments.contains("--progressive-home-load") {
             await progressiveGate.wait()
         }
+        if isOffline { throw AppError.serverUnreachable }
         if ProcessInfo.processInfo.arguments.contains("--empty-home-resume") { return [] }
         try await holdForSlowLoad()
         let items = Array((0..<rowCount).prefix(limit).map(movie))
