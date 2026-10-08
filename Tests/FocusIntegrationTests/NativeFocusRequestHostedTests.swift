@@ -334,6 +334,7 @@ final class NativeFocusRequestHostedTests: XCTestCase {
             for cardStyle in CardStyle.allCases {
                 for (name, style, seriesArtwork, caption) in [
                     ("series", SkeletonCardView.Style.landscape, true, false),
+                    ("series-caption", .landscape, true, true),
                     ("episode-caption", .landscape, false, true),
                     ("episode-no-caption", .landscape, false, false),
                     ("poster-caption", .poster, false, true),
@@ -410,7 +411,7 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(count, CardFocusStyle.allCases.count * CardStyle.allCases.count * 5)
+        XCTAssertEqual(count, CardFocusStyle.allCases.count * CardStyle.allCases.count * 6)
     }
 
     private func lockups(in view: UIView) -> [TVLockupView] {

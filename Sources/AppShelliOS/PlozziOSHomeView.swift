@@ -503,6 +503,7 @@ struct PlozziOSHomeView: View {
                         && heroRequestError == nil,
                     pullModel: heroPullModel
                 )
+                .environment(\.plozzArtworkArea, .home)
                 // Warm every slide's logo as soon as the carousel exists.
                 //
                 // `HeroLogoArtwork` shows the styled title while the logo
@@ -1234,6 +1235,7 @@ struct PlozziOSHomeView: View {
 }
 
 private struct PlozziOSHomeHeroCarousel: View {
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSHeroContainerHeight) private var heroContainerHeight
@@ -1682,7 +1684,7 @@ private struct PlozziOSHomeHeroCarousel: View {
             item: item,
             artworkStyle: horizontalSizeClass == .compact ? .compactPortrait : .landscape,
             surface: .home
-        ).artworkReferences
+        ).artworkReferences(settings: artworkPolicy.settings, in: .home)
         return references.contains {
             ArtworkImageCache.shared.cachedImage(for: $0, variant: .heroBackdrop) != nil
         }
@@ -1953,7 +1955,7 @@ private struct PlozziOSHomeHeroCarousel: View {
             item: item,
             artworkStyle: style,
             surface: .home
-        ).artworkReferences
+        ).artworkReferences(settings: artworkPolicy.settings, in: .home)
     }
 
     /// Decodes the full-size artwork for the slides either side of this one.
@@ -2297,7 +2299,11 @@ private struct PlozziOSHomeRowView: View {
                     style: row.kind == .libraries || row.style == .landscape ? .landscape : .poster,
                     cardCount: row.loadingPlaceholderCount > 0 ? row.loadingPlaceholderCount : 8,
                     showsCaption: row.kind == .libraries
-                        || appModel.settings.cardStyle.captions.showsLabels(in: .home),
+                        || appModel.settings.cardStyle.captions.showsLabels(
+                            in: .home,
+                            hasArtworkTitle: row.kind == .continueWatching
+                                && appModel.settings.homeVisibility.continueWatchingShowsSeriesArtwork
+                        ),
                     showsSeriesArtwork: row.kind == .continueWatching
                         && appModel.settings.homeVisibility.continueWatchingShowsSeriesArtwork
                 )
@@ -2323,6 +2329,7 @@ private struct PlozziOSHomeRowView: View {
                     onNavigationInteraction:
                         viewModel.noteHomeNavigationInteraction
                 )
+                .environment(\.plozzArtworkArea, row.kind == .continueWatching ? .continueWatching : .homeRows)
             }
         }
     }
@@ -2408,6 +2415,7 @@ struct PlozziOSHomeMediaRail: View {
     @State private var lastArtworkPrefetchIndex: Int?
     @State private var artworkPrefetchDirection = 1
     @State private var artworkPrefetchTasks = PlozziOSArtworkPrefetchTasks()
+    @State private var seriesArtworkPrefetch = ArtworkPrefetchWindow()
 
     var body: some View {
         PlozziOSHomeRailLayout { rail(metrics: $0) }
@@ -2455,7 +2463,8 @@ struct PlozziOSHomeMediaRail: View {
                             PlozziOSPosterCard(
                                 item: nil,
                                 style: style,
-                                showsSeriesArtwork: showsSeriesArtwork
+                                showsSeriesArtwork: showsSeriesArtwork,
+                                reservesSubtitleSpace: style == .poster || showsSeriesArtwork
                             )
                             .frame(
                                 width: metrics.cardSlotWidth(
@@ -2484,17 +2493,20 @@ struct PlozziOSHomeMediaRail: View {
             }
         }
         .task(id: artworkPrefetchIdentity) {
-            guard prefetchesArtwork else { return }
             resetArtworkPrefetch()
+            guard prefetchesArtwork else { return }
             if let first = MediaRowView.uniqued(items).first {
                 prefetchArtwork(around: first)
             }
         }
         .onDisappear {
             artworkPrefetchTasks.cancelAll()
+            seriesArtworkPrefetch.cancelAll()
         }
         .environment(\.plozzCardCaptionView, .home)
         .environment(\.plozzCardCaptionSettings, appModel.settings.cardStyle.captions)
+        .environment(\.plozzArtworkSettings, appModel.settings.cardStyle.artwork)
+        .environment(\.plozzArtworkProviders, appModel.metadataProviderSettingsModel.settings)
     }
 
     private func provider(for item: MediaItem) -> (any MediaProvider)? {
@@ -2512,13 +2524,14 @@ struct PlozziOSHomeMediaRail: View {
             appModel.settings.spoilers.settings.isEnabled ? "spoilers" : "visible",
             appModel.settings.spoilers.settings.mode.rawValue,
             MediaRowView.uniqued(items)
-                .map(\.stablePresentationID)
+                .map { showsSeriesArtwork ? seriesArtworkSource(for: $0).identity : $0.stablePresentationID }
                 .joined(separator: "|"),
         ].joined(separator: "\n")
     }
 
     private func resetArtworkPrefetch() {
         artworkPrefetchTasks.cancelAll()
+        seriesArtworkPrefetch.cancelAll()
         prefetchedIDs.removeAll(keepingCapacity: true)
         prefetchedPreviewIDs.removeAll(keepingCapacity: true)
         lastArtworkPrefetchIndex = nil
@@ -2556,6 +2569,13 @@ struct PlozziOSHomeMediaRail: View {
             count: items.count,
             lookahead: MediaRowPrefetchWindow.fullArtworkLookahead
         )
+        if showsSeriesArtwork {
+            seriesArtworkPrefetch.update(fullIndices.map {
+                let source = seriesArtworkSource(for: items[$0])
+                return .init(id: source.identity) { await source.prepare() }
+            })
+            return
+        }
         for candidateIndex in fullIndices {
             let candidate = items[candidateIndex]
             let candidates = MediaArtworkPrefetchPolicy.candidates(
@@ -2579,12 +2599,6 @@ struct PlozziOSHomeMediaRail: View {
                 for url in candidates.prefix(2) {
                     trackPrefetch(url, variant: variant)
                 }
-            }
-            if showsSeriesArtwork {
-                MediaArtworkPrefetchPolicy.warmSeriesPresentation(
-                    for: candidate,
-                    variant: variant
-                )
             }
         }
 
@@ -2613,6 +2627,17 @@ struct PlozziOSHomeMediaRail: View {
             else { continue }
             trackPrefetch(preview, variant: .posterPreview)
         }
+    }
+
+    private func seriesArtworkSource(for item: MediaItem) -> ContinueWatchingArtworkSource {
+        ContinueWatchingArtworkSource(
+            item: item, style: style,
+            policy: .init(
+                area: .continueWatching,
+                settings: appModel.settings.cardStyle.artwork,
+                providers: appModel.metadataProviderSettingsModel.settings
+            )
+        )
     }
 
     private func trackPrefetch(
@@ -2707,6 +2732,7 @@ private struct PlozziOSHomeMediaCard: View {
             // artwork toggle below is turned off and the row hands itself back to
             // these settings.
             spoilerSettings: appModel.settings.spoilers.settings,
+            reservesSubtitleSpace: !isLandscape || showsSeriesArtwork,
             // The chip is requested explicitly rather than riding an implicit
             // "landscape means playable" rule, so presentation and behaviour stay
             // independently controlled.

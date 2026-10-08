@@ -105,9 +105,9 @@ struct HomeSkeletonView: View {
 /// live server data while the cached hero and stable rows are already visible.
 struct HomeSkeletonRowView: View {
     @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
+    @Environment(\.plozzCardCaptionsHiddenWithArtworkTitle) private var artworkTitleCaptionsHidden
     let row: HomeRowLayout
-    /// Whether Continue Watching is in its caption-less series-artwork mode, so
-    /// the placeholder matches the card that is about to replace it.
+    /// Matches the loaded card's series-artwork shape and Recommended caption default.
     var continueWatchingShowsSeriesArtwork: Bool = true
     /// Mirrors `MediaRowView`: the navigation inset lives INSIDE the scroll
     /// content, so the placeholder's first card lands exactly where the real one
@@ -186,10 +186,8 @@ struct HomeSkeletonRowView: View {
         }
     }
 
-    /// Continue Watching's series-artwork cards carry their text on the artwork
-    /// and draw no caption, so their placeholders must not reserve one either.
     private func showsCaption(for kind: HomeRowKind) -> Bool {
-        kind == .libraries || (!captionsHidden && !usesSeriesArtwork(kind))
+        kind == .libraries || !(usesSeriesArtwork(kind) ? artworkTitleCaptionsHidden : captionsHidden)
     }
 
     /// Continue Watching and the Libraries tiles use the wide landscape card;

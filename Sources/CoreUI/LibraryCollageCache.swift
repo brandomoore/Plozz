@@ -2,16 +2,18 @@
 import CoreModels
 import CoreNetworking
 import CryptoKit
+import MetadataKit
 import Synchronization
 import UIKit
 
 actor LibraryCollageCache {
     static let shared = LibraryCollageCache()
     private nonisolated let memory: Mutex<NSCache<NSString, UIImage>>
-    private let disk: LocalArtworkDerivedCache
+    private let disk: LocalArtworkDerivedCache?
     private let limiter = ConcurrencyLimiter(limit: 2)
     private let imageLimiter = ConcurrencyLimiter(limit: 3)
     private let imageLoader: @Sendable (ArtworkReference) async -> UIImage?
+    private let artworkRouter: ArtworkRouter
     private var pending: [String: Task<UIImage?, Never>] = [:]
     private var retryAfter: [String: Date] = [:]
     private static let renderQueue = DispatchQueue(
@@ -20,40 +22,54 @@ actor LibraryCollageCache {
 
     init(
         directory: URL? = nil,
+        usesDiskCache: Bool = true,
+        artworkRouter: ArtworkRouter = .shared,
         imageLoader: @escaping @Sendable (ArtworkReference) async -> UIImage? = {
             await ArtworkImageCache.shared.image(for: $0, variant: .posterPreview)
         }
     ) {
         self.imageLoader = imageLoader
+        self.artworkRouter = artworkRouter
         let directory = directory ?? FileManager.default.urls(
             for: .cachesDirectory, in: .userDomainMask
         )[0].appendingPathComponent("plozz-library-collages", isDirectory: true)
-        disk = LocalArtworkDerivedCache(
+        disk = usesDiskCache ? LocalArtworkDerivedCache(
             directory: directory,
             byteCap: 8 * 1024 * 1024,
             warningByteCap: 4 * 1024 * 1024,
             maximumAge: 30 * 24 * 60 * 60,
             now: { Date() }
-        )
+        ) : nil
         let images = NSCache<NSString, UIImage>()
         images.totalCostLimit = 16 * 1024 * 1024
         images.countLimit = 24
         memory = Mutex(images)
     }
 
-    nonisolated func cachedImage(for source: LibraryArtworkSource) -> UIImage? {
-        memory.withLock { $0.object(forKey: source.cacheIdentity as NSString) }
+    nonisolated static func identity(
+        for source: LibraryArtworkSource, policy: ArtworkPresentationPolicy
+    ) -> String {
+        "library-collage-v2|\(source.cacheIdentity)|\(policy.identity)"
     }
 
-    func image(for source: LibraryArtworkSource) async -> UIImage? {
-        if let image = cachedImage(for: source) { return image }
-        let key = SHA256.hash(data: Data(source.cacheIdentity.utf8))
+    nonisolated func cachedImage(
+        for source: LibraryArtworkSource, policy: ArtworkPresentationPolicy = .init()
+    ) -> UIImage? {
+        memory.withLock { $0.object(forKey: Self.identity(for: source, policy: policy) as NSString) }
+    }
+
+    func image(
+        for source: LibraryArtworkSource, policy: ArtworkPresentationPolicy = .init()
+    ) async -> UIImage? {
+        if let image = cachedImage(for: source, policy: policy) { return image }
+        let identity = Self.identity(for: source, policy: policy)
+        let key = SHA256.hash(data: Data(identity.utf8))
             .map { String(format: "%02x", $0) }.joined()
         if let task = pending[key] { return await task.value }
         if let retry = retryAfter[key], retry > Date() { return nil }
-        let task = Task(priority: .utility) { [disk, limiter, imageLimiter, imageLoader] in
+        let task = Task(priority: .utility) { [disk, limiter, imageLimiter, imageLoader, artworkRouter] in
             await limiter.run { () async -> UIImage? in
-                if let data = await disk.data(
+                if let data = await disk?.data(
                     for: key, accountID: source.accountID,
                     credentialRevision: source.credentialRevision,
                     sourceFingerprint: key
@@ -61,19 +77,22 @@ actor LibraryCollageCache {
                     return image
                 }
                 do {
-                    let candidates = try await source.candidates()
+                    let candidates = try await source.artworkCandidates()
                     let images = await withTaskGroup(of: (Int, UIImage?).self) { group in
-                        for (index, references) in candidates.enumerated() {
+                        for (index, candidate) in candidates.enumerated() {
                             group.addTask {
                                 let image = await imageLimiter.run { () async -> UIImage? in
-                                    for reference in references {
-                                        guard !Task.isCancelled else { return nil }
-                                        if let image = await imageLoader(reference),
-                                           image.size.width / image.size.height <= 1 {
-                                            return image
-                                        }
-                                    }
-                                    return nil
+                                    await ArtworkFirstPaintResolver.resolve(
+                                        references: candidate.references, variant: .posterPreview,
+                                        maxAspectRatio: 1,
+                                        asyncOnlineURL: {
+                                            await artworkRouter.artworkURL(
+                                                for: candidate.item, placements: [.poster]
+                                            )
+                                        },
+                                        prefersOnlineArtwork: policy.prefersOnlineArtwork,
+                                        background: true, imageLoader: imageLoader
+                                    )?.image
                                 }
                                 return (index, image)
                             }
@@ -91,7 +110,7 @@ actor LibraryCollageCache {
                         return nil
                     }
                     let image = await Self.compose(images)
-                    await disk.store(
+                    await disk?.store(
                         image, key: key, accountID: source.accountID,
                         credentialRevision: source.credentialRevision,
                         sourceFingerprint: key, variant: .landscapeCard
@@ -111,7 +130,7 @@ actor LibraryCollageCache {
         pending[key] = nil
         if let image {
             memory.withLock {
-                $0.setObject(image, forKey: source.cacheIdentity as NSString, cost: 720 * 405 * 4)
+                $0.setObject(image, forKey: identity as NSString, cost: 720 * 405 * 4)
             }
             retryAfter[key] = nil
         } else {

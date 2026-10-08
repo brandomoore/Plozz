@@ -256,6 +256,7 @@ public struct ItemDetailView: View {
                 container(detail)
             }
         }
+        .environment(\.plozzArtworkArea, .details)
         .artworkGradientBackground(
             scope: ObjectIdentifier(viewModel), isVisible: isPageVisible && !hasChildOnTop
         )
@@ -741,6 +742,7 @@ public struct ItemDetailView: View {
                             onSelect: onSelectChild
                         )
                         .environment(\.plozzCardCaptionView, .episodes)
+                        .environment(\.plozzArtworkArea, .episodes)
                     }
                     DetailExtrasView(
                         item: detail.item,

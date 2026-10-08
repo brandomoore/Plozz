@@ -30,6 +30,35 @@ import UIKit
 
 #if canImport(UIKit)
 @MainActor
+final class PreviewCardLayoutTests: XCTestCase {
+    func testRelatedPresetTitlesReserveIdenticalHeightsAtEveryWidthAndTextSize() {
+        let titles = CardCaptionPreference.allCases.map(\.displayName)
+        for width in [CGFloat(180), 260, 340] {
+            for textSize in [DynamicTypeSize.large, .accessibility3] {
+                let heights = titles.map { title in
+                    let card = PreviewCard(
+                        title: title, isSelected: false, accent: .blue,
+                        compact: true, swatchHeight: 150, titleLineLimit: nil,
+                        titleSizeGroup: titles, action: {}
+                    ) {
+                        CardStyleSwatch(style: .borderless)
+                    }
+                    .environment(\.dynamicTypeSize, textSize)
+                    .frame(width: width)
+                    return UIHostingController(rootView: card)
+                        .sizeThatFits(in: CGSize(width: width, height: 2_000)).height
+                }
+                for height in heights {
+                    XCTAssertEqual(height, heights[0], accuracy: 0.5, "\(width) / \(textSize)")
+                    XCTAssertGreaterThan(height, 150)
+                    XCTAssertLessThan(height, 1_000)
+                }
+            }
+        }
+    }
+}
+
+@MainActor
 final class MediaFolderCardLayoutTests: XCTestCase {
     func testFallbackNamesDoNotExpandCardsWithHiddenCaptions() {
         for style in [CardStyle.framed, .borderless] {

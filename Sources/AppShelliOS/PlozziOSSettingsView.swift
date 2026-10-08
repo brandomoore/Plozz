@@ -432,7 +432,7 @@ private struct PlozziOSSettingsSplitView: View {
                             )
                             settingsRow(
                                 .metadata,
-                                title: "Metadata",
+                                title: "Metadata Providers",
                                 systemImage: "sparkles.rectangle.stack"
                             )
                         } footer: {
@@ -645,7 +645,8 @@ private struct PlozziOSSettingsSplitView: View {
                 cardStyle: appModel.settings.cardStyle,
                 density: appModel.settings.density,
                 watchIndicator: appModel.settings.watchIndicator,
-                navigation: appModel.settings.navigation
+                navigation: appModel.settings.navigation,
+                canManageProviders: !isParentalSealed
             )
         case .home:
             PlozziOSHomeSettingsView(
@@ -698,7 +699,7 @@ private struct PlozziOSSettingsSplitView: View {
         case .syncSetup:
             PlozziOSSyncSetupSettingsView(appModel: appModel)
         case .metadata:
-            PlozziOSMetadataSettingsView(deps: appModel.makeMetadataSettingsDependencies())
+            PlozziOSMetadataSettingsView(appModel: appModel, deps: appModel.makeMetadataSettingsDependencies())
         case .subtitles:
             PlozziOSSubtitleSettingsView(
                 behavior: appModel.settings.subtitleBehavior,
@@ -974,7 +975,8 @@ private struct PlozziOSSettingsCompactMenu: View {
                         cardStyle: appModel.settings.cardStyle,
                         density: appModel.settings.density,
                         watchIndicator: appModel.settings.watchIndicator,
-                        navigation: appModel.settings.navigation
+                        navigation: appModel.settings.navigation,
+                        canManageProviders: !isParentalSealed
                     )
                 } label: {
                     Label("Appearance", systemImage: "paintpalette")
@@ -1167,7 +1169,7 @@ private struct PlozziOSSettingsCompactMenu: View {
                     Button {
                         showMetadata = true
                     } label: {
-                        Label("Metadata", systemImage: "sparkles.rectangle.stack")
+                        Label("Metadata Providers", systemImage: "sparkles.rectangle.stack")
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                     }
@@ -1277,7 +1279,7 @@ private struct PlozziOSSettingsCompactMenu: View {
         .onChange(of: appModel.profiles.activeProfileID) { _, _ in isParentalUnlocked = false }
         .onChange(of: appModel.profiles.parentalPIN) { _, _ in isParentalUnlocked = false }
         .navigationDestination(isPresented: $showMetadata) {
-            PlozziOSMetadataSettingsView(deps: appModel.makeMetadataSettingsDependencies())
+            PlozziOSMetadataSettingsView(appModel: appModel, deps: appModel.makeMetadataSettingsDependencies())
         }
         .alert("Sign out of all accounts?", isPresented: $confirmSignOutAll) {
             Button("Cancel", role: .cancel) {}
@@ -1734,6 +1736,7 @@ struct PlozziOSAppearanceSettingsView: View {
     @Bindable var density: UIDensitySettingsModel
     @Bindable var watchIndicator: WatchStatusIndicatorSettingsModel
     @Bindable var navigation: NavigationStyleSettingsModel
+    var canManageProviders = false
     @Environment(AppLanguageSettingsModel.self) private var appLanguage
 
     private var navigationLibrariesScope: ProfileLibrariesScope {
@@ -1815,6 +1818,15 @@ struct PlozziOSAppearanceSettingsView: View {
                 }
             }
 
+            SettingsSectionGroup("Artwork") {
+                NavigationLink("Artwork") {
+                    PlozziOSArtworkSettingsView(
+                        appModel: appModel, cardStyle: cardStyle,
+                        canManageProviders: canManageProviders
+                    )
+                }
+                .accessibilityIdentifier("appearance-artwork")
+            }
             SettingsSectionGroup("Cards") {
                 NavigationLink("Cards") {
                     CardAppearanceControls(cards: cardStyle, watchIndicator: watchIndicator)
@@ -1846,6 +1858,52 @@ struct PlozziOSAppearanceSettingsView: View {
         .navigationTitle("Appearance")
     }
 
+}
+
+struct PlozziOSArtworkSettingsView: View {
+    let appModel: PlozziOSAppModel
+    @Bindable var cardStyle: CardStyleSettingsModel
+    let canManageProviders: Bool
+    var returnsToMetadata = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            SettingsSectionGroup {
+                ArtworkSettingsControls(cards: cardStyle)
+            }
+            if canManageProviders {
+                SettingsSectionGroup {
+                    if returnsToMetadata {
+                        Button {
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Text("Metadata Providers (TMDB, TheTVDB…)")
+                                Spacer()
+                                Image(systemName: "chevron.forward")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityIdentifier("artwork-metadata-providers")
+                    } else {
+                        NavigationLink("Metadata Providers (TMDB, TheTVDB…)") {
+                            PlozziOSMetadataSettingsView(
+                                appModel: appModel, deps: appModel.makeMetadataSettingsDependencies(),
+                                returnsToArtwork: true
+                            )
+                        }
+                        .accessibilityIdentifier("artwork-metadata-providers")
+                    }
+                } footer: {
+                    Text("Shared by all profiles.")
+                }
+            }
+        }
+        .settingsPageSurface()
+        .navigationTitle("Artwork")
+    }
 }
 
 private struct PlozziOSHomeSettingsView: View {

@@ -2,6 +2,7 @@
 import SwiftUI
 import CoreUI
 import CoreModels
+import MetadataKit
 
 /// The Cast tab's card: a row of the people on screen.
 ///
@@ -12,6 +13,24 @@ import CoreModels
 /// fixed stage that the reveal transform moves as a unit, so anything that
 /// changed its height would make the whole transport jump.
 struct CastPanelView: View {
+    static func creditArtworkSource(
+        for item: MediaItem, policy: ArtworkPresentationPolicy
+    ) -> MediaArtworkSource {
+        MediaArtworkSource(
+            item: item, placement: item.kind == .episode ? .seriesPoster : .poster,
+            policy: policy.forArea(.playback)
+        )
+    }
+
+    static func creditArtworkLookup(for item: MediaItem, router: ArtworkRouter = .shared) async -> URL? {
+        await ArtworkSession.artworkResolveLimiter.run {
+            guard !Task.isCancelled else { return nil }
+            return await router.artworkURL(
+                for: item, placements: [item.kind == .episode ? .seriesPoster : .poster]
+            )
+        }
+    }
+
     @Environment(\.playerCardMetrics) private var metrics
     let model: PlayerControlsModel
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
@@ -1237,6 +1256,7 @@ private struct CastMemberDetail: View {
 /// Not focusable, by design. Nothing in this card may end the film.
 private struct CastCreditsRow: View {
     @Environment(\.playerCardMetrics) private var metrics
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     /// Whether an unowned credit here can be requested or is only flagged.
     @Environment(\.plozzSeerConnected) private var seerConnected
     let items: [MediaItem]
@@ -1426,15 +1446,14 @@ private struct CastCreditsRow: View {
 
     @ViewBuilder
     private func poster(for item: MediaItem) -> some View {
-        let references = item.artworkReferences(
-            for: item.kind == .episode ? .seriesPoster : .poster
-        )
-        if references.isEmpty {
+        let source = CastPanelView.creditArtworkSource(for: item, policy: artworkPolicy)
+        FallbackAsyncImage(
+            references: source.references, variant: .posterCard,
+            artworkPolicy: source.policy,
+            asyncFallbackURL: { await CastPanelView.creditArtworkLookup(for: item) },
+            pinIdentity: source.itemIdentity
+        ) {
             titleTile(item)
-        } else {
-            FallbackAsyncImage(references: references, variant: .posterCard) {
-                titleTile(item)
-            }
         }
     }
 

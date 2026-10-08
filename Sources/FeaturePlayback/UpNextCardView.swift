@@ -165,6 +165,9 @@ struct UpNextCardView: View {
 
     @ViewBuilder
     private func thumbnail(for info: UpNextInfo) -> some View {
+        let source = EpisodeArtworkSource(
+            item: info.episode, spoilerSettings: info.spoilerSettings, policy: model.artworkPolicy
+        )
         // Sized to the measured text-column height at 16:9, so the artwork spans
         // exactly the same vertical extent as the eyebrow/title/subtitle block —
         // top and bottom edges aligned — instead of a fixed height that the larger
@@ -172,7 +175,11 @@ struct UpNextCardView: View {
         Color.clear
             .frame(width: mediaHeight * 16.0 / 9.0, height: mediaHeight)
             .overlay {
-                FallbackAsyncImage(urls: info.thumbnailURLs, variant: .landscapeCard) {
+                FallbackAsyncImage(
+                    references: source.references, variant: .landscapeCard,
+                    artworkPolicy: source.policy,
+                    asyncFallbackURL: source.fallbackURL, pinIdentity: source.pinIdentity
+                ) {
                     ZStack {
                         // Fixed white, NOT palette.fill: over the player's variable
                         // video backdrop (scrim-relative), so it must not track theme.

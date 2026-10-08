@@ -7,6 +7,15 @@ final class HeroLogoPresentationPolicyTests: XCTestCase {
 
         XCTAssertTrue(policy.shouldAdopt(elapsed: 30))
         XCTAssertTrue(policy.animatesResolvedLogo)
+        XCTAssertTrue(policy.showsTextWhileLoading)
+    }
+
+    func testWhenResolvedWaitsForTheLogoOrAConfirmedMiss() {
+        let policy = HeroLogoPresentationPolicy.whenResolved
+
+        XCTAssertTrue(policy.shouldAdopt(elapsed: 30))
+        XCTAssertTrue(policy.animatesResolvedLogo)
+        XCTAssertFalse(policy.showsTextWhileLoading)
     }
 
     func testOnArrivalAdoptsOnlyInsideArrivalWindow() {
@@ -15,6 +24,7 @@ final class HeroLogoPresentationPolicyTests: XCTestCase {
         XCTAssertTrue(policy.shouldAdopt(elapsed: 0.2))
         XCTAssertFalse(policy.shouldAdopt(elapsed: 0.201))
         XCTAssertFalse(policy.animatesResolvedLogo)
+        XCTAssertTrue(policy.showsTextWhileLoading)
     }
 
     func testOnArrivalTreatsNegativeWindowAsImmediateOnly() {

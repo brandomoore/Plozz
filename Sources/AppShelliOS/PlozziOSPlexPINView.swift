@@ -9,6 +9,7 @@ struct PlozziOSPlexPINView: View {
     let request: PlexHomeUsersModel.PlexPINRequest
     var sequenceStep: PINSequenceStep? = nil
     var dismissOnSuccess = true
+    var onCancel: () -> Void = {}
 
     @State private var isSubmitting = false
 
@@ -25,6 +26,7 @@ struct PlozziOSPlexPINView: View {
                 model.submitPlexPIN(pin)
             },
             onCancel: {
+                onCancel()
                 model.cancelPlexPIN()
                 if dismissOnSuccess { dismiss() }
             }

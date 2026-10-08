@@ -21,71 +21,80 @@ public struct FirstPaintArtwork: @unchecked Sendable {
     }
 }
 
-/// Selects online-versus-library artwork without ever publishing a provisional
-/// image. A timed-out online task keeps running to warm shared caches, but its
-/// result is not returned after a library image wins this appearance.
+/// Resolves the preferred source before falling back, without publishing a
+/// provisional image. Queueing or downloading slowly is not a missing image;
+/// the underlying network and image-cache deadlines bound failed requests.
 public enum ArtworkFirstPaintResolver {
-    public static let denseArtworkWait: TimeInterval = 0.5
-    public static let focalArtworkWait: TimeInterval = 2
-
     /// Prepares the exact policy-qualified result FallbackAsyncImage can adopt
     /// synchronously, including an online winner absent from its library URLs.
     @MainActor
     public static func prepare(
         references: [ArtworkReference],
+        prefersPrimaryReference: Bool = false,
         variant: ArtworkImageVariant,
+        maxAspectRatio: CGFloat? = nil,
         asyncOnlineURL: (@Sendable () async -> URL?)?,
         pinIdentity: String,
-        maximumOnlineWait: TimeInterval = denseArtworkWait
+        policy: ArtworkPresentationPolicy = .init()
     ) async {
-        let settings = MetadataProviderSettingsStore().load()
         let key = ArtworkResolveKey.make(
-            references: references, variant: variant, maxAspectRatio: nil,
+            references: references, variant: variant, maxAspectRatio: maxAspectRatio,
             pinIdentity: pinIdentity,
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
+            providerPolicyIdentity: policy.identity,
+            prefersPrimaryReference: prefersPrimaryReference
         )
         if ArtworkSeedMemo.prepared(for: key, variant: variant) != nil { return }
         guard let artwork = await resolve(
-            references: references, variant: variant,
-            asyncOnlineURL: asyncOnlineURL, maximumOnlineWait: maximumOnlineWait,
-            prefersOnlineArtwork: settings.preferOnlineArtwork, background: true
+            references: references, prefersPrimaryReference: prefersPrimaryReference, variant: variant,
+            maxAspectRatio: maxAspectRatio,
+            asyncOnlineURL: asyncOnlineURL,
+            prefersOnlineArtwork: policy.prefersOnlineArtwork, background: true
         ), !Task.isCancelled else { return }
         ArtworkSeedMemo.store(artwork, for: key)
     }
 
     public static func resolve(
         references: [ArtworkReference],
+        prefersPrimaryReference: Bool = false,
         variant: ArtworkImageVariant,
         maxAspectRatio: CGFloat? = nil,
         asyncOnlineURL: (@Sendable () async -> URL?)?,
-        maximumOnlineWait: TimeInterval,
-        prefersOnlineArtwork: Bool? = nil,
+        prefersOnlineArtwork: Bool = true,
         sharedKey: String? = nil,
-        background: Bool = false
+        background: Bool = false,
+        imageLoader: (@Sendable (ArtworkReference) async -> UIImage?)? = nil
     ) async -> FirstPaintArtwork? {
         if let sharedKey {
-            return await FirstPaintTaskMemo.shared.value(for: sharedKey) {
+            let key = prefersPrimaryReference
+                ? "\(sharedKey)|primary:\(references.first?.privacySafeIdentity ?? "none")" : sharedKey
+            return await FirstPaintTaskMemo.shared.value(for: key) {
                 await resolve(
                     references: references,
+                    prefersPrimaryReference: prefersPrimaryReference,
                     variant: variant,
                     maxAspectRatio: maxAspectRatio,
                     asyncOnlineURL: asyncOnlineURL,
-                    maximumOnlineWait: maximumOnlineWait,
                     prefersOnlineArtwork: prefersOnlineArtwork,
                     sharedKey: nil,
-                    background: background
+                    background: background,
+                    imageLoader: imageLoader
                 )
             }
         }
-        let prefersOnline = prefersOnlineArtwork
-            ?? MetadataProviderSettingsStore().load().preferOnlineArtwork
-
-        guard prefersOnline, let asyncOnlineURL else {
+        if prefersPrimaryReference, let primary = references.first,
+           let artwork = await loadFirst(
+               [primary], variant: variant, maxAspectRatio: maxAspectRatio,
+               background: background, imageLoader: imageLoader
+           ) {
+            return artwork
+        }
+        guard prefersOnlineArtwork, let asyncOnlineURL else {
             if let local = await loadFirst(
                 references,
                 variant: variant,
                 maxAspectRatio: maxAspectRatio,
-                background: background
+                background: background,
+                imageLoader: imageLoader
             ) {
                 return local
             }
@@ -93,83 +102,58 @@ public enum ArtworkFirstPaintResolver {
                 asyncOnlineURL,
                 variant: variant,
                 maxAspectRatio: maxAspectRatio,
-                background: background
+                background: background,
+                imageLoader: imageLoader
             )
         }
 
-        // Speculation has no blank on-screen card to rescue. Resolve its preferred
-        // image first instead of racing a second download or pinning a provisional
-        // library fallback before the viewer has even opened the season.
-        if background {
-            if let online = await loadOnline(
-                asyncOnlineURL, variant: variant,
-                maxAspectRatio: maxAspectRatio, background: true
-            ) {
-                return online
-            }
-            return await loadFirst(
-                references, variant: variant,
-                maxAspectRatio: maxAspectRatio, background: true
-            )
-        }
-
+        let race = FirstPaintRace()
         let onlineTask = Task {
-            await loadOnline(
+            let artwork = await loadOnline(
                 asyncOnlineURL,
                 variant: variant,
                 maxAspectRatio: maxAspectRatio,
-                background: background
+                background: background,
+                imageLoader: imageLoader
             )
-        }
-        let race = FirstPaintRace()
-        Task {
-            await race.submit(.resolved(await onlineTask.value))
-        }
-        Task {
-            let nanoseconds = UInt64(max(0, maximumOnlineWait) * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: nanoseconds)
-            await race.submit(.timedOut)
+            await race.submit(.resolved(artwork))
         }
 
         let outcome = await withTaskCancellationHandler {
             await race.value()
         } onCancel: {
+            onlineTask.cancel()
             Task { await race.submit(.cancelled) }
         }
+        guard !Task.isCancelled else { return nil }
         switch outcome {
         case .resolved(let artwork):
             if let artwork { return artwork }
-        case .timedOut:
-            break
         case .cancelled:
             return nil
         }
 
-        if let local = await loadFirst(
+        return await loadFirst(
             references,
             variant: variant,
             maxAspectRatio: maxAspectRatio,
-            background: background
-        ) {
-            return local
-        }
-        guard !Task.isCancelled else { return nil }
-        return await onlineTask.value
+            background: background,
+            imageLoader: imageLoader
+        )
     }
 
     private static func loadFirst(
         _ references: [ArtworkReference],
         variant: ArtworkImageVariant,
         maxAspectRatio: CGFloat?,
-        background: Bool
+        background: Bool,
+        imageLoader: (@Sendable (ArtworkReference) async -> UIImage?)?
     ) async -> FirstPaintArtwork? {
         for reference in references {
             guard !Task.isCancelled else { return nil }
-            guard let image = await ArtworkImageCache.shared.image(
-                for: reference,
-                variant: variant,
-                background: background
-            ), isUsable(image, maxAspectRatio: maxAspectRatio) else {
+            guard let image = await loadImage(
+                reference, variant: variant, background: background, imageLoader: imageLoader
+            ), !Task.isCancelled, isUsable(image, maxAspectRatio: maxAspectRatio) else {
                 continue
             }
             return FirstPaintArtwork(
@@ -185,18 +169,17 @@ public enum ArtworkFirstPaintResolver {
         _ resolver: (@Sendable () async -> URL?)?,
         variant: ArtworkImageVariant,
         maxAspectRatio: CGFloat?,
-        background: Bool
+        background: Bool,
+        imageLoader: (@Sendable (ArtworkReference) async -> UIImage?)?
     ) async -> FirstPaintArtwork? {
         guard !Task.isCancelled,
               let resolver,
               let url = await resolver(),
               !Task.isCancelled,
-              let image = await ArtworkImageCache.shared.image(
-                  for: url,
-                  variant: variant,
-                  background: background
+              let image = await loadImage(
+                  .remote(url), variant: variant, background: background, imageLoader: imageLoader
               ),
-              isUsable(image, maxAspectRatio: maxAspectRatio) else {
+              !Task.isCancelled, isUsable(image, maxAspectRatio: maxAspectRatio) else {
             return nil
         }
         return FirstPaintArtwork(
@@ -204,6 +187,14 @@ public enum ArtworkFirstPaintResolver {
             reference: .remote(url),
             variant: variant
         )
+    }
+
+    private static func loadImage(
+        _ reference: ArtworkReference, variant: ArtworkImageVariant, background: Bool,
+        imageLoader: (@Sendable (ArtworkReference) async -> UIImage?)?
+    ) async -> UIImage? {
+        if let imageLoader { return await imageLoader(reference) }
+        return await ArtworkImageCache.shared.image(for: reference, variant: variant, background: background)
     }
 
     private static func isUsable(
@@ -218,7 +209,6 @@ public enum ArtworkFirstPaintResolver {
 
 private enum FirstPaintRaceResult: @unchecked Sendable {
     case resolved(FirstPaintArtwork?)
-    case timedOut
     case cancelled
 }
 

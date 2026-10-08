@@ -2,6 +2,7 @@
 import SwiftUI
 import CoreUI
 import CoreModels
+import MetadataKit
 
 /// The Info panel's now-playing card: a 16:9 thumbnail, the episode headline +
 /// overview, a metadata/badge row, and the right-hand action column (Restart ·
@@ -25,6 +26,31 @@ struct InfoPanelView: View {
     static var thumbHeight: CGFloat { PlayerCardMetrics.platformDefault.contentHeight }
     static var contentPadding: CGFloat { PlayerCardMetrics.platformDefault.contentPadding }
     static var cardHeight: CGFloat { PlayerCardMetrics.platformDefault.cardHeight }
+
+    /// Info can crop a still or poster when no backdrop loads; detail pages keep
+    /// their stricter backdrop-only selection.
+    static func artworkReferences(
+        for item: MediaItem, policy: ArtworkPresentationPolicy
+    ) -> [ArtworkReference] {
+        let policy = policy.forArea(.playback)
+        var seen = Set<ArtworkReference>()
+        return artworkPlacements(for: item).flatMap { policy.references(for: item, placement: $0) }
+            .filter { seen.insert($0).inserted }
+    }
+
+    static func artworkPlacements(for item: MediaItem) -> [ArtworkPlacement] {
+        item.kind == .episode
+            ? [.detailBackdrop, .episodeThumbnail, .poster]
+            : [.detailBackdrop, .poster]
+    }
+
+    static func artworkLookup(for item: MediaItem, router: ArtworkRouter = .shared) async -> URL? {
+        let placements = artworkPlacements(for: item)
+        return await ArtworkSession.artworkResolveLimiter.run {
+            guard !Task.isCancelled else { return nil }
+            return await router.artworkURL(for: item, placements: placements)
+        }
+    }
 
     @Environment(\.playerCardMetrics) private var metrics
 
@@ -374,7 +400,10 @@ struct InfoPanelView: View {
     }
 
     private func infoThumbnail(cornerRadius: CGFloat, height: CGFloat) -> some View {
-        PlayerInfoArtwork(urls: model.infoCard.artworkURLs, cornerRadius: cornerRadius, height: height)
+        PlayerInfoArtwork(
+            urls: model.infoCard.artworkURLs, item: model.infoCard.artworkItem,
+            policy: model.artworkPolicy, cornerRadius: cornerRadius, height: height
+        )
     }
 
     /// An icon-only Info-card action. At rest it shows just its glyph; while
@@ -421,16 +450,28 @@ struct InfoPanelView: View {
 
 private struct PlayerInfoArtwork: View {
     let urls: [URL]
+    let item: MediaItem?
+    let policy: ArtworkPresentationPolicy
     let cornerRadius: CGFloat
     let height: CGFloat
     @State private var policyRevision = 0
 
     var body: some View {
         let _ = policyRevision
+        let policy = self.policy.forArea(.playback)
+        let references = item.map { InfoPanelView.artworkReferences(for: $0, policy: policy) }
+            ?? urls.map(ArtworkReference.remote)
+        let fallback: (@Sendable () async -> URL?)? = item.map { item in
+            { await InfoPanelView.artworkLookup(for: item) }
+        }
         Color.clear
             .frame(width: height * 16.0 / 9.0, height: height)
             .overlay {
-                FallbackAsyncImage(urls: urls, variant: .landscapeCard) {
+                FallbackAsyncImage(
+                    references: references,
+                    variant: .landscapeCard, artworkPolicy: policy,
+                    asyncFallbackURL: fallback, pinIdentity: item?.stablePresentationID
+                ) {
                     Rectangle().fill(Color.white.opacity(0.08))
                         .overlay(
                             Image(systemName: "photo")

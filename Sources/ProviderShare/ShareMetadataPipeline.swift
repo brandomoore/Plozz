@@ -61,6 +61,6 @@ struct DefaultShareMetadataPipelineFactory: ShareMetadataPipelineFactory {
     /// source inert when unusable), so no per-config resolver selection is needed.
     /// Exposed (non-private) so a test can assert the selected type without a global.
     func makeExternalResolver() -> any ShareMetadataResolving {
-        PipelineShareResolver(pipeline: clients.makePipeline())
+        PipelineShareResolver(makePipeline: clients.makePipeline)
     }
 }

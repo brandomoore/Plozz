@@ -54,6 +54,65 @@ and the single place caption customization lives.
 
 ## Invariants
 
+- **Artwork and label presets.** Choosing any preset, including reselecting the
+  previous one, replaces the whole configuration through `applyPreset`. Editing
+  a view switches to Custom: no preset is selected, and a single badge appears on
+  "Customize by view". `selectedPreset` derives this status from existing stored
+  overrides; the backing preference retains unedited views' behavior, including
+  mixed recommended rules. Settings remain in the existing profile store and sync
+  payload; artwork's `scopeVersion` migrates earlier shared choices once.
+  Matching a preset's value manually stays Custom until a preset is chosen.
+  Rows have only a name and short value: Library / Providers, or On / Off. Select
+  toggles the value directly, without an inheritance step, menus, chevrons, or
+  per-row status. Mixed labels in Home and library Recommended retain their
+  Showcase/title-artwork rules until edited. Explanations appear outside the rows
+  when focused on TV, and as accessibility hints on both platforms. Accessibility
+  text sizes can stack the name and value instead of shrinking or clipping them.
+  Both lists group library tabs under "Libraries". Artwork separates Home's
+  Showcase/hero from other Home rows, and library Recommended's hero (TV only)
+  from its rows. Browse, Collections, and Playlists have independent choices;
+  titles inside collections/playlists use Browse. Continue Watching rows share
+  one choice across Home and libraries, independent of the series-artwork option.
+  Watchlist means the standalone page, not Home's Watchlist row. Episode browser
+  means detail-page episode cards; Video player artwork covers player menus,
+  Up Next, and system Now Playing. Shared view components retain these scopes
+  rather than treating a common layout as a shared preference.
+  Labels retain equal-height visual presets: App default uses a single split illustration with
+  caption bars on only one half. Show labels everywhere and Hide labels everywhere
+  govern all media captions; App default owns Showcase and title-artwork exceptions.
+  Explicit per-view choices, including Episodes, last until a preset replaces them.
+  Library navigation names and on-artwork information are not captions.
+- **Scoped TV detail navigation.** `SettingsDetailPages` and `SettingsDetailLink`
+  in `SettingsDetailNavigation.swift` are reusable across settings, independent of
+  artwork and labels. A `SettingsSplitRow` opts in with `SettingsDetailSubpage`;
+  use `SettingsDetailLink` inside its root content to open that child. Outside a
+  scoped pane, the link uses ordinary navigation. Both pages slide by the pane's
+  full width: the root leaves toward the leading edge as the child enters from
+  the trailing edge, and Back reverses both motions. The root stays mounted to
+  preserve state and scroll position; it becomes ineligible for input while away.
+  The sidebar stays stationary. Entry transfers native focus to the first row;
+  Back restores the originating link after removal completes. Stale completions
+  are invalidated when changing the selected sidebar page. Left remains available
+  for sidebar navigation, RTL mirrors the motion, and Reduce Motion disables it.
+  Child content chooses its initial native focus target and calls
+  `SettingsDetailNavigation.focusArrived()` when that control receives focus.
+  Customization lists and their inset contextual cards occupy separate regions.
+  Larger 16:9 illustrations highlight only the affected artwork, beside one sentence
+  of help; full-page outlines sit inside the preview's rounded corners rather than
+  being clipped by its mask. Label settings reuse the card-style preview. Navigation follows the active
+  profile, including native sidebar, pinned rail, and top-tab differences. Ordinary
+  title rows use 2:3 posters; episode/player thumbnails use their landscape ratios.
+  Home follows the active Fullscreen Hero/Showcase layout, including disabled heroes;
+  Continue Watching uses its actual thumbnail or extended series-artwork shape.
+  The shared title-detail choice shows separate movie and show layouts: show episodes
+  stay muted because the episode choice owns those images. Extras and cast photos
+  are not promised a title-level source replacement. Keep the card and viewport
+  stable as focus or values change, with no extra focus stop or content behind
+  the card. A smooth 40-point bottom fade and matching scroll clearance keep focused
+  rows above the fade. Lists without help reserve no footer. Pane-level transition clipping
+  remains. Artwork values use "Library" and "Metadata providers", with "Mixed" for
+  Recommended title details (metadata-provider heroes and library-first related posters); narrow/mobile
+  and accessibility layouts stack the complete value rather than abbreviating it.
 - **Profile Seerr setup uses page gutters, not artwork padding.** On iPhone/iPad,
   `ProfileSeerrSetupView` uses `SettingsPageScroll` and a centered, at-most
   720-point column. Its noninteractive profile chip uses `ProfileAvatarView`

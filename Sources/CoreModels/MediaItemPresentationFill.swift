@@ -93,6 +93,7 @@ public extension MediaItem {
                 })
         }
         for url in adoptedArtwork {
+            recordArtworkMetadataSource(donor.artworkMetadataSource(for: url) ?? .server, for: url)
             if let accountID = donor.artworkSourceAccountID(for: url)
                 ?? donor.sourceAccountID {
                 recordArtworkSource(accountID: accountID, for: [url])

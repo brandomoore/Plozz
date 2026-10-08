@@ -406,11 +406,12 @@ final class ShareLocalArtworkTests: XCTestCase {
             metadataConfig: MetadataEnrichmentConfig(preferOnlineArtwork: false)
         )
 
-        XCTAssertEqual(projected.artworkReferences(for: .poster), [.remote(localURL), .remote(onlineURL)])
-        XCTAssertEqual(projected.metadataProvenance[.posterURL]?.source, .localArtwork)
+        XCTAssertEqual(projected.artworkReferences(for: .poster), [.remote(localURL)])
+        XCTAssertEqual(projected.metadataProvenance[.posterURL]?.source, .tmdb)
+        XCTAssertEqual(projected.metadataArtworkURLs(for: .poster), [.init(value: onlineURL, source: .tmdb)])
     }
 
-    func testOnlineArtworkPreferenceOverridesOnlyArtwork() throws {
+    func testSharedCatalogRetainsLocalAlternativesForProfileArtworkPreferences() throws {
         let onlineURL = try XCTUnwrap(URL(string: "https://example.invalid/online.jpg"))
         let localURL = try XCTUnwrap(URL(string: "https://example.invalid/local.jpg"))
         var item = MediaItem(id: "movie", title: "Movie", kind: .movie)
@@ -438,8 +439,9 @@ final class ShareLocalArtworkTests: XCTestCase {
             metadataConfig: MetadataEnrichmentConfig(preferOnlineArtwork: true)
         )
 
-        XCTAssertEqual(projected.artworkReferences(for: .poster), [.remote(onlineURL)])
+        XCTAssertEqual(projected.artworkReferences(for: .poster), [.remote(localURL)])
         XCTAssertEqual(projected.metadataProvenance[.posterURL]?.source, .tmdb)
+        XCTAssertEqual(projected.metadataArtworkURLs(for: .poster), [.init(value: onlineURL, source: .tmdb)])
         XCTAssertEqual(projected.overview, "Local overview")
         XCTAssertEqual(projected.metadataProvenance[.overview]?.source, .localNFO)
     }
@@ -462,10 +464,42 @@ final class ShareLocalArtworkTests: XCTestCase {
         )
 
         XCTAssertEqual(projected.artworkReferences(for: .poster).first, .remote(localURL))
+        XCTAssertNil(projected.posterURL)
         XCTAssertEqual(projected.metadataProvenance[.posterURL]?.source, .localArtwork)
     }
 
-    func testCatalogReadAppliesOnlineArtworkPreference() async throws {
+    func testUnattributedLegacyEnrichmentIsNotAnImmediateLibraryFallback() throws {
+        let url = try XCTUnwrap(URL(string: "https://example.invalid/legacy.jpg"))
+        let original = MediaItem(id: "share-item", title: "Local title", kind: .movie, providerIDs: ["Tmdb": "42"])
+        let projected = ShareCatalogReadProjection.applyEnrichment(original, .init(posterURL: url))
+        XCTAssertEqual(projected.posterURL, url)
+        XCTAssertEqual(projected.metadataProvenance[.posterURL]?.source, .legacyUnknown)
+        XCTAssertTrue(projected.artworkReferences(for: .poster).isEmpty)
+        XCTAssertEqual(projected.metadataArtworkURLs(for: .poster), [.init(value: url, source: .legacyUnknown)])
+        XCTAssertEqual(projected.id, original.id)
+        XCTAssertEqual(projected.title, original.title)
+        XCTAssertEqual(projected.providerIDs, original.providerIDs)
+    }
+
+    func testDisabledSeriesProviderDoesNotEraseNativeEpisodeArtwork() throws {
+        let native = try XCTUnwrap(URL(string: "https://library.example.test/episode.jpg?api_key=fixture"))
+        let external = try XCTUnwrap(URL(string: "https://art.example.test/series.jpg"))
+        let episode = MediaItem(id: "episode", title: "Episode", kind: .episode, posterURL: native)
+        let enriched = ShareCatalogReadProjection.applyEnrichment(
+            episode, .sourced(posterURL: .init(value: external, source: .tmdb))
+        )
+        XCTAssertEqual(enriched.artworkReferences(for: .episodeThumbnail), [.remote(native)])
+        XCTAssertTrue(enriched.seriesArtworkReferences().isEmpty)
+        let filtered = ShareCatalogReadProjection.applyLocalArtwork(
+            enriched, [], metadataConfig: .init(disabledSources: [.tmdb])
+        )
+        XCTAssertEqual(filtered.posterURL, native)
+        XCTAssertNil(filtered.seriesPosterURL)
+        XCTAssertEqual(filtered.artworkMetadataSource(for: native), .server)
+        XCTAssertEqual(filtered.artworkReferences(for: .episodeThumbnail), [.remote(native)])
+    }
+
+    func testCatalogReadKeepsLocalArtworkWithOnlineEnrichment() async throws {
         let fixture = ShareCatalogSQLiteFixture()
         defer { fixture.cleanup() }
         let store = ShareCatalogStore(
@@ -490,14 +524,17 @@ final class ShareLocalArtworkTests: XCTestCase {
 
         let loaded = await store.item(id: itemID)
         let item = try XCTUnwrap(loaded)
-        XCTAssertEqual(
-            item.artworkReferences(for: .poster),
-            [.remote(try XCTUnwrap(URL(string: "https://example.invalid/online.jpg")))]
-        )
+        XCTAssertEqual(item.artworkReferences(for: .poster).count, 1)
+        guard case .networkFile = item.artworkReferences(for: .poster).first else {
+            return XCTFail("The shared catalog must retain local artwork for library-first profiles")
+        }
+        XCTAssertEqual(item.metadataArtworkURLs(for: .poster),
+                       [.init(value: try XCTUnwrap(URL(string: "https://example.invalid/online.jpg")),
+                              source: .legacyUnknown)])
         XCTAssertEqual(
             try fixture.integer("SELECT COUNT(*) FROM metadata_values WHERE source='localArtwork';"),
             1,
-            "preference changes projection, not the independently persisted local lane"
+            "Local artwork remains independently persisted"
         )
     }
 
@@ -521,8 +558,8 @@ final class ShareLocalArtworkTests: XCTestCase {
         await store.upsertArtwork([candidate("Movies/Film/poster.jpg")], scanID: 1)
 
         let item = await store.item(id: itemID)
-        XCTAssertEqual(item?.artworkReferences(for: .poster).count, 2)
-        XCTAssertEqual(item?.metadataProvenance[.posterURL]?.source, .localArtwork)
+        XCTAssertEqual(item?.artworkReferences(for: .poster).count, 1)
+        XCTAssertEqual(item?.metadataProvenance[.posterURL]?.source, .legacyUnknown)
         XCTAssertNil(item?.metadataProvenance[.posterURL]?.sourceURL)
         XCTAssertNil(try fixture.text("""
             SELECT source_url FROM metadata_values
@@ -561,7 +598,8 @@ final class ShareLocalArtworkTests: XCTestCase {
             "external replacement must preserve the independently owned local artwork lane"
         )
         let refreshedItem = await store.item(id: itemID)
-        XCTAssertEqual(refreshedItem?.artworkReferences(for: .poster).count, 2)
+        XCTAssertEqual(refreshedItem?.artworkReferences(for: .poster).count, 1)
+        XCTAssertEqual(refreshedItem?.posterURL, URL(string: "https://example.invalid/refreshed.jpg"))
 
         // A clean scan where the media remains but the sidecar is absent deletes
         // only the local artwork lane; external enrichment stays intact.
@@ -1055,9 +1093,10 @@ final class ShareLocalArtworkTests: XCTestCase {
         let asset = movie()
         let itemID = ShareCatalogID.file(asset.relPath)
         await store.upsert([asset], scanID: 1)
+        let external = try XCTUnwrap(URL(string: "https://example.invalid/external.jpg"))
         let saved = await store.saveEnrichment(
             itemID: itemID,
-            .init(posterURL: URL(string: "https://example.invalid/external.jpg")),
+            .sourced(posterURL: .init(value: external, source: .tmdb)),
             version: ShareEnricher.version
         )
         XCTAssertTrue(saved)
@@ -1074,10 +1113,9 @@ final class ShareLocalArtworkTests: XCTestCase {
 
         let loadedFallback = await store.item(id: itemID)
         let fallback = try XCTUnwrap(loadedFallback)
-        XCTAssertEqual(
-            fallback.artworkReferences(for: .poster),
-            [.remote(try XCTUnwrap(URL(string: "https://example.invalid/external.jpg")))]
-        )
+        XCTAssertTrue(fallback.artworkReferences(for: .poster).isEmpty)
+        XCTAssertEqual(fallback.metadataArtworkURLs(for: .poster),
+                       [.init(value: external, source: .tmdb)])
         XCTAssertEqual(
             try fixture.integer("SELECT COUNT(*) FROM metadata_values WHERE source='localArtwork';"),
             0

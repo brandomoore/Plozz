@@ -8,36 +8,39 @@ public struct EpisodeArtworkSource: Sendable {
     public let references: [ArtworkReference]
     public let pinIdentity: String
     public let fallbackURL: @Sendable () async -> URL?
+    public let policy: ArtworkPresentationPolicy
     #if canImport(UIKit)
     public let requestIdentity: String
     private let prefersOnlineArtwork: Bool
     #endif
 
-    public init(item: MediaItem, spoilerSettings: SpoilerSettings) {
+    public init(
+        item: MediaItem, spoilerSettings: SpoilerSettings,
+        policy: ArtworkPresentationPolicy = .init(area: .episodes),
+        router: ArtworkRouter = .shared
+    ) {
+        self.policy = policy
         let hidesStill = spoilerSettings.mode == .placeholder
             && spoilerSettings.shouldHideThumbnail(for: item)
-        references = hidesStill
-            ? item.seriesArtworkReferences()
-            : item.artworkReferences(for: .episodeThumbnail)
+        var seen = Set<ArtworkReference>()
+        let seriesReferences = item.seriesArtworkReferences()
+        references = (hidesStill ? seriesReferences : item.artworkReferences(for: .episodeThumbnail) + seriesReferences)
+            .filter { seen.insert($0).inserted }
         // Posterless episode and spoiler-safe show art otherwise have the same
         // empty reference list. Their prepared images must never share a key.
         pinIdentity = "\(item.stablePresentationID)|\(hidesStill ? "series-artwork" : "episode-artwork")"
-        let subject = hidesStill ? PosterCardView.seriesArtworkItem(for: item) : item
+        let placements: [ArtworkPlacement] = hidesStill
+            ? [.detailBackdrop, .seriesPoster] : [.episodeThumbnail, .detailBackdrop, .seriesPoster]
         fallbackURL = {
-            if !hidesStill,
-               let still = await ArtworkRouter.shared.artworkURL(.thumbnail, for: subject) {
-                return still
-            }
-            return await ArtworkRouter.shared.artworkURL(.hero, for: subject)
-                ?? subject.fallbackArtworkURL
+            await router.artworkURL(for: item, placements: placements)
+                ?? item.libraryArtworkURL(item.fallbackArtworkURL)
         }
         #if canImport(UIKit)
-        let settings = MetadataProviderSettingsStore().load()
-        prefersOnlineArtwork = settings.preferOnlineArtwork
+        prefersOnlineArtwork = policy.prefersOnlineArtwork
         requestIdentity = ArtworkResolveKey.make(
             references: references, variant: .landscapeCard, maxAspectRatio: nil,
             pinIdentity: pinIdentity,
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
+            providerPolicyIdentity: policy.identity
         )
         #endif
     }
@@ -54,7 +57,6 @@ public struct EpisodeArtworkSource: Sendable {
         guard let artwork = await ArtworkFirstPaintResolver.resolve(
             references: references, variant: .landscapeCard,
             asyncOnlineURL: fallbackURL,
-            maximumOnlineWait: ArtworkFirstPaintResolver.denseArtworkWait,
             prefersOnlineArtwork: prefersOnlineArtwork,
             sharedKey: background ? nil : requestIdentity, background: background
         ), !Task.isCancelled else { return nil }

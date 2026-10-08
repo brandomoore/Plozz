@@ -9,8 +9,11 @@ struct PlozziOSDownloadsView: View {
     @Bindable var model: PlozziOSDownloadsModel
     let appModel: PlozziOSAppModel
     let onShowSettings: () -> Void
+    // Only the rebuilt stack may consume the tap; the retiring view must not race it.
+    var notificationPresentationID: UUID?
 
     @State private var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
+    @State private var notificationDestination: PlozziOSDownloadNotificationDestination?
 
     var body: some View {
         let library = model.library
@@ -35,6 +38,19 @@ struct PlozziOSDownloadsView: View {
         }
         .navigationTitle("Downloads")
         .task { await model.refreshArtwork() }
+        .task(id: notificationPresentationID) {
+            let navigation = PlozziOSDownloadNotificationNavigation.shared
+            guard let notificationPresentationID,
+                  navigation.presentation?.id == notificationPresentationID,
+                  appModel.isActiveProfileAuthorized,
+                  let destination = navigation.claimDestination(
+                profileID: appModel.profiles.activeProfileID
+            ) else { return }
+            notificationDestination = destination == .library ? nil : destination
+        }
+        .navigationDestination(item: $notificationDestination) { destination in
+            notificationPage(destination)
+        }
         .toolbarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -78,6 +94,49 @@ struct PlozziOSDownloadsView: View {
         }
     }
 
+    @ViewBuilder
+    private func notificationPage(_ destination: PlozziOSDownloadNotificationDestination) -> some View {
+        switch destination {
+        case .library:
+            EmptyView()
+        case let .show(id, seasonID):
+            PlozziOSDownloadedShowView(
+                showID: id, model: model, appModel: appModel, initialSeasonID: seasonID
+            )
+        case let .item(identityKey, createdAt):
+            if let record = model.records.first(where: {
+                $0.identityKey == identityKey && $0.createdAt == createdAt && $0.status == .completed
+            }), let item = model.playbackItem(for: record) {
+                if let provider = appModel.provider(for: item) {
+                    PlozziOSItemDetailView(
+                        appModel: appModel, provider: provider, item: item,
+                        seerService: appModel.seerService,
+                        originSourceAccountID: item.sourceAccountID,
+                        presentsEpisodeAsSubject: item.kind == .episode
+                    )
+                } else {
+                    ContentUnavailableView(
+                        "Server unavailable",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text("This title's server is no longer connected.")
+                    )
+                }
+            } else {
+                unavailableNotificationPage
+            }
+        case .unavailable:
+            unavailableNotificationPage
+        }
+    }
+
+    private var unavailableNotificationPage: some View {
+        ContentUnavailableView(
+            "Downloads Unavailable",
+            systemImage: "arrow.down.circle",
+            description: Text("This download has been removed or replaced.")
+        )
+    }
+
     private func libraryList(_ library: PlozziOSDownloadLibrary) -> some View {
         GeometryReader { proxy in
             ScrollView {
@@ -107,58 +166,23 @@ struct PlozziOSDownloadsView: View {
     }
 
     private var activeTransfersHeader: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Active downloads: \(model.activeTransfers.count.formatted())")
-                    .font(.headline)
-                activeTransferSummary
-                    .font(.caption)
-                    .plozzForeground(.secondary)
-            }
-            Spacer()
-            if model.activeTransfers.contains(where: {
-                $0.status == .downloading
-                    || $0.status == .preparing
-                    || $0.status == .queued
-            }) {
-                Button("Pause All", systemImage: "pause.fill") {
-                    Task { await model.pauseAllActive() }
-                }
-            } else {
-                Button("Resume All", systemImage: "play.fill") {
-                    Task { await model.resumeAllPaused() }
+        let isRunning = model.activeTransfers.contains {
+            $0.status == .downloading || $0.status == .preparing || $0.status == .queued
+        }
+        return PlozziOSActiveDownloadsSummary(
+            count: model.activeTransfers.count,
+            isRunning: isRunning,
+            bytesPerSecond: model.aggregateBytesPerSecond,
+            remaining: model.aggregateETA,
+            limitDescription: model.activeLimitDescription
+        ) {
+            Task {
+                if isRunning {
+                    await model.pauseAllActive()
+                } else {
+                    await model.resumeAllPaused()
                 }
             }
-        }
-        .padding(14)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    private var activeTransferSummary: Text {
-        var parts = [Text(model.activeLimitDescription)]
-        if model.aggregateBytesPerSecond > 0 {
-            parts.insert(
-                Text(
-                    verbatim: model.aggregateBytesPerSecond
-                        .formatted(.byteCount(style: .file)) + "/s"
-                ),
-                at: 0
-            )
-        }
-        if let eta = model.aggregateETA {
-            let duration = Duration.seconds(eta).formatted(
-                .units(
-                    allowed: [.hours, .minutes],
-                    width: .abbreviated,
-                    maximumUnitCount: 2
-                )
-            )
-            parts.append(
-                Text("\(duration) remaining")
-            )
-        }
-        return parts.dropFirst().reduce(parts[0]) {
-            $0 + Text(verbatim: " • ") + $1
         }
     }
 
@@ -658,6 +682,164 @@ struct DownloadTileContent: View {
     }
 }
 
+struct PlozziOSActiveDownloadsSummary: View {
+    let count: Int
+    let isRunning: Bool
+    let bytesPerSecond: Int64
+    let remaining: TimeInterval?
+    let limitDescription: LocalizedStringResource
+    let onToggle: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    title.fixedSize(horizontal: true, vertical: true)
+                    Spacer(minLength: 0)
+                    toggleButton.fixedSize(horizontal: true, vertical: true)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    title
+                    toggleButton
+                }
+            }
+            Divider()
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    speed
+                    limit
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    speed
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    limit
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+            if isRunning, let remaining {
+                let duration = Duration.seconds(remaining).formatted(
+                    .units(allowed: [.hours, .minutes], width: .abbreviated, maximumUnitCount: 2)
+                        .locale(locale)
+                )
+                Label {
+                    Text("\(duration) remaining")
+                        .monospacedDigit()
+                } icon: {
+                    Image(systemName: "clock")
+                }
+                .font(.caption)
+                .plozzForeground(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var title: some View {
+        Text("Active downloads: \(count.formatted(.number.locale(locale)))")
+            .font(.headline)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var toggleButton: some View {
+        Button(action: onToggle) {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    toggleLabel.labelStyle(.titleOnly)
+                } else {
+                    toggleLabel
+                }
+            }
+            .font(.subheadline.weight(.semibold))
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+    }
+
+    private var toggleLabel: some View {
+        Group {
+            if isRunning {
+                Label("Pause All", systemImage: "pause.fill")
+            } else {
+                Label("Resume All", systemImage: "play.fill")
+            }
+        }
+    }
+
+    private var speed: some View {
+        Group {
+            if isRunning, bytesPerSecond > 0 {
+                Text(verbatim: bytesPerSecond.formatted(.byteCount(style: .file).locale(locale)) + "/s")
+            } else if isRunning {
+                Text("In Progress")
+            } else {
+                Text("Paused")
+            }
+        }
+        .font(.title3.weight(.semibold))
+        .monospacedDigit()
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var limit: some View {
+        Text(limitDescription)
+            .font(.caption)
+            .plozzForeground(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+// Keep live record observation out of the view that constructs native picker menus.
+private struct PlozziOSDownloadManagementSettings: View {
+    let model: PlozziOSDownloadsModel
+    @Binding var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
+
+    var body: some View {
+        if model.hasActiveTransfers {
+            SettingsSectionGroup("In Progress") {
+                Button("Pause All", systemImage: "pause.circle") {
+                    Task { await model.pauseAllActive() }
+                }
+                Button("Resume All", systemImage: "play.circle") {
+                    Task { await model.resumeAllPaused() }
+                }
+                Button(
+                    "Cancel Active Downloads",
+                    systemImage: "xmark.circle",
+                    role: .destructive
+                ) {
+                    pendingBulkDeletion = .cancelActive(model.activeTransfers)
+                }
+            }
+        }
+
+        SettingsSectionGroup("Storage") {
+            PlozziOSDownloadsStorageBar(downloadsBytes: model.library.totalBytes)
+            LabeledContent("Downloaded titles") {
+                Text(model.records.filter { $0.status == .completed }.count.formatted())
+            }
+            if !model.library.isEmpty {
+                Button(
+                    "Delete All Downloads",
+                    systemImage: "trash",
+                    role: .destructive
+                ) {
+                    pendingBulkDeletion = .all(model.library)
+                }
+            }
+        }
+    }
+}
+
 struct PlozziOSDownloadSettingsView: View {
     @Bindable var model: PlozziOSDownloadsModel
     @State private var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
@@ -671,9 +853,17 @@ struct PlozziOSDownloadSettingsView: View {
                     isOn: $model.pausesOnLowDataMode
                 )
             } footer: {
-                Text(
-                    "These settings affect offline downloads only. Playback is never throttled."
-                )
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(
+                        "These settings affect offline downloads only. Playback is never throttled."
+                    )
+                    if #available(iOS 26.0, *) {
+                        Text(
+                            "Live Activities show download progress when background processing is available. Cancel in the Live Activity to pause its downloads. You can resume them in Plozz.",
+                            comment: "iOS/iPadOS 26+ download-settings footer. Live Activities is Apple's system feature. Cancelling its task pauses, rather than deletes, the downloads."
+                        )
+                    }
+                }
             }
 
             SettingsSectionGroup("Download Speed") {
@@ -731,7 +921,8 @@ struct PlozziOSDownloadSettingsView: View {
                     Text("Downloads use the full available connection speed.")
                 } else {
                     Text(
-                        "iOS cannot enforce a speed limit on background transfers. Choose whether capped downloads pause or continue uncapped while Plozz is in the background."
+                        "Choose whether speed-limited downloads pause or continue at full speed while Plozz is in the background.",
+                        comment: "Download speed settings footer explaining the two background choices: pause, or temporarily remove the speed limit."
                     )
                 }
             }
@@ -815,39 +1006,9 @@ struct PlozziOSDownloadSettingsView: View {
                 )
             }
 
-            if model.hasActiveTransfers {
-                SettingsSectionGroup("In Progress") {
-                    Button("Pause All", systemImage: "pause.circle") {
-                        Task { await model.pauseAllActive() }
-                    }
-                    Button("Resume All", systemImage: "play.circle") {
-                        Task { await model.resumeAllPaused() }
-                    }
-                    Button(
-                        "Cancel Active Downloads",
-                        systemImage: "xmark.circle",
-                        role: .destructive
-                    ) {
-                        pendingBulkDeletion = .cancelActive(model.activeTransfers)
-                    }
-                }
-            }
-
-            SettingsSectionGroup("Storage") {
-                PlozziOSDownloadsStorageBar(downloadsBytes: model.library.totalBytes)
-                LabeledContent("Downloaded titles") {
-                    Text(model.records.filter { $0.status == .completed }.count.formatted())
-                }
-                if !model.library.isEmpty {
-                    Button(
-                        "Delete All Downloads",
-                        systemImage: "trash",
-                        role: .destructive
-                    ) {
-                        pendingBulkDeletion = .all(model.library)
-                    }
-                }
-            }
+            PlozziOSDownloadManagementSettings(
+                model: model, pendingBulkDeletion: $pendingBulkDeletion
+            )
         }
         .settingsPageSurface()
         .navigationTitle("Downloads")

@@ -2,6 +2,7 @@
 import CoreModels
 import CoreUI
 import Foundation
+import MetadataKit
 import UIKit
 
 enum PlozziOSDownloadArtwork {
@@ -10,31 +11,49 @@ enum PlozziOSDownloadArtwork {
         case invalidImage
     }
 
-    static func references(for item: MediaItem) -> [ArtworkReference] {
-        let explicit = item.artworkSelections.first { $0.placement == .detailBackdrop }?.references ?? []
-        let remote = [item.backdropURL, item.fallbackArtworkURL].compactMap { $0.map(ArtworkReference.remote) }
-        let candidates = explicit + remote
-            + item.artworkReferences(for: .poster)
-            + item.artworkReferences(for: .seriesPoster)
+    static func references(
+        for item: MediaItem, policy: ArtworkPresentationPolicy = .init(area: .downloads)
+    ) -> [ArtworkReference] {
+        let policy = policy.forArea(.downloads)
         var seen = Set<ArtworkReference>()
-        return candidates.filter { seen.insert($0).inserted }
+        return placements(for: item).flatMap { policy.references(for: item, placement: $0) }
+            .filter { seen.insert($0).inserted }
     }
 
-    static func load(for item: MediaItem) async throws -> Data {
-        for reference in references(for: item) {
-            try Task.checkCancellation()
-            guard let image = await ArtworkImageCache.shared.image(
-                for: reference, variant: .landscapeCard, background: true
-            ) else { continue }
-            let data = await Task.detached(priority: .utility) {
-                image.jpegData(compressionQuality: 0.85)
-            }.value
-            try Task.checkCancellation()
-            if let data, !data.isEmpty, data.count <= 15_000_000 {
-                return data
-            }
+    static func placements(for item: MediaItem) -> [ArtworkPlacement] {
+        switch item.kind {
+        case .episode: [.detailBackdrop, .episodeThumbnail, .poster, .seriesPoster]
+        case .season: [.detailBackdrop, .poster, .seriesPoster]
+        default: [.detailBackdrop, .poster]
         }
-        throw Failure.unavailable
+    }
+
+    static func lookup(for item: MediaItem, router: ArtworkRouter = .shared) async -> URL? {
+        await ArtworkSession.artworkResolveLimiter.run {
+            guard !Task.isCancelled else { return nil }
+            return await router.artworkURL(for: item, placements: placements(for: item))
+        }
+    }
+
+    static func load(
+        for item: MediaItem, policy: ArtworkPresentationPolicy = .init(area: .downloads),
+        router: ArtworkRouter = .shared
+    ) async throws -> Data {
+        let policy = policy.forArea(.downloads)
+        try Task.checkCancellation()
+        guard let artwork = await ArtworkFirstPaintResolver.resolve(
+            references: references(for: item, policy: policy),
+            variant: .landscapeCard,
+            asyncOnlineURL: { await lookup(for: item, router: router) },
+            prefersOnlineArtwork: policy.prefersOnlineArtwork,
+            background: true
+        ) else { throw Failure.unavailable }
+        let data = await Task.detached(priority: .utility) {
+            artwork.image.jpegData(compressionQuality: 0.85)
+        }.value
+        try Task.checkCancellation()
+        guard let data, !data.isEmpty, data.count <= 15_000_000 else { throw Failure.invalidImage }
+        return data
     }
 
     static func isValid(_ data: Data) -> Bool {

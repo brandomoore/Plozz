@@ -252,13 +252,28 @@ private extension String {
 /// sourced-field priority still merges these external results under any
 /// higher-priority local values.
 struct PipelineShareResolver: ShareMetadataResolving {
-    let pipeline: MetadataEnrichmentPipeline
+    private let makePipeline: @Sendable () -> MetadataEnrichmentPipeline
     /// The work tier used for share enrichment. Idle backlog is the dominant path and
     /// is the only tier that admits the idle-only fallback sources (Wikidata /
     /// Wikipedia).
     var tier: MetadataWorkTier = .idleBacklog
 
+    init(
+        makePipeline: @escaping @Sendable () -> MetadataEnrichmentPipeline,
+        tier: MetadataWorkTier = .idleBacklog
+    ) {
+        self.makePipeline = makePipeline
+        self.tier = tier
+    }
+
+    init(pipeline: MetadataEnrichmentPipeline, tier: MetadataWorkTier = .idleBacklog) {
+        self.init(makePipeline: { pipeline }, tier: tier)
+    }
+
     func resolve(_ request: ShareEnrichRequest) async -> EnrichmentRecord {
+        // The worker survives provider-setting edits and credential changes.
+        // Each new item needs the current policy; the factory retains shared caches.
+        let pipeline = makePipeline()
         var ids = request.knownProviderIDs
         if let tvdb = request.knownTVDBID?.nonBlank, ids.providerID(.tvdb) == nil {
             ids["Tvdb"] = tvdb

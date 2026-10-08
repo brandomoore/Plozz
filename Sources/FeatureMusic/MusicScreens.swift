@@ -1016,6 +1016,19 @@ struct TrackListView: View {
         #endif
     }
 
+    func trackArtwork(for track: MusicTrack) -> MusicArtworkImage {
+        MusicArtworkImage(
+            url: track.artworkURL ?? artworkFallback,
+            systemPlaceholder: "music.note",
+            cornerRadius: 8,
+            variant: .musicThumbnail,
+            asyncFallbackURL: MusicArtworkFallback.trackCover(
+                title: track.title, album: track.albumTitle, artist: track.artistName
+            ),
+            pinIdentity: track.id
+        )
+    }
+
     /// The leading column of a track row. Playlists show the track's own album
     /// artwork (with a now-playing equalizer overlaid when it's the current
     /// track); albums keep the numbered list, swapping the number for an
@@ -1023,13 +1036,7 @@ struct TrackListView: View {
     @ViewBuilder
     private func leadingAccessory(track: MusicTrack, index: Int, isCurrent: Bool) -> some View {
         if showArtwork {
-            MusicArtworkImage(
-                url: track.artworkURL ?? artworkFallback,
-                systemPlaceholder: "music.note",
-                cornerRadius: 8,
-                variant: .musicThumbnail,
-                pinIdentity: track.id
-            )
+            trackArtwork(for: track)
             .frame(width: 72, height: 72)
             .overlay {
                 if isCurrent {

@@ -13,6 +13,8 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     private var spoilerSettings = SpoilerSettings.default
     private var artwork: UIImage?
     private var artworkReferences: [ArtworkReference] = []
+    private var artworkPolicyIdentity: String?
+    private var artworkItemIdentity: String?
     private var imageTask: Task<Void, Never>?
     private var imageRevision = UUID()
     private let caption = SystemPosterCaption.CaptionView()
@@ -66,6 +68,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         self.spoilerSettings = spoilerSettings
         self.environment = environment
         source.itemKey = item?.stablePresentationID ?? ""
+        source.artworkPolicy = environment.plozzArtworkPolicy.forArea(.details)
         source.cornerRadius =
             environment.plozzCardStyle == .framed
             ? PlozzTheme.Metrics.posterArtCornerRadius : environment.plozzMetrics.posterCardCornerRadius
@@ -89,12 +92,19 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
                     ? $0.seriesArtworkReferences(prefersPortrait: true)
                     : CardArtworkPolicy.standard.references(for: $0, style: .poster)
             } ?? []
-        if references != artworkReferences {
+        let policy = environment.plozzArtworkPolicy
+        let fallback = item.flatMap { CardArtworkPolicy.standard.posterFallback(for: $0) }
+        let identity = item.map { CardArtworkPolicy.standard.pinIdentity(for: $0) }
+        if references != artworkReferences || artworkPolicyIdentity != policy.identity
+            || artworkItemIdentity != identity {
+            artworkItemIdentity = identity
             imageTask?.cancel()
             artworkReferences = references
+            artworkPolicyIdentity = policy.identity
             // Adopt only the first candidate synchronously. A cached fallback must
             // never overtake a preferred image that has not finished loading.
-            if let reference = references.first, case .remote(let url) = reference {
+            if !(policy.prefersOnlineArtwork && fallback != nil),
+               let reference = references.first, case .remote(let url) = reference {
                 artwork = ArtworkImageCache.shared.cachedImage(for: url, variant: .posterCard)
             } else {
                 // Network-file cache reads must pass the resolver's access gate.
@@ -105,11 +115,19 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             }
             let revision = UUID()
             imageRevision = revision
-            if artwork == nil, !references.isEmpty {
+            if artwork == nil, !references.isEmpty || fallback != nil {
                 imageTask = Task { [weak self] in
                     let result = await ArtworkFirstPaintResolver.resolve(
                         references: references, variant: .posterCard, maxAspectRatio: 0.9,
-                        asyncOnlineURL: nil, maximumOnlineWait: 0, prefersOnlineArtwork: false
+                        asyncOnlineURL: fallback.map { resolve in
+                            {
+                                await ArtworkSession.artworkResolveLimiter.run {
+                                    guard !Task.isCancelled else { return nil }
+                                    return await resolve()
+                                }
+                            }
+                        },
+                        prefersOnlineArtwork: policy.prefersOnlineArtwork
                     )
                     guard !Task.isCancelled, let self, self.imageRevision == revision else { return }
                     self.artwork = result?.image
@@ -185,6 +203,8 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         imageTask = nil
         imageRevision = UUID()
         artworkReferences = []
+        artworkPolicyIdentity = nil
+        artworkItemIdentity = nil
         artwork = nil
         item = nil
         isConfiguredForDisplay = false
@@ -201,7 +221,10 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         imageTask?.cancel()
         imageTask = nil
         // A redisplayed cell must resume a cancelled image request.
-        if artwork == nil { artworkReferences = [] }
+        if artwork == nil {
+            artworkReferences = []
+            artworkPolicyIdentity = nil
+        }
     }
 
     private func updateCaption(animated: Bool) {

@@ -155,15 +155,33 @@ public struct CardStyleSwatch: View {
     private let style: CardStyle
     private let cornerRadius: CGFloat
     private let showsCaptions: Bool
+    private let showsMixedCaptions: Bool
 
-    public init(style: CardStyle, cornerRadius: CGFloat = 16, showsCaptions: Bool = true) {
+    public init(
+        style: CardStyle, cornerRadius: CGFloat = 16,
+        showsCaptions: Bool = true, showsMixedCaptions: Bool = false
+    ) {
         self.style = style
         self.cornerRadius = cornerRadius
         self.showsCaptions = showsCaptions
+        self.showsMixedCaptions = showsMixedCaptions
     }
 
     public var body: some View {
-        CardStyleMini(style: style, showsCaptions: showsCaptions)
+        HStack(spacing: 0) {
+            CardStyleMini(style: style, showsCaptions: showsCaptions)
+            if showsMixedCaptions {
+                CardStyleMini(style: style, showsCaptions: false)
+            }
+        }
+            .overlay {
+                if showsMixedCaptions {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.16))
+                        .frame(width: 1)
+                        .padding(.vertical, 14)
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)

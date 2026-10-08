@@ -30,6 +30,7 @@ public actor DownloadQueue {
     private var schedulingEnabled = true
     private var applicationIsActive = true
     private var applicationActivityRevision: UInt64 = 0
+    private var backgroundExecutionLease: DownloadBackgroundExecutionLease?
 
     public init(
         registry: DownloadedMediaRegistry,
@@ -85,6 +86,13 @@ public actor DownloadQueue {
             applicationActivityRevision = revision
         }
         applicationIsActive = isActive
+    }
+
+    public func setBackgroundExecutionLease(_ lease: DownloadBackgroundExecutionLease) {
+        guard schedulingEnabled, lease.isValid else { return }
+        activityPermit.invalidate()
+        activityPermit = DownloadMutationPermit()
+        backgroundExecutionLease = lease
     }
 
     public func networkConditionsDidChange(
@@ -196,6 +204,7 @@ public actor DownloadQueue {
     /// Previously persisted requests remain available to a new queue.
     public func suspendScheduling() {
         schedulingEnabled = false
+        backgroundExecutionLease?.invalidate()
         lifetimePermit.invalidate()
         activityPermit.invalidate()
         for permit in attemptPermits.values { permit.invalidate() }
@@ -251,6 +260,9 @@ public actor DownloadQueue {
                 try $0.setStatus(identityKey: identityKey, .paused,
                                  failureReason: description, pauseReason: reason)
             }
+            return
+        }
+        if record.status.isActive, let task = running[identityKey], !task.isCancelled {
             return
         }
         do {
@@ -670,7 +682,9 @@ public actor DownloadQueue {
         guard !applicationIsActive else { return true }
         switch record.sourceKind {
         case .directShare:
-            return false
+            return backgroundExecutionLease?.isValid == true
+                && (policy.maximumBytesPerSecond == nil
+                    || policy.cappedBackgroundBehavior == .continueAtFullSpeed)
         case .managedHTTP:
             return policy.maximumBytesPerSecond == nil
                 || policy.cappedBackgroundBehavior == .continueAtFullSpeed
@@ -680,7 +694,7 @@ public actor DownloadQueue {
     private func lifecyclePauseReason(
         for record: DownloadedMediaRecord
     ) -> DownloadPauseReason {
-        record.sourceKind == .directShare
+        record.sourceKind == .directShare && backgroundExecutionLease?.isValid != true
             ? .directShareBackground
             : .backgroundPolicy
     }

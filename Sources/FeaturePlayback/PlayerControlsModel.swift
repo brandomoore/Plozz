@@ -4,6 +4,7 @@ import CoreGraphics
 import Observation
 import SwiftUI
 import CoreModels
+import CoreUI
 
 @MainActor
 @Observable
@@ -223,6 +224,7 @@ public final class InfoCardModel {
     public var openTitlePage: ((MediaItem) -> Void)?
     /// Ordered artwork candidates (image → backdrop → poster) for the thumbnail.
     public var artworkURLs: [URL] = []
+    public var artworkItem: MediaItem?
     /// Pre-formatted runtime label (e.g. "37 min") for the meta line.
     public var runtimeLabel: String = ""   // l10n:content — formatted upstream
     /// Compact season/episode tag for the metadata row (e.g. "S2 · E7"). Empty for
@@ -368,6 +370,7 @@ public final class SkipSegmentsModel {
 @MainActor
 @Observable
 public final class PlayerControlsModel {
+    public var artworkPolicy = ArtworkPresentationPolicy(area: .playback)
     // MARK: Live playback (written by the view model)
     public var duration: TimeInterval = 0
     public var currentSeconds: TimeInterval = 0
@@ -754,6 +757,7 @@ public struct UpNextInfo: Equatable, Sendable {
     public let thumbnailURLs: [URL]
     /// Whether to blur the (real) thumbnail — spoiler "blur" mode over the still.
     public let blurThumbnail: Bool
+    public let spoilerSettings: SpoilerSettings
 
     public init(
         episode: MediaItem,
@@ -761,7 +765,8 @@ public struct UpNextInfo: Equatable, Sendable {
         showName: Text,
         metaLine: String?,
         thumbnailURLs: [URL],
-        blurThumbnail: Bool
+        blurThumbnail: Bool,
+        spoilerSettings: SpoilerSettings = .default
     ) {
         self.episode = episode
         self.eyebrow = eyebrow
@@ -769,6 +774,7 @@ public struct UpNextInfo: Equatable, Sendable {
         self.metaLine = metaLine
         self.thumbnailURLs = thumbnailURLs
         self.blurThumbnail = blurThumbnail
+        self.spoilerSettings = spoilerSettings
     }
 }
 #endif

@@ -58,10 +58,15 @@ public final class TextlessBackdropStore {
     /// Series key → what we know. Absent means "not answered yet", which is not
     /// the same as ``Outcome/none`` and must never be treated as it.
     private var outcomes: [String: Outcome] = [:]
-    /// In flight or already answered, so a row that re-appears never re-asks.
-    private var attempted: Set<String> = []
+    private struct Running {
+        let id: UUID
+        let task: Task<Void, Never>
+        var consumers: Set<UUID>
+    }
+    private var running: [String: Running] = [:]
     /// Where last session's answers are kept, so this session starts knowing them.
     private let store: TextlessBackdropIndex
+    private let resolveArtwork: (@Sendable (MediaItem) async -> URL?)?
     /// Whether ``outcomes`` has been seeded from disk yet. Deferred to first use
     /// rather than done in `init` so constructing the shared instance costs
     /// nothing, and the read lands with the first card that actually needs it.
@@ -69,8 +74,12 @@ public final class TextlessBackdropStore {
     /// Cards currently waiting to hear about a show, by show key.
     private var waiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
 
-    public init(store: TextlessBackdropIndex? = nil) {
+    public init(
+        store: TextlessBackdropIndex? = nil,
+        resolveArtwork: (@Sendable (MediaItem) async -> URL?)? = nil
+    ) {
         self.store = store ?? .sharedIndex
+        self.resolveArtwork = resolveArtwork
     }
 
     /// Reads last session's answers in, once.
@@ -140,42 +149,83 @@ public final class TextlessBackdropStore {
     /// answer, which is what makes it available on the first frame rather than
     /// merely fast.
     public func warm(for item: MediaItem, variant: ArtworkImageVariant) {
+        Task { await prepare(for: item, variant: variant) }
+    }
+
+    public func prepare(
+        for item: MediaItem, variant: ArtworkImageVariant, background: Bool = false
+    ) async {
         #if canImport(UIKit)
         seedIfNeeded()
         let key = Self.key(for: item)
-        guard !attempted.contains(key) else { return }
-        attempted.insert(key)
-        // Already answered last session, and re-read on the first frame. Warm the
-        // picture so the card can paint it, but don't re-ask the router.
+        guard !Task.isCancelled else { return }
         if case .available(let known) = outcomes[key] {
-            ArtworkImageCache.shared.prefetch(known, variant: variant)
+            _ = await ArtworkImageCache.shared.image(for: known, variant: variant, background: true)
             return
         }
         if outcomes[key] == Outcome.none { return }
-        let seriesItem = Self.seriesItem(for: item)
-        Task { [weak self] in
-            let url = await ArtworkSession.artworkResolveLimiter.run { () -> URL? in
-                if Task.isCancelled { return nil }
-                return await ArtworkRouter.shared.artworkURL(.hero, for: seriesItem)
+        let consumer = UUID()
+        let work: Running
+        if var existing = running[key], !existing.task.isCancelled {
+            existing.consumers.insert(consumer)
+            running[key] = existing
+            work = existing
+        } else {
+            let task = Task(priority: background ? .background : .userInitiated) { [weak self] in
+                guard let self else { return }
+                await self.resolve(for: item, key: key, variant: variant, background: background)
             }
-            // A cancelled resolve proves nothing about what exists, so it must not
-            // be recorded as a conclusive miss — that would suppress a logo on the
-            // strength of a scroll that happened to interrupt us.
-            guard !Task.isCancelled else { self?.forget(key); return }
-            guard let url else { self?.record(.none, for: key); return }
-            // Decode before publishing — see the type's note. `background: true`
-            // keeps the decode off the main thread so a scrolling row never
-            // stutters for art no card is waiting on.
-            guard await ArtworkImageCache.shared.image(
-                for: url, variant: variant, background: true
-            ) != nil else {
-                // The art exists, we just could not load it this time. Also not a
-                // miss: leave it unknown so a later launch retries.
-                self?.forget(key)
-                return
-            }
-            self?.record(.available(url), for: key)
+            work = Running(id: UUID(), task: task, consumers: [consumer])
+            running[key] = work
         }
+        await withTaskCancellationHandler {
+            await work.task.value
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelConsumer(consumer, key: key, id: work.id)
+            }
+        }
+        if running[key]?.id == work.id {
+            running[key] = nil
+        }
+        // A coalesced request may have prepared a different card size.
+        if !Task.isCancelled, case .available(let url) = outcomes[key] {
+            _ = await ArtworkImageCache.shared.image(for: url, variant: variant, background: true)
+        }
+        #endif
+    }
+
+    private func cancelConsumer(_ consumer: UUID, key: String, id: UUID) {
+        guard running[key]?.id == id else { return }
+        running[key]?.consumers.remove(consumer)
+        if running[key]?.consumers.isEmpty == true {
+            running[key]?.task.cancel()
+        }
+    }
+
+    func preparationConsumerCount(for item: MediaItem) -> Int {
+        running[Self.key(for: item)]?.consumers.count ?? 0
+    }
+
+    private func resolve(
+        for item: MediaItem, key: String, variant: ArtworkImageVariant, background: Bool
+    ) async {
+        #if canImport(UIKit)
+        let seriesItem = Self.seriesItem(for: item)
+        let resolveArtwork = resolveArtwork
+        let url = await ArtworkSession.resolveArtwork(background: background) { () -> URL? in
+            if Task.isCancelled { return nil }
+            if let resolveArtwork { return await resolveArtwork(seriesItem) }
+            return await ArtworkRouter.shared.artworkURL(.hero, for: seriesItem)
+        }
+        // Cancellation is not evidence of missing artwork.
+        guard !Task.isCancelled, key == Self.key(for: item) else { return }
+        guard let url else { record(.none, for: key); return }
+        guard await ArtworkImageCache.shared.image(
+            for: url, variant: variant, background: true
+        ) != nil else { return }
+        guard !Task.isCancelled, key == Self.key(for: item) else { return }
+        record(.available(url), for: key)
         #endif
     }
 
@@ -238,11 +288,6 @@ public final class TextlessBackdropStore {
         record(outcome, for: Self.key(for: item))
     }
 
-    /// Drops an inconclusive attempt so the next appearance tries again.
-    private func forget(_ key: String) {
-        attempted.remove(key)
-    }
-
     /// Continue Watching is one card per *show*, so an episode's art is keyed by
     /// its series — otherwise every episode of the same show resolves separately
     /// and the row asks the router once per card instead of once per show.
@@ -250,7 +295,8 @@ public final class TextlessBackdropStore {
     /// suppress a logo after the series metadata is corrected.
     static func key(for item: MediaItem) -> String {
         let subject = seriesItem(for: item)
-        return "series-art-v2|\(subject.stablePresentationID)|\(MetadataQuery(subject).cacheKey(for: .hero))"
+        let policy = MetadataProviderSettingsStore().load().artworkPolicyIdentity
+        return "series-art-v3|\(policy)|\(subject.stablePresentationID)|\(MetadataQuery(subject).cacheKey(for: .hero))"
     }
 
     private static func seriesItem(for item: MediaItem) -> MediaItem {

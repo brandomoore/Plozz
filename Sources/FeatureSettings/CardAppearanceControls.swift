@@ -6,7 +6,6 @@ import SwiftUI
 public struct CardAppearanceControls: View {
     @Bindable private var cards: CardStyleSettingsModel
     @Bindable private var watchIndicator: WatchStatusIndicatorSettingsModel
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     public init(cards: CardStyleSettingsModel, watchIndicator: WatchStatusIndicatorSettingsModel) {
         self.cards = cards
@@ -16,7 +15,9 @@ public struct CardAppearanceControls: View {
     public var body: some View {
         #if os(tvOS)
         VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
-            SettingsDetailGroup(title: "Labels") { labelControls }
+            SettingsDetailGroup(title: "Labels") {
+                CardLabelControls(settings: $cards.captions, style: cards.style)
+            }
             SettingsDetailGroup(title: "Watched Indicator") {
                 CompactWatchIndicatorPicker(selection: $watchIndicator.indicator, swatchHeight: 150)
             }
@@ -35,7 +36,9 @@ public struct CardAppearanceControls: View {
         }
         #else
         List {
-            SettingsSectionGroup("Labels") { labelControls }
+            SettingsSectionGroup("Labels") {
+                CardLabelControls(settings: $cards.captions, style: cards.style)
+            }
             SettingsSectionGroup("Watched Indicator") {
                 CompactWatchIndicatorPicker(selection: $watchIndicator.indicator, swatchHeight: 112)
             }
@@ -48,32 +51,17 @@ public struct CardAppearanceControls: View {
         #endif
     }
 
-    private var labelControls: some View {
+}
+
+struct CardLabelControls: View {
+    @Binding var settings: CardCaptionSettings
+    let style: CardStyle
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            CardCaptionPicker(selection: $cards.captions.showsLabels, style: cards.style)
-            NavigationLink {
-                CardCaptionCustomizationView(cards: cards)
-            } label: {
-                HStack {
-                    let layout = dynamicTypeSize.isAccessibilitySize
-                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
-                        : AnyLayout(HStackLayout())
-                    layout {
-                        Text("Customize by view")
-                        if !dynamicTypeSize.isAccessibilitySize { Spacer() }
-                        Group {
-                            if cards.captions.overrides.isEmpty {
-                                Text("Default everywhere")
-                            } else {
-                                Text("\(cards.captions.overrides.count) customized")
-                            }
-                        }
-                        .foregroundStyle(.secondary)
-                    }
-                    #if os(tvOS)
-                    Image(systemName: "chevron.right").accessibilityHidden(true)
-                    #endif
-                }
+            CardCaptionPicker(settings: $settings, style: style)
+            ViewCustomizationLink(isCustomized: settings.selectedPreset == nil) {
+                CardCaptionCustomizationContent(settings: $settings, style: style)
             }
             .accessibilityIdentifier("card-label-customization")
         }
@@ -81,29 +69,38 @@ public struct CardAppearanceControls: View {
 }
 
 private struct CardCaptionPicker: View {
-    @Binding var selection: Bool
+    @Binding var settings: CardCaptionSettings
     let style: CardStyle
     @Environment(\.themePalette) private var palette
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        let layout = dynamicTypeSize.isAccessibilitySize
+        let layout = dynamicTypeSize.isAccessibilitySize || horizontalSizeClass == .compact
             ? AnyLayout(VStackLayout(spacing: 16))
             : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
         layout {
-            ForEach([false, true], id: \.self) { showsLabels in
+            ForEach(CardCaptionPreference.allCases) { preference in
                 PreviewCard(
-                    title: showsLabels ? "Labels" : "No labels",
-                    isSelected: selection == showsLabels,
+                    title: preference.displayName,
+                    isSelected: settings.selectedPreset == preference,
                     accent: palette.accent,
                     compact: true,
                     swatchHeight: swatchHeight,
-                    action: { selection = showsLabels }
+                    titleLineLimit: nil,
+                    titleSizeGroup: CardCaptionPreference.allCases.map(\.displayName),
+                    action: { settings.applyPreset(preference) }
                 ) {
-                    CardStyleSwatch(style: style, showsCaptions: showsLabels)
+                    CardStyleSwatch(
+                        style: style,
+                        showsCaptions: preference != .hide,
+                        showsMixedCaptions: preference == .recommended
+                    )
+                        .accessibilityHidden(true)
                 }
-                .accessibilityAddTraits(selection == showsLabels ? .isSelected : [])
-                .accessibilityIdentifier(showsLabels ? "card-labels-on" : "card-labels-off")
+                .accessibilityAddTraits(settings.selectedPreset == preference ? .isSelected : [])
+                .accessibilityIdentifier(preference == .recommended ? "card-labels-recommended"
+                                         : preference == .show ? "card-labels-on" : "card-labels-off")
             }
         }
     }
@@ -119,84 +116,111 @@ private struct CardCaptionPicker: View {
 
 public struct CardCaptionCustomizationView: View {
     @Bindable private var cards: CardStyleSettingsModel
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     public init(cards: CardStyleSettingsModel) { self.cards = cards }
 
     public var body: some View {
-        #if os(tvOS)
-        SettingsSplitLayout(
-            title: "Labels by view",
-            rows: CardCaptionView.customizableCases.map { view in
-                SettingsSplitRow(
-                    id: view.rawValue,
-                    title: view.displayName,
-                    description: "Choices apply across all libraries. Titles inside collections and playlists use Browse."
-                ) {
-                    Picker(view.displayName, selection: selection(for: view)) { options }
-                        .pickerStyle(.segmented)
-                }
-            } + [
-                SettingsSplitRow(id: "reset", title: "Reset all to default") {
-                    resetButton
-                }
-            ]
-        )
-        #else
-        List {
-            if dynamicTypeSize.isAccessibilitySize {
-                Text(resolvedDefault)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
-            SettingsSectionGroup {
-                ForEach(CardCaptionView.customizableCases, id: \.rawValue) { view in
-                    Picker(view.displayName, selection: selection(for: view)) { options }
-                        .accessibilityIdentifier("card-label-view-\(view.rawValue)")
-                }
-            } footer: {
-                Text("Choices apply across all libraries. Titles inside collections and playlists use Browse.")
-            }
-            SettingsSectionGroup { resetButton }
-        }
-        .settingsPageSurface()
-        .navigationTitle("Labels by view")
-        #endif
+        CardCaptionCustomizationContent(settings: $cards.captions, style: cards.style)
     }
+}
 
-    private func selection(for view: CardCaptionView) -> Binding<CardCaptionOverride> {
-        Binding(
-            get: { cards.captions.override(for: view) },
-            set: { cards.captions.setOverride($0, for: view) }
-        )
-    }
+struct CardCaptionCustomizationContent: View {
+    @Binding var settings: CardCaptionSettings
+    var style: CardStyle = .borderless
 
-    private var options: some View {
-        ForEach(CardCaptionOverride.allCases) { option in
-            Group {
-                if option == .automatic {
-                    if dynamicTypeSize.isAccessibilitySize {
-                        Text("Default")
-                    } else {
-                        Text(resolvedDefault)
-                    }
-                } else {
-                    Text(option.displayName)
-                }
+    var body: some View {
+        ViewCustomizationList(
+            title: "Labels by view", initialRowID: "card-label-view-home",
+            focusedHelp: { id in
+                CardCaptionView.allCases.first { "card-label-view-\($0.rawValue)" == id }
+                    .map { settings.customizationHelp(in: $0, style: style) }
             }
-            .tag(option)
+        ) {
+            CardCaptionViewChoices(view: .home, settings: $settings)
+            Section {
+                ForEach(CardCaptionView.customizableCases.filter(\.isLibraryView), id: \.rawValue) { view in
+                    CardCaptionViewChoices(view: view, settings: $settings)
+                }
+            } header: {
+                Text("Libraries")
+                    #if os(tvOS)
+                    .settingsSectionHeader()
+                    .padding(.top, 20)
+                    .padding(.bottom, 6)
+                    #endif
+            }
+            Section {
+                ForEach(CardCaptionView.customizableCases.filter { $0 != .home && !$0.isLibraryView }, id: \.rawValue) { view in
+                    CardCaptionViewChoices(view: view, settings: $settings)
+                }
+            } header: {
+                Text("Other views")
+                    #if os(tvOS)
+                    .settingsSectionHeader()
+                    .padding(.top, 20)
+                    .padding(.bottom, 6)
+                    #endif
+            }
+            Text("Choices apply across all libraries. Titles inside collections and playlists use Browse.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 
-    private var resolvedDefault: LocalizedStringResource {
-        cards.captions.showsLabels ? "Default · Labels" : "Default · No labels"
+}
+
+struct CardCaptionViewChoices: View {
+    let view: CardCaptionView
+    @Binding var settings: CardCaptionSettings
+
+    var body: some View {
+        ViewCustomizationRow(
+            id: "card-label-view-\(view.rawValue)",
+            title: view.displayName,
+            value: settings.customizationValue(in: view),
+            detail: settings.customizationDetail(in: view)
+        ) { settings.toggleCustomization(in: view) }
+    }
+}
+
+extension CardCaptionSettings {
+    func customizationHelp(in view: CardCaptionView, style: CardStyle) -> ViewCustomizationHelp {
+        let mixedDetail = customizationDetail(in: view)
+        return ViewCustomizationHelp(
+            detail: mixedDetail ?? "Labels are separate from any text already in the artwork.",
+            illustration: .captions(
+                style: style, showsCaptions: showsLabels(in: view),
+                showsMixedCaptions: mixedDetail != nil
+            )
+        )
     }
 
-    private var resetButton: some View {
-        Button("Reset all to default") { cards.captions.resetOverrides() }
-            .disabled(cards.captions.overrides.isEmpty)
+    func customizationValue(in view: CardCaptionView) -> LocalizedStringResource {
+        if preference == .recommended, overrides[view] == nil, view == .home || view == .recommended {
+            return LocalizedStringResource(
+                "cardLabels.mixed", defaultValue: "Mixed",
+                comment: "Per-view label value: labels are shown except in Showcase and on series artwork."
+            )
+        }
+        return showsLabels(in: view)
+            ? LocalizedStringResource("cardLabels.on", defaultValue: "On", comment: "Per-view setting: show card labels.")
+            : LocalizedStringResource("cardLabels.off", defaultValue: "Off", comment: "Per-view setting: hide card labels.")
+    }
+
+    func customizationDetail(in view: CardCaptionView) -> LocalizedStringResource? {
+        if preference == .recommended, overrides[view] == nil, view == .home || view == .recommended {
+            return "Labels are hidden in Showcase and on series artwork."
+        }
+        return nil
+    }
+}
+
+private extension CardCaptionView {
+    var isLibraryView: Bool {
+        switch self {
+        case .recommended, .browse, .collections, .playlists: true
+        default: false
+        }
     }
 }
 #endif

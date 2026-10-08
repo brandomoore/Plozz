@@ -22,6 +22,7 @@ struct PresentationHostApp: App {
         let model = PlozziOSAppModel()
         model.settings.density.density = .standard
         model.settings.cardStyle.captions = .default
+        model.settings.cardStyle.artwork = .default
         model.settings.cardStyle.style = .borderless
         model.settings.theme.theme = .dark
         model.settings.theme.gradientEnabled = true

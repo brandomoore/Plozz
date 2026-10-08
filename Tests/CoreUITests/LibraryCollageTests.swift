@@ -1,10 +1,134 @@
 #if canImport(UIKit)
 import CoreModels
 @testable import CoreUI
+@testable import MetadataKit
 import UIKit
 import XCTest
 
 final class LibraryCollageTests: XCTestCase {
+    func testExternalOnlyCandidatesRetainTheirItemsAndRemainBoundedAndUnique() async throws {
+        let items = (0..<18).map { index in
+            let poster = URL(string: "https://art.example.test/poster/\(index / 2).jpg")!
+            var item = MediaItem(id: "\(index)", title: "Title \(index)", kind: .movie, posterURL: poster)
+            item.recordArtworkMetadataSource(.tvdb, for: poster)
+            return item
+        }
+        let provider = CollageProvider(items: items)
+        let candidates = try await source(provider).artworkCandidates()
+        XCTAssertEqual(candidates.count, 6)
+        XCTAssertTrue(candidates.allSatisfy { $0.references.isEmpty })
+        XCTAssertEqual(candidates.map(\.item.id), ["0", "2", "4", "6", "8", "10"])
+        let requests = await provider.requests
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.first?.2.limit, 18)
+    }
+
+    func testExternalCollageCacheSeparatesLiveProviderOrderAndDisablement() async throws {
+        let tvdb = try XCTUnwrap(URL(string: "https://art.example.test/tvdb.jpg"))
+        let tmdb = try XCTUnwrap(URL(string: "https://art.example.test/tmdb.jpg"))
+        var item = MediaItem(
+            id: "movie", title: "Movie", kind: .movie, posterURL: tvdb, fallbackArtworkURL: tmdb
+        )
+        item.recordArtworkMetadataSource(.tvdb, for: tvdb)
+        item.recordArtworkMetadataSource(.tmdb, for: tmdb)
+        let initial = MetadataProviderSettings(orderMode: .custom, enabledOrder: ["tvdb", "tmdb"])
+        let settings = CollageArtworkSettings(initial)
+        let router = await router(for: item, settings: settings)
+        let provider = CollageProvider(items: [item])
+        let source = source(provider)
+        let loader = CollageArtworkLoader(images: [.remote(tvdb): Self.poster(.red), .remote(tmdb): Self.poster(.blue)])
+        let cache = LibraryCollageCache(
+            usesDiskCache: false, artworkRouter: router, imageLoader: { await loader.image(for: $0) }
+        )
+        let firstPolicy = ArtworkPresentationPolicy(settings: .init(preference: .library), providers: initial)
+        let first = await cache.image(for: source, policy: firstPolicy)
+        XCTAssertNotNil(first)
+        XCTAssertTrue(cache.cachedImage(for: source, policy: firstPolicy) === first)
+
+        settings.save(.init(orderMode: .custom, enabledOrder: ["tmdb", "tvdb"]))
+        let reorderedPolicy = ArtworkPresentationPolicy(
+            settings: .init(preference: .library), providers: settings.load()
+        )
+        XCTAssertNotEqual(
+            LibraryCollageCache.identity(for: source, policy: firstPolicy),
+            LibraryCollageCache.identity(for: source, policy: reorderedPolicy)
+        )
+        XCTAssertNil(cache.cachedImage(for: source, policy: reorderedPolicy))
+        let reordered = await cache.image(for: source, policy: reorderedPolicy)
+        XCTAssertNotNil(reordered)
+        XCTAssertNotEqual(first?.pngData(), reordered?.pngData())
+
+        settings.save(.init(orderMode: .custom, disabledOrder: ["tvdb", "tmdb"]))
+        let disabledPolicy = ArtworkPresentationPolicy(
+            settings: .init(preference: .library), providers: settings.load()
+        )
+        XCTAssertNil(cache.cachedImage(for: source, policy: disabledPolicy))
+        let disabled = await cache.image(for: source, policy: disabledPolicy)
+        let repeated = await cache.image(for: source, policy: disabledPolicy)
+        XCTAssertNil(disabled)
+        XCTAssertNil(repeated)
+        let requests = await loader.requests
+        XCTAssertEqual(requests, [.remote(tvdb), .remote(tmdb)])
+        let providerCalls = await provider.calls
+        XCTAssertEqual(providerCalls, 3, "An unchanged negative policy result must not create a retry storm.")
+
+        settings.save(initial)
+        let restored = await cache.image(for: source, policy: firstPolicy)
+        XCTAssertTrue(restored === first, "Re-enabling a policy may reuse only its own source-qualified composite.")
+        XCTAssertNotEqual(
+            LibraryCollageCache.identity(for: source, policy: firstPolicy),
+            LibraryCollageCache.identity(
+                for: source, policy: .init(settings: .init(preference: .online), providers: initial)
+            )
+        )
+    }
+
+    func testLibraryCollagePaintsActualSidecarBeforeRetainedExternalPoster() async throws {
+        let sidecar = ArtworkReference.networkFile(try NetworkArtworkReference(
+            accountID: "share-account", credentialRevision: CredentialRevision(),
+            catalogArtworkID: "local-poster",
+            representation: RemoteFileRepresentation(
+                size: 1_024, identity: .init(kind: .modificationTime, modifiedAt: .distantPast),
+                consistency: .changeDetecting
+            ),
+            sourceRevision: "one", dimensions: .init(width: 100, height: 150)
+        ))
+        let external = try XCTUnwrap(URL(string: "https://art.example.test/external.jpg"))
+        var item = MediaItem(
+            id: "movie", title: "Movie", kind: .movie, posterURL: external,
+            artworkSelections: [.init(placement: .poster, references: [sidecar])]
+        )
+        item.recordArtworkMetadataSource(.tvdb, for: external)
+        let settings = CollageArtworkSettings(.init(orderMode: .custom, enabledOrder: ["tvdb", "tmdb"]))
+        let router = await router(for: item, settings: settings)
+        let loader = CollageArtworkLoader(images: [
+            sidecar: Self.poster(.green), .remote(external): Self.poster(.red)
+        ])
+        let cache = LibraryCollageCache(
+            usesDiskCache: false, artworkRouter: router, imageLoader: { await loader.image(for: $0) }
+        )
+        let result = await cache.image(
+            for: source(CollageProvider(items: [item])),
+            policy: .init(settings: .init(preference: .library), providers: settings.load())
+        )
+        XCTAssertNotNil(result)
+        let requests = await loader.requests
+        XCTAssertEqual(requests, [sidecar])
+    }
+
+    private func router(for item: MediaItem, settings: CollageArtworkSettings) async -> ArtworkRouter {
+        let cache = MetadataDiskCache(directory: nil)
+        for source in [MetadataSource.tvdb, .tmdb] {
+            await cache.store(nil, for: ArtworkRouter.providerCacheKey(
+                query: MetadataQuery(item), kind: .poster, source: source
+            ))
+        }
+        return ArtworkRouter(
+            cache: cache, enrichmentBaseline: .init(order: [.tvdb, .tmdb], priority: .init(rules: [])),
+            settingsStore: settings
+        )
+    }
+
     func testServerCoverDoesNotRequestCollageCandidates() async throws {
         let provider = CollageProvider()
         let source = source(provider, cover: URL(string: "https://example.invalid/custom.jpg"))
@@ -153,6 +277,24 @@ final class LibraryCollageTests: XCTestCase {
             $0.fill(CGRect(x: 0, y: 0, width: 100, height: 150))
         }
     }
+}
+
+private actor CollageArtworkLoader {
+    let images: [ArtworkReference: UIImage]
+    private(set) var requests: [ArtworkReference] = []
+    init(images: [ArtworkReference: UIImage]) { self.images = images }
+    func image(for reference: ArtworkReference) -> UIImage? {
+        requests.append(reference)
+        return images[reference]
+    }
+}
+
+private final class CollageArtworkSettings: MetadataProviderSettingsStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: MetadataProviderSettings
+    init(_ value: MetadataProviderSettings) { self.value = value }
+    func load() -> MetadataProviderSettings { lock.lock(); defer { lock.unlock() }; return value }
+    func save(_ value: MetadataProviderSettings) { lock.lock(); self.value = value; lock.unlock() }
 }
 
 private actor CollageProvider: MediaProvider, MediaFileBrowsing {

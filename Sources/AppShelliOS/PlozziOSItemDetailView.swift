@@ -56,6 +56,7 @@ struct PlozziOSItemDetailView: View {
 
     var body: some View {
         detailBody
+            .environment(\.plozzArtworkArea, .details)
             // Each detail page installs its own router. A pushed destination —
             // whether from an inline `NavigationLink` or a
             // `navigationDestination` — does not inherit environment installed
@@ -3145,7 +3146,7 @@ private struct PlozziOSEpisodeDownloadRow: View {
     }
 }
 
-private struct PlozziOSDownloadThumbnail: View {
+struct PlozziOSDownloadThumbnail: View {
     @Environment(PlozziOSAppModel.self) private var appModel
 
     enum Style {
@@ -3193,6 +3194,7 @@ private struct PlozziOSDownloadThumbnail: View {
                     .blur(radius: spoilers.shouldHideThumbnail(for: item) ? 10 : 0)
                 }
             }
+            .environment(\.plozzArtworkArea, .episodes)
         }
     }
 }
@@ -3429,7 +3431,7 @@ private struct PlozziOSSeasonDownloadPrompt: Identifiable {
     }
 }
 
-private struct PlozziOSInlineEpisodeRail: View {
+struct PlozziOSInlineEpisodeRail: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var scrollPositionID: String?
     let episodes: [MediaItem]?
@@ -3474,6 +3476,7 @@ private struct PlozziOSInlineEpisodeRail: View {
                             episodes: episodes,
                             onPlay: onPlay
                         )
+                        .environment(\.plozzArtworkArea, .episodes)
                         .id(episode.id)
                     }
                 }

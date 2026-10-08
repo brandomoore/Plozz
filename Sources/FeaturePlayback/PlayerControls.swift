@@ -350,6 +350,9 @@ struct PlayerControls: View {
                 focus = .row(0)
             }
         }
+        .environment(\.plozzArtworkSettings, model.artworkPolicy.settings)
+        .environment(\.plozzArtworkProviders, model.artworkPolicy.providers)
+        .environment(\.plozzArtworkArea, .playback)
         .onChange(of: model.controlBarVisible) { _, focused in
             titleVisible = true
             guard focused else {

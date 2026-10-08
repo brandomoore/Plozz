@@ -294,6 +294,20 @@ public final class AudioPlaybackController {
     private var currentArtwork: MPMediaItemArtwork?
     #endif
     private var artworkLoadTask: Task<Void, Never>?
+    @ObservationIgnored private var artworkPolicy = ArtworkPresentationPolicy(area: .music)
+
+    public func updateArtworkPolicy(_ policy: ArtworkPresentationPolicy) {
+        let policy = policy.forArea(.music)
+        guard artworkPolicy != policy else { return }
+        artworkPolicy = policy
+        #if canImport(MediaPlayer)
+        currentArtwork = nil
+        if nowPlaying.isActive, let currentTrack {
+            updateNowPlayingInfo()
+            loadArtwork(for: currentTrack)
+        }
+        #endif
+    }
     /// The next track pre-enqueued *behind* the current one — the "treadmill"
     /// (WWDC 2016 §503 / 2019 §501). Resolving the upcoming track's URL and
     /// `insert`ing its item into the live queue ahead of time lets AVFoundation
@@ -971,8 +985,9 @@ public final class AudioPlaybackController {
         // starts) shows the album art, like Apple Music/Spotify. Bounded so a
         // slow artwork download never holds up the Now Playing card itself.
         #if canImport(UIKit)
-        if let artURL = track.artworkURL,
-           let image = await bannerArtworkImage(artURL),
+        let policy = artworkPolicy
+        if let image = await bannerArtworkImage(track, policy: policy),
+           artworkPolicy == policy,
            currentTrack?.id == track.id {
             currentArtwork = Self.makeArtwork(from: image)
         }
@@ -1829,19 +1844,16 @@ public final class AudioPlaybackController {
     private func loadArtwork(for track: MusicTrack) {
         #if canImport(MediaPlayer) && canImport(UIKit)
         artworkLoadTask?.cancel()
-        guard let url = track.artworkURL else { return }
-        if let cached = ArtworkImageCache.shared.cachedImage(for: url) {
-            currentArtwork = Self.makeArtwork(from: cached)
-            updateNowPlayingInfo()
-            return
-        }
+        let policy = artworkPolicy
         let trackID = track.id
         artworkLoadTask = Task { [weak self] in
-            guard let image = await ArtworkImageCache.shared.image(for: url) else { return }
-            let artwork = Self.makeArtwork(from: image)
+            guard let selected = await MusicArtworkFallback.resolveTrack(track, policy: policy) else { return }
+            let artwork = Self.makeArtwork(from: selected.image)
             await MainActor.run {
                 guard !Task.isCancelled, let self, self.nowPlaying.isActive,
-                      self.currentTrack?.id == trackID else { return }
+                      self.currentTrack?.id == trackID,
+                      self.currentTrack?.sourceAccountID == track.sourceAccountID,
+                      self.artworkPolicy == policy else { return }
                 self.currentArtwork = artwork
                 self.updateNowPlayingInfo()
             }
@@ -1853,10 +1865,9 @@ public final class AudioPlaybackController {
     /// Returns the track's artwork for the initial Now Playing publish, serving a
     /// cached copy instantly and otherwise waiting only briefly for the download
     /// so the system banner can include it without stalling the card.
-    private func bannerArtworkImage(_ url: URL) async -> UIImage? {
-        if let cached = ArtworkImageCache.shared.cachedImage(for: url) { return cached }
+    private func bannerArtworkImage(_ track: MusicTrack, policy: ArtworkPresentationPolicy) async -> UIImage? {
         return await withTaskGroup(of: UIImage?.self) { group in
-            group.addTask { await ArtworkImageCache.shared.image(for: url) }
+            group.addTask { await MusicArtworkFallback.resolveTrack(track, policy: policy)?.image }
             group.addTask { try? await Task.sleep(nanoseconds: 700_000_000); return nil }
             let result = await group.next() ?? nil
             group.cancelAll()

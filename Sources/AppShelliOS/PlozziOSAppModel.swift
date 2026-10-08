@@ -2018,6 +2018,7 @@ final class PlozziOSAppModel {
     ) -> PlozziOSDownloadsModel {
         guard let durableStore else {
             return PlozziOSDownloadsModel(
+                profileID: namespace,
                 initializationError: "Durable download storage is unavailable."
             )
         }
@@ -2049,6 +2050,7 @@ final class PlozziOSAppModel {
                         deviceLanguage: LanguageMatch.deviceLanguageCode
                     )
                 },
+                artworkSettings: { settings.cardStyle.artwork },
                 startsActive: startsActive,
                 resolveArtworkItem: { record in
                     guard let accountID = record.snapshot.sourceAccountID
@@ -2251,6 +2253,7 @@ final class PlozziOSAppModel {
             )
         } catch {
             return PlozziOSDownloadsModel(
+                profileID: namespace,
                 initializationError: error.localizedDescription
             )
         }

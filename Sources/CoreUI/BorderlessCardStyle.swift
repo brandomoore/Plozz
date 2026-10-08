@@ -144,6 +144,7 @@ public struct BorderlessCardCaption: View {
     private let isFocused: Bool
     private let providerKind: ProviderKind?
     private let mediaShareTransport: MediaShareTransportKind?
+    private let usesPosterTypography: Bool
 
     @Environment(\.plozzMetrics) private var metrics
 
@@ -154,7 +155,8 @@ public struct BorderlessCardCaption: View {
         reservesSubtitleSpace: Bool = true,
         isFocused: Bool = false,
         providerKind: ProviderKind? = nil,
-        mediaShareTransport: MediaShareTransportKind? = nil
+        mediaShareTransport: MediaShareTransportKind? = nil,
+        usesPosterTypography: Bool = false
     ) {
         self.title = title
         self.subtitle = subtitle
@@ -163,14 +165,18 @@ public struct BorderlessCardCaption: View {
         self.isFocused = isFocused
         self.providerKind = providerKind
         self.mediaShareTransport = mediaShareTransport
+        self.usesPosterTypography = usesPosterTypography
     }
+
+    private var titleFontSize: CGFloat { usesPosterTypography ? metrics.posterTitleFontSize : metrics.cardTitleFontSize }
+    private var subtitleFontSize: CGFloat { usesPosterTypography ? metrics.posterSubtitleFontSize : metrics.cardSubtitleFontSize }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             if let providerKind {
                 HStack(spacing: PlozzTheme.Spacing.small) {
                     ProviderBrandMark(
-                        provider: providerKind, size: metrics.cardTitleFontSize,
+                        provider: providerKind, size: titleFontSize,
                         mediaShareTransport: mediaShareTransport
                     )
                     .accessibilityHidden(true)
@@ -183,14 +189,14 @@ public struct BorderlessCardCaption: View {
             if let subtitle {
                 PlozzMarqueeText(
                     text: Text(subtitle),
-                    font: .system(size: metrics.cardSubtitleFontSize),
+                    font: .system(size: subtitleFontSize),
                     color: .secondary,
                     inset: horizontalInset,
                     isFocused: isFocused
                 )
             } else if reservesSubtitleSpace {
                 Text(verbatim: " ")
-                    .font(.system(size: metrics.cardSubtitleFontSize))
+                    .font(.system(size: subtitleFontSize))
                     .hidden()
             }
         }
@@ -200,7 +206,7 @@ public struct BorderlessCardCaption: View {
     private func titleLine(inset: CGFloat) -> some View {
         PlozzMarqueeText(
             text: title,
-            font: .system(size: metrics.cardTitleFontSize, weight: .semibold),
+            font: .system(size: titleFontSize, weight: .semibold),
             color: .primary,
             inset: inset,
             fadeWidth: horizontalInset * PlozzTheme.Metrics.marqueeFadeRatio,

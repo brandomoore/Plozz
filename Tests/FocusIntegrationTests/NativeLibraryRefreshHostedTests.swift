@@ -4,6 +4,7 @@ import CoreModels
 @testable import AppShell
 @testable import FeatureHome
 import FeatureHomeCore
+import MetadataKit
 import SwiftUI
 import TVUIKit
 import UIKit
@@ -12,6 +13,20 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    private var savedProviders = MetadataProviderSettings.default
+
+    override func setUp() async throws {
+        try await super.setUp()
+        let store = MetadataProviderSettingsStore()
+        savedProviders = store.load()
+        store.save(.init(orderMode: .custom, disabledOrder: MetadataEnrichmentConfig.defaultBaseOrder.map(\.rawValue)))
+    }
+
+    override func tearDown() async throws {
+        MetadataProviderSettingsStore().save(savedProviders)
+        try await super.tearDown()
+    }
+
     func testLibraryHeaderClearanceAndFullBleedArtworkFollowNavigation() async throws {
         for style in [NavigationStyle.sidebar, .tabBar, .rail] {
             try await withNavigatedLibrary(style: style) { root, window, model in
@@ -55,6 +70,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
 
     private func withNavigatedLibrary(
         style: NavigationStyle,
+        artwork: ArtworkSettings = .default,
         body: (UIView, UIWindow, LibraryBrowseViewModel) async throws -> Void
     ) async throws {
         let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, recommendationHub: true)
@@ -68,7 +84,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
-        let host = UIHostingController(rootView: LibraryNavigationLayoutFixture(model: model, style: style))
+        let host = UIHostingController(rootView: LibraryNavigationLayoutFixture(model: model, style: style, artwork: artwork))
         let container = LibraryFocusFixtureController()
         container.addChild(host)
         container.view.addSubview(host.view)
@@ -121,6 +137,11 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         )
         await model.loadRecommendationsIfNeeded()
         XCTAssertEqual(model.contentMode, .recommended)
+        try await withLibrary(model: model) { root, _ in
+            XCTAssertNotNil(find(TVPosterView.self, in: root))
+            XCTAssertNil(find(SystemPosterCaption.CaptionView.self, in: root),
+                         "Recommended must hide labels in the actual Showcase, not ordinary library browsing.")
+        }
         for visible in [false, true] {
             let settings = CardCaptionSettings(
                 showsLabels: !visible, overrides: [.home: !visible, .recommended: visible]
@@ -216,6 +237,75 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                     controller.target = nil
                     XCTAssertTrue(system.focusedItem === item, "Every restored tab and menu must accept native focus.")
                 }
+            }
+        }
+    }
+
+    func testNativeBrowseKeepsPartiallyVisibleRowsMountedUntilTheyLeaveTheScreen() async throws {
+        for style in [NavigationStyle.sidebar, .tabBar, .rail] {
+            try await withNavigatedLibrary(style: style, artwork: .init(preference: .online)) { root, window, model in
+                await model.setContentMode(.titles)
+                try await Task.sleep(for: .milliseconds(300))
+                window.layoutIfNeeded()
+                let collection = try XCTUnwrap(self.find(UICollectionView.self, in: root))
+                let path = IndexPath(item: 2, section: 0)
+                let cell = try XCTUnwrap(collection.cellForItem(at: path) as? NativeTVLibraryCell)
+                let itemID = try XCTUnwrap(cell.item?.id)
+                let artworkFrame = cell.contentView.frame
+                let initialFrame = cell.convert(artworkFrame, to: window)
+                let sample = CGPoint(x: initialFrame.midX, y: initialFrame.maxY - 20)
+                let beforePixel = try self.pixel(
+                    self.capture(window, name: "browse-before-scroll-\(style)", drawsHierarchy: true), at: sample)
+                let origin = collection.contentOffset.y
+                let target = origin + initialFrame.maxY - 80
+                collection.setContentOffset(CGPoint(x: 0, y: target), animated: true)
+                var intermediateFrames = 0
+                for _ in 0..<25 {
+                    try await Task.sleep(for: .milliseconds(20))
+                    let offset = collection.contentOffset.y
+                    if offset > origin + 1, offset < target - 1 { intermediateFrames += 1 }
+                    XCTAssertTrue(cell.window === window)
+                    XCTAssertFalse(cell.isHidden)
+                    XCTAssertEqual(cell.alpha, 1, accuracy: 0.01)
+                }
+                XCTAssertGreaterThan(intermediateFrames, 0, "Exercise the moving viewport, not only its endpoint.")
+                collection.layoutIfNeeded()
+
+                let attributes = try XCTUnwrap(collection.layoutAttributesForItem(at: path))
+                let expectedFrame = collection.convert(artworkFrame.offsetBy(
+                    dx: attributes.frame.minX, dy: attributes.frame.minY), to: window)
+                let viewport = collection.convert(collection.bounds, to: window)
+                let image = self.capture(window, name: "browse-partial-row-\(style)", drawsHierarchy: true)
+                let geometry = XCTAttachment(string:
+                    "\(style): artwork=\(expectedFrame), viewport=\(viewport), safeArea=\(collection.safeAreaInsets)")
+                geometry.name = "browse-partial-row-geometry-\(style)"
+                geometry.lifetime = .keepAlways
+                self.add(geometry)
+                XCTAssertEqual(expectedFrame.maxY, 80, accuracy: 1)
+                XCTAssertEqual(viewport.minY, window.bounds.minY, accuracy: 1)
+                XCTAssertEqual(viewport.maxY, window.bounds.maxY, accuracy: 1)
+                XCTAssertTrue(expectedFrame.intersects(window.bounds))
+                XCTAssertTrue(collection.cellForItem(at: path) === cell,
+                              "\(style): recycle only after screen exit; row=\(expectedFrame), viewport=\(viewport)")
+                XCTAssertTrue(cell.window === window, "\(style): the partially visible card must remain mounted.")
+                XCTAssertEqual(cell.item?.id, itemID, "\(style): screen-visible artwork must not be reused.")
+                let afterPixel = try self.pixel(image, at: CGPoint(x: expectedFrame.midX, y: expectedFrame.maxY - 20))
+                for channel in 0..<3 {
+                    XCTAssertEqual(Int(afterPixel[channel]), Int(beforePixel[channel]), accuracy: 3,
+                                   "\(style): artwork must remain rendered, not just mounted.")
+                }
+                let distant = IndexPath(item: 120, section: 0)
+                collection.scrollToItem(at: distant, at: .centeredVertically, animated: false)
+                try await Task.sleep(for: .milliseconds(200))
+                XCTAssertFalse(collection.indexPathsForVisibleItems.contains(path),
+                               "Offscreen rows must still leave the displayed set.")
+                XCTAssertLessThan(collection.visibleCells.count, 50, "Do not keep the entire library mounted.")
+                collection.setContentOffset(CGPoint(x: 0, y: origin), animated: true)
+                try await Task.sleep(for: .milliseconds(500))
+                let restored = try await self.waitForGridItem(itemID, at: path, in: collection)
+                XCTAssertEqual(restored.convert(restored.contentView.frame, to: window).minY,
+                               initialFrame.minY, accuracy: 1)
+                XCTAssertTrue(restored.onRequestFocus?() == true, "A returning card must retain native focus behavior.")
             }
         }
     }
@@ -1373,6 +1463,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
 private struct LibraryNavigationLayoutFixture: View {
     let model: LibraryBrowseViewModel
     let style: NavigationStyle
+    let artwork: ArtworkSettings
     @State private var path: [Int] = []
 
     var body: some View {
@@ -1390,6 +1481,7 @@ private struct LibraryNavigationLayoutFixture: View {
         .environment(\.plozzNavigationStyle, style)
         .environment(\.plozzCardFocusStyle, .system)
         .environment(\.plozzCardStyle, .borderless)
+        .environment(\.plozzArtworkSettings, artwork)
         .preferredColorScheme(.dark)
     }
 

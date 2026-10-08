@@ -75,6 +75,8 @@ final class ArtworkReferenceTests: XCTestCase {
             JSONSerialization.jsonObject(with: JSONEncoder().encode(item)) as? [String: Any]
         )
         object.removeValue(forKey: "artworkSelections")
+        object.removeValue(forKey: "artworkMetadataSourcesByURL")
+        object.removeValue(forKey: "artworkLookupSubject")
 
         let decoded = try JSONDecoder().decode(
             MediaItem.self,
@@ -82,6 +84,53 @@ final class ArtworkReferenceTests: XCTestCase {
         )
 
         XCTAssertTrue(decoded.artworkSelections.isEmpty)
+        XCTAssertTrue(decoded.artworkMetadataSourcesByURL.isEmpty)
+        XCTAssertNil(decoded.artworkLookupSubject)
+    }
+
+    func testCatalogArtworkSubjectRoundTripsWithoutReplacingThePhysicalFolder() throws {
+        let catalog = MediaItem(
+            id: "catalog-series", title: "Recognized Series", kind: .series,
+            productionYear: 2020, providerIDs: ["Tvdb": "42"]
+        )
+        var folder = MediaItem(
+            id: "d:series", title: "Folder Name", kind: .folder,
+            sourceAccountID: "share-account", isFavorite: true
+        )
+        folder.artworkLookupSubject = try XCTUnwrap(ArtworkLookupSubject(catalog: catalog))
+        let decoded = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(folder))
+        XCTAssertEqual(decoded, folder)
+        XCTAssertEqual(decoded.kind, .folder)
+        XCTAssertEqual(decoded.id, "d:series")
+        XCTAssertEqual(decoded.title, "Folder Name")
+        XCTAssertTrue(decoded.isFavorite)
+        XCTAssertEqual(decoded.artworkLookupItem.id, catalog.id)
+        XCTAssertEqual(decoded.artworkLookupItem.kind, .series)
+        XCTAssertEqual(decoded.artworkLookupItem.providerIDs, catalog.providerIDs)
+        XCTAssertEqual(decoded.artworkLookupItem.sourceAccountID, "share-account")
+        XCTAssertNil(ArtworkLookupSubject(catalog: folder))
+    }
+
+    func testLibraryHeroUsesPrimarySidecarAheadOfAlternateAndEnrichedRemoteArtwork() throws {
+        let primary = ArtworkReference.networkFile(try networkReference(catalogArtworkID: "primary"))
+        let alternate = ArtworkReference.networkFile(try networkReference(catalogArtworkID: "alternate"))
+        let online = try XCTUnwrap(URL(string: "https://example.com/enriched.jpg"))
+        let item = MediaItem(
+            id: "share", title: "Share", kind: .movie, heroBackdropURL: online,
+            artworkSelections: [
+                .init(placement: .homeHero, references: [primary, alternate]),
+                .init(placement: .detailBackdrop, references: [alternate, primary])
+            ]
+        )
+        XCTAssertEqual(item.artworkReferences(for: .detailBackdrop).first, alternate)
+        XCTAssertEqual(
+            item.artworkReferences(for: .detailBackdrop, preferringLibrarySelection: true),
+            [primary, alternate, .remote(online)]
+        )
+        XCTAssertEqual(
+            item.artworkReferences(for: .homeHero, preferringLibrarySelection: true).first,
+            primary
+        )
     }
 
     func testEpisodeThumbnailLegacyReferencesStayEpisodeScoped() throws {
@@ -121,6 +170,94 @@ final class ArtworkReferenceTests: XCTestCase {
             item.artworkReferences(for: .seriesPoster),
             [.remote(seriesPoster), .remote(poster), .remote(fallback)]
         )
+    }
+
+    func testSeriesSidecarLeadsLandscapeWithoutLeakingEpisodeStill() throws {
+        let sidecar = ArtworkReference.networkFile(try networkReference())
+        let still = try XCTUnwrap(URL(string: "https://library.example.test/episode.jpg"))
+        let backdrop = try XCTUnwrap(URL(string: "https://library.example.test/series-backdrop.jpg"))
+        let poster = try XCTUnwrap(URL(string: "https://library.example.test/series-poster.jpg"))
+        var episode = MediaItem(
+            id: "episode", title: "Episode", kind: .episode,
+            posterURL: still, seriesPosterURL: poster, fallbackArtworkURL: backdrop,
+            artworkSelections: [.init(placement: .seriesPoster, references: [sidecar])]
+        )
+        XCTAssertEqual(episode.seriesArtworkReferences(), [sidecar, .remote(backdrop), .remote(poster)])
+        XCTAssertEqual(episode.seriesArtworkReferences(prefersPortrait: true),
+                       [sidecar, .remote(poster), .remote(backdrop)])
+        episode.metadataProvenance[.posterURL] = MetadataAttribution(source: .tmdb)
+        episode.metadataProvenance[.backdropURL] = MetadataAttribution(source: .tvdb)
+        XCTAssertEqual(episode.seriesArtworkReferences(), [sidecar])
+        XCTAssertEqual(episode.seriesArtworkReferences(prefersPortrait: true), [sidecar])
+        XCTAssertEqual(episode.posterURL, still, "Selecting show art must not modify the playable episode.")
+    }
+
+    func testPersistedExternalArtworkIsNotAnImmediateLibraryCandidate() throws {
+        let poster = try XCTUnwrap(URL(string: "https://metadata.example.test/poster.jpg"))
+        let backdrop = try XCTUnwrap(URL(string: "https://metadata.example.test/backdrop.jpg"))
+        var item = MediaItem(
+            id: "share-movie", title: "Local title", kind: .movie,
+            overview: "Local overview", posterURL: poster, heroBackdropURL: backdrop,
+            providerIDs: ["Tmdb": "42"]
+        )
+        item.metadataProvenance[.posterURL] = MetadataAttribution(source: .tmdb)
+        item.metadataProvenance[.backdropURL] = MetadataAttribution(source: .tvdb)
+        item = item.taggingSource("share-account")
+        let decoded = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(item))
+
+        XCTAssertTrue(decoded.artworkReferences(for: .poster).isEmpty)
+        XCTAssertTrue(decoded.artworkReferences(for: .homeHero).isEmpty)
+        XCTAssertEqual(decoded.metadataArtworkURLs(for: .poster), [.init(value: poster, source: .tmdb)])
+        XCTAssertEqual(decoded.metadataArtworkURLs(for: .homeHero), [.init(value: backdrop, source: .tvdb)])
+        XCTAssertEqual(decoded.posterURL, poster)
+        XCTAssertEqual(decoded.artworkSourceAccountID(for: poster), "share-account")
+        XCTAssertEqual(decoded.sourceAccountID, item.sourceAccountID)
+        XCTAssertEqual(decoded.providerIDs, item.providerIDs)
+        XCTAssertEqual(decoded.title, item.title)
+        XCTAssertEqual(decoded.overview, item.overview)
+    }
+
+    func testServerArtworkKeepsAuthenticationAndUnknownExternalArtworkCannotMasqueradeAsServerArt() throws {
+        let url = try XCTUnwrap(URL(string: "https://library.example.test/poster.jpg?api_key=fixture"))
+        var item = MediaItem(id: "server-item", title: "Title", kind: .movie, posterURL: url)
+        item.metadataProvenance[.posterURL] = MetadataAttribution(source: .server)
+        XCTAssertEqual(item.artworkReferences(for: .poster), [.remote(url)])
+        XCTAssertTrue(item.metadataArtworkURLs(for: .poster).isEmpty)
+        item.metadataProvenance[.posterURL] = MetadataAttribution(source: .legacyUnknown)
+        XCTAssertTrue(item.artworkReferences(for: .poster).isEmpty)
+        XCTAssertNil(item.libraryArtworkURL(url))
+        XCTAssertEqual(item.posterURL, url)
+    }
+
+    func testDonatedArtworkRetainsItsSourceWithoutChangingNativeArtworkOrAuth() throws {
+        let native = try XCTUnwrap(URL(string: "https://library.example.test/poster.jpg?api_key=fixture"))
+        let external = try XCTUnwrap(URL(string: "https://art.example.test/backdrop.jpg"))
+        var recipient = MediaItem(
+            id: "playable", title: "Local title", kind: .movie,
+            posterURL: native, backdropURL: native, sourceAccountID: "library-account"
+        )
+        recipient.metadataProvenance[.backdropURL] = MetadataAttribution(source: .server)
+        var donor = MediaItem(id: "other", title: "Other title", kind: .movie, heroBackdropURL: external)
+        donor.metadataProvenance[.backdropURL] = MetadataAttribution(source: .tmdb)
+        donor = donor.taggingSource("share-account")
+        recipient.fillingMissingPresentation(from: donor)
+        let decoded = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(recipient))
+        XCTAssertEqual(decoded.artworkReferences(for: .homeHero), [.remote(native)])
+        XCTAssertEqual(decoded.metadataArtworkURLs(for: .homeHero), [.init(value: external, source: .tmdb)])
+        XCTAssertEqual(decoded.artworkSourceAccountID(for: external), "share-account")
+        XCTAssertEqual(decoded.posterURL, native)
+        XCTAssertEqual(decoded.sourceAccountID, "library-account")
+        XCTAssertEqual(decoded.id, "playable")
+        XCTAssertEqual(decoded.title, "Local title")
+
+        // A native donor also cannot inherit an external sibling field's source.
+        var inverse = MediaItem(id: "inverse", title: "Inverse", kind: .movie, backdropURL: external)
+        inverse.metadataProvenance[.backdropURL] = MetadataAttribution(source: .tmdb)
+        inverse.fillingMissingPresentation(from: .init(
+            id: "server", title: "Server", kind: .movie, heroBackdropURL: native
+        ))
+        XCTAssertEqual(inverse.artworkReferences(for: .homeHero), [.remote(native)])
+        XCTAssertEqual(inverse.metadataArtworkURLs(for: .homeHero), [.init(value: external, source: .tmdb)])
     }
 
     func testNetworkReferencePrivacySafeIdentityExcludesPath() throws {

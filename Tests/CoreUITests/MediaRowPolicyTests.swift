@@ -5,34 +5,85 @@ import CoreModels
 @testable import CoreUI
 
 final class MediaRowPolicyTests: XCTestCase {
-    func testOverlappingWindowsScheduleEachLogoOnlyOncePerTraversal() throws {
-        let reference = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://example.test/logo.png")))
-        var history = MediaRowLogoPrefetchHistory()
-        var scheduled = 0
+    @MainActor
+    func testOverlappingWindowsScheduleEachPresentationOnlyOnce() async throws {
+        let window = ArtworkPrefetchWindow(limiter: ConcurrencyLimiter(limit: 16))
+        defer { window.cancelAll() }
+        let probe = PrefetchProbe()
         for index in 0..<5 {
-            for candidate in MediaRowPrefetchWindow.indices(
+            let requests = MediaRowPrefetchWindow.indices(
                 from: index, direction: 1, count: 75,
                 lookahead: MediaRowPrefetchWindow.fullArtworkLookahead
-            ) {
-                if history.shouldPrefetch(id: "item-\(candidate)", references: [reference]) {
-                    scheduled += 1
+            ).map { candidate in
+                ArtworkPrefetchWindow.Request(id: "item-\(candidate)") {
+                    await probe.start("item-\(candidate)")
                 }
             }
+            window.update(requests)
+            try await waitForPrefetch { await probe.started.count == 9 + index }
         }
-        XCTAssertEqual(scheduled, 13, "Five entering cards have overlapping nine-item windows, not 45 distinct logo jobs.")
-        history = MediaRowLogoPrefetchHistory()
-        XCTAssertTrue(history.shouldPrefetch(id: "item-4", references: [reference]))
+        let started = await probe.started
+        XCTAssertEqual(started.count, 13, "Overlapping windows must not restart completed preparation.")
     }
 
-    func testLogoPrefetchAllowsChangedReferencesAndSeparateItems() throws {
-        let first = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://example.test/first.png")))
-        let changed = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://example.test/changed.png")))
-        var history = MediaRowLogoPrefetchHistory()
-        XCTAssertTrue(history.shouldPrefetch(id: "item", references: []))
-        XCTAssertTrue(history.shouldPrefetch(id: "item", references: [first]))
-        XCTAssertFalse(history.shouldPrefetch(id: "item", references: [first]))
-        XCTAssertTrue(history.shouldPrefetch(id: "item", references: [changed]))
-        XCTAssertTrue(history.shouldPrefetch(id: "other", references: [changed]))
+    @MainActor
+    func testReversalCancelsObsoleteQueuedArtworkWithoutWaitingForIt() async throws {
+        let window = ArtworkPrefetchWindow(limiter: ConcurrencyLimiter(limit: 1))
+        defer { window.cancelAll() }
+        let probe = PrefetchProbe()
+        window.update((0..<9).map { index in
+            .init(id: "old-\(index)") { await probe.hold("old-\(index)") }
+        })
+        try await waitForPrefetch { await probe.started.count == 1 }
+        window.update([.init(id: "new-policy") { await probe.start("new-policy") }])
+        try await waitForPrefetch { await probe.started.contains("new-policy") }
+        let started = await probe.started
+        XCTAssertEqual(started.count, 2, "Cancelled queued jobs must never start.")
+    }
+
+    @MainActor
+    func testHeldBackgroundMetadataDoesNotOccupyForegroundPermits() async throws {
+        let probe = PrefetchProbe()
+        let background = Task {
+            await ArtworkSession.resolveArtwork(background: true) {
+                await probe.hold("background")
+                return nil
+            }
+        }
+        defer { background.cancel() }
+        try await waitForPrefetch { await probe.started.contains("background") }
+        let foreground = Task {
+            await ArtworkSession.resolveArtwork(background: false) {
+                await probe.start("foreground")
+                return nil
+            }
+        }
+        defer { foreground.cancel() }
+        try await waitForPrefetch { await probe.started.contains("foreground") }
+        background.cancel()
+        _ = await background.value
+        _ = await foreground.value
+    }
+
+    @MainActor
+    private func waitForPrefetch(_ condition: () async -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !(await condition()), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let satisfied = await condition()
+        XCTAssertTrue(satisfied)
+    }
+
+    private actor PrefetchProbe {
+        var started: [String] = []
+
+        func start(_ id: String) { started.append(id) }
+
+        func hold(_ id: String) async {
+            started.append(id)
+            try? await Task.sleep(for: .seconds(60))
+        }
     }
 
     func testPrefetchWindowFollowsRightwardTraversal() {

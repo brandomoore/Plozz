@@ -1,4 +1,6 @@
 import Foundation
+import CryptoKit
+import os
 
 #if canImport(UIKit)
 import UIKit
@@ -22,6 +24,40 @@ import UIKit
 /// fractions of the image width so the burned-in bar stays visually identical to
 /// the in-app one at any resolution.
 public enum TopShelfPosterComposer {
+    public static func selectedPosterURL(
+        id: String, data: Data, progress: Double?, chip: String?
+    ) -> URL? {
+        #if canImport(UIKit)
+        guard !Task.isCancelled, let directory = TopShelfStore.artworkDirectoryURL,
+              let image = UIImage(data: data) else { return nil }
+        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let bucket = Int(((progress ?? 0) * 100).rounded())
+        let chipKey = chip.map { String(fnv1a($0), radix: 16) } ?? "n"
+        let destination = directory.appendingPathComponent(
+            "\(sanitize(id))_\(bucket)_\(digest)_\(chipKey)_v\(barStyleGeneration).png"
+        )
+        if FileManager.default.fileExists(atPath: destination.path) { return destination }
+        let output: Data?
+        if let progress, progress > 0.01, progress < 0.99 {
+            output = render(base: image, progress: CGFloat(progress), chip: chip)
+        } else {
+            output = image.pngData()
+        }
+        guard let output, !Task.isCancelled else { return nil }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try output.write(to: destination, options: .atomic)
+            return destination
+        } catch {
+            Logger(subsystem: "com.thatcube.Plozz", category: "TopShelf")
+                .error("Unable to save selected Top Shelf artwork: \(String(describing: error))")
+            return nil
+        }
+        #else
+        return nil
+        #endif
+    }
+
     /// In-app bar proportions, taken from `PosterCardView` / `PlozzTheme` base
     /// metrics (poster width 280, bar height 12, inset 22, scrim = height*8.5,
     /// fill shadow blur = height*0.25). Kept as width fractions so the composited

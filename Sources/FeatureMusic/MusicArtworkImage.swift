@@ -7,11 +7,10 @@ import CoreUI
 /// loading or when no image exists. Mirrors CoreUI's fallback-image behaviour but
 /// is square (album/artist art) rather than poster-shaped.
 ///
-/// The server's own art (`url`) is always tried first. `asyncFallbackURL` is an
-/// optional best-effort closure (Deezer artist hero / Cover Art Archive album
-/// cover via `ArtworkRouter`) used only when the server ships no art, so the
-/// keyless MetadataKit music providers fill gaps without ever overriding the
-/// user's library art. Resolved bytes are cached by CoreUI's `ArtworkImageCache`.
+/// The profile's Music artwork choice orders library art (`url`) and the
+/// optional provider lookup (`asyncFallbackURL`). Recommended keeps library
+/// artwork first; either choice can fall back when its preferred image fails.
+/// Resolved bytes are cached by CoreUI's `ArtworkImageCache`.
 struct MusicArtworkImage: View {
     let url: URL?
     var systemPlaceholder: String = "music.note"
@@ -28,6 +27,7 @@ struct MusicArtworkImage: View {
     /// transparency. Falls back to `.secondary` when nil.
     var placeholderColor: Color? = nil
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     init(
         url: URL?,
@@ -56,6 +56,7 @@ struct MusicArtworkImage: View {
             FallbackAsyncImage(
                 urls: [url].compactMap { $0 },
                 variant: variant,
+                artworkPolicy: artworkPolicy.forArea(.music),
                 asyncFallbackURL: asyncFallbackURL,
                 pinIdentity: pinIdentity
             ) {

@@ -265,6 +265,7 @@ public struct HomeView: View {
     @Namespace private var heroFocusScope
 
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzArtworkSettings) private var artworkSettings
     /// How far the navigation rail insets page content, so the libraries row can
     /// carry the same gutter as every media row.
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
@@ -1300,6 +1301,7 @@ public struct HomeView: View {
                 loadingPlaceholderCount: row.loadingPlaceholderCount,
                 reservesLoadingFocus: reservesLoadingFocus, playsOnSelect: true, onSelect: onPlayItem
             )
+            .environment(\.plozzArtworkArea, .continueWatching)
         case .watchlist:
             MediaRowView(
                 title: Text(row.title),
@@ -1391,7 +1393,10 @@ public struct HomeView: View {
                     items: row.items,
                     isPlaceholder: row.loadingPlaceholderCount > 0,
                     cardArtwork: row.style == .landscape
-                        ? { PosterCardView.leadingLandscapeArtwork(for: $0, showsSeriesArtwork: seriesArtwork) }
+                        ? { PosterCardView.leadingLandscapeArtwork(
+                            for: $0, showsSeriesArtwork: seriesArtwork,
+                            prefersTextlessArtwork: artworkSettings.prefersTextlessArtwork(in: .continueWatching)
+                        ) }
                         : nil
                 ),
                 .home(row)
@@ -1571,6 +1576,7 @@ public struct HomeView: View {
                         playsOnSelect: true,
                         onSelect: onPlayItem
                     )
+                    .environment(\.plozzArtworkArea, .continueWatching)
                 case .watchlist:
                     MediaRowView(
                         title: Text(row.title),

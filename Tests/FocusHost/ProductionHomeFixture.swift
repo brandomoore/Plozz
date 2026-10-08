@@ -10,6 +10,23 @@ import SwiftUI
 import UIKit
 @testable import AppShell
 
+@MainActor
+@Observable
+fileprivate final class HeldHomeArtworkState {
+    static let shared = HeldHomeArtworkState()
+    var started = 0
+    var completed = 0
+}
+
+private actor HeldHomeArtworkLoader: ArtworkNetworkFileLoading {
+    func loadArtwork(_ reference: NetworkArtworkReference, maximumBytes: Int) async throws -> Data {
+        await MainActor.run { HeldHomeArtworkState.shared.started += 1 }
+        try await Task.sleep(for: .seconds(300))
+        await MainActor.run { HeldHomeArtworkState.shared.completed += 1 }
+        return Data()
+    }
+}
+
 struct ProductionHomeFixture: View {
     @State private var fixture: ProductionHomeState?
     @State private var path: [MediaItem] = []
@@ -104,6 +121,12 @@ struct ProductionHomeFixture: View {
                 .overlay(alignment: .topTrailing) {
                     VStack {
                         Text("Production Home ready")
+                        if ProcessInfo.processInfo.arguments.contains("--held-home-artwork") {
+                            Text(verbatim: "\(HeldHomeArtworkState.shared.started)")
+                                .accessibilityIdentifier("home-held-artwork-started")
+                            Text(verbatim: "\(HeldHomeArtworkState.shared.completed)")
+                                .accessibilityIdentifier("home-held-artwork-completed")
+                        }
                         if ProcessInfo.processInfo.arguments.contains("--library-detail-sequence") {
                             Text(verbatim: "\(libraryPath.count)")
                                 .accessibilityIdentifier("detail-sequence-route-depth")
@@ -348,6 +371,13 @@ private final class ProductionHomeState {
         let settingsStore = MetadataProviderSettingsStore()
         var settings = settingsStore.load()
         settings.preferOnlineArtwork = false
+        if ProcessInfo.processInfo.arguments.contains("--held-home-artwork") {
+            settings = .init(
+                orderMode: .custom,
+                disabledOrder: MetadataSourceAttribution.all.map(\.source.rawValue)
+            )
+            ArtworkImageCache.shared.configure(networkFileService: ArtworkNetworkFileService(loader: HeldHomeArtworkLoader()))
+        }
         settingsStore.save(settings)
         let poster = await artwork(name: "poster", size: CGSize(width: 240, height: 360), color: .systemIndigo)
         let backdrop = await artwork(name: "backdrop", size: CGSize(width: 960, height: 540), color: .systemBlue)
@@ -498,6 +528,7 @@ private struct ProductionHomeProvider: MediaProvider {
     let poster: URL
     let backdrop: URL
     let logo: URL
+    private let heldArtworkRevision = CredentialRevision()
     private let progressiveGate = ProductionHomeRowsGate()
     private let recentGate = ProductionHomeRowsGate(notificationKey: "PLOZZ_HOME_RECENT_RELEASE_NOTIFICATION")
     private let discoverGate = ProductionHomeRowsGate(notificationKey: "PLOZZ_HOME_DISCOVER_RELEASE_NOTIFICATION")
@@ -541,6 +572,29 @@ private struct ProductionHomeProvider: MediaProvider {
         item.runtime = 7200
         item.resumePosition = index < rowCount ? 1800 : nil
         item.overview = "A locally supplied movie for measuring the production Home view."
+        if ProcessInfo.processInfo.arguments.contains("--held-home-artwork") {
+            item.posterURL = nil
+            item.backdropURL = nil
+            item.heroBackdropURL = nil
+            item.logoURL = nil
+            do {
+                let reference = ArtworkReference.networkFile(try NetworkArtworkReference(
+                    accountID: "home-fixture", credentialRevision: heldArtworkRevision,
+                    catalogArtworkID: "held-\(index)",
+                    representation: RemoteFileRepresentation(
+                        size: 1_024,
+                        identity: RemoteFileIdentity(kind: .modificationTime, modifiedAt: .distantPast),
+                        consistency: .changeDetecting
+                    ),
+                    sourceRevision: "held", dimensions: ArtworkDimensions(width: 960, height: 540)
+                ))
+                item.artworkSelections = [ArtworkPlacement.poster, .detailBackdrop, .homeHero, .logo].map {
+                    .init(placement: $0, references: [reference])
+                }
+            } catch {
+                preconditionFailure("Invalid held artwork fixture: \(error)")
+            }
+        }
         return item
     }
 
