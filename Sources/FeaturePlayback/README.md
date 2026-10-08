@@ -63,9 +63,24 @@ and the diagnostics overlay.
   `PlayerViewModel` redacts before logging.
 
 Native asset diagnostics identify `original-url`, `provider-manifest`,
-`subtitle-wrapper`, or `trailer-composition` without recording the URL or tokens.
+`provider-initialization-repair`, `subtitle-wrapper`, or `trailer-composition`
+without recording the URL or tokens.
 Bypassing the legacy tvOS wrapper preserves native media delivery; it is not
 proof of HDR10+ HDMI output, nor a change to the Plozzigen path.
+
+Negotiated HEVC server transcodes also inspect a bounded, same-origin fMP4
+initialization segment for an empty `sdtp` in an empty sample table. Emby's
+muxer can emit this box, which makes AVFoundation fail with -11829/-12848
+before decoding. Only that empty box and its ancestor sizes are changed;
+codec headers, HDR metadata, timing, audio, and encoded samples are preserved.
+The repaired initialization and fixed VOD playlist are served by an item-owned
+resource loader; media segments keep their exact provider URLs. Adaptive,
+live, encrypted, byte-range, foreign-origin, and multi-initialization playlists
+remain untouched. Inspection failure retains normal playback and codec fallback.
+`HEVCInitializationPlaybackHostedTests` covers the native rejection, repaired
+decode, and seeking with a six-second synthetic FFmpeg `testsrc2`/silent AAC
+fixture (160x90, 24fps, x265 `hvc1`, one-second keyframes), not captured media.
+Its video initialization deliberately adds the empty 12-byte `sdtp` box.
 
 WebVTT sidecars distinguish caption class names from literal CSS colors.
 An unstyled `<c.green>` is a compatibility alias for bright `lime` (`#00FF00`),
