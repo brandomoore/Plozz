@@ -37,6 +37,18 @@ extension JellyfinCapabilityProfile {
         transcodingProfiles.contains { $0.videoCodec.split(separator: ",").contains("hevc") }
     }
 
+    func applyingTranscodingRange(for provider: ProviderKind) -> Self {
+        var result = self
+        result.codecProfiles.append(.init(type: "Video", codec: "h264", conditions: [
+            .init(
+                condition: "Equals",
+                property: provider == .emby ? "VideoRange" : "VideoRangeType",
+                value: "SDR", isRequired: false
+            )
+        ]))
+        return result
+    }
+
     func applying(_ options: StreamingPlaybackOptions) -> Self {
         var result = self
         if let limit = options.quality.maximumBitrate {
@@ -83,6 +95,32 @@ extension PlaybackInfoResponse {
 }
 
 extension MediaSourceInfo {
+    mutating func requestSDRForH264Transcode(provider: ProviderKind, forceVideoTranscode: Bool) throws {
+        guard let TranscodingUrl else { return }
+        guard var url = URLComponents(string: TranscodingUrl) else {
+            throw StreamingQualityError.unavailable
+        }
+        var query = url.queryItems ?? []
+        let codecs = query.first { $0.name.caseInsensitiveCompare("VideoCodec") == .orderedSame }?
+            .value?.lowercased().split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? []
+        guard codecs.contains("h264") else { return }
+
+        let allowsCopy = query.first { $0.name.caseInsensitiveCompare("AllowVideoStreamCopy") == .orderedSame }?
+            .value?.lowercased() != "false"
+        let sourceCodec = MediaStreams?.first { $0.Type == "Video" }?.Codec?.lowercased()
+        let requiresCodecChange = sourceCodec.map { !codecs.contains($0) && !codecs.contains("copy") } ?? false
+        // A TranscodingUrl can also copy the video while converting audio or its
+        // container. Do not turn that lossless path into an SDR video encode.
+        guard forceVideoTranscode || !allowsCopy || requiresCodecChange else { return }
+
+        let name = provider == .emby ? "h264-videorange" : "h264-rangetype"
+        query.removeAll { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+        query.append(.init(name: name, value: "SDR"))
+        url.queryItems = query
+        guard let value = url.string else { throw StreamingQualityError.unavailable }
+        self.TranscodingUrl = value
+    }
+
     var burnedInSubtitleTrackID: Int? {
         guard let TranscodingUrl,
               let query = URLComponents(string: TranscodingUrl)?.queryItems,

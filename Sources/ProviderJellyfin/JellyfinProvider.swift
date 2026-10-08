@@ -1289,6 +1289,18 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             }
         }
 
+        if !didRemux {
+            do {
+                try source.requestSDRForH264Transcode(
+                    provider: kind, forceVideoTranscode: forceTranscode || streaming != nil
+                )
+            } catch {
+                if let id = info.PlaySessionId { await releaseStreamingEncoding(id) }
+                PlozzLog.playback.error("Unable to apply the H.264 transcode output range.")
+                throw error
+            }
+        }
+
         let playbackLocator = try authenticatedPlaybackLocator(
             itemID: itemID,
             source: source,
