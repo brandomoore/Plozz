@@ -107,58 +107,23 @@ struct PlozziOSDownloadsView: View {
     }
 
     private var activeTransfersHeader: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Active downloads: \(model.activeTransfers.count.formatted())")
-                    .font(.headline)
-                activeTransferSummary
-                    .font(.caption)
-                    .plozzForeground(.secondary)
-            }
-            Spacer()
-            if model.activeTransfers.contains(where: {
-                $0.status == .downloading
-                    || $0.status == .preparing
-                    || $0.status == .queued
-            }) {
-                Button("Pause All", systemImage: "pause.fill") {
-                    Task { await model.pauseAllActive() }
-                }
-            } else {
-                Button("Resume All", systemImage: "play.fill") {
-                    Task { await model.resumeAllPaused() }
+        let isRunning = model.activeTransfers.contains {
+            $0.status == .downloading || $0.status == .preparing || $0.status == .queued
+        }
+        return PlozziOSActiveDownloadsSummary(
+            count: model.activeTransfers.count,
+            isRunning: isRunning,
+            bytesPerSecond: model.aggregateBytesPerSecond,
+            remaining: model.aggregateETA,
+            limitDescription: model.activeLimitDescription
+        ) {
+            Task {
+                if isRunning {
+                    await model.pauseAllActive()
+                } else {
+                    await model.resumeAllPaused()
                 }
             }
-        }
-        .padding(14)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    private var activeTransferSummary: Text {
-        var parts = [Text(model.activeLimitDescription)]
-        if model.aggregateBytesPerSecond > 0 {
-            parts.insert(
-                Text(
-                    verbatim: model.aggregateBytesPerSecond
-                        .formatted(.byteCount(style: .file)) + "/s"
-                ),
-                at: 0
-            )
-        }
-        if let eta = model.aggregateETA {
-            let duration = Duration.seconds(eta).formatted(
-                .units(
-                    allowed: [.hours, .minutes],
-                    width: .abbreviated,
-                    maximumUnitCount: 2
-                )
-            )
-            parts.append(
-                Text("\(duration) remaining")
-            )
-        }
-        return parts.dropFirst().reduce(parts[0]) {
-            $0 + Text(verbatim: " • ") + $1
         }
     }
 
@@ -658,6 +623,164 @@ struct DownloadTileContent: View {
     }
 }
 
+struct PlozziOSActiveDownloadsSummary: View {
+    let count: Int
+    let isRunning: Bool
+    let bytesPerSecond: Int64
+    let remaining: TimeInterval?
+    let limitDescription: LocalizedStringResource
+    let onToggle: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    title.fixedSize(horizontal: true, vertical: true)
+                    Spacer(minLength: 0)
+                    toggleButton.fixedSize(horizontal: true, vertical: true)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    title
+                    toggleButton
+                }
+            }
+            Divider()
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    speed
+                    limit
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    speed
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    limit
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+            if isRunning, let remaining {
+                let duration = Duration.seconds(remaining).formatted(
+                    .units(allowed: [.hours, .minutes], width: .abbreviated, maximumUnitCount: 2)
+                        .locale(locale)
+                )
+                Label {
+                    Text("\(duration) remaining")
+                        .monospacedDigit()
+                } icon: {
+                    Image(systemName: "clock")
+                }
+                .font(.caption)
+                .plozzForeground(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var title: some View {
+        Text("Active downloads: \(count.formatted(.number.locale(locale)))")
+            .font(.headline)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var toggleButton: some View {
+        Button(action: onToggle) {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    toggleLabel.labelStyle(.titleOnly)
+                } else {
+                    toggleLabel
+                }
+            }
+            .font(.subheadline.weight(.semibold))
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+    }
+
+    private var toggleLabel: some View {
+        Group {
+            if isRunning {
+                Label("Pause All", systemImage: "pause.fill")
+            } else {
+                Label("Resume All", systemImage: "play.fill")
+            }
+        }
+    }
+
+    private var speed: some View {
+        Group {
+            if isRunning, bytesPerSecond > 0 {
+                Text(verbatim: bytesPerSecond.formatted(.byteCount(style: .file).locale(locale)) + "/s")
+            } else if isRunning {
+                Text("In Progress")
+            } else {
+                Text("Paused")
+            }
+        }
+        .font(.title3.weight(.semibold))
+        .monospacedDigit()
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var limit: some View {
+        Text(limitDescription)
+            .font(.caption)
+            .plozzForeground(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+// Keep live record observation out of the view that constructs native picker menus.
+private struct PlozziOSDownloadManagementSettings: View {
+    let model: PlozziOSDownloadsModel
+    @Binding var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
+
+    var body: some View {
+        if model.hasActiveTransfers {
+            SettingsSectionGroup("In Progress") {
+                Button("Pause All", systemImage: "pause.circle") {
+                    Task { await model.pauseAllActive() }
+                }
+                Button("Resume All", systemImage: "play.circle") {
+                    Task { await model.resumeAllPaused() }
+                }
+                Button(
+                    "Cancel Active Downloads",
+                    systemImage: "xmark.circle",
+                    role: .destructive
+                ) {
+                    pendingBulkDeletion = .cancelActive(model.activeTransfers)
+                }
+            }
+        }
+
+        SettingsSectionGroup("Storage") {
+            PlozziOSDownloadsStorageBar(downloadsBytes: model.library.totalBytes)
+            LabeledContent("Downloaded titles") {
+                Text(model.records.filter { $0.status == .completed }.count.formatted())
+            }
+            if !model.library.isEmpty {
+                Button(
+                    "Delete All Downloads",
+                    systemImage: "trash",
+                    role: .destructive
+                ) {
+                    pendingBulkDeletion = .all(model.library)
+                }
+            }
+        }
+    }
+}
+
 struct PlozziOSDownloadSettingsView: View {
     @Bindable var model: PlozziOSDownloadsModel
     @State private var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
@@ -824,39 +947,9 @@ struct PlozziOSDownloadSettingsView: View {
                 )
             }
 
-            if model.hasActiveTransfers {
-                SettingsSectionGroup("In Progress") {
-                    Button("Pause All", systemImage: "pause.circle") {
-                        Task { await model.pauseAllActive() }
-                    }
-                    Button("Resume All", systemImage: "play.circle") {
-                        Task { await model.resumeAllPaused() }
-                    }
-                    Button(
-                        "Cancel Active Downloads",
-                        systemImage: "xmark.circle",
-                        role: .destructive
-                    ) {
-                        pendingBulkDeletion = .cancelActive(model.activeTransfers)
-                    }
-                }
-            }
-
-            SettingsSectionGroup("Storage") {
-                PlozziOSDownloadsStorageBar(downloadsBytes: model.library.totalBytes)
-                LabeledContent("Downloaded titles") {
-                    Text(model.records.filter { $0.status == .completed }.count.formatted())
-                }
-                if !model.library.isEmpty {
-                    Button(
-                        "Delete All Downloads",
-                        systemImage: "trash",
-                        role: .destructive
-                    ) {
-                        pendingBulkDeletion = .all(model.library)
-                    }
-                }
-            }
+            PlozziOSDownloadManagementSettings(
+                model: model, pendingBulkDeletion: $pendingBulkDeletion
+            )
         }
         .settingsPageSurface()
         .navigationTitle("Downloads")

@@ -189,6 +189,115 @@ final class DownloadPresentationTests: XCTestCase {
         XCTAssertEqual(model.records.first?.status, .completed, "A queued progress update must not replace completion.")
     }
 
+    func testDownloadSettingsDoNotRebuildPickerContentForLiveProgress() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        var download = record()
+        download.status = .downloading
+        download.totalBytes = 1_000_000
+        _ = try await registry.beginDownload(download)
+        let model = makeModel(
+            registry: registry, storage: try temporaryStorage(),
+            probe: ArtworkProbe(data: imageData()), startsActive: false
+        )
+        defer { model.beginProfileTransition() }
+        try await waitUntil { model.records.count == 1 }
+        let settings = PlozziOSDownloadSettingsView(model: model)
+        let observer = DownloadObservationProbe { _ = settings.body }
+        defer { observer.stop() }
+
+        for bytes in [100_000, 200_000, 300_000] {
+            try await registry.updateProgress(
+                identityKey: download.identityKey, bytesDownloaded: Int64(bytes),
+                totalBytes: 1_000_000
+            )
+            try await waitUntil { model.records.first?.bytesDownloaded == Int64(bytes) }
+        }
+        XCTAssertEqual(observer.changes, 0, "Live storage/progress changes must not rebuild native picker menus.")
+        model.maximumDownloadMegabitsPerSecond = 25
+        try await waitUntil { observer.changes > 0 }
+    }
+
+    func testActiveDownloadSummaryKeepsMetricsAndActionStableAsValuesChange() throws {
+        for width in [280.0, 350.0, 728.0] {
+            var heights: [Int] = []
+            for (speed, seconds) in [(999, 240.0), (9_900_000, 3_540.0), (83_200_000, 3_660.0), (100_000_000, 7_140.0)] {
+                let image = try summaryImage(width: width, speed: Int64(speed), seconds: seconds)
+                heights.append(image.height)
+                let lines = try recognizedText(image)
+                let text = lines.map(\.text).joined(separator: " ")
+                XCTAssertTrue(text.contains("Active downloads: 1"), text)
+                XCTAssertTrue(text.contains("Pause All"), text)
+                XCTAssertTrue(text.contains("No speed limit"), text)
+                let eta = try XCTUnwrap(lines.first { $0.text.contains("remaining") }, text)
+                XCTAssertFalse(eta.text.contains("limit"), "ETA must have its own full-width line.")
+                XCTAssertFalse(eta.text.contains("MB/s"), "Rate must not share the ETA's wrapping line.")
+                let action = try XCTUnwrap(lines.first { $0.text.contains("Pause All") }, text)
+                XCTAssertGreaterThan(action.bounds.minY, eta.bounds.maxY)
+                if speed == 83_200_000 {
+                    let attachment = XCTAttachment(image: UIImage(cgImage: image))
+                    attachment.name = "download-summary-\(Int(width))"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+            }
+            XCTAssertEqual(Set(heights).count, 1, "Live values must not change the card height at width \(width): \(heights)")
+        }
+    }
+
+    func testActiveDownloadSummarySupportsAccessibilityAndPausedState() throws {
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            for running in [true, false] {
+                let image = try summaryImage(
+                    width: 280, speed: 83_200_000, seconds: 3_660,
+                    running: running, size: .accessibility3, direction: direction
+                )
+                let text = try recognizedText(image).map(\.text).joined(separator: " ")
+                XCTAssertTrue(text.contains("Active downloads:"), text)
+                XCTAssertTrue(text.contains(running ? "Pause All" : "Resume All"), text)
+                XCTAssertTrue(text.contains("No speed limit"), text)
+                XCTAssertEqual(text.contains("remaining"), running, text)
+                XCTAssertEqual(text.contains("Paused"), !running, text)
+                let attachment = XCTAttachment(image: UIImage(cgImage: image))
+                attachment.name = "download-summary-accessibility-\(direction)-\(running)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
+    private func summaryImage(
+        width: CGFloat, speed: Int64, seconds: TimeInterval,
+        running: Bool = true, size: DynamicTypeSize = .large,
+        direction: LayoutDirection = .leftToRight
+    ) throws -> CGImage {
+        let renderer = ImageRenderer(content: PlozziOSActiveDownloadsSummary(
+            count: 1, isRunning: running, bytesPerSecond: speed,
+            remaining: seconds, limitDescription: "No speed limit", onToggle: {}
+        )
+        .frame(width: width)
+        .padding(20)
+        .background(.black)
+        .tint(.blue)
+        .environment(\.colorScheme, .dark)
+        .environment(\.locale, Locale(identifier: "en"))
+        .environment(\.dynamicTypeSize, size)
+        .environment(\.layoutDirection, direction))
+        renderer.scale = 2
+        return try XCTUnwrap(renderer.cgImage)
+    }
+
+    private func recognizedText(_ image: CGImage) throws -> [(text: String, bounds: CGRect)] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        request.customWords = ["Pause All", "Resume All", "MB/s"]
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        return (request.results ?? []).compactMap {
+            guard let text = $0.topCandidates(1).first?.string else { return nil }
+            return (text, $0.boundingBox)
+        }
+    }
+
     func testSeasonDownloadActionLabelsClarifyBulkScope() throws {
         let cases: [(SeriesDownloadAction, MediaDownloadBadgeState?, String)] = [
             (.download, nil, "Download All"),

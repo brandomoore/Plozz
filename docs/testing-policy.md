@@ -413,6 +413,13 @@ and escaping, malformed identities, and profile/item/file isolation. HTTP and
 HLS task lookups, callbacks, cancellation markers, and persisted HLS locations
 must use the same canonical identity, including for tasks saved by older builds.
 
+`DownloadPresentationTests` checks that changing rates and ETAs do not change the
+active-queue summary's height at phone and tablet widths, with separate coverage
+for accessibility text and right-to-left layouts. Live storage and transfer
+sections own their record observation: progress must not invalidate the settings
+view that constructs native picker menus. Actual preference changes must still
+update those controls.
+
 The `PlozziOSInteractionTests` scheme adds real native touch coverage for Settings
 on both an owned iPhone simulator and an owned iPad simulator. It launches the
 same presentation host with an explicit settings-fixture argument, exercising
