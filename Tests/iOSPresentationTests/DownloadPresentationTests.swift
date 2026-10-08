@@ -101,10 +101,11 @@ final class DownloadPresentationTests: XCTestCase {
     }
 
     func testCompactDownloadRowsRemainDenseAndReadableAcrossStates() throws {
+        XCTAssertEqual(MediaDownloadBadge.completedSystemImage, "arrow.down.circle.fill")
         for status in [DownloadStatus.downloading, .queued, .paused, .completed, .failed] {
             var record = record()
             record.status = status
-            record.bytesDownloaded = 38
+            record.bytesDownloaded = status == .completed ? 100 : 38
             record.totalBytes = 100
             record.snapshot.title = "E1 · One Year Later"
             if status == .failed { record.failureReason = "Reconnect to the server and try again." }
@@ -114,7 +115,7 @@ final class DownloadPresentationTests: XCTestCase {
                 }, accessibilityTitle: record.snapshot.title) {
                     DownloadRowContent(
                         title: record.snapshot.title, subtitle: DownloadFormatting.status(for: record),
-                        subtitleColor: DownloadFormatting.statusColor(for: record),
+                        status: record.status,
                         fraction: DownloadFormatting.activeFraction(for: record),
                         failure: DownloadFormatting.failure(for: record), artworkURL: nil, kind: .episode
                     )
@@ -136,6 +137,10 @@ final class DownloadPresentationTests: XCTestCase {
                 XCTAssertTrue(text.contains("One Year Later"), text)
                 if status == .downloading { XCTAssertTrue(text.contains("38%"), text) }
                 if status == .failed { XCTAssertTrue(text.contains("try again"), text) }
+                if status == .completed {
+                    XCTAssertFalse(text.contains("Available offline"), text)
+                    XCTAssertTrue(text.contains("100"), text)
+                }
                 let attachment = XCTAttachment(image: UIImage(cgImage: image))
                 attachment.name = "compact-download-row-\(status)-\(width)"
                 attachment.lifetime = .keepAlways
@@ -155,7 +160,7 @@ final class DownloadPresentationTests: XCTestCase {
                 DownloadCompactCard(menu: { Button("Remove") {} }, accessibilityTitle: "episode") {
                     DownloadRowContent(
                         title: "It's Always Sunny in Philadelphia",
-                        subtitle: Text("Queued"), subtitleColor: .secondary, fraction: 0,
+                        subtitle: Text("Queued"), status: .queued, fraction: 0,
                         failure: "Reconnect to the server and try again.", artworkURL: nil, kind: .episode
                     )
                 }
@@ -842,9 +847,10 @@ final class DownloadPresentationTests: XCTestCase {
         var show = try XCTUnwrap(PlozziOSDownloadLibrary.make(from: completed).shows.first)
         XCTAssertEqual(show.status, .completed)
         XCTAssertEqual(show.fractionCompleted, 1)
-        XCTAssertTrue(try renderedStatus(show).contains("Available offline"))
+        XCTAssertTrue(try renderedStatus(show).contains("2 episodes"))
+        XCTAssertFalse(try renderedStatus(show).contains("Available offline"))
         let frenchStatus = try renderedStatus(show, language: "fr")
-        XCTAssertTrue(frenchStatus.contains("Disponible hors ligne"), frenchStatus)
+        XCTAssertTrue(frenchStatus.contains("2 épisodes"), frenchStatus)
 
         var finishing = completed
         finishing[1].status = .downloading
@@ -852,6 +858,7 @@ final class DownloadPresentationTests: XCTestCase {
         XCTAssertEqual(show.status, .downloading)
         XCTAssertEqual(show.fractionCompleted, 1)
         XCTAssertFalse(try renderedStatus(show).contains("Available offline"))
+        XCTAssertTrue(try renderedStatus(show).contains("100%"))
 
         finishing[1].status = .failed
         show = try XCTUnwrap(PlozziOSDownloadLibrary.make(from: finishing).shows.first)

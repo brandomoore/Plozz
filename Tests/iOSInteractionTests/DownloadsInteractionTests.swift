@@ -50,6 +50,59 @@ final class DownloadsInteractionTests: XCTestCase {
         XCTAssertFalse(app.navigationBars.buttons["BackButton"].exists, "One tap must push only one page.")
     }
 
+    func testCompletedRowsUseDownloadSymbolsWithoutCompletionCopyOrChevrons() {
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10))
+        let row = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Downloaded Show 12"
+        )).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(row.label.contains("Downloaded"), row.label)
+        XCTAssertFalse(row.label.contains("Available offline"), row.label)
+        XCTAssertTrue(row.label.contains("100 MB"), row.label)
+        XCTAssertFalse(list.images["chevron.right"].exists)
+        XCTAssertFalse(list.images["chevron.forward"].exists)
+        row.tap()
+        XCTAssertTrue(app.navigationBars["Downloaded Show 12"].waitForExistence(timeout: 3))
+        let episode = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "E12 · Episode 12"
+        )).firstMatch
+        XCTAssertTrue(episode.waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertTrue(episode.label.contains("Downloaded"), episode.label)
+        XCTAssertFalse(episode.label.contains("Available offline"), episode.label)
+        XCTAssertTrue(episode.label.contains("100 MB"), episode.label)
+        XCTAssertFalse(list.images["chevron.right"].exists)
+    }
+
+    func testEpisodeArtworkAlignsWithSeasonHeadingsInBothCardStyles() {
+        for framed in [false, true] {
+            app.terminate()
+            app.launchArguments = ["--downloads-interaction-fixture"]
+            if framed { app.launchArguments.append("--framed-downloads") }
+            app.launch()
+            let show = app.buttons.matching(NSPredicate(
+                format: "label BEGINSWITH %@", "Downloaded Show 12"
+            )).firstMatch
+            XCTAssertTrue(show.waitForExistence(timeout: 10), app.debugDescription)
+            show.tap()
+            let heading = app.staticTexts["Season 2"]
+            XCTAssertTrue(heading.waitForExistence(timeout: 3))
+            let episode = app.buttons.matching(NSPredicate(
+                format: "label BEGINSWITH %@", "E12 · Episode 12"
+            )).firstMatch
+            let artwork = episode.images["tv"]
+            XCTAssertTrue(artwork.exists, app.debugDescription)
+            XCTAssertEqual(
+                artwork.frame.minX, heading.frame.minX, accuracy: 2,
+                "The artwork edge must align with the heading, allowing its thin media-edge stroke."
+            )
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = framed ? "aligned-framed-downloads" : "aligned-borderless-downloads"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testEpisodeActionsDoNotNavigateAndSeasonRemovalRequiresConfirmation() throws {
         let list = app.collectionViews.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 10))

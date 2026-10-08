@@ -179,7 +179,7 @@ private struct PlozziOSDownloadedSeasonSection: View {
             )
             .textCase(nil)
             .listRowInsets(EdgeInsets(
-                top: 16, leading: horizontalInset + 8, bottom: 6, trailing: horizontalInset
+                top: 16, leading: horizontalInset, bottom: 6, trailing: horizontalInset
             ))
         }
     }
@@ -264,7 +264,7 @@ private struct PlozziOSDownloadedEpisodeRow: View {
                 DownloadRowContent(
                     title: DownloadFormatting.episodeLabel(for: record),
                     subtitle: DownloadFormatting.status(for: record),
-                    subtitleColor: DownloadFormatting.statusColor(for: record),
+                    status: record.status,
                     fraction: DownloadFormatting.activeFraction(for: record),
                     failure: DownloadFormatting.failure(for: record),
                     artworkURL: model.artworkURL(for: record),

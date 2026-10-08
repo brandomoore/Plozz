@@ -53,7 +53,10 @@ struct DownloadsInteractionFixture: View {
         .environment(\.locale, Locale(identifier: "en"))
         .environment(\.themePalette, .dark)
         .environment(\.plozzMetrics, .touch(density: .standard))
-        .environment(\.plozzCardStyle, .borderless)
+        .environment(
+            \.plozzCardStyle,
+            ProcessInfo.processInfo.arguments.contains("--framed-downloads") ? .framed : .borderless
+        )
         .preferredColorScheme(.dark)
     }
 }

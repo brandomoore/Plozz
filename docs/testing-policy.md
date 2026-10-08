@@ -448,6 +448,12 @@ Watchlist keeps its bookmark.
 `DownloadsInteractionTests` taps the production library and episode menus,
 checks 44-point targets and the compact queue control, returns through one Back
 step, and cancels then confirms season deletion without navigating by accident.
+Completed library and episode rows retain a spoken "Downloaded" label on the
+shared filled download glyph, without visible completion copy or disclosure
+chevrons beside their menus. Receiving 100% of bytes still does not confer the
+completed state before finalization.
+Native geometry checks keep episode artwork aligned with season headings in
+both card styles; the framed surface must not add a second content inset.
 
 The `PlozziOSInteractionTests` scheme adds real native touch coverage for Settings
 on both an owned iPhone simulator and an owned iPad simulator. It launches the

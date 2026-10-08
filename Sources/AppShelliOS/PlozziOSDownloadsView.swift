@@ -14,6 +14,8 @@ struct PlozziOSDownloadsView: View {
 
     @State private var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
     @State private var notificationDestination: PlozziOSDownloadNotificationDestination?
+    @State private var selectedShowID: String?
+    @State private var detailNav: PlozziOSDownloadDetailNav?
 
     var body: some View {
         let library = model.library
@@ -50,6 +52,23 @@ struct PlozziOSDownloadsView: View {
         }
         .navigationDestination(item: $notificationDestination) { destination in
             notificationPage(destination)
+        }
+        .navigationDestination(item: $selectedShowID) { showID in
+            PlozziOSDownloadedShowView(showID: showID, model: model, appModel: appModel)
+        }
+        .navigationDestination(item: $detailNav) { nav in
+            if let provider = appModel.provider(for: nav.item) {
+                PlozziOSItemDetailView(
+                    appModel: appModel, provider: provider, item: nav.item,
+                    seerService: appModel.seerService
+                )
+            } else {
+                ContentUnavailableView(
+                    "Server unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text("This title's server is no longer connected.")
+                )
+            }
         }
         .toolbarTitleDisplayMode(.large)
         .toolbar {
@@ -203,11 +222,13 @@ struct PlozziOSDownloadsView: View {
             },
             accessibilityTitle: record.snapshot.title
         ) {
-            DownloadRowLink(record: record, model: model, appModel: appModel) {
+            DownloadRowButton(record: record, model: model, appModel: appModel, open: {
+                detailNav = PlozziOSDownloadDetailNav(item: $0)
+            }) {
                 DownloadRowContent(
                     title: record.snapshot.title,
                     subtitle: DownloadFormatting.status(for: record),
-                    subtitleColor: DownloadFormatting.statusColor(for: record),
+                    status: record.status,
                     fraction: DownloadFormatting.activeFraction(for: record),
                     failure: DownloadFormatting.failure(for: record),
                     artworkURL: model.artworkURL(for: record),
@@ -237,17 +258,13 @@ struct PlozziOSDownloadsView: View {
             },
             accessibilityTitle: show.title
         ) {
-            NavigationLink {
-                PlozziOSDownloadedShowView(
-                    showID: show.id,
-                    model: model,
-                    appModel: appModel
-                )
+            Button {
+                selectedShowID = show.id
             } label: {
                 DownloadRowContent(
                     title: show.title,
                     subtitle: DownloadFormatting.status(for: show),
-                    subtitleColor: DownloadFormatting.statusColor(show.status),
+                    status: show.status,
                     fraction: show.status.isActive ? show.fractionCompleted : nil,
                     failure: show.records.first { $0.status == .failed }?.failureReason,
                     artworkURL: show.artworkRecord.flatMap(model.artworkURL(for:)),
@@ -405,21 +422,8 @@ enum DownloadFormatting {
                 return Text("Downloading")
             }
         case .paused: return Text("Paused")
-        case .completed:
-            return Text("Available offline • \(summary)")
+        case .completed: return summary
         case .failed: return Text("Failed")
-        }
-    }
-
-    static func statusColor(for record: DownloadedMediaRecord) -> Color {
-        statusColor(record.status)
-    }
-
-    static func statusColor(_ status: DownloadStatus) -> Color {
-        switch status {
-        case .completed: .green
-        case .failed: .red
-        default: .secondary
         }
     }
 
@@ -463,24 +467,20 @@ enum DownloadFormatting {
     }
 }
 
-/// Wraps row content in a detail-page link when the record maps back to a live
+/// Opens details when the record maps back to a live
 /// provider item; otherwise shows the content inert (e.g. a stale source).
-struct DownloadRowLink<Content: View>: View {
+struct DownloadRowButton<Content: View>: View {
     let record: DownloadedMediaRecord
     let model: PlozziOSDownloadsModel
     let appModel: PlozziOSAppModel
+    let open: (MediaItem) -> Void
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         if let item = model.playbackItem(for: record) ?? model.detailItem(for: record),
-           let provider = appModel.provider(for: item) {
-            NavigationLink {
-                PlozziOSItemDetailView(
-                    appModel: appModel,
-                    provider: provider,
-                    item: item,
-                    seerService: appModel.seerService
-                )
+           appModel.provider(for: item) != nil {
+            Button {
+                open(item)
             } label: {
                 content()
             }
@@ -496,7 +496,7 @@ struct DownloadRowContent: View {
     /// Media title and a formatted status line — both provider/derived content.
     let title: String   // l10n:content — media title from the server
     let subtitle: Text
-    let subtitleColor: Color
+    let status: DownloadStatus
     let fraction: Double?
     let failure: String?
     let artworkURL: URL?
@@ -512,10 +512,17 @@ struct DownloadRowContent: View {
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                     .foregroundStyle(palette.primaryText)
-                subtitle
-                    .font(.caption)
-                    .foregroundStyle(subtitleColor)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    if status == .completed {
+                        Image(systemName: MediaDownloadBadge.completedSystemImage)
+                            .accessibilityLabel("Downloaded")
+                    }
+                    subtitle
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.caption)
+                .foregroundStyle(status == .failed ? palette.errorText : palette.secondaryText)
+                .accessibilityElement(children: .combine)
                 if let fraction {
                     ProgressView(value: fraction)
                         .tint(ThemePalette.brandBlue)
@@ -531,7 +538,6 @@ struct DownloadRowContent: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 8)
-        .padding(.leading, 8)
         .contentShape(Rectangle())
     }
 }
@@ -565,11 +571,14 @@ struct DownloadCompactCard<MenuContent: View, Card: View>: View {
 }
 
 private struct DownloadCompactCardSurface: ViewModifier {
+    @Environment(\.plozzMetrics) private var metrics
     let isFramed: Bool
 
     func body(content: Content) -> some View {
         if isFramed {
             content.plozzFramedMediaCard(innerCornerRadius: 8, glassAtRest: false)
+                // The frame surrounds the row without shifting its artwork off the list's content edge.
+                .padding(.horizontal, -metrics.cardInset)
         } else {
             content
         }

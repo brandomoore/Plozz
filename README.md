@@ -173,7 +173,10 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   libraries scannable, with per-title progress, status, and trailing actions.
   Downloaded shows group compact episode rows by season; season removal lives
   in the season menu. Show rows reflect their downloaded
-  episodes' live progress and are marked available offline once all are complete.
+  episodes' live progress. Completed shows, movies, and episodes use the same
+  filled download icon as media cards, with neutral counts and sizes instead of
+  repeated completion text. Tap a row to open it; the trailing menu is its only
+  accessory.
   Only the Downloads navigation item displays queue progress; Watchlist retains
   its bookmark.
   Progress display updates are batched rather than redrawing at network-callback
