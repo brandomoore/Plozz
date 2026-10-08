@@ -69,6 +69,32 @@ struct PlozziOSDownloadedShow: Identifiable {
         records.map(\.updatedAt).max() ?? .distantPast
     }
 
+    var status: DownloadStatus {
+        let records = records
+        if !records.isEmpty, records.allSatisfy({ $0.status == .completed }) { return .completed }
+        for status in [DownloadStatus.downloading, .preparing, .queued, .failed, .paused] {
+            if records.contains(where: { $0.status == status }) { return status }
+        }
+        return .queued
+    }
+
+    var fractionCompleted: Double? {
+        let records = records
+        guard !records.isEmpty else { return nil }
+        var total = 0.0
+        for record in records {
+            if record.status == .completed {
+                total += 1
+            } else if let fraction = record.status == .preparing
+                ? record.preparationFraction : record.fractionCompleted {
+                total += fraction
+            } else {
+                return nil
+            }
+        }
+        return total / Double(records.count)
+    }
+
     /// The record whose pinned artwork best represents the show in a row.
     var artworkRecord: DownloadedMediaRecord? {
         records.first { $0.snapshot.artworkFileName != nil } ?? records.first

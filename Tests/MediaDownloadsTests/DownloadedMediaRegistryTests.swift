@@ -3,6 +3,62 @@ import XCTest
 @testable import MediaDownloads
 
 final class DownloadedMediaRegistryTests: XCTestCase {
+    func testCancelledArtworkCannotAttach() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let original = try DownloadTestFactory.record(status: .completed)
+        _ = try await registry.beginDownload(original)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await registry.setArtworkFileName(
+                identityKey: original.identityKey, fileName: "cancelled.jpg",
+                expectedCreatedAt: original.createdAt
+            )
+        }
+        do {
+            _ = try await task.value
+            XCTFail("Cancelled artwork must not be attached.")
+        } catch is CancellationError {
+        }
+        let current = await registry.record(forKey: original.identityKey)
+        XCTAssertNil(current?.snapshot.artworkFileName)
+        XCTAssertEqual(current?.status, .completed)
+    }
+
+    func testArtworkCannotAttachToARemovedAndRecreatedDownload() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let original = try DownloadTestFactory.record(status: .completed)
+        _ = try await registry.beginDownload(original)
+        try await registry.remove(identityKey: original.identityKey)
+        var replacement = original
+        replacement.createdAt = original.createdAt.addingTimeInterval(1)
+        _ = try await registry.beginDownload(replacement)
+
+        let attached = try await registry.setArtworkFileName(
+            identityKey: original.identityKey, fileName: "old.jpg",
+            expectedCreatedAt: original.createdAt
+        )
+        XCTAssertFalse(attached)
+        let current = await registry.record(forKey: original.identityKey)
+        XCTAssertNil(current?.snapshot.artworkFileName)
+        XCTAssertEqual(current?.status, .completed)
+    }
+
+    func testAttachingArtworkPreservesCompletionAndSurvivesReload() async throws {
+        let store = InMemoryDownloadedMediaStore()
+        let registry = DownloadedMediaRegistry(store: store)
+        let original = try DownloadTestFactory.record(status: .completed, bytesDownloaded: 100, totalBytes: 100)
+        _ = try await registry.beginDownload(original)
+        let attached = try await registry.setArtworkFileName(
+            identityKey: original.identityKey, fileName: "artwork.jpg",
+            expectedCreatedAt: original.createdAt
+        )
+        XCTAssertTrue(attached)
+        let reloaded = await DownloadedMediaRegistry(store: store).record(forKey: original.identityKey)
+        XCTAssertEqual(reloaded?.snapshot.artworkFileName, "artwork.jpg")
+        XCTAssertEqual(reloaded?.status, .completed)
+        XCTAssertEqual(reloaded?.bytesDownloaded, 100)
+        XCTAssertEqual(reloaded?.totalBytes, 100)
+    }
 
     func testBeginDownloadRoundTripsThroughStore() async throws {
         let store = InMemoryDownloadedMediaStore()

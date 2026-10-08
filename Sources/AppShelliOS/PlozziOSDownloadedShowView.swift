@@ -103,6 +103,7 @@ struct PlozziOSDownloadedShowView: View {
         .onChange(of: showStillExists) { _, exists in
             if !exists { dismiss() }
         }
+        .task { await model.refreshArtwork() }
     }
 
     private var currentShow: PlozziOSDownloadedShow? {
