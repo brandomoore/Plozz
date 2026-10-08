@@ -25,6 +25,13 @@ fallback when the user's server has no attached trailer.
   after subtracting each card style's internal inset. Smaller mobile artwork uses
   proportionate corners and a 20pt minimum watched badge, without shrinking folder
   navigation badges. Continue Watching geometry and library grid columns are unchanged.
+- **Showcase artwork lookahead** — A separate observer warms the policy-selected
+  preview and logo for up to five nearby titles plus the leading title of either
+  adjacent row. It shares the bounded background queue and artwork caches with
+  Continue Watching, without observing focus in the view that builds the rows.
+  Changing focus, rows, source references, or provider settings replaces only
+  obsolete preparation; leaving Home cancels it. The native navigation and
+  row/hero motion never await artwork or metadata.
 - **Card labels** — Appearance > Cards owns profile-scoped App default,
   Show labels everywhere, and Hide labels everywhere presets, with
   On / Off values edited directly in a flat list of experiences. Editing enters

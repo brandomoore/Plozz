@@ -1,5 +1,6 @@
 import Foundation
 import CoreModels
+import CoreNetworking
 
 /// The single, dedicated networking lane for all artwork *byte* downloads
 /// (posters, backdrops, hero/title logos, studio logos, episode stills).
@@ -94,4 +95,24 @@ public enum ArtworkSession {
     /// foreground/detail art calls ArtworkRouter directly (NOT gated here), so they
     /// never queue behind the grid backlog. Same lesson as the SMB probe-storm fix.
     public static let artworkResolveLimiter = ConcurrencyLimiter(limit: 3)
+
+    /// Speculative lookups never occupy the visible cards' metadata permits.
+    public static let backgroundArtworkResolveLimiter = ConcurrencyLimiter(limit: 1)
+
+    public static func resolveArtwork(
+        background: Bool, _ lookup: @escaping @Sendable () async -> URL?
+    ) async -> URL? {
+        let limiter = background ? backgroundArtworkResolveLimiter : artworkResolveLimiter
+        do {
+            return try await limiter.runUnlessCancelled {
+                try Task.checkCancellation()
+                return await lookup()
+            }
+        } catch is CancellationError {
+            return nil
+        } catch {
+            PlozzLog.app.error("Artwork preparation failed: \(String(describing: error))")
+            return nil
+        }
+    }
 }

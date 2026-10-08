@@ -694,6 +694,12 @@ public struct MediaRowView: View {
                         }
                     }
                 }
+                .task(id: seriesArtworkPrefetchIdentity) {
+                    activity.seriesArtworkPrefetch.cancelAll()
+                    guard showsSeriesArtwork, !items.isEmpty else { return }
+                    let index = min(activity.lastArtworkPrefetchIndex ?? 0, items.count - 1)
+                    prefetchArtwork(around: items[index])
+                }
                 .onDisappear {
                     activity.pendingReport?.cancel()
                     activity.pendingReport = nil
@@ -701,7 +707,7 @@ public struct MediaRowView: View {
                     activity.prefetchedIDs.removeAll(keepingCapacity: true)
                     activity.prefetchedPreviewIDs.removeAll(keepingCapacity: true)
                     activity.lastArtworkPrefetchIndex = nil
-                    activity.logoPrefetchHistory = MediaRowLogoPrefetchHistory()
+                    activity.seriesArtworkPrefetch.cancelAll()
                     pendingEntryHandoff = false
                 }
             }
@@ -1035,7 +1041,6 @@ public struct MediaRowView: View {
             activity.artworkPrefetchTasks.cancelAll()
             activity.prefetchedIDs.removeAll(keepingCapacity: true)
             activity.prefetchedPreviewIDs.removeAll(keepingCapacity: true)
-            activity.logoPrefetchHistory = MediaRowLogoPrefetchHistory()
         }
         activity.artworkPrefetchDirection = direction
         activity.lastArtworkPrefetchIndex = index
@@ -1051,6 +1056,13 @@ public struct MediaRowView: View {
             count: items.count,
             lookahead: MediaRowPrefetchWindow.fullArtworkLookahead
         )
+        if showsSeriesArtwork, presentation != .episodeColumn {
+            activity.seriesArtworkPrefetch.update(fullIndices.map {
+                let source = seriesArtworkSource(for: items[$0])
+                return .init(id: source.identity) { await source.prepare() }
+            })
+            return
+        }
         for i in fullIndices {
             let candidate = items[i]
             if presentation == .episodeColumn {
@@ -1094,22 +1106,6 @@ public struct MediaRowView: View {
                     trackPrefetch(url, variant: variant)
                 }
             }
-            // Series-artwork cards also carry a LOGO, resolved asynchronously and
-            // through a different pipeline from the picture. Warming only the
-            // picture meant a card scrolled onto showed its styled title first and
-            // then swapped to the logo a moment later — the card visibly changing
-            // under the viewer, which is the one thing a rail must not do. Warm
-            // both, so the card is finished before it is reached.
-            if showsSeriesArtwork {
-                let includeLogo = activity.logoPrefetchHistory.shouldPrefetch(
-                    id: candidate.stablePresentationID,
-                    references: candidate.artworkReferences(for: .logo)
-                )
-                MediaArtworkPrefetchPolicy.warmSeriesPresentation(
-                    for: candidate, variant: variant, includeLogo: includeLogo,
-                    prefersTextlessArtwork: presentationArtworkPolicy.forArea(.continueWatching).prefersTextlessArtwork
-                )
-            }
         }
         if presentation == .poster {
             let near = Set(fullIndices)
@@ -1139,6 +1135,16 @@ public struct MediaRowView: View {
             }
         }
         #endif
+    }
+
+    private var seriesArtworkPrefetchIdentity: [String] {
+        showsSeriesArtwork ? items.map { seriesArtworkSource(for: $0).identity } : []
+    }
+
+    private func seriesArtworkSource(for item: MediaItem) -> ContinueWatchingArtworkSource {
+        ContinueWatchingArtworkSource(
+            item: item, style: artworkStyle, policy: presentationArtworkPolicy, cardPolicy: artworkPolicy
+        )
     }
 
     private func trackPrefetch(
@@ -1443,7 +1449,7 @@ private final class MediaRowActivity {
     @ObservationIgnored var artworkPrefetchDirection = 1
     @ObservationIgnored let artworkPrefetchTasks = ArtworkPrefetchTasks()
     @ObservationIgnored var prefetchedHeroIDs: Set<String> = []
-    @ObservationIgnored var logoPrefetchHistory = MediaRowLogoPrefetchHistory()
+    @ObservationIgnored let seriesArtworkPrefetch = ArtworkPrefetchWindow()
     @ObservationIgnored var focus: FocusState<String?>.Binding?
 
     func requestFocus(_ id: String) {
@@ -1490,37 +1496,7 @@ enum MediaRowFocusPolicy {
     }
 }
 
-struct MediaRowLogoPrefetchHistory {
-    private var referencesByID: [String: [ArtworkReference]] = [:]
-
-    mutating func shouldPrefetch(id: String, references: [ArtworkReference]) -> Bool {
-        guard referencesByID[id] != references else { return false }
-        referencesByID[id] = references
-        return true
-    }
-}
-
 public enum MediaArtworkPrefetchPolicy {
-    /// Warms both pieces of a Continue Watching card: its clean series backdrop
-    /// and the logo drawn over it. Shared by tvOS and iOS rails so one platform
-    /// cannot regress to on-demand loading while the other stays smooth.
-    @MainActor
-    public static func warmSeriesPresentation(
-        for item: MediaItem,
-        variant: ArtworkImageVariant,
-        includeLogo: Bool = true,
-        prefersTextlessArtwork: Bool = true
-    ) {
-        if includeLogo {
-            HeroLogoPipeline.shared.prefetch(
-                references: item.artworkReferences(for: .logo)
-            )
-        }
-        if prefersTextlessArtwork {
-            TextlessBackdropStore.shared.warm(for: item, variant: variant)
-        }
-    }
-
     public static func candidates(
         for item: MediaItem,
         style: PosterCardView.Style,

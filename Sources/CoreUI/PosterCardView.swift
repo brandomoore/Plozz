@@ -10,7 +10,7 @@ import MetadataKit
 /// Both card layouts keep one focus owner and one select handler. System focus
 /// uses tvOS projection; Highlight and Outline retain their custom treatment.
 public struct PosterCardView: View {
-    public enum Style { case poster, landscape }
+    public enum Style: Sendable { case poster, landscape }
 
     private let item: MediaItem
     private let style: Style
@@ -1140,7 +1140,7 @@ public struct PosterCardView: View {
                 // likely candidate of all to carry a title — treat it as clean.
                 artworkAlreadyCarriesTitle = reference.map(titleBearingArtwork.contains) ?? false
             },
-            pinIdentity: item.id,
+            pinIdentity: seriesSource.pinIdentity,
             // The card is taller than the picture, so the picture is laid in at
             // its own shape and the band left underneath is filled with a
             // mirrored continuation of it — never by cropping the sides down to
@@ -1179,28 +1179,29 @@ public struct PosterCardView: View {
     /// answer is fetched rather than inferred, and why reading it here (during
     /// body, synchronously) is what keeps the switch invisible.
     private var seriesArtworkReferences: [ArtworkReference] {
-        let ladder = item.kind == .episode ? placeholderArtworkReferences : artworkReferences
-        guard let preferredSeriesArtwork else { return ladder }
-        return [preferredSeriesArtwork] + ladder.filter { $0 != preferredSeriesArtwork }
+        seriesSource.references(textlessBackdrop: textlessBackdropStore.backdrop(for: item))
+    }
+
+    private var seriesSource: ContinueWatchingArtworkSource {
+        ContinueWatchingArtworkSource(
+            item: item, style: style, policy: presentationArtworkPolicy,
+            cardPolicy: artworkPolicy, enablesAsyncArtworkFallback: enablesAsyncArtworkFallback
+        )
     }
 
     private var preferredSeriesArtwork: ArtworkReference? {
         guard showsSeriesArtwork else { return nil }
-        return PosterCardPresentation.continueWatchingPrimaryReference(
-            for: item, policy: presentationArtworkPolicy,
-            textlessBackdrop: presentationArtworkPolicy.prefersTextlessArtwork
-                ? textlessBackdropStore.backdrop(for: item) : nil
-        )
+        return seriesSource.primaryReference(textlessBackdrop: textlessBackdropStore.backdrop(for: item))
     }
 
     private var seriesArtworkFallback: (@Sendable () async -> URL?)? {
-        item.kind == .episode ? placeholderArtworkFallback : asyncArtworkFallback
+        seriesSource.fallback()
     }
 
     private var seriesLogo: some View {
         ContinueWatchingSeriesLogo(
             title: seriesDisplayTitle,
-            logoReferences: item.artworkReferences(for: .logo),
+            logoReferences: seriesSource.logoReferences,
             artworkReferences: seriesArtworkReferences,
             artworkVariant: artworkVariant,
             asyncFallbackURL: seriesLogoFallback
@@ -1232,14 +1233,7 @@ public struct PosterCardView: View {
     /// Bounded by the shared resolve limiter so a scrolling row can't fire one
     /// lookup per card at once.
     private var seriesLogoFallback: HeroLogoFallback? {
-        guard enablesAsyncArtworkFallback else { return nil }
-        let target = item.kind == .episode ? Self.seriesArtworkItem(for: item) : item
-        return HeroLogoFallback(for: target) {
-            await ArtworkSession.artworkResolveLimiter.run {
-                if Task.isCancelled { return nil }
-                return await ArtworkRouter.shared.artworkURL(.logo, for: target)
-            }
-        }
+        seriesSource.logoFallback()
     }
 
     // MARK: Progress

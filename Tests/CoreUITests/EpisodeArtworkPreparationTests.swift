@@ -7,6 +7,60 @@ import XCTest
 
 @MainActor
 final class EpisodeArtworkPreparationTests: XCTestCase {
+    func testContinueWatchingPreparesNetworkShareArtworkWithoutURLConversion() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 160, height: 90)).image {
+            UIColor.green.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 160, height: 90))
+        }
+        let loader = EpisodeArtworkLoader(data: try XCTUnwrap(image.pngData()))
+        ArtworkImageCache.shared.configure(networkFileService: ArtworkNetworkFileService(loader: loader))
+        defer { ArtworkImageCache.shared.configure(networkFileService: nil) }
+        let reference = ArtworkReference.networkFile(try NetworkArtworkReference(
+            accountID: UUID().uuidString, credentialRevision: CredentialRevision(),
+            catalogArtworkID: UUID().uuidString,
+            representation: RemoteFileRepresentation(
+                size: 1_024,
+                identity: RemoteFileIdentity(kind: .modificationTime, modifiedAt: .distantPast),
+                consistency: .changeDetecting
+            ),
+            sourceRevision: UUID().uuidString, dimensions: ArtworkDimensions(width: 160, height: 90)
+        ))
+        var item = MediaItem(id: UUID().uuidString, title: "Share movie", kind: .movie)
+        item.artworkSelections = [.init(placement: .detailBackdrop, references: [reference])]
+        let policy = ArtworkPresentationPolicy(area: .continueWatching, settings: .init(preference: .library))
+        let source = ContinueWatchingArtworkSource(
+            item: item, style: .landscape, policy: policy, enablesAsyncArtworkFallback: false
+        )
+        XCTAssertEqual(source.references(textlessBackdrop: nil).first, reference)
+        await source.prepare()
+        let key = ArtworkResolveKey.make(
+            references: source.references(textlessBackdrop: nil), variant: .landscapeCard,
+            maxAspectRatio: nil, pinIdentity: source.pinIdentity, providerPolicyIdentity: policy.identity
+        )
+        let prepared = try XCTUnwrap(ArtworkSeedMemo.prepared(for: key, variant: .landscapeCard))
+        XCTAssertEqual(prepared.reference, reference)
+        XCTAssertGreaterThan(try centerPixel(prepared.image)[1], 240)
+    }
+
+    func testContinueWatchingPreparationIdentityTracksSettingsAndSourceChanges() {
+        let item = MediaItem(id: "same", title: "Movie", kind: .movie)
+        func identity(_ item: MediaItem, _ preference: ArtworkPreference = .recommended) -> String {
+            ContinueWatchingArtworkSource(
+                item: item, style: .landscape,
+                policy: .init(settings: .init(preference: preference))
+            ).identity
+        }
+        XCTAssertNotEqual(identity(item), identity(item, .online))
+        XCTAssertNotEqual(identity(item), identity(item, .library))
+        XCTAssertNotEqual(identity(item.taggingSource("one")), identity(item.taggingSource("two")))
+        var changed = item
+        changed.logoURL = URL(string: "https://example.test/new-logo.png")
+        XCTAssertNotEqual(identity(item), identity(changed))
+        changed = item
+        changed.title = "Corrected movie"
+        XCTAssertNotEqual(identity(item), identity(changed))
+    }
+
     func testEpisodeResolutionKeepsServerArtworkWhenOnlineSourcesAreUnavailable() async throws {
         let store = MetadataProviderSettingsStore()
         let original = store.load()

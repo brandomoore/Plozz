@@ -32,12 +32,13 @@ public enum ArtworkFirstPaintResolver {
         references: [ArtworkReference],
         prefersPrimaryReference: Bool = false,
         variant: ArtworkImageVariant,
+        maxAspectRatio: CGFloat? = nil,
         asyncOnlineURL: (@Sendable () async -> URL?)?,
         pinIdentity: String,
         policy: ArtworkPresentationPolicy = .init()
     ) async {
         let key = ArtworkResolveKey.make(
-            references: references, variant: variant, maxAspectRatio: nil,
+            references: references, variant: variant, maxAspectRatio: maxAspectRatio,
             pinIdentity: pinIdentity,
             providerPolicyIdentity: policy.identity,
             prefersPrimaryReference: prefersPrimaryReference
@@ -45,6 +46,7 @@ public enum ArtworkFirstPaintResolver {
         if ArtworkSeedMemo.prepared(for: key, variant: variant) != nil { return }
         guard let artwork = await resolve(
             references: references, prefersPrimaryReference: prefersPrimaryReference, variant: variant,
+            maxAspectRatio: maxAspectRatio,
             asyncOnlineURL: asyncOnlineURL,
             prefersOnlineArtwork: policy.prefersOnlineArtwork, background: true
         ), !Task.isCancelled else { return }

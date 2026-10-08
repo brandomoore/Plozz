@@ -7,6 +7,97 @@ import XCTest
 
 @MainActor
 final class AppearanceConsistencyHostedTests: XCTestCase {
+    func testPolicySelectedPrefetchedLogoPaintsBeforeAnyViewHasLoadedIt() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let library = try await servedLogo(color: .blue)
+        let online = try await servedLogo(color: .red)
+        defer {
+            for url in [library, online] {
+                ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: url))
+            }
+        }
+        for preference in [ArtworkPreference.recommended, .library, .online] {
+            let item = MediaItem(id: UUID().uuidString, title: "Prefetched title", kind: .series)
+            let fallback = HeroLogoFallback(for: item) { online }
+            let policy = ArtworkPresentationPolicy(
+                area: .continueWatching, settings: .init(preference: preference)
+            )
+            let key = HeroLogoMemo.key(
+                for: [.remote(library)], fallback: fallback,
+                prefersOnlineArtwork: policy.prefersOnlineArtwork,
+                providerPolicyIdentity: policy.forPlacement(.logo).identity
+            )
+            XCTAssertNil(HeroLogoMemo.value(for: key))
+            await HeroLogoPreloader.prepare(references: [.remote(library)], fallback: fallback, policy: policy)
+            let prepared = try XCTUnwrap(HeroLogoMemo.value(for: key))
+            if preference == .library {
+                XCTAssertGreaterThan(prepared.blue, prepared.red)
+            } else {
+                XCTAssertGreaterThan(prepared.red, prepared.blue)
+            }
+            let renderer = ImageRenderer(content:
+                HeroLogoArtwork(
+                    references: [.remote(library)], asyncFallbackURL: fallback,
+                    maxWidth: 300, maxHeight: 120, constrainsToBounds: true,
+                    presentationPolicy: .whenResolved
+                ) { Color.green }
+                .environment(\.plozzArtworkArea, .continueWatching)
+                .environment(\.plozzArtworkSettings, policy.settings)
+                .frame(width: 300, height: 120)
+                .background(.black)
+            )
+            let pixels = try rgba(XCTUnwrap(renderer.uiImage))
+            let selected = countPixels(pixels) {
+                preference == .library ? $2 > 100 && $0 < 30 && $1 < 30 : $0 > 100 && $1 < 30 && $2 < 30
+            }
+            XCTAssertGreaterThan(selected, 100, "The exact selected logo must render without running a view task.")
+        }
+    }
+
+    func testCancelledLogoPreparationDoesNotSeedAMissOrAnotherPolicy() async throws {
+        let lookup = PendingLogoLookup()
+        defer { lookup.finish(nil) }
+        let item = MediaItem(id: UUID().uuidString, title: "Cancelled prefetch", kind: .series)
+        let fallback = HeroLogoFallback(for: item) { await lookup.resolve() }
+        let policy = ArtworkPresentationPolicy(area: .continueWatching)
+        let task = Task { await HeroLogoPreloader.prepare(references: [], fallback: fallback, policy: policy) }
+        try await waitUntil { lookup.calls == 1 }
+        task.cancel()
+        lookup.finish(nil)
+        await task.value
+        let key = HeroLogoMemo.key(
+            for: [], fallback: fallback, prefersOnlineArtwork: true, providerPolicyIdentity: policy.identity
+        )
+        XCTAssertNil(HeroLogoMemo.value(for: key))
+    }
+
+    func testPrefetchedLogoDoesNotRepeatMetadataLookupOnAppearance() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let logo = try await servedLogo(color: .red)
+        let lookup = PendingLogoLookup()
+        defer {
+            lookup.finish(nil)
+            ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: logo))
+        }
+        let fallback = HeroLogoFallback(
+            for: MediaItem(id: UUID().uuidString, title: "Prewarmed logo", kind: .series)
+        ) { await lookup.resolve() }
+        let task = Task {
+            await HeroLogoPreloader.prepare(
+                references: [], fallback: fallback, policy: .init(area: .continueWatching)
+            )
+        }
+        try await waitUntil { lookup.calls == 1 }
+        lookup.finish(logo)
+        await task.value
+        fixture.host.rootView = AnyView(PendingLogoFixture(model: PendingLogoModel(fallback: fallback), isCard: true))
+        try await waitUntil { (try? self.logoPixelCounts(fixture.window).logo) ?? 0 > 100 }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(lookup.calls, 1, "Appearance must reuse the prepared policy winner, not ask for it again.")
+    }
+
     func testBrowsingLogoWaitsForResolutionBeforeShowingText() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -528,6 +619,19 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
     }
 
     private func seedLogo(monochrome: Bool, color: UIColor? = nil) throws -> URL {
+        try seedImage(logoImage(monochrome: monochrome, color: color))
+    }
+
+    private func servedLogo(color: UIColor) async throws -> URL {
+        let bytes = try XCTUnwrap(logoImage(monochrome: false, color: color).pngData())
+        let server = try IPTVTestHTTPServer { _ in
+            .init(data: bytes, headers: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"])
+        }
+        addTeardownBlock { await server.stop() }
+        return try await server.start().appendingPathComponent("\(UUID()).png")
+    }
+
+    private func logoImage(monochrome: Bool, color: UIColor? = nil) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
@@ -541,7 +645,7 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
                 context.fill(CGRect(x: 120, y: 15, width: 40, height: 30))
             }
         }
-        return try seedImage(image)
+        return image
     }
 
     private func seedArtwork(color: UIColor) throws -> URL {

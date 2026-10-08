@@ -2415,6 +2415,7 @@ struct PlozziOSHomeMediaRail: View {
     @State private var lastArtworkPrefetchIndex: Int?
     @State private var artworkPrefetchDirection = 1
     @State private var artworkPrefetchTasks = PlozziOSArtworkPrefetchTasks()
+    @State private var seriesArtworkPrefetch = ArtworkPrefetchWindow()
 
     var body: some View {
         PlozziOSHomeRailLayout { rail(metrics: $0) }
@@ -2492,14 +2493,15 @@ struct PlozziOSHomeMediaRail: View {
             }
         }
         .task(id: artworkPrefetchIdentity) {
-            guard prefetchesArtwork else { return }
             resetArtworkPrefetch()
+            guard prefetchesArtwork else { return }
             if let first = MediaRowView.uniqued(items).first {
                 prefetchArtwork(around: first)
             }
         }
         .onDisappear {
             artworkPrefetchTasks.cancelAll()
+            seriesArtworkPrefetch.cancelAll()
         }
         .environment(\.plozzCardCaptionView, .home)
         .environment(\.plozzCardCaptionSettings, appModel.settings.cardStyle.captions)
@@ -2522,13 +2524,14 @@ struct PlozziOSHomeMediaRail: View {
             appModel.settings.spoilers.settings.isEnabled ? "spoilers" : "visible",
             appModel.settings.spoilers.settings.mode.rawValue,
             MediaRowView.uniqued(items)
-                .map(\.stablePresentationID)
+                .map { showsSeriesArtwork ? seriesArtworkSource(for: $0).identity : $0.stablePresentationID }
                 .joined(separator: "|"),
         ].joined(separator: "\n")
     }
 
     private func resetArtworkPrefetch() {
         artworkPrefetchTasks.cancelAll()
+        seriesArtworkPrefetch.cancelAll()
         prefetchedIDs.removeAll(keepingCapacity: true)
         prefetchedPreviewIDs.removeAll(keepingCapacity: true)
         lastArtworkPrefetchIndex = nil
@@ -2566,6 +2569,13 @@ struct PlozziOSHomeMediaRail: View {
             count: items.count,
             lookahead: MediaRowPrefetchWindow.fullArtworkLookahead
         )
+        if showsSeriesArtwork {
+            seriesArtworkPrefetch.update(fullIndices.map {
+                let source = seriesArtworkSource(for: items[$0])
+                return .init(id: source.identity) { await source.prepare() }
+            })
+            return
+        }
         for candidateIndex in fullIndices {
             let candidate = items[candidateIndex]
             let candidates = MediaArtworkPrefetchPolicy.candidates(
@@ -2589,13 +2599,6 @@ struct PlozziOSHomeMediaRail: View {
                 for url in candidates.prefix(2) {
                     trackPrefetch(url, variant: variant)
                 }
-            }
-            if showsSeriesArtwork {
-                MediaArtworkPrefetchPolicy.warmSeriesPresentation(
-                    for: candidate,
-                    variant: variant,
-                    prefersTextlessArtwork: appModel.settings.cardStyle.artwork.prefersTextlessArtwork(in: .continueWatching)
-                )
             }
         }
 
@@ -2624,6 +2627,17 @@ struct PlozziOSHomeMediaRail: View {
             else { continue }
             trackPrefetch(preview, variant: .posterPreview)
         }
+    }
+
+    private func seriesArtworkSource(for item: MediaItem) -> ContinueWatchingArtworkSource {
+        ContinueWatchingArtworkSource(
+            item: item, style: style,
+            policy: .init(
+                area: .continueWatching,
+                settings: appModel.settings.cardStyle.artwork,
+                providers: appModel.metadataProviderSettingsModel.settings
+            )
+        )
     }
 
     private func trackPrefetch(

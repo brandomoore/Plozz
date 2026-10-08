@@ -133,6 +133,16 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   Native tvOS and SwiftUI cards both settle cold textless lookups before
   selecting a background;
   the native poster and its focus owner remain mounted while waiting.
+  `ContinueWatchingArtworkSource` is shared by rendering and lookahead on TV and
+  mobile. It prepares the selected backdrop and processed logo, including
+  metadata-provider fallbacks and SMB references, in the existing bounded caches.
+  `ArtworkPrefetchWindow` retains only the current nine-card window, cancels work
+  that leaves it, and reuses overlapping completed requests. Source or policy
+  changes replace those requests; leaving the row cancels them. Background
+  metadata has a separate one-request gate and image decoding uses the background
+  lane. Neither focus callbacks nor touch scrolling await any preparation.
+  Textless lookups coalesce per title; cancelling speculative work cannot cancel
+  a visible consumer or turn an unfinished lookup into a cached miss.
   SMB selections retain local and online candidates in the shared
   catalog, including typed network-file references and their access gate.
   SwiftUI, native Browse cells, detached hosts, and prewarmers use the same

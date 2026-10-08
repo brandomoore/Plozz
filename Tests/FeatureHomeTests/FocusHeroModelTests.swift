@@ -387,7 +387,8 @@ final class FocusHeroModelTests: XCTestCase {
         )
         XCTAssertEqual(
             HomeHeroArtwork.backdropReferences(for: item, avoiding: [.remote(selected)]).first,
-            .remote(selected)
+            other,
+            "Recommended heroes are metadata-first and retain artwork variation."
         )
         let online = ArtworkPresentationPolicy(area: .home, settings: .init(preference: .online))
         XCTAssertEqual(

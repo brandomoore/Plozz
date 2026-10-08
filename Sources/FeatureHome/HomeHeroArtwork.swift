@@ -2,6 +2,7 @@
 import Foundation
 import CoreModels
 import CoreUI
+import HeroUI
 import MetadataKit
 
 /// The Home hero's external-art fallbacks, shared by the carousel and the hero
@@ -67,6 +68,31 @@ enum HomeHeroArtwork {
         default: break
         }
         return HeroLogoFallback(for: item) { await ArtworkRouter.shared.artworkURL(.logo, for: item) }
+    }
+
+    @MainActor
+    static func prepare(
+        item: MediaItem, logoItem: MediaItem, references: [ArtworkReference],
+        policy: ArtworkPresentationPolicy
+    ) async {
+        let backdropLookup = backdropFallback(for: item)
+        let logoLookup = logoFallback(for: logoItem)
+        let fallback = logoLookup.map { lookup in
+            HeroLogoFallback(for: logoItem) {
+                await ArtworkSession.resolveArtwork(background: true, lookup.resolve)
+            }
+        }
+        async let logo: Void = HeroLogoPreloader.prepare(
+            references: logoItem.artworkReferences(for: .logo), fallback: fallback, policy: policy
+        )
+        _ = await ArtworkFirstPaintResolver.resolve(
+            references: references, variant: .heroPreview, maxAspectRatio: HeroBackdropArtworkPolicy.maxAspectRatio,
+            asyncOnlineURL: backdropLookup.map { lookup in
+                { await ArtworkSession.resolveArtwork(background: true, lookup) }
+            },
+            prefersOnlineArtwork: policy.prefersOnlineArtwork, background: true
+        )
+        await logo
     }
 
 }

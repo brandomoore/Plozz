@@ -6,6 +6,7 @@ import CoreNetworking
 import CoreUI
 import FeatureHomeCore
 import HeroUI
+import MetadataKit
 
 /// One row of the Home that follows focus, as the hero needs to know it.
 struct FocusHeroRow: Identifiable {
@@ -368,6 +369,8 @@ struct FocusHeroHomeView<RowContent: View>: View {
             FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent)
                 .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
                 .environment(\.plozzCardCaptionIsShowcase, true)
+            FocusHeroArtworkPrefetch(rows: rows, model: model, metadata: metadata, isFrontmost: isFrontmost)
+                .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea(
@@ -380,6 +383,58 @@ struct FocusHeroHomeView<RowContent: View>: View {
         .task(id: rows.map { $0.items.map(FocusHeroMetadata.Key.init) }) {
             guard let enrich else { return }
             await metadata.prefetch(rows.map { Array($0.items.prefix(16)) }, using: enrich)
+        }
+    }
+}
+
+private struct FocusHeroArtworkPrefetch: View {
+    let rows: [FocusHeroRow]
+    let model: FocusHeroModel
+    let metadata: FocusHeroMetadata
+    let isFrontmost: Bool
+    @Environment(\.plozzArtworkPolicy) private var policy
+    @State private var window = ArtworkPrefetchWindow()
+
+    var body: some View {
+        let requests = requests
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .task(id: requests.map(\.id)) { window.update(requests) }
+            .onDisappear { window.cancelAll() }
+    }
+
+    private var requests: [ArtworkPrefetchWindow.Request] {
+        guard isFrontmost, !rows.isEmpty else { return [] }
+        let rowIndex = model.activeIndex(in: rows)
+        let row = rows[rowIndex]
+        let index = row.items.firstIndex {
+            $0.stablePresentationID == model.subject?.item?.stablePresentationID
+        } ?? 0
+        var targets = [index, index + 1, index - 1, index + 2, index - 2].filter {
+            row.items.indices.contains($0)
+        }.map {
+            (row.items[$0], row)
+        }
+        for adjacent in [rowIndex + 1, rowIndex - 1] where rows.indices.contains(adjacent) {
+            if let item = rows[adjacent].leadItem { targets.append((item, rows[adjacent])) }
+        }
+        return targets.map { item, row in
+            let logoItem = metadata.item(for: item)
+            let references = HomeHeroArtwork.backdropReferences(
+                for: item, avoiding: row.shownArtwork(for: item), policy: policy
+            )
+            let identity = [
+                item.stablePresentationID, policy.identity,
+                MetadataQuery(item).cacheKey(for: .hero),
+                MetadataQuery(logoItem).cacheKey(for: .logo),
+                references.map(\.privacySafeIdentity).joined(separator: "\n"),
+                logoItem.artworkReferences(for: .logo).map(\.privacySafeIdentity).joined(separator: "\n"),
+            ].joined(separator: "|")
+            return .init(id: identity) {
+                await HomeHeroArtwork.prepare(item: item, logoItem: logoItem, references: references, policy: policy)
+            }
         }
     }
 }

@@ -392,7 +392,7 @@ public struct HomeHeroBackdrop: View {
 /// assets through backdrop fields; treating those as full-bleed art both looks wrong
 /// and can suppress warming of a valid fallback.
 public enum HeroBackdropArtworkPolicy {
-    static let maxAspectRatio: CGFloat = 3.0
+    public static let maxAspectRatio: CGFloat = 3.0
 
     static func isUsable(_ image: UIImage) -> Bool {
         let size = image.size

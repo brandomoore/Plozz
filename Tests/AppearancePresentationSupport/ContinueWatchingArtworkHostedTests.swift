@@ -27,6 +27,79 @@ final class ContinueWatchingArtworkHostedTests: XCTestCase {
         try await super.tearDown()
     }
 
+    func testPreparationSeedsTheExactCardWinnerForEachSourcePreference() async throws {
+        for preference in [ArtworkPreference.recommended, .library, .online] {
+            let fixture = try await makeArtwork()
+            let store = makeStore { _ in fixture.clean }
+            let policy = ArtworkPresentationPolicy(
+                area: .continueWatching, settings: .init(preference: preference),
+                providers: MetadataProviderSettingsStore().load()
+            )
+            let source = ContinueWatchingArtworkSource(item: fixture.item, style: .landscape, policy: policy)
+            await source.prepare(store: store)
+            let references = source.references(textlessBackdrop: store.backdrop(for: fixture.item))
+            let key = ArtworkResolveKey.make(
+                references: references, variant: .landscapeCard, maxAspectRatio: nil,
+                pinIdentity: source.pinIdentity, providerPolicyIdentity: policy.identity,
+                prefersPrimaryReference: source.primaryReference(textlessBackdrop: store.backdrop(for: fixture.item)) != nil
+            )
+            let prepared = try XCTUnwrap(ArtworkSeedMemo.prepared(for: key, variant: .landscapeCard))
+            XCTAssertEqual(prepared.reference, preference == .library
+                ? fixture.item.backdropURL.map(ArtworkReference.remote) : .remote(fixture.clean))
+            let renderer = ImageRenderer(content:
+                FallbackAsyncImage(
+                    references: references,
+                    prefersPrimaryReference: source.primaryReference(textlessBackdrop: store.backdrop(for: fixture.item)) != nil,
+                    variant: .landscapeCard, artworkPolicy: policy,
+                    asyncFallbackURL: { nil }, pinIdentity: source.pinIdentity
+                ) { Color.green }
+                .frame(width: 160, height: 90)
+            )
+            XCTAssertNotNil(renderer.uiImage, "Rendering must not need an asynchronous view load.")
+            for cardStyle in [CardStyle.borderless, .framed] {
+                try await withCard(fixture.item, store: store, style: cardStyle, settings: policy.settings) { window in
+                    let expected = preference == .library ? 0 : 2
+                    XCTAssertGreaterThan(try coloredPixels(window)[expected], 500)
+                }
+            }
+        }
+    }
+
+    func testCancellingPrefetchDoesNotCancelAVisibleTextlessConsumer() async throws {
+        let fixture = try await makeArtwork()
+        let gate = TextlessLookupGate()
+        defer { Task { await gate.finish(nil) } }
+        let store = makeStore { _ in await gate.lookup() }
+        let prefetch = Task { await store.prepare(for: fixture.item, variant: .landscapeCard, background: true) }
+        let deadline = ContinuousClock.now + .seconds(3)
+        while await gate.requests == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let visible = Task { await store.prepare(for: fixture.item, variant: .landscapeCard) }
+        try await waitUntil { store.preparationConsumerCount(for: fixture.item) == 2 }
+        prefetch.cancel()
+        await gate.finish(fixture.clean)
+        await prefetch.value
+        await visible.value
+        XCTAssertEqual(store.backdrop(for: fixture.item), fixture.clean)
+        let requests = await gate.requests
+        XCTAssertEqual(requests, 1)
+    }
+
+    func testCancelledTextlessPreparationLeavesTheAnswerUnknownAndRetryable() async throws {
+        let fixture = try await makeArtwork()
+        let gate = TextlessLookupGate()
+        defer { Task { await gate.finish(nil) } }
+        let store = makeStore { _ in await gate.lookup() }
+        let task = Task { await store.prepare(for: fixture.item, variant: .landscapeCard, background: true) }
+        try await waitUntil { store.preparationConsumerCount(for: fixture.item) == 1 }
+        task.cancel()
+        try await waitUntil { store.preparationConsumerCount(for: fixture.item) == 0 }
+        await gate.finish(nil)
+        await task.value
+        XCTAssertFalse(store.hasAnswer(for: fixture.item))
+    }
+
     func testKnownTextlessArtworkBeatsGenericMetadataForEveryRenderer() async throws {
         for kind in [MediaItemKind.episode, .movie] {
             let fixture = try await makeArtwork(kind: kind)
