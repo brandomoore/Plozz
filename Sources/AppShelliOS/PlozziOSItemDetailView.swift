@@ -1906,8 +1906,12 @@ private struct PlozziOSSeriesDownloadPicker: View {
                             seasonRow(row)
                         }
                     } header: {
-                        Text(verbatim: series.title)
-                            .textCase(nil)
+                        if presentation.hasLibraryDownloads {
+                            Text("Seasons")
+                        } else {
+                            Text(verbatim: series.title)
+                                .textCase(nil)
+                        }
                     }
                 }
 
@@ -2297,21 +2301,27 @@ private struct PlozziOSShowDownloadAction: View {
             : batch.contains { $0.status.isActive && $0.batchID != nil } ? .pause
             : batch.contains { $0.status == .paused && $0.batchID != nil } ? .resume : .download
         let completedCount = allRecords.filter { $0.status == .completed }.count
-        Button(action: onDownload) {
-            SeriesDownloadActionLabel(
-                title: action.title(for: .current),
-                subtitle: "All available episodes in this show, for offline viewing.",
-                systemImage: action.systemImage,
-                detail: completedCount > 0 && state == nil
-                    ? "Downloaded: \(completedCount.formatted())" : nil
-            ) {
-                if state != nil || isBusy {
-                    PlozziOSDownloadControl(state: state, isPreparing: isBusy)
+        let seasonCount = SeriesDownloadSeasons(
+            librarySeasons: seasons, looseEpisodes: looseEpisodes, requestAvailability: nil
+        ).rows.count
+        PlozziOSShowDownloadActionLabel(
+            title: Text(verbatim: series.title),
+            seasonCount: seasonCount,
+            completedCount: state == nil ? completedCount : 0
+        ) {
+            PlozziOSDownloadThumbnail(item: series, style: .season)
+        } accessory: {
+            if state == .completed, !isBusy {
+                PlozziOSBulkDownloadActionControl(action: action, state: state)
+            } else {
+                Button(action: onDownload) {
+                    PlozziOSBulkDownloadActionControl(action: action, state: state)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(action.title))
+                .disabled(!action.isEnabled)
             }
         }
-        .buttonStyle(.plain)
-        .disabled(!action.isEnabled)
     }
 }
 
@@ -2737,7 +2747,7 @@ private struct PlozziOSSeasonDownloadAction: View {
             PlozziOSDownloadThumbnail(item: artworkItem, style: .season)
         } accessory: {
             if state == .completed, !isBusy {
-                PlozziOSSeasonDownloadActionControl(action: action, state: state)
+                PlozziOSBulkDownloadActionControl(action: action, state: state)
             } else {
                 Button {
                     if let activeBatchID {
@@ -2748,7 +2758,7 @@ private struct PlozziOSSeasonDownloadAction: View {
                         onDownload(episodes)
                     }
                 } label: {
-                    PlozziOSSeasonDownloadActionControl(action: action, state: state)
+                    PlozziOSBulkDownloadActionControl(action: action, state: state)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(action.title))
@@ -2759,9 +2769,55 @@ private struct PlozziOSSeasonDownloadAction: View {
 }
 
 struct PlozziOSSeasonDownloadActionLabel<Artwork: View, Accessory: View>: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let title: Text
     let episodeCount: Int
+    @ViewBuilder let artwork: Artwork
+    @ViewBuilder let accessory: Accessory
+
+    var body: some View {
+        PlozziOSBulkDownloadActionLabel(title: title) {
+            Text(
+                "Episodes: \(episodeCount.formatted())",
+                comment: "Episode count in the season download header. %@ is the total number of episodes in the season."
+            )
+        } artwork: {
+            artwork
+        } accessory: {
+            accessory
+        }
+    }
+}
+
+struct PlozziOSShowDownloadActionLabel<Artwork: View, Accessory: View>: View {
+    let title: Text
+    let seasonCount: Int
+    let completedCount: Int
+    @ViewBuilder let artwork: Artwork
+    @ViewBuilder let accessory: Accessory
+
+    var body: some View {
+        PlozziOSBulkDownloadActionLabel(title: title) {
+            if seasonCount > 0 {
+                Text(
+                    "Seasons: \(seasonCount.formatted())",
+                    comment: "Season count in the whole-show download header. %@ is the number of distinct seasons available in the library, including specials."
+                )
+            }
+            if completedCount > 0 {
+                Text("Downloaded: \(completedCount.formatted())")
+            }
+        } artwork: {
+            artwork
+        } accessory: {
+            accessory
+        }
+    }
+}
+
+private struct PlozziOSBulkDownloadActionLabel<Details: View, Artwork: View, Accessory: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let title: Text
+    @ViewBuilder let details: Details
     @ViewBuilder let artwork: Artwork
     @ViewBuilder let accessory: Accessory
 
@@ -2769,10 +2825,7 @@ struct PlozziOSSeasonDownloadActionLabel<Artwork: View, Accessory: View>: View {
         let summary = VStack(alignment: .leading, spacing: 3) {
             title
                 .foregroundStyle(.primary)
-            Text(
-                "Episodes: \(episodeCount.formatted())",
-                comment: "Episode count in the season download header. %@ is the total number of episodes in the season."
-            )
+            details
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -2802,7 +2855,7 @@ struct PlozziOSSeasonDownloadActionLabel<Artwork: View, Accessory: View>: View {
     }
 }
 
-struct PlozziOSSeasonDownloadActionControl: View {
+struct PlozziOSBulkDownloadActionControl: View {
     let action: SeriesDownloadAction
     let state: MediaDownloadBadgeState?
 
@@ -2817,7 +2870,7 @@ struct PlozziOSSeasonDownloadActionControl: View {
                     case .download:
                         Text(
                             "Download All",
-                            comment: "Button to download every available episode in the selected season or season version."
+                            comment: "Button to download every available episode in the selected show, season, or season version."
                         )
                     case .pause: Text("Pause All")
                     case .resume: Text("Resume All")

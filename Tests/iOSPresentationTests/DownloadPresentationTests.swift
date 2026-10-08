@@ -13,6 +13,54 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    func testShowDownloadActionUsesSharedLayoutWithoutInventingEpisodeTotals() throws {
+        for (seasonCount, completedCount) in [(3, 8), (0, 0)] {
+            for size in [DynamicTypeSize.large, .accessibility3] {
+                let renderer = ImageRenderer(content:
+                    PlozziOSShowDownloadActionLabel(
+                        title: Text(verbatim: "Avatar: The Last Airbender"),
+                        seasonCount: seasonCount, completedCount: completedCount
+                    ) {
+                        SeasonDownloadRowArtwork(showsMediaEdge: false) { Color.red }
+                    } accessory: {
+                        PlozziOSBulkDownloadActionControl(action: .download, state: nil)
+                    }
+                    .frame(width: 320)
+                    .padding(16)
+                    .background(.black)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.locale, Locale(identifier: "en"))
+                    .environment(\.dynamicTypeSize, size)
+                )
+                renderer.scale = 3
+                let image = try XCTUnwrap(renderer.cgImage)
+                XCTAssertEqual(image.width, 1056)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                request.customWords = ["Download All"]
+                try VNImageRequestHandler(cgImage: image).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                    .joined(separator: " ")
+                XCTAssertTrue(text.contains("Airbender"), text)
+                XCTAssertTrue(text.contains("Download"), text)
+                XCTAssertEqual(text.contains("Seasons:"), seasonCount > 0, text)
+                XCTAssertEqual(text.contains("Downloaded:"), completedCount > 0, text)
+                if completedCount > 0 {
+                    XCTAssertTrue(text.contains("8"), text)
+                    XCTAssertTrue(text.contains("3"), text)
+                }
+                XCTAssertFalse(text.contains("Episodes:"), "Unknown episode totals must not appear as zero.")
+                XCTAssertFalse(text.contains("iPhone"), text)
+                XCTAssertFalse(text.contains("offline"), text)
+                let attachment = XCTAttachment(image: UIImage(cgImage: image))
+                attachment.name = "show-download-summary-\(seasonCount)-\(completedCount)-\(size)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
     func testSeasonDownloadActionDisplaysArtworkWithoutDecorativeDownloadIcon() throws {
         for size in [DynamicTypeSize.large, .accessibility3] {
             for direction in [LayoutDirection.leftToRight, .rightToLeft] {
@@ -22,7 +70,7 @@ final class DownloadPresentationTests: XCTestCase {
                 ) {
                     SeasonDownloadRowArtwork(showsMediaEdge: false) { Color.red }
                 } accessory: {
-                    PlozziOSSeasonDownloadActionControl(action: .download, state: nil)
+                    PlozziOSBulkDownloadActionControl(action: .download, state: nil)
                 }
                 .frame(width: 320)
                 .padding(16)
@@ -151,7 +199,7 @@ final class DownloadPresentationTests: XCTestCase {
         ]
         for (action, state, expected) in cases {
             let renderer = ImageRenderer(content:
-                PlozziOSSeasonDownloadActionControl(action: action, state: state)
+                PlozziOSBulkDownloadActionControl(action: action, state: state)
                     .padding(16)
                     .background(.black)
                     .environment(\.colorScheme, .dark)
@@ -175,7 +223,7 @@ final class DownloadPresentationTests: XCTestCase {
             ) {
                 SeasonDownloadRowArtwork(showsMediaEdge: false) { Color.red }
             } accessory: {
-                PlozziOSSeasonDownloadActionControl(action: .download, state: nil)
+                PlozziOSBulkDownloadActionControl(action: .download, state: nil)
             }
             .frame(width: 320)
             .padding(16)
