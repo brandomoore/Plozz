@@ -37,6 +37,10 @@ public struct ArtworkPresentationPolicy: Equatable, Sendable {
     public func forArea(_ area: ArtworkArea) -> Self {
         Self(area: area, settings: settings, providers: providers)
     }
+
+    public var heroPolicy: Self {
+        forArea(area == .recommended || area == .recommendedHero ? .recommendedHero : .home)
+    }
 }
 
 private struct ArtworkSettingsKey: EnvironmentKey {
@@ -73,12 +77,15 @@ public extension EnvironmentValues {
             area = explicit
         } else {
             switch plozzCardCaptionView {
-            case .home, .recommended: area = .home
+            case .home: area = .homeRows
+            case .recommended: area = .recommended
             case .search: area = .search
             case .watchlist: area = .watchlist
             case .related, .filmography, .extras: area = .details
             case .episodes: area = .episodes
-            case .browse, .collections, .playlists: area = .browse
+            case .browse: area = .browse
+            case .collections: area = .collections
+            case .playlists: area = .playlists
             }
         }
         return ArtworkPresentationPolicy(

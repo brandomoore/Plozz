@@ -1783,6 +1783,7 @@ private struct SeriesEpisodeRailContent: View {
             onSelect: onSelect
         )
         .environment(\.plozzCardCaptionView, .episodes)
+        .environment(\.plozzArtworkArea, .episodes)
         .mediaItemActionContext(
             MediaItemActionContext(
                 orderedSiblings: episodes,

@@ -3375,6 +3375,7 @@ private struct PlozziOSInlineEpisodeRail: View {
                             episodes: episodes,
                             onPlay: onPlay
                         )
+                        .environment(\.plozzArtworkArea, .episodes)
                         .id(episode.id)
                     }
                 }

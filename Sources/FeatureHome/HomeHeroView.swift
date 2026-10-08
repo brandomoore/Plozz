@@ -548,6 +548,7 @@ struct HomeHeroView: View {
                 }
             }
         }
+        .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
         .opacity(heroVisible ? 1 : 0)
         .trackHeroExposure(
             item: current,

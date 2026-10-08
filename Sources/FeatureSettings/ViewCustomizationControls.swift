@@ -60,18 +60,21 @@ struct ViewPreferenceChoiceRow: View {
 }
 
 struct ViewCustomizationLink<Destination: View>: View {
-    let count: Int
+    let isCustomized: Bool
     @ViewBuilder var destination: () -> Destination
 
     var body: some View {
         SettingsDetailLink(destination: destination) {
-            ViewCustomizationLinkLabel(count: count)
+            ViewCustomizationLinkLabel(isCustomized: isCustomized)
         }
+        #if os(tvOS)
+        .buttonStyle(SettingsFocusButtonStyle())
+        #endif
     }
 }
 
 private struct ViewCustomizationLinkLabel: View {
-    let count: Int
+    let isCustomized: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -82,21 +85,31 @@ private struct ViewCustomizationLinkLabel: View {
             layout {
                 Text("Customize by view")
                 if !dynamicTypeSize.isAccessibilitySize { Spacer() }
-                if count > 0 {
-                    Text("\(count) customized")
-                        .foregroundStyle(.secondary)
+                if isCustomized {
+                    Text("Custom")
+                        .font(.caption.weight(.medium))
+                        .settingsRowSecondary()
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(.quaternary, in: Capsule())
                 }
             }
             #if os(tvOS)
             Image(systemName: "chevron.right").accessibilityHidden(true)
             #endif
         }
+        #if os(tvOS)
+        .frame(minHeight: 44)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        #endif
     }
 }
 
 struct ViewCustomizationList<Content: View>: View {
     let title: LocalizedStringResource
     let initialRowID: String
+    var focusedDetail: (String) -> LocalizedStringResource? = { _ in nil }
     @ViewBuilder var content: () -> Content
     @Environment(\.dismiss) private var dismiss
     @Environment(SettingsDetailNavigation.self) private var detailNavigation: SettingsDetailNavigation?
@@ -107,36 +120,51 @@ struct ViewCustomizationList<Content: View>: View {
 
     var body: some View {
         #if os(tvOS)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                Button {
-                    if let detailNavigation {
-                        detailNavigation.pop(animated: !reduceMotion)
-                    } else {
-                        dismiss()
+        ZStack(alignment: .bottomLeading) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    Button {
+                        if let detailNavigation {
+                            detailNavigation.pop(animated: !reduceMotion)
+                        } else {
+                            dismiss()
+                        }
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
                     }
-                } label: {
-                    Label("Back", systemImage: "chevron.left")
+                    .accessibilityIdentifier("view-customization-back")
+                    .disabled(!hasEnteredList)
+                    Text(title).settingsFeatureTitle()
+                    VStack(alignment: .leading, spacing: 8, content: content)
                 }
-                .accessibilityIdentifier("view-customization-back")
-                .disabled(!hasEnteredList)
-                Text(title).settingsFeatureTitle()
-                VStack(alignment: .leading, spacing: 8, content: content)
-            }
-            .environment(\.viewCustomizationFocus, $focusedRow)
-            .focusScope(focusScope)
-            .defaultFocus($focusedRow, initialRowID)
-            .task { focusedRow = initialRowID }
-            .onChange(of: focusedRow) { _, row in
-                if row != nil {
-                    hasEnteredList = true
-                    detailNavigation?.focusArrived()
+                .environment(\.viewCustomizationFocus, $focusedRow)
+                .focusScope(focusScope)
+                .defaultFocus($focusedRow, initialRowID)
+                .task { focusedRow = initialRowID }
+                .onChange(of: focusedRow) { _, row in
+                    if row != nil {
+                        hasEnteredList = true
+                        detailNavigation?.focusArrived()
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 40)
+                .padding(.bottom, 24)
+                .padding(.horizontal, 48)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 40)
-            .padding(.bottom, 48)
-            .padding(.horizontal, 48)
+            .contentMargins(.bottom, 88, for: .scrollContent)
+            .accessibilityIdentifier("view-customization-scroll")
+            if let focusedRow, let detail = focusedDetail(focusedRow) {
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading)
+                    .padding(.horizontal, 64)
+                    .padding(.bottom, 24)
+                    .background(.regularMaterial)
+                    .accessibilityIdentifier("view-customization-help")
+            }
         }
         .navigationTitle(Text(verbatim: ""))
         #else
@@ -151,12 +179,12 @@ struct ViewCustomizationRow: View {
     let id: String
     let title: LocalizedStringResource
     let value: LocalizedStringResource
-    let isCustomized: Bool
+    var detail: LocalizedStringResource? = nil
     let cycle: () -> Void
 
     var body: some View {
         Button(action: cycle) {
-            ViewCustomizationRowLabel(title: title, value: value, isCustomized: isCustomized)
+            ViewCustomizationRowLabel(title: title, value: value)
         }
         #if os(tvOS)
         .buttonStyle(SettingsFocusButtonStyle())
@@ -164,10 +192,8 @@ struct ViewCustomizationRow: View {
         .buttonStyle(.plain)
         #endif
         .accessibilityLabel(Text(title))
-        .accessibilityValue(isCustomized
-            ? Text("\(Text(value)), customized")
-            : Text("\(Text(value)), following main setting"))
-        .accessibilityHint(Text("Select to cycle through choices."))
+        .accessibilityValue(Text(value))
+        .accessibilityHint(Text(detail ?? "Select to change."))
         .accessibilityIdentifier(id)
         .modifier(ViewCustomizationRowFocus(id: id))
     }
@@ -201,7 +227,6 @@ private struct ViewCustomizationRowFocus: ViewModifier {
 private struct ViewCustomizationRowLabel: View {
     let title: LocalizedStringResource
     let value: LocalizedStringResource
-    let isCustomized: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -214,16 +239,10 @@ private struct ViewCustomizationRowLabel: View {
                     .font(.body.weight(.medium))
                     .multilineTextAlignment(.leading)
                 if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 12) }
-                VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing, spacing: 4) {
-                    Text(value)
-                        .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
-                    if isCustomized {
-                        Text("Custom").font(.caption)
-                    } else {
-                        Text("Main setting").font(.caption)
-                    }
-                }
-                .settingsRowSecondary()
+                Text(value)
+                    .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
+                    .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: true)
+                    .settingsRowSecondary()
             }
         }
         .frame(minHeight: 44)
@@ -235,13 +254,4 @@ private struct ViewCustomizationRowLabel: View {
     }
 }
 
-struct ViewCustomizationResetButton: View {
-    let isEnabled: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button("Remove view customizations", action: action)
-            .disabled(!isEnabled)
-    }
-}
 #endif

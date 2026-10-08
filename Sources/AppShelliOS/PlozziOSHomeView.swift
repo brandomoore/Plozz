@@ -502,6 +502,7 @@ struct PlozziOSHomeView: View {
                         && heroRequestError == nil,
                     pullModel: heroPullModel
                 )
+                .environment(\.plozzArtworkArea, .home)
                 // Warm every slide's logo as soon as the carousel exists.
                 //
                 // `HeroLogoArtwork` shows the styled title while the logo
@@ -2326,6 +2327,7 @@ private struct PlozziOSHomeRowView: View {
                     onNavigationInteraction:
                         viewModel.noteHomeNavigationInteraction
                 )
+                .environment(\.plozzArtworkArea, row.kind == .continueWatching ? .continueWatching : .homeRows)
             }
         }
     }

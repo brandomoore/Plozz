@@ -2,6 +2,27 @@ import XCTest
 @testable import CoreModels
 
 final class CardCaptionSettingsTests: XCTestCase {
+    func testCustomStateAndPresetReplacementSurviveProfileStorageAndTransfer() throws {
+        try withDefaults { defaults in
+            let source = CardCaptionSettingsStore(defaults: defaults)
+            var settings = CardCaptionSettings.default
+            settings.toggleCustomization(in: .home)
+            settings.toggleCustomization(in: .home)
+            source.save(settings)
+            XCTAssertNil(source.load().selectedPreset)
+            let entries = ProfileSettingsTransfer.capture(namespace: nil, defaults: defaults)
+            ProfileSettingsTransfer.apply(entries, namespace: "other", defaults: defaults)
+            let other = CardCaptionSettingsStore(defaults: defaults, namespace: "other")
+            XCTAssertEqual(other.load(), settings)
+            settings.applyPreset(.recommended)
+            other.save(settings)
+            XCTAssertEqual(other.load(), .default)
+            XCTAssertFalse(other.load().showsLabels(in: .home, isShowcase: true))
+            XCTAssertTrue(source.load().showsLabels(in: .home, isShowcase: true))
+            XCTAssertNil(source.load().selectedPreset)
+        }
+    }
+
     func testRecommendedShowsBrowsingLabelsButNotShowcaseLabels() {
         XCTAssertEqual(CardStyle.allCases.first, .default)
         let settings = CardCaptionSettings.default

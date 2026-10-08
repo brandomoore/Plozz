@@ -21,12 +21,12 @@ fallback when the user's server has no attached trailer.
   navigation badges. Continue Watching geometry and library grid columns are unchanged.
 - **Card labels** — Appearance > Cards owns profile-scoped App default,
   Show labels everywhere, and Hide labels everywhere presets, with
-  Labels / No labels exceptions cycled directly in a flat list of experiences.
-  Keep selecting a row to cycle back to following the main preference.
+  On / Off values edited directly in a flat list of experiences. Editing enters
+  Custom mode; selecting any preset replaces all per-view choices.
   App default shows labels during ordinary browsing and on detail-page episodes;
   it hides them in Showcase and on Continue Watching cards that carry a title on
   their artwork. Manual presets apply to all media captions, including those cards.
-  Existing explicit global and per-view choices survive migration and preset changes.
+  Existing explicit global and per-view choices survive migration.
   Showcase is presentation context within Home or library Recommended, not a new
   override scope; destination scopes clear that context and hosting boundaries forward it.
   Home, Recommended, Browse, Collections, Playlists, Search, Watchlist, related titles,

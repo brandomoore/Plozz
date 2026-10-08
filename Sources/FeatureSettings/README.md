@@ -54,21 +54,34 @@ and the single place caption customization lives.
 
 ## Invariants
 
-- **Artwork and label customization.** Both use a flat list of click-to-cycle rows,
-  without menus or navigation chevrons. Repeated Select/tap cycles from following
-  the main preference to the opposite value, then the matching explicit value,
-  then back to following the main preference. The matching explicit value remains
-  a customization when the main preference changes. Rows show concrete source or
-  label behavior, including the default Home caption exceptions and alternate
-  Details backgrounds, rather than "Recommended" or "App default". The secondary
-  "Main setting"/"Custom" status distinguishes inheritance from an explicit choice.
-  "Customize by view" only shows a count when customizations exist. The label list
-  groups library tabs under "Libraries" on both platforms.
+- **Artwork and label presets.** Choosing any preset, including reselecting the
+  previous one, replaces the whole configuration through `applyPreset`. Editing
+  a view switches to Custom: no preset is selected, and a single badge appears on
+  "Customize by view". `selectedPreset` derives this status from existing stored
+  overrides; the backing preference retains unedited views' behavior, including
+  mixed recommended rules. Settings remain in the existing profile store and sync
+  payload; artwork's `scopeVersion` migrates earlier shared choices once.
+  Matching a preset's value manually stays Custom until a preset is chosen.
+  Rows have only a name and short value: Library / Providers, or On / Off. Select
+  toggles the value directly, without an inheritance step, menus, chevrons, or
+  per-row status. Mixed labels in Home and library Recommended retain their
+  Showcase/title-artwork rules until edited. Explanations appear outside the rows
+  when focused on TV, and as accessibility hints on both platforms. Accessibility
+  text sizes can stack the name and value instead of shrinking or clipping them.
+  Both lists group library tabs under "Libraries". Artwork separates Home's
+  Showcase/hero from other Home rows, and library Recommended's hero (TV only)
+  from its rows. Browse, Collections, and Playlists have independent choices;
+  titles inside collections/playlists use Browse. Continue Watching rows share
+  one choice across Home and libraries, independent of the series-artwork option.
+  Watchlist means the standalone page, not Home's Watchlist row. Episode browser
+  means detail-page episode cards; Video player artwork covers player menus,
+  Up Next, and system Now Playing. Shared view components retain these scopes
+  rather than treating a common layout as a shared preference.
   Labels retain equal-height visual presets: App default uses a single split illustration with
   caption bars on only one half. Show labels everywhere and Hide labels everywhere
   govern all media captions; App default owns Showcase and title-artwork exceptions.
-  Explicit per-view choices, including Episodes, override any preset and survive
-  preset changes. Library navigation names and on-artwork information are not captions.
+  Explicit per-view choices, including Episodes, last until a preset replaces them.
+  Library navigation names and on-artwork information are not captions.
 - **Scoped TV detail navigation.** `SettingsDetailPages` and `SettingsDetailLink`
   in `SettingsDetailNavigation.swift` are reusable across settings, independent of
   artwork and labels. A `SettingsSplitRow` opts in with `SettingsDetailSubpage`;
@@ -83,6 +96,9 @@ and the single place caption customization lives.
   for sidebar navigation, RTL mirrors the motion, and Reduce Motion disables it.
   Child content chooses its initial native focus target and calls
   `SettingsDetailNavigation.focusArrived()` when that control receives focus.
+  Customization lists scroll through the full pane. Contextual help overlays its
+  bottom edge; scroll-content margins keep focused rows clear of it without an
+  empty footer shortening the viewport. Pane-level transition clipping remains.
 - **Mobile Settings is a presentation action.** Its tab or More entry opens
   the drawer over the current page without selecting a replacement destination.
   Keep the active content stack and overflow navigation intact on dismissal;

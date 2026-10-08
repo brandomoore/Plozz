@@ -8,6 +8,52 @@ import UIKit
 
 @MainActor
 final class ArtworkPresentationPolicyTests: XCTestCase {
+    func testSharedRowLayoutsResolveIndependentPageScopes() {
+        for (view, area) in [
+            (CardCaptionView.home, ArtworkArea.homeRows),
+            (.recommended, .recommended), (.browse, .browse),
+            (.collections, .collections), (.playlists, .playlists), (.watchlist, .watchlist),
+            (.episodes, .episodes), (.search, .search)
+        ] {
+            var environment = EnvironmentValues()
+            environment.plozzCardCaptionView = view
+            environment.plozzArtworkSettings = .init(overrides: [area: .online])
+            XCTAssertEqual(environment.plozzArtworkPolicy.area, area)
+            XCTAssertTrue(environment.plozzArtworkPolicy.prefersOnlineArtwork)
+        }
+    }
+
+    func testHomeAndLibraryHeroesDoNotUseTheirRowsOrEachOthersChoice() {
+        let settings = ArtworkSettings(overrides: [.home: .online, .recommended: .online])
+        let home = ArtworkPresentationPolicy(area: .homeRows, settings: settings)
+        let library = home.forArea(.recommended)
+        XCTAssertFalse(home.prefersOnlineArtwork)
+        XCTAssertEqual(home.heroPolicy.area, .home)
+        XCTAssertTrue(home.heroPolicy.prefersOnlineArtwork)
+        XCTAssertTrue(library.prefersOnlineArtwork)
+        XCTAssertEqual(library.heroPolicy.area, .recommendedHero)
+        XCTAssertFalse(library.heroPolicy.prefersOnlineArtwork)
+        XCTAssertEqual(library.heroPolicy.heroPolicy, library.heroPolicy)
+    }
+
+    func testContinueWatchingRowScopeDoesNotDependOnItsParentPage() {
+        for view in [CardCaptionView.home, .recommended] {
+            var environment = EnvironmentValues()
+            environment.plozzCardCaptionView = view
+            environment.plozzArtworkSettings = .init(overrides: [.continueWatching: .library])
+            environment.plozzArtworkArea = .continueWatching
+            let policy = environment.plozzArtworkPolicy
+            XCTAssertEqual(policy.area, .continueWatching)
+            XCTAssertFalse(policy.prefersOnlineArtwork)
+            XCTAssertFalse(policy.prefersTextlessArtwork)
+            let episode = EpisodeArtworkSource(
+                item: .init(id: "episode", title: "Episode", kind: .episode),
+                spoilerSettings: .default, policy: policy
+            )
+            XCTAssertEqual(episode.policy.area, .continueWatching)
+        }
+    }
+
     #if canImport(UIKit)
     func testCancellingPendingProviderLookupReturnsWithoutWaitingForItsAnswer() async throws {
         let lookup = PolicyOnlineGate()

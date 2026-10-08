@@ -344,6 +344,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
 
     @State private var model = FocusHeroModel()
     @State private var metadata = FocusHeroMetadata()
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     // Reads nothing from `model`: this body builds the rows, and must not run
     // again when the pinned row or the hero title changes.
@@ -354,6 +355,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 navigationStyle: navigationStyle,
                 isFrontmost: isFrontmost
             )
+            .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
             FocusHeroColumn(
                 model: model,
                 metadata: metadata,
@@ -362,6 +364,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 spoilerSettings: spoilerSettings,
                 navigationStyle: navigationStyle
             )
+            .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
             FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent)
                 .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
                 .environment(\.plozzCardCaptionIsShowcase, true)
@@ -1015,7 +1018,7 @@ private struct FocusHeroBackdropLayer: View {
         switch subject {
         case .item(let item):
             HomeHeroArtwork.backdropReferences(
-                for: item, avoiding: model.shownArtwork, policy: artworkPolicy.forArea(.home)
+                for: item, avoiding: model.shownArtwork, policy: artworkPolicy
             )
         case .library(let library):
             [library.library.imageURL].compactMap { $0 }.map(ArtworkReference.remote)

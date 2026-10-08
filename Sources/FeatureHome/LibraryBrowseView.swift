@@ -320,6 +320,7 @@ public struct LibraryBrowseView: View {
             showsResumeChip: section.id == "continueWatching",
             onSelect: onSelect
         )
+        .environment(\.plozzArtworkArea, section.id == "continueWatching" ? .continueWatching : .recommended)
     }
 
     #if os(tvOS)
@@ -367,6 +368,7 @@ public struct LibraryBrowseView: View {
                     showsResumeChip: section.id == "continueWatching",
                     onSelect: onSelect
                 )
+                .environment(\.plozzArtworkArea, section.id == "continueWatching" ? .continueWatching : .recommended)
             }
         }
         .ignoresSafeArea(.container, edges: .trailing)

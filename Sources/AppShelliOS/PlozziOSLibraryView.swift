@@ -330,6 +330,7 @@ struct PlozziOSLibraryGridView: View {
                             && settings.homeVisibility.continueWatchingShowsSeriesArtwork,
                         onSelect: { selectedRecommendedItem = $0 }
                     )
+                    .environment(\.plozzArtworkArea, section.id == "continueWatching" ? .continueWatching : .recommended)
                 }
             }
         case .failed(let error):

@@ -11,15 +11,15 @@ public enum CardCaptionView: String, CaseIterable, Codable, Sendable {
 
     public var displayName: LocalizedStringResource {
         switch self {
-        case .home: "Home"
+        case .home: "Home rows"
         case .recommended: "Recommended"
         case .browse: "Browse"
         case .collections: "Collections"
         case .playlists: "Playlists"
-        case .search: "Search"
-        case .watchlist: "Watchlist"
+        case .search: "Search results"
+        case .watchlist: "Watchlist page"
         case .related: "Related titles"
-        case .episodes: "Episodes"
+        case .episodes: "Episode browser"
         case .extras: "Extras"
         case .filmography: "Filmography"
         }
@@ -58,6 +58,18 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
     public private(set) var overrides: [CardCaptionView: Bool]
 
     public static let `default` = CardCaptionSettings()
+
+    public var selectedPreset: CardCaptionPreference? {
+        overrides.isEmpty ? preference : nil
+    }
+
+    public mutating func applyPreset(_ preset: CardCaptionPreference) {
+        self = Self(preference: preset)
+    }
+
+    public mutating func toggleCustomization(in view: CardCaptionView) {
+        setOverride(showsLabels(in: view) ? .hide : .show, for: view)
+    }
 
     public var showsLabels: Bool {
         get { preference != .hide }

@@ -3,7 +3,7 @@ import CoreModels
 import CoreText
 import CoreUI
 import FeatureLiveTVCore
-import FeatureSettings
+@testable import FeatureSettings
 import SwiftUI
 import UIKit
 import Vision
@@ -13,6 +13,43 @@ import XCTest
 
 @MainActor
 final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
+    func testArtworkScopeNamesAndValuesFitPhoneTabletAndAccessibleLayouts() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.settings.cardStyle.artwork
+        defer { app.settings.cardStyle.artwork = original }
+        app.settings.cardStyle.artwork = .default
+        try await withWindow { window, host in
+            for (width, typeSize) in [
+                (CGFloat(320), DynamicTypeSize.large), (390, .large),
+                (768, .large), (1024, .large), (320, .accessibility3)
+            ] {
+                window.frame.size = CGSize(width: width, height: typeSize.isAccessibilitySize ? 2400 : 1500)
+                host.rootView = AnyView(
+                    NavigationStack {
+                        ArtworkCustomizationView(cards: app.settings.cardStyle)
+                    }
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
+                    .environment(\.dynamicTypeSize, typeSize)
+                )
+                try await settle(window)
+                let image = snapshot(window, name: "artwork-scopes-\(Int(width))-\(typeSize)")
+                let observations = try text(image, maximumCandidates: 1)
+                let copy = observations.map(\.candidate.string).joined(separator: " ")
+                for word in ["Showcase", "hero", "Other", "Home", "rows", "Library"] {
+                    XCTAssertTrue(copy.contains(word), copy)
+                    let rect = try textFrame(word, observations: observations, size: image.size)
+                    XCTAssertGreaterThan(rect.minX, 0)
+                    XCTAssertLessThan(rect.maxX, image.size.width)
+                }
+                XCTAssertTrue(copy.uppercased().contains("LIBRARIES"), copy)
+                XCTAssertFalse(copy.contains("Recommended hero"), copy)
+                XCTAssertFalse(copy.contains("…"), copy)
+            }
+        }
+    }
+
     func testMobilePosterTitlesFitMoreTextAndScaleWithDynamicType() async throws {
         let artwork = try await posterArtwork()
         let title = "The Long Journey Home"
@@ -420,7 +457,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     if page {
                         XCTAssertTrue(copy.uppercased().contains("BROWSE"), copy)
                         if typeSize.isAccessibilitySize {
-                            let label = try textFrame("Labels", observations: observations, size: image.size)
+                            let label = try textFrame("Mixed", observations: observations, size: image.size)
                             XCTAssertGreaterThan(label.minX, 0)
                             XCTAssertLessThan(label.maxX, image.size.width)
                         }
@@ -430,8 +467,10 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                         XCTAssertTrue(copy.contains("Customize") && copy.contains("by view"), copy)
                     }
                     if page {
-                        XCTAssertTrue(copy.contains("Labels"), copy)
-                        XCTAssertTrue(copy.contains("Main setting"), copy)
+                        XCTAssertTrue(copy.contains("Mixed"), copy)
+                        XCTAssertTrue(copy.contains("On"), copy)
+                        XCTAssertFalse(copy.contains("Main setting"), copy)
+                        XCTAssertFalse(copy.contains("Custom"), copy)
                         XCTAssertFalse(copy.contains("App default"), copy)
                         XCTAssertFalse(copy.contains("Use default"), copy)
                         XCTAssertFalse(copy.contains("No labels"), copy)

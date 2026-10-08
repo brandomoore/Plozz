@@ -27,7 +27,7 @@ extension HomeHeroView {
     /// as remote artwork. Library-first keeps the selected image ahead of any
     /// previously resolved fallback; Recommended retains its existing ordering.
     func primaryBackdropReferences(for item: MediaItem) -> [ArtworkReference] {
-        let prefersLibrary = !artworkPolicy.forArea(.home).prefersOnlineArtwork
+        let prefersLibrary = !artworkPolicy.heroPolicy.prefersOnlineArtwork
         let explicit = item.artworkReferences(
             for: .homeHero, preferringLibrarySelection: prefersLibrary
         )

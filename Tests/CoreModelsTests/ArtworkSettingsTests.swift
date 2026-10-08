@@ -2,6 +2,66 @@ import XCTest
 @testable import CoreModels
 
 final class ArtworkSettingsTests: XCTestCase {
+    func testExistingSharedOverridesMigrateOnceIntoIndependentScopes() throws {
+        let legacy = Data(#"{"preference":"recommended","overrides":{"home":"online","browse":"library"}}"#.utf8)
+        var settings = try JSONDecoder().decode(ArtworkSettings.self, from: legacy)
+        for area in [ArtworkArea.home, .homeRows, .recommended, .recommendedHero] {
+            XCTAssertEqual(settings.preference(in: area), .online)
+        }
+        for area in [ArtworkArea.browse, .collections, .playlists] {
+            XCTAssertEqual(settings.preference(in: area), .library)
+        }
+        settings.setOverride(.library, for: .home)
+        settings.setOverride(.online, for: .browse)
+        XCTAssertEqual(settings.preference(in: .homeRows), .online)
+        XCTAssertEqual(settings.preference(in: .recommendedHero), .online)
+        XCTAssertEqual(settings.preference(in: .collections), .library)
+        XCTAssertEqual(settings.preference(in: .playlists), .library)
+        settings.setOverride(.automatic, for: .homeRows)
+        let restored = try JSONDecoder().decode(ArtworkSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(restored, settings)
+        XCTAssertEqual(restored.preference(in: .homeRows), .recommended,
+                       "Decoding a new configuration must not repeat the shared-scope migration.")
+    }
+
+    func testScopeNamesDistinguishPagesRowsAndPlayerArtwork() {
+        for (area, name) in [
+            (ArtworkArea.home, "Showcase / hero"),
+            (.homeRows, "Other Home rows"),
+            (.recommendedHero, "Recommended hero"),
+            (.recommended, "Recommended rows"),
+            (.continueWatching, "Continue Watching rows"),
+            (.watchlist, "Watchlist page"),
+            (.details, "Title detail pages"),
+            (.episodes, "Episode browser"),
+            (.playback, "Video player artwork")
+        ] {
+            XCTAssertEqual(String(localized: area.displayName), name)
+            XCTAssertNotNil(area.detail)
+        }
+    }
+
+    func testCustomStateAndPresetReplacementSurviveProfileStorageAndTransfer() throws {
+        let name = "ArtworkPresetTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let source = ArtworkSettingsStore(defaults: defaults)
+        var settings = ArtworkSettings.default
+        settings.toggleCustomization(in: .browse)
+        settings.toggleCustomization(in: .browse)
+        source.save(settings)
+        XCTAssertNil(source.load().selectedPreset)
+        let entries = ProfileSettingsTransfer.capture(namespace: nil, defaults: defaults)
+        ProfileSettingsTransfer.apply(entries, namespace: "other", defaults: defaults)
+        let other = ArtworkSettingsStore(defaults: defaults, namespace: "other")
+        XCTAssertEqual(other.load(), settings)
+        settings.applyPreset(.recommended)
+        other.save(settings)
+        XCTAssertEqual(other.load(), .default)
+        XCTAssertEqual(other.load().selectedPreset, .recommended)
+        XCTAssertNil(source.load().selectedPreset)
+    }
+
     func testRecommendedAndLibraryFirstKeepSourceSeparateFromPresentation() {
         let recommended = ArtworkSettings.default
         XCTAssertTrue(recommended.prefersTextlessArtwork(in: .continueWatching))

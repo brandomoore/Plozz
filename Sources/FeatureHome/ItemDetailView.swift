@@ -742,6 +742,7 @@ public struct ItemDetailView: View {
                             onSelect: onSelectChild
                         )
                         .environment(\.plozzCardCaptionView, .episodes)
+                        .environment(\.plozzArtworkArea, .episodes)
                     }
                     DetailExtrasView(
                         item: detail.item,

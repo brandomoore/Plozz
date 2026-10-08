@@ -9,6 +9,40 @@ import XCTest
 
 @MainActor
 final class ArtworkSettingsHostedTests: XCTestCase {
+    func testCustomizationViewportUsesTheWholePaneWithOrWithoutHelp() async throws {
+        for hasHelp in [false, true] {
+            try await withScreen(content: ViewCustomizationList(
+                title: "Artwork by view", initialRowID: "viewport-first",
+                focusedDetail: { _ in hasHelp ? "A focused setting explanation." : nil }
+            ) {
+                ForEach(0..<18) { index in
+                    ViewCustomizationRow(
+                        id: index == 0 ? "viewport-first" : "viewport-\(index)",
+                        title: "Music", value: "Library", cycle: {}
+                    )
+                }
+            }
+            .frame(width: 1100, height: 900)
+            .ignoresSafeArea()) { window in
+                var views = [try XCTUnwrap(window.rootViewController?.view)]
+                var scrollViews: [UIScrollView] = []
+                while let view = views.popLast() {
+                    if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height {
+                        scrollViews.append(scroll)
+                    }
+                    views.append(contentsOf: view.subviews)
+                }
+                let scroll = try XCTUnwrap(scrollViews.max { $0.bounds.width < $1.bounds.width })
+                XCTAssertEqual(scroll.bounds.height, 900, accuracy: 2,
+                               "The scroll view must fill the pane rather than stop above an empty footer.")
+                XCTAssertGreaterThanOrEqual(scroll.adjustedContentInset.bottom, 88,
+                                            "Native focus scrolling must leave room for contextual help.")
+                _ = try await self.capture(window, name: "customization-full-viewport-help-\(hasHelp)",
+                                           includeMaster: true)
+            }
+        }
+    }
+
     func testLabelPreviewsOfferRecommendedAndShareCustomizationControls() async throws {
         let suite = "LabelPreviewHosted.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -45,12 +79,13 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             XCTAssertEqual(cards.captions.preference, .recommended)
             cards.captions.setOverride(.hide, for: .browse)
             let customized = try await self.capture(window, name: "labels-customized-preview")
-            XCTAssertTrue(customized.contains("1 customized"), customized)
-            XCTAssertTrue(customized.contains("Remove view customizations"), customized)
+            XCTAssertTrue(customized.split(whereSeparator: \.isWhitespace).contains("Custom"), customized)
+            XCTAssertFalse(customized.contains("Remove view customizations"), customized)
+            XCTAssertNil(cards.captions.selectedPreset)
         }
     }
 
-    func testLabelViewChoicesUseResolvedDefaultsAndPreserveOverrides() async throws {
+    func testLabelViewChoicesUseShortValuesAndPresetsReplaceCustomizations() async throws {
         let suite = "LabelChoicesHosted.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -61,22 +96,23 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         )) { window in
             let initial = try await self.capture(window, name: "labels-browse-inherited", includeMaster: true)
             XCTAssertTrue(initial.contains("Labels"), initial)
-            XCTAssertTrue(initial.contains("Main setting"), initial)
+            XCTAssertTrue(initial.contains("Mixed"), initial)
+            XCTAssertFalse(initial.contains("Main setting"), initial)
             XCTAssertFalse(initial.contains("App default"), initial)
             XCTAssertFalse(initial.contains("Use default"), initial)
             XCTAssertTrue(initial.uppercased().contains("LIBRARIES"), initial)
             XCTAssertTrue(initial.uppercased().contains("OTHER VIEWS"), initial)
             XCTAssertFalse(initial.contains("No labels"), initial)
-            cards.captions.setOverride(.show, for: .browse)
-            cards.captions.preference = .hide
+            cards.captions.toggleCustomization(in: .browse)
             let changed = try await self.capture(window, name: "labels-browse-explicit")
-            XCTAssertTrue(changed.contains("Custom"), changed)
+            XCTAssertFalse(changed.contains("Custom"), changed)
             XCTAssertFalse(changed.contains("Use default"), changed)
-            XCTAssertEqual(cards.captions.override(for: .browse), .show)
-            XCTAssertTrue(cards.captions.showsLabels(in: .browse))
-            XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults).load(), cards.captions)
-            cards.captions.resetOverrides()
+            XCTAssertEqual(cards.captions.override(for: .browse), .hide)
             XCTAssertFalse(cards.captions.showsLabels(in: .browse))
+            XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults).load(), cards.captions)
+            cards.captions.applyPreset(.show)
+            XCTAssertTrue(cards.captions.showsLabels(in: .browse))
+            XCTAssertTrue(cards.captions.overrides.isEmpty)
         }
     }
 
@@ -133,55 +169,58 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 if canManage {
                     models.cardStyleModel.artwork.setOverride(.library, for: .browse)
                     let customized = try await self.capture(window, name: "artwork-appearance-customized")
-                    XCTAssertTrue(customized.contains("1 customized"), customized)
-                    XCTAssertTrue(customized.contains("Remove view customizations"), customized)
+                    XCTAssertTrue(customized.split(whereSeparator: \.isWhitespace).contains("Custom"), customized)
+                    XCTAssertFalse(customized.contains("Remove view customizations"), customized)
                     models.cardStyleModel.artwork.resetOverrides()
                 }
             }
         }
     }
 
-    func testBrowseShowsInheritedSourceAndKeepsAnExplicitChoiceWhenPresetChanges() async throws {
+    func testBrowseShowsOnlyItsSourceAndPresetChangesReplaceExplicitChoices() async throws {
         let suite = "ArtworkSettingsHosted.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let cards = makeCards(defaults: defaults)
         try await withScreen(cards: cards, area: .browse) { window in
             let inherited = try await self.capture(window, name: "artwork-browse-use-preset")
-            XCTAssertTrue(inherited.contains("Library artwork"), inherited)
-            XCTAssertTrue(inherited.contains("Main setting"), inherited)
+            XCTAssertTrue(inherited.contains("Library"), inherited)
+            XCTAssertFalse(inherited.contains("Main setting"), inherited)
             XCTAssertFalse(inherited.contains("Recommended"), inherited)
             XCTAssertFalse(inherited.contains("Use default"), inherited)
             XCTAssertFalse(inherited.contains("without text"), inherited)
             XCTAssertFalse(inherited.contains("Continue Watching"), inherited)
-            XCTAssertLessThan(inherited.split(whereSeparator: \.isWhitespace).count, 30, inherited)
+            XCTAssertLessThan(inherited.split(whereSeparator: \.isWhitespace).count, 8, inherited)
 
             cards.artwork.setOverride(.online, for: .browse)
             let overridden = try await self.capture(window, name: "artwork-browse-provider-first")
-            XCTAssertTrue(overridden.contains("Metadata providers"), overridden)
-            XCTAssertTrue(overridden.contains("Custom"), overridden)
+            XCTAssertTrue(overridden.contains("Providers"), overridden)
+            XCTAssertFalse(overridden.contains("Custom"), overridden)
             XCTAssertEqual(cards.artwork.override(for: .browse), .online)
-            cards.artwork.preference = .online
+            cards.artwork.applyPreset(.library)
             let changed = try await self.capture(window, name: "artwork-browse-changed-preset")
-            XCTAssertTrue(changed.contains("Metadata providers"), changed)
-            XCTAssertTrue(changed.contains("Custom"), changed)
-            XCTAssertEqual(cards.artwork.override(for: .browse), .online)
+            XCTAssertTrue(changed.contains("Library"), changed)
+            XCTAssertFalse(changed.contains("Custom"), changed)
+            XCTAssertEqual(cards.artwork.selectedPreset, .library)
+            XCTAssertTrue(cards.artwork.overrides.isEmpty)
             XCTAssertEqual(ArtworkSettingsStore(defaults: defaults).load(), cards.artwork)
         }
     }
 
-    func testContinueWatchingShowsItsResolvedSourceAndInheritedStatus() async throws {
+    func testContinueWatchingShowsOnlyItsResolvedSource() async throws {
         let suite = "ArtworkContinueWatchingHosted.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let cards = makeCards(defaults: defaults)
         try await withScreen(cards: cards, area: .continueWatching) { window in
             let text = try await self.capture(window, name: "artwork-continue-watching")
-            XCTAssertTrue(text.contains("Metadata providers"), text)
-            XCTAssertTrue(text.contains("Main setting"), text)
+            XCTAssertTrue(text.contains("Providers"), text)
+            XCTAssertFalse(text.contains("Main setting"), text)
             XCTAssertFalse(text.contains("Recommended"), text)
             XCTAssertFalse(text.contains("Custom"), text)
             XCTAssertTrue(cards.artwork.prefersTextlessArtwork(in: .continueWatching))
+            let row = try XCTUnwrap(self.focusItems(in: window).first { $0.frame.width > 700 })
+            XCTAssertLessThan(row.frame.height, 80, "The name and value must fit one line at normal TV text size.")
         }
     }
 

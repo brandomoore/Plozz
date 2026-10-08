@@ -1298,6 +1298,7 @@ public struct HomeView: View {
                 loadingPlaceholderCount: row.loadingPlaceholderCount,
                 reservesLoadingFocus: reservesLoadingFocus, playsOnSelect: true, onSelect: onPlayItem
             )
+            .environment(\.plozzArtworkArea, .continueWatching)
         case .watchlist:
             MediaRowView(
                 title: Text(row.title),
@@ -1572,6 +1573,7 @@ public struct HomeView: View {
                         playsOnSelect: true,
                         onSelect: onPlayItem
                     )
+                    .environment(\.plozzArtworkArea, .continueWatching)
                 case .watchlist:
                     MediaRowView(
                         title: Text(row.title),

@@ -14,13 +14,10 @@ public struct ArtworkSettingsControls: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             ArtworkPresetPicker(settings: $cards.artwork)
-            ViewCustomizationLink(count: cards.artwork.overrides.count) {
+            ViewCustomizationLink(isCustomized: cards.artwork.selectedPreset == nil) {
                 ArtworkCustomizationView(cards: cards)
             }
             .accessibilityIdentifier("artwork-customization")
-            if !cards.artwork.overrides.isEmpty {
-                ArtworkResetButton(settings: $cards.artwork)
-            }
         }
     }
 }
@@ -35,9 +32,9 @@ private struct ArtworkPresetPicker: View {
                     ViewPreferenceChoiceRow(
                         title: preference.displayName,
                         detail: preference.detail,
-                        isSelected: settings.preference == preference
+                        isSelected: settings.selectedPreset == preference
                     ) {
-                        settings.preference = preference
+                        settings.applyPreset(preference)
                     }
                     .accessibilityIdentifier("artwork-preset-\(preference.rawValue)")
                 }
@@ -53,19 +50,39 @@ struct ArtworkCustomizationView: View {
         #if os(tvOS)
         ArtworkArea.allCases.filter { $0 != .downloads }
         #else
-        ArtworkArea.allCases.filter { $0 != .topShelf && $0 != .music }
+        ArtworkArea.allCases.filter { $0 != .topShelf && $0 != .music && $0 != .recommendedHero }
         #endif
     }
 
     var body: some View {
-        ViewCustomizationList(title: "Artwork by view", initialRowID: "artwork-view-home") {
-            ForEach(areas) { area in
+        ViewCustomizationList(
+            title: "Artwork by view", initialRowID: "artwork-view-home",
+            focusedDetail: { id in
+                areas.first { "artwork-view-\($0.rawValue)" == id }
+                    .flatMap { cards.artwork.customizationDetail(in: $0) }
+            }
+        ) {
+            section("Home", areas: [.home, .homeRows])
+            section("Libraries", areas: [.recommendedHero, .recommended, .browse, .collections, .playlists])
+            section("Across the app", areas: [
+                .continueWatching, .search, .watchlist, .details, .episodes,
+                .playback, .music, .topShelf, .downloads
+            ])
+        }
+    }
+
+    private func section(_ title: LocalizedStringResource, areas sectionAreas: [ArtworkArea]) -> some View {
+        Section {
+            ForEach(sectionAreas.filter { areas.contains($0) }) { area in
                 ArtworkAreaChoices(area: area, settings: $cards.artwork)
             }
-            if !cards.artwork.overrides.isEmpty {
-                Divider()
-                ArtworkResetButton(settings: $cards.artwork)
-            }
+        } header: {
+            Text(title)
+                #if os(tvOS)
+                .settingsSectionHeader()
+                .padding(.top, 20)
+                .padding(.bottom, 6)
+                #endif
         }
     }
 }
@@ -79,38 +96,23 @@ struct ArtworkAreaChoices: View {
             id: "artwork-view-\(area.rawValue)",
             title: area.displayName,
             value: settings.customizationValue(in: area),
-            isCustomized: settings.overrides[area] != nil
+            detail: settings.customizationDetail(in: area)
         ) {
-            settings.cycleCustomization(in: area)
+            settings.toggleCustomization(in: area)
         }
     }
 }
 
 extension ArtworkSettings {
     func customizationValue(in area: ArtworkArea) -> LocalizedStringResource {
+        prefersOnlineArtwork(in: area) ? "Providers" : "Library"
+    }
+
+    func customizationDetail(in area: ArtworkArea) -> LocalizedStringResource? {
         if preference(in: area) == .recommended, area == .details {
-            return "Library artwork; alternate backgrounds"
+            return "Library artwork, with a different background from Home when available."
         }
-        return prefersOnlineArtwork(in: area) ? "Metadata providers" : "Library artwork"
-    }
-
-    mutating func cycleCustomization(in area: ArtworkArea) {
-        let inherited: ArtworkOverride = inheritedPreference(in: area) == .online ? .online : .library
-        let opposite: ArtworkOverride = inherited == .online ? .library : .online
-        switch override(for: area) {
-        case .automatic: setOverride(opposite, for: area)
-        case opposite: setOverride(inherited, for: area)
-        default: setOverride(.automatic, for: area)
-        }
-    }
-}
-
-private struct ArtworkResetButton: View {
-    @Binding var settings: ArtworkSettings
-
-    var body: some View {
-        ViewCustomizationResetButton(isEnabled: !settings.overrides.isEmpty) { settings.resetOverrides() }
-            .accessibilityIdentifier("artwork-remove-customizations")
+        return area.detail
     }
 }
 

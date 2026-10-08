@@ -7,7 +7,46 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testArtworkCyclesSourcesAndInheritanceWithoutLeavingTheRow() throws {
+    func testArtworkScopesAreIndependentAndBottomRowsScrollAboveHelp() {
+        let app = launch()
+        defer { app.terminate() }
+        let sidebar = app.buttons["settings-master-artwork"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitUntil { sidebar.hasFocus })
+        XCUIRemote.shared.press(.right)
+        focus(app.buttons["artwork-customization"], in: app)
+        XCUIRemote.shared.press(.select)
+        let hero = app.buttons["artwork-view-home"]
+        XCTAssertTrue(waitUntil { self.hasFocus(hero) }, app.debugDescription)
+        XCTAssertEqual(hero.label, "Showcase / hero")
+        cycle(hero, expecting: "Library")
+        XCTAssertEqual(app.buttons["artwork-view-homeRows"].value as? String, "Providers")
+        XCTAssertEqual(app.buttons["artwork-view-recommendedHero"].value as? String, "Providers")
+        for area in ["homeRows", "recommendedHero", "recommended", "browse", "collections", "playlists"] {
+            let row = app.buttons["artwork-view-\(area)"]
+            focus(row, in: app)
+            cycle(row, expecting: "Library")
+            XCTAssertEqual(app.buttons["artwork-view-watchlist"].value as? String, "Providers")
+        }
+        capture(app, "artwork-library-scopes")
+        for area in ["continueWatching", "search", "watchlist", "details", "episodes", "playback", "music", "topShelf"] {
+            let row = app.buttons["artwork-view-\(area)"]
+            focus(row, in: app)
+            let viewport = app.scrollViews["view-customization-scroll"]
+            let help = app.staticTexts["view-customization-help"]
+            XCTAssertTrue(viewport.exists, app.debugDescription)
+            XCTAssertTrue(help.exists, app.debugDescription)
+            XCTAssertEqual(viewport.frame.maxY, help.frame.maxY, accuracy: 2,
+                           "Help must overlay the pane, not shorten its scrolling viewport.")
+            XCTAssertTrue(waitUntil {
+                row.frame.minY >= viewport.frame.minY && row.frame.maxY <= help.frame.minY
+            }, "The complete focused row must remain above contextual help: \(row.frame), \(help.frame)")
+            if area == "music" { capture(app, "artwork-music-fully-visible") }
+        }
+        capture(app, "artwork-bottom-fully-visible")
+    }
+
+    func testArtworkTogglesValuesAndPresetSelectionReplacesCustomizations() throws {
         let app = launch()
         defer { app.terminate() }
         let sidebar = app.buttons["settings-master-artwork"]
@@ -24,49 +63,64 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         XCTAssertTrue(waitUntil { self.hasFocus(app.buttons["artwork-view-home"]) }, app.debugDescription)
         XCTAssertEqual(sidebar.frame, originalFrame)
         XCTAssertFalse(app.buttons["artwork-preset-online"].exists)
-        XCTAssertEqual(browse.value as? String, "Metadata providers, following main setting")
+        XCTAssertEqual(browse.value as? String, "Providers")
         focus(browse, in: app)
         capture(app, "artwork-flat-child-page")
-        for _ in 0..<2 {
-            cycle(browse, expecting: "Library artwork, customized")
-            cycle(browse, expecting: "Metadata providers, customized")
-            cycle(browse, expecting: "Metadata providers, following main setting")
+        for _ in 0..<3 {
+            cycle(browse, expecting: "Library")
+            cycle(browse, expecting: "Providers")
         }
-        cycle(browse, expecting: "Library artwork, customized")
-        cycle(browse, expecting: "Metadata providers, customized")
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(waitUntil { self.hasFocus(customize) }, app.debugDescription)
-        XCTAssertTrue(customize.label.contains("1 customized"))
+        XCTAssertTrue(customize.label.hasSuffix("Custom"))
+        for preset in ["recommended", "library", "online"] {
+            XCTAssertFalse(app.buttons["artwork-preset-\(preset)"].isSelected)
+        }
+        let onlinePreset = app.buttons["artwork-preset-online"]
+        focus(onlinePreset, in: app, direction: .up)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(onlinePreset.isSelected)
+        XCTAssertFalse(customize.label.hasSuffix("Custom"))
+        // Removing the badge can replace the AX focus wrapper. Prove the
+        // direct Down/Select path by opening the page, rather than its flag.
+        XCUIRemote.shared.press(.down)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(browse.waitForExistence(timeout: 5), app.debugDescription)
+        focus(browse, in: app)
+        cycle(browse, expecting: "Library")
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(waitUntil { self.hasFocus(customize) })
         let libraryPreset = app.buttons["artwork-preset-library"]
         focus(libraryPreset, in: app, direction: .up)
         XCUIRemote.shared.press(.select)
-        focus(customize, in: app)
+        XCTAssertTrue(libraryPreset.isSelected)
+        XCTAssertFalse(customize.label.hasSuffix("Custom"))
+        XCUIRemote.shared.press(.down)
+        XCUIRemote.shared.press(.down)
         XCUIRemote.shared.press(.select)
+        XCTAssertTrue(browse.waitForExistence(timeout: 5), app.debugDescription)
         focus(browse, in: app)
-        XCTAssertEqual(browse.value as? String, "Metadata providers, customized")
+        XCTAssertEqual(browse.value as? String, "Library")
+        XCTAssertEqual(app.buttons["artwork-view-continueWatching"].value as? String, "Library")
 
         XCUIRemote.shared.press(.left)
         XCTAssertTrue(waitUntil { sidebar.hasFocus }, app.debugDescription)
         XCTAssertEqual(sidebar.frame, originalFrame)
         XCUIRemote.shared.press(.right)
         focus(browse, in: app)
-        cycle(browse, expecting: "Library artwork, customized")
-        cycle(browse, expecting: "Library artwork, following main setting")
-        capture(app, "artwork-cycled-to-main-setting")
+        capture(app, "artwork-replaced-by-preset")
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(waitUntil {
             customize.exists && app.buttons["artwork-preset-online"].isEnabled
         }, app.debugDescription)
-        XCTAssertFalse(customize.label.contains("customized"))
+        XCTAssertFalse(customize.label.hasSuffix("Custom"))
         XCTAssertFalse(customize.label.contains("defaults"))
         capture(app, "artwork-return-focus")
-        // Removing the count changes the accessible focus wrapper. Prove return
-        // focus through activation without a directional move, not its AX flag.
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(browse.waitForExistence(timeout: 5), app.debugDescription)
     }
 
-    func testLabelsCycleValuesAndInheritanceWithoutLeavingTheRow() {
+    func testLabelsToggleValuesAndReselectingDefaultRestoresMixedBehavior() {
         let app = launch(labels: true)
         defer { app.terminate() }
         let sidebar = app.buttons["settings-master-cards"]
@@ -80,25 +134,39 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         let home = app.buttons["card-label-view-home"]
         XCTAssertTrue(home.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(sidebar.frame, originalFrame)
-        let inherited = "Labels except Showcase and series artwork, following main setting"
-        XCTAssertEqual(home.value as? String, inherited)
+        XCTAssertEqual(home.value as? String, "Mixed")
         XCTAssertTrue(waitUntil { self.hasFocus(home) }, app.debugDescription)
-        cycle(home, expecting: "No labels, customized")
+        cycle(home, expecting: "Off")
         capture(app, "labels-flat-child-page")
-        cycle(home, expecting: "Labels, customized")
-        cycle(home, expecting: inherited)
-        cycle(home, expecting: "No labels, customized")
-        cycle(home, expecting: "Labels, customized")
-        cycle(home, expecting: inherited)
+        cycle(home, expecting: "On")
+        cycle(home, expecting: "Off")
+        cycle(home, expecting: "On")
         focus(app.buttons["view-customization-back"], in: app, direction: .up)
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(waitUntil {
             customize.exists && app.buttons["card-labels-recommended"].isEnabled
         }, app.debugDescription)
         XCTAssertEqual(sidebar.frame, originalFrame)
+        XCTAssertTrue(customize.label.hasSuffix("Custom"))
+        for preset in ["recommended", "on", "off"] {
+            XCTAssertFalse(app.buttons["card-labels-\(preset)"].isSelected)
+        }
         capture(app, "labels-return-focus")
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(home.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(home.value as? String, "On")
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(waitUntil { self.hasFocus(customize) })
+        let recommended = app.buttons["card-labels-recommended"]
+        XCUIRemote.shared.press(.up)
+        focus(recommended, in: app, direction: .left)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(recommended.isSelected)
+        XCTAssertFalse(customize.label.hasSuffix("Custom"))
+        XCUIRemote.shared.press(.down)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(waitUntil { self.hasFocus(home) })
+        XCTAssertEqual(home.value as? String, "Mixed")
     }
 
     func testBackAndSidebarChangesResetOnlyNavigation() {
@@ -139,7 +207,7 @@ final class ViewCustomizationRemoteTests: XCTestCase {
     private func focus(_ target: XCUIElement, in app: XCUIApplication,
                        direction: XCUIRemote.Button = .down) {
         XCTAssertTrue(target.waitForExistence(timeout: 5), app.debugDescription)
-        for _ in 0..<14 {
+        for _ in 0..<24 {
             if hasFocus(target) { return }
             XCUIRemote.shared.press(direction)
         }

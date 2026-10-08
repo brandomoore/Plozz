@@ -85,14 +85,11 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   an already-available background different from Home without an extra metadata
   lookup before display; ordinary Details cards remain library-first.
   Library-first and metadata-provider-first
-  presets support independent overrides for Home, Continue Watching, Browse,
+  presets initialize source choices for Home, Continue Watching, Browse,
   Search, Watchlist, Details, Episodes, Playback, Music, Top Shelf, and Downloads
-  where available. Use default displays the inherited source and follows later
-  preset changes; explicit overrides remain pinned until reset. The main page
-  keeps three direct preferences and a customization count. An inline explanation
-  follows the focused option on TV and the selected option on touch; there is no
-  separate artwork-help page. Remove view customizations clears only the overrides,
-  preserving the main preference. Cards retains
+  where available. Editing a view enters Custom mode; choosing any preset
+  replaces the whole configuration. The shared editing and presentation contract
+  lives in [FeatureSettings](../FeatureSettings/README.md#invariants). Cards retains
   card presentation controls, not app-wide artwork policy. Missing artwork can
   fall back to the other source. Provider-first waits for lookup and image decoding
   to finish, including time queued behind other requests; a short first-paint

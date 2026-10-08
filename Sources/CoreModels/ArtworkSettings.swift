@@ -24,21 +24,27 @@ public enum ArtworkPreference: String, CaseIterable, Codable, Identifiable, Send
 }
 
 public enum ArtworkArea: String, CaseIterable, Codable, Identifiable, Sendable {
-    case home, continueWatching, browse, search, watchlist, details, episodes
+    case home, homeRows, recommendedHero, recommended, browse, collections, playlists
+    case continueWatching, search, watchlist, details, episodes
     case playback, music, topShelf, downloads
 
     public var id: Self { self }
 
     public var displayName: LocalizedStringResource {
         switch self {
-        case .home: "Home"
-        case .continueWatching: "Continue Watching"
+        case .home: "Showcase / hero"
+        case .homeRows: "Other Home rows"
+        case .recommendedHero: "Recommended hero"
+        case .recommended: "Recommended rows"
+        case .continueWatching: "Continue Watching rows"
         case .browse: "Browse"
-        case .search: "Search"
-        case .watchlist: "Watchlist"
-        case .details: "Details"
-        case .episodes: "Episodes"
-        case .playback: "Playback"
+        case .collections: "Collections"
+        case .playlists: "Playlists"
+        case .search: "Search results"
+        case .watchlist: "Watchlist page"
+        case .details: "Title detail pages"
+        case .episodes: "Episode browser"
+        case .playback: "Video player artwork"
         case .music: "Music"
         case .topShelf: "Top Shelf"
         case .downloads: "Downloads"
@@ -47,13 +53,19 @@ public enum ArtworkArea: String, CaseIterable, Codable, Identifiable, Sendable {
 
     public var detail: LocalizedStringResource? {
         switch self {
-        case .home: "Backgrounds, logos, and Home rows."
-        case .continueWatching: "Metadata providers favor images without text. Library artwork keeps your chosen images."
-        case .browse: "Libraries, collections, and playlists."
-        case .search, .watchlist: nil
-        case .details: "Backdrops, logos, and related titles. Recommended can use a different background from Home."
-        case .episodes: "Episode thumbnails."
-        case .playback: "Player menus and Now Playing."
+        case .home: "Home's Showcase background, carousel images, and title logos. Rows have separate choices."
+        case .homeRows: "Home rows, including Watchlist and Recently Added. Continue Watching has its own choice."
+        case .recommendedHero: "The Showcase background and title logo in each library's Recommended tab."
+        case .recommended: "Rows in each library's Recommended tab. Continue Watching has its own choice."
+        case .continueWatching: "Continue Watching rows on Home and in libraries. Providers favor images without text."
+        case .browse: "The Browse tab in every library, plus titles inside collections and playlists."
+        case .collections: "Collection cards in each library's Collections tab. Titles inside use Browse."
+        case .playlists: "Playlist cards in each library's Playlists tab. Titles inside use Browse."
+        case .search: "Artwork in search results."
+        case .watchlist: "The separate Watchlist page. Home's Watchlist row uses Other Home rows."
+        case .details: "Movie and show detail-page backdrops, logos, and supporting cards. Episode browsers have their own choice."
+        case .episodes: "Episode thumbnails in the show detail-page browser. Player thumbnails use Video player artwork."
+        case .playback: "Video player Info, episode and playlist menus, Up Next, and system Now Playing."
         case .music: "Covers, artist images, and the music player."
         case .topShelf: "Apple TV Home Screen."
         case .downloads: "Applies when you queue new downloads. Existing downloads keep their artwork."
@@ -80,6 +92,18 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
     public private(set) var overrides: [ArtworkArea: ArtworkPreference]
 
     public static let `default` = ArtworkSettings()
+
+    public var selectedPreset: ArtworkPreference? {
+        overrides.isEmpty ? preference : nil
+    }
+
+    public mutating func applyPreset(_ preset: ArtworkPreference) {
+        self = Self(preference: preset)
+    }
+
+    public mutating func toggleCustomization(in area: ArtworkArea) {
+        setOverride(prefersOnlineArtwork(in: area) ? .library : .online, for: area)
+    }
 
     public init(
         preference: ArtworkPreference = .recommended,
@@ -145,7 +169,7 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
 
     public mutating func resetOverrides() { overrides.removeAll() }
 
-    private enum CodingKeys: CodingKey { case preference, overrides }
+    private enum CodingKeys: CodingKey { case preference, overrides, scopeVersion }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -158,11 +182,21 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
                   preference != .recommended else { return nil }
             return (area, preference)
         })
+        if try values.decodeIfPresent(Int.self, forKey: .scopeVersion) == nil {
+            // Split existing choices once; future edits to the new scopes are independent.
+            for area in [ArtworkArea.homeRows, .recommendedHero, .recommended] {
+                if overrides[area] == nil { overrides[area] = overrides[.home] }
+            }
+            for area in [ArtworkArea.collections, .playlists] {
+                if overrides[area] == nil { overrides[area] = overrides[.browse] }
+            }
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(preference.rawValue, forKey: .preference)
+        try values.encode(1, forKey: .scopeVersion)
         try values.encode(
             Dictionary(uniqueKeysWithValues: overrides.map { ($0.key.rawValue, $0.value.rawValue) }),
             forKey: .overrides
