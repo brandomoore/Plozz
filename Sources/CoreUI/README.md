@@ -72,7 +72,11 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   radius directly; glass frames add their inset to remain concentric. Loaded
   artwork, missing-art placeholders, and skeletons agree. TV rounding is unchanged.
   Mobile library, episode, and download artwork uses the same metric, keeping
-  its caption clearance consistent with its actual corners. Home library names
+  its caption clearance consistent with its actual corners. Mobile captions use
+  a shared 4pt horizontal inset from the artwork edge, independently of their
+  unchanged bottom corner clearance. Poster, landscape, music, download, and
+  episode captions and skeletons share it; TV caption layout is unchanged.
+  Home library names
   and server names share one leading-aligned text column beside the provider mark.
 - **Media-row focus** — a dedicated modifier owns the row's `FocusState`
   and supplies its binding to tracked cards. Focus callbacks and prefetch

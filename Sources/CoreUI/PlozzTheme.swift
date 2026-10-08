@@ -225,13 +225,10 @@ public enum PlozzTheme {
             /// (`panel − content`; == `cardInset` base).
             public static let inset: CGFloat = 12
         }
-        /// Optical clearance factor for a media card's caption: the title/metadata
-        /// text is inset horizontally from the glass edge by this fraction of the
-        /// card's *outer* corner radius, so left-aligned text clears the rounded
-        /// corner instead of crowding it. ~0.8 keeps text off the curve while
-        /// staying visually tied to the artwork's edge. Applied per-card in
-        /// `PlozzMetrics` (artwork itself is unaffected).
+        /// Bottom caption clearance from the glass edge as a fraction of the
+        /// outer radius. TV also uses this clearance horizontally.
         public static let captionCornerClearanceFactor: CGFloat = 0.8
+        public static let touchCaptionHorizontalInset: CGFloat = 4
         /// Vertical gap between a media card's artwork and its caption block —
         /// the *base* shared by every poster and landscape card. The artwork sits
         /// flush against the top corner curve (unlike the side/bottom text, which

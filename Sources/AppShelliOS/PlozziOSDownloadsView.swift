@@ -617,7 +617,7 @@ struct DownloadTileContent: View {
                         .lineLimit(1)
                 }
             }
-            .padding(.horizontal, metrics.landscapeCaptionInset)
+            .padding(.horizontal, metrics.landscapeCaptionHorizontalInset)
             .padding(
                 .bottom,
                 cardStyle == .framed ? metrics.landscapeCaptionInset : 0

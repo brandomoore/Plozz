@@ -3567,7 +3567,7 @@ private struct PlozziOSInlineEpisodeSkeleton: View {
                     skeletonLine(width: cardWidth * 0.72, height: 13)
                 }
                 .frame(maxWidth: .infinity, minHeight: 66, alignment: .topLeading)
-                .padding(.horizontal, metrics.landscapeCaptionInset)
+                .padding(.horizontal, metrics.landscapeCaptionHorizontalInset)
             }
         }
         .frame(width: cardWidth, alignment: .leading)
@@ -3701,7 +3701,7 @@ struct PlozziOSInlineEpisodeEntry: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, metrics.landscapeCaptionInset)
+                .padding(.horizontal, metrics.landscapeCaptionHorizontalInset)
             }
         }
         .frame(width: cardWidth, alignment: .leading)

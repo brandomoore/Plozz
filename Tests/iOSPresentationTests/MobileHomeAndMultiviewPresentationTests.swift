@@ -202,6 +202,59 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         }
     }
 
+    func testMobileCaptionsStayCloseToTheArtworkLeadingEdge() async throws {
+        let artwork = try await posterArtwork()
+        let item = MediaItem(
+            id: "caption-leading-edge", title: "Movie", kind: .movie,
+            posterURL: artwork, backdropURL: artwork
+        )
+        try await withWindow { window, host in
+            for width in [CGFloat(320), 390, 768, 1024] {
+                for cardStyle in [CardStyle.borderless, .framed] {
+                    for shape in [PosterCardView.Style.poster, .landscape] {
+                        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+                            let metrics = PlozzMetrics.touch(density: .standard)
+                            let slot = shape == .poster ? min(200, width / 2) :
+                                metrics.cardSlotWidth(for: .landscape, cardStyle: cardStyle)
+                            window.frame.size = CGSize(width: width, height: 600)
+                            host.rootView = AnyView(
+                                PosterCardView(
+                                    item: item, style: shape, enablesAsyncArtworkFallback: false, action: {}
+                                )
+                                .frame(width: slot)
+                                .padding(22)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                .background(Color.black)
+                                .environment(\.themePalette, .dark)
+                                .environment(\.plozzCardStyle, cardStyle)
+                                .environment(\.plozzCardCaptionsHidden, false)
+                                .environment(\.plozzMetrics, metrics)
+                                .environment(\.layoutDirection, direction)
+                            )
+                            try await settle(window)
+                            let image = snapshot(
+                                window, name: "caption-leading-\(Int(width))-\(cardStyle)-\(shape)-\(direction)"
+                            )
+                            let center = direction == .leftToRight ? 22 + slot / 2 : width - 22 - slot / 2
+                            let rows = try XCTUnwrap(posterRuns(image, axis: .vertical, at: center).first)
+                            let columns = try XCTUnwrap(posterRuns(
+                                image, at: CGFloat(rows.lowerBound + rows.count / 2)
+                            ).first)
+                            let caption = try brightTextBounds(
+                                image, from: CGFloat(rows.upperBound + 1), to: CGFloat(rows.upperBound + 64)
+                            )
+                            let inset = direction == .leftToRight ?
+                                caption.minX - CGFloat(columns.lowerBound) :
+                                CGFloat(columns.upperBound) - caption.maxX
+                            XCTAssertEqual(inset, 4, accuracy: 2,
+                                           "Caption ink must follow the 4pt leading inset, including RTL.")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testDetailEpisodeLabelsIgnoreGlobalAndSavedHidePreferences() async throws {
         let app = PlozziOSAppModel()
         let artwork = try await posterArtwork()
@@ -232,7 +285,15 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     let observations = try text(image)
                     let title = try textFrame("The Hidden Room", observations: observations, size: image.size)
                     let number = try textFrame("EPISODE 4", observations: observations, size: image.size)
-                    let artworkBottom = try XCTUnwrap(posterRuns(image, axis: .vertical, at: 100).first).upperBound
+                    let artworkRows = try XCTUnwrap(posterRuns(image, axis: .vertical, at: 100).first)
+                    let artworkBottom = artworkRows.upperBound
+                    let artworkLeft = try XCTUnwrap(posterRuns(
+                        image, at: CGFloat(artworkRows.lowerBound + artworkRows.count / 2)
+                    ).first).lowerBound
+                    let titleInk = try brightTextBounds(
+                        image, from: title.minY - 3, to: title.maxY + 3
+                    )
+                    XCTAssertEqual(titleInk.minX - CGFloat(artworkLeft), 4, accuracy: 2)
                     XCTAssertGreaterThan(number.minY, CGFloat(artworkBottom), "The identity must remain below the thumbnail.")
                     XCTAssertGreaterThan(title.minY, number.maxY)
                 }
@@ -532,6 +593,12 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                         .environment(\.themePalette, .dark)
                     )
                     try await settle(window)
+                    // Hidden captions still show a name inside unloaded artwork.
+                    for _ in 0..<20 {
+                        if try !posterRuns(snapshot(window), axis: .vertical, at: 64).isEmpty { break }
+                        try await Task.sleep(for: .milliseconds(100))
+                    }
+                    XCTAssertFalse(try posterRuns(snapshot(window), axis: .vertical, at: 64).isEmpty)
                     let rails = scrollViews(window).filter { $0.contentSize.width > $0.bounds.width + 10 }
                     XCTAssertEqual(rails.count, 2)
                     if !captions {

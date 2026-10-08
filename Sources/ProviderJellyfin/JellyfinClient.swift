@@ -948,7 +948,7 @@ public struct JellyfinClient: Sendable {
         mode: PlaybackStreamMode = .auto, streaming: StreamingPlaybackOptions? = nil
     ) async throws -> PlaybackInfoResponse {
         try streaming?.quality.validate()
-        let capabilityProfile = streaming.map { self.capabilityProfile.applying($0) } ?? self.capabilityProfile
+        var capabilityProfile = streaming.map { self.capabilityProfile.applying($0) } ?? self.capabilityProfile
         var queryItems = [URLQueryItem(name: "UserId", value: userID)]
         if let streaming {
             if let track = streaming.audioTrack {
@@ -994,6 +994,7 @@ public struct JellyfinClient: Sendable {
             queryItems.append(URLQueryItem(name: "EnableDirectStream", value: "false"))
             enableDirectPlay = false
             enableDirectStream = false
+            capabilityProfile = capabilityProfile.applyingTranscodingRange(for: providerKind)
         }
         var endpoint = Endpoint(
             method: .post,

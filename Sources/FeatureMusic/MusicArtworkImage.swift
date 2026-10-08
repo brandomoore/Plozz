@@ -184,14 +184,14 @@ struct MusicCard: View {
                     text: Text(title),
                     font: .system(size: metrics.cardTitleFontSize, weight: .semibold),
                     color: titleColor,
-                    inset: metrics.landscapeCaptionInset,
+                    inset: metrics.landscapeCaptionHorizontalInset,
                     isFocused: isFocused
                 )
                 PlozzMarqueeText(
                     text: Text(subtitle ?? " "),
                     font: .system(size: metrics.cardSubtitleFontSize),
                     color: subtitleColor,
-                    inset: metrics.landscapeCaptionInset,
+                    inset: metrics.landscapeCaptionHorizontalInset,
                     isFocused: isFocused
                 )
                 .opacity(subtitle == nil ? 0 : 1)
@@ -229,7 +229,7 @@ struct MusicCard: View {
             BorderlessCardCaption(
                 title: Text(verbatim: title),
                 subtitle: subtitle,
-                horizontalInset: metrics.landscapeCaptionInset,
+                horizontalInset: metrics.landscapeCaptionHorizontalInset,
                 isFocused: isFocused
             )
             .frame(width: scaledWidth)
