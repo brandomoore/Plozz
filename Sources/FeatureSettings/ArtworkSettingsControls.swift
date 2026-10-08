@@ -48,7 +48,6 @@ private struct ArtworkPresetPicker: View {
 
 struct ArtworkCustomizationView: View {
     @Bindable var cards: CardStyleSettingsModel
-    var selection: Binding<String?>? = nil
 
     private var areas: [ArtworkArea] {
         #if os(tvOS)
@@ -59,41 +58,15 @@ struct ArtworkCustomizationView: View {
     }
 
     var body: some View {
-        #if os(tvOS)
-        SettingsSplitLayout(
-            title: "Artwork by view",
-            rows: areas.map { area in
-                SettingsSplitRow(
-                    id: area.rawValue, title: area.displayName, description: area.detail
-                ) {
-                    ArtworkAreaChoices(area: area, settings: $cards.artwork)
-                }
-            } + [
-                SettingsSplitRow(
-                    id: "reset", title: "Remove view customizations",
-                    description: "All views will follow your main artwork preference."
-                ) {
-                    ArtworkResetButton(settings: $cards.artwork)
-                }
-            ],
-            selection: selection
-        )
-        #else
-        List {
+        ViewCustomizationList(title: "Artwork by view", initialRowID: "artwork-view-home") {
             ForEach(areas) { area in
-                SettingsSectionGroup(area.displayName) {
-                    ArtworkAreaChoices(area: area, settings: $cards.artwork)
-                } footer: {
-                    if let detail = area.detail { Text(detail) }
-                }
+                ArtworkAreaChoices(area: area, settings: $cards.artwork)
             }
-            SettingsSectionGroup {
+            if !cards.artwork.overrides.isEmpty {
+                Divider()
                 ArtworkResetButton(settings: $cards.artwork)
             }
         }
-        .settingsPageSurface()
-        .navigationTitle("Artwork by view")
-        #endif
     }
 }
 
@@ -102,26 +75,32 @@ struct ArtworkAreaChoices: View {
     @Binding var settings: ArtworkSettings
 
     var body: some View {
-        ViewPreferenceChoiceGroup {
-            ForEach(ArtworkOverride.allCases) { option in
-                ViewPreferenceChoiceRow(
-                    title: title(for: option),
-                    isSelected: settings.override(for: area) == option
+        ViewCustomizationRow(
+            id: "artwork-view-\(area.rawValue)",
+            title: area.displayName,
+            value: settings.preference(in: area).summary,
+            isCustomized: settings.overrides[area] != nil,
+            choices: [ArtworkOverride.library, .online].map { option in
+                ViewCustomizationChoice(
+                    id: "artwork-view-\(area.rawValue)-\(option.rawValue)",
+                    title: option.displayName,
+                    isSelected: settings.overrides[area] == (option == .library ? .library : .online)
                 ) {
                     settings.setOverride(option, for: area)
                 }
-                .accessibilityIdentifier("artwork-view-\(area.rawValue)-\(option.rawValue)")
             }
+        ) {
+            settings.setOverride(.automatic, for: area)
         }
     }
+}
 
-    private func title(for option: ArtworkOverride) -> LocalizedStringResource {
-        switch option {
-        case .automatic:
-            settings.inheritedPreference(in: area) == .online
-                ? "Use default: metadata providers preferred"
-                : "Use default: library preferred"
-        case .library, .online: option.displayName
+private extension ArtworkPreference {
+    var summary: LocalizedStringResource {
+        switch self {
+        case .recommended: "Recommended"
+        case .library: "Library artwork"
+        case .online: "Metadata providers"
         }
     }
 }

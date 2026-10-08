@@ -130,47 +130,43 @@ public struct CardCaptionCustomizationView: View {
 
 struct CardCaptionCustomizationContent: View {
     @Binding var settings: CardCaptionSettings
-    var selection: Binding<String?>? = nil
 
     var body: some View {
-        #if os(tvOS)
-        SettingsSplitLayout(
-            title: "Labels by view",
-            rows: CardCaptionView.customizableCases.map { view in
-                SettingsSplitRow(
-                    id: view.rawValue,
-                    title: view.displayName,
-                    description: "Choices apply across all libraries. Titles inside collections and playlists use Browse.",
-                    sectionStart: view == .recommended ? .heading(Text("Libraries"))
-                        : view == .search ? .heading(Text("Other views")) : nil
-                ) {
+        ViewCustomizationList(title: "Labels by view", initialRowID: "card-label-view-home") {
+            CardCaptionViewChoices(view: .home, settings: $settings)
+            Section {
+                ForEach(CardCaptionView.customizableCases.filter(\.isLibraryView), id: \.rawValue) { view in
                     CardCaptionViewChoices(view: view, settings: $settings)
                 }
-            } + [
-                SettingsSplitRow(id: "reset", title: "Remove view customizations", sectionStart: .divider) {
-                    ViewCustomizationResetButton(isEnabled: !settings.overrides.isEmpty) { settings.resetOverrides() }
-                        .accessibilityIdentifier("card-label-remove-customizations")
-                }
-            ],
-            selection: selection
-        )
-        #else
-        List {
-            ForEach(CardCaptionView.customizableCases, id: \.rawValue) { view in
-                SettingsSectionGroup(view.displayName) {
-                    CardCaptionViewChoices(view: view, settings: $settings)
-                }
+            } header: {
+                Text("Libraries")
+                    #if os(tvOS)
+                    .settingsSectionHeader()
+                    .padding(.top, 20)
+                    .padding(.bottom, 6)
+                    #endif
             }
-            SettingsSectionGroup {
-                ViewCustomizationResetButton(isEnabled: !settings.overrides.isEmpty) { settings.resetOverrides() }
+            Section {
+                ForEach(CardCaptionView.customizableCases.filter { $0 != .home && !$0.isLibraryView }, id: \.rawValue) { view in
+                    CardCaptionViewChoices(view: view, settings: $settings)
+                }
+            } header: {
+                Text("Other views")
+                    #if os(tvOS)
+                    .settingsSectionHeader()
+                    .padding(.top, 20)
+                    .padding(.bottom, 6)
+                    #endif
+            }
+            if !settings.overrides.isEmpty {
+                Divider()
+                ViewCustomizationResetButton(isEnabled: true) { settings.resetOverrides() }
                     .accessibilityIdentifier("card-label-remove-customizations")
-            } footer: {
-                Text("Choices apply across all libraries. Titles inside collections and playlists use Browse.")
             }
+            Text("Choices apply across all libraries. Titles inside collections and playlists use Browse.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
-        .settingsPageSurface()
-        .navigationTitle("Labels by view")
-        #endif
     }
 
 }
@@ -180,18 +176,41 @@ struct CardCaptionViewChoices: View {
     @Binding var settings: CardCaptionSettings
 
     var body: some View {
-        ViewPreferenceChoiceGroup {
-            ForEach(CardCaptionOverride.allCases) { option in
-                ViewPreferenceChoiceRow(
-                    title: option == .automatic ? "Use default" : option.displayName,
+        ViewCustomizationRow(
+            id: "card-label-view-\(view.rawValue)",
+            title: view.displayName,
+            value: summary,
+            isCustomized: settings.overrides[view] != nil,
+            choices: [CardCaptionOverride.show, .hide].map { option in
+                ViewCustomizationChoice(
+                    id: "card-label-view-\(view.rawValue)-\(option.rawValue)",
+                    title: option.displayName,
                     isSelected: settings.override(for: view) == option
                 ) {
                     settings.setOverride(option, for: view)
                 }
-                .accessibilityIdentifier("card-label-view-\(view.rawValue)-\(option.rawValue)")
             }
-        }
+        ) { settings.setOverride(.automatic, for: view) }
     }
 
+    private var summary: LocalizedStringResource {
+        if let showsLabels = settings.overrides[view] {
+            return showsLabels ? CardCaptionOverride.show.displayName : CardCaptionOverride.hide.displayName
+        }
+        switch settings.preference {
+        case .recommended: return settings.preference.displayName
+        case .show: return CardCaptionOverride.show.displayName
+        case .hide: return CardCaptionOverride.hide.displayName
+        }
+    }
+}
+
+private extension CardCaptionView {
+    var isLibraryView: Bool {
+        switch self {
+        case .recommended, .browse, .collections, .playlists: true
+        default: false
+        }
+    }
 }
 #endif

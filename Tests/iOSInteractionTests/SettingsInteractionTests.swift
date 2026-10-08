@@ -201,28 +201,20 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Cards"].exists)
         let customization = app.buttons["card-label-customization"]
         reveal(customization)
+        XCTAssertFalse(customization.label.contains("defaults"))
         customization.tap()
-        let home = app.buttons["card-label-view-home-hide"]
+        let home = app.buttons["card-label-view-home"]
         XCTAssertTrue(home.waitForExistence(timeout: 3))
-        home.tap()
-        XCTAssertTrue(home.isSelected)
-        let browse = app.buttons["card-label-view-browse-show"]
-        let browseDefault = app.buttons["card-label-view-browse-automatic"]
-        reveal(browseDefault)
-        XCTAssertEqual(browseDefault.label, "Use default")
-        XCTAssertTrue(browseDefault.isSelected)
-        reveal(browse)
-        browse.tap()
-        XCTAssertTrue(browse.isSelected)
-        XCTAssertFalse(browseDefault.isSelected)
-        let episodes = app.buttons["card-label-view-episodes-hide"]
-        reveal(episodes)
-        episodes.tap()
-        XCTAssertTrue(episodes.isSelected)
-        let filmography = app.buttons["card-label-view-filmography-hide"]
-        reveal(filmography)
-        filmography.tap()
-        XCTAssertTrue(filmography.isSelected)
+        XCTAssertEqual(home.value as? String, "Labels")
+        chooseCustomization("No labels", for: home)
+        XCTAssertEqual(home.value as? String, "No labels, customized")
+        let browse = app.buttons["card-label-view-browse"]
+        chooseCustomization("Labels", for: browse)
+        XCTAssertEqual(browse.value as? String, "Labels, customized")
+        let episodes = app.buttons["card-label-view-episodes"]
+        chooseCustomization("No labels", for: episodes)
+        let filmography = app.buttons["card-label-view-filmography"]
+        chooseCustomization("No labels", for: filmography)
         app.navigationBars.buttons.firstMatch.tap()
         let recommended = app.buttons["card-labels-recommended"]
         reveal(recommended, towardTop: true)
@@ -231,20 +223,72 @@ final class SettingsInteractionTests: XCTestCase {
         reveal(customization)
         customization.tap()
         reveal(home, towardTop: true)
-        XCTAssertTrue(home.isSelected)
+        XCTAssertEqual(home.value as? String, "No labels, customized")
         reveal(browse)
-        XCTAssertTrue(browse.isSelected)
+        XCTAssertEqual(browse.value as? String, "Labels, customized")
         reveal(episodes)
-        XCTAssertTrue(episodes.isSelected)
+        XCTAssertEqual(episodes.value as? String, "No labels, customized")
         reveal(filmography)
-        XCTAssertTrue(filmography.isSelected)
+        XCTAssertEqual(filmography.value as? String, "No labels, customized")
+        reveal(home, towardTop: true)
+        chooseCustomization("Remove customization", for: home)
+        XCTAssertEqual(home.value as? String, "App default")
+        XCTAssertEqual(browse.value as? String, "Labels, customized")
         let reset = app.buttons["card-label-remove-customizations"]
         reveal(reset)
         reset.tap()
-        XCTAssertFalse(reset.isEnabled)
-        reveal(browseDefault, towardTop: true)
-        XCTAssertTrue(browseDefault.isSelected)
+        XCTAssertFalse(reset.exists)
+        reveal(browse, towardTop: true)
+        XCTAssertEqual(browse.value as? String, "App default")
         capture("independent-caption-overrides")
+    }
+
+    func testArtworkFlatChoicesPreserveMainPreferenceAndResetOnlyOneView() {
+        launch()
+        app.buttons["appearance-artwork"].tap()
+        let providers = app.buttons["artwork-preset-online"]
+        XCTAssertTrue(providers.waitForExistence(timeout: 3))
+        providers.tap()
+        let customize = app.buttons["artwork-customization"]
+        reveal(customize)
+        XCTAssertFalse(customize.label.contains("defaults"))
+        customize.tap()
+        let browse = app.buttons["artwork-view-browse"]
+        XCTAssertTrue(browse.waitForExistence(timeout: 3))
+        XCTAssertEqual(browse.value as? String, "Metadata providers")
+        browse.tap()
+        XCTAssertTrue(app.buttons["Prefer my library's artwork"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["Remove customization"].exists)
+        capture("artwork-source-chooser")
+        app.navigationBars["Artwork by view"].tap()
+        XCTAssertEqual(browse.value as? String, "Metadata providers")
+        chooseCustomization("Prefer my library's artwork", for: browse)
+        XCTAssertEqual(browse.value as? String, "Library artwork, customized")
+        chooseCustomization("Prefer artwork from metadata providers", for: browse)
+        XCTAssertEqual(browse.value as? String, "Metadata providers, customized")
+        let downloads = app.buttons["artwork-view-downloads"]
+        chooseCustomization("Prefer my library's artwork", for: downloads)
+        app.navigationBars.buttons.firstMatch.tap()
+        let library = app.buttons["artwork-preset-library"]
+        reveal(library, towardTop: true)
+        library.tap()
+        reveal(customize)
+        customize.tap()
+        XCTAssertEqual(browse.value as? String, "Metadata providers, customized")
+        chooseCustomization("Remove customization", for: browse)
+        XCTAssertEqual(browse.value as? String, "Library artwork")
+        reveal(downloads)
+        XCTAssertEqual(downloads.value as? String, "Library artwork, customized")
+        capture("artwork-flat-customizations")
+    }
+
+    private func chooseCustomization(_ choice: String, for row: XCUIElement) {
+        reveal(row, fullyVisible: true)
+        row.tap()
+        let option = app.buttons[choice]
+        XCTAssertTrue(option.waitForExistence(timeout: 3), app.debugDescription)
+        option.tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 3))
     }
 
     func testSettingsSectionsOpenTheirOwnDestinations() {
@@ -460,12 +504,20 @@ final class SettingsInteractionTests: XCTestCase {
         app.launch()
     }
 
-    private func reveal(_ element: XCUIElement, settingsMenu: Bool = false, towardTop: Bool = false) {
+    private func reveal(
+        _ element: XCUIElement,
+        settingsMenu: Bool = false,
+        towardTop: Bool = false,
+        fullyVisible: Bool = false
+    ) {
         for _ in 0..<10 {
-            if element.exists && element.isHittable { return }
             let scroll = settingsMenu
                 ? app.scrollViews.firstMatch
                 : app.collectionViews.element(boundBy: app.collectionViews.count - 1)
+            if element.exists && element.isHittable
+                && (!fullyVisible || scroll.frame.intersection(app.windows.firstMatch.frame).contains(element.frame)) {
+                return
+            }
             if towardTop { scroll.swipeDown() } else { scroll.swipeUp() }
         }
         XCTAssertTrue(element.isHittable, app.debugDescription)

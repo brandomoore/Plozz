@@ -54,14 +54,25 @@ and the single place caption customization lives.
 
 ## Invariants
 
-- **Artwork and label customization.** Both use shared checkmarked per-view choices,
-  customization counts and the same reset action. Labels use a plain "Use default"
-  inherited choice; their TV index groups the library tabs under "Libraries".
+- **Artwork and label customization.** Both use a flat list of views and native
+  two-choice menus. Choosing a source or label mode immediately customizes that
+  view, even when it matches the main preference. A separate "Remove customization"
+  menu action resumes following the main preference; inheritance is not a third
+  choice. Rows show the current policy and mark explicit choices "Custom".
+  "Customize by view" only shows a count when customizations exist. The label list
+  groups library tabs under "Libraries" on both platforms.
   Labels retain equal-height visual presets: App default uses a single split illustration with
   caption bars on only one half. Show labels everywhere and Hide labels everywhere
   govern all media captions; App default owns Showcase and title-artwork exceptions.
   Explicit per-view choices, including Episodes, override any preset and survive
   preset changes. Library navigation names and on-artwork information are not captions.
+- **Scoped TV detail navigation.** Artwork and Cards opt into a right-pane subpage;
+  the Appearance sidebar stays in place. The root remains mounted to preserve its
+  state and scroll position, but is hidden and disabled while the subpage is open.
+  Entry transfers native focus to the first row; Back restores the originating
+  link after the outgoing transition is removed. Stale transition completions are
+  invalidated when changing the selected sidebar page. Left remains available for
+  sidebar navigation, and Reduce Motion suppresses the transition animation.
 - **Mobile Settings is a presentation action.** Its tab or More entry opens
   the drawer over the current page without selecting a replacement destination.
   Keep the active content stack and overflow navigation intact on dismissal;

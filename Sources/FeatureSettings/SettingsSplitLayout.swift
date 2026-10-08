@@ -1,6 +1,7 @@
 #if canImport(SwiftUI)
 import SwiftUI
 import CoreUI
+import Observation
 
 /// Shared metrics for the Settings detail panes so spacing is consistent (and
 /// tunable in one place) across every feature form.
@@ -31,6 +32,7 @@ struct SettingsSplitRow: Identifiable {
     let description: Text?
     let indented: Bool
     let sectionStart: SectionStart?
+    let subpage: SettingsDetailSubpage?
     let detail: () -> AnyView
 
     /// A row whose label is app COPY — the common case.
@@ -45,6 +47,7 @@ struct SettingsSplitRow: Identifiable {
         description: LocalizedStringResource? = nil,
         sectionStart: SectionStart? = nil,
         indented: Bool = false,
+        subpage: SettingsDetailSubpage? = nil,
         @ViewBuilder detail: @escaping () -> Detail
     ) {
         self.init(id: id,
@@ -52,6 +55,7 @@ struct SettingsSplitRow: Identifiable {
                   description: description.map(Text.init),
                   sectionStart: sectionStart,
                   indented: indented,
+                  subpage: subpage,
                   detail: detail)
     }
 
@@ -64,6 +68,7 @@ struct SettingsSplitRow: Identifiable {
         description: LocalizedStringResource? = nil,
         sectionStart: SectionStart? = nil,
         indented: Bool = false,
+        subpage: SettingsDetailSubpage? = nil,
         @ViewBuilder detail: @escaping () -> Detail
     ) {
         self.init(id: id,
@@ -71,6 +76,7 @@ struct SettingsSplitRow: Identifiable {
                   description: description.map(Text.init),
                   sectionStart: sectionStart,
                   indented: indented,
+                  subpage: subpage,
                   detail: detail)
     }
 
@@ -80,6 +86,7 @@ struct SettingsSplitRow: Identifiable {
         description: Text?,
         sectionStart: SectionStart?,
         indented: Bool,
+        subpage: SettingsDetailSubpage?,
         @ViewBuilder detail: @escaping () -> Detail
     ) {
         self.id = id
@@ -87,6 +94,7 @@ struct SettingsSplitRow: Identifiable {
         self.description = description
         self.indented = indented
         self.sectionStart = sectionStart
+        self.subpage = subpage
         self.detail = { AnyView(detail()) }
     }
 }
@@ -132,6 +140,7 @@ struct SettingsSplitLayout: View {
     /// left-press out of a control has exactly one place to land (the row you
     /// came in from), with no geometrically-nearer row to steal it.
     @State private var focusInDetail = false
+    @State private var detailNavigation = SettingsDetailNavigation()
     /// During a shell re-host, only the persisted row is focusable. tvOS otherwise
     /// lands briefly on the first row, then overrides our focus request and writes
     /// "language" over the saved "navigation" selection.
@@ -213,6 +222,9 @@ struct SettingsSplitLayout: View {
             if let selected = selectedRowID, !ids.contains(selected) {
                 selectedRowID = ids.first
             }
+        }
+        .onChange(of: selectedRowID) { _, _ in
+            detailNavigation.reset()
         }
         .onDisappear {
             // Invalidate any delayed restoration owned by this view instance.
@@ -337,11 +349,13 @@ struct SettingsSplitLayout: View {
             SettingsMasterRowLabel(row: row, isSelected: selectedRowID == row.id)
         }
         .buttonStyle(SettingsFocusButtonStyle())
+        .accessibilityIdentifier("settings-master-\(row.id)")
         // While editing OR restoring after a shell swap, take every other row out
         // of the focus order. Focus restoration must be solved by controlling
         // eligibility, not by racing tvOS after it lands on Language.
         .disabled(
-            (focusInDetail || isRestoringExternalFocus)
+            detailNavigation.awaitingFocus
+                || (focusInDetail || isRestoringExternalFocus)
                 && selectedRowID != row.id
         )
     }
@@ -349,32 +363,15 @@ struct SettingsSplitLayout: View {
     // MARK: - Detail pane (right)
 
     private var detailPane: some View {
-        ScrollView {
-            // Exactly two children: the title/description block and the control.
-            // The spacing is therefore the gap between the description and the
-            // first toggle/checkmark/box below it.
-            VStack(alignment: .leading, spacing: 44) {
-                if let row = selectedRow {
-                    VStack(alignment: .leading, spacing: 12) {
-                        row.title
-                            .settingsFeatureTitle()
-                        if let description = row.description {
-                            description
-                                .settingsHelperText()
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-
-                    row.detail()
-                        .toggleStyle(SettingsSwitchToggleStyle())
-                        .frame(maxWidth: .infinity, alignment: .leading)
+        Group {
+            if let row = selectedRow {
+                if let subpage = row.subpage {
+                    SettingsNavigableDetail(row: row, subpage: subpage, navigation: detailNavigation)
+                        .id(row.id)
+                } else {
+                    SettingsDetailContent(row: row)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 56)
-            .padding(.bottom, 48)
-            .padding(.leading, 80)
-            .padding(.trailing, 120)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // Full-height detail panel, separated from the master list by a single
@@ -398,6 +395,132 @@ struct SettingsSplitLayout: View {
         // So the detail pane updates INSTANTLY as focus moves (no `.animation`
         // here). A tap that pins a row still animates via its `withAnimation`.
         .tvOSFocusSection()
+    }
+}
+
+struct SettingsDetailSubpage {
+    let content: () -> AnyView
+
+    init<Content: View>(@ViewBuilder content: @escaping () -> Content) {
+        self.content = { AnyView(content()) }
+    }
+}
+
+@MainActor
+@Observable
+final class SettingsDetailNavigation {
+    private(set) var isPresented = false
+    private(set) var awaitingFocus = false
+    private(set) var returnFocusGeneration = 0
+    private var transitionGeneration = 0
+
+    func push() {
+        transitionGeneration += 1
+        awaitingFocus = true
+        isPresented = true
+    }
+
+    func pop(animated: Bool) {
+        transitionGeneration += 1
+        let generation = transitionGeneration
+        awaitingFocus = true
+        withAnimation(animated ? .easeInOut(duration: 0.2) : nil, completionCriteria: .removed) {
+            isPresented = false
+        } completion: {
+            guard self.transitionGeneration == generation else { return }
+            self.returnFocusGeneration += 1
+        }
+    }
+
+    func focusArrived() { awaitingFocus = false }
+
+    func reset() {
+        transitionGeneration += 1
+        isPresented = false
+        awaitingFocus = false
+        returnFocusGeneration = 0
+    }
+}
+
+private struct SettingsNavigableDetail: View {
+    let row: SettingsSplitRow
+    let subpage: SettingsDetailSubpage
+    let navigation: SettingsDetailNavigation
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var rootFocusScope
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            SettingsDetailContent(row: row)
+                .tvOSFocusScope(rootFocusScope)
+                .environment(\.settingsDetailRootFocusScope, rootFocusScope)
+                .environment(\.settingsDetailRootEnabled, isEnabled)
+                .opacity(navigation.isPresented ? 0 : 1)
+                .environment(\.isEnabled, isEnabled && !navigation.isPresented && !navigation.awaitingFocus)
+                .allowsHitTesting(!navigation.isPresented)
+                .accessibilityHidden(navigation.isPresented)
+                // A fading-in root cannot receive the returning native focus yet.
+                .animation(nil, value: navigation.isPresented)
+            if navigation.isPresented {
+                subpage.content()
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    #if os(tvOS)
+                    .onExitCommand {
+                        navigation.pop(animated: !reduceMotion)
+                    }
+                    #endif
+            }
+        }
+        .environment(navigation)
+        .clipped()
+    }
+}
+
+private struct SettingsDetailRootFocusScopeKey: EnvironmentKey {
+    static let defaultValue: Namespace.ID? = nil
+}
+
+private struct SettingsDetailRootEnabledKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var settingsDetailRootEnabled: Bool {
+        get { self[SettingsDetailRootEnabledKey.self] }
+        set { self[SettingsDetailRootEnabledKey.self] = newValue }
+    }
+
+    var settingsDetailRootFocusScope: Namespace.ID? {
+        get { self[SettingsDetailRootFocusScopeKey.self] }
+        set { self[SettingsDetailRootFocusScopeKey.self] = newValue }
+    }
+}
+
+private struct SettingsDetailContent: View {
+    let row: SettingsSplitRow
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 44) {
+                VStack(alignment: .leading, spacing: 12) {
+                    row.title.settingsFeatureTitle()
+                    if let description = row.description {
+                        description
+                            .settingsHelperText()
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                row.detail()
+                    .toggleStyle(SettingsSwitchToggleStyle())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 56)
+            .padding(.bottom, 48)
+            .padding(.leading, 80)
+            .padding(.trailing, 120)
+        }
     }
 }
 

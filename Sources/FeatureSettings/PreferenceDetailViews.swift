@@ -76,7 +76,8 @@ struct AppearanceDetailView: View {
                 },
                 SettingsSplitRow(
                     id: "artwork",
-                    title: "Artwork"
+                    title: "Artwork",
+                    subpage: SettingsDetailSubpage { ArtworkCustomizationView(cards: cardStyle) }
                 ) {
                     VStack(alignment: .leading, spacing: 32) {
                         ArtworkSettingsControls(cards: cardStyle)
@@ -97,6 +98,7 @@ struct AppearanceDetailView: View {
                     id: "cards",
                     title: "Cards",
                     description: "How media cards look across the app.",
+                    subpage: SettingsDetailSubpage { CardCaptionCustomizationView(cards: cardStyle) }
                 ) {
                     cardsControls
                 },

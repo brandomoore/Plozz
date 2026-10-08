@@ -429,7 +429,11 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                         // must remain complete rather than truncated.
                         XCTAssertTrue(copy.contains("Customize") && copy.contains("by view"), copy)
                     }
-                    if page { XCTAssertTrue(copy.contains("No labels"), copy) }
+                    if page {
+                        XCTAssertTrue(copy.contains("App default"), copy)
+                        XCTAssertFalse(copy.contains("Use default"), copy)
+                        XCTAssertFalse(copy.contains("No labels"), copy)
+                    }
                     if !page {
                         XCTAssertTrue(copy.contains("App default"), copy)
                         XCTAssertTrue(copy.contains("Show labels everywhere"), copy)
