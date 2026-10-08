@@ -228,9 +228,10 @@ public final class NativeSubtitleCueOutput: NSObject, AVPlayerItemLegibleOutputP
         next.advanceIntervalForDelegateInvocation = 12
         next.setDelegate(self, queue: .main)
         output = next
-        item.add(next)
+        // Avoid overlapping registrations while the paused rendition changes.
         previous?.setDelegate(nil, queue: nil)
         if let previous { item.remove(previous) }
+        item.add(next)
         item.textStyleRules = rendersThroughPlayer ? style.textStyleRules() : nil
         timeline.reset()
         onCues([])
@@ -259,8 +260,8 @@ public final class NativeSubtitleCueOutput: NSObject, AVPlayerItemLegibleOutputP
             // Clear the old native line before changing drawing ownership.
             await Task.yield()
             guard !Task.isCancelled, self.renderingGeneration == generation, self.item === item else { return }
-            self.replaceOutput()
             item.select(selected, in: group)
+            self.replaceOutput()
         }
     }
 

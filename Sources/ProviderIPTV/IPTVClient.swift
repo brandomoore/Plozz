@@ -166,7 +166,7 @@ actor IPTVClient {
         try catalog.commitImport(
             library: credential.mode == .playlist ? nil : library,
             scope: credential.mode == .playlist ? Self.playlistCatalogScope : library
-        )
+        ) { progress(IPTVImportProgress(stage: .catalogCommit, entries: $0)) }
     }
 
     private func categories(library: String) async throws -> [String: String] {
@@ -199,7 +199,9 @@ actor IPTVClient {
         try await importPlaylist(fileURL: url)
         try Task.checkCancellation()
         IPTVSetupDiagnostics.current?.advance(to: .catalogCommit)
-        try catalog.commitImport(library: nil, scope: "playlist")
+        try catalog.commitImport(library: nil, scope: "playlist") {
+            progress(IPTVImportProgress(stage: .catalogCommit, entries: $0))
+        }
     }
 
     private func importPlaylist(fileURL: URL? = nil) async throws {

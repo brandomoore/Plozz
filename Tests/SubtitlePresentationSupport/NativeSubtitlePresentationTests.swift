@@ -597,7 +597,8 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         engine.selectSubtitleTrack(alternate)
         try await waitUntil(
             detail: "After selecting Alternate: visible=\(model.primary.compactMap(\.text)), "
-                + "decoded=\(cues.compactMap(\.text))"
+                + "decoded=\(cues.compactMap(\.text)), time=\(engine.subtitlePresentationTime), "
+                + "selected=\(String(describing: item.currentMediaSelection.selectedMediaOption(in: group)))"
         ) {
             return model.primary.map(\.text) == ["Alternate"]
         }
@@ -606,12 +607,29 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         engine.selectSubtitleTrack(full)
         try await waitUntil(
             detail: "After reselecting Full: visible=\(model.primary.compactMap(\.text)), "
-                + "decoded=\(cues.compactMap(\.text)), "
+                + "decoded=\(cues.compactMap(\.text)), time=\(engine.subtitlePresentationTime), "
                 + "selected=\(String(describing: item.currentMediaSelection.selectedMediaOption(in: group))), "
                 + "suppressed=\(item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }.map(\.suppressesPlayerRendering))"
         ) {
             return model.primary.compactMap(\.text) == ["Alpha", "Bravo"]
         }
+        let previousOutput = try XCTUnwrap(item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }.first)
+        engine.selectSubtitleTrack(full)
+        try await waitUntil(detail: "Reselecting the same paused rendition must repopulate the replacement output") {
+            item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }.first !== previousOutput
+                && model.primary.compactMap(\.text) == ["Alpha", "Bravo"]
+        }
+        engine.selectSubtitleTrack(nil)
+        try await waitUntil {
+            item.currentMediaSelection.selectedMediaOption(in: group) == nil && cues.isEmpty
+        }
+        engine.selectSubtitleTrack(alternate)
+        engine.selectSubtitleTrack(full)
+        try await waitUntil(detail: "The latest rapid track selection must win after explicit Off") {
+            model.primary.compactMap(\.text) == ["Alpha", "Bravo"]
+        }
+        XCTAssertTrue(engine.isPaused)
+        XCTAssertEqual(engine.subtitlePresentationTime, 2.5, accuracy: 1.0 / 24)
         await engine.seek(to: 7.5)
         try await waitUntil {
             return model.primary.isEmpty

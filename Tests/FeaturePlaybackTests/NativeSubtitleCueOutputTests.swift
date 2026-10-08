@@ -249,4 +249,29 @@ final class NativeSubtitleCueOutputTests: XCTestCase {
         XCTAssertTrue(delivered.isEmpty)
         XCTAssertTrue(item.outputs.isEmpty)
     }
+
+    func testReplacementRemovesThePreviousLegibleOutputBeforeAddingTheNext() {
+        let item = OutputRegistrationItem(url: URL(fileURLWithPath: "/nonexistent-caption-fixture.mp4"))
+        let player = AVPlayer(playerItem: item)
+        player.isMuted = true
+        let bridge = NativeSubtitleCueOutput(player: player, item: item, style: .default) { _ in }
+        defer { bridge.detach(); player.pause() }
+        for enabled in [true, true, false, true] {
+            bridge.select(enabled: enabled)
+            XCTAssertEqual(item.outputs.count, 1)
+        }
+        XCTAssertEqual(item.legibleCountsBeforeAdd, [0, 0, 0, 0, 0],
+                       "Even transient overlapping registration can lose paused cues on older runtimes")
+    }
+}
+
+private final class OutputRegistrationItem: AVPlayerItem, @unchecked Sendable {
+    var legibleCountsBeforeAdd: [Int] = []
+
+    override func add(_ output: AVPlayerItemOutput) {
+        if output is AVPlayerItemLegibleOutput {
+            legibleCountsBeforeAdd.append(outputs.filter { $0 is AVPlayerItemLegibleOutput }.count)
+        }
+        super.add(output)
+    }
 }

@@ -11,6 +11,40 @@ import Vision
 #if os(tvOS)
 @MainActor
 final class MediaRowEpisodeEntryHostedTests: XCTestCase {
+    func testCaptionSamplingDistinguishesAnimationFromAJump() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIViewController()
+        window.rootViewController = host
+        let ink = UIView(frame: CGRect(x: 100, y: 100, width: 80, height: 20))
+        ink.backgroundColor = .white
+        host.view.backgroundColor = .black
+        host.view.addSubview(ink)
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        await waitUntil { ink.layer.presentation()?.frame.minY == 100 }
+        let region = CGRect(x: 96, y: 96, width: 88, height: 64)
+        let start = try titleInkY(in: captionImage(window, region: region))
+        UIView.animate(withDuration: 0.18) { ink.frame.origin.y = 116 }
+        let animated = try await titleMotion(window, region: region)
+        XCTAssertEqual(try XCTUnwrap(animated.last), start + 16, accuracy: 1)
+        XCTAssertTrue(animated.contains { $0 > start + 2 && $0 < start + 14 })
+
+        UIView.performWithoutAnimation { ink.frame.origin.y = 100 }
+        await waitUntil { ink.layer.presentation()?.frame.minY == 100 }
+        UIView.performWithoutAnimation { ink.frame.origin.y = 116 }
+        let jumped = try await titleMotion(window, region: region)
+        XCTAssertEqual(try XCTUnwrap(jumped.last), start + 16, accuracy: 1)
+        XCTAssertFalse(jumped.contains { $0 > start + 2 && $0 < start + 14 },
+                       "Sampling must not invent intermediate motion for an unanimated change.")
+    }
+
     func testEpisodeTitleAnimatesDownAndBackWithoutMovingTheRow() async throws {
         try await assertCaptionMotion(loading: false)
     }
@@ -113,12 +147,14 @@ final class MediaRowEpisodeEntryHostedTests: XCTestCase {
         )
     }
 
-    private func captionImage(_ window: UIWindow, region: CGRect) -> UIImage {
+    private func captionImage(_ window: UIWindow, region: CGRect) throws -> UIImage {
+        let presentation = try XCTUnwrap(window.layer.presentation())
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
+        // Sample composited pixels without asking UIKit to snapshot/layout the whole hierarchy.
         return UIGraphicsImageRenderer(size: region.size, format: format).image { context in
             context.cgContext.translateBy(x: -region.minX, y: -region.minY)
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+            presentation.render(in: context.cgContext)
         }
     }
 

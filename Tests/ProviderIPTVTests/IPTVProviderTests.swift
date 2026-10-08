@@ -191,6 +191,93 @@ final class IPTVProviderTests: XCTestCase {
         XCTAssertThrowsError(try first.record("movie:new"))
     }
 
+    func testBatchedImportKeepsReadersAtomicAndHandlesReplacedStagingRows() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
+        let credential = try IPTVCredential(mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.example/list")))
+        let url = root.appendingPathComponent("catalog.sqlite")
+        let writer = try IPTVCatalog(url: url, key: credential.catalogKey)
+        let reader = try IPTVCatalog(url: url, key: credential.catalogKey)
+        try writer.insert(IPTVRecord(item: MediaItem(id: "old", title: "Original", kind: .movie, libraryID: "movies")))
+        try writer.insert(IPTVRecord(item: MediaItem(id: "live", title: "Retained", kind: .video, libraryID: "live")))
+        try writer.setState("movies", "old")
+        try writer.beginImport()
+        defer { writer.discardImport() }
+        for index in 0..<10_005 {
+            try writer.insert(IPTVRecord(
+                item: MediaItem(id: "movie:\(index)", title: "Movie \(index)", kind: .movie, libraryID: "movies")
+            ), into: .incoming)
+        }
+        for index in 0..<7 {
+            try writer.insert(IPTVRecord(
+                item: MediaItem(id: "movie:\(index)", title: "Replacement \(index)", kind: .movie, libraryID: "movies")
+            ), into: .incoming)
+        }
+        var checkpoints: [Int] = []
+        XCTAssertThrowsError(try writer.commitImport(library: "movies", scope: "movies") { count in
+            checkpoints.append(count)
+            if count > 0 { throw CancellationError() }
+        }) { XCTAssertTrue($0 is CancellationError) }
+        XCTAssertEqual(checkpoints, [0, 10_000])
+        XCTAssertEqual(try reader.count(where: "1 = 1"), 2)
+        XCTAssertEqual(try reader.state("movies"), "old")
+        XCTAssertEqual(try reader.record("old").item.title, "Original")
+
+        checkpoints = []
+        try writer.commitImport(library: "movies", scope: "movies") { count in
+            checkpoints.append(count)
+            XCTAssertEqual(try reader.count(where: "1 = 1"), 2)
+            XCTAssertEqual(try reader.state("movies"), "old")
+            XCTAssertEqual(try reader.record("old").item.title, "Original")
+        }
+        XCTAssertEqual(checkpoints, [0, 10_000, 10_005])
+        XCTAssertEqual(try reader.count(where: "library = ?", values: ["movies"]), 10_005)
+        XCTAssertEqual(try reader.record("movie:0").item.title, "Replacement 0")
+        XCTAssertEqual(try reader.record("movie:10004").item.title, "Movie 10004")
+        XCTAssertEqual(try reader.record("live").item.title, "Retained")
+        XCTAssertThrowsError(try reader.record("old"))
+        XCTAssertNotEqual(try reader.state("movies"), "old")
+
+        try writer.commitImport(library: nil, scope: "playlist")
+        XCTAssertEqual(try reader.count(where: "1 = 1"), 10_005)
+        XCTAssertThrowsError(try reader.record("live"))
+        writer.discardImport()
+        try writer.beginImport()
+        try writer.commitImport(library: nil, scope: "playlist")
+        XCTAssertEqual(try reader.count(where: "1 = 1"), 0)
+    }
+
+    func testCancellationBetweenCommitBatchesRestoresThePreviousCatalog() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
+        let credential = try IPTVCredential(mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.example/list")))
+        let result = try await Task.detached {
+            let catalog = try IPTVCatalog(url: root.appendingPathComponent("catalog.sqlite"), key: credential.catalogKey)
+            try catalog.insert(IPTVRecord(item: MediaItem(id: "old", title: "Original", kind: .movie, libraryID: "movies")))
+            try catalog.setState("playlist", "old")
+            try catalog.beginImport()
+            defer { catalog.discardImport() }
+            for index in 0..<10_005 {
+                try catalog.insert(IPTVRecord(
+                    item: MediaItem(id: "\(index)", title: "Movie", kind: .movie, libraryID: "movies")
+                ), into: .incoming)
+            }
+            var checkpoints: [Int] = []
+            do {
+                try catalog.commitImport(library: nil, scope: "playlist") { count in
+                    checkpoints.append(count)
+                    if count > 0 { withUnsafeCurrentTask { $0?.cancel() } }
+                }
+                XCTFail("Cancellation must roll back the replacement before publication")
+            } catch is CancellationError {
+                XCTAssertEqual(checkpoints, [0, 10_000])
+            }
+            return (try catalog.count(where: "1 = 1"), try catalog.state("playlist"))
+        }.value
+        XCTAssertEqual(result.0, 1)
+        XCTAssertEqual(result.1, "old")
+    }
+
     func testCredentialMovesUserInfoIntoHeaderAndKeepsItOutOfDescription() throws {
         let credential = try IPTVCredential(
             mode: .playlist, address: XCTUnwrap(URL(string: "https://viewer:private-pass@provider.example/list.m3u"))
