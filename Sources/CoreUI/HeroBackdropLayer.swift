@@ -31,10 +31,11 @@ struct DetailBackdropArtworkSource {
     let previewKey: String
 
     init(item: MediaItem, policy: ArtworkPresentationPolicy) {
+        let policy = policy.forArea(.details).forPlacement(.detailBackdrop)
         self.init(
-            references: policy.forArea(.details).references(for: item, placement: .detailBackdrop),
+            references: policy.references(for: item, placement: .detailBackdrop),
             pinIdentity: "detail:\(item.id)",
-            settings: policy.forArea(.details).metadataSettings,
+            settings: policy.metadataSettings,
             fallback: DetailBackdropArtwork.fallback(
                 for: item, isDiscoveryItem: TitleClassifier.isDiscoveryRouting(item, identitySources: item.sources)
             )
@@ -337,7 +338,7 @@ public struct HeroBackdropLayer<Video: View>: View {
             // Put a real image up while the 2000px pass decodes. Home's hero has
             // always done this; the detail hero opened onto a scrim instead.
             previewVariant: .heroPreview,
-            artworkPolicy: artworkPolicy.forArea(.details),
+            artworkPolicy: artworkPolicy.forArea(.details).forPlacement(.detailBackdrop),
             asyncFallbackURL: asyncFallbackURL,
             pinIdentity: pinIdentity,
             content: ArtworkFillImage.init,

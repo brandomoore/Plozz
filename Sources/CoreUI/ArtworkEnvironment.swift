@@ -6,18 +6,21 @@ public struct ArtworkPresentationPolicy: Equatable, Sendable {
     public let area: ArtworkArea
     public let settings: ArtworkSettings
     public let providers: MetadataProviderSettings
+    public let placement: ArtworkPlacement?
 
     public init(
         area: ArtworkArea = .browse,
         settings: ArtworkSettings = .default,
-        providers: MetadataProviderSettings = .default
+        providers: MetadataProviderSettings = .default,
+        placement: ArtworkPlacement? = nil
     ) {
         self.area = area
         self.settings = settings
         self.providers = providers
+        self.placement = placement
     }
 
-    public var prefersOnlineArtwork: Bool { settings.prefersOnlineArtwork(in: area) }
+    public var prefersOnlineArtwork: Bool { settings.prefersOnlineArtwork(in: area, placement: placement) }
     public var prefersTextlessArtwork: Bool { settings.prefersTextlessArtwork(in: area) }
 
     public func references(for item: MediaItem, placement: ArtworkPlacement) -> [ArtworkReference] {
@@ -35,7 +38,11 @@ public struct ArtworkPresentationPolicy: Equatable, Sendable {
     }
 
     public func forArea(_ area: ArtworkArea) -> Self {
-        Self(area: area, settings: settings, providers: providers)
+        Self(area: area, settings: settings, providers: providers, placement: placement)
+    }
+
+    public func forPlacement(_ placement: ArtworkPlacement?) -> Self {
+        Self(area: area, settings: settings, providers: providers, placement: placement)
     }
 
     public var heroPolicy: Self {

@@ -66,14 +66,33 @@ final class ArtworkSettingsTests: XCTestCase {
         let recommended = ArtworkSettings.default
         XCTAssertTrue(recommended.prefersTextlessArtwork(in: .continueWatching))
         for area in ArtworkArea.allCases {
-            XCTAssertEqual(recommended.prefersOnlineArtwork(in: area), area == .continueWatching)
-            XCTAssertEqual(recommended.inheritedPreference(in: area), area == .continueWatching ? .online : .library)
+            let online = [.home, .recommendedHero, .continueWatching].contains(area)
+            XCTAssertEqual(recommended.prefersOnlineArtwork(in: area), online)
+            XCTAssertEqual(recommended.inheritedPreference(in: area), online ? .online : .library)
         }
         let library = ArtworkSettings(preference: .library)
         for area in ArtworkArea.allCases {
             XCTAssertFalse(library.prefersOnlineArtwork(in: area))
         }
         XCTAssertFalse(library.prefersTextlessArtwork(in: .continueWatching))
+    }
+
+    func testRecommendedDetailHeroesDoNotChangePostersOrEpisodeRows() {
+        for placement in [ArtworkPlacement.homeHero, .detailBackdrop, .logo] {
+            XCTAssertTrue(ArtworkSettings.default.prefersOnlineArtwork(in: .details, placement: placement))
+        }
+        for placement in [ArtworkPlacement.poster, .seriesPoster, .episodeThumbnail] {
+            XCTAssertFalse(ArtworkSettings.default.prefersOnlineArtwork(in: .details, placement: placement))
+            XCTAssertFalse(ArtworkSettings.default.prefersOnlineArtwork(in: .episodes, placement: placement))
+        }
+        for preference in [ArtworkPreference.library, .online] {
+            let settings = ArtworkSettings(overrides: [.home: preference, .recommendedHero: preference, .details: preference])
+            for area in [ArtworkArea.home, .recommendedHero, .details] {
+                for placement in [ArtworkPlacement.detailBackdrop, .logo, .poster] {
+                    XCTAssertEqual(settings.prefersOnlineArtwork(in: area, placement: placement), preference == .online)
+                }
+            }
+        }
     }
 
     func testOverridesInheritChangesWithoutBecomingPermanentDefaults() {
@@ -123,7 +142,7 @@ final class ArtworkSettingsTests: XCTestCase {
         var settings = ArtworkSettings(overrides: [.browse: .library])
         XCTAssertFalse(settings.prefersOnlineArtwork(in: .browse))
         XCTAssertFalse(settings.prefersOnlineArtwork(in: .music))
-        XCTAssertFalse(settings.prefersOnlineArtwork(in: .home))
+        XCTAssertTrue(settings.prefersOnlineArtwork(in: .home))
         settings.preference = .online
         settings.preference = .recommended
         XCTAssertEqual(settings.overrides, [.browse: .library])

@@ -1035,6 +1035,7 @@ private struct PlozziOSHeroBackdrop: View {
             // the whole carousel, so a swipe lands on an image immediately
             // and sharpens, instead of waiting out a full-size download.
             previewVariant: .heroPreview,
+            artworkPolicy: artworkPolicy.forPlacement(.detailBackdrop),
             asyncFallbackURL: asyncFallbackURL,
             pinIdentity: "\(surfaceRole == .home ? "home" : "detail"):\(presentation.itemID)",
             sharedResolutionIdentity: sharedResolutionIdentity
@@ -1503,6 +1504,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
+            artworkPolicy: artworkPolicy.forPlacement(.detailBackdrop),
             asyncFallbackURL: asyncFallbackURL,
             pinIdentity: "home:\(presentation.itemID)",
             sharedResolutionIdentity: sharedResolutionIdentity
@@ -1520,6 +1522,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
+            artworkPolicy: artworkPolicy.forPlacement(.detailBackdrop),
             asyncFallbackURL: asyncFallbackURL,
             pinIdentity: "home:\(presentation.itemID)",
             sharedResolutionIdentity: sharedResolutionIdentity
@@ -1554,6 +1557,7 @@ private struct PlozziOSHeroReflection: View {
                 maxAspectRatio: 3,
                 variant: .heroBackdrop,
                 previewVariant: .heroPreview,
+                artworkPolicy: artworkPolicy.forPlacement(.detailBackdrop),
                 asyncFallbackURL: asyncFallbackURL,
                 pinIdentity: artworkPinIdentity,
                 sharedResolutionIdentity: sharedResolutionIdentity

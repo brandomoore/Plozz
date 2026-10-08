@@ -80,9 +80,11 @@ final class ViewCustomizationCycleTests: XCTestCase {
 
     func testRecommendedValuesDescribeTheirActualBehavior() {
         let artwork = ArtworkSettings.default
+        XCTAssertEqual(String(localized: artwork.customizationValue(in: .home)), "Metadata providers")
+        XCTAssertEqual(String(localized: artwork.customizationValue(in: .recommendedHero)), "Metadata providers")
         XCTAssertEqual(String(localized: artwork.customizationValue(in: .browse)), "Library")
         XCTAssertEqual(String(localized: artwork.customizationValue(in: .continueWatching)), "Metadata providers")
-        XCTAssertEqual(String(localized: artwork.customizationValue(in: .details)), "Library")
+        XCTAssertEqual(String(localized: artwork.customizationValue(in: .details)), "Mixed")
         XCTAssertNotNil(artwork.customizationDetail(in: .details))
         XCTAssertTrue(artwork.prefersTextlessArtwork(in: .continueWatching))
         let labels = CardCaptionSettings.default

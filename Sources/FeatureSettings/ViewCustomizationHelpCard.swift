@@ -111,6 +111,11 @@ struct ArtworkScopeDiagram: View {
     }
 
     var body: some View {
+        let regions = Self.regions(
+            for: area, navigationStyle: navigationStyle, detailKind: detailKind,
+            heroSettings: heroSettings, continueWatchingShowsSeriesArtwork: continueWatchingShowsSeriesArtwork
+        )
+        let screenBounds = CGRect(origin: .zero, size: Self.screen)
         Canvas { context, size in
             context.scaleBy(x: size.width / Self.screen.width, y: size.height / Self.screen.height)
             if layoutDirection == .rightToLeft {
@@ -119,13 +124,10 @@ struct ArtworkScopeDiagram: View {
             }
             context.fill(Path(CGRect(origin: .zero, size: Self.screen)),
                          with: .color(palette.settingsBackground))
-            for region in Self.regions(
-                for: area, navigationStyle: navigationStyle, detailKind: detailKind,
-                heroSettings: heroSettings, continueWatchingShowsSeriesArtwork: continueWatchingShowsSeriesArtwork
-            ) {
+            for region in regions {
                 let shape = Path(roundedRect: region.frame, cornerRadius: 3)
                 context.fill(shape, with: .color(region.highlighted ? palette.accent.opacity(0.2) : palette.fill))
-                if region.highlighted {
+                if region.highlighted, region.frame != screenBounds {
                     context.stroke(shape, with: .color(palette.accent), lineWidth: 1.5)
                 }
                 if region.artwork, region.kind != .logo {
@@ -144,6 +146,13 @@ struct ArtworkScopeDiagram: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            if regions.contains(where: { $0.highlighted && $0.frame == screenBounds }) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(palette.accent, lineWidth: 1.5)
+                    .padding(1)
+            }
+        }
     }
 
     static func regions(

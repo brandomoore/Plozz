@@ -117,11 +117,13 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
         overrides[area] ?? preference
     }
 
-    public func prefersOnlineArtwork(in area: ArtworkArea) -> Bool {
+    public func prefersOnlineArtwork(in area: ArtworkArea, placement: ArtworkPlacement? = nil) -> Bool {
         switch preference(in: area) {
         case .library: false
         case .online: true
-        case .recommended: area == .continueWatching
+        case .recommended:
+            area == .home || area == .recommendedHero || area == .continueWatching
+                || (area == .details && [.homeHero, .detailBackdrop, .logo].contains(placement))
         }
     }
 
@@ -131,9 +133,11 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
         let preference = preference(in: area)
         let variesBackground = preference == .recommended
             && area == .details && placement == .detailBackdrop
+        let preservesLibrarySelection = preference == .library
+            || (preference == .recommended && area != .continueWatching && !variesBackground)
         let references = item.artworkReferences(
             for: placement,
-            preferringLibrarySelection: !prefersOnlineArtwork(in: area) && !variesBackground
+            preferringLibrarySelection: preservesLibrarySelection
         )
         guard variesBackground,
               let home = artworkReferences(for: item, placement: .homeHero, in: .home).first else {

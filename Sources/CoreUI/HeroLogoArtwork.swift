@@ -229,11 +229,12 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
     public var body: some View {
         #if canImport(UIKit)
         ArtworkPolicyReader(policy: nil) { policy in
+        let logoPolicy = policy.forPlacement(.logo)
         LoadedLogo(
             references: references,
             asyncFallbackURL: asyncFallbackURL,
-            prefersOnlineArtwork: policy.prefersOnlineArtwork,
-            providerPolicyIdentity: policy.identity,
+            prefersOnlineArtwork: logoPolicy.prefersOnlineArtwork,
+            providerPolicyIdentity: logoPolicy.identity,
             backgroundSample: backgroundSample,
             displayedArtworkID: displayedArtworkID,
             maxWidth: maxWidth,
@@ -246,7 +247,7 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
             onResolve: onResolve,
             textFallback: textFallback
         )
-        .id(policy.identity)
+        .id(logoPolicy.identity)
         }
         #else
         textFallback()

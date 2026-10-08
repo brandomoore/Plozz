@@ -774,7 +774,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                 maxAspectRatio: maxAspectRatio,
                 asyncOnlineURL: asyncFallbackURL,
                 prefersOnlineArtwork: true,
-                sharedKey: sharedResolutionIdentity
+                sharedKey: sharedResolutionIdentity.map { "\($0)|\(providerPolicyIdentity)" }
             ) {
                 await adoptFirstPaint(firstPaint, for: key)
                 return

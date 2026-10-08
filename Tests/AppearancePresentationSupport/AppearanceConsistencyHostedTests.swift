@@ -7,6 +7,133 @@ import XCTest
 
 @MainActor
 final class AppearanceConsistencyHostedTests: XCTestCase {
+    func testSharedHeroAppearanceReevaluatesChangedProviderPolicy() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let library = try seedArtwork(color: .red)
+        let metadata = try seedArtwork(color: .blue)
+        let appearanceID = UUID().uuidString
+        for providerEnabled in [true, false, true] {
+            let providers = MetadataProviderSettings(
+                orderMode: .custom,
+                enabledOrder: providerEnabled ? ["tmdb"] : [],
+                disabledOrder: providerEnabled ? [] : ["tmdb"]
+            )
+            let policy = ArtworkPresentationPolicy(
+                area: .details, providers: providers, placement: .detailBackdrop
+            )
+            let online = providerEnabled ? metadata : nil
+            fixture.host.rootView = AnyView(
+                VStack(spacing: 0) {
+                    ForEach(0..<2) { index in
+                        FallbackAsyncImage(
+                            references: [.remote(library)], variant: .heroBackdrop,
+                            artworkPolicy: policy, asyncFallbackURL: { online },
+                            pinIdentity: "\(appearanceID)-\(index)",
+                            sharedResolutionIdentity: appearanceID
+                        ) { Color.clear }
+                        .frame(height: 160)
+                    }
+                }
+                .frame(width: 300, height: 320)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(.black)
+            )
+            try await waitUntil("shared hero provider enabled=\(providerEnabled)") {
+                guard let image = try? self.capture(fixture.window) else { return false }
+                return [50.0, 220.0].allSatisfy { y in
+                    guard let pixel = try? self.pixel(
+                        image, x: 50 / fixture.window.bounds.width, y: y / fixture.window.bounds.height
+                    ) else { return false }
+                    return pixel[providerEnabled ? 2 : 0] > 100 && pixel[providerEnabled ? 0 : 2] < 20
+                }
+            }
+        }
+    }
+
+    func testRecommendedDetailHeroesUseMetadataWithoutChangingRelatedCards() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let library = try seedArtwork(color: .red)
+        let metadata = try seedArtwork(color: .blue)
+        for settings in [
+            ArtworkSettings.default, .init(preference: .library),
+            .init(overrides: [.details: .library]), .init(preference: .online)
+        ] {
+            for hasMetadata in [true, false] {
+                let online = hasMetadata ? metadata : nil
+                let heroOnline = settings.preference(in: .details) != .library && hasMetadata
+                let cardsOnline = settings.preference(in: .details) == .online && hasMetadata
+                fixture.host.rootView = AnyView(
+                    VStack(spacing: 0) {
+                        HeroBackdropLayer(
+                            references: [.remote(library)], asyncFallbackURL: { online },
+                            height: 160, scrimTone: .clear, ignoresOverscan: false,
+                            pinIdentity: UUID().uuidString
+                        ) { EmptyView() }
+                        FallbackAsyncImage(
+                            references: [.remote(library)], variant: .posterCard,
+                            asyncFallbackURL: { online }, pinIdentity: UUID().uuidString
+                        ) { Color.clear }
+                        .frame(height: 160)
+                    }
+                    .frame(width: 300, height: 320)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .background(.black)
+                    .environment(\.plozzArtworkArea, .details)
+                    .environment(\.plozzArtworkSettings, settings)
+                    .id(UUID())
+                )
+                try await waitUntil("hero settings=\(settings) metadata=\(hasMetadata)") {
+                    guard let image = try? self.capture(fixture.window),
+                          let hero = try? self.pixel(image, x: 50 / fixture.window.bounds.width, y: 50 / fixture.window.bounds.height),
+                          let card = try? self.pixel(image, x: 50 / fixture.window.bounds.width, y: 220 / fixture.window.bounds.height)
+                    else { return false }
+                    return hero[heroOnline ? 2 : 0] > 100 && hero[heroOnline ? 0 : 2] < 20
+                        && card[cardsOnline ? 2 : 0] > 100 && card[cardsOnline ? 0 : 2] < 20
+                }
+            }
+        }
+    }
+
+    func testHeroLogosUseRecommendedSourcesAndRetainLibraryOverrides() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let library = try seedLogo(monochrome: false, color: .red)
+        let metadata = try seedLogo(monochrome: false, color: .blue)
+        defer {
+            for url in [library, metadata] {
+                ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: url))
+            }
+        }
+        for area in [ArtworkArea.home, .recommendedHero, .details, .homeRows, .browse] {
+            for useLibrary in [false, true] {
+                let settings = ArtworkSettings(overrides: useLibrary ? [area: .library] : [:])
+                let expectsMetadata = !useLibrary && [.home, .recommendedHero, .details].contains(area)
+                let item = MediaItem(id: UUID().uuidString, title: "Hero logo", kind: .movie)
+                fixture.host.rootView = AnyView(
+                    HeroLogoArtwork(
+                        references: [.remote(library)],
+                        asyncFallbackURL: HeroLogoFallback(for: item) { metadata },
+                        maxWidth: 200, maxHeight: 120
+                    ) { Color.clear }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.black)
+                    .environment(\.plozzArtworkArea, area)
+                    .environment(\.plozzArtworkSettings, settings)
+                    .id(item.id)
+                )
+                try await waitUntil("logo area=\(area) library=\(useLibrary)") {
+                    guard let image = try? self.capture(fixture.window),
+                          let bytes = try? self.rgba(image) else { return false }
+                    return self.countPixels(bytes) { red, green, blue in
+                        green < 30 && (expectsMetadata ? blue > 100 && red < 30 : red > 100 && blue < 30)
+                    } > 500
+                }
+            }
+        }
+    }
+
     #if os(iOS)
     func testSettingsScrollEdgesSpanTheNavigationBarWhileRowsStayInset() async throws {
         let fixture = try await makeFixture()
@@ -254,21 +381,37 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
         }
     }
 
-    private func seedLogo(monochrome: Bool) throws -> URL {
-        let url = try XCTUnwrap(URL(string: "https://appearance-fixture.example.test/\(UUID()).png"))
+    private func seedLogo(monochrome: Bool, color: UIColor? = nil) throws -> URL {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
         format.preferredRange = .standard
         let image = UIGraphicsImageRenderer(size: CGSize(width: 180, height: 100), format: format).image { context in
-            (monochrome ? UIColor.white : UIColor.red).setFill()
+            (monochrome ? UIColor.white : color ?? UIColor.red).setFill()
             context.fill(CGRect(x: 20, y: 15, width: 25, height: 70))
             context.fill(CGRect(x: 20, y: 60, width: 140, height: 25))
             if !monochrome {
-                UIColor.blue.setFill()
+                (color ?? UIColor.blue).setFill()
                 context.fill(CGRect(x: 120, y: 15, width: 40, height: 30))
             }
         }
+        return try seedImage(image)
+    }
+
+    private func seedArtwork(color: UIColor) throws -> URL {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 180, height: 100)).image {
+            color.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 180, height: 100))
+        }
+        let url = try seedImage(image)
+        addTeardownBlock {
+            ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: url))
+        }
+        return url
+    }
+
+    private func seedImage(_ image: UIImage) throws -> URL {
+        let url = try XCTUnwrap(URL(string: "https://appearance-fixture.example.test/\(UUID()).png"))
         let response = try XCTUnwrap(HTTPURLResponse(
             url: url, statusCode: 200, httpVersion: nil,
             headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
@@ -352,9 +495,9 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
         add(attachment)
     }
 
-    private func waitUntil(_ condition: () -> Bool) async throws {
+    private func waitUntil(_ context: String = "", _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !condition(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
-        XCTAssertTrue(condition(), "Appearance fixture did not finish resolving.")
+        XCTAssertTrue(condition(), "Appearance fixture did not finish resolving. \(context)")
     }
 }

@@ -81,7 +81,7 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
     }
 
     func testHomeAndLibraryHeroesDoNotUseTheirRowsOrEachOthersChoice() {
-        let settings = ArtworkSettings(overrides: [.home: .online, .recommended: .online])
+        let settings = ArtworkSettings(preference: .library, overrides: [.home: .online, .recommended: .online])
         let home = ArtworkPresentationPolicy(area: .homeRows, settings: settings)
         let library = home.forArea(.recommended)
         XCTAssertFalse(home.prefersOnlineArtwork)
@@ -91,6 +91,28 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
         XCTAssertEqual(library.heroPolicy.area, .recommendedHero)
         XCTAssertFalse(library.heroPolicy.prefersOnlineArtwork)
         XCTAssertEqual(library.heroPolicy.heroPolicy, library.heroPolicy)
+    }
+
+    func testRecommendedDetailHeroPolicyIsScopedAndPreservesProviderPermissions() {
+        let providers = MetadataProviderSettings(orderMode: .custom, enabledOrder: ["tvdb"], disabledOrder: ["tmdb"])
+        let cards = ArtworkPresentationPolicy(area: .details, providers: providers)
+        let hero = cards.forPlacement(.detailBackdrop)
+        let logo = cards.forPlacement(.logo)
+        XCTAssertFalse(cards.prefersOnlineArtwork)
+        XCTAssertTrue(hero.prefersOnlineArtwork)
+        XCTAssertTrue(logo.prefersOnlineArtwork)
+        XCTAssertEqual(hero.providers, cards.providers)
+        XCTAssertEqual(hero.metadataSettings.disabledOrder, ["tmdb"])
+        XCTAssertNotEqual(hero.identity, cards.identity)
+        XCTAssertEqual(hero.identity, logo.identity)
+        XCTAssertFalse(hero.forPlacement(.poster).prefersOnlineArtwork)
+        XCTAssertFalse(hero.forArea(.episodes).prefersOnlineArtwork)
+        let item = MediaItem(id: "detail", title: "Detail", kind: .movie)
+        XCTAssertTrue(MediaArtworkSource(item: item, placement: .detailBackdrop, policy: cards).policy.prefersOnlineArtwork)
+        XCTAssertFalse(MediaArtworkSource(item: item, placement: .poster, policy: cards).policy.prefersOnlineArtwork)
+        #if os(tvOS)
+        XCTAssertTrue(DetailBackdropArtworkSource(item: item, policy: cards).settings.preferOnlineArtwork)
+        #endif
     }
 
     func testContinueWatchingRowScopeDoesNotDependOnItsParentPage() {

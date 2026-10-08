@@ -124,12 +124,13 @@ struct ArtworkAreaChoices: View {
 
 extension ArtworkSettings {
     func customizationValue(in area: ArtworkArea) -> LocalizedStringResource {
-        prefersOnlineArtwork(in: area) ? "Metadata providers" : "Library"
+        if preference(in: area) == .recommended, area == .details { return "Mixed" }
+        return prefersOnlineArtwork(in: area) ? "Metadata providers" : "Library"
     }
 
     func customizationDetail(in area: ArtworkArea) -> LocalizedStringResource? {
         if preference(in: area) == .recommended, area == .details {
-            return "Library artwork, with a different background from Home when available."
+            return "Metadata-provider backgrounds and logos, with library artwork for related-title posters."
         }
         return area.detail
     }

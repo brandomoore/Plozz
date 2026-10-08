@@ -16,7 +16,7 @@ public struct MediaArtworkSource: Sendable {
         item: MediaItem, placements: [ArtworkPlacement], policy: ArtworkPresentationPolicy,
         router: ArtworkRouter = .shared
     ) {
-        self.policy = policy
+        self.policy = policy.forPlacement(placements.first)
         itemIdentity = CardArtworkPolicy.standard.pinIdentity(for: item)
         var seen = Set<ArtworkReference>()
         references = placements.flatMap { policy.references(for: item, placement: $0) }

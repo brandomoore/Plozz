@@ -90,10 +90,14 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   the shared group surface, separators, or tvOS control styles.
 - **Async artwork** — `FallbackAsyncImage` and `ArtworkImageCache`: an
   on-disk + in-memory image cache shared with `MetadataKit`'s URL cache,
-  with profile-scoped source choices in Appearance > Artwork. Recommended is
-  library-first except for textless Continue Watching artwork. Details can select
-  an already-available background different from Home without an extra metadata
-  lookup before display; ordinary Details cards remain library-first.
+  with profile-scoped source choices in Appearance > Artwork. Recommended uses
+  metadata providers first for Home and library Showcase heroes, movie/show detail
+  backgrounds and logos, and textless Continue Watching artwork. Ordinary rows,
+  related-title posters, and episode thumbnails remain library-first. Detail hero
+  placement is carried through resolution, cache identity, prewarming, and mobile
+  reflections without changing the surrounding page's card policy.
+  Shared hero/reflection first-paint results are qualified by source and provider
+  policy so changing those settings cannot reuse a previous provider's winner.
   Library-first and metadata-provider-first
   presets initialize source choices for Home, Continue Watching, Browse,
   Search, Watchlist, Details, Episodes, Playback, Music, Top Shelf, and Downloads
@@ -113,7 +117,7 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   Reciprocal links return to an existing page instead of stacking duplicate pages.
   Library-first heroes honor the server-selected backdrop or primary share
   sidecar rather than choosing a different image for Details or avoiding artwork
-  on the focused card. Recommended varies available Details backgrounds;
+  on the focused card. Recommended retains varied library Details backgrounds as fallbacks;
   metadata-provider-first retains provider lookup and artwork variation. The
   choice applies equally to first paint, prewarming, mobile reflections, and
   later visits; alternative images remain fallbacks if the selected one fails.

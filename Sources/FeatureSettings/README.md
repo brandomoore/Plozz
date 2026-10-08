@@ -98,7 +98,8 @@ and the single place caption customization lives.
   `SettingsDetailNavigation.focusArrived()` when that control receives focus.
   Customization lists and their inset contextual cards occupy separate regions.
   Larger 16:9 illustrations highlight only the affected artwork, beside one sentence
-  of help; label settings reuse the card-style preview. Navigation follows the active
+  of help; full-page outlines sit inside the preview's rounded corners rather than
+  being clipped by its mask. Label settings reuse the card-style preview. Navigation follows the active
   profile, including native sidebar, pinned rail, and top-tab differences. Ordinary
   title rows use 2:3 posters; episode/player thumbnails use their landscape ratios.
   Home follows the active Fullscreen Hero/Showcase layout, including disabled heroes;
@@ -109,7 +110,8 @@ and the single place caption customization lives.
   stable as focus or values change, with no extra focus stop or content behind
   the card. A smooth 40-point bottom fade and matching scroll clearance keep focused
   rows above the fade. Lists without help reserve no footer. Pane-level transition clipping
-  remains. Artwork values use "Library" and "Metadata providers"; narrow/mobile
+  remains. Artwork values use "Library" and "Metadata providers", with "Mixed" for
+  Recommended title details (metadata-provider heroes and library-first related posters); narrow/mobile
   and accessibility layouts stack the complete value rather than abbreviating it.
 - **Profile Seerr setup uses page gutters, not artwork padding.** On iPhone/iPad,
   `ProfileSeerrSetupView` uses `SettingsPageScroll` and a centered, at-most

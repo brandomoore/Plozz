@@ -9,6 +9,65 @@ import XCTest
 
 @MainActor
 final class ArtworkSettingsHostedTests: XCTestCase {
+    func testFullPageArtworkHighlightsRemainVisibleAtEveryRoundedCorner() throws {
+        var hero = HeroSettings.default
+        hero.style = .carousel
+        for (area, kind) in [
+            (ArtworkArea.home, ArtworkScopeDiagram.DetailKind.movie),
+            (.details, .movie), (.details, .series)
+        ] {
+            for palette in [ThemePalette.dark, .light, .pureBlack] {
+                for scale in [CGFloat(1), 2] {
+                    let renderer = ImageRenderer(content:
+                        ArtworkScopeDiagram(area: area, detailKind: kind, heroSettings: hero)
+                            .frame(width: 256, height: 144)
+                            .environment(\.themePalette, palette)
+                    )
+                    renderer.scale = scale
+                    let image = try XCTUnwrap(renderer.cgImage)
+                    var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+                    try pixels.withUnsafeMutableBytes { bytes in
+                        let context = try XCTUnwrap(CGContext(
+                            data: bytes.baseAddress, width: image.width, height: image.height,
+                            bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                            space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                        ))
+                        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                    }
+                    var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+                    XCTAssertTrue(UIColor(palette.accent).getRed(&red, green: &green, blue: &blue, alpha: &alpha))
+                    for trailing in [false, true] {
+                        for bottom in [false, true] {
+                            var accentPixels = 0
+                            for y in Int(2 * scale)..<Int(9 * scale) {
+                                for x in Int(2 * scale)..<Int(9 * scale) {
+                                    let column = trailing ? image.width - 1 - x : x
+                                    let row = bottom ? image.height - 1 - y : y
+                                    let offset = (row * image.width + column) * 4
+                                    if abs(CGFloat(pixels[offset]) - red * 255) < 35,
+                                       abs(CGFloat(pixels[offset + 1]) - green * 255) < 35,
+                                       abs(CGFloat(pixels[offset + 2]) - blue * 255) < 35,
+                                       pixels[offset + 3] > 220 {
+                                        accentPixels += 1
+                                    }
+                                }
+                            }
+                            XCTAssertGreaterThanOrEqual(
+                                accentPixels, Int(3 * scale * scale),
+                                "\(area) \(kind), scale=\(scale), trailing=\(trailing), bottom=\(bottom)"
+                            )
+                        }
+                    }
+                    let attachment = XCTAttachment(image: UIImage(cgImage: image))
+                    attachment.name = "highlight-corners-\(area)-\(kind)-\(scale)-\(palette.isLight)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+            }
+        }
+    }
+
     func testCustomizationCardReservesAStableViewportWithoutOverlappingRows() async throws {
         let helpCases: [ViewCustomizationHelp?] = [
             nil,
