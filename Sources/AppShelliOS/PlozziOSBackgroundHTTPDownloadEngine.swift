@@ -3,6 +3,7 @@
 import Foundation
 import MediaDownloads
 import CoreModels
+import CoreNetworking
 
 public enum PlozziOSBackgroundSessionBridge {
     private static let lock = NSLock()
@@ -495,7 +496,7 @@ private final class BackgroundHLSDownloadCoordinator:
                         self.allTasks { [weak self] tasks in
                             guard let self else { return }
                             if let existing = tasks.first(where: {
-                                $0.taskDescription == key
+                                backgroundTaskKey($0.taskDescription) == key
                             }) {
                                 if self.hasTransfer(key) {
                                     existing.resume()
@@ -539,7 +540,7 @@ private final class BackgroundHLSDownloadCoordinator:
                     }
                 } onCancel: {
                     self.allTasks { tasks in
-                        tasks.first { $0.taskDescription == key }?.suspend()
+                        tasks.first { backgroundTaskKey($0.taskDescription) == key }?.suspend()
                         self.finish(key: key, result: .failure(CancellationError()))
                     }
                 }
@@ -553,14 +554,15 @@ private final class BackgroundHLSDownloadCoordinator:
                     guard let value = task.taskDescription,
                           let descriptor = try? BackgroundTaskDescriptor.decode(value),
                           descriptor.profileID == profileID,
-                          descriptor.identityKey == identityKey else {
+                          descriptor.identityKey == identityKey,
+                          let key = backgroundTaskKey(value) else {
                         continue
                     }
                     _ = lock.withLock {
-                        discardedKeys.insert(value)
+                        discardedKeys.insert(key)
                     }
                     task.cancel()
-                    removeStagedLocation(for: value)
+                    removeStagedLocation(for: key)
                 }
             }
 
@@ -571,7 +573,7 @@ private final class BackgroundHLSDownloadCoordinator:
                 totalTimeRangesLoaded loadedTimeRanges: [NSValue],
                 timeRangeExpectedToLoad: CMTimeRange
             ) {
-                guard let key = assetDownloadTask.taskDescription else { return }
+                guard let key = backgroundTaskKey(assetDownloadTask.taskDescription) else { return }
                 reportProgress(
                     key: key,
                     loadedTimeRanges: loadedTimeRanges,
@@ -587,7 +589,7 @@ private final class BackgroundHLSDownloadCoordinator:
                 timeRangeExpectedToLoad: CMTimeRange,
                 for mediaSelection: AVMediaSelection
             ) {
-                guard let key = aggregateAssetDownloadTask.taskDescription else { return }
+                guard let key = backgroundTaskKey(aggregateAssetDownloadTask.taskDescription) else { return }
                 reportProgress(
                     key: key,
                     loadedTimeRanges: loadedTimeRanges,
@@ -627,7 +629,7 @@ private final class BackgroundHLSDownloadCoordinator:
                 aggregateAssetDownloadTask: AVAggregateAssetDownloadTask,
                 willDownloadTo location: URL
             ) {
-                guard let key = aggregateAssetDownloadTask.taskDescription else { return }
+                guard let key = backgroundTaskKey(aggregateAssetDownloadTask.taskDescription) else { return }
                 lock.lock()
                 if var transfer = transfers[key] {
                     transfer.stagedLocation = location
@@ -646,7 +648,7 @@ private final class BackgroundHLSDownloadCoordinator:
                 assetDownloadTask: AVAssetDownloadTask,
                 didFinishDownloadingTo location: URL
             ) {
-                guard let key = assetDownloadTask.taskDescription else { return }
+                guard let key = backgroundTaskKey(assetDownloadTask.taskDescription) else { return }
                 finalizeDownload(key: key, location: location)
     }
 
@@ -694,7 +696,7 @@ private final class BackgroundHLSDownloadCoordinator:
                 task: URLSessionTask,
                 didCompleteWithError error: (any Error)?
             ) {
-                guard let key = task.taskDescription else { return }
+                guard let key = backgroundTaskKey(task.taskDescription) else { return }
                 if lock.withLock({ discardedKeys.remove(key) != nil }) {
                     removeStagedLocation(for: key)
                     finish(key: key, result: .failure(CancellationError()))
@@ -812,7 +814,9 @@ private final class BackgroundHLSDownloadCoordinator:
                 guard let locations = UserDefaults.standard.dictionary(
                     forKey: stagedLocationsKey
                 ) as? [String: String],
-                      let path = locations[key] else {
+                      let path = locations[key] ?? locations.first(where: {
+                          backgroundTaskKey($0.key) == key
+                      })?.value else {
                     return nil
                 }
                 return URL(fileURLWithPath: path)
@@ -822,7 +826,7 @@ private final class BackgroundHLSDownloadCoordinator:
                 var locations = UserDefaults.standard.dictionary(
                     forKey: stagedLocationsKey
                 ) as? [String: String] ?? [:]
-                locations.removeValue(forKey: key)
+                locations = locations.filter { backgroundTaskKey($0.key) != key }
                 UserDefaults.standard.set(locations, forKey: stagedLocationsKey)
             }
 
@@ -887,13 +891,20 @@ private final class BackgroundHLSDownloadCoordinator:
                 return filtered.isEmpty ? [preferred] : filtered
             }
         }
-private struct BackgroundTaskDescriptor: Codable {
+struct BackgroundTaskDescriptor: Codable {
     let profileID: String
     let identityKey: String
     let localFileName: String
 
     func encoded() throws -> String {
-        try JSONEncoder().encode(self).base64EncodedString()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(self).base64EncodedString()
+    }
+
+    static func canonicalKey(_ value: String) throws -> String {
+        // Existing tasks can have different JSON ordering or escaping.
+        try decode(value).encoded()
     }
 
     static func decode(_ value: String) throws -> BackgroundTaskDescriptor {
@@ -909,6 +920,16 @@ private struct BackgroundTaskDescriptor: Codable {
         )
         .pinnedFolderURL(forKey: identityKey)
         .appendingPathComponent(localFileName, isDirectory: false)
+    }
+}
+
+private func backgroundTaskKey(_ value: String?) -> String? { // l10n:content - Serialized transfer identity, not display text.
+    guard let value else { return nil }
+    do {
+        return try BackgroundTaskDescriptor.canonicalKey(value)
+    } catch {
+        PlozzLog.networking.error("Background download task has an invalid persisted identity")
+        return nil
     }
 }
 
@@ -1045,7 +1066,7 @@ private final class BackgroundDownloadCoordinator:
                 Task {
                     let tasks = await allTasks()
                     if let existing = tasks.first(where: {
-                        $0.taskDescription == taskID
+                        backgroundTaskKey($0.taskDescription) == taskID
                     }) as? URLSessionDownloadTask {
                         if hasTransfer(taskID) {
                             existing.resume()
@@ -1104,7 +1125,7 @@ private final class BackgroundDownloadCoordinator:
     private func cancel(taskID: String) async {
         let tasks = await allTasks()
         guard let task = tasks.first(where: {
-            $0.taskDescription == taskID
+            backgroundTaskKey($0.taskDescription) == taskID
         }) as? URLSessionDownloadTask else {
             finish(taskID: taskID, result: .failure(CancellationError()))
             return
@@ -1119,11 +1140,12 @@ private final class BackgroundDownloadCoordinator:
             guard let value = task.taskDescription,
                   let descriptor = try? BackgroundTaskDescriptor.decode(value),
                   descriptor.profileID == profileID,
-                  descriptor.identityKey == identityKey else {
+                  descriptor.identityKey == identityKey,
+                  let key = backgroundTaskKey(value) else {
                 continue
             }
             _ = lock.withLock {
-                cancelledTaskIDs.insert(value)
+                cancelledTaskIDs.insert(key)
             }
             task.cancel()
         }
@@ -1140,7 +1162,7 @@ private final class BackgroundDownloadCoordinator:
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        guard let taskID = downloadTask.taskDescription else { return }
+        guard let taskID = backgroundTaskKey(downloadTask.taskDescription) else { return }
         lock.lock()
         guard var transfer = transfers[taskID] else {
             lock.unlock()
@@ -1164,7 +1186,7 @@ private final class BackgroundDownloadCoordinator:
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        guard let taskID = downloadTask.taskDescription else { return }
+        guard let taskID = backgroundTaskKey(downloadTask.taskDescription) else { return }
         guard !lock.withLock({
             cancelledTaskIDs.contains(taskID)
         }) else {
@@ -1214,7 +1236,7 @@ private final class BackgroundDownloadCoordinator:
         task: URLSessionTask,
         didCompleteWithError error: Error?
     ) {
-        guard let taskID = task.taskDescription else { return }
+        guard let taskID = backgroundTaskKey(task.taskDescription) else { return }
         if lock.withLock({ cancelledTaskIDs.remove(taskID) != nil }) {
             finish(taskID: taskID, result: .failure(CancellationError()))
             return

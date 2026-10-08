@@ -194,6 +194,8 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   still apply. If iOS declines the request, normal download behavior remains:
   eligible HTTP transfers use background URL sessions, while in-process
   transfers require the app to stay active.
+  Pause and resume reuse eligible background transfers, including downloads
+  started by an older app version.
 - **Completion notifications** — individual downloads and whole season/show
   batches have separate profile settings. Completion notifications default to
   on for profiles without saved preferences, require device permission, and

@@ -405,6 +405,14 @@ continued-processing identifier and a bounded loopback HTTP fixture, never
 stored accounts or user downloads. Simulator runs skip this system-admission
 check; that skip is not device proof.
 
+`ManagedDownloadResumeTests` exercises the real background HTTP engine and
+download queue against a bounded local fixture, with and without an ETag.
+It checks that pause/resume preserves progress, issues no second full-body GET,
+and produces byte-identical output. Descriptor checks cover legacy JSON ordering
+and escaping, malformed identities, and profile/item/file isolation. HTTP and
+HLS task lookups, callbacks, cancellation markers, and persisted HLS locations
+must use the same canonical identity, including for tasks saved by older builds.
+
 The `PlozziOSInteractionTests` scheme adds real native touch coverage for Settings
 on both an owned iPhone simulator and an owned iPad simulator. It launches the
 same presentation host with an explicit settings-fixture argument, exercising
