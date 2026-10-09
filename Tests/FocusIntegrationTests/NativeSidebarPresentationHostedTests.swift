@@ -1,12 +1,46 @@
 import CoreModels
+import CoreUI
 import Observation
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 @testable import AppShell
 
 @MainActor
 final class NativeSidebarPresentationHostedTests: XCTestCase {
+    func testNativeSidebarDisplaysOfflineStatusAndRemovesItAfterRecovery() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let model = LibraryStatusModel()
+        fixture.window.rootViewController = UIHostingController(rootView: LibraryStatusSidebar(model: model)
+            .environment(\.locale, Locale(identifier: "en_US")))
+        for appearance in [UIUserInterfaceStyle.dark, .light] {
+            fixture.window.overrideUserInterfaceStyle = appearance
+            for offline in [false, true, false] {
+                model.isOffline = offline
+                try await Task.sleep(for: .milliseconds(500))
+                fixture.window.layoutIfNeeded()
+                let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+                    XCTAssertTrue(fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true))
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "Native sidebar \(appearance == .dark ? "dark" : "light") offline=\(offline)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                request.customWords = ["Offline"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                let labels = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                XCTAssertTrue(labels.contains { $0.contains("Movies") }, "\(labels)")
+                XCTAssertEqual(labels.filter { $0.contains("Offline") }.count, offline ? 2 : 0, "\(labels)")
+                XCTAssertEqual(model.selection, "home", "Reachability updates must not select another tab.")
+            }
+        }
+    }
+
     func testLiveTVWaitsForFirstVisitThenRetainsStateWithinItsProfile() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -131,6 +165,44 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
             window.rootViewController = nil
             model.buttons.removeAll()
             previous?.makeKeyAndVisible()
+        }
+    }
+
+    @MainActor @Observable
+    fileprivate final class LibraryStatusModel {
+        var isOffline = false
+        var selection = "home"
+        let library = AggregatedLibrary(
+            accountID: "fixture", accountName: "Fixture", serverName: "Fixture", providerKind: .plex,
+            library: MediaLibrary(id: "movies", title: "Movies", kind: .movie)
+        )
+    }
+
+    private struct LibraryStatusSidebar: View {
+        @Bindable var model: LibraryStatusModel
+
+        var body: some View {
+            let entries = [
+                NavigationRailLibraryEntry(
+                    key: model.library.key, library: model.library, isOffline: model.isOffline),
+                NavigationRailLibraryEntry(
+                    key: NavigationLibraryLayout.allLibrariesKey, library: nil, isOffline: model.isOffline)
+            ]
+            TabView(selection: $model.selection) {
+                Tab(value: "home") {
+                    AnyView(Color.clear)
+                } label: {
+                    AnyView(Label("Home", systemImage: "house"))
+                }
+                ForEach(entries, id: \.key) { entry in
+                    Tab(value: entry.key) {
+                        AnyView(Color.clear)
+                    } label: {
+                        AnyView(MainTabView.navigationLibraryLabel(entry))
+                    }
+                }
+            }
+            .tabViewStyle(.sidebarAdaptable)
         }
     }
 

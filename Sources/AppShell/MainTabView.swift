@@ -1374,7 +1374,7 @@ struct MainTabView: View {
             guard let libraryEntry else {
                 return AnyView(EmptyView())
             }
-            return AnyView(navigationLibraryLabel(libraryEntry))
+            return AnyView(Self.navigationLibraryLabel(libraryEntry))
         }
     }
 
@@ -1604,22 +1604,16 @@ struct MainTabView: View {
     }
 
     /// Native sidebar label for a real or synthetic library destination.
-    private func navigationLibraryLabel(
+    static func navigationLibraryLabel(
         _ entry: NavigationRailLibraryEntry
     ) -> some View {
         let title = entry.library?.library.displayName ?? Text(AllLibrariesBrowse.title)
         let symbol = entry.library?.library.navigationSymbolName
             ?? "square.stack.3d.up.fill"
+        // Native tabs extract one title; sibling Text views are discarded.
+        let label = entry.isOffline ? title + Text(verbatim: " · ") + Text("Offline") : title
         return Label {
-            HStack {
-                title
-                    .font(.system(size: 26, weight: .regular))
-                if entry.isOffline {
-                    Text("Offline")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            label.font(.system(size: 26, weight: .regular))
         } icon: {
             Image(systemName: symbol)
         }
