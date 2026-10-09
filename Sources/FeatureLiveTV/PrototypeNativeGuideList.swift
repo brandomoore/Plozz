@@ -110,6 +110,7 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
     let revision: (LiveTVGuideRowID) -> Revision
     var horizontalNavigation: () -> Void = {}
     var leadingExit: (() -> Void)?
+    var isLeadingColumnFocused = false
     @ViewBuilder let content: (LiveTVGuideRowID) -> Content
 
     struct RowEnvironment: Equatable {
@@ -225,9 +226,15 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
             collectionView.remembersLastFocusedIndexPath = false
             collectionView.contentInsetAdjustmentBehavior = .never
             collectionView.register(Cell.self, forCellWithReuseIdentifier: "guide-row")
-            collectionView.addGestureRecognizer(HorizontalPressObserver { [weak self] in
-                self?.parentView?.horizontalNavigation()
-            })
+            collectionView.addGestureRecognizer(GuideHorizontalPressRecognizer(
+                onHorizontal: { [weak self] in self?.parentView?.horizontalNavigation() },
+                leadingExit: { [weak self] type in
+                    guard let self, let parentView, parentView.isLeadingColumnFocused,
+                          type == (swiftUIEnvironment?.layoutDirection == .rightToLeft ? .rightArrow : .leftArrow)
+                    else { return nil }
+                    return parentView.leadingExit
+                }
+            ))
             if let parentView, let swiftUIEnvironment { update(parentView, environment: swiftUIEnvironment) }
         }
 
@@ -383,11 +390,18 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
     }
 }
 
-private final class HorizontalPressObserver: UIGestureRecognizer {
+private final class GuideHorizontalPressRecognizer: UIGestureRecognizer {
     private let onHorizontal: () -> Void
+    private let leadingExit: (UIPress.PressType) -> (() -> Void)?
+    private var consumedPress: UIPress?
+    private var exitAction: (() -> Void)?
 
-    init(onHorizontal: @escaping () -> Void) {
+    init(
+        onHorizontal: @escaping () -> Void,
+        leadingExit: @escaping (UIPress.PressType) -> (() -> Void)?
+    ) {
         self.onHorizontal = onHorizontal
+        self.leadingExit = leadingExit
         super.init(target: nil, action: nil)
         allowedPressTypes = [
             NSNumber(value: UIPress.PressType.leftArrow.rawValue),
@@ -399,15 +413,41 @@ private final class HorizontalPressObserver: UIGestureRecognizer {
         delaysTouchesEnded = false
     }
 
-    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { consumedPress != nil }
     override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent) {
-        if presses.contains(where: { $0.type == .leftArrow || $0.type == .rightArrow }),
-           DetailTransitionNavigation.navigationInputEpoch(in: view) != nil {
-            onHorizontal()
+        guard let press = presses.first(where: { $0.type == .leftArrow || $0.type == .rightArrow }),
+              DetailTransitionNavigation.navigationInputEpoch(in: view) != nil else {
+            state = .failed
+            return
         }
-        state = .failed
+        onHorizontal()
+        guard let action = leadingExit(press.type) else {
+            state = .failed
+            return
+        }
+        // Own this press through release so the native tab sidebar cannot also open.
+        consumedPress = press
+        exitAction = action
+        state = .began
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+        guard let consumedPress, presses.contains(where: { $0 === consumedPress }) else { return }
+        let action = exitAction
+        state = .ended
+        action?()
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+        state = .cancelled
+    }
+
+    override func reset() {
+        consumedPress = nil
+        exitAction = nil
+        super.reset()
     }
 }
 #endif

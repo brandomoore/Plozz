@@ -393,6 +393,10 @@ is no prior in-memory history to migrate on the first updated launch.
   vertical position, or time. A leading-edge move out of the guide reveals the
   panel and focuses the selected category. Back still opens Search. Internal
   programme-to-programme moves keep their normal timeline behavior.
+  The guide consumes the category-reveal press through release, so the native
+  app sidebar cannot open from that same input. A separate leading press from
+  the category panel still opens app navigation. Remote regressions exercise
+  both directions inside a real native sidebar, not only the standalone guide.
   With pinned navigation visible, the Live TV controls also clear its title-safe
   margin; native top-bar/sidebar styles keep their tighter leading spacing.
   The selected category uses a checkmark rather than a second focused-looking

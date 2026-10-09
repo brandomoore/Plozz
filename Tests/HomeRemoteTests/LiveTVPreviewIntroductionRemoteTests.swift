@@ -2,6 +2,42 @@ import XCTest
 
 @MainActor
 final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
+    func testLeadingEdgeRevealsOnlyCategoriesInsideNativeSidebar() {
+        exerciseNativeSidebar(rtl: false)
+    }
+
+    func testRTLLeadingEdgeRevealsOnlyCategoriesInsideNativeSidebar() {
+        exerciseNativeSidebar(rtl: true)
+    }
+
+    private func exerciseNativeSidebar(rtl: Bool) {
+        let app = launch(
+            suite: "PreviewIntroduction.\(UUID().uuidString)", reset: true, rtl: rtl, nativeSidebar: true
+        )
+        defer { app.terminate() }
+        let leading: XCUIRemote.Button = rtl ? .right : .left
+        assertFocused(app.buttons["live-tv-preview-enable"])
+        XCUIRemote.shared.press(
+            app.buttons["live-tv-preview-disable"].frame.midX < app.buttons["live-tv-preview-enable"].frame.midX
+                ? .left : .right
+        )
+        assertFocused(app.buttons["live-tv-preview-disable"])
+        XCUIRemote.shared.press(.select)
+        let content = app.buttons["live-tv-channel-content-channels-1-whole"]
+        assertFocused(content)
+        assertCategoriesHidden(in: app)
+        XCUIRemote.shared.press(leading)
+        XCUIRemote.shared.press(leading)
+        capture("native-sidebar-category-reveal", in: app)
+        assertFocused(app.buttons["All categories"])
+        XCTAssertFalse(app.buttons["Settings"].isHittable, "Revealing categories must not open the app menu")
+        XCUIRemote.shared.press(leading)
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 5),
+                      "A subsequent Left from categories must still reach native navigation")
+        XCTAssertTrue(app.buttons["Settings"].isHittable)
+        capture("native-sidebar-after-categories", in: app)
+    }
+
     func testRTLLeadingEdgeRevealsCategoriesAndReturnsToTheSameChannel() {
         let app = launch(suite: "PreviewIntroduction.\(UUID().uuidString)", reset: true, rtl: true)
         defer { app.terminate() }
@@ -90,7 +126,8 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
     }
 
     private func launch(
-        suite: String, reset: Bool = false, secondProfile: Bool = false, rtl: Bool = false
+        suite: String, reset: Bool = false, secondProfile: Bool = false, rtl: Bool = false,
+        nativeSidebar: Bool = false
     ) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
@@ -100,6 +137,7 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         ] + (reset ? ["--reset-preview-choice"] : [])
           + (secondProfile ? ["--second-preview-profile"] : [])
           + (rtl ? ["--preview-rtl"] : [])
+          + (nativeSidebar ? ["--preview-native-sidebar"] : [])
         app.launch()
         return app
     }

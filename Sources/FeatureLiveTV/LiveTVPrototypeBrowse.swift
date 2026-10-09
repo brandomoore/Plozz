@@ -165,7 +165,11 @@ struct PrototypeBrowser: View {
                             }
                         },
                         horizontalNavigation: useNativeNavigation,
-                        leadingExit: leadingExit
+                        leadingExit: leadingExit,
+                        isLeadingColumnFocused: {
+                            if case .channel = confirmedFocus { return true }
+                            return false
+                        }()
                     ) { row in
                         if let entry = model.guideEntry(for: row) {
                             guideRow(
@@ -265,11 +269,6 @@ struct PrototypeBrowser: View {
         .focusSection()
         .onExitCommand {
             if !isRestoringFocus { openToolbar() }
-        }
-        .onMoveCommand { direction in
-            guard direction == (layoutDirection == .rightToLeft ? .right : .left),
-                  !isRestoringFocus, case .channel = confirmedFocus else { return }
-            leadingExit?()
         }
         #endif
         .onChange(of: confirmedFocus, initial: true) { _, target in

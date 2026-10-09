@@ -6,6 +6,7 @@ import SwiftUI
 
 struct LiveTVPreviewIntroductionFixture: View {
     @State private var previewStarted = false
+    @State private var hidesNavigation = false
     @State private var settings: LiveTVViewSettings
     private let store: LiveTVViewSettingsStore
     private let profileID: String
@@ -31,11 +32,31 @@ struct LiveTVPreviewIntroductionFixture: View {
         _settings = State(initialValue: store.load())
     }
 
+    @ViewBuilder
     var body: some View {
+        if ProcessInfo.processInfo.arguments.contains("--preview-native-sidebar") {
+            TabView {
+                Tab("Live TV", systemImage: "tv") {
+                    LiveTVNavigationContainer(hidesNavigation: hidesNavigation) { liveTV }
+                }
+                Tab("Settings", systemImage: "gearshape") {
+                    Text("Fixture settings")
+                }
+            }
+            .tabViewStyle(.sidebarAdaptable)
+            .environment(\.layoutDirection, ProcessInfo.processInfo.arguments.contains("--preview-rtl")
+                ? .rightToLeft : .leftToRight)
+        } else {
+            liveTV
+        }
+    }
+
+    private var liveTV: some View {
         LiveTVPrototypeView(
             preferencesStore: PreviewIntroductionPreferences(),
             viewSettingsStore: store,
             sourceStore: PreviewIntroductionSources(),
+            onExpandedChange: { hidesNavigation = $0 },
             sourceLoader: PreviewIntroductionLoader(),
             profileID: profileID,
             preferencesNamespace: namespace,
