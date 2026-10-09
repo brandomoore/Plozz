@@ -110,7 +110,6 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
     let revision: (LiveTVGuideRowID) -> Revision
     var horizontalNavigation: () -> Void = {}
     var leadingExit: (() -> Void)?
-    var isLeadingColumnFocused = false
     @ViewBuilder let content: (LiveTVGuideRowID) -> Content
 
     struct RowEnvironment: Equatable {
@@ -229,13 +228,25 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
             collectionView.addGestureRecognizer(GuideHorizontalPressRecognizer(
                 onHorizontal: { [weak self] in self?.parentView?.horizontalNavigation() },
                 leadingExit: { [weak self] type in
-                    guard let self, let parentView, parentView.isLeadingColumnFocused,
+                    guard let self, let parentView, isLeadingColumnFocused,
                           type == (swiftUIEnvironment?.layoutDirection == .rightToLeft ? .rightArrow : .leftArrow)
                     else { return nil }
                     return parentView.leadingExit
                 }
             ))
             if let parentView, let swiftUIEnvironment { update(parentView, environment: swiftUIEnvironment) }
+        }
+
+        private var isLeadingColumnFocused: Bool {
+            guard let focused = UIFocusSystem.focusSystem(for: collectionView)?.focusedItem as? UIView,
+                  focused.isDescendant(of: collectionView) else { return false }
+            // Rapid remote presses can arrive before SwiftUI's FocusState catches up.
+            let center = focused.convert(
+                CGPoint(x: focused.bounds.midX, y: focused.bounds.midY), to: collectionView
+            )
+            let distance = swiftUIEnvironment?.layoutDirection == .rightToLeft
+                ? collectionView.bounds.maxX - center.x : center.x - collectionView.bounds.minX
+            return distance >= 0 && distance < PrototypeLayout.stationWidth(for: collectionView.bounds.width)
         }
 
         func update(_ parent: PrototypeNativeGuideList, environment: EnvironmentValues) {
@@ -408,7 +419,7 @@ private final class GuideHorizontalPressRecognizer: UIGestureRecognizer {
             NSNumber(value: UIPress.PressType.rightArrow.rawValue)
         ]
         allowedTouchTypes = []
-        cancelsTouchesInView = false
+        cancelsTouchesInView = true
         delaysTouchesBegan = false
         delaysTouchesEnded = false
     }

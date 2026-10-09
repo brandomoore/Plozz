@@ -26,11 +26,20 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         let content = app.buttons["live-tv-channel-content-channels-1-whole"]
         assertFocused(content)
         assertCategoriesHidden(in: app)
-        XCUIRemote.shared.press(leading)
-        XCUIRemote.shared.press(leading)
+        for iteration in 0..<3 {
+            if iteration > 0 {
+                XCUIRemote.shared.press(rtl ? .left : .right)
+                assertCategoriesHidden(in: app)
+                XCUIRemote.shared.press(rtl ? .left : .right)
+                assertFocused(content)
+                assertCategoriesHidden(in: app)
+            }
+            XCUIRemote.shared.press(leading)
+            XCUIRemote.shared.press(leading)
+            assertFocused(app.buttons["All categories"])
+            XCTAssertFalse(app.buttons["Settings"].isHittable, "Revealing categories must not open the app menu")
+        }
         capture("native-sidebar-category-reveal", in: app)
-        assertFocused(app.buttons["All categories"])
-        XCTAssertFalse(app.buttons["Settings"].isHittable, "Revealing categories must not open the app menu")
         XCUIRemote.shared.press(leading)
         XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 5),
                       "A subsequent Left from categories must still reach native navigation")

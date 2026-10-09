@@ -165,11 +165,7 @@ struct PrototypeBrowser: View {
                             }
                         },
                         horizontalNavigation: useNativeNavigation,
-                        leadingExit: leadingExit,
-                        isLeadingColumnFocused: {
-                            if case .channel = confirmedFocus { return true }
-                            return false
-                        }()
+                        leadingExit: leadingExit
                     ) { row in
                         if let entry = model.guideEntry(for: row) {
                             guideRow(
