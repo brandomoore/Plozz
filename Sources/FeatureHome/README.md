@@ -18,6 +18,19 @@ fallback when the user's server has no attached trailer.
   active account set (`[ResolvedAccount]`) so Home is a merged view
   across multiple servers / profiles. Uses the `MediaProvider`
   abstraction; never imports a specific provider module.
+  All Libraries keeps reachable sources when capability preparation, query facets,
+  inventory discovery, or duplicate-card hydration encounters an unavailable source.
+  Inventory membership stays fixed per attempt. Before publishing a first page,
+  a source lost during inventory or card hydration causes one bounded rebuild
+  without that source; concurrent callers share recovery. Published pages keep
+  their offsets and retry feedback rather than silently shifting existing cards.
+  Refresh rediscovers sources. All-source failures
+  remain retryable errors, and cancellation never becomes partial success.
+  Navigation retains offline library destinations with an Offline indicator.
+  Failed library pages identify the affected server with its provider logo and
+  saved name in a non-focusable identity chip on both platforms, alongside Retry.
+  It reuses library-discovery failures and actual share-root scan results, never
+  a new polling loop or cached-catalog reads as proof that a share is online.
 - **Mobile Home posters** — portrait rails fit two full posters below 375pt,
   three on larger phones, and a 28% preview at standard density. Wider windows add columns;
   per-profile display-size choices scale the result. Loaded cards and placeholders

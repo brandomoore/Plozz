@@ -387,7 +387,7 @@ final class AggregatedLibraryAlphabetTests: XCTestCase {
         do {
             _ = try await provider.letterPosition(in: "lib", kind: .movie, letter: "Z", sort: .default)
             XCTFail("An unavailable source must produce retryable feedback")
-        } catch { XCTAssertEqual(error as? AppError, .serverUnreachable) }
+        } catch { XCTAssertEqual(LibrarySourceFailure.underlying(error) as? AppError, .serverUnreachable) }
         source.alwaysFail = false
         let position = try await provider.letterPosition(in: "lib", kind: .movie, letter: "Z", sort: .default)
         XCTAssertNil(position, "The failed fill must release its gate for retry")

@@ -874,7 +874,9 @@ struct MainTabView: View {
     private var railEntries: [NavigationRailLibraryEntry] {
         NavigationRailPlan.entries(
             visibleLibraries: availableRailLibraries,
-            layout: effectiveNavigationLayout
+            layout: effectiveNavigationLayout,
+            offlineAccountIDs: navigationStyleModel.offlineAccountIDs
+                .union(shareScanStatusModel.offlineShareIDs)
         )
     }
 
@@ -1406,7 +1408,11 @@ struct MainTabView: View {
         // Tab content is evaluated repeatedly; never rebuild the library plan inside it.
         let libraries = availableRailLibraries
         let layout = effectiveNavigationLayout
-        let entries = NavigationRailPlan.entries(visibleLibraries: libraries, layout: layout)
+        let entries = NavigationRailPlan.entries(
+            visibleLibraries: libraries, layout: layout,
+            offlineAccountIDs: navigationStyleModel.offlineAccountIDs
+                .union(shareScanStatusModel.offlineShareIDs)
+        )
         let destinations = includingExplicitLiveTVEntry(NavigationRailPlan.destinations(
             libraryEntries: entries,
             layout: layout,
@@ -1605,8 +1611,15 @@ struct MainTabView: View {
         let symbol = entry.library?.library.navigationSymbolName
             ?? "square.stack.3d.up.fill"
         return Label {
-            title
-                .font(.system(size: 26, weight: .regular))
+            HStack {
+                title
+                    .font(.system(size: 26, weight: .regular))
+                if entry.isOffline {
+                    Text("Offline")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         } icon: {
             Image(systemName: symbol)
         }
@@ -1658,7 +1671,8 @@ struct MainTabView: View {
         navigation.updateContentLibraries(
             discovered.libraries,
             accountIDs: Set(accounts.map(\.account.id)),
-            unreachableAccountIDs: discovered.unreachableAccountIDs
+            unreachableAccountIDs: discovered.unreachableAccountIDs,
+            failures: discovered.failures
         )
         guard !railLibraries.isEmpty || discovered.unreachableAccountIDs.isEmpty else { return }
         railLibrariesLoaded = true

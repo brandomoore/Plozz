@@ -6,6 +6,182 @@ import XCTest
 
 @MainActor
 final class LibraryQuerySessionTests: XCTestCase {
+    func testConcurrentFirstPagesShareOfflineRecovery() async throws {
+        let lost = QueryInventoryProvider(items: queryItems(1), delay: 5_000_000)
+        let healthy = QueryInventoryProvider(items: queryItems(10))
+        await lost.failInventoryAfter(1)
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "lost", containerID: "movies", provider: lost, kind: .movie),
+            .init(accountID: "healthy", containerID: "movies", provider: healthy, kind: .movie)
+        ])
+        let session = LibraryQuerySession(provider: provider, containerID: "all", kind: .unknown)
+        let request = PageRequest(sort: .init(field: .year, direction: .ascending))
+        async let first = session.page(request, progress: { _, _ in })
+        async let second = session.page(request, progress: { _, _ in })
+        let results = try await [first, second]
+        XCTAssertEqual(results.map(\.totalCount), [10, 10])
+        XCTAssertTrue(results.flatMap(\.items).allSatisfy { $0.sourceAccountID == "healthy" })
+        let requests = await lost.inventoryRequests
+        XCTAssertEqual(requests, 2)
+    }
+
+    func testUnpublishedAggregateQueryRestartsWithoutMidInventoryOrHydrationOutage() async throws {
+        for outageDuringHydration in [false, true] {
+            let lost = QueryInventoryProvider(items: [
+                MediaItem(id: "lost", title: "Lost", kind: .movie, productionYear: 2000)
+            ], serverID: "lost", serverName: "Unavailable")
+            let healthy = QueryInventoryProvider(items: queryItems(125))
+            if outageDuringHydration {
+                await lost.setHydrationFailure(.serverUnreachable)
+            } else {
+                await lost.failInventoryAfter(1)
+            }
+            // Two libraries on one account must remain independent.
+            let provider = AggregatedLibraryProvider(sources: [
+                .init(accountID: "same", containerID: "lost", provider: lost, kind: .movie),
+                .init(accountID: "same", containerID: "healthy", provider: healthy, kind: .movie)
+            ])
+            let session = LibraryQuerySession(provider: provider, containerID: "all", kind: .unknown)
+            let sort = CoreModels.SortDescriptor(field: .year, direction: .ascending)
+            let first = try await session.page(.init(limit: 20, sort: sort), progress: { _, _ in })
+            XCTAssertEqual(first.totalCount, 125)
+            XCTAssertEqual(first.items.count, 20)
+            XCTAssertFalse(first.items.contains { $0.id == "lost" })
+            let last = try await session.page(.init(startIndex: 120, limit: 20, sort: sort), progress: { _, _ in })
+            XCTAssertEqual(last.items.count, 5)
+            XCTAssertEqual(last.totalCount, 125)
+            let requests = await lost.inventoryRequests
+            XCTAssertLessThanOrEqual(requests, 2)
+            await lost.failInventoryAfter(nil)
+            await lost.setHydrationFailure(nil)
+            await session.invalidate()
+            let recovered = try await session.page(.init(limit: 20, sort: sort), progress: { _, _ in })
+            XCTAssertEqual(recovered.totalCount, 126)
+            XCTAssertEqual(recovered.items.first?.id, "lost")
+        }
+    }
+
+    func testAllOfflineDuringHydrationRemainsRetryableAndPreservesSourceAttribution() async throws {
+        let first = QueryInventoryProvider(items: queryItems(1), serverID: "first", serverName: "First")
+        let second = QueryInventoryProvider(items: queryItems(1), serverID: "second", serverName: "Second")
+        await first.setHydrationFailure(.serverUnreachable)
+        await second.setHydrationFailure(.serverUnreachable)
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "a", containerID: "movies", provider: first, kind: .movie),
+            .init(accountID: "b", containerID: "movies", provider: second, kind: .movie)
+        ])
+        let session = LibraryQuerySession(provider: provider, containerID: "all", kind: .unknown)
+        do {
+            _ = try await session.page(.init(sort: .init(field: .year, direction: .ascending)), progress: { _, _ in })
+            XCTFail("No healthy source cannot be an empty success")
+        } catch {
+            let failure = try XCTUnwrap(error as? LibrarySourceFailure)
+            XCTAssertEqual(failure.underlyingError as? AppError, .serverUnreachable)
+            XCTAssertFalse(failure.servers.isEmpty)
+        }
+    }
+
+    func testFailedLibraryIdentifiesItsServerAndClearsTheChipOnRetry() async {
+        let source = QueryInventoryProvider(items: queryItems(1), serverID: "plex", serverName: "Living Room")
+        await source.setFailure(.serverUnreachable)
+        let model = LibraryBrowseViewModel(
+            provider: source, containerID: "movies", containerKind: .movie, initialContentMode: .titles)
+        await model.loadFirstPage()
+        XCTAssertEqual(model.state, .failed(.serverUnreachable))
+        XCTAssertEqual(model.errorServers.map(\.name), ["Living Room"])
+        await source.setFailure(nil)
+        await model.loadFirstPage()
+        XCTAssertTrue(model.errorServers.isEmpty)
+    }
+
+    func testAllOfflineIdentifiesEveryFailedServerInsteadOfOnlyTheFirstProvider() async {
+        let first = QueryInventoryProvider(items: [], serverID: "first", serverName: "Living Room")
+        let second = QueryInventoryProvider(items: [], serverID: "second", serverName: "Bedroom")
+        await first.setFailure(.serverUnreachable)
+        await second.setFailure(.serverUnreachable)
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "a", containerID: "movies", provider: first, kind: .movie),
+            .init(accountID: "a", containerID: "shows", provider: first, kind: .series),
+            .init(accountID: "b", containerID: "movies", provider: second, kind: .movie)
+        ])
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "all", containerKind: .unknown, initialContentMode: .titles)
+        await model.loadFirstPage()
+        XCTAssertEqual(model.state, .failed(.serverUnreachable))
+        XCTAssertEqual(model.errorServers.map(\.name), ["Living Room", "Bedroom"])
+    }
+
+    func testAggregateKeepsHealthyQueriesWhenAnotherSourceIsOfflineAndRecovers() async throws {
+        let offline = QueryInventoryProvider(items: [
+            MediaItem(id: "offline", title: "Offline", kind: .movie, productionYear: 2025)
+        ])
+        let healthy = QueryInventoryProvider(items: queryItems(125))
+        await offline.setFailure(.serverUnreachable)
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "offline", containerID: "movies", provider: offline, kind: .movie),
+            .init(accountID: "healthy", containerID: "movies", provider: healthy, kind: .movie)
+        ])
+        try await provider.prepareLibraryQueryCapabilities()
+        let facets = try await provider.libraryQueryFacets(in: "all", kind: .unknown)
+        XCTAssertEqual(facets.genres, ["Drama"])
+        let session = LibraryQuerySession(provider: provider, containerID: "all", kind: .unknown)
+        let request = PageRequest(limit: 20, sort: .init(field: .year, direction: .ascending))
+        let first = try await session.page(request, progress: { _, _ in })
+        XCTAssertEqual(first.totalCount, 125)
+        XCTAssertEqual(first.items.count, 20)
+        XCTAssertTrue(first.items.allSatisfy { $0.sourceAccountID == "healthy" })
+        let last = try await session.page(
+            .init(startIndex: 120, limit: 20, sort: request.sort), progress: { _, _ in })
+        XCTAssertEqual(last.items.count, 5)
+        await offline.setFailure(nil)
+        await session.invalidate()
+        let recovered = try await session.page(request, progress: { _, _ in })
+        XCTAssertEqual(recovered.totalCount, 126)
+    }
+
+    func testAggregateAllOfflineIsRetryableInsteadOfEmptyAndCancellationPropagates() async throws {
+        let source = QueryInventoryProvider(items: queryItems(1))
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "owner", containerID: "movies", provider: source, kind: .movie)
+        ])
+        for failure in [AppError.serverUnreachable, .cancelled] {
+            await source.setFailure(failure)
+            for operation in 0..<3 {
+                do {
+                    switch operation {
+                    case 0: try await provider.prepareLibraryQueryCapabilities()
+                    case 1: _ = try await provider.libraryQueryFacets(in: "all", kind: .unknown)
+                    default: _ = try await provider.libraryQueryInventory(
+                        in: "all", kind: .unknown, page: .init())
+                    }
+                    XCTFail("A failed source is not an empty library")
+                } catch {
+                    if failure == .cancelled { XCTAssertTrue(error is CancellationError) }
+                    else { XCTAssertEqual(LibrarySourceFailure.underlying(error) as? AppError, failure) }
+                }
+            }
+        }
+        await source.setFailure(nil)
+        let recovered = try await provider.libraryQueryInventory(in: "all", kind: .unknown, page: .init())
+        XCTAssertEqual(recovered.totalCount, 1)
+    }
+
+    func testAggregateHydratesReachableDuplicateWhenOtherCopyIsOffline() async throws {
+        let source = QueryInventoryProvider(items: queryItems(1))
+        let offline = QueryInventoryProvider(items: [])
+        await offline.setFailure(.serverUnreachable)
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "offline", containerID: "movies", provider: offline),
+            .init(accountID: "healthy", containerID: "movies", provider: source)
+        ])
+        let item = try await provider.libraryQueryItem(.init(id: "i0", sources: [
+            .init(accountID: "offline", itemID: "i0"),
+            .init(accountID: "healthy", itemID: "i0")
+        ]))
+        XCTAssertEqual(item.sourceAccountID, "healthy")
+        XCTAssertFalse(item.sources.contains { $0.accountID == "offline" })
+    }
+
     func testDuplicatesIgnoreOutOfScopeSourcesButRetainActualVersions() async throws {
         for otherAccount in ["active", "excluded"] {
             for versions: [MediaVersion] in [[], [.init(id: "1080p"), .init(id: "2160p")]] {
@@ -494,10 +670,7 @@ private func queryItems(_ count: Int) -> [MediaItem] {
 private actor QueryInventoryProvider: MediaLibraryQueryProviding {
     enum Broken { case emptyTail, repeatedIdentity, changedTotal }
     nonisolated let kind: ProviderKind = .mediaShare
-    nonisolated let session = UserSession(
-        server: MediaServer(id: "query-server", name: "Query", baseURL: URL(string: "https://query.test")!, provider: .mediaShare),
-        userID: "user", userName: "User", deviceID: "device", accessToken: "test"
-    )
+    nonisolated let session: UserSession
     private var allItems: [MediaItem]
     private let episodes: [MediaItem]
     private let broken: Broken?
@@ -505,6 +678,9 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
     private var facets: LibraryQueryFacets
     private let supportsFacets: Bool
     private var facetError: AppError?
+    private var failure: AppError?
+    private var hydrationFailure: AppError?
+    private var maximumInventoryRequests: Int?
     private var holdsNextFacetRequest = false
     private var heldFacetRequest: CheckedContinuation<Void, Never>?
     private var heldFacetObserver: CheckedContinuation<Void, Never>?
@@ -517,7 +693,11 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
     private(set) var maximumMaterialization = 0
 
     init(items: [MediaItem], episodes: [MediaItem] = [], broken: Broken? = nil, delay: UInt64 = 0,
-         facets: LibraryQueryFacets = .init(genres: ["Drama"], years: [2024]), supportsFacets: Bool = true) {
+         facets: LibraryQueryFacets = .init(genres: ["Drama"], years: [2024]), supportsFacets: Bool = true,
+         serverID: String = "query-server", serverName: String = "Query") {
+        session = UserSession(
+            server: MediaServer(id: serverID, name: serverName, baseURL: URL(string: "https://query.test")!, provider: .mediaShare),
+            userID: "user", userName: "User", deviceID: "device", accessToken: "test")
         allItems = items
         self.episodes = episodes
         self.broken = broken
@@ -534,7 +714,14 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
     nonisolated func libraryQueryInventorySortKey(_ field: SortField) -> SortField {
         [.plays, .lastPlayed].contains(field) ? field : .name
     }
+    func setFailure(_ value: AppError?) { failure = value }
+    func setHydrationFailure(_ value: AppError?) { hydrationFailure = value }
+    func failInventoryAfter(_ value: Int?) { maximumInventoryRequests = value }
+    func prepareLibraryQueryCapabilities() async throws {
+        if let failure { throw failure }
+    }
     func libraryQueryFacets(in containerID: String, kind: MediaItemKind) async throws -> LibraryQueryFacets {
+        if let failure { throw failure }
         facetRequests += 1
         let snapshot = facets
         let error = facetError
@@ -561,7 +748,11 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
         heldFacetRequest = nil
     }
     func libraryQueryInventory(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        if let failure { throw failure }
         inventoryRequests += 1
+        if let maximumInventoryRequests, inventoryRequests > maximumInventoryRequests {
+            throw AppError.serverUnreachable
+        }
         inventoryOnMain = inventoryOnMain || Thread.isMainThread
         if delay > 0 { try await Task.sleep(nanoseconds: delay) }
         var result = slice(allItems, page)
@@ -585,6 +776,7 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
         return result
     }
     func libraryQueryEpisodeInventory(in containerID: String, page: PageRequest) async throws -> MediaPage {
+        if let failure { throw failure }
         episodeRequests += 1
         return slice(episodes, page)
     }
@@ -604,6 +796,8 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func item(id: String) async throws -> MediaItem {
+        if let failure { throw failure }
+        if let hydrationFailure { throw hydrationFailure }
         materializing += 1
         maximumMaterialization = max(maximumMaterialization, materializing)
         defer { materializing -= 1 }

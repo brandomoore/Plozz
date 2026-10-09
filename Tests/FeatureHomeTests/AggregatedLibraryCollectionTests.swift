@@ -74,7 +74,7 @@ final class AggregatedLibraryCollectionTests: XCTestCase {
             _ = try await provider.collections(in: "merged", page: PageRequest())
             XCTFail("A failed source must remain retryable, not look empty or complete.")
         } catch {
-            XCTAssertEqual(error as? AppError, .serverUnreachable)
+            XCTAssertEqual(LibrarySourceFailure.underlying(error) as? AppError, .serverUnreachable)
         }
         await second.setFailure(nil)
         let recovered = try await provider.collections(in: "merged", page: PageRequest())

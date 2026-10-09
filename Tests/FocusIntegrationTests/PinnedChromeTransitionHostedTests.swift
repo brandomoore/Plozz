@@ -10,6 +10,37 @@ import XCTest
 
 @MainActor
 final class PinnedChromeTransitionHostedTests: XCTestCase {
+    func testOfflineServerChipFitsLongNamesAndRendersInFailureState() async throws {
+        let server = MediaServer(
+            id: "offline", name: "Living Room Plex Server - Family Movies",
+            baseURL: URL(string: "https://example.test")!, provider: .plex)
+        let chip = UIHostingController(rootView: ServerIdentityChip(server: server))
+        let size = chip.sizeThatFits(in: CGSize(width: 400, height: 1000))
+        XCTAssertLessThanOrEqual(size.width, 400)
+        XCTAssertGreaterThan(size.height, 0)
+        XCTAssertLessThan(size.height, 400)
+
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let host = UIHostingController(rootView: ContentStateView(
+            state: LoadState<Int>.failed(.serverUnreachable),
+            errorServers: [server], onRetry: {}
+        ) { _ in Text(verbatim: "") })
+        fixture.window.rootViewController = host
+        fixture.window.overrideUserInterfaceStyle = .dark
+        fixture.window.layoutIfNeeded()
+        host.setNeedsFocusUpdate()
+        host.updateFocusIfNeeded()
+        try await waitUntil { UIFocusSystem.focusSystem(for: fixture.window)?.focusedItem != nil }
+        let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+            fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true)
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Offline library server identity"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testExplicitHomeNavigationDoesNotChangeHiddenNavigationPreferences() {
         let configured: [NavigationRailDestination] = [.liveTV, .settings]
         XCTAssertEqual(MainTabView.includingExplicitHome(configured, isRequested: false), configured)
@@ -95,6 +126,7 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         let rows = markers(in: fixture.window).sorted {
             $0.convert($0.bounds, to: fixture.window).midY < $1.convert($1.bounds, to: fixture.window).midY
         }
+
         XCTAssertEqual(rows.count, 4)
         let frames = rows.map { $0.convert($0.bounds, to: fixture.window) }
         fixture.model.interaction?.requestOpen()
@@ -105,6 +137,27 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
             XCTAssertEqual(expanded.midY, initial.midY, accuracy: 0.5)
             XCTAssertEqual(expanded.height, initial.height, accuracy: 0.5)
             XCTAssertGreaterThan(expanded.minX, initial.minX)
+        }
+    }
+
+    func testOfflineBadgesPreservePinnedRowGeometryAndFocusTargets() async throws {
+        let fixture = try await makeFixture(libraryCount: 3)
+        defer { fixture.close() }
+        fixture.model.interaction?.requestOpen()
+        try await waitUntil { !self.targets(in: fixture.window).isEmpty }
+        try await Task.sleep(for: .milliseconds(350))
+        let before = markers(in: fixture.window).map { $0.convert($0.bounds, to: fixture.window) }
+        let targetCount = targets(in: fixture.window).count
+        fixture.model.entries = fixture.model.entries.map {
+            NavigationRailLibraryEntry(key: $0.key, library: $0.library, isOffline: true)
+        }
+        try await Task.sleep(for: .milliseconds(350))
+        let after = markers(in: fixture.window).map { $0.convert($0.bounds, to: fixture.window) }
+        XCTAssertEqual(before.count, after.count)
+        XCTAssertEqual(targets(in: fixture.window).count, targetCount)
+        for (old, new) in zip(before, after) {
+            XCTAssertEqual(old.midY, new.midY, accuracy: 0.5)
+            XCTAssertEqual(old.height, new.height, accuracy: 0.5)
         }
     }
 

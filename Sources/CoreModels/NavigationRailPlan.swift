@@ -56,10 +56,12 @@ public struct NavigationRailLibraryEntry: Hashable, Sendable, Identifiable {
     public let key: String
     /// The backing library; `nil` for the combined "All Libraries" entry.
     public let library: AggregatedLibrary?
+    public let isOffline: Bool
 
-    public init(key: String, library: AggregatedLibrary?) {
+    public init(key: String, library: AggregatedLibrary?, isOffline: Bool = false) {
         self.key = key
         self.library = library
+        self.isOffline = isOffline
     }
 
     public var id: String { key }
@@ -148,7 +150,8 @@ public enum NavigationRailPlan {
     /// The rail's library slots, in the viewer's order, with hidden entries removed.
     public static func entries(
         visibleLibraries: [AggregatedLibrary],
-        layout: NavigationLibraryLayout
+        layout: NavigationLibraryLayout,
+        offlineAccountIDs: Set<String> = []
     ) -> [NavigationRailLibraryEntry] {
         let browsable = browsableLibraries(visibleLibraries)
         let byKey = Dictionary(
@@ -161,10 +164,16 @@ public enum NavigationRailPlan {
                 // The combined entry is pointless with nothing to combine, and
                 // actively misleading with exactly one library.
                 guard browsable.count > 1 else { return nil }
-                return NavigationRailLibraryEntry(key: key, library: nil)
+                return NavigationRailLibraryEntry(
+                    key: key, library: nil,
+                    isOffline: browsable.allSatisfy { offlineAccountIDs.contains($0.accountID) }
+                )
             }
             guard let library = byKey[key] else { return nil }
-            return NavigationRailLibraryEntry(key: key, library: library)
+            return NavigationRailLibraryEntry(
+                key: key, library: library,
+                isOffline: offlineAccountIDs.contains(library.accountID)
+            )
         }
     }
 

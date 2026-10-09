@@ -2,6 +2,20 @@ import XCTest
 @testable import CoreModels
 
 final class NavigationStyleSettingsStoreTests: XCTestCase {
+    @MainActor
+    func testOfflineStatusIsTransientAndDoesNotMislabelAuthenticationOrCancellation() {
+        let model = NavigationStyleSettingsModel(
+            store: NavigationStyleSettingsStore(defaults: makeDefaults()),
+            layoutStore: NavigationLibraryLayoutStore(defaults: makeDefaults())
+        )
+        XCTAssertTrue(model.offlineAccountIDs.isEmpty)
+        model.updateContentLibraries(
+            [], accountIDs: ["a", "b", "c"], unreachableAccountIDs: ["a", "b", "c"],
+            failures: ["a": .serverUnreachable, "b": .unauthorized, "c": .cancelled])
+        XCTAssertEqual(model.offlineAccountIDs, ["a"])
+        model.updateContentLibraries([], accountIDs: ["a"], unreachableAccountIDs: [])
+        XCTAssertTrue(model.offlineAccountIDs.isEmpty)
+    }
     private func makeDefaults() -> UserDefaults {
         let suite = "NavigationStyleSettingsStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

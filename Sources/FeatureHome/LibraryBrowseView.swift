@@ -145,6 +145,7 @@ public struct LibraryBrowseView: View {
                     state: viewModel.state,
                     emptyMessage: viewModel.emptyMessage,
                     errorMessage: viewModel.queryMessage,
+                    errorServers: viewModel.errorServers,
                     onRetry: { Task { await viewModel.loadFirstPage() } },
                     loadingContent: {
                         if let progress = viewModel.queryProgress {
@@ -298,6 +299,7 @@ public struct LibraryBrowseView: View {
         ContentStateView(
             state: viewModel.recommendationState,
             emptyMessage: viewModel.emptyMessage,
+            errorServers: viewModel.errorServers,
             onRetry: { Task { await viewModel.loadRecommendations() } }
         ) { sections in
             #if os(tvOS)

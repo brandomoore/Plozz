@@ -466,7 +466,7 @@ struct NavigationRailView: View {
     private func libraryItem(_ entry: NavigationRailLibraryEntry) -> some View {
         let symbol = entry.library?.library.navigationSymbolName ?? "square.stack.3d.up.fill"
         let label = entry.library?.library.displayName ?? Text(Self.allLibrariesTitle)
-        return item(entry.destination, symbol: symbol, label: label)
+        return item(entry.destination, symbol: symbol, label: label, isOffline: entry.isOffline)
     }
 
     private var profileButton: some View {
@@ -518,7 +518,8 @@ struct NavigationRailView: View {
         _ destination: NavigationRailDestination,
         symbol: String,
         label: Text,
-        isExperimental: Bool = false
+        isExperimental: Bool = false,
+        isOffline: Bool = false
     ) -> some View {
         Button {
             onSelectDestination(destination)
@@ -527,6 +528,14 @@ struct NavigationRailView: View {
                 Image(systemName: symbol)
                     .font(.system(size: NavigationRailMetrics.itemIconSize, weight: .semibold))
                     .frame(width: NavigationRailMetrics.iconColumnWidth)
+                    .overlay(alignment: .bottomTrailing) {
+                        if isOffline {
+                            Image(systemName: "wifi.slash")
+                                .font(.system(size: 12, weight: .bold))
+                                .padding(3)
+                                .background(.background, in: Circle())
+                        }
+                    }
                     .accessibilityHidden(true)
                 Spacer(minLength: 0)
             }
@@ -546,8 +555,8 @@ struct NavigationRailView: View {
                         font: isExperimental
                             ? .system(size: 22, weight: .semibold) : NavigationRailMetrics.labelFont
                     )
-                    if isExperimental {
-                        Text("Experimental")
+                    if isExperimental || isOffline {
+                        (isOffline ? Text("Offline") : Text("Experimental"))
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(foregroundColor(
                                 for: .destination(destination),
@@ -579,7 +588,7 @@ struct NavigationRailView: View {
         .padding(.vertical, NavigationRailMetrics.itemVerticalPadding)
         .offset(x: animatedContentOffset)
         .accessibilityLabel(label)
-        .accessibilityValue(isExperimental ? Text("Experimental") : Text(verbatim: ""))
+        .accessibilityValue(isOffline ? Text("Offline") : isExperimental ? Text("Experimental") : Text(verbatim: ""))
         .accessibilityAddTraits(selection == destination ? [.isSelected] : [])
     }
 
