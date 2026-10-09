@@ -1055,6 +1055,13 @@ the saved composition, and ordinary channel preferences or portable preference
 imports preserve it. Required lifecycle or authorization cleanup never waits
 for exit confirmation.
 
+On tvOS, Favorite Multiviews uses a compact native sheet rather than a full
+Settings page. Its title and Done control stay above the scrolling saved list;
+the empty state fits its content, and long lists cannot expand the sheet beyond
+600 points. Typography follows the smaller sheet scale with Dynamic Type, and
+focused rows retain the shared contained highlight without growing. iPhone and
+iPad retain their native navigation-sheet presentation.
+
 Its hardware decoder capacity, mixed HDR/SDR behavior and long-running resource
 use still need real-device acceptance; controlled fixtures are not proof of
 those guarantees.

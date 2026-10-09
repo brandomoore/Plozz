@@ -81,7 +81,16 @@ struct LiveTVPreviewIntroductionFixture: View {
 }
 
 private struct PreviewIntroductionPreferences: LiveTVPreferencesStoring {
-    func load() throws -> LiveTVPreferences { .empty }
+    func load() throws -> LiveTVPreferences {
+        guard ProcessInfo.processInfo.arguments.contains("--preview-saved-multiviews") else { return .empty }
+        return LiveTVPreferences(favoriteMultiviews: (1...8).map { index in
+            LiveTVMultiviewFavorite(
+                id: "fixture-\(index)",
+                name: index == 2 ? "Weekend sports and international highlights" : "Saved Multiview \(index)",
+                channelIDs: ["channels-1", "channels-2"], layout: .sideBySide
+            )
+        })
+    }
     func save(_ preferences: LiveTVPreferences) throws {}
 }
 

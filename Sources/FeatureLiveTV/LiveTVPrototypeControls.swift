@@ -297,6 +297,18 @@ struct PrototypeSheetContent: View {
     @Environment(\.themePalette) private var palette
 
     var body: some View {
+        #if os(tvOS)
+        if case .multiviewFavorites = destination {
+            LiveTVMultiviewFavoritesView(model: model, open: openMultiview)
+        } else {
+            navigationContent
+        }
+        #else
+        navigationContent
+        #endif
+    }
+
+    private var navigationContent: some View {
         NavigationStack {
             Group {
                 switch destination {

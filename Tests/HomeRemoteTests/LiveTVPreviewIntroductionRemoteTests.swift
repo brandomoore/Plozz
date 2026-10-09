@@ -2,6 +2,73 @@ import XCTest
 
 @MainActor
 final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
+    func testFavoriteMultiviewsEmptySheetHasCompactHeaderAndDismisses() {
+        let app = openMultiviews(saved: false)
+        defer { app.terminate() }
+        assertCompactMultiviewHeader(in: app)
+        let description = app.staticTexts["Favorite a Multiview to open its channels and layout here."]
+        XCTAssertTrue(description.exists)
+        XCTAssertLessThanOrEqual(description.frame.width, 420)
+        XCTAssertLessThan(description.frame.height, 100)
+        XCTAssertGreaterThan(description.frame.minY, app.staticTexts["live-multiview-favorites-title"].frame.maxY + 32)
+        capture("multiview-favorites-empty", in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.staticTexts["live-multiview-favorites-title"].waitForNonExistence(timeout: 5))
+    }
+
+    func testFavoriteMultiviewsSavedRowsScrollWithoutMovingHeader() {
+        let app = openMultiviews(saved: true)
+        defer { app.terminate() }
+        assertCompactMultiviewHeader(in: app)
+        let headerY = app.staticTexts["live-multiview-favorites-title"].frame.minY
+        XCTAssertGreaterThan(headerY, 200, "A long saved list must stay in a compact sheet")
+        for index in 1...8 {
+            if index > 1 { XCUIRemote.shared.press(.down) }
+            let row = app.buttons["live-multiview-saved-fixture-\(index)"]
+            assertFocused(row)
+            XCTAssertLessThan(row.frame.height, 150)
+            XCTAssertLessThanOrEqual(row.frame.maxY, app.frame.maxY - 80)
+            if index == 2 { capture("multiview-favorites-saved", in: app) }
+        }
+        XCTAssertEqual(app.staticTexts["live-multiview-favorites-title"].frame.minY, headerY, accuracy: 1)
+        XCTAssertTrue(app.buttons["live-tv-close-sheet"].isHittable)
+        capture("multiview-favorites-scrolled", in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.staticTexts["live-multiview-favorites-title"].waitForNonExistence(timeout: 5))
+    }
+
+    private func openMultiviews(saved: Bool) -> XCUIApplication {
+        let app = launch(
+            suite: "PreviewIntroduction.\(UUID().uuidString)", reset: true,
+            nativeSidebar: true, savedMultiviews: saved
+        )
+        assertFocused(app.buttons["live-tv-preview-enable"])
+        XCUIRemote.shared.press(.menu)
+        assertFocused(app.buttons["live-tv-channel-content-channels-1-whole"])
+        XCUIRemote.shared.press(.left)
+        XCUIRemote.shared.press(.left)
+        assertFocused(app.buttons["All categories"])
+        let multiviewsReady = NSPredicate { _, _ in app.buttons["live-tv-multiview-favorites"].isEnabled }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: multiviewsReady, object: nil)], timeout: 5
+        ), .completed)
+        XCUIRemote.shared.press(.up)
+        assertFocused(app.buttons["live-tv-multiview-favorites"])
+        XCUIRemote.shared.press(.select)
+        assertFocused(app.buttons[saved ? "live-multiview-saved-fixture-1" : "live-tv-close-sheet"])
+        return app
+    }
+
+    private func assertCompactMultiviewHeader(in app: XCUIApplication) {
+        let title = app.staticTexts["live-multiview-favorites-title"]
+        let done = app.buttons["live-tv-close-sheet"]
+        XCTAssertTrue(title.exists)
+        XCTAssertLessThan(title.frame.height, 70)
+        XCTAssertLessThanOrEqual(done.frame.height, 60)
+        XCTAssertLessThan(done.frame.width, 140)
+        XCTAssertLessThanOrEqual(title.frame.maxX + 16, done.frame.minX)
+    }
+
     func testLeadingEdgeRevealsOnlyCategoriesInsideNativeSidebar() {
         exerciseNativeSidebar(rtl: false)
     }
@@ -136,7 +203,7 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
 
     private func launch(
         suite: String, reset: Bool = false, secondProfile: Bool = false, rtl: Bool = false,
-        nativeSidebar: Bool = false
+        nativeSidebar: Bool = false, savedMultiviews: Bool = false
     ) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
@@ -147,6 +214,7 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
           + (secondProfile ? ["--second-preview-profile"] : [])
           + (rtl ? ["--preview-rtl"] : [])
           + (nativeSidebar ? ["--preview-native-sidebar"] : [])
+          + (savedMultiviews ? ["--preview-saved-multiviews"] : [])
         app.launch()
         return app
     }
