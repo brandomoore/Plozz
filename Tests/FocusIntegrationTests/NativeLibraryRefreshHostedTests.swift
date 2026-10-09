@@ -15,6 +15,59 @@ import XCTest
 final class NativeLibraryRefreshHostedTests: XCTestCase {
     private var savedProviders = MetadataProviderSettings.default
 
+    func testLiveScanBannerReservesSpaceAndAlignsWithUnfocusedArtwork() async throws {
+        let provider = RefreshLibraryProvider()
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .series
+        )
+        await model.loadFirstPage()
+        let status = ShareScanStatusModel()
+        try await withLibrary(model: model, scanStatus: status, navigationInset: 64) { root, window in
+            let collection = try XCTUnwrap(self.find(UICollectionView.self, in: root))
+            for pass in 0..<2 {
+                status.scanStarted(shareID: "fixture", name: "Media")
+                status.scanProgress(shareID: "fixture", directoriesScanned: 700, itemsFound: 970)
+                try await Task.sleep(for: .milliseconds(250))
+                let header = try XCTUnwrap(collection.supplementaryView(
+                    forElementKind: UICollectionView.elementKindSectionHeader,
+                    at: IndexPath(item: 0, section: 0)
+                ))
+                let banner = try XCTUnwrap(self.find(TVCardView.self, in: header))
+                let bannerFrame = banner.contentView.convert(banner.contentView.bounds, to: window)
+                let cells = collection.visibleCells.compactMap { $0 as? NativeTVLibraryCell }
+                    .filter { (collection.indexPath(for: $0)?.item ?? .max) < 6 }
+                    .sorted { $0.frame.minX < $1.frame.minX }
+                let first = try XCTUnwrap(cells.first)
+                let last = try XCTUnwrap(cells.last)
+                let firstArtwork = first.contentView.convert(first.contentView.bounds, to: window)
+                let lastArtwork = last.contentView.convert(last.contentView.bounds, to: window)
+                XCTAssertFalse(banner.isFocused)
+                XCTAssertEqual(try XCTUnwrap(header.subviews.first).frame, header.bounds)
+                XCTAssertLessThan(bannerFrame.maxY, firstArtwork.minY,
+                                  "A live status update must reserve space without focusing the banner.")
+                XCTAssertEqual(bannerFrame.minX, firstArtwork.minX, accuracy: 1)
+                XCTAssertEqual(bannerFrame.maxX, lastArtwork.maxX, accuracy: 1)
+                self.capture(window, name: "unfocused-scan-banner-\(pass)")
+                let bounds = header.bounds
+                let surfaceInHeader = banner.contentView.convert(banner.contentView.bounds, to: header)
+                let owner = try XCTUnwrap(self.findController(
+                    NativeLibraryFocusHostController.self, in: XCTUnwrap(window.rootViewController)
+                ))
+                let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                owner.requestFocus(to: banner, using: system)
+                try await Task.sleep(for: .milliseconds(250))
+                XCTAssertTrue(system.focusedItem === banner)
+                XCTAssertEqual(header.bounds, bounds, "Focus must not repair or change the header's reserved size.")
+                XCTAssertEqual(try XCTUnwrap(header.subviews.first).frame, bounds)
+                XCTAssertTrue(first.onRequestFocus?() == true)
+                try await Task.sleep(for: .milliseconds(250))
+                XCTAssertEqual(banner.contentView.convert(banner.contentView.bounds, to: header), surfaceInHeader)
+                status.scanFinished(shareID: "fixture")
+                try await Task.sleep(for: .milliseconds(150))
+            }
+        }
+    }
+
     override func setUp() async throws {
         try await super.setUp()
         let store = MetadataProviderSettingsStore()
@@ -68,23 +121,108 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         }
     }
 
+    func testPinnedNavigationRestoresRecommendedLibraryControls() async throws {
+        try await withNavigatedLibrary(style: .rail, pinnedHandoff: true) { root, window, _ in
+            let controller = try XCTUnwrap(window.rootViewController)
+            let header = try XCTUnwrap(self.findController(NativeLibraryHeaderController.self, in: controller))
+            let owner = try XCTUnwrap(self.findController(NativeLibraryFocusHostController.self, in: controller))
+            let shellOwner = try XCTUnwrap(self.findController(NavigationRailFocusHostController.self, in: controller))
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let observer = try XCTUnwrap(window.gestureRecognizers?
+                .compactMap { $0 as? NavigationRailEdgeCatcher.LeftPressRecognizer }.first)
+            let fixture = try XCTUnwrap(controller as? LibraryFocusFixtureController)
+            var disabledHeaderDuringOpening = false
+            fixture.onFocusUpdate = { context in
+                if let item = context.nextFocusedItem,
+                   let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                   frame.maxX < 500, self.focusItems(in: header.host.view).isEmpty {
+                    disabledHeaderDuringOpening = true
+                }
+            }
+            defer { fixture.onFocusUpdate = nil }
+            var seen = Set<ObjectIdentifier>()
+            let controls = self.focusItems(in: header.host.view).filter {
+                seen.insert(ObjectIdentifier($0)).inserted
+            }.sorted {
+                (NavigationRowFocusRequester.frame(of: $0, relativeTo: window)?.minX ?? .infinity)
+                    < (NavigationRowFocusRequester.frame(of: $1, relativeTo: window)?.minX ?? .infinity)
+            }
+            XCTAssertGreaterThanOrEqual(controls.count, 2)
+            let card = try XCTUnwrap(self.find(TVPosterView.self, in: root))
+            let sources: [any UIFocusItem] = Array(controls.prefix(2)) + [card]
+            for source in sources {
+                owner.requestFocus(to: source, using: system)
+                try await Task.sleep(for: .milliseconds(50))
+                XCTAssertTrue(system.focusedItem === source)
+                observer.onOpenNavigation?()
+                let opened = ContinuousClock.now + .seconds(3)
+                while !observer.railHasFocus, ContinuousClock.now < opened {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertTrue(observer.railHasFocus)
+                XCTAssertFalse(shellOwner.allowsFocusUpdate(heading: .right),
+                               "Native Right must not choose another control before source restoration.")
+                observer.onLeaveNavigation?()
+                let returned = ContinuousClock.now + .seconds(3)
+                while (observer.railHasFocus || self.focusItems(in: header.host.view).isEmpty
+                       || system.focusedItem !== source), ContinuousClock.now < returned {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertFalse(observer.railHasFocus)
+                XCTAssertFalse(self.focusItems(in: header.host.view).isEmpty,
+                               "Closing navigation must re-enable the actual library header.")
+                XCTAssertTrue(system.focusedItem === source,
+                              "Return must restore \(source), not \(String(describing: system.focusedItem)).")
+                XCTAssertTrue(shellOwner.allowsFocusUpdate(heading: .right))
+            }
+            XCTAssertFalse(disabledHeaderDuringOpening,
+                           "Opening navigation must not disable and rebuild the library's controls.")
+        }
+    }
+
+    func testPinnedNavigationPresentsAReplacementLibraryStack() async throws {
+        try await withNavigatedLibrary(style: .rail, pinnedHandoff: true, stagedLibraryEntry: true) {
+            root, window, _ in
+            XCTAssertNotNil(self.find(TVPosterView.self, in: root))
+            XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+        }
+    }
+
+    func testPinnedNavigationPresentsAShareLibraryStack() async throws {
+        try await withNavigatedLibrary(
+            style: .rail, pinnedHandoff: true, stagedLibraryEntry: true, shareLibrary: true
+        ) { root, _, _ in
+            XCTAssertNotNil(self.find(UICollectionView.self, in: root))
+        }
+    }
+
     private func withNavigatedLibrary(
         style: NavigationStyle,
         artwork: ArtworkSettings = .default,
+        pinnedHandoff: Bool = false,
+        stagedLibraryEntry: Bool = false,
+        shareLibrary: Bool = false,
         body: (UIView, UIWindow, LibraryBrowseViewModel) async throws -> Void
     ) async throws {
-        let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, recommendationHub: true)
+        let provider = RefreshLibraryProvider(
+            kind: shareLibrary ? .mediaShare : .jellyfin,
+            supportsModes: !shareLibrary, recommendationHub: !shareLibrary
+        )
         let name = "LibraryNativeNavigation.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         let model = LibraryBrowseViewModel(
             provider: provider, containerID: "library", containerKind: .movie, defaults: defaults)
-        await model.loadRecommendationsIfNeeded()
+        if shareLibrary { await model.loadFirstPage() } else { await model.loadRecommendationsIfNeeded() }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
-        let host = UIHostingController(rootView: LibraryNavigationLayoutFixture(model: model, style: style, artwork: artwork))
+        let switcher = stagedLibraryEntry ? LibraryNavigationSwitch() : nil
+        let host = UIHostingController(rootView: LibraryNavigationLayoutFixture(
+            model: model, style: style, artwork: artwork, pinnedHandoff: pinnedHandoff,
+            switcher: switcher
+        ))
         let container = LibraryFocusFixtureController()
         container.addChild(host)
         container.view.addSubview(host.view)
@@ -100,6 +238,66 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         try await Task.sleep(for: .seconds(1))
+        if let switcher {
+            XCTAssertNil(findController(NativeLibraryHeaderController.self, in: host))
+            let observer = try XCTUnwrap(window.gestureRecognizers?
+                .compactMap { $0 as? NavigationRailEdgeCatcher.LeftPressRecognizer }.first)
+            observer.onOpenNavigation?()
+            let opened = ContinuousClock.now + .seconds(3)
+            while !observer.railHasFocus, ContinuousClock.now < opened {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(observer.railHasFocus)
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let shell = try XCTUnwrap(findController(NavigationRailFocusHostController.self, in: host))
+            var seenTargets = Set<ObjectIdentifier>()
+            let railTargets = focusItems(in: host.view).filter {
+                seenTargets.insert(ObjectIdentifier($0)).inserted
+                    && (NavigationRowFocusRequester.frame(of: $0, relativeTo: window)?.maxX ?? .infinity) < 500
+            }.sorted {
+                (NavigationRowFocusRequester.frame(of: $0, relativeTo: window)?.midY ?? .infinity)
+                    < (NavigationRowFocusRequester.frame(of: $1, relativeTo: window)?.midY ?? .infinity)
+            }
+            XCTAssertEqual(railTargets.count, 4)
+            let profile = try XCTUnwrap(railTargets.first)
+            let profileFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: profile, relativeTo: window))
+            let destination = try XCTUnwrap(railTargets.last)
+            shell.requestFocus(to: destination, using: system)
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertTrue(system.focusedItem === destination)
+            var focusedProfileDuringHandoff = false
+            var transitions: [String] = []
+            container.onFocusUpdate = { context in
+                if let item = context.nextFocusedItem,
+                   let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                   frame.maxX < 500, abs(frame.midY - profileFrame.midY) < 1 {
+                    focusedProfileDuringHandoff = true
+                }
+                transitions.append(String(describing: context.nextFocusedItem))
+            }
+            defer { container.onFocusUpdate = nil }
+            switcher.handoff.begin(.settings)
+            switcher.selection = .settings
+            switcher.presented = .settings
+            let presented = ContinuousClock.now + .seconds(5)
+            while switcher.handoff.isWaiting || observer.railHasFocus, ContinuousClock.now < presented {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(switcher.handoff.isWaiting, "The newly selected stack must finish presentation.")
+            XCTAssertFalse(observer.railHasFocus, "Selection must automatically transfer focus out of navigation.")
+            window.layoutIfNeeded()
+            let header = try XCTUnwrap(findController(NativeLibraryHeaderController.self, in: host))
+            let first = focusItems(in: header.host.view).min {
+                (NavigationRowFocusRequester.frame(of: $0, relativeTo: window)?.minX ?? .infinity)
+                    < (NavigationRowFocusRequester.frame(of: $1, relativeTo: window)?.minX ?? .infinity)
+            }
+            XCTAssertNotNil(first)
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === first,
+                          "Entry must focus the first header without help from the fixture.")
+            XCTAssertFalse(focusedProfileDuringHandoff, "Profile must never receive intermediate focus: \(transitions)")
+            try await body(host.view, window, model)
+            return
+        }
         let header = try XCTUnwrap(findController(NativeLibraryHeaderController.self, in: host))
         let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
         let target = try XCTUnwrap(focusItems(in: header.host.view).first)
@@ -1337,6 +1535,8 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         focusStyle: CardFocusStyle = .system,
         palette: ThemePalette = .dark,
         captions: CardCaptionSettings = .default,
+        scanStatus: ShareScanStatusModel = ShareScanStatusModel(),
+        navigationInset: CGFloat = 0,
         presenter: TransientStatusPresenter = TransientStatusPresenter(announcement: { _ in }),
         onSelect: @escaping (MediaItem) -> Void = { _ in },
         body: (UIView, UIWindow) async throws -> Void
@@ -1353,6 +1553,8 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 .environment(\.plozzCardStyle, .borderless)
                 .environment(\.themePalette, palette)
                 .environment(\.plozzCardCaptionSettings, captions)
+                .environment(scanStatus)
+                .environment(\.plozzNavigationContentInset, navigationInset)
                 .preferredColorScheme(palette.isLight ? .light : .dark)
                 .transientStatusOverlay(presenter: presenter, palette: palette)
         )
@@ -1398,7 +1600,10 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
 
     private func find<T: UIView>(_ type: T.Type, in view: UIView) -> T? {
         if let result = view as? T { return result }
-        return view.subviews.lazy.compactMap { self.find(type, in: $0) }.first
+        for child in view.subviews {
+            if let result = find(type, in: child) { return result }
+        }
+        return nil
     }
 
     private func findSource(_ itemKey: String, in view: UIView) -> DetailTransitionSourceView? {
@@ -1408,7 +1613,10 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
 
     private func findController<T: UIViewController>(_ type: T.Type, in controller: UIViewController) -> T? {
         if let result = controller as? T { return result }
-        return controller.children.lazy.compactMap { self.findController(type, in: $0) }.first
+        for child in controller.children {
+            if let result = findController(type, in: child) { return result }
+        }
+        return nil
     }
 
     private func focusItems(in root: UIView) -> [any UIFocusItem] {
@@ -1460,15 +1668,36 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
     }
 }
 
+@MainActor @Observable
+private final class LibraryNavigationSwitch {
+    var selection = NavigationRailDestination.home
+    var presented = NavigationRailDestination.home
+    let handoff = NavigationDestinationFocusHandoff()
+}
+
 private struct LibraryNavigationLayoutFixture: View {
     let model: LibraryBrowseViewModel
     let style: NavigationStyle
     let artwork: ArtworkSettings
+    var pinnedHandoff = false
+    var switcher: LibraryNavigationSwitch?
     @State private var path: [Int] = []
+    @State private var selection = NavigationRailDestination.home
+    @State private var chrome = NavigationChromeModel()
 
     var body: some View {
         Group {
-            if style == .rail {
+            if pinnedHandoff {
+                NavigationRailShell(
+                    profile: Profile(name: "Viewer"), entries: [], destinations: [.home, .music, .settings],
+                    selection: Binding(
+                        get: { switcher?.selection ?? selection },
+                        set: { if let switcher { switcher.selection = $0 } else { selection = $0 } }
+                    ), onOpenProfileSwitcher: {}, chrome: chrome,
+                    content: pinnedContent, contentDestination: switcher?.presented ?? selection,
+                    destinationFocus: switcher?.handoff ?? NavigationDestinationFocusHandoff()
+                )
+            } else if style == .rail {
                 NavigationStack { library }
                     .environment(\.plozzNavigationContentInset, 128)
                     .environment(\.plozzPinnedSidebarActive, true)
@@ -1483,6 +1712,13 @@ private struct LibraryNavigationLayoutFixture: View {
         .environment(\.plozzCardStyle, .borderless)
         .environment(\.plozzArtworkSettings, artwork)
         .preferredColorScheme(.dark)
+    }
+
+    private var pinnedContent: AnyView {
+        if switcher?.presented == .home {
+            return AnyView(NavigationStack { Button("Home") {} }.id("home"))
+        }
+        return AnyView(NavigationStack { library }.id("library"))
     }
 
     private var tabs: some View {
@@ -1511,8 +1747,13 @@ private struct LibraryNavigationLayoutFixture: View {
 
 private final class LibraryFocusFixtureController: UIViewController {
     weak var target: (any UIFocusEnvironment)?
+    var onFocusUpdate: ((UIFocusUpdateContext) -> Void)?
     override var preferredFocusEnvironments: [any UIFocusEnvironment] {
         target.map { [$0] } ?? super.preferredFocusEnvironments
+    }
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        onFocusUpdate?(context)
     }
 }
 

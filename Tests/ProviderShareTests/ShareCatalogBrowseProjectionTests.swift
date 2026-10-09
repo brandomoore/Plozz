@@ -162,6 +162,24 @@ final class ShareCatalogBrowseProjectionTests: XCTestCase {
         XCTAssertEqual(localIDsAfter["imdb"], "tt0094625")
     }
 
+    func testFilenameIDsUseEachGroupsRepresentativeEvenWithoutItsOwnExplicitIDs() async throws {
+        let store = ShareCatalogStore(accountKey: "filename-representatives", directory: try catalogDirectory())
+        var assets: [CatalogAsset] = []
+        for index in 0..<100 {
+            let title = "Movie \(index)"
+            let plain = movie("Movies/\(title)/A.mkv", title: title, year: 2000)
+            var tagged = movie("Movies/\(title)/Z.mkv", title: title, year: 2000)
+            tagged.explicitProviderIDs = ["tmdb": "\(index + 1)"]
+            assets.append(contentsOf: [tagged, plain])
+        }
+        await store.upsert(assets, scanID: 1)
+        await store.materializeFilenameProviderIDs()
+        for index in 0..<100 {
+            let ids = await store.localProviderIDs(forItemID: ShareCatalogID.file("Movies/Movie \(index)/A.mkv"))
+            XCTAssertEqual(ids["tmdb"], "\(index + 1)")
+        }
+    }
+
     func testLibraryContainerStaysFolderWhileAuthoritativeShowRootPromotes() async throws {
         let store = ShareCatalogStore(accountKey: "series-root", directory: try catalogDirectory())
         let showRoot = "TV Shows/Animanimals"

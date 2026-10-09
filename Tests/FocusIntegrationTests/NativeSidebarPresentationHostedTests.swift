@@ -58,7 +58,15 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
     }
 
     func testInactiveAndUnpresentedPagesCannotAcceptFocus() async throws {
-        let fixture = try await makeFixture()
+        try await exercisePresentation(sharedPinnedHost: false)
+    }
+
+    func testDestinationPresentationCompletesInsidePinnedFocusHost() async throws {
+        try await exercisePresentation(sharedPinnedHost: true)
+    }
+
+    private func exercisePresentation(sharedPinnedHost: Bool) async throws {
+        let fixture = try await makeFixture(sharedPinnedHost: sharedPinnedHost)
         defer { fixture.close() }
         try await waitUntil { fixture.model.buttons[.home]?.isFocused == true }
         let inactive = try XCTUnwrap(fixture.model.buttons[.settings])
@@ -79,13 +87,13 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
         XCTAssertEqual(fixture.model.prematureFocusCount, 0)
     }
 
-    private func makeFixture() async throws -> Fixture {
+    private func makeFixture(sharedPinnedHost: Bool = false) async throws -> Fixture {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
         }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
-        return Fixture(scene: scene)
+        return Fixture(scene: scene, sharedPinnedHost: sharedPinnedHost)
     }
 
     private func waitUntil(_ predicate: @MainActor () -> Bool) async throws {
@@ -102,11 +110,18 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
         let window: UIWindow
         let previous: UIWindow?
 
-        init(scene: UIWindowScene) {
+        init(scene: UIWindowScene, sharedPinnedHost: Bool) {
             previous = scene.windows.first(where: \.isKeyWindow)
             window = UIWindow(windowScene: scene)
             window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
-            window.rootViewController = UIHostingController(rootView: Pages(model: model))
+            window.rootViewController = UIHostingController(rootView: Group {
+                if sharedPinnedHost {
+                    NavigationRailFocusHost(isNavigationFocused: false) { Pages(model: model) }
+                        .ignoresSafeArea()
+                } else {
+                    Pages(model: model)
+                }
+            })
             window.makeKeyAndVisible()
             window.layoutIfNeeded()
         }

@@ -45,6 +45,17 @@ scan throttles, playback admission, and foreground-only operation. Cached
 catalog reads remain available without authorizing scans. Status distinguishes
 paused execution from a completed scan, preserving the last completed date.
 
+Artwork reference context uses a persisted account/credential-revision marker.
+Unchanged catalogue access, including after relaunch, checks that marker without
+enumerating artwork or starting a write transaction. A changed context backfills
+legacy artwork IDs and rebuilds references before committing the marker; new
+artwork gets its ID on upsert.
+
+When a clean scan needs reconciliation, filename-ID projection resolves movie
+representatives in one grouped catalog query rather than one lookup per movie.
+The earliest member still owns the group projection even when only another
+member has explicit IDs; conflicting IDs remain omitted.
+
 ## Explicit work
 
 `Scan now` authorizes the requested scan and its ensuing metadata pass, even

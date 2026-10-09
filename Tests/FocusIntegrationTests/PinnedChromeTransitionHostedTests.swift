@@ -1,6 +1,7 @@
 @testable import AppShell
 import CoreModels
 @testable import CoreUI
+@testable import FeatureHome
 import Observation
 import SwiftUI
 import UIKit
@@ -85,6 +86,106 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         XCTAssertFalse(fixture.model.chrome.isChromeHidden)
         fixture.model.interaction?.requestOpen()
         try await waitUntil { !self.targets(in: fixture.window).isEmpty }
+    }
+
+    func testPinnedExpansionPreservesRowVerticalPositions() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        try await Task.sleep(for: .milliseconds(300))
+        let rows = markers(in: fixture.window).sorted {
+            $0.convert($0.bounds, to: fixture.window).midY < $1.convert($1.bounds, to: fixture.window).midY
+        }
+        XCTAssertEqual(rows.count, 4)
+        let frames = rows.map { $0.convert($0.bounds, to: fixture.window) }
+        fixture.model.interaction?.requestOpen()
+        try await waitUntil { !self.targets(in: fixture.window).isEmpty }
+        try await Task.sleep(for: .milliseconds(350))
+        for (row, initial) in zip(rows, frames) {
+            let expanded = row.convert(row.bounds, to: fixture.window)
+            XCTAssertEqual(expanded.midY, initial.midY, accuracy: 0.5)
+            XCTAssertEqual(expanded.height, initial.height, accuracy: 0.5)
+            XCTAssertGreaterThan(expanded.minX, initial.minX)
+        }
+    }
+
+    func testOpeningLongRailDoesNotRecenterAnAlreadyVisibleSelection() async throws {
+        let fixture = try await makeFixture(libraryCount: 20)
+        defer { fixture.close() }
+        try await Task.sleep(for: .milliseconds(300))
+        let rows = markers(in: fixture.window).sorted {
+            $0.convert($0.bounds, to: fixture.window).midY < $1.convert($1.bounds, to: fixture.window).midY
+        }
+        XCTAssertEqual(rows.count, 24)
+        // Profile, Home, Search, then library 0 through library 19.
+        let selected = try XCTUnwrap(rows.dropFirst(9).first)
+        var ancestor = selected.superview
+        while ancestor != nil, !(ancestor is UIScrollView) { ancestor = ancestor?.superview }
+        let scroll = try XCTUnwrap(ancestor as? UIScrollView)
+        scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentOffset.y + 100), animated: false)
+        try await Task.sleep(for: .milliseconds(150))
+        let before = selected.convert(selected.bounds, to: fixture.window)
+        XCTAssertTrue(scroll.convert(scroll.bounds, to: fixture.window).contains(before))
+        fixture.model.interaction?.requestOpen()
+        try await waitUntil {
+            guard let target = NavigationRowFocusRequester.target(for: selected, in: fixture.window) else { return false }
+            return UIFocusSystem.focusSystem(for: fixture.window)?.focusedItem === target
+        }
+        try await Task.sleep(for: .milliseconds(350))
+        XCTAssertEqual(selected.convert(selected.bounds, to: fixture.window).midY, before.midY, accuracy: 0.5)
+    }
+
+    func testLibraryFocusHostPropagatesEnabledChangesWithoutContentChanges() async throws {
+        let fixture = try await makeFixture(hostedHeader: true)
+        defer { fixture.close() }
+        try await waitUntil { fixture.model.buttonEnabled }
+        fixture.model.blocksContent = true
+        try await waitUntil { !fixture.model.buttonEnabled }
+        fixture.model.blocksContent = false
+        try await waitUntil { fixture.model.buttonEnabled }
+    }
+
+    func testNestedHostsPreserveChangingSeasonAndThemeMusicContext() async throws {
+        let fixture = try await makeFixture(hostedHeader: true)
+        defer { fixture.close() }
+        try await waitUntil { fixture.model.observedSeasonContext == "initial-profile" }
+        XCTAssertEqual(fixture.model.observedMusicSettings, fixture.model.musicSettings)
+        XCTAssertTrue(fixture.model.observedMusicController === fixture.model.musicController)
+        fixture.model.seasonContext = "replacement-profile"
+        fixture.model.musicSettings = .init(isEnabled: true, volume: .high)
+        try await waitUntil {
+            fixture.model.observedSeasonContext == "replacement-profile"
+                && fixture.model.observedMusicSettings == fixture.model.musicSettings
+        }
+    }
+
+    func testSidebarReturnRejectsUnavailableOriginalControls() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let controller = FocusFallbackController()
+        fixture.window.rootViewController = controller
+        controller.view.layoutIfNeeded()
+        try await waitUntil { controller.hero.isFocused }
+        let source = NavigationContentFocusRequester.ReturnFocus()
+        source.marker = controller.view
+        source.capture()
+        XCTAssertTrue(source.target(relativeTo: controller.view) === controller.hero)
+
+        controller.hero.isHidden = true
+        XCTAssertNil(source.target(relativeTo: controller.view))
+        controller.hero.isHidden = false
+        controller.hero.isEnabled = false
+        XCTAssertNil(source.target(relativeTo: controller.view))
+        controller.hero.isEnabled = true
+        XCTAssertTrue(source.target(relativeTo: controller.view) === controller.hero)
+        controller.hero.removeFromSuperview()
+        XCTAssertNil(source.target(relativeTo: controller.view))
+        XCTAssertTrue(NavigationContentFocusRequester.firstTarget(
+            in: fixture.window, relativeTo: controller.view, isRightToLeft: false
+        ) === controller.card)
+
+        controller.view.addSubview(controller.hero)
+        source.clear()
+        XCTAssertNil(source.target(relativeTo: controller.view))
     }
 
     func testFreshLaunchStartsOnHomeWithoutResettingSameProcessNavigation() {
@@ -180,13 +281,13 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         markers(in: window).compactMap { NavigationRowFocusRequester.target(for: $0, in: window) }
     }
 
-    private func makeFixture() async throws -> Fixture {
+    private func makeFixture(hostedHeader: Bool = false, libraryCount: Int = 0) async throws -> Fixture {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
         }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
-        let fixture = Fixture(scene: scene)
+        let fixture = Fixture(scene: scene, hostedHeader: hostedHeader, libraryCount: libraryCount)
         try await waitUntil {
             DetailTransitionNavigation.chromeModel(in: fixture.window) === fixture.model.chrome
                 && fixture.model.interaction != nil
@@ -194,12 +295,15 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         return fixture
     }
 
-    private func waitUntil(_ predicate: @MainActor () -> Bool) async throws {
+    private func waitUntil(
+        file: StaticString = #filePath, line: UInt = #line,
+        _ predicate: @MainActor () -> Bool
+    ) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !predicate(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
-        XCTAssertTrue(predicate())
+        XCTAssertTrue(predicate(), file: file, line: line)
     }
 
     @MainActor
@@ -208,7 +312,17 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         let previous: UIWindow?
         let model = Model()
 
-        init(scene: UIWindowScene) {
+        init(scene: UIWindowScene, hostedHeader: Bool, libraryCount: Int) {
+            model.hostedHeader = hostedHeader
+            model.entries = (0..<libraryCount).map { index in
+                let library = AggregatedLibrary(
+                    accountID: "fixture", accountName: "Fixture", serverName: "Fixture",
+                    providerKind: .jellyfin,
+                    library: MediaLibrary(id: "\(index)", title: "Library \(index)", kind: .movie)
+                )
+                return NavigationRailLibraryEntry(key: library.key, library: library)
+            }
+            if libraryCount > 6 { model.selection = model.entries[6].destination }
             previous = scene.windows.first(where: \.isKeyWindow)
             window = UIWindow(windowScene: scene)
             window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -232,7 +346,18 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         let profile = Profile(name: "Viewer")
         let chrome = NavigationChromeModel()
         var selection = NavigationRailDestination.home
+        var entries: [NavigationRailLibraryEntry] = []
         @ObservationIgnored var interaction: PlozzPinnedSidebarInteraction?
+        @ObservationIgnored var buttonEnabled = false
+        @ObservationIgnored var observedSeasonContext: String?
+        @ObservationIgnored var observedMusicSettings: ThemeMusicSettings?
+        @ObservationIgnored weak var observedMusicController: ThemeMusicController?
+        let musicController = ThemeMusicController()
+        var musicSettings = ThemeMusicSettings(isEnabled: true, volume: .low)
+        var seasonContext = "initial-profile"
+        var hostedHeader = false
+        var blocksContent = false
+        let scrollTarget = NativeLibraryScrollTarget()
     }
 
     private struct RailFixture: View {
@@ -240,12 +365,16 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
 
         var body: some View {
             NavigationRailShell(
-                profile: model.profile, entries: [], destinations: [.home, .search, .settings],
+                profile: model.profile, entries: model.entries,
+                destinations: [.home, .search] + model.entries.map(\.destination) + [.settings],
                 selection: $model.selection, onOpenProfileSwitcher: {},
                 chrome: model.chrome,
                 content: PageContent(model: model),
                 contentDestination: model.selection
             )
+            .environment(\.seasonRequestContextID, model.seasonContext)
+            .environment(\.themeMusicController, model.musicController)
+            .environment(\.themeMusicSettings, model.musicSettings)
         }
     }
 
@@ -254,10 +383,51 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         @Environment(\.plozzPinnedSidebarInteraction) private var interaction
 
         var body: some View {
+            Group {
+                if model.hostedHeader {
+                    NativeLibraryFocusHost(
+                        scrollTarget: model.scrollTarget,
+                        content: NativeLibraryScrollingHeader(
+                            scrollTarget: model.scrollTarget, content: ContentButton(model: model)
+                        )
+                        .background(HostedContextProbe(model: model))
+                    )
+                } else {
+                    ContentButton(model: model)
+                }
+            }
+            .disabled(model.blocksContent)
+            .frame(width: 400, height: 100)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onAppear { model.interaction = interaction }
+        }
+    }
+
+    private struct ContentButton: View {
+        let model: Model
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
             Button("Page content") {}
-                .frame(width: 400, height: 100)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onAppear { model.interaction = interaction }
+                .onChange(of: isEnabled, initial: true) { _, enabled in model.buttonEnabled = enabled }
+        }
+    }
+
+    private struct HostedContextProbe: View {
+        let model: Model
+        @Environment(\.seasonRequestContextID) private var seasonContext
+        @Environment(\.themeMusicController) private var musicController
+        @Environment(\.themeMusicSettings) private var musicSettings
+
+        var body: some View {
+            Color.clear
+                .onChange(of: seasonContext, initial: true) { _, value in
+                    model.observedSeasonContext = value
+                    model.observedMusicController = musicController
+                }
+                .onChange(of: musicSettings, initial: true) { _, value in
+                    model.observedMusicSettings = value
+                }
         }
     }
 

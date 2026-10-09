@@ -11,8 +11,8 @@ struct NavigationDestinationHandoffFixture: View {
     var body: some View {
         NavigationRailShell(
             profile: model.profile,
-            entries: [],
-            destinations: [.home, .music, .settings],
+            entries: model.entries,
+            destinations: [.home, .music] + model.entries.map(\.destination) + [.settings],
             selection: Binding(
                 get: { model.requested },
                 set: { model.select($0) }
@@ -22,6 +22,7 @@ struct NavigationDestinationHandoffFixture: View {
             content: NavigationHandoffFixturePage(model: model),
             contentDestination: model.presented
         )
+        .background(NavigationHandoffProfileFocusObserver { model.profileFocusCount += 1 })
         .task(id: model.requested) {
             await model.finishLoading()
         }
@@ -34,18 +35,33 @@ struct NavigationDestinationHandoffFixture: View {
 private final class NavigationDestinationHandoffFixtureModel {
     let profile = Profile(name: "Viewer")
     let chrome = NavigationChromeModel()
+    let entries: [NavigationRailLibraryEntry] = {
+        guard ProcessInfo.processInfo.arguments.contains("--navigation-long-rail") else { return [] }
+        return (0..<12).map { index in
+            let library = AggregatedLibrary(
+                accountID: "fixture", accountName: "Fixture", serverName: "Fixture", providerKind: .jellyfin,
+                library: MediaLibrary(id: "\(index)", title: "Library \(index)", kind: .movie)
+            )
+            return NavigationRailLibraryEntry(key: library.key, library: library)
+        }
+    }()
     var requested = NavigationRailDestination.home
     var presented = NavigationRailDestination.home
     var prematureFocusCount = 0
     var laterCardFocusCount = 0
     var contentFocusCount = 0
+    var profileFocusCount = 0
     private let holdsPages = ProcessInfo.processInfo.arguments.contains("--manual-navigation-handoff")
 
     func select(_ destination: NavigationRailDestination) {
         prematureFocusCount = 0
         laterCardFocusCount = 0
         contentFocusCount = 0
+        profileFocusCount = 0
         requested = destination
+        if ProcessInfo.processInfo.arguments.contains("--navigation-immediate-page") {
+            presented = destination
+        }
     }
 
     func focused(_ destination: NavigationRailDestination) {
@@ -110,9 +126,59 @@ private struct NavigationHandoffFixturePage: View {
                 .accessibilityIdentifier("handoff-later-card-focus")
             Text("\(model.contentFocusCount)")
                 .accessibilityIdentifier("handoff-content-focus")
+            Text("\(model.profileFocusCount)")
+                .accessibilityIdentifier("handoff-profile-focus")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.black)
+    }
+}
+
+private struct NavigationHandoffProfileFocusObserver: UIViewRepresentable {
+    let onProfileFocus: () -> Void
+
+    func makeUIView(context: Context) -> ObserverView {
+        let view = ObserverView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: ObserverView, context: Context) {
+        view.onProfileFocus = onProfileFocus
+    }
+
+    final class ObserverView: UIView {
+        var onProfileFocus: (() -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            NotificationCenter.default.removeObserver(self)
+            guard window != nil else { return }
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(focusDidUpdate(_:)),
+                name: UIFocusSystem.didUpdateNotification, object: nil
+            )
+        }
+
+        @objc private func focusDidUpdate(_ notification: Notification) {
+            guard let window,
+                  let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
+                    as? UIFocusUpdateContext,
+                  let item = context.nextFocusedItem,
+                  let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                  let profile = rowMarkers(in: window).min(by: {
+                      $0.convert($0.bounds, to: window).midY < $1.convert($1.bounds, to: window).midY
+                  }) else { return }
+            let marker = profile.convert(profile.bounds, to: window)
+            if frame.contains(CGPoint(x: marker.midX, y: marker.midY)) { onProfileFocus?() }
+        }
+
+        private func rowMarkers(in view: UIView) -> [NavigationRowFocusRequester.RequestView] {
+            if let marker = view as? NavigationRowFocusRequester.RequestView { return [marker] }
+            return view.subviews.flatMap { rowMarkers(in: $0) }
+        }
+
+        deinit { NotificationCenter.default.removeObserver(self) }
     }
 }
 

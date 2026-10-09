@@ -180,6 +180,173 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
         try runRows(observeOnly: true)
     }
 
+    func testPinnedLibraryNavigationRoundtripsWarm() throws {
+        #if !os(tvOS) || targetEnvironment(simulator)
+        throw XCTSkip("Physical tvOS only.")
+        #else
+        let environment = ProcessInfo.processInfo.environment
+        try XCTSkipUnless(
+            environment["PLOZZ_PINNED_NAVIGATION"] == "1"
+                && environment["PLOZZ_HOME_TARGET_DEVICE"]?.isEmpty == false
+                && environment["PLOZZ_HOME_ROWS_FIRST"] == environment["PLOZZ_HOME_TARGET_DEVICE"],
+            "Requires explicit pinned-navigation opt-in on the existing physical app."
+        )
+        continueAfterFailure = false
+        executionTimeAllowance = 150
+        inputBudget = 120
+        started = ProcessInfo.processInfo.systemUptime
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz")
+        addTeardownBlock { @MainActor [weak self] in
+            guard let self else { return }
+            let timeline = XCTAttachment(string: self.events.joined(separator: "\n"))
+            timeline.name = "pinned-navigation-timeline"
+            timeline.lifetime = .keepAlways
+            self.add(timeline)
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "pinned-navigation-final-state"
+            hierarchy.lifetime = .keepAlways
+            self.add(hierarchy)
+            let image = XCTAttachment(screenshot: app.screenshot())
+            image.name = "pinned-navigation-final-state"
+            image.lifetime = .keepAlways
+            self.add(image)
+        }
+        try waitForWarmConfirmation()
+        started = ProcessInfo.processInfo.systemUptime
+        guard app.state == .runningForeground else {
+            try fail(.notReady, "Existing Plozz must already be foreground; no launch or activation attempted.")
+        }
+        let title = environment["PLOZZ_PINNED_LIBRARY_LABEL"] ?? "Movies"
+        let library = app.buttons.matching(NSPredicate(format: "label == %@ AND selected == true", title)).firstMatch
+        let profile = app.buttons["Navigation"]
+        let modes = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'library-content-mode-'"))
+        let controlName = environment["PLOZZ_PINNED_CONTENT_CONTROL"] ?? "library-content-mode-recommended"
+        let expectsRecommendation = controlName == "library-content-mode-recommended"
+        let entryControl = app.buttons.matching(NSPredicate(
+            format: "(identifier == %@ OR label == %@) AND enabled == true", controlName, controlName
+        )).firstMatch
+        let focusedModes = modes.matching(NSPredicate(format: "hasFocus == true"))
+        if environment["PLOZZ_PINNED_ENTER_LIBRARY"] == "1" {
+            let sourceTitle = environment["PLOZZ_PINNED_ENTRY_SOURCE_LABEL"] ?? "Home"
+            let source = app.buttons.matching(NSPredicate(format: "label == %@ AND selected == true", sourceTitle)).firstMatch
+            guard source.exists, profile.exists else {
+                try fail(.notReady, "Explicit library entry requires the named source page.")
+            }
+            if !profile.isEnabled {
+                try input(.menu, phase: "pinned.entry.open-navigation", app: app)
+            }
+            let opened = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in profile.isEnabled && source.hasFocus }, object: nil
+            )
+            guard XCTWaiter.wait(for: [opened], timeout: 5) == .completed else {
+                try fail(.inputFailed, "Home navigation did not open onto its selected row.")
+            }
+            let occurrence = Int(environment["PLOZZ_PINNED_LIBRARY_INDEX"] ?? "0") ?? -1
+            let candidates = app.buttons.matching(NSPredicate(format: "label == %@ AND enabled == true", title))
+            guard occurrence >= 0, occurrence < candidates.count else {
+                try fail(.notReady, "The requested library occurrence must exist in navigation.")
+            }
+            let candidate = candidates.element(boundBy: occurrence)
+            guard candidate.exists, candidate.isEnabled,
+                  sourceTitle == "Home" || candidate.isHittable else {
+                try fail(.notReady, "The requested library must be selectable and have a known direction.")
+            }
+            let direction: XCUIRemote.Button = sourceTitle != "Home" && candidate.frame.midY < source.frame.midY ? .up : .down
+            for step in 0..<12 where !candidate.hasFocus {
+                try input(direction, phase: "pinned.entry.find-library.\(step)", app: app)
+            }
+            guard candidate.hasFocus else {
+                try fail(.inputFailed, "Navigation did not reach the first matching library.")
+            }
+            try input(.select, phase: "pinned.entry.select-library", app: app)
+            let entered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                library.exists && library.isSelected && entryControl.exists
+                    && (!expectsRecommendation || entryControl.isSelected)
+                    && entryControl.hasFocus && !profile.isEnabled
+            }, object: nil)
+            guard XCTWaiter.wait(for: [entered], timeout: 15) == .completed else {
+                try fail(.inputFailed, "Selecting the library did not present its page, close navigation, and focus the expected control.")
+            }
+            event("pinned.entry.verified automaticClose=true control=\(controlName)")
+        }
+        guard library.exists, profile.exists, !profile.isEnabled, entryControl.exists,
+              expectsRecommendation
+                ? (modes.count > 0 && entryControl.isSelected && focusedModes.count == 1)
+                : entryControl.hasFocus else {
+            try fail(.notReady, "Expected the named library page, closed pinned navigation, and an observed focused header control.")
+        }
+        for step in 0..<3 where expectsRecommendation && !entryControl.hasFocus {
+            let before = focusedModes.firstMatch.identifier
+            try input(.left, phase: "pinned.prepare-recommended.\(step)", app: app)
+            guard focusedModes.count == 1, focusedModes.firstMatch.identifier != before,
+                  entryControl.isSelected, !profile.isEnabled else {
+                try fail(.notReady, "Preparatory header navigation did not advance toward Recommended.")
+            }
+        }
+        guard entryControl.hasFocus else { try fail(.notReady, "The expected control must hold focus before sidebar input.") }
+        event("pinned.ready library=\(title.debugDescription) control=\(controlName) relaunch=false cold=false")
+
+        func verify(open: Bool, phase: String) throws {
+            let predicate = NSPredicate { _, _ in
+                app.state == .runningForeground && library.exists && library.isSelected
+                    && entryControl.exists && (!expectsRecommendation || entryControl.isSelected)
+                    && profile.isEnabled == open
+                    && (open ? library.hasFocus : entryControl.hasFocus)
+            }
+            let result = XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 5
+            )
+            guard result == .completed else {
+                let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
+                event("\(phase).unexpected-focus identifier=\(focused.exists ? focused.identifier : "<none>")")
+                try fail(.inputFailed, "\(phase): expected selected library focus while open, or the original control after closing.")
+            }
+            event("\(phase).verified open=\(open)")
+        }
+
+        if environment["PLOZZ_PINNED_MEASURE_OPEN"] == "1" {
+            guard #available(tvOS 26.0, *) else {
+                throw XCTSkip("Native hitch measurement requires tvOS 26 or newer.")
+            }
+            let options = XCTMeasureOptions()
+            options.iterationCount = 3
+            options.invocationOptions = [.manuallyStart, .manuallyStop]
+            var iteration = 0
+            var failure: Error?
+            measure(metrics: [XCTHitchMetric(application: app), XCTCPUMetric(application: app)], options: options) {
+                iteration += 1
+                do {
+                    try verify(open: false, phase: "pinned.metric.\(iteration).ready")
+                    self.event("pinned.metric.begin iteration=\(iteration) direction=left axInside=false")
+                    self.startMeasuring()
+                    XCUIRemote.shared.press(.left)
+                    Thread.sleep(forTimeInterval: 0.6)
+                    self.stopMeasuring()
+                    self.event("pinned.metric.end iteration=\(iteration)")
+                    try verify(open: true, phase: "pinned.metric.\(iteration).open")
+                    try self.input(.right, phase: "pinned.metric.\(iteration).reset", app: app)
+                    try verify(open: false, phase: "pinned.metric.\(iteration).closed")
+                } catch {
+                    failure = error
+                    XCTFail("Measured navigation did not preserve its verified source: \(error)")
+                }
+            }
+            if let failure { throw failure }
+            event("pinned.measurement.complete direction=left axInside=false")
+            event("complete")
+            return
+        }
+        for pair in 0..<6 {
+            try input(.left, phase: "pinned.\(pair).open", app: app)
+            try verify(open: true, phase: "pinned.\(pair).open")
+            try input(.right, phase: "pinned.\(pair).close", app: app)
+            try verify(open: false, phase: "pinned.\(pair).close")
+        }
+        event("pinned.roundtrips.verified pairs=6 everyTransitionObserved=true rapidReversals=false performanceMeasured=false")
+        event("complete")
+        #endif
+    }
+
     func testShowcaseMixedRowsWarm() throws {
         try XCTSkipUnless(
             ProcessInfo.processInfo.environment["PLOZZ_SHOWCASE_MIXED_ROWS"] == "1",

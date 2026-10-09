@@ -321,6 +321,90 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
         XCTAssertTrue(home.loadingRows.isEmpty)
     }
 
+    func testVisibilityChangeWithoutAnotherViewTaskCannotStrandLoadingRows() async {
+        for merged in [true, false] {
+            let gate = HomeRefreshGate()
+            defer { gate.open() }
+            let provider = FakeMediaProvider(allItems: [])
+            provider.latestItems = [MediaItem(id: "latest", title: "Latest", kind: .movie)]
+            provider.continueWatchingItems = [MediaItem(id: "resume", title: "Resume", kind: .movie)]
+            provider.continueWatchingGate = { await gate.wait() }
+            var visibility = HomeLibraryVisibility(mergeLibrariesOnHome: merged)
+            let home = HomeViewModel(
+                accounts: [resolved(provider, accountID: "a")],
+                layoutStore: InMemoryHomeLayoutStore(),
+                currentVisibility: { visibility }
+            )
+
+            let load = Task { await home.loadIfNeeded(for: visibility) }
+            let startedDeadline = Date().addingTimeInterval(1)
+            while Date() < startedDeadline, home.state.value?.latest.first?.id != "latest" {
+                await Task.yield()
+            }
+            XCTAssertEqual(home.state.value?.latest.first?.id, "latest")
+            XCTAssertTrue(home.loadingRows.contains(.continueWatching))
+
+            // Settings can change while Home's view-owned task is absent.
+            visibility.setGlobalRowEnabled(false, for: .watchlist)
+            gate.open()
+            await load.value
+            let finishedDeadline = Date().addingTimeInterval(2)
+            while Date() < finishedDeadline, home.isRefreshing || provider.librariesCallCount < 2 {
+                await Task.yield()
+            }
+
+            XCTAssertEqual(provider.librariesCallCount, 2, "The model must replace its obsolete load.")
+            XCTAssertFalse(home.isRefreshing)
+            XCTAssertTrue(home.loadingRows.isEmpty, "A discarded result must not leave permanent skeletons.")
+            XCTAssertEqual(home.state.value?.continueWatching.map(\.id), ["resume"])
+        }
+    }
+
+    func testVisibilityChangeDuringFinalReconciliationDoesNotCompleteObsoleteLoad() async {
+        for merged in [true, false] {
+            let pause = HomeResumePublicationPause(detailReads: 2)
+            let replacementGate = HomeRefreshGate()
+            defer {
+                pause.release.open()
+                replacementGate.open()
+            }
+            let provider = FakeMediaProvider(allItems: [])
+            provider.continueWatchingItems = [MediaItem(id: "resume", title: "Resume", kind: .movie)]
+            var visibility = HomeLibraryVisibility(mergeLibrariesOnHome: merged)
+            let home = HomeViewModel(
+                accounts: [resolved(provider, accountID: "a")],
+                layoutStore: InMemoryHomeLayoutStore(),
+                currentVisibility: { visibility },
+                recentlyAppliedRecency: {
+                    await pause.waitForPublication()
+                    return [:]
+                }
+            )
+            let load = Task { await home.load() }
+            let deadline = ContinuousClock.now + .seconds(2)
+            while !(await pause.isWaiting), ContinuousClock.now < deadline { await Task.yield() }
+            let isWaiting = await pause.isWaiting
+            XCTAssertTrue(isWaiting, "Pause final reconciliation after detail and progressive publication.")
+            XCTAssertFalse(home.loadingRows.contains(.continueWatching))
+
+            visibility.setGlobalRowEnabled(false, for: .watchlist)
+            provider.continueWatchingGate = { await replacementGate.wait() }
+            pause.release.open()
+            await load.value
+            let restartedDeadline = ContinuousClock.now + .seconds(2)
+            while provider.librariesCallCount < 2, ContinuousClock.now < restartedDeadline { await Task.yield() }
+            XCTAssertEqual(provider.librariesCallCount, 2)
+            XCTAssertTrue(home.loadingRows.contains(.continueWatching),
+                          "The obsolete final result must not mark the cold load complete.")
+
+            replacementGate.open()
+            let finishedDeadline = ContinuousClock.now + .seconds(2)
+            while home.isRefreshing, ContinuousClock.now < finishedDeadline { await Task.yield() }
+            XCTAssertFalse(home.isRefreshing)
+            XCTAssertTrue(home.loadingRows.isEmpty)
+        }
+    }
+
     func testRestartedColdLoadStillPublishesRowsAfterResumeHadArrived() async {
         let latestGate = HomeRefreshGate()
         let secondResumeGate = HomeRefreshGate()

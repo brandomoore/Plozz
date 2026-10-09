@@ -7,6 +7,40 @@ import XCTest
 
 @MainActor
 final class LiveTVPortableLibraryImportTests: XCTestCase {
+    func testProfilePartitionReusesParsedIDsButAlwaysUsesCurrentPayloads() async throws {
+        let worker = LiveTVPortableLibraryPreparation()
+        let first = LiveTVPortableRecordKey(profileID: "first", kind: .channel, entityID: "one").recordName
+        let second = LiveTVPortableRecordKey(profileID: "second", kind: .channel, entityID: "two").recordName
+        let unknown = "unrecognized-record"
+        let original = Data("original".utf8)
+        var input = [first: original, second: original, unknown: original]
+        let partitioned = await worker.partitionByProfile(input)
+        XCTAssertEqual(partitioned, ["first": [first: original], "second": [second: original]])
+        let initialParses = await worker.recordIDParseCount
+        XCTAssertEqual(initialParses, 3)
+
+        let edited = Data("edited".utf8)
+        input[first] = edited
+        let updated = await worker.partitionByProfile(input)
+        XCTAssertEqual(updated["first"], [first: edited])
+        let repeatedParses = await worker.recordIDParseCount
+        XCTAssertEqual(repeatedParses, initialParses, "Unchanged IDs, even unknown ones, must not be decoded again.")
+
+        input[second] = nil
+        let third = LiveTVPortableRecordKey(profileID: "third", kind: .channel, entityID: "three").recordName
+        input[third] = original
+        let replaced = await worker.partitionByProfile(input)
+        XCTAssertNil(replaced["second"])
+        XCTAssertEqual(replaced["third"], [third: original])
+        let finalParses = await worker.recordIDParseCount
+        let retained = await worker.cachedRecordIDCount
+        XCTAssertEqual(finalParses, initialParses + 1)
+        XCTAssertEqual(retained, input.count)
+        _ = await worker.partitionByProfile([:])
+        let cleared = await worker.cachedRecordIDCount
+        XCTAssertEqual(cleared, 0)
+    }
+
     func testCaptureReceiptDoesNotRetainAnUnchangedCollectionAbove64MiB() async throws {
         let worker = LiveTVPortableLibraryPreparation()
         let bytes = Data(repeating: 42, count: 51_280)

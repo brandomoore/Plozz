@@ -117,6 +117,7 @@ public final class LiveTVPortableSyncBridge {
             return fallback
         }
         clearDiagnosticFailures(.capture, profileID: "")
+        var profileFallbacks: [String: [SyncRecordID: Data]]?
         if !removed.isEmpty {
             result = result.filter {
                 guard let key = LiveTVPortableRecordKey.parse($0.key) else { return true }
@@ -133,9 +134,11 @@ public final class LiveTVPortableSyncBridge {
             guard mayApply(profile.id, epoch: epoch) else { continue }
             var stage = LiveTVSyncDiagnostic.Stage.prepareJournal
             do {
-                let profileFallback = fallback.filter {
-                    LiveTVPortableRecordKey.parse($0.key)?.profileID == profile.id
+                if profileFallbacks == nil {
+                    profileFallbacks = await libraryPreparation.partitionByProfile(fallback)
+                    guard mayApply(profile.id, epoch: epoch) else { continue }
                 }
+                let profileFallback = profileFallbacks?[profile.id] ?? [:]
                 let completed = completedCaptures[profile.id]
                 let fallbackMatches: Bool
                 if let completed {
@@ -932,6 +935,14 @@ actor LiveTVPortableLibraryPreparation {
     }
 
     private var cachedExport: LiveTVPortableLibraryExport?
+    private struct RecordOwner {
+        let profileID: String?
+    }
+    private var recordOwners: [SyncRecordID: RecordOwner] = [:]
+    #if DEBUG
+    private(set) var recordIDParseCount = 0
+    var cachedRecordIDCount: Int { recordOwners.count }
+    #endif
     private let makeExport: @Sendable (
         [LibraryChannelDefinition], [LibraryChannelSnapshot]
     ) throws -> LiveTVPortableLibraryExport
@@ -966,6 +977,29 @@ actor LiveTVPortableLibraryPreparation {
             guard let fingerprint = fingerprints[name], SHA256.hash(data: bytes) == fingerprint else { return false }
         }
         return true
+    }
+
+    func partitionByProfile(_ records: [SyncRecordID: Data]) -> [String: [SyncRecordID: Data]] {
+        var owners: [SyncRecordID: RecordOwner] = [:]
+        var profiles: [String: [SyncRecordID: Data]] = [:]
+        for (name, bytes) in records {
+            let owner: RecordOwner
+            if let cached = recordOwners[name] {
+                owner = cached
+            } else {
+                owner = RecordOwner(profileID: LiveTVPortableRecordKey.parse(name)?.profileID)
+                #if DEBUG
+                recordIDParseCount += 1
+                #endif
+            }
+            // Bound retained identity data to this input; never cache payload bytes.
+            owners[name] = owner
+            if let profileID = owner.profileID {
+                profiles[profileID, default: [:]][name] = bytes
+            }
+        }
+        recordOwners = owners
+        return profiles
     }
 
     func captureRecords(_ records: [SyncRecordID: Data], fallback: [SyncRecordID: Data]) throws -> CaptureRecords? {

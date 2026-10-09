@@ -1285,34 +1285,7 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
         // Preserve public presentation/actions, not another hosting tree's
         // internal accessibility environment, which hides this tree's children.
         AnyView(content.transformEnvironment(\.self) { target in
-            target.colorScheme = source.colorScheme
-            target.locale = source.locale
-            target.layoutDirection = source.layoutDirection
-            target.dynamicTypeSize = source.dynamicTypeSize
-            target.displayScale = source.displayScale
-            target.isEnabled = source.isEnabled
-            target.redactionReasons = source.redactionReasons
-            target.scenePhase = source.scenePhase
-            target.themePalette = source.themePalette
-            target.plozzMetrics = source.plozzMetrics
-            target.plozzCardStyle = source.plozzCardStyle
-            target.plozzCardFocusStyle = source.plozzCardFocusStyle
-            target.copyCardCaptionPresentation(from: source)
-            target.plozzArtworkSettings = source.plozzArtworkSettings
-            target.plozzArtworkProviders = source.plozzArtworkProviders
-            target.plozzArtworkArea = source.plozzArtworkArea
-            target.plozzWatchStatusIndicator = source.plozzWatchStatusIndicator
-            target.plozzSeerConnected = source.plozzSeerConnected
-            target.plozzReduceTransparency = source.plozzReduceTransparency
-            target.plozzNavigationStyle = source.plozzNavigationStyle
-            target.plozzNavigationContentInset = source.plozzNavigationContentInset
-            target.plozzPinnedSidebarActive = source.plozzPinnedSidebarActive
-            target.plozzPinnedSidebarInteraction = source.plozzPinnedSidebarInteraction
-            target.plozzRowTitleTightening = source.plozzRowTitleTightening
-            target.plozzRowTitleOffset = source.plozzRowTitleOffset
-            target.mediaItemActionHandler = source.mediaItemActionHandler
-            target.mediaItemActionContext = source.mediaItemActionContext
-            target.mediaItemNavigator = source.mediaItemNavigator
+            target.copyHostedPresentation(from: source)
         })
     }
 

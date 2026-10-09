@@ -3,6 +3,7 @@ import SwiftUI
 import CoreModels
 import CoreUI
 import FeatureProfiles
+import FeatureHome
 
 /// Fixed geometry for the custom navigation rail. Collected here so the shell's
 /// content inset and the rail's own layout can never drift apart.
@@ -101,7 +102,6 @@ enum NavigationRailMetrics {
     /// The profile is a navigation row too: avatar + one label, matching every
     /// destination's vertical rhythm.
     static let profileRowHeight: CGFloat = rowContentHeight
-    static let verticalPadding: CGFloat = 14
     /// Non-focusable breathing room at the rail's outer boundaries.
     static let edgeSpacerHeight: CGFloat = 10
     /// How far the destination list dissolves at its top and bottom edges. Roughly
@@ -167,8 +167,7 @@ struct NavigationRailView: View {
     /// follows the scroll instead of flashing on at a threshold.
     @State private var libraryListFade = ListEdgeFade()
     /// Physical offset of the safe-area-constrained rail from the screen edge.
-    /// Expanded geometry subtracts this instead of changing safe-area participation,
-    /// which keeps every movement inside one smooth layout animation.
+    /// Both rail states use the same physical row positions.
     @State private var physicalVerticalInset: CGFloat = 0
     /// One numeric clock drives every animated dimension. A focus change is
     /// discrete; using that Boolean directly let newly revealed labels jump to
@@ -191,15 +190,6 @@ struct NavigationRailView: View {
         NavigationRailMetrics.collapsedWidth
             + (
                 NavigationRailMetrics.expandedWidth - NavigationRailMetrics.collapsedWidth
-            ) * expansionProgress
-    }
-
-    private var animatedVerticalPadding: CGFloat {
-        NavigationRailMetrics.verticalPadding
-            + (
-                NavigationRailMetrics.expandedContentVerticalPadding(
-                    safeAreaInset: physicalVerticalInset
-                ) - NavigationRailMetrics.verticalPadding
             ) * expansionProgress
     }
 
@@ -251,7 +241,9 @@ struct NavigationRailView: View {
 
             edgeSpacing
         }
-        .padding(.vertical, animatedVerticalPadding)
+        .padding(.vertical, NavigationRailMetrics.expandedContentVerticalPadding(
+            safeAreaInset: physicalVerticalInset
+        ))
         .padding(.leading, NavigationRailMetrics.leadingInset)
         .padding(
             .trailing,
@@ -280,11 +272,15 @@ struct NavigationRailView: View {
             }
         }
         .onChange(of: hasFocus) { _, focused in
+            HeroFocusDiagnostics.emit("sidebar.rail focused=\(focused) releasing=\(isReleasingFocus) pending=\(String(describing: pendingFocusRequest))")
             isExpandedOutward = focused
             if !focused {
                 pendingFocusRequest = nil
                 pendingFocusTarget = nil
             }
+        }
+        .onChange(of: focusedTarget) { _, target in
+            HeroFocusDiagnostics.emit("sidebar.rail target=\(String(describing: target))")
         }
         .onDisappear {
             pendingFocusRequest = nil
@@ -336,6 +332,7 @@ struct NavigationRailView: View {
     /// loading and has no focusable content yet: restoring them on a timer lets
     /// tvOS re-home focus back into the rail and reopen it.
     private func releaseFocusToPage() {
+        HeroFocusDiagnostics.emit("sidebar.rail release focused=\(hasFocus) pending=\(String(describing: pendingFocusRequest))")
         pendingFocusRequest = nil
         pendingFocusTarget = nil
         isReleasingFocus = true
@@ -401,7 +398,7 @@ struct NavigationRailView: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            proxy.scrollTo(destination, anchor: .center)
+            proxy.scrollTo(destination)
         }
     }
 
@@ -495,7 +492,14 @@ struct NavigationRailView: View {
                 .opacity(animatedLabelOpacity)
             }
             .contentShape(Rectangle())
-            .background { focusRequester(for: .profile) }
+            .background {
+                focusRequester(for: .profile)
+                if HeroFocusDiagnostics.isEnabled {
+                    NativeFocusRegionObserver {
+                        HeroFocusDiagnostics.emit("sidebar.profile native-focus")
+                    }
+                }
+            }
         }
         .focused($focusedTarget, equals: .profile)
         .prefersDefaultFocus(pendingFocusTarget == .profile, in: railFocusScope)

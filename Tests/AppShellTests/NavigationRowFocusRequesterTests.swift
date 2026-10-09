@@ -29,7 +29,9 @@ final class NavigationRowFocusRequesterTests: XCTestCase {
                 opensExpanded: opening
             )
         }
-        let host = UIHostingController(rootView: rail(token: 0, opening: false))
+        let host = UIHostingController(rootView: NavigationRailFocusHost(isNavigationFocused: false) {
+            rail(token: 0, opening: false)
+        })
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1_920, height: 1_080))
         window.rootViewController = host
         window.makeKeyAndVisible()
@@ -45,7 +47,9 @@ final class NavigationRowFocusRequesterTests: XCTestCase {
         )
         XCTAssertGreaterThan(scroll.contentOffset.y, 0, "Initial entry must reveal a selected row below the fold")
         scroll.setContentOffset(.zero, animated: false)
-        host.rootView = rail(token: 1, opening: true)
+        host.rootView = NavigationRailFocusHost(isNavigationFocused: false) {
+            rail(token: 1, opening: true)
+        }
         host.view.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(400))
         host.view.layoutIfNeeded()
@@ -65,36 +69,28 @@ final class NavigationRowFocusRequesterTests: XCTestCase {
         view.subviews.flatMap { [$0] + descendantViews(of: $0) }
     }
 
-    func testSuccessfulRowHandoffIsNotOverriddenByWindowPreference() {
-        let window = UIWindow()
+    func testHandoffUsesSharedOwnerAndClearsItsTemporaryPreference() {
+        let owner = NavigationRailFocusHostController()
         let row = UIButton()
         let page = UIButton()
         let focusSystem = FocusSystemStub(nextFocusedItems: [row, page])
-        XCTAssertTrue(NavigationRowFocusRequester.handoff(to: row, in: window, using: focusSystem))
+        XCTAssertTrue(owner.requestFocus(to: row, using: focusSystem))
         XCTAssertEqual(focusSystem.requests.count, 1)
-        XCTAssertTrue(focusSystem.requests[0] === row)
+        XCTAssertTrue(focusSystem.requests[0] === owner)
+        XCTAssertTrue(focusSystem.requestedPreferences.first?.first === row)
+        XCTAssertFalse(owner.preferredFocusEnvironments.contains { $0 === row })
         XCTAssertTrue(focusSystem.focusedItem === row)
         XCTAssertEqual(focusSystem.committedRequestCounts, [1])
     }
 
-    func testHandoffReevaluatesWindowOnlyAfterDirectRowRequestFails() {
-        let window = UIWindow()
-        let row = UIButton()
-        let capsule = UIButton()
-        let focusSystem = FocusSystemStub(nextFocusedItems: [capsule, row])
-        XCTAssertTrue(NavigationRowFocusRequester.handoff(to: row, in: window, using: focusSystem))
-        XCTAssertEqual(focusSystem.requests.count, 2)
-        XCTAssertTrue(focusSystem.requests[0] === row)
-        XCTAssertTrue(focusSystem.requests[1] === window)
-        XCTAssertEqual(focusSystem.committedRequestCounts, [1, 2])
-    }
-
     func testHandoffDoesNotAcknowledgeFocusRemainingOnCapsule() {
-        let window = UIWindow()
+        let owner = NavigationRailFocusHostController()
         let row = UIButton()
         let capsule = UIButton()
         let focusSystem = FocusSystemStub(nextFocusedItems: [capsule, capsule])
-        XCTAssertFalse(NavigationRowFocusRequester.handoff(to: row, in: window, using: focusSystem))
+        XCTAssertFalse(owner.requestFocus(to: row, using: focusSystem))
+        XCTAssertEqual(focusSystem.requests.count, 1)
+        XCTAssertFalse(owner.preferredFocusEnvironments.contains { $0 === row })
     }
 
     func testMissingRowCompletesFailedRequestAndCannotStealFocusOnLaterLayout() async throws {
@@ -275,12 +271,14 @@ private final class FocusSystemStub: NavigationFocusUpdating {
     private var nextFocusedItems: [any UIFocusItem]
     private(set) var focusedItem: (any UIFocusItem)?
     private(set) var requests: [any UIFocusEnvironment] = []
+    private(set) var requestedPreferences: [[any UIFocusEnvironment]] = []
     private(set) var committedRequestCounts: [Int] = []
 
     init(nextFocusedItems: [any UIFocusItem]) { self.nextFocusedItems = nextFocusedItems }
 
     func requestFocusUpdate(to environment: any UIFocusEnvironment) {
         requests.append(environment)
+        requestedPreferences.append(environment.preferredFocusEnvironments)
     }
 
     func updateFocusIfNeeded() {
