@@ -27,9 +27,42 @@ struct NavigationRailShell<Content: View>: View {
     let onOpenProfileSwitcher: () -> Void
     let chrome: NavigationChromeModel
     let content: Content
+    let contentDestination: NavigationRailDestination
+    var onRequireHome: () -> Void = {}
+    var destinationFocus = NavigationDestinationFocusHandoff()
+
+    var body: some View {
+        NavigationRailFocusHost { owner in
+            NavigationRailShellContent(
+                profile: profile, entries: entries, destinations: destinations,
+                selection: $selection, onOpenProfileSwitcher: onOpenProfileSwitcher,
+                chrome: chrome, content: content, contentDestination: contentDestination,
+                onRequireHome: onRequireHome,
+                onNavigationFocusChanged: { [weak owner] focused in
+                    owner?.isNavigationFocused = focused
+                },
+                destinationFocus: destinationFocus
+            )
+        }
+        .accessibilityElement(children: .contain)
+        .ignoresSafeArea()
+    }
+}
+
+// Keep interaction state inside the native host so opening the rail does not
+// replace its root or propagate a new environment through the stationary page.
+private struct NavigationRailShellContent<Content: View>: View {
+    let profile: Profile
+    let entries: [NavigationRailLibraryEntry]
+    let destinations: [NavigationRailDestination]
+    @Binding var selection: NavigationRailDestination
+    let onOpenProfileSwitcher: () -> Void
+    let chrome: NavigationChromeModel
+    let content: Content
     /// The destination the supplied content actually depicts, which may lag selection.
     let contentDestination: NavigationRailDestination
     var onRequireHome: () -> Void = {}
+    let onNavigationFocusChanged: (Bool) -> Void
 
     /// Scopes appearance-time default focus so the CONTENT is focused first. Without
     /// it the rail — a stack of focusable rows sitting at the leading edge — can win
@@ -63,11 +96,7 @@ struct NavigationRailShell<Content: View>: View {
             isExpanded: railExpanded,
             isOpening: isOpeningNavigation
         )
-        return NavigationRailFocusHost(isNavigationFocused: railExpanded) {
-            shell(presentation: presentation, hidden: hidden, contentEntry: contentEntry)
-        }
-        .accessibilityElement(children: .contain)
-        .ignoresSafeArea()
+        return shell(presentation: presentation, hidden: hidden, contentEntry: contentEntry)
     }
 
     private func shell(
@@ -244,7 +273,8 @@ struct NavigationRailShell<Content: View>: View {
                 pinnedSidebarInteraction.setSearchResultsFocused(false)
             }
         }
-        .onChange(of: railExpanded) { _, expanded in
+        .onChange(of: railExpanded, initial: true) { _, expanded in
+            onNavigationFocusChanged(expanded)
             HeroFocusDiagnostics.emit("sidebar.shell expanded=\(expanded) opening=\(isOpeningNavigation) waiting=\(destinationFocus.isWaiting)")
             isOpeningNavigation = false
             if !expanded {
@@ -284,6 +314,7 @@ struct NavigationRailShell<Content: View>: View {
             if phase != .active, railExpanded { returnFocusToPage() }
         }
         .onDisappear {
+            onNavigationFocusChanged(false)
             destinationFocus.cancel()
             contentFocusRequest = nil
             contentReturnFocus.clear()

@@ -979,6 +979,11 @@ and a passing functional test are not substitutes for presented-frame timing.
   containing both current and requested focus. Confirm the actual focused item.
   Opening navigation does not need to disable and re-enable the entire page;
   retain the disabled-content gate only while a different destination is pending.
+  Keep rail interaction state inside that hosting boundary, not above it:
+  opening must not replace the whole hosted root or forward a newly captured
+  environment through the stationary page. Actual content and environment
+  changes still update the host. The native owner's focus flag is updated
+  independently from the rail's observed focus state.
 - **Return to real Search content.** `SearchPageFocusObserver` checks ownership by
   the native Search controller, not screen coordinates alone: outgoing Home
   content can occupy the same rectangle. Keep the capsule gated until entry.
@@ -1015,6 +1020,9 @@ and a passing functional test are not substitutes for presented-frame timing.
   every row by 36pt in the hosted reproduction. Reveal offscreen destinations with
   minimal scrolling, not an unconditional centered jump; already-visible rows
   must retain their vertical positions when an opening request repeats.
+  Each pending native-focus generation owns its reveal; do not also scroll for
+  the shell's opening token. Initial selection and destination-list changes
+  still reveal the selected destination independently.
 - **Do not copy a hosting tree's private accessibility environment.** A whole
   `environment(\.self, ...)` bridge can leave a visibly rendered page absent from
   the accessibility tree. Adding a containment accessibility modifier alone does

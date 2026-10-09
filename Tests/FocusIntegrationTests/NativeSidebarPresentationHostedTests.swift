@@ -116,7 +116,7 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
             window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
             window.rootViewController = UIHostingController(rootView: Group {
                 if sharedPinnedHost {
-                    NavigationRailFocusHost(isNavigationFocused: false) { Pages(model: model) }
+                    NavigationRailFocusHost { [model] _ in Pages(model: model) }
                         .ignoresSafeArea()
                 } else {
                     Pages(model: model)

@@ -29,7 +29,7 @@ final class NavigationRowFocusRequesterTests: XCTestCase {
                 opensExpanded: opening
             )
         }
-        let host = UIHostingController(rootView: NavigationRailFocusHost(isNavigationFocused: false) {
+        let host = UIHostingController(rootView: NavigationRailFocusHost { _ in
             rail(token: 0, opening: false)
         })
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1_920, height: 1_080))
@@ -47,7 +47,7 @@ final class NavigationRowFocusRequesterTests: XCTestCase {
         )
         XCTAssertGreaterThan(scroll.contentOffset.y, 0, "Initial entry must reveal a selected row below the fold")
         scroll.setContentOffset(.zero, animated: false)
-        host.rootView = NavigationRailFocusHost(isNavigationFocused: false) {
+        host.rootView = NavigationRailFocusHost { _ in
             rail(token: 1, opening: true)
         }
         host.view.layoutIfNeeded()

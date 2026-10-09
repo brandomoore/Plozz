@@ -378,14 +378,11 @@ struct NavigationRailView: View {
                 .onChange(of: selection, initial: true) { _, destination in
                     reveal(destination, using: proxy)
                 }
-                .onChange(of: focusRequestToken) { _, _ in
-                    reveal(selection, using: proxy)
-                }
                 .onChange(of: destinations) { _, _ in
                     if !hasFocus { reveal(selection, using: proxy) }
                 }
-                .onChange(of: pendingFocusTarget) { _, target in
-                    if case let .destination(destination) = target {
+                .onChange(of: pendingFocusRequest) { _, request in
+                    if request != nil, case let .destination(destination) = pendingFocusTarget {
                         reveal(destination, using: proxy)
                     }
                 }

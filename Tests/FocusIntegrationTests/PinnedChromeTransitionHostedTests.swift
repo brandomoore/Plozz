@@ -144,6 +144,26 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         try await waitUntil { fixture.model.buttonEnabled }
     }
 
+    func testOpeningNavigationDoesNotReplaceTheHostedRoot() async throws {
+        let fixture = try await makeFixture(hostedHeader: true)
+        defer { fixture.close() }
+        try await waitUntil { fixture.model.buttonEnabled }
+        let marker = try XCTUnwrap(markers(in: fixture.window).first)
+        let owner = try XCTUnwrap(NavigationRailFocusHostController.containing(marker))
+        let updates = owner.rootUpdateCount
+        fixture.model.interaction?.requestOpen()
+        try await waitUntil { owner.isNavigationFocused }
+        XCTAssertEqual(owner.rootUpdateCount, updates)
+        XCTAssertTrue(fixture.model.buttonEnabled)
+
+        fixture.model.seasonContext = "updated-profile"
+        try await waitUntil { fixture.model.observedSeasonContext == "updated-profile" }
+        XCTAssertGreaterThan(owner.rootUpdateCount, updates,
+                             "Real environment updates must still reach hosted content.")
+        XCTAssertTrue(owner.isNavigationFocused,
+                      "An environment refresh must preserve the native owner's focus state.")
+    }
+
     func testNestedHostsPreserveChangingSeasonAndThemeMusicContext() async throws {
         let fixture = try await makeFixture(hostedHeader: true)
         defer { fixture.close() }

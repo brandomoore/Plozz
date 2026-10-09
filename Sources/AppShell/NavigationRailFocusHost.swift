@@ -10,12 +10,10 @@ import UIKit
 struct NavigationRailFocusHost<Content: View>: UIViewControllerRepresentable {
     @Environment(\.self) private var environment
     @Environment(\.isEnabled) private var isEnabled
-    let isNavigationFocused: Bool
-    let content: Content
+    let content: (NavigationRailFocusHostController) -> Content
 
-    init(isNavigationFocused: Bool, @ViewBuilder content: () -> Content) {
-        self.isNavigationFocused = isNavigationFocused
-        self.content = content()
+    init(@ViewBuilder content: @escaping (NavigationRailFocusHostController) -> Content) {
+        self.content = content
     }
 
     func makeUIViewController(context: Context) -> NavigationRailFocusHostController {
@@ -25,9 +23,11 @@ struct NavigationRailFocusHost<Content: View>: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: NavigationRailFocusHostController, context: Context) {
-        controller.isNavigationFocused = isNavigationFocused
         let source = environment
-        controller.rootView = AnyView(content.transformEnvironment(\.self) { target in
+        #if DEBUG
+        controller.rootUpdateCount += 1
+        #endif
+        controller.rootView = AnyView(content(controller).transformEnvironment(\.self) { target in
             target.copyHostedPresentation(from: source)
             target.isEnabled = isEnabled
             target.plozzReducePanelGlass = source.plozzReducePanelGlass
@@ -73,6 +73,9 @@ struct NavigationRailFocusHost<Content: View>: UIViewControllerRepresentable {
 
 final class NavigationRailFocusHostController: UIHostingController<AnyView> {
     var isNavigationFocused = false
+    #if DEBUG
+    var rootUpdateCount = 0
+    #endif
     private weak var requestedFocus: (any UIFocusItem)?
 
     static func containing(_ view: UIView) -> NavigationRailFocusHostController? {
