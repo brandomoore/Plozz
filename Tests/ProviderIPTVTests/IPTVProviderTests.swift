@@ -218,7 +218,7 @@ final class IPTVProviderTests: XCTestCase {
             checkpoints.append(count)
             if count > 0 { throw CancellationError() }
         }) { XCTAssertTrue($0 is CancellationError) }
-        XCTAssertEqual(checkpoints, [0, 10_000])
+        XCTAssertEqual(checkpoints, [0, 500])
         XCTAssertEqual(try reader.count(where: "1 = 1"), 2)
         XCTAssertEqual(try reader.state("movies"), "old")
         XCTAssertEqual(try reader.record("old").item.title, "Original")
@@ -230,7 +230,7 @@ final class IPTVProviderTests: XCTestCase {
             XCTAssertEqual(try reader.state("movies"), "old")
             XCTAssertEqual(try reader.record("old").item.title, "Original")
         }
-        XCTAssertEqual(checkpoints, [0, 10_000, 10_005])
+        XCTAssertEqual(checkpoints, Array(stride(from: 0, through: 10_000, by: 500)) + [10_005])
         XCTAssertEqual(try reader.count(where: "library = ?", values: ["movies"]), 10_005)
         XCTAssertEqual(try reader.record("movie:0").item.title, "Replacement 0")
         XCTAssertEqual(try reader.record("movie:10004").item.title, "Movie 10004")
@@ -238,7 +238,11 @@ final class IPTVProviderTests: XCTestCase {
         XCTAssertThrowsError(try reader.record("old"))
         XCTAssertNotEqual(try reader.state("movies"), "old")
 
-        try writer.commitImport(library: nil, scope: "playlist")
+        try writer.commitImport(library: nil, scope: "playlist") { _ in
+            XCTAssertEqual(try reader.count(where: "1 = 1"), 10_006)
+            XCTAssertEqual(try reader.record("live").item.title, "Retained")
+            try reader.execute("SELECT id FROM entries INDEXED BY catalogue_name")
+        }
         XCTAssertEqual(try reader.count(where: "1 = 1"), 10_005)
         XCTAssertThrowsError(try reader.record("live"))
         writer.discardImport()
@@ -270,7 +274,7 @@ final class IPTVProviderTests: XCTestCase {
                 }
                 XCTFail("Cancellation must roll back the replacement before publication")
             } catch is CancellationError {
-                XCTAssertEqual(checkpoints, [0, 10_000])
+                XCTAssertEqual(checkpoints, [0, 500])
             }
             return (try catalog.count(where: "1 = 1"), try catalog.state("playlist"))
         }.value

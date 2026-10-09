@@ -59,6 +59,9 @@ public struct IPTVSignInView: View {
         }
         .foregroundStyle(palette.primaryText)
         .background { SettingsPageBackground() }
+        #if canImport(UIKit)
+        .keepsDisplayAwake(while: model.isConnecting)
+        #endif
         .navigationTitle("IPTV")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

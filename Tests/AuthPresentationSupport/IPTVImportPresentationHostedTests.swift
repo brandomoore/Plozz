@@ -1,7 +1,9 @@
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureAuth
 import FeatureAuthCore
+import Observation
 import ProviderIPTV
 import SwiftUI
 import UIKit
@@ -10,6 +12,77 @@ import XCTest
 
 @MainActor
 final class IPTVImportPresentationHostedTests: XCTestCase {
+    func testImportWakeProtectionReleasesOnSuccessFailureAndCancellation() async throws {
+        for outcome in ImportWakeOutcome.allCases {
+            let gate = PresentationImportGate()
+            addTeardownBlock { await gate.release() }
+            var authenticated = false
+            let model = IPTVAuthViewModel(
+                deviceID: "fixture", address: "https://provider.test/playlist",
+                signIn: { credential, _, _, progress in
+                    await gate.wait(progress)
+                    if outcome == .failure { throw LiveTVSourceImportError.invalidPlaylist }
+                    return UserSession(
+                        server: MediaServer(id: "fixture", name: "Fixture", baseURL: credential.address, provider: .iptv),
+                        userID: "viewer", userName: "Viewer", deviceID: "fixture", accessToken: "fixture"
+                    )
+                }, onAuthenticated: { _ in authenticated = true }
+            )
+            let window = try await host(
+                IPTVSignInView(model: model, onCancel: {}).environment(\.scenePhase, .active)
+            )
+            defer { model.cancel(); close(window) }
+            try await assertIdleTimerDisabled(false)
+            model.connect()
+            await gate.waitUntilStarted()
+            try await assertIdleTimerDisabled(true)
+            for stage in [IPTVImportProgress.Stage.playlist, .catalogCommit] {
+                await gate.send(.init(stage: stage, entries: 382_324))
+                try await assertIdleTimerDisabled(true)
+            }
+            if outcome == .cancellation { model.cancel() }
+            await gate.release()
+            try await assertIdleTimerDisabled(false)
+            XCTAssertFalse(model.isConnecting)
+            XCTAssertEqual(authenticated, outcome == .success)
+            if outcome == .failure { XCTAssertNotNil(model.issue) }
+        }
+    }
+
+    func testImportWakeProtectionTracksForegroundAndPreservesOverlappingPlayback() async throws {
+        let gate = PresentationImportGate()
+        addTeardownBlock { await gate.release() }
+        let model = IPTVAuthViewModel(
+            deviceID: "fixture", address: "https://provider.test/playlist",
+            signIn: { _, _, _, progress in
+                await gate.wait(progress)
+                throw CancellationError()
+            }, onAuthenticated: { _ in XCTFail("Dismissed import must not authenticate.") }
+        )
+        let state = ImportWakeScene()
+        let playbackLease = DisplayWakeLease()
+        let window = try await host(ImportWakeFixture(model: model, state: state))
+        defer { model.cancel(); close(window); playbackLease.allowSleep() }
+        model.connect()
+        await gate.waitUntilStarted()
+        try await assertIdleTimerDisabled(true)
+        for phase in [ScenePhase.inactive, .active, .background, .active] {
+            state.phase = phase
+            try await assertIdleTimerDisabled(phase == .active)
+        }
+        playbackLease.keepAwake(true)
+        state.visible = false
+        let deadline = ContinuousClock.now + .seconds(3)
+        while model.isConnecting, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(model.isConnecting, "Leaving setup must cancel the pending import.")
+        try await assertIdleTimerDisabled(true)
+        playbackLease.allowSleep()
+        try await assertIdleTimerDisabled(false)
+        await gate.release()
+    }
+
     func testImportReplacesTheFormWithReadableProgressAndACancelAction() async throws {
         let gate = PresentationImportGate()
         addTeardownBlock { await gate.release() }
@@ -85,6 +158,14 @@ final class IPTVImportPresentationHostedTests: XCTestCase {
         XCTAssertTrue(text.contains("Choose later"), text)
     }
 
+    private func assertIdleTimerDisabled(_ expected: Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while UIApplication.shared.isIdleTimerDisabled != expected, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(UIApplication.shared.isIdleTimerDisabled, expected)
+    }
+
     private func host<V: View>(_ view: V, increasedContrast: Bool = false) async throws -> UIWindow {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -123,6 +204,30 @@ final class IPTVImportPresentationHostedTests: XCTestCase {
         request.recognitionLevel = .accurate
         try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
         return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+    }
+}
+
+private enum ImportWakeOutcome: CaseIterable, Sendable {
+    case success, failure, cancellation
+}
+
+@MainActor @Observable
+private final class ImportWakeScene {
+    var phase = ScenePhase.active
+    var visible = true
+}
+
+private struct ImportWakeFixture: View {
+    let model: IPTVAuthViewModel
+    let state: ImportWakeScene
+
+    var body: some View {
+        VStack {
+            if state.visible {
+                IPTVSignInView(model: model, onCancel: {})
+            }
+        }
+        .environment(\.scenePhase, state.phase)
     }
 }
 

@@ -3,6 +3,15 @@ import Foundation
 import XCTest
 
 final class IPTVSetupDiagnosticTests: XCTestCase {
+    func testSQLiteCodesAreBoundedAndApplyOnlyToStorageFailures() {
+        XCTAssertEqual(IPTVSetupDiagnostic.Failure(.storage, sqliteCode: 13).sqliteCode, 13)
+        XCTAssertEqual(IPTVSetupDiagnostic.Failure(.storage, sqliteCode: 1811).sqliteCode, 1811)
+        for code in [-1, 0, 65_536, Int.max] {
+            XCTAssertNil(IPTVSetupDiagnostic.Failure(.storage, sqliteCode: code).sqliteCode)
+        }
+        XCTAssertNil(IPTVSetupDiagnostic.Failure(.network, sqliteCode: 13).sqliteCode)
+    }
+
     func testCampaignRemainsEnabledForTestFlightAndDebugWithoutABuildNumber() {
         for environment in ["testflight", "debug"] {
             XCTAssertTrue(IPTVSetupDiagnostic.isEnabled(environment: environment), environment)

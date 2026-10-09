@@ -32,10 +32,13 @@ public struct IPTVSetupDiagnostic: Equatable, Sendable {
         }
         public let reason: Reason
         public let networkCode: Int?
+        public let sqliteCode: Int?
 
-        public init(_ reason: Reason, networkCode: Int? = nil) {
+        public init(_ reason: Reason, networkCode: Int? = nil, sqliteCode: Int? = nil) {
             self.reason = reason
             self.networkCode = networkCode.flatMap { (-4_000 ... -1).contains($0) ? $0 : nil }
+            self.sqliteCode = reason == .storage
+                ? sqliteCode.flatMap { (1...65_535).contains($0) ? $0 : nil } : nil
         }
     }
 

@@ -1,4 +1,5 @@
 import XCTest
+@testable import CoreUI
 #if os(iOS)
 import Observation
 import SwiftUI
@@ -31,9 +32,9 @@ final class MobilePlaybackDisplaySleepPolicyTests: XCTestCase {
     @MainActor
     func testOutgoingPlayerAndLateTeardownCannotReleaseIncomingPlayersLease() async {
         var wakeRequests: [Bool] = []
-        let group = LiveChannelWakeGroup { wakeRequests.append($0) }
-        var outgoing: LiveChannelWakeLease? = LiveChannelWakeLease(group: group)
-        let incoming = LiveChannelWakeLease(group: group)
+        let group = DisplayWakeGroup { wakeRequests.append($0) }
+        var outgoing: DisplayWakeLease? = DisplayWakeLease(group: group)
+        let incoming = DisplayWakeLease(group: group)
         outgoing?.keepAwake(true)
         incoming.keepAwake(true)
         outgoing?.keepAwake(MobilePlaybackDisplaySleepPolicy.shouldStayAwake(
@@ -52,8 +53,8 @@ final class MobilePlaybackDisplaySleepPolicyTests: XCTestCase {
     @MainActor
     func testHostedLoadingPresentationUpdatesAndReleasesItsWakeLease() async throws {
         var requests: [Bool] = []
-        let group = LiveChannelWakeGroup { requests.append($0) }
-        let lease = LiveChannelWakeLease(group: group)
+        let group = DisplayWakeGroup { requests.append($0) }
+        let lease = DisplayWakeLease(group: group)
         let state = WakePresentationState()
         let host = UIHostingController(rootView: WakePresentationFixture(state: state, lease: lease))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
@@ -97,7 +98,7 @@ private final class WakePresentationState {
 
 private struct WakePresentationFixture: View {
     let state: WakePresentationState
-    let lease: LiveChannelWakeLease
+    let lease: DisplayWakeLease
 
     var body: some View {
         Group {

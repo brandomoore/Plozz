@@ -2,11 +2,54 @@ import CoreModels
 import Darwin
 import FeatureLiveTVCore
 import Foundation
-import ProviderIPTV
+@testable import ProviderIPTV
 import XCTest
 
 @MainActor
 final class IPTVPerformanceProbeTests: XCTestCase {
+    func testOptInCatalogWritePerformance() throws {
+        let marker = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent(".build/iptv-catalog-benchmark.enabled")
+        guard FileManager.default.fileExists(atPath: marker.path) else {
+            throw XCTSkip("An explicitly enabled local catalogue benchmark is required.")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            do { try FileManager.default.removeItem(at: root) }
+            catch { XCTFail("Could not remove the owned benchmark catalogue.") }
+        }
+        let url = root.appendingPathComponent("catalog.sqlite")
+        let catalog = try IPTVCatalog(url: url, key: Data(repeating: 7, count: 32))
+        try catalog.beginImport()
+        defer { catalog.discardImport() }
+        let started = Date()
+        for index in 0..<100_000 {
+            let series = "Series \(index / 40)"
+            let record = IPTVRecord(
+                item: MediaItem(
+                    id: "episode:\(index)", title: "\(series) S01 E\(index % 40 + 1)", kind: .episode,
+                    parentTitle: series, seasonNumber: 1, episodeNumber: index % 40 + 1,
+                    seriesID: "series:\(index / 40)", seasonID: "season:\(index / 40):1",
+                    seriesPosterURL: URL(string: "https://provider.test/artwork/\(index / 40).jpg"),
+                    libraryID: "series"
+                ),
+                parentID: "season:\(index / 40):1",
+                streamURL: URL(string: "https://provider.test/series/fixture/\(index)")
+            )
+            try catalog.insert(record, into: .incoming)
+        }
+        let staged = Date()
+        try catalog.commitImport(library: nil, scope: "playlist")
+        let committed = Date()
+        XCTAssertEqual(try catalog.count(where: "1 = 1"), 100_000)
+        XCTAssertEqual(try catalog.record("episode:99999").item.title, "Series 2499 S01 E40")
+        let bytes = try FileManager.default.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: [.fileSizeKey]
+        ).reduce(0) { try $0 + ($1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) }
+        print("IPTV_CATALOG_BENCHMARK records=100000 staging_seconds=\(staged.timeIntervalSince(started)) commit_seconds=\(committed.timeIntervalSince(staged)) files_bytes=\(bytes)")
+    }
+
     func testOptInPlaylistImportAndLibraryDiscovery() async throws {
         let control = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()

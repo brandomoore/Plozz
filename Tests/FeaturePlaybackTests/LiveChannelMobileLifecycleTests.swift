@@ -3,6 +3,7 @@ import CoreModels
 import SwiftUI
 import UIKit
 import XCTest
+@testable import CoreUI
 @testable import FeaturePlayback
 
 extension LiveEngineSpy: PictureInPicturePresentingEngine {}
@@ -199,9 +200,9 @@ final class LiveChannelMobileLifecycleTests: XCTestCase {
 
     func testLeavingOneLivePaneDoesNotReleaseAnotherPanesWakeLease() async {
         var wakeRequests: [Bool] = []
-        let group = LiveChannelWakeGroup { wakeRequests.append($0) }
-        let first = LiveChannelWakeLease(group: group)
-        let second = LiveChannelWakeLease(group: group)
+        let group = DisplayWakeGroup { wakeRequests.append($0) }
+        let first = DisplayWakeLease(group: group)
+        let second = DisplayWakeLease(group: group)
         first.keepAwake(true)
         first.keepAwake(true)
         second.keepAwake(true)
@@ -213,16 +214,16 @@ final class LiveChannelMobileLifecycleTests: XCTestCase {
     }
 
     func testDefaultLivePaneLeasesShareWakeOwnership() {
-        let first = LiveChannelWakeLease()
-        let second = LiveChannelWakeLease()
+        let first = DisplayWakeLease()
+        let second = DisplayWakeLease()
         XCTAssertTrue(first.group === second.group)
     }
 
     func testDeinitializingOneLivePanePreservesOtherWakeOwner() async {
         var wakeRequests: [Bool] = []
-        let group = LiveChannelWakeGroup { wakeRequests.append($0) }
-        var first: LiveChannelWakeLease? = LiveChannelWakeLease(group: group)
-        let second = LiveChannelWakeLease(group: group)
+        let group = DisplayWakeGroup { wakeRequests.append($0) }
+        var first: DisplayWakeLease? = DisplayWakeLease(group: group)
+        let second = DisplayWakeLease(group: group)
         first?.keepAwake(true)
         second.keepAwake(true)
         weak var released = first
@@ -238,8 +239,8 @@ final class LiveChannelMobileLifecycleTests: XCTestCase {
 
     func testDeinitializingFinalWakeOwnerRequestsSleep() async {
         var wakeRequests: [Bool] = []
-        let group = LiveChannelWakeGroup { wakeRequests.append($0) }
-        var lease: LiveChannelWakeLease? = LiveChannelWakeLease(group: group)
+        let group = DisplayWakeGroup { wakeRequests.append($0) }
+        var lease: DisplayWakeLease? = DisplayWakeLease(group: group)
         lease?.keepAwake(true)
         lease = nil
         for _ in 0..<100 where wakeRequests.count < 2 { await Task.yield() }

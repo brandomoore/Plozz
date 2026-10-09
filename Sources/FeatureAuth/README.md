@@ -72,6 +72,9 @@ session persistence.
   available, stale callbacks cannot update a later attempt, and failed setup
   preserves the form and its disclosure state. Library discovery uses the same
   outlined surface and explicitly offers Choose later while it is working.
+  Visible foreground imports temporarily suppress idle sleep on Apple TV and
+  iPhone/iPad. Completion, failure, cancellation, backgrounding, and dismissal
+  release only the import's wake lease; overlapping playback keeps its own lease.
   On iOS the loading card lives in a settings scroll surface, not a Form row
   whose native corner mask would clip its outline. The outline and fill use
   the same continuous corner shape.
@@ -84,6 +87,12 @@ session persistence.
   Repeated series/season parents are recognized before encoding and encrypting
   them again; their first record still wins. Statements and bound data are
   released with the temporary import, including failed replacements.
+  Saving reports completed 500-record batches. Full-playlist replacement builds
+  secondary indexes once inside the transaction instead of maintaining them for
+  every inserted row; partial library refreshes retain their indexes. Cancellation
+  or a write failure rolls back both rows and indexes. Storage diagnostics retain
+  only numeric SQLite codes, never SQL, provider values, or database paths; only
+  an actual disk-full result suggests checking available storage.
 - **Channels-only IPTV needs no library selection.** Successful discovery with
   no on-demand libraries continues onboarding on both platforms; failed
   discovery still offers recovery. Adding an IPTV account includes it in the
