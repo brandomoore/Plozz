@@ -532,8 +532,10 @@ struct NavigationRailView: View {
                         if isOffline {
                             Image(systemName: "wifi.slash")
                                 .font(.system(size: 12, weight: .bold))
+                                // The row inverts on focus; the badge keeps its own contrast.
+                                .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
                                 .padding(3)
-                                .background(.background, in: Circle())
+                                .background(colorScheme == .dark ? Color.black : Color.white, in: Circle())
                         }
                     }
                     .accessibilityHidden(true)

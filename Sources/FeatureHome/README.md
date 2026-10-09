@@ -26,7 +26,10 @@ fallback when the user's server has no attached trailer.
   their offsets and retry feedback rather than silently shifting existing cards.
   Refresh rediscovers sources. All-source failures
   remain retryable errors, and cancellation never becomes partial success.
-  Navigation retains offline library destinations with an Offline indicator.
+  Navigation retains offline library destinations: the native sidebar adds an
+  Offline label, while the pinned rail also adds a contrasting wifi-slash badge
+  that stays legible when the row is focused. Compact top navigation has no
+  individual library destinations.
   Failed library pages identify the affected server with its provider logo and
   saved name in a non-focusable identity chip on both platforms, alongside Retry.
   It reuses library-discovery failures and actual share-root scan results, never

@@ -161,6 +161,66 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         }
     }
 
+    func testOfflineBadgeRetainsContrastingGlyphWhenFocusedInBothAppearances() async throws {
+        for appearance in [UIUserInterfaceStyle.dark, .light] {
+            let fixture = try await makeFixture(libraryCount: 1)
+            defer { fixture.close() }
+            fixture.window.overrideUserInterfaceStyle = appearance
+            let entry = try XCTUnwrap(fixture.model.entries.first)
+            fixture.model.entries = [
+                NavigationRailLibraryEntry(key: entry.key, library: entry.library, isOffline: true)
+            ]
+            fixture.model.selection = entry.destination
+            try await Task.sleep(for: .milliseconds(350))
+            let rows = markers(in: fixture.window).sorted {
+                $0.convert($0.bounds, to: fixture.window).midY < $1.convert($1.bounds, to: fixture.window).midY
+            }
+            let libraryRow = try XCTUnwrap(rows.dropFirst(3).first)
+            for focused in [false, true] {
+                if focused {
+                    fixture.model.interaction?.requestOpen()
+                    try await waitUntil {
+                        guard let target = NavigationRowFocusRequester.target(for: libraryRow, in: fixture.window)
+                        else { return false }
+                        return UIFocusSystem.focusSystem(for: fixture.window)?.focusedItem === target
+                    }
+                    try await Task.sleep(for: .milliseconds(350))
+                }
+                let row = libraryRow.convert(libraryRow.bounds, to: fixture.window)
+                let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+                    fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true)
+                }
+                let name = "Offline badge \(appearance == .dark ? "dark" : "light") focused=\(focused)"
+                let attachment = XCTAttachment(image: image)
+                attachment.name = name
+                attachment.lifetime = .keepAlways
+                add(attachment)
+
+                let badge = CGRect(
+                    x: row.minX + NavigationRailMetrics.iconColumnWidth - 18,
+                    y: row.midY - 4, width: 14, height: 14
+                ).applying(CGAffineTransform(scaleX: image.scale, y: image.scale))
+                let crop = try XCTUnwrap(image.cgImage?.cropping(to: badge))
+                var pixels = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+                let context = try XCTUnwrap(CGContext(
+                    data: &pixels, width: crop.width, height: crop.height,
+                    bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ))
+                context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+                let lightPixels = stride(from: 0, to: pixels.count, by: 4).filter {
+                    min(pixels[$0], pixels[$0 + 1], pixels[$0 + 2]) > 220
+                }.count
+                let darkPixels = stride(from: 0, to: pixels.count, by: 4).filter {
+                    max(pixels[$0], pixels[$0 + 1], pixels[$0 + 2]) < 35
+                }.count
+                XCTAssertGreaterThan(lightPixels, crop.width * crop.height / 25, name)
+                XCTAssertGreaterThan(darkPixels, crop.width * crop.height / 25, name)
+            }
+        }
+    }
+
     func testOpeningLongRailDoesNotRecenterAnAlreadyVisibleSelection() async throws {
         let fixture = try await makeFixture(libraryCount: 20)
         defer { fixture.close() }
