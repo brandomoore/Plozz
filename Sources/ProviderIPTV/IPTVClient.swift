@@ -9,7 +9,10 @@ actor IPTVClient {
     private let http: IPTVHTTP
     private let artworkSecrets: [String]
     let catalog: IPTVCatalog
-    private var refresh: Task<Void, Error>?
+    private var refresh: Task<Void, Never>?
+    private var refreshScope: String?
+    private var refreshHasBackgroundOwner = false
+    private var refreshRetryAfter: [String: Date] = [:]
     private var refreshWaiters: [UUID: CheckedContinuation<Void, Error>] = [:]
     private var authenticatedAt: Date?
     private var liveExtension = "ts"
@@ -85,33 +88,61 @@ actor IPTVClient {
             try await authenticate()
             return
         }
-        try Task.checkCancellation()
         let scope = credential.mode == .playlist ? Self.playlistCatalogScope : library
-        // A committed, current catalogue remains readable while an explicit
-        // refresh stages its replacement. Cold readers still join the import.
-        if !force, try catalogIsCurrent(scope) { return }
-        while refresh != nil {
-            try await waitForRefresh()
+        while true {
             try Task.checkCancellation()
+            // Freshness controls revalidation, not availability of committed data.
+            // Missing or old-schema catalogues must still finish their first import.
+            if !force, let committedAt = try catalogCommittedAt(scope) {
+                if Date().timeIntervalSince(committedAt) >= 1_800, refresh == nil,
+                   refreshRetryAfter[scope].map({ $0 <= Date() }) != false {
+                    startRefresh(library, scope: scope, background: true)
+                }
+                return
+            }
+            if refresh != nil {
+                let sameScope = refreshScope == scope
+                try await waitForRefresh()
+                if sameScope { return }
+            } else {
+                startRefresh(library, scope: scope, background: false)
+                try await waitForRefresh()
+                return
+            }
         }
-        try Task.checkCancellation()
-        if !force, try catalogIsCurrent(scope) { return }
+    }
+
+    private func startRefresh(_ library: String, scope: String, background: Bool) {
+        refreshScope = scope
+        refreshHasBackgroundOwner = background
         refresh = Task {
+            let started = ContinuousClock.now
+            HandoffDiagnostics.emit("IPTV catalogRefresh begin background=\(background)")
             let result: Result<Void, Error>
-            do { try await self.importCatalog(library); result = .success(()) }
-            catch { result = .failure(error) }
+            do {
+                try await self.importCatalog(library)
+                self.refreshRetryAfter[scope] = nil
+                result = .success(())
+                HandoffDiagnostics.emit("IPTV catalogRefresh complete elapsed=\(started.duration(to: .now))")
+            } catch {
+                self.refreshRetryAfter[scope] = Date().addingTimeInterval(60)
+                let reason = IPTVSetupDiagnostic.Failure.sanitized(error).reason.rawValue
+                PlozzLog.networking.error("IPTV catalogue refresh failed reason=\(reason)")
+                HandoffDiagnostics.emit("IPTV catalogRefresh failed reason=\(reason) elapsed=\(started.duration(to: .now))")
+                result = .failure(error)
+            }
             self.refresh = nil
+            self.refreshScope = nil
+            self.refreshHasBackgroundOwner = false
             let waiters = self.refreshWaiters.values
             self.refreshWaiters.removeAll()
             for waiter in waiters { waiter.resume(with: result) }
-            try result.get()
         }
-        try await waitForRefresh()
     }
 
-    private func catalogIsCurrent(_ scope: String) throws -> Bool {
-        guard let raw = try catalog.state(scope), let time = TimeInterval(raw) else { return false }
-        return Date().timeIntervalSince1970 - time < 1_800
+    private func catalogCommittedAt(_ scope: String) throws -> Date? {
+        guard let raw = try catalog.state(scope), let time = TimeInterval(raw), time.isFinite else { return nil }
+        return Date(timeIntervalSince1970: time)
     }
 
     private func waitForRefresh() async throws {
@@ -129,7 +160,7 @@ actor IPTVClient {
 
     private func cancelRefreshWaiter(_ id: UUID) {
         refreshWaiters.removeValue(forKey: id)?.resume(throwing: CancellationError())
-        if refreshWaiters.isEmpty { refresh?.cancel() }
+        if refreshWaiters.isEmpty, !refreshHasBackgroundOwner { refresh?.cancel() }
     }
 
     private func importCatalog(_ library: String) async throws {
@@ -261,6 +292,7 @@ actor IPTVClient {
                     try parser.append(chunk)
                     try persist(parser.takeCatalogEntries())
                     chunk.removeAll(keepingCapacity: true)
+                    await Task.yield()
                 }
             }
         }
@@ -601,6 +633,7 @@ actor IPTVClient {
                 try Task.checkCancellation()
                 try consume(chunk)
                 chunk.removeAll(keepingCapacity: true)
+                await Task.yield()
             }
         }
         try Task.checkCancellation()

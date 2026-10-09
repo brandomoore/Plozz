@@ -3,6 +3,66 @@ import notify
 
 @MainActor
 final class PhysicalDiagnosticInputTests: XCTestCase {
+    func testExistingLiveTVPublishesSavedChannels() throws {
+        guard ProcessInfo.processInfo.environment["PLOZZ_CAPTURE_LIVE_TV_LOADING"] == "1",
+              ProcessInfo.processInfo.environment["PLOZZ_CAPTURE_BUNDLE_ID"] == "com.thatcube.Plozz" else {
+            throw XCTSkip("Explicit saved-playlist loading check in the foreground physical app only.")
+        }
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz")
+        XCTAssertEqual(app.state, .runningForeground)
+        guard app.state == .runningForeground else { return }
+        defer {
+            let tree = XCTAttachment(string: app.debugDescription)
+            tree.name = "Existing Live TV loading result"
+            tree.lifetime = .keepAlways
+            add(tree)
+            let image = XCTAttachment(screenshot: app.screenshot())
+            image.name = "Existing Live TV loaded screen"
+            image.lifetime = .keepAlways
+            add(image)
+        }
+        let rows = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "live-tv-channel-content-channels-")
+        )
+        let introduction = app.buttons["live-tv-preview-enable"]
+        let skeleton = app.descendants(matching: .any)["live-tv-guide-skeleton"]
+        var navigated = false
+        var started = ProcessInfo.processInfo.systemUptime
+        if !rows.firstMatch.exists && !introduction.exists && !skeleton.exists {
+            let destination = app.buttons.matching(
+                NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Live TV", "Live TV,")
+            ).firstMatch
+            XCTAssertTrue(destination.exists, "No known Live TV navigation control; no input sent.")
+            guard destination.exists else { return }
+            for _ in 0..<12 where !destination.hasFocus {
+                let focused = app.descendants(matching: .any).matching(
+                    NSPredicate(format: "hasFocus == true")
+                ).firstMatch
+                guard focused.exists else {
+                    XCTFail("No current focus; no selection sent.")
+                    return
+                }
+                if focused.frame.midX > destination.frame.maxX {
+                    XCUIRemote.shared.press(.left)
+                } else {
+                    XCUIRemote.shared.press(focused.frame.midY < destination.frame.midY ? .down : .up)
+                }
+            }
+            XCTAssertTrue(destination.hasFocus, "Could not reach Live TV; no selection sent.")
+            guard destination.hasFocus else { return }
+            started = ProcessInfo.processInfo.systemUptime
+            XCUIRemote.shared.press(.select)
+            navigated = true
+        }
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            rows.firstMatch.exists || introduction.exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed,
+                       "Saved channels must replace loading placeholders without a full playlist download.")
+        XCTAssertFalse(skeleton.exists)
+        print("PLZLIVETV saved-loading navigated=\(navigated) observed_seconds=\(ProcessInfo.processInfo.systemUptime - started)")
+    }
+
     func testRepeatedDownThroughExistingSubfolders() throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["PLOZZ_CAPTURE_FOLDER_DOWN"] == "1",

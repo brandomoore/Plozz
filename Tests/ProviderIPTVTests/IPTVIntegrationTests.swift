@@ -241,6 +241,228 @@ final class IPTVIntegrationTests: XCTestCase {
         XCTAssertEqual(IPTVFixture.state.requests.count, 2)
     }
 
+    func testExpiredSavedPlaylistRemainsReadableWhileProviderRefreshIsSlow() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let credential = try IPTVCredential(
+            mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list"))
+        )
+        do {
+            let saved = try IPTVCatalog(
+                url: root.appendingPathComponent(credential.identity.uuidString + ".sqlite"), key: credential.catalogKey
+            )
+            try saved.insert(IPTVRecord(
+                item: MediaItem(id: "live:saved", title: "Saved channel", kind: .video, libraryID: "live"),
+                streamURL: URL(string: "https://provider.test/live/saved.ts"), isLive: true
+            ))
+            try saved.insert(IPTVRecord(
+                item: MediaItem(id: "movie:saved", title: "Saved movie", kind: .movie, libraryID: "movies"),
+                streamURL: URL(string: "https://provider.test/movie/saved.mp4")
+            ))
+            try saved.setState("playlist-v4", String(Date().addingTimeInterval(-3_600).timeIntervalSince1970))
+        }
+        let started = expectation(description: "Expired playlist refresh started")
+        let readable = expectation(description: "Saved channel and delivery remain available during refresh")
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        IPTVFixture.state.handler = { _ in
+            started.fulfill()
+            guard gate.wait(timeout: .now() + 10) == .success else { throw URLError(.timedOut) }
+            return (200, [:], Data("#EXTM3U\n#EXTINF:-1,Updated channel\nhttps://provider.test/live/new.ts\n".utf8))
+        }
+        let client = try IPTVClient(credential: credential, directory: root, configuration: configuration())
+        let read = Task {
+            let channels = try await client.liveChannels()
+            XCTAssertEqual(channels.map(\.name), ["Saved channel"])
+            let count = try await client.liveChannelCount()
+            XCTAssertEqual(count, 1)
+            let hasGuide = try await client.hasGuideSource()
+            XCTAssertFalse(hasGuide)
+            let guideURLs = try await client.guideURLs()
+            XCTAssertTrue(guideURLs.isEmpty)
+            let hasMovies = try await client.hasItems(in: "movies", kind: .movie)
+            XCTAssertTrue(hasMovies)
+            let movies = try await client.page(library: "movies", kind: .movie, page: .init(limit: 20))
+            XCTAssertEqual(movies.items.map(\.title), ["Saved movie"])
+            let search = try await client.search("Saved", libraries: ["movies"], limit: 20)
+            XCTAssertEqual(search.map(\.title), ["Saved movie"])
+            let delivery = try await client.delivery("live:saved")
+            XCTAssertEqual(delivery.url.path, "/live/saved.ts")
+            let movieDelivery = try await client.delivery("movie:saved")
+            XCTAssertEqual(movieDelivery.url.path, "/movie/saved.mp4")
+            readable.fulfill()
+        }
+        await fulfillment(of: [started], timeout: 3)
+        await fulfillment(of: [readable], timeout: 1)
+        gate.signal()
+        try await read.value
+        let deadline = ContinuousClock.now + .seconds(5)
+        var updated: [ServerLiveTVChannel] = []
+        while ContinuousClock.now < deadline {
+            updated = try await client.liveChannels()
+            if updated.first?.name == "Updated channel" { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(updated.map(\.name), ["Updated channel"])
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1, "Readers must share the background refresh")
+        await client.cancel()
+    }
+
+    func testCancellingExplicitWaiterDoesNotCancelBackgroundPlaylistRefresh() async throws {
+        let client = try makeExpiredPlaylistClient()
+        let started = expectation(description: "Background refresh started")
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        IPTVFixture.state.handler = { _ in
+            started.fulfill()
+            guard gate.wait(timeout: .now() + 10) == .success else { throw URLError(.timedOut) }
+            return (200, [:], Data("#EXTM3U\n#EXTINF:-1,Updated\nhttps://provider.test/live/new.ts\n".utf8))
+        }
+        let saved = try await client.liveChannels()
+        XCTAssertEqual(saved.map(\.name), ["Saved"])
+        await fulfillment(of: [started], timeout: 3)
+        let waiter = Task { try await client.ensureCatalog("live", force: true) }
+        let deadline = ContinuousClock.now + .seconds(3)
+        while await client.pendingCatalogRequestCount != 1, ContinuousClock.now < deadline { await Task.yield() }
+        let pending = await client.pendingCatalogRequestCount
+        XCTAssertEqual(pending, 1, "Explicit refresh must await the in-flight replacement")
+        waiter.cancel()
+        do { try await waiter.value; XCTFail("Cancelled explicit refresh must finish with cancellation") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        gate.signal()
+        let updatedDeadline = ContinuousClock.now + .seconds(3)
+        var channels: [ServerLiveTVChannel] = []
+        while ContinuousClock.now < updatedDeadline {
+            channels = try await client.liveChannels()
+            if channels.first?.name == "Updated" { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(channels.map(\.name), ["Updated"])
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+    }
+
+    func testFailedBackgroundRefreshRetainsSavedPlaylistAndBacksOffButExplicitRetryThrows() async throws {
+        let client = try makeExpiredPlaylistClient()
+        let started = expectation(description: "Background refresh started")
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        IPTVFixture.state.handler = { _ in
+            started.fulfill()
+            guard gate.wait(timeout: .now() + 10) == .success else { throw URLError(.timedOut) }
+            return (200, [:], Data("<html>Provider unavailable</html>".utf8))
+        }
+        try await client.ensureCatalog("live")
+        await fulfillment(of: [started], timeout: 3)
+        let waiter = Task { try await client.ensureCatalog("live", force: true) }
+        let deadline = ContinuousClock.now + .seconds(3)
+        while await client.pendingCatalogRequestCount != 1, ContinuousClock.now < deadline { await Task.yield() }
+        let pending = await client.pendingCatalogRequestCount
+        XCTAssertEqual(pending, 1)
+        gate.signal()
+        do { try await waiter.value; XCTFail("A joined refresh must surface the provider failure") }
+        catch { XCTAssertEqual(error as? LiveTVSourceImportError, .invalidPlaylist) }
+        for _ in 0..<10 {
+            let saved = try await client.liveChannels()
+            XCTAssertEqual(saved.map(\.name), ["Saved"])
+        }
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1, "Saved reads must not cause a retry storm")
+        IPTVFixture.state.handler = { _ in (200, [:], Data("<html>Provider unavailable</html>".utf8)) }
+        do { try await client.ensureCatalog("live", force: true); XCTFail("Explicit retry must surface failure") }
+        catch { XCTAssertEqual(error as? LiveTVSourceImportError, .invalidPlaylist) }
+        XCTAssertEqual(IPTVFixture.state.requests.count, 2, "Explicit retries must bypass automatic backoff")
+    }
+
+    func testTeardownCancelsBackgroundPlaylistRefresh() async throws {
+        let client = try makeExpiredPlaylistClient()
+        let started = expectation(description: "Background refresh started")
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        IPTVFixture.state.handler = { _ in
+            started.fulfill()
+            guard gate.wait(timeout: .now() + 10) == .success else { throw URLError(.timedOut) }
+            return (200, [:], Data("#EXTM3U\n#EXTINF:-1,Updated\nhttps://provider.test/live/new.ts\n".utf8))
+        }
+        try await client.ensureCatalog("live")
+        await fulfillment(of: [started], timeout: 3)
+        let waiter = Task { try await client.ensureCatalog("live", force: true) }
+        let deadline = ContinuousClock.now + .seconds(3)
+        while await client.pendingCatalogRequestCount != 1, ContinuousClock.now < deadline { await Task.yield() }
+        let pending = await client.pendingCatalogRequestCount
+        XCTAssertEqual(pending, 1)
+        await client.cancel()
+        gate.signal()
+        do { try await waiter.value; XCTFail("Teardown must cancel the in-flight refresh") }
+        catch { XCTAssertEqual(IPTVSetupDiagnostic.Failure.sanitized(error).reason, .cancelled) }
+        let saved = try await client.liveChannels()
+        XCTAssertEqual(saved.map(\.name), ["Saved"])
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+    }
+
+    func testExplicitXtreamRefreshWaitsForItsOwnLibraryAfterAnotherLibraryRefresh() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        IPTVFixture.state.handler = Self.xtream
+        let credential = try IPTVCredential(
+            mode: .xtream, address: XCTUnwrap(URL(string: "https://provider.test")),
+            username: "fixture-user", password: "fixture-password"
+        )
+        let client = try IPTVClient(credential: credential, directory: root, configuration: configuration())
+        try await client.ensureCatalog("live")
+        try await client.ensureCatalog("movies")
+        do {
+            let saved = try IPTVCatalog(
+                url: root.appendingPathComponent(credential.identity.uuidString + ".sqlite"), key: credential.catalogKey
+            )
+            try saved.setState("live", String(Date().addingTimeInterval(-3_600).timeIntervalSince1970))
+        }
+        let started = expectation(description: "Stale live library refresh started")
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        IPTVFixture.state.handler = { request in
+            let action = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "action" }?.value
+            if action == "get_live_streams" {
+                started.fulfill()
+                guard gate.wait(timeout: .now() + 10) == .success else { throw URLError(.timedOut) }
+            }
+            if action == "get_vod_streams" {
+                return (200, [:], Data(#"[{"stream_id":20,"name":"Refreshed movie"}]"#.utf8))
+            }
+            return try Self.xtream(request)
+        }
+        try await client.ensureCatalog("live")
+        await fulfillment(of: [started], timeout: 3)
+        let movies = Task { try await client.ensureCatalog("movies", force: true) }
+        let deadline = ContinuousClock.now + .seconds(3)
+        while await client.pendingCatalogRequestCount != 1, ContinuousClock.now < deadline { await Task.yield() }
+        let pending = await client.pendingCatalogRequestCount
+        XCTAssertEqual(pending, 1)
+        gate.signal()
+        try await movies.value
+        let refreshed = try await client.page(library: "movies", kind: .movie, page: .init(limit: 20))
+        XCTAssertEqual(refreshed.items.map(\.title), ["Refreshed movie"])
+        await client.cancel()
+    }
+
+    private func makeExpiredPlaylistClient() throws -> IPTVClient {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
+        let credential = try IPTVCredential(mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list")))
+        do {
+            let saved = try IPTVCatalog(
+                url: root.appendingPathComponent(credential.identity.uuidString + ".sqlite"), key: credential.catalogKey
+            )
+            try saved.insert(IPTVRecord(
+                item: MediaItem(id: "live:saved", title: "Saved", kind: .video, libraryID: "live"),
+                streamURL: URL(string: "https://provider.test/live/saved.ts"), isLive: true
+            ))
+            try saved.setState("playlist-v4", String(Date().addingTimeInterval(-3_600).timeIntervalSince1970))
+        }
+        let client = try IPTVClient(credential: credential, directory: root, configuration: configuration())
+        addTeardownBlock { await client.cancel() }
+        return client
+    }
+
     func testPreviousURLCatalogRefreshesToRemovePlaceholderChannels() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

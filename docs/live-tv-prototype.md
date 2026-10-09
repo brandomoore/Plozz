@@ -79,6 +79,24 @@ a successful empty response clears ended events without deleting the source.
 Failed downloads preserve the previous catalog. Blank responses, web pages,
 and lists containing only unusable entries still fail validation.
 
+The 30-minute age is a refresh interval, not an expiry of saved channels.
+Ordinary browsing, guide availability, library discovery and playback read the
+last committed current-format catalogue immediately, while one background
+refresh stages its replacement. A failed automatic refresh retains that data,
+logs a sanitized reason and waits at least one minute before another automatic
+attempt. Explicit refresh joins an in-flight refresh of the same catalogue or
+starts a new one, waits for completion and reports failures without that backoff.
+Cold accounts and old-format catalogues still await their required import.
+Provider teardown cancels background work; cancelling one explicit waiter does
+not cancel a refresh still owned by saved-catalogue readers.
+`IPTVIntegrationTests` gates a slow refresh and requires saved reads within one
+second; `IPTVLiveTVImportTests` checks that the actual import model publishes
+channels and leaves loading before that gate opens. The opt-in physical
+`PhysicalDiagnosticInputTests.testExistingLiveTVPublishesSavedChannels` observes
+the foreground app, enters Live TV only through its existing navigation button
+when needed, and retains its screenshot/tree without relaunching or changing
+the user's preview choice, account or catalogue age.
+
 The first-run chooser selects a provider, not a playback destination. Its
 **IPTV** entry opens the playlist/provider connection form directly, just as
 account management does. **Live TV** is a destination inside the app: it can
