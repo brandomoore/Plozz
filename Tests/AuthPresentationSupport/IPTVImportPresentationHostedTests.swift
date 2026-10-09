@@ -12,6 +12,35 @@ import XCTest
 
 @MainActor
 final class IPTVImportPresentationHostedTests: XCTestCase {
+    func testCountRendersIntermediateValuesThenResetsAndSupportsDisabledAnimations() async throws {
+        let state = ImportCountScene()
+        let window = try await host(ImportCountFixture(state: state))
+        defer { close(window) }
+        let initial = try await capture(window, name: "iptv-count-initial")
+        XCTAssertTrue(initial.contains("1,000"), initial)
+
+        state.count = 50_000
+        let intermediate = try await capture(window, name: "iptv-count-intermediate")
+        let number = try XCTUnwrap(intermediate.split(separator: " ").compactMap {
+            Int($0.replacingOccurrences(of: ",", with: ""))
+        }.first, intermediate)
+        XCTAssertGreaterThan(number, 1_000, intermediate)
+        XCTAssertLessThan(number, 50_000, intermediate)
+        try await Task.sleep(for: .seconds(1))
+        let completed = try await capture(window, name: "iptv-count-confirmed")
+        XCTAssertTrue(completed.contains("50,000"), completed)
+
+        state.saving = true
+        state.count = 500
+        let reset = try await capture(window, name: "iptv-count-new-stage")
+        XCTAssertTrue(reset.contains("500"), reset)
+        XCTAssertFalse(reset.contains("50,000"), reset)
+        state.disableAnimations = true
+        state.count = 75_000
+        let immediate = try await capture(window, name: "iptv-count-animation-disabled")
+        XCTAssertTrue(immediate.contains("75,000"), immediate)
+    }
+
     func testImportWakeProtectionReleasesOnSuccessFailureAndCancellation() async throws {
         for outcome in ImportWakeOutcome.allCases {
             let gate = PresentationImportGate()
@@ -97,6 +126,7 @@ final class IPTVImportPresentationHostedTests: XCTestCase {
             IPTVSignInView(model: model, onCancel: {})
                 .environment(\.themePalette, .dark)
                 .environment(\.gradientBackgroundsEnabled, true)
+                .transaction { $0.disablesAnimations = true }
         )
         defer { model.cancel(); close(window) }
         model.connect()
@@ -209,6 +239,28 @@ final class IPTVImportPresentationHostedTests: XCTestCase {
 
 private enum ImportWakeOutcome: CaseIterable, Sendable {
     case success, failure, cancellation
+}
+
+@MainActor @Observable
+private final class ImportCountScene {
+    var count = 1_000
+    var saving = false
+    var disableAnimations = false
+}
+
+private struct ImportCountFixture: View {
+    let state: ImportCountScene
+
+    var body: some View {
+        SetupProgressCard(
+            title: state.saving ? "Saving your library" : "Reading your playlist",
+            detail: "Finishing this import before you choose your libraries.",
+            count: state.count,
+            countLabel: state.saving ? "Library records saved" : "Playlist entries read"
+        )
+        .padding(32)
+        .transaction { if state.disableAnimations { $0.disablesAnimations = true } }
+    }
 }
 
 @MainActor @Observable

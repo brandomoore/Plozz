@@ -78,6 +78,9 @@ session persistence.
   On iOS the loading card lives in a settings scroll surface, not a Form row
   whose native corner mask would clip its outline. The outline and fill use
   the same continuous corner shape.
+  Count text interpolates toward confirmed totals without running ahead; a stage
+  change resets it immediately. Reduce Motion shows exact counts without animation,
+  and accessibility always exposes the latest confirmed total.
   Playlist sign-in validates and imports a single response. Automatic Live TV
   entry/enrollment reuses the current provider catalogue; only explicit source
   refresh bypasses its freshness policy. A current committed catalogue remains
@@ -93,6 +96,11 @@ session persistence.
   or a write failure rolls back both rows and indexes. Storage diagnostics retain
   only numeric SQLite codes, never SQL, provider values, or database paths; only
   an actual disk-full result suggests checking available storage.
+  Unexpected HTTP failures use plain-language provider errors rather than field
+  validation advice; exact status codes stay in diagnostics. A 451 response
+  explains blocked access without asserting that a trial has expired.
+  Duplicate, incomplete, and conflicting custom headers have
+  separate validation messages and cannot be inferred from a server response.
 - **Channels-only IPTV needs no library selection.** Successful discovery with
   no on-demand libraries continues onboarding on both platforms; failed
   discovery still offers recovery. Adding an IPTV account includes it in the

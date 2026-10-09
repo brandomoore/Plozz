@@ -299,6 +299,7 @@ final class IPTVCatalog {
 public enum IPTVError: Error, LocalizedError, Sendable, Equatable {
     case invalidAddress, authentication, expired, unsupported, malformed, storage, oversizedRecord, empty, fileUnavailable
     case database(Int32)
+    case httpStatus(Int)
 
     public var setupFailure: IPTVSetupDiagnostic.Failure {
         switch self {
@@ -309,6 +310,7 @@ public enum IPTVError: Error, LocalizedError, Sendable, Equatable {
         case .malformed: .init(.malformed)
         case .storage: .init(.storage)
         case .database(let code): .init(.storage, sqliteCode: Int(code))
+        case .httpStatus: .init(.invalidResponse)
         case .oversizedRecord: .init(.tooLarge)
         case .empty: .init(.empty)
         case .fileUnavailable: .init(.fileUnavailable)
@@ -329,6 +331,10 @@ public enum IPTVError: Error, LocalizedError, Sendable, Equatable {
         case .database(let code) where code & 0xff == SQLITE_FULL:
             "The IPTV catalogue could not be saved. Check the available device storage."
         case .storage, .database: "The IPTV catalogue could not be saved. Please try again."
+        case .httpStatus(451):
+            "Your IPTV provider has blocked access to this playlist. Check that your trial or subscription is still active, or contact your provider."
+        case .httpStatus:
+            "Your IPTV provider couldn't send the playlist. Try again later or contact your provider."
         case .oversizedRecord: "An individual IPTV catalogue entry exceeds the supported size."
         case .empty: "This IPTV source contains no supported channels, movies, or series."
         case .fileUnavailable: "Import this playlist file on this device to use its channels and library."

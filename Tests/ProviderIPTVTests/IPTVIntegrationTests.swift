@@ -466,7 +466,7 @@ final class IPTVIntegrationTests: XCTestCase {
                 } else if status == 429 {
                     guard case AppError.rateLimited = error else { return XCTFail("Expected rate limit, got \(error)") }
                 } else {
-                    guard case AppError.invalidResponse = error else { return XCTFail("Expected server failure, got \(error)") }
+                    XCTAssertEqual(error as? IPTVError, .httpStatus(status))
                 }
             }
             XCTAssertFalse(IPTVFixture.state.requests.contains { $0.url?.path == "/prefix/xmltv.php" })

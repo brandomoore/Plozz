@@ -49,7 +49,10 @@ public struct SetupProgressCard: View {
             }
             if let count {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(count, format: .number)
+                    SetupProgressNumber(count: count)
+                        .animation(reduceMotion ? nil : .linear(duration: 0.8), value: count)
+                        .id(String(localized: countLabel))
+                        .accessibilityLabel(Text(count, format: .number))
                         .font(.title2.weight(.semibold))
                         .monospacedDigit()
                     Text(countLabel)
@@ -71,5 +74,28 @@ public struct SetupProgressCard: View {
                 .allowsHitTesting(false)
         }
         .accessibilityElement(children: .contain)
+    }
+}
+
+struct SetupProgressNumber: View, Animatable {
+    private var value: Double
+    let confirmedCount: Int
+
+    init(count: Int) {
+        value = Double(count)
+        confirmedCount = count
+    }
+
+    var animatableData: Double {
+        get { value }
+        set { value = newValue }
+    }
+
+    var displayedCount: Int {
+        value < Double(confirmedCount) ? Int(max(0, value)) : confirmedCount
+    }
+
+    var body: some View {
+        Text(displayedCount, format: .number)
     }
 }

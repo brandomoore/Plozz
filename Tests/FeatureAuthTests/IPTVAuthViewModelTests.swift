@@ -7,6 +7,62 @@ import XCTest
 
 @MainActor
 final class IPTVAuthViewModelTests: XCTestCase {
+    func testProviderResponsesDoNotBlameCustomHeaders() async throws {
+        let cases: [(any Error, LocalizedStringResource)] = [
+            (IPTVError.httpStatus(451), "Your IPTV provider has blocked access to this playlist. Check that your trial or subscription is still active, or contact your provider."),
+            (AppError.invalidResponse, "Your IPTV provider couldn't send the playlist. Try again later or contact your provider.")
+        ]
+        for (error, message) in cases {
+            let model = IPTVAuthViewModel(
+                deviceID: "fixture",
+                address: "http://provider.test/get.php?username=fixture&password=fixture&type=m3u_plus&output=ts",
+                signIn: { credential, _, _, _ in
+                    XCTAssertTrue(credential.headers.isEmpty)
+                    throw error
+                }, onAuthenticated: { _ in XCTFail("A provider error cannot authenticate.") }
+            )
+            defer { model.cancel() }
+            XCTAssertTrue(try model.makeCredential().headers.isEmpty)
+            model.connect()
+            let deadline = ContinuousClock.now + .seconds(3)
+            while model.issue == nil, ContinuousClock.now < deadline { await Task.yield() }
+            XCTAssertEqual(model.issue, message)
+            XCTAssertFalse(model.isConnecting)
+            XCTAssertTrue(model.canConnect)
+        }
+    }
+
+    func testHeaderValidationDistinguishesEmptyDuplicateAndConflictingRows() {
+        let expected: [LocalizedStringResource] = [
+            "Enter a name and value for each custom header, or remove the empty row.",
+            "Header names must be unique. Remove or rename the duplicate header.",
+            "Use either an authentication option or an Authorization header, not both."
+        ]
+        for index in expected.indices {
+            let model = IPTVAuthViewModel(
+                deviceID: "fixture", address: "https://provider.test/list",
+                signIn: { _, _, _, _ in XCTFail("Invalid fields must not reach the provider."); throw CancellationError() },
+                onAuthenticated: { _ in XCTFail("Invalid fields cannot authenticate.") }
+            )
+            model.addHeader()
+            if index == 1 {
+                model.headers[0].name = "Cookie"
+                model.headers[0].value = "fixture"
+                model.addHeader()
+                model.headers[1].name = " cookie "
+                model.headers[1].value = "fixture"
+            } else if index == 2 {
+                model.authentication = .bearer
+                model.token = "fixture"
+                model.headers[0].name = "Authorization"
+                model.headers[0].value = "Bearer fixture"
+            }
+            model.connect()
+            XCTAssertEqual(model.issue, expected[index])
+            XCTAssertFalse(model.isConnecting)
+        }
+    }
+
     func testImportProgressIsTypedAndLateCallbacksCannotReplaceANewAttempt() async throws {
         let callbacks = AuthProgressCallbacks()
         let gate = IPTVSignInGate()

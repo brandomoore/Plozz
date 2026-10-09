@@ -5,6 +5,28 @@ import Foundation
 import XCTest
 
 final class IPTVAuthenticationTests: XCTestCase {
+    func testUnexpectedHTTPStatusIsPreservedInsteadOfBecomingAFieldValidationError() async throws {
+        for status in [451, 500, 503] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { _ in (status, ["Content-Type": "text/html"], Data("Provider error".utf8)) }
+            let credential = try IPTVCredential(
+                mode: .playlist,
+                address: XCTUnwrap(URL(string: "https://provider.test/get.php?username=fixture&password=fixture&type=m3u_plus&output=ts"))
+            )
+            do {
+                _ = try await IPTVProvider.signIn(
+                    credential: credential, name: "Fixture", deviceID: "fixture",
+                    cacheDirectory: temporaryDirectory(), configuration: IPTVFixture.configuration()
+                )
+                XCTFail("An HTTP failure cannot create an account.")
+            } catch {
+                XCTAssertEqual(error as? IPTVError, .httpStatus(status))
+                XCTAssertEqual((error as? IPTVError)?.setupFailure.reason, .invalidResponse)
+            }
+            XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+        }
+    }
+
     func testSigningInWithACachedPlaylistStillValidatesTheCurrentCredentials() async throws {
         let root = temporaryDirectory()
         let credential = try IPTVCredential(
