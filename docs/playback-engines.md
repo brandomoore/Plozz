@@ -4,6 +4,24 @@ Plozz uses two playback engines, automatically selected per-item based on
 container, codecs, and subtitle requirements. The goal is maximum format coverage
 with the best possible quality (Dolby Vision, Atmos, full-timeline seek).
 
+## IPTV live streams
+
+IPTV playlist URLs can declare live output as `ts` or `m3u8` while publishing
+extensionless channel URLs. The provider carries that declaration into its
+encrypted loopback URL without changing the upstream address or opening an
+extra probe connection. This keeps declared MPEG-TS on the ingest/remux path
+instead of the HLS-only native bypass. Explicit stream extensions take
+precedence; the hint never applies to movies, episodes, or HLS child resources.
+
+Raw live transport streams (`ts`, `m2ts`, `mts`) use Aether's supported `fastZap`
+join profile. Unlike HLS, these sources have no existing playlist window to
+fetch: the standard full-holdback gate can wait longer than AVPlayer's initial
+playlist timeout on a long-GOP channel. Fast start permits a shallower initial
+window after two finalized segments and a bounded grace period. It can trade
+some initial buffering protection for earlier playback; it does not remove the
+source's keyframe wait or guarantee instant tuning. Native HLS and unknown-format
+streams keep their existing route and standard join policy; on-demand is unchanged.
+
 ## Dependency version
 
 Authored primary ASS/SSA subtitles use libass **0.17.5**, built from the

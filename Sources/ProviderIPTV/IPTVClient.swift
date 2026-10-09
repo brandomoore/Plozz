@@ -85,14 +85,17 @@ actor IPTVClient {
             try await authenticate()
             return
         }
+        try Task.checkCancellation()
+        let scope = credential.mode == .playlist ? Self.playlistCatalogScope : library
+        // A committed, current catalogue remains readable while an explicit
+        // refresh stages its replacement. Cold readers still join the import.
+        if !force, try catalogIsCurrent(scope) { return }
         while refresh != nil {
             try await waitForRefresh()
             try Task.checkCancellation()
         }
         try Task.checkCancellation()
-        let scope = credential.mode == .playlist ? Self.playlistCatalogScope : library
-        if !force, let raw = try catalog.state(scope),
-           let time = TimeInterval(raw), Date().timeIntervalSince1970 - time < 1_800 { return }
+        if !force, try catalogIsCurrent(scope) { return }
         refresh = Task {
             let result: Result<Void, Error>
             do { try await self.importCatalog(library); result = .success(()) }
@@ -104,6 +107,11 @@ actor IPTVClient {
             try result.get()
         }
         try await waitForRefresh()
+    }
+
+    private func catalogIsCurrent(_ scope: String) throws -> Bool {
+        guard let raw = try catalog.state(scope), let time = TimeInterval(raw) else { return false }
+        return Date().timeIntervalSince1970 - time < 1_800
     }
 
     private func waitForRefresh() async throws {
@@ -425,7 +433,7 @@ actor IPTVClient {
         }
     }
 
-    func delivery(_ id: String) async throws -> (URL, [String: String]) {
+    func delivery(_ id: String) async throws -> (url: URL, headers: [String: String], formatHint: MediaFormatHint) {
         let record = try await record(id)
         let url: URL
         if let address = record.streamURL { url = address }
@@ -452,7 +460,16 @@ actor IPTVClient {
             headers[key] = value
         }
         try IPTVCredential.validate(headers: headers)
-        return (url, headers)
+        var container: String?
+        if record.isLive, credential.mode == .playlist, url.pathExtension.isEmpty {
+            let outputs = URLComponents(url: credential.address, resolvingAgainstBaseURL: false)?
+                .queryItems?.filter { $0.name.lowercased() == "output" } ?? []
+            if outputs.count == 1, let output = outputs.first?.value?.lowercased(),
+               ["ts", "m3u8"].contains(output) {
+                container = output
+            }
+        }
+        return (url, headers, MediaFormatHint(container: container))
     }
 
     func guideURLs() async throws -> [URL] {

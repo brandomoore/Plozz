@@ -46,7 +46,8 @@ public final class IPTVAuthViewModel {
     public var authentication: Authentication = .none
     public var headers: [Header] = []
     public private(set) var isConnecting = false
-    public private(set) var progressMessage: LocalizedStringResource = "Checking your connection"
+    public private(set) var progress = IPTVImportProgress(stage: .connecting)
+    public var progressMessage: LocalizedStringResource { progress.message }
     public private(set) var issue: LocalizedStringResource?
     private let deviceID: String
     private let onAuthenticated: (UserSession) throws -> Void
@@ -145,15 +146,15 @@ public final class IPTVAuthViewModel {
                 ? playlistFileURL?.deletingPathExtension().lastPathComponent ?? "IPTV" : enteredName
             let fileURL = mode == .file ? playlistFileURL : nil
             isConnecting = true
-            progressMessage = "Checking your connection"
+            progress = IPTVImportProgress(stage: mode == .file ? .playlist : .connecting)
             flow = Task { [weak self, deviceID, signIn] in
                 await IPTVSetupDiagnostics.$current.withValue(attempt) {
                     defer { attempt?.finish(.init(.cancelled)) }
                     do {
                         let progress: @Sendable (IPTVImportProgress) -> Void = { [weak self] progress in
                             Task { @MainActor [weak self] in
-                                guard let self, self.generation == current else { return }
-                                self.progressMessage = progress.message
+                                guard let self, self.generation == current, self.isConnecting else { return }
+                                self.progress = progress
                             }
                         }
                         var session: UserSession

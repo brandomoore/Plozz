@@ -7,6 +7,38 @@ import XCTest
 
 @MainActor
 final class IPTVAuthViewModelTests: XCTestCase {
+    func testImportProgressIsTypedAndLateCallbacksCannotReplaceANewAttempt() async throws {
+        let callbacks = AuthProgressCallbacks()
+        let gate = IPTVSignInGate()
+        let model = IPTVAuthViewModel(
+            deviceID: "fixture", address: "https://provider.test/list",
+            signIn: { credential, _, _, progress in
+                callbacks.append(progress)
+                return await gate.complete(credential)
+            }, onAuthenticated: { _ in XCTFail("A cancelled attempt must not authenticate.") }
+        )
+        defer { model.cancel() }
+        model.connect()
+        XCTAssertEqual(model.progress.stage, .connecting)
+        await gate.waitUntilRequested()
+        callbacks.send(.init(stage: .playlist, entries: 382_324), at: 0)
+        let deadline = ContinuousClock.now + .seconds(3)
+        while model.progress.entries != 382_324, ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertEqual(model.progress.stage, .playlist)
+        XCTAssertEqual(model.progress.entries, 382_324)
+        model.cancel()
+        await gate.release()
+        model.connect()
+        XCTAssertEqual(model.progress.stage, .connecting)
+        XCTAssertEqual(model.progress.entries, 0)
+        await gate.waitUntilRequested()
+        callbacks.send(.init(stage: .catalogCommit, entries: 382_324), at: 0)
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertEqual(model.progress.stage, .connecting)
+        model.cancel()
+        await gate.release()
+    }
+
     func testPlaylistFailureCopyAndDiagnosticsRemainSpecificAndAllowRetry() async throws {
         for (error, reason) in [
             (LiveTVSourceImportError.emptyPlaylist, IPTVSetupDiagnostic.Failure.Reason.empty),
@@ -28,6 +60,18 @@ final class IPTVAuthViewModelTests: XCTestCase {
             XCTAssertEqual(buffer.values.last?.failure?.reason, reason)
             XCTAssertFalse(model.isConnecting)
             XCTAssertTrue(model.canConnect)
+        }
+    }
+
+    private final class AuthProgressCallbacks: @unchecked Sendable {
+        private let lock = NSLock()
+        private var callbacks: [@Sendable (IPTVImportProgress) -> Void] = []
+        func append(_ callback: @escaping @Sendable (IPTVImportProgress) -> Void) {
+            lock.withLock { callbacks.append(callback) }
+        }
+        func send(_ progress: IPTVImportProgress, at index: Int) {
+            let callback = lock.withLock { callbacks[index] }
+            callback(progress)
         }
     }
 
@@ -296,7 +340,7 @@ private actor IPTVSignInGate {
         while !requested, ContinuousClock.now < deadline { await Task.yield() }
         XCTAssertTrue(requested)
     }
-    func release() { continuation?.resume(); continuation = nil }
+    func release() { continuation?.resume(); continuation = nil; requested = false }
     nonisolated static func session(_ credential: IPTVCredential) -> UserSession {
         UserSession(
             server: MediaServer(id: "fixture", name: "Fixture", baseURL: credential.address, provider: .iptv),

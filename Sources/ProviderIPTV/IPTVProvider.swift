@@ -41,9 +41,11 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         let client = try IPTVClient(
             credential: credential, directory: cacheDirectory, configuration: configuration, progress: progress
         )
-        try await client.authenticate()
+        // A playlist import validates the response itself. Probing it first
+        // makes slow providers generate the same large playlist twice.
+        if credential.mode != .playlist { try await client.authenticate() }
         for library in credential.mode == .xtream ? ["live", "movies", "series"] : ["live"] {
-            try await client.ensureCatalog(library)
+            try await client.ensureCatalog(library, force: credential.mode == .playlist)
         }
         try Task.checkCancellation()
         IPTVSetupDiagnostics.current?.advance(to: .sessionCreation)
@@ -406,10 +408,10 @@ private actor IPTVPlaybackSessions {
         if let pending = entry.pending { task = pending }
         else {
             task = Task { [client, configuration, isLive = entry.isLive] in
-                let (url, headers) = try await client.delivery(locator.itemID)
+                let (url, headers, formatHint) = try await client.delivery(locator.itemID)
                 let credential = await client.credential
                 let proxy = try IPTVPlaybackProxy(
-                    origin: url, headers: headers, configuration: configuration,
+                    origin: url, headers: headers, formatHint: formatHint, configuration: configuration,
                     sensitiveValues: [credential.password], content: isLive ? .live : .onDemand
                 )
                 do { return try await Delivery(url: proxy.start(), proxy: proxy) }

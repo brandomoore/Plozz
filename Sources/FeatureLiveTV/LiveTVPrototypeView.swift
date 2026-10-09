@@ -1200,13 +1200,13 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             }
         }
         async let enrolled = enrollAuthorizedServers()
-        await imports.reload(into: model)
+        await imports.reload(into: model, forceServerRefresh: false)
         let added = await enrolled
         guard !Task.isCancelled, request == reloadRequest, isProfileAuthorized() else { return }
         if !added.isEmpty, let sources {
             sources.reload()
             guard sources.hasLoaded, applySourceConfiguration() else { return }
-            await imports.reloadServers(into: model)
+            await imports.reloadServers(into: model, forceRefresh: false)
         }
         if !Task.isCancelled, request == reloadRequest { loadedRequest = request }
     }

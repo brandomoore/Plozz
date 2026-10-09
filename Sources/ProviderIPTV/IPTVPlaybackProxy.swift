@@ -11,6 +11,7 @@ actor IPTVPlaybackProxy {
     private let listener: NWListener
     private let origin: URL
     private let headers: [String: String]
+    private let formatHint: MediaFormatHint
     private let http: IPTVHTTP
     private let diagnostic: PlaybackFailureAttempt?
     private let key = SymmetricKey(size: .bits256)
@@ -21,12 +22,14 @@ actor IPTVPlaybackProxy {
     private var didStart = false
 
     init(
-        origin: URL, headers: [String: String], configuration: URLSessionConfiguration? = nil,
+        origin: URL, headers: [String: String], formatHint: MediaFormatHint = .init(),
+        configuration: URLSessionConfiguration? = nil,
         sensitiveValues: [String] = [], content: PlaybackFailureDiagnostic.Content = .live,
         diagnostics: PlaybackFailureDiagnostics = .shared
     ) throws {
         self.origin = origin
         self.headers = headers
+        self.formatHint = formatHint
         http = IPTVHTTP(configuration: configuration, resourceTimeout: 86_400, sensitiveValues: sensitiveValues)
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
@@ -101,7 +104,7 @@ actor IPTVPlaybackProxy {
         }
         let payload = encrypted.base64EncodedString().replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-        let suffix = Self.mediaSuffix(for: url)
+        let suffix = mediaSuffix(for: url)
         guard let url = URL(string: "http://127.0.0.1:\(port)/\(token)/\(payload)\(suffix)") else {
             throw IPTVError.invalidAddress
         }
@@ -120,14 +123,19 @@ actor IPTVPlaybackProxy {
         guard let data = Data(base64Encoded: text),
               let raw = String(data: try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: key), encoding: .utf8),
               let url = URL(string: raw), LiveTVPlaylistSource.isSupportedURL(url),
-              (resource.count == 2 ? "." + resource[1] : "") == Self.mediaSuffix(for: url) else {
+              (resource.count == 2 ? "." + resource[1] : "") == mediaSuffix(for: url) else {
             throw IPTVError.authentication
         }
         return url
     }
 
-    private static func mediaSuffix(for url: URL) -> String {
+    private func mediaSuffix(for url: URL) -> String {
         let suffix = url.pathExtension.lowercased()
+        // Some playlists declare output=ts but omit the extension from every channel URL.
+        if suffix.isEmpty, url == origin, let container = formatHint.container,
+           ["ts", "m3u8"].contains(container) {
+            return "." + container
+        }
         return ["m3u8", "ts", "m2ts", "mts"].contains(suffix) ? "." + suffix : ""
     }
 

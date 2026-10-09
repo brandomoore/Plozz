@@ -24,6 +24,7 @@ final class IPTVCatalog {
     enum Table: String { case entries, incoming }
     private var db: OpaquePointer?
     private let key: SymmetricKey
+    private var writeStatements: [String: OpaquePointer] = [:]
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     init(url: URL, key: Data) throws {
@@ -64,7 +65,10 @@ final class IPTVCatalog {
         }
     }
 
-    deinit { if let db { sqlite3_close(db) } }
+    deinit {
+        for statement in writeStatements.values { sqlite3_finalize(statement) }
+        if let db { sqlite3_close(db) }
+    }
 
     func execute(_ sql: String) throws {
         guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
@@ -74,6 +78,7 @@ final class IPTVCatalog {
     }
 
     func insert(_ record: IPTVRecord, overwrite: Bool = true, into table: Table = .entries) throws {
+        if !overwrite, try contains(record.item.id, in: table) { return }
         let data = try JSONEncoder().encode(record)
         guard let sealed = try AES.GCM.seal(data, using: key).combined else { throw IPTVError.storage }
         let item = record.item
@@ -81,8 +86,8 @@ final class IPTVCatalog {
             INSERT OR \(overwrite ? "REPLACE" : "IGNORE") INTO \(table.rawValue)
             (id,kind,library,parent,title,year,added,ordinal,live,payload) VALUES(?,?,?,?,?,?,?,?,?,?)
             """
-        let statement = try prepare(sql)
-        defer { sqlite3_finalize(statement) }
+        let statement = try writeStatement(sql)
+        defer { resetWriteStatement(statement) }
         try bind([item.id, item.kind.rawValue, item.libraryID ?? "", record.parentID, item.title,
                   String(item.productionYear ?? 0), String(item.librarySortValues?.dateAdded?.timeIntervalSince1970 ?? 0),
                   String(item.episodeNumber ?? item.seasonNumber ?? 0),
@@ -167,6 +172,8 @@ final class IPTVCatalog {
     }
 
     func discardImport() {
+        for statement in writeStatements.values { sqlite3_finalize(statement) }
+        writeStatements.removeAll()
         do { try execute("DROP TABLE IF EXISTS incoming") }
         catch { PlozzLog.networking.error("IPTV temporary catalogue could not be removed") }
     }
@@ -214,6 +221,29 @@ final class IPTVCatalog {
         guard sqlite3_step(statement) == SQLITE_ROW else { throw IPTVError.storage }
         guard sqlite3_column_type(statement, 0) != SQLITE_NULL else { return nil }
         return sqlite3_column_int64(statement, 0)
+    }
+
+    private func contains(_ id: String, in table: Table) throws -> Bool {
+        let statement = try writeStatement("SELECT 1 FROM \(table.rawValue) WHERE id = ?")
+        defer { resetWriteStatement(statement) }
+        try bind([id], to: statement)
+        switch sqlite3_step(statement) {
+        case SQLITE_ROW: return true
+        case SQLITE_DONE: return false
+        default: throw IPTVError.storage
+        }
+    }
+
+    private func writeStatement(_ sql: String) throws -> OpaquePointer {
+        if let statement = writeStatements[sql] { return statement }
+        let statement = try prepare(sql)
+        writeStatements[sql] = statement
+        return statement
+    }
+
+    private func resetWriteStatement(_ statement: OpaquePointer) {
+        sqlite3_reset(statement)
+        sqlite3_clear_bindings(statement)
     }
 
     private func prepare(_ sql: String) throws -> OpaquePointer {

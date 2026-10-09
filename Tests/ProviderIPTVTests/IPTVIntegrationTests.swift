@@ -77,6 +77,7 @@ final class IPTVIntegrationTests: XCTestCase {
         IPTVFixture.state.handler = { _ in
             (200, [:], Data("#EXTM3U\n#EXTINF:-1,Movie\nhttps://provider.test/movie/one.mp4\n".utf8))
         }
+
         let credential = try IPTVCredential(mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list")))
         let client = try IPTVClient(credential: credential, directory: root, configuration: configuration())
         try await client.ensureCatalog("movies")
@@ -91,6 +92,44 @@ final class IPTVIntegrationTests: XCTestCase {
         let after = try await client.page(library: "movies", kind: .movie, page: .init(limit: 20))
         XCTAssertEqual(after.items.map(\.id), before.items.map(\.id))
         XCTAssertEqual(after.totalCount, 1)
+    }
+
+    func testPlaylistOutputHintAppliesOnlyToExtensionlessLiveChannels() async throws {
+        IPTVFixture.state.handler = { _ in
+            (200, [:], Data("""
+            #EXTM3U
+            #EXTINF:-1,Channel
+            https://provider.test/channel
+            #EXTINF:-1,Explicit HLS
+            https://provider.test/channel.m3u8
+            #EXTINF:-1,Movie
+            https://provider.test/movie/one
+
+            """.utf8))
+        }
+        for (query, expected) in [
+            ("output=ts", "ts"), ("output=m3u8", "m3u8"), ("OUTPUT=TS", "ts"),
+            ("output=unknown", ""), ("output=ts&output=m3u8", ""), ("", "")
+        ] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let credential = try IPTVCredential(
+                mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/get.php?" + query))
+            )
+            let client = try IPTVClient(credential: credential, directory: root, configuration: configuration())
+            let channels = try await client.liveChannels()
+            let channel = try XCTUnwrap(channels.first { $0.name == "Channel" })
+            let delivery = try await client.delivery(channel.id)
+            XCTAssertEqual(delivery.formatHint.container ?? "", expected)
+            XCTAssertEqual(delivery.url.path, "/channel")
+            let explicit = try XCTUnwrap(channels.first { $0.name == "Explicit HLS" })
+            let hls = try await client.delivery(explicit.id)
+            XCTAssertNil(hls.formatHint.container, "An explicit stream suffix takes precedence over the playlist default")
+            let movies = try await client.page(library: "movies", kind: .movie, page: .init(limit: 20))
+            let movie = try XCTUnwrap(movies.items.first)
+            let onDemand = try await client.delivery(movie.id)
+            XCTAssertNil(onDemand.formatHint.container, "A live-output preference must not alter on-demand playback")
+        }
     }
 
     func testConcurrentCatalogRequestsAreSerializedAcrossLibraries() async throws {
@@ -167,6 +206,39 @@ final class IPTVIntegrationTests: XCTestCase {
         XCTAssertEqual(IPTVFixture.state.requests.count, 1)
         let channels = try await client.liveChannels()
         XCTAssertEqual(channels.count, 1)
+    }
+
+    func testLibraryDiscoveryReadsCommittedCatalogWhileRefreshWaitsForProvider() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let credential = try IPTVCredential(
+            mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list"))
+        )
+        let body = Data("#EXTM3U\n#EXTINF:120,Movie\nhttps://provider.test/movie/1.mp4\n".utf8)
+        IPTVFixture.state.handler = { _ in (200, [:], body) }
+        let client = try IPTVClient(credential: credential, directory: root, configuration: configuration())
+        try await client.ensureCatalog("movies")
+        let entered = expectation(description: "Refresh waiting on response")
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        IPTVFixture.state.handler = { _ in
+            entered.fulfill()
+            guard gate.wait(timeout: .now() + 10) == .success else { throw URLError(.timedOut) }
+            return (200, [:], body)
+        }
+        let refresh = Task { try await client.ensureCatalog("movies", force: true) }
+        await fulfillment(of: [entered], timeout: 3)
+        let discovered = expectation(description: "Fresh library remains immediately readable")
+        let discovery = Task {
+            let hasMovies = try await client.hasItems(in: "movies", kind: .movie)
+            XCTAssertTrue(hasMovies)
+            discovered.fulfill()
+        }
+        await fulfillment(of: [discovered], timeout: 2)
+        gate.signal()
+        try await refresh.value
+        try await discovery.value
+        XCTAssertEqual(IPTVFixture.state.requests.count, 2)
     }
 
     func testPreviousURLCatalogRefreshesToRemovePlaceholderChannels() async throws {
@@ -251,7 +323,7 @@ final class IPTVIntegrationTests: XCTestCase {
                 channelIDs: channels.map(\.id), from: Date(timeIntervalSince1970: 100),
                 to: Date(timeIntervalSince1970: 500)
             )
-            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/list" }.count, 2)
+            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/list" }.count, 1)
             XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/guide.xml" }.count, 1)
         } catch { await provider.teardown(); throw error }
         await provider.teardown()

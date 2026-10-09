@@ -66,7 +66,11 @@ struct SelectLibrariesView: View {
             Button {
                 appState.confirmLibrarySelection()
             } label: {
-                Text("Continue").frame(minWidth: 260)
+                if discovery.state.isLoading {
+                    Text("Choose later").frame(minWidth: 260)
+                } else {
+                    Text("Continue").frame(minWidth: 260)
+                }
             }
             .buttonStyle(.borderedProminent)
             .focused($focused, equals: .continueButton)
@@ -95,12 +99,11 @@ struct SelectLibrariesView: View {
     private var content: some View {
         switch discovery.state {
         case .idle, .loading:
-            VStack(spacing: 16) {
-                ProgressView()
-                Text("Finding your libraries…")
-                    .font(.title3)
-                    .plozzForeground(.secondary)
-            }
+            SetupProgressCard(
+                title: "Finding your libraries",
+                detail: "Checking your connected sources for available libraries.",
+                symbol: "rectangle.stack"
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .empty:

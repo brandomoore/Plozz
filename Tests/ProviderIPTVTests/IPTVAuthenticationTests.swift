@@ -5,6 +5,27 @@ import Foundation
 import XCTest
 
 final class IPTVAuthenticationTests: XCTestCase {
+    func testSigningInWithACachedPlaylistStillValidatesTheCurrentCredentials() async throws {
+        let root = temporaryDirectory()
+        let credential = try IPTVCredential(
+            mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list"))
+        )
+        IPTVFixture.state.handler = { _ in (200, [:], Data("#EXTM3U\n".utf8)) }
+        _ = try await IPTVProvider.signIn(
+            credential: credential, name: "Fixture", deviceID: "fixture",
+            cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        IPTVFixture.state.handler = { _ in (401, [:], Data()) }
+        do {
+            _ = try await IPTVProvider.signIn(
+                credential: credential, name: "Fixture", deviceID: "fixture",
+                cacheDirectory: root, configuration: IPTVFixture.configuration()
+            )
+            XCTFail("A cached catalogue must not bypass sign-in validation.")
+        } catch { XCTAssertEqual(error as? IPTVError, .authentication) }
+        XCTAssertEqual(IPTVFixture.state.requests.count, 2)
+    }
+
     override func tearDown() {
         IPTVFixture.state.reset()
         super.tearDown()
@@ -21,7 +42,7 @@ final class IPTVAuthenticationTests: XCTestCase {
             cacheDirectory: root, configuration: IPTVFixture.configuration()
         )
         XCTAssertEqual(try IPTVCredential.decode(remote.accessToken).identity, credential.identity)
-        XCTAssertEqual(IPTVFixture.state.requests.count, 2)
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
         let file = root.appendingPathComponent("empty.m3u")
         try body.write(to: file)
         let local = try await IPTVProvider.importFile(
@@ -67,12 +88,12 @@ final class IPTVAuthenticationTests: XCTestCase {
         }
         let cached = try await live.liveTVAvailability()
         XCTAssertEqual(cached.status, .noChannels)
-        XCTAssertEqual(IPTVFixture.state.requests.count, 2)
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
         let active = try await live.refreshLiveTVAvailability()
         let channels = try await live.liveTVChannels()
         XCTAssertEqual(active.status, .available)
         XCTAssertEqual(channels.map(\.name), ["Live event"])
-        XCTAssertEqual(IPTVFixture.state.requests.count, 3)
+        XCTAssertEqual(IPTVFixture.state.requests.count, 2)
 
         for (status, body) in [(200, Data()), (200, Data("<html>Sign in</html>".utf8)), (401, Data())] {
             IPTVFixture.state.handler = { _ in (status, [:], body) }
@@ -262,7 +283,7 @@ final class IPTVAuthenticationTests: XCTestCase {
         let channels = try await first.liveChannels()
         XCTAssertEqual(channels.map(\.id), ["live:10"])
         let restored = try IPTVClient(credential: credential, directory: root, configuration: IPTVFixture.configuration())
-        let (url, _) = try await restored.delivery("live:10")
+        let (url, _, _) = try await restored.delivery("live:10")
         let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
         XCTAssertEqual(components.percentEncodedPath, "/prefix/live/viewer%40example.test/fixture%2Fp%20a%26%3F%2B%23/10.m3u8")
         XCTAssertNil(components.query)

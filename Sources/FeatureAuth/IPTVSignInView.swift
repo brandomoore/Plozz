@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 public struct IPTVSignInView: View {
     @State private var model: IPTVAuthViewModel
+    @State private var showsAdvanced: Bool
     @Environment(\.themePalette) private var palette
     private let onCancel: () -> Void
 
@@ -15,22 +16,34 @@ public struct IPTVSignInView: View {
         discoversPlaylistGuides: Bool = true,
         onAuthenticated: @escaping (UserSession) throws -> Void, onCancel: @escaping () -> Void
     ) {
-        _model = State(initialValue: IPTVAuthViewModel(
+        let model = IPTVAuthViewModel(
             deviceID: deviceID, address: address, name: name, guideAddress: guideAddress,
             guideURLs: guideURLs, reconnecting: reconnecting, initialMode: initialMode,
             discoversPlaylistGuides: discoversPlaylistGuides,
             onAuthenticated: onAuthenticated
-        ))
+        )
+        _model = State(initialValue: model)
+        _showsAdvanced = State(initialValue: model.hasAdvancedConfiguration)
+        self.onCancel = onCancel
+    }
+
+    public init(model: IPTVAuthViewModel, onCancel: @escaping () -> Void) {
+        _model = State(initialValue: model)
+        _showsAdvanced = State(initialValue: model.hasAdvancedConfiguration)
         self.onCancel = onCancel
     }
 
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                OnboardingHeader(Text("Connect your IPTV provider"))
-                IPTVConnectionFields(model: model)
-                    .disabled(model.isConnecting)
-                IPTVConnectionStatus(model: model)
+                if model.isConnecting {
+                    OnboardingHeader(Text("Preparing your library"))
+                    IPTVConnectionProgress(model: model)
+                } else {
+                    OnboardingHeader(Text("Connect your IPTV provider"))
+                    IPTVConnectionFields(model: model, showsAdvanced: $showsAdvanced)
+                    IPTVConnectionStatus(model: model)
+                }
                 Button(role: .cancel) {
                     model.cancel()
                     onCancel()
@@ -38,6 +51,7 @@ public struct IPTVSignInView: View {
                     Text("Cancel").frame(maxWidth: .infinity)
                 }
                 .plozzActionButton(role: .secondary)
+                .accessibilityIdentifier("iptv-cancel")
             }
             .frame(maxWidth: 840)
             .padding(32)
@@ -58,12 +72,7 @@ public struct IPTVSignInView: View {
 
 private struct IPTVConnectionFields: View {
     @Bindable var model: IPTVAuthViewModel
-    @State private var showsAdvanced: Bool
-
-    init(model: IPTVAuthViewModel) {
-        self.model = model
-        _showsAdvanced = State(initialValue: model.hasAdvancedConfiguration)
-    }
+    @Binding var showsAdvanced: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -286,17 +295,30 @@ private struct IPTVHeaderFields: View {
     }
 }
 
+private struct IPTVConnectionProgress: View {
+    let model: IPTVAuthViewModel
+
+    var body: some View {
+        SetupProgressCard(
+            title: model.progress.title,
+            detail: model.progress.detail,
+            symbol: model.progress.stage == .catalogCommit ? "square.and.arrow.down" : "text.badge.plus",
+            count: model.progress.stage == .connecting ? nil : model.progress.entries,
+            countLabel: model.progress.countLabel
+        )
+        .accessibilityIdentifier("iptv-import-progress")
+    }
+}
+
 private struct IPTVConnectionStatus: View {
     let model: IPTVAuthViewModel
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if model.isConnecting {
-                ProgressView(model.progressMessage)
-            }
             if let issue = model.issue {
                 Label(issue, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
             }
+
             Button(action: model.connect) {
                 Text("Connect").frame(maxWidth: .infinity)
             }

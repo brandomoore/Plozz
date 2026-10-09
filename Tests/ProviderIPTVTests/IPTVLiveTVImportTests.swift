@@ -6,6 +6,47 @@ import XCTest
 
 @MainActor
 final class IPTVLiveTVImportTests: XCTestCase {
+    func testAutomaticGuideEnrollmentReusesImportButExplicitRefreshFetchesAgain() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            IPTVFixture.state.reset()
+            try? FileManager.default.removeItem(at: root)
+        }
+        IPTVFixture.state.handler = { _ in
+            (200, [:], Data("#EXTM3U\n#EXTINF:-1,News\nhttps://provider.test/live/1.ts\n".utf8))
+        }
+        let credential = try IPTVCredential(
+            mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list"))
+        )
+        let session = try await IPTVProvider.signIn(
+            credential: credential, name: "Fixture", deviceID: "fixture",
+            cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        let provider = try IPTVProvider(
+            context: .init(session: session, accountID: "account", credentialRevision: .init(),
+                           localMediaContext: .init(accountID: "account", profileID: "fixture", profileNamespace: nil)),
+            cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        let source = LiveTVServerSource(id: "server", name: "Fixture", accountID: "account")
+        var configuration = LiveTVSourcesConfiguration()
+        configuration.servers = [source]
+        let imports = LiveTVPrototypeImportModel(
+            configuration: configuration,
+            serverProviderResolver: { _ in
+                .init(accountID: "account", authorizationID: "fixture", kind: .iptv, provider: provider)
+            }
+        )
+        let model = LiveTVPrototypeModel(channels: [])
+        await imports.reload(into: model, forceServerRefresh: false)
+        XCTAssertEqual(model.channels.count, 1)
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1, "Automatic guide loading must not reimport the account.")
+        await imports.reloadServers(into: model, forceRefresh: false)
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+        await imports.reload(into: model)
+        XCTAssertEqual(IPTVFixture.state.requests.count, 2, "An explicit refresh must still bypass the cache.")
+        await provider.teardown()
+    }
+
     func testPlaylistAccountLoadsLargeLiveLineupWithoutAMovieLibrary() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

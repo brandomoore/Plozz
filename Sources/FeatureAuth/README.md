@@ -66,6 +66,24 @@ session persistence.
   Disclosure, menu, and add/remove actions use `SettingsFormButtonStyle`, which
   places the shared TV row height and padding **inside** the focus fill. The
   section's outer spacing cannot substitute for clearance around text and icons.
+- **IPTV import shows measured stages, not estimated completion.** Connecting,
+  reading, and saving use one gradient-aware status card on both platforms.
+  Parsed entries and committed records are distinct counts; cancellation remains
+  available, stale callbacks cannot update a later attempt, and failed setup
+  preserves the form and its disclosure state. Library discovery uses the same
+  outlined surface and explicitly offers Choose later while it is working.
+  On iOS the loading card lives in a settings scroll surface, not a Form row
+  whose native corner mask would clip its outline. The outline and fill use
+  the same continuous corner shape.
+  Playlist sign-in validates and imports a single response. Automatic Live TV
+  entry/enrollment reuses the current provider catalogue; only explicit source
+  refresh bypasses its freshness policy. A current committed catalogue remains
+  readable during replacement staging so library selection does not wait for
+  another full download.
+  Catalogue writes reuse a bounded set of prepared statements during staging.
+  Repeated series/season parents are recognized before encoding and encrypting
+  them again; their first record still wins. Statements and bound data are
+  released with the temporary import, including failed replacements.
 - **Channels-only IPTV needs no library selection.** Successful discovery with
   no on-demand libraries continues onboarding on both platforms; failed
   discovery still offers recovery. Adding an IPTV account includes it in the

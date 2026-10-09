@@ -703,15 +703,18 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     nonisolated static func liveLoadOptions(
         httpHeaders: [String: String], url: URL? = nil
     ) -> LoadOptions {
+        let isTransportStream = ["ts", "m2ts", "mts"].contains(url?.pathExtension.lowercased() ?? "")
         // Aether 6.66 gives nativeRemoteHLS its AVPlayer-backed live window
         // without a host-selected DVR duration. Keep nil so an ingest reroute
         // does not silently opt the app into an arbitrary disk timeshift policy.
-        LoadOptions(
+        return LoadOptions(
             httpHeaders: httpHeaders,
             isLive: true,
             dvrWindowSeconds: nil,
-            liveJoinProfile: .standard,
-            nativeRemoteHLS: !["ts", "m2ts", "mts"].contains(url?.pathExtension.lowercased() ?? ""),
+            // Raw live sources have no existing HLS window to fill the initial
+            // holdback; long GOPs can otherwise outlast AVPlayer's playlist timeout.
+            liveJoinProfile: isTransportStream ? .fastZap : .standard,
+            nativeRemoteHLS: !isTransportStream,
             nativeRemoteHLSIngestFallback: true
         )
     }

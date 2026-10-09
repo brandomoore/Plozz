@@ -54,6 +54,7 @@ final class IPTVPlaybackDiagnosticsTests: XCTestCase {
                 let (_, response) = try await session.data(from: url)
                 XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 502)
             }
+
             let failure = try XCTUnwrap(buffer.values.first)
             XCTAssertEqual(buffer.values.count, 1)
             XCTAssertEqual(failure.httpStatus, status)
@@ -61,6 +62,35 @@ final class IPTVPlaybackDiagnosticsTests: XCTestCase {
             XCTAssertEqual(failure.format, .html)
             XCTAssertNil(failure.code)
             XCTAssertFalse(String(decoding: try JSONEncoder().encode(failure), as: UTF8.self).contains("private"))
+            await proxy.stop()
+        }
+    }
+
+    func testDeclaredFormatLabelsOnlyTheExtensionlessOriginWithoutChangingUpstream() async throws {
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        for (path, hint, expected) in [
+            ("channel", "ts", "ts"), ("channel", "m3u8", "m3u8"),
+            ("channel.m3u8", "ts", "m3u8"), ("channel.ts", "m3u8", "ts"),
+            ("channel.mp4", "ts", ""), ("channel", "mp4", "")
+        ] {
+            let origin = try XCTUnwrap(URL(string: "https://provider.test/private/" + path))
+            IPTVFixture.state.handler = { request in
+                XCTAssertEqual(request.url, origin)
+                return (200, [:], Data("fixture".utf8))
+            }
+            let proxy = try IPTVPlaybackProxy(
+                origin: origin, headers: [:], formatHint: .init(container: hint),
+                configuration: IPTVFixture.configuration()
+            )
+            addTeardownBlock { await proxy.stop() }
+            let address = try await proxy.start()
+            XCTAssertEqual(address.pathExtension, expected)
+            let (_, response) = try await session.data(from: address)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+            let tampered = address.deletingPathExtension().appendingPathExtension(expected == "ts" ? "m3u8" : "ts")
+            let (_, rejected) = try await session.data(from: tampered)
+            XCTAssertEqual((rejected as? HTTPURLResponse)?.statusCode, 502)
             await proxy.stop()
         }
     }
