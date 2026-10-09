@@ -8,7 +8,9 @@ import FeaturePlayback
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--view-customization-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--preview-introduction-fixture") {
+                LiveTVPreviewIntroductionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--view-customization-fixture") {
                 ViewCustomizationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--iptv-setup-fixture") {
                 IPTVSetupFixture()

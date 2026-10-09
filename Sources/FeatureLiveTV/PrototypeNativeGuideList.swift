@@ -109,6 +109,7 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
     let scrolled: (LiveTVGuideRowID?, CGFloat) -> Void
     let revision: (LiveTVGuideRowID) -> Revision
     var horizontalNavigation: () -> Void = {}
+    var leadingExit: (() -> Void)?
     @ViewBuilder let content: (LiveTVGuideRowID) -> Content
 
     struct RowEnvironment: Equatable {
@@ -202,6 +203,7 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
         private var rowIDs: [LiveTVGuideRowID] = []
         private var sectionStarts: [Int] = []
         private var scrollReportScheduled = false
+        private var isRequestingLeadingExit = false
         private let guideLayout: PrototypeGuideCollectionLayout
 
         init() {
@@ -231,6 +233,7 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
 
         func update(_ parent: PrototypeNativeGuideList, environment: EnvironmentValues) {
             parentView = parent
+            if parent.leadingExit == nil { isRequestingLeadingExit = false }
             swiftUIEnvironment = environment
             parent.scrollController.collection = collectionView
             if rowIDs != parent.rows {
@@ -280,6 +283,21 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
         }
 
         override func scrollViewDidScroll(_ scrollView: UIScrollView) { reportScroll() }
+
+        override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
+            let leading: UIFocusHeading = swiftUIEnvironment?.layoutDirection == .rightToLeft ? .right : .left
+            if context.focusHeading == leading,
+               context.previouslyFocusedView?.isDescendant(of: collectionView) == true,
+               context.nextFocusedView?.isDescendant(of: collectionView) != true,
+               parentView?.leadingExit != nil {
+                if !isRequestingLeadingExit {
+                    isRequestingLeadingExit = true
+                    DispatchQueue.main.async { [weak self] in self?.parentView?.leadingExit?() }
+                }
+                return false
+            }
+            return super.shouldUpdateFocus(in: context)
+        }
 
         override func collectionView(
             _ collectionView: UICollectionView, didUpdateFocusIn context: UICollectionViewFocusUpdateContext,

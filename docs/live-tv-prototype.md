@@ -366,6 +366,15 @@ is no prior in-memory history to migrate on the first updated launch.
   to the left of the guide. Search never scrolls away
   with either list. Select a category directly; Right returns to the remembered
   guide channel/program. Compact or short windows keep pinned horizontal controls.
+  Apple TV reserves 384 points for categories on wide layouts and 320 on narrower
+  sidebar layouts, without shrinking category text. Mobile layout widths are unchanged.
+  Its sidebar runs the full content height, beside both the channel details and
+  guide. Loading and loaded layouts use the same two-column container.
+  The category panel collapses completely when native focus enters the TV guide;
+  the channel details and same mounted guide expand into its space without resetting the channel,
+  vertical position, or time. A leading-edge move out of the guide reveals the
+  panel and focuses the selected category. Back still opens Search. Internal
+  programme-to-programme moves keep their normal timeline behavior.
   With pinned navigation visible, the Live TV controls also clear its title-safe
   margin; native top-bar/sidebar styles keep their tighter leading spacing.
   The selected category uses a checkmark rather than a second focused-looking
@@ -374,6 +383,14 @@ is no prior in-memory history to migrate on the first updated launch.
   preferences are in Settings > Live TV. Sources and Guide time remain
   directly available through channel/programme context menus; failed or empty
   imports also expose Sources beside Retry.
+  On Apple TV, each profile is asked about live previews on its first Live TV visit
+  with available channels. "Turn on previews" initially has native focus, but no
+  automatic playback starts until it is selected. "Keep previews off" and Back
+  both keep previews off and complete the choice. Settings > Live TV > Auto preview
+  can change the choice later. The completion flag is profile-scoped and independent
+  of filter saves; legacy saved values alone do not count as a choice. Inactive,
+  backgrounded, or unauthorized profiles cannot answer the prompt. iPhone and iPad
+  retain tap-to-play and do not show this prompt.
   On Apple TV, Back from a guide row focuses Search without scrolling the list.
   Back from the controls goes to the
   surrounding app navigation. Holding Select on a channel/program also opens

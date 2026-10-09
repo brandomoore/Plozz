@@ -1,0 +1,155 @@
+import XCTest
+
+@MainActor
+final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
+    func testRTLLeadingEdgeRevealsCategoriesAndReturnsToTheSameChannel() {
+        let app = launch(suite: "PreviewIntroduction.\(UUID().uuidString)", reset: true, rtl: true)
+        defer { app.terminate() }
+        assertFocused(app.buttons["live-tv-preview-enable"])
+        XCUIRemote.shared.press(.menu)
+        assertStatus("chosen-off; playback=false", in: app)
+        let second = app.buttons["live-tv-channel-content-channels-2-whole"]
+        XCUIRemote.shared.press(.down)
+        assertFocused(second)
+        assertCategoriesHidden(in: app)
+        XCUIRemote.shared.press(.right)
+        XCUIRemote.shared.press(.right)
+        assertFocused(app.buttons["All categories"])
+        assertFullHeightCategories(in: app, beside: second)
+        capture("rtl-categories-revealed", in: app)
+        XCUIRemote.shared.press(.left)
+        assertCategoriesHidden(in: app)
+        XCUIRemote.shared.press(.left)
+        assertFocused(second)
+        capture("rtl-guide-same-channel", in: app)
+    }
+
+    func testAffirmativeInitiallyFocusedAndStartsPreviewOnlyAfterSelection() {
+        let suite = "PreviewIntroduction.\(UUID().uuidString)"
+        let app = launch(suite: suite, reset: true)
+        defer { app.terminate() }
+        assertFocused(app.buttons["live-tv-preview-enable"])
+        capture("preview-choice-affirmative", in: app)
+        assertStatus("unanswered; playback=false", in: app)
+        XCUIRemote.shared.press(.select)
+        assertStatus("chosen-on; playback=true", in: app)
+        XCTAssertFalse(app.buttons["live-tv-preview-enable"].exists)
+        app.terminate()
+        _ = launch(suite: suite)
+        assertStatus("chosen-on; playback=true", in: app)
+        XCTAssertFalse(app.buttons["live-tv-preview-enable"].exists)
+    }
+
+    func testRightReachesKeepOffAndChoiceIsProfileScoped() {
+        let suite = "PreviewIntroduction.\(UUID().uuidString)"
+        let app = launch(suite: suite, reset: true)
+        defer { app.terminate() }
+        assertFocused(app.buttons["live-tv-preview-enable"])
+        XCUIRemote.shared.press(.right)
+        assertFocused(app.buttons["live-tv-preview-disable"])
+        capture("preview-choice-keep-off", in: app)
+        assertStatus("unanswered; playback=false", in: app)
+        XCUIRemote.shared.press(.select)
+        assertStatus("chosen-off; playback=false", in: app)
+        XCTAssertFalse(app.buttons["live-tv-preview-enable"].exists)
+        let content = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "live-tv-channel-content-channels-")
+        ).firstMatch
+        assertFocused(content)
+        assertCategoriesHidden(in: app)
+        let expandedGuideX = content.frame.minX
+        capture("preview-categories-collapsed", in: app)
+        XCUIRemote.shared.press(.left)
+        XCUIRemote.shared.press(.left)
+        assertFocused(app.buttons["All categories"])
+        XCTAssertGreaterThan(content.frame.minX - expandedGuideX, 300)
+        assertFullHeightCategories(in: app, beside: content)
+        capture("preview-wider-categories", in: app)
+        XCUIRemote.shared.press(.down)
+        assertFocused(app.buttons["Entertainment & Lifestyle"])
+        XCUIRemote.shared.press(.select)
+        XCUIRemote.shared.press(.right)
+        assertCategoriesHidden(in: app)
+        XCUIRemote.shared.press(.right)
+        assertFocused(content)
+        XCUIRemote.shared.press(.left)
+        XCUIRemote.shared.press(.left)
+        assertFocused(app.buttons["Entertainment & Lifestyle"])
+        assertStatus("chosen-off; playback=false", in: app)
+        app.terminate()
+        _ = launch(suite: suite)
+        assertStatus("chosen-off; playback=false", in: app)
+        XCTAssertFalse(app.buttons["live-tv-preview-enable"].exists)
+        app.terminate()
+        _ = launch(suite: suite, secondProfile: true)
+        assertFocused(app.buttons["live-tv-preview-enable"])
+        assertStatus("unanswered; playback=false", in: app)
+        XCUIRemote.shared.press(.menu)
+        assertStatus("chosen-off; playback=false", in: app)
+        XCTAssertFalse(app.buttons["live-tv-preview-enable"].exists)
+    }
+
+    private func launch(
+        suite: String, reset: Bool = false, secondProfile: Bool = false, rtl: Bool = false
+    ) -> XCUIApplication {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--preview-introduction-fixture", "--preview-suite=\(suite)",
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
+        ] + (reset ? ["--reset-preview-choice"] : [])
+          + (secondProfile ? ["--second-preview-profile"] : [])
+          + (rtl ? ["--preview-rtl"] : [])
+        app.launch()
+        return app
+    }
+
+    private func assertFocused(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(element.waitForExistence(timeout: 15), file: file, line: line)
+        let focused = NSPredicate { _, _ in element.hasFocus }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: focused, object: nil)], timeout: 5
+        ), .completed, XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost").debugDescription,
+                       file: file, line: line)
+        XCTAssertGreaterThanOrEqual(element.frame.height, 50, file: file, line: line)
+    }
+
+    private func assertStatus(
+        _ expected: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let status = app.staticTexts["preview-fixture-status"]
+        let matches = NSPredicate { _, _ in status.exists && status.label == expected }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: matches, object: nil)], timeout: 10
+        ), .completed, app.debugDescription, file: file, line: line)
+    }
+
+    private func capture(_ name: String, in app: XCUIApplication) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    private func assertFullHeightCategories(
+        in app: XCUIApplication, beside channel: XCUIElement,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let search = app.buttons["live-tv-search"]
+        let categories = app.scrollViews["live-tv-category-list"]
+        XCTAssertTrue(categories.exists, file: file, line: line)
+        XCTAssertLessThan(search.frame.minY, 120, file: file, line: line)
+        XCTAssertLessThan(search.frame.maxY, channel.frame.minY - 200, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(categories.frame.maxY, app.frame.maxY - 40, file: file, line: line)
+        XCTAssertEqual(app.buttons["All categories"].frame.width, 384, accuracy: 1, file: file, line: line)
+    }
+
+    private func assertCategoriesHidden(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let hidden = NSPredicate { _, _ in !app.buttons["All categories"].exists }
+        let result = XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: hidden, object: nil)], timeout: 5
+        )
+        capture("guide-category-visibility", in: app)
+        XCTAssertEqual(result, .completed, app.debugDescription, file: file, line: line)
+    }
+}

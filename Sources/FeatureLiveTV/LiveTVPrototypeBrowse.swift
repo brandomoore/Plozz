@@ -39,6 +39,7 @@ struct PrototypeBrowser: View {
     var libraryCatalog: PrototypeLibraryCatalogRevision?
     var loadLibraryGuide: ((Set<String>, DateInterval) -> Void)?
     var openLibraryItem: ((LibraryChannelItem) -> Void)?
+    var leadingExit: (() -> Void)?
     @State private var scrollID: LiveTVGuideRowID?
     @State private var pendingFocus: PrototypeBrowseFocus?
     @State private var restorationFallback: PrototypeBrowseFocus?
@@ -60,6 +61,7 @@ struct PrototypeBrowser: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
         let guideRequest = serverGuideRequest
@@ -162,7 +164,8 @@ struct PrototypeBrowser: View {
                                     focusPolicy: rowFocusPolicy(for: row))
                             }
                         },
-                        horizontalNavigation: useNativeNavigation
+                        horizontalNavigation: useNativeNavigation,
+                        leadingExit: leadingExit
                     ) { row in
                         if let entry = model.guideEntry(for: row) {
                             guideRow(
@@ -262,6 +265,11 @@ struct PrototypeBrowser: View {
         .focusSection()
         .onExitCommand {
             if !isRestoringFocus { openToolbar() }
+        }
+        .onMoveCommand { direction in
+            guard direction == (layoutDirection == .rightToLeft ? .right : .left),
+                  !isRestoringFocus, case .channel = confirmedFocus else { return }
+            leadingExit?()
         }
         #endif
         .onChange(of: confirmedFocus, initial: true) { _, target in

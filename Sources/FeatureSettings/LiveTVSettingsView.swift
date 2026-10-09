@@ -114,7 +114,10 @@ public struct LiveTVSettingsView: View {
                 title: "Auto preview",
                 description: "Preview the focused channel as you browse."
             ) {
-                Toggle("Auto preview", isOn: $settings.autoPreview)
+                Toggle("Auto preview", isOn: Binding(
+                    get: { settings.allowsAutomaticPreview },
+                    set: { settings.chooseAutoPreview($0) }
+                ))
                     .toggleStyle(SettingsSwitchToggleStyle())
             },
             SettingsSplitRow(

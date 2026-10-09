@@ -4,6 +4,7 @@ import Foundation
 public struct LiveTVViewSettings: Equatable, Sendable {
     public var sortByName: Bool
     public var autoPreview: Bool
+    public var hasChosenAutoPreview: Bool
     public var keepWatchingWhileBrowsing: Bool
     public var favoritesOnly: Bool
     public var guideOnly: Bool
@@ -21,16 +22,25 @@ public struct LiveTVViewSettings: Equatable, Sendable {
         guideOnly: Bool = false,
         wifiOnly: Bool = false,
         previewAfterWatching: Bool = true,
-        showsRecentChannels: Bool = true
+        showsRecentChannels: Bool = true,
+        hasChosenAutoPreview: Bool = false
     ) {
         self.sortByName = sortByName
         self.autoPreview = autoPreview
+        self.hasChosenAutoPreview = hasChosenAutoPreview
         self.keepWatchingWhileBrowsing = keepWatchingWhileBrowsing
         self.favoritesOnly = favoritesOnly
         self.guideOnly = guideOnly
         self.wifiOnly = wifiOnly
         self.previewAfterWatching = previewAfterWatching
         self.showsRecentChannels = showsRecentChannels
+    }
+
+    public var allowsAutomaticPreview: Bool { hasChosenAutoPreview && autoPreview }
+
+    public mutating func chooseAutoPreview(_ enabled: Bool) {
+        autoPreview = enabled
+        hasChosenAutoPreview = true
     }
 }
 
@@ -47,6 +57,7 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
     public static let didChange = Notification.Name("com.plozz.liveTV.view.didChange")
     static let sortByNameKey = "com.plozz.liveTV.view.sortByName"
     static let autoPreviewKey = "com.plozz.liveTV.view.autoPreview"
+    static let hasChosenAutoPreviewKey = "com.plozz.liveTV.view.hasChosenAutoPreview"
     static let keepWatchingWhileBrowsingKey = "com.plozz.liveTV.view.keepWatchingWhileBrowsing"
     static let favoritesOnlyKey = "com.plozz.liveTV.view.favoritesOnly"
     static let guideOnlyKey = "com.plozz.liveTV.view.guideOnly"
@@ -57,6 +68,7 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
     private let defaults: UserDefaults
     private let sortByNameKey: String
     private let autoPreviewKey: String
+    private let hasChosenAutoPreviewKey: String
     private let keepWatchingWhileBrowsingKey: String
     private let favoritesOnlyKey: String
     private let guideOnlyKey: String
@@ -70,6 +82,7 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
         self.defaults = defaults
         self.sortByNameKey = SettingsKey.scoped(Self.sortByNameKey, namespace: namespace)
         self.autoPreviewKey = SettingsKey.scoped(Self.autoPreviewKey, namespace: namespace)
+        self.hasChosenAutoPreviewKey = SettingsKey.scoped(Self.hasChosenAutoPreviewKey, namespace: namespace)
         self.keepWatchingWhileBrowsingKey = SettingsKey.scoped(
             Self.keepWatchingWhileBrowsingKey, namespace: namespace
         )
@@ -92,13 +105,15 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
             guideOnly: value(forKey: guideOnlyKey, default: fallback.guideOnly),
             wifiOnly: value(forKey: wifiOnlyKey, default: fallback.wifiOnly),
             previewAfterWatching: value(forKey: previewAfterWatchingKey, default: fallback.previewAfterWatching),
-            showsRecentChannels: value(forKey: showsRecentChannelsKey, default: fallback.showsRecentChannels)
+            showsRecentChannels: value(forKey: showsRecentChannelsKey, default: fallback.showsRecentChannels),
+            hasChosenAutoPreview: value(forKey: hasChosenAutoPreviewKey, default: fallback.hasChosenAutoPreview)
         )
     }
 
     public func save(_ settings: LiveTVViewSettings) {
         defaults.set(settings.sortByName, forKey: sortByNameKey)
         defaults.set(settings.autoPreview, forKey: autoPreviewKey)
+        defaults.set(settings.hasChosenAutoPreview, forKey: hasChosenAutoPreviewKey)
         defaults.set(settings.keepWatchingWhileBrowsing, forKey: keepWatchingWhileBrowsingKey)
         defaults.set(settings.favoritesOnly, forKey: favoritesOnlyKey)
         defaults.set(settings.guideOnly, forKey: guideOnlyKey)
