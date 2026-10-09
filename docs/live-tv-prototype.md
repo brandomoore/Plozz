@@ -127,6 +127,12 @@ Authentication failures, rate limits, transport failures and ordinary server
 errors remain visible rather than triggering another request path; a failed
 XMLTV fallback also remains an error. Auto-discovered guide URLs on
 another origin require explicit configuration for URL-based playlists.
+Playlist and imported-file accounts without an explicit or enabled playlist-declared
+guide immediately report no guide capability. Both platforms show "No program
+guide available" and skip guide warmup and browsing requests instead of showing
+"Loading guide...". Channels remain playable. Configured feeds and Xtream retain
+real loading, empty-listing and failure states; an empty response does not disable
+their guide capability.
 
 Catalogue imports stream into encrypted SQLite staging, not a retained
 document or a giant array of media items. They have no legacy 128 MiB document

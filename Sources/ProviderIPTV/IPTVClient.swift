@@ -484,6 +484,12 @@ actor IPTVClient {
         return guides
     }
 
+    func hasGuideSource() async throws -> Bool {
+        if credential.mode == .xtream || !credential.explicitGuideURLs.isEmpty { return true }
+        try await ensureCatalog("live")
+        return try catalog.count(where: "kind = ?", values: [MediaItemKind.unknown.rawValue]) > 0
+    }
+
     func guide(channelID: String, from: Date, to: Date) async throws -> [ServerLiveTVProgramme] {
         guard credential.mode == .xtream else { return [] }
         let channel = try await record(channelID)

@@ -530,6 +530,10 @@ final class IPTVIntegrationTests: XCTestCase {
             cacheDirectory: root, configuration: configuration(), guideLoader: guideLoader
         )
         addTeardownBlock { await provider.teardown() }
+        let requests = IPTVFixture.state.requests.count
+        let availability = try await provider.liveTVAvailability()
+        XCTAssertTrue(availability.supportsGuide, "Xtream keeps its native API and XMLTV fallback.")
+        XCTAssertEqual(IPTVFixture.state.requests.count, requests, "Capability must not prefetch guide listings.")
         return provider
     }
 

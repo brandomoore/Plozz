@@ -40,6 +40,22 @@ final class IPTVLiveTVImportTests: XCTestCase {
         await imports.reload(into: model, forceServerRefresh: false)
         XCTAssertEqual(model.channels.count, 1)
         XCTAssertEqual(IPTVFixture.state.requests.count, 1, "Automatic guide loading must not reimport the account.")
+        XCTAssertEqual(imports.serverSources.first?.availability?.supportsGuide, false)
+        XCTAssertEqual(imports.serverSources.first?.guidePhase, .idle)
+        XCTAssertTrue(imports.serverGuideWindows.isEmpty)
+        XCTAssertFalse(imports.isLoading)
+        let channel = try XCTUnwrap(model.channels.first)
+        let end = model.now.addingTimeInterval(21_600)
+        XCTAssertEqual(imports.gapState(for: channel), .disabled)
+        XCTAssertEqual(imports.gapState(for: channel, from: model.now, to: end), .disabled)
+        XCTAssertEqual(imports.gapState(for: channel).title, "No program guide available")
+        for force in [false, true] {
+            await imports.reloadServerGuides(
+                channelIDs: [channel.id], from: model.now, to: end, into: model, force: force
+            )
+            XCTAssertTrue(imports.serverGuideWindows.isEmpty, "Browsing must not start a nonexistent guide request.")
+            XCTAssertEqual(imports.gapState(for: channel), .disabled)
+        }
         await imports.reloadServers(into: model, forceRefresh: false)
         XCTAssertEqual(IPTVFixture.state.requests.count, 1)
         await imports.reload(into: model)
@@ -104,6 +120,9 @@ final class IPTVLiveTVImportTests: XCTestCase {
             XCTAssertEqual(model.visibleChannels.count, 2_080)
             XCTAssertEqual(imports.serverChannelReferences.count, 2_080)
             XCTAssertTrue(model.channels.allSatisfy { $0.source == .iptv && $0.streamURL == nil })
+            XCTAssertEqual(imports.serverSources.first?.availability?.supportsGuide, false)
+            XCTAssertTrue(imports.serverGuideWindows.isEmpty)
+            XCTAssertTrue(model.channels.allSatisfy { imports.gapState(for: $0) == .disabled })
             let channel = try XCTUnwrap(model.channels.first { $0.name == "Channel 0" })
             let reference = try XCTUnwrap(imports.serverChannelReferences[channel.id])
             let lease = try await provider.openLiveTVChannel(id: reference.channelID)

@@ -53,6 +53,92 @@ final class IPTVAuthenticationTests: XCTestCase {
         super.tearDown()
     }
 
+    func testPlaylistGuideAvailabilityUsesConfiguredSourcesWithoutFetchingGuideData() async throws {
+        let address = try XCTUnwrap(URL(string: "https://provider.test/list"))
+        let guide = try XCTUnwrap(URL(string: "https://provider.test/guide.xml"))
+        let cases: [(header: String, explicit: Bool, discovers: Bool, expected: Bool)] = [
+            ("#EXTM3U", false, true, false),
+            ("#EXTM3U", true, true, true),
+            ("#EXTM3U", true, false, true),
+            ("#EXTM3U x-tvg-url=\"https://provider.test/guide.xml\"", false, true, true),
+            ("#EXTM3U x-tvg-url=\"https://provider.test/guide.xml\"", false, false, false),
+            ("#EXTM3U x-tvg-url=\"https://other.test/guide.xml\"", false, true, true)
+        ]
+        for mode in [IPTVCredential.Mode.playlist, .file] {
+            for entry in cases {
+                IPTVFixture.state.reset()
+                let body = Data("\(entry.header)\n#EXTINF:-1,News\nhttps://provider.test/live/1.ts\n".utf8)
+                IPTVFixture.state.handler = { request in
+                    XCTAssertEqual(request.url, address, "Guide capability must not fetch a guide or open a stream.")
+                    return (200, [:], body)
+                }
+                let root = temporaryDirectory()
+                let credential = try IPTVCredential(
+                    mode: mode, address: address, guideURL: entry.explicit ? guide : nil,
+                    discoversPlaylistGuides: entry.discovers
+                )
+                let session: UserSession
+                if mode == .file {
+                    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                    let file = root.appendingPathComponent("channels.m3u")
+                    try body.write(to: file)
+                    session = try await IPTVProvider.importFile(
+                        file, credential: credential, name: "Fixture", deviceID: "fixture", cacheDirectory: root
+                    )
+                } else {
+                    session = try await IPTVProvider.signIn(
+                        credential: credential, name: "Fixture", deviceID: "fixture",
+                        cacheDirectory: root, configuration: IPTVFixture.configuration()
+                    )
+                }
+                let provider = try IPTVProvider(
+                    context: .init(
+                        session: session, accountID: "account", credentialRevision: .init(),
+                        localMediaContext: .init(accountID: "account", profileID: "guide", profileNamespace: nil)
+                    ),
+                    cacheDirectory: root, configuration: IPTVFixture.configuration()
+                )
+                addTeardownBlock { await provider.teardown() }
+                for _ in 0..<2 {
+                    let availability = try await provider.liveTVAvailability()
+                    XCTAssertEqual(availability.supportsGuide, entry.expected, "\(mode): \(entry)")
+                    XCTAssertTrue(availability.supportsPlayback)
+                    XCTAssertEqual(availability.channelCount, 1)
+                }
+                XCTAssertEqual(IPTVFixture.state.requests.count, mode == .file ? 0 : 1)
+            }
+        }
+    }
+
+    func testExplicitPlaylistRefreshUpdatesGuideCapabilityWhenFeedIsAddedOrRemoved() async throws {
+        let root = temporaryDirectory()
+        let credential = try IPTVCredential(
+            mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list"))
+        )
+        let channel = "\n#EXTINF:-1,News\nhttps://provider.test/live/1.ts\n"
+        IPTVFixture.state.handler = { _ in (200, [:], Data(("#EXTM3U" + channel).utf8)) }
+        let session = try await IPTVProvider.signIn(
+            credential: credential, name: "Fixture", deviceID: "fixture",
+            cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        let provider = try IPTVProvider(
+            context: .init(
+                session: session, accountID: "account", credentialRevision: .init(),
+                localMediaContext: .init(accountID: "account", profileID: "guide", profileNamespace: nil)
+            ),
+            cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        addTeardownBlock { await provider.teardown() }
+        for hasGuide in [false, true, false] {
+            let header = hasGuide ? "#EXTM3U url-tvg=\"https://provider.test/guide.xml\"" : "#EXTM3U"
+            IPTVFixture.state.handler = { _ in (200, [:], Data((header + channel).utf8)) }
+            let availability = try await provider.refreshLiveTVAvailability()
+            XCTAssertEqual(availability.supportsGuide, hasGuide)
+            XCTAssertTrue(availability.supportsPlayback)
+        }
+        XCTAssertEqual(IPTVFixture.state.requests.count, 4)
+    }
+
     func testValidEmptyRemoteAndLocalPlaylistsCanCreateAnAccount() async throws {
         let body = Data("# Playlist name: Fixture\n# Last update: today\n\n#EXTM3U\n".utf8)
         IPTVFixture.state.handler = { _ in (200, ["Content-Type": "text/plain"], body) }

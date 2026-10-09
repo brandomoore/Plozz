@@ -227,7 +227,10 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
 
     public func liveTVAvailability() async throws -> ServerLiveTVAvailability {
         let count = try await client.liveChannelCount()
-        return ServerLiveTVAvailability(status: count > 0 ? .available : .noChannels, channelCount: count)
+        let supportsGuide = try await client.hasGuideSource()
+        return ServerLiveTVAvailability(
+            status: count > 0 ? .available : .noChannels, channelCount: count, supportsGuide: supportsGuide
+        )
     }
 
     public func refreshLiveTVAvailability() async throws -> ServerLiveTVAvailability {
