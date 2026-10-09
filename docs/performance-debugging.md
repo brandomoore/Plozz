@@ -1001,15 +1001,26 @@ and a passing functional test are not substitutes for presented-frame timing.
   or a nearby card. The shared
   `NavigationRailFocusHost` supplies the preferred target and requests the update:
   UIKit ignores requests from a leaf or nested library host that does not contain
-  current focus. A removed source falls back to the first visible page control;
+  current focus. A removed source falls back to the page's entry preference;
   switching destinations clears the source and uses the presentation fence above.
   Query each native container once, including visible nested controller roots:
   window queries alone omitted the share library's real header. Exclude every
-  candidate centered in a rail label, not just one minimum-area match. Scrolled
+  candidate owned by the rail and centered in a rail label, not just one
+  minimum-area match. A nested page's controls can overlap the expanded labels
+  without belonging to the rail; compare native ownership before excluding them. Scrolled
   rows overlap Profile and can have identical areas; virtual items can also be
   recreated between queries. The physical failure explicitly requested a rail
   item as page content, then moved again when the rail became disabled. Cross the
   newly enabled page's render commit before resolving its content target.
+- **New-page entry prefers useful content.** `navigationEntryFocus` declares
+  content and fallback regions without changing ordinary directional navigation.
+  Libraries prefer their cards; Music prefers Recently Played, then Playlists.
+  Apply the preference to cards rather than scan banners or Now Playing header
+  accessories. Idle/loading pages declare a pending region; region changes wake
+  the active request after rendering, without polling or focusing a header first.
+  Empty/error states clear pending and use the remaining visible controls.
+  Cancellation removes the observer, and a valid captured source still wins
+  when closing navigation on the same page.
 - **Nested hosts must observe enabled-state changes.** Forwarding
   `context.environment` alone did not subscribe `NativeLibraryFocusHost` to
   `isEnabled`. A library could keep disabled controls after a shell gate

@@ -96,6 +96,15 @@ public struct LibraryBrowseView: View {
             + (navigationContentInset > 0 ? 16 : 0)
     }
 
+    private var isEntryContentPending: Bool {
+        if viewModel.contentMode == .recommended {
+            if case .idle = viewModel.recommendationState { return true }
+            return viewModel.recommendationState.isLoading
+        }
+        if case .idle = viewModel.state { return true }
+        return viewModel.state.isLoading
+    }
+
     public init(
         viewModel: LibraryBrowseViewModel,
         title: Text,
@@ -161,6 +170,7 @@ public struct LibraryBrowseView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationEntryFocus(isEntryContentPending ? .pending : nil)
         // Browse is a full-screen sub-page: hide the top tab bar so it reads as a
         // dedicated destination with no navigation chrome pinned at the top.
         .environment(\.plozzCardCaptionView, viewModel.browseScope.cardCaptionView(for: viewModel.contentMode))
@@ -321,6 +331,7 @@ public struct LibraryBrowseView: View {
             onSelect: onSelect
         )
         .environment(\.plozzArtworkArea, section.id == "continueWatching" ? .continueWatching : .recommended)
+        .navigationEntryFocus(.content)
     }
 
     #if os(tvOS)
@@ -369,6 +380,7 @@ public struct LibraryBrowseView: View {
                     onSelect: onSelect
                 )
                 .environment(\.plozzArtworkArea, section.id == "continueWatching" ? .continueWatching : .recommended)
+                .navigationEntryFocus(.content)
             }
         }
         .ignoresSafeArea(.container, edges: .trailing)
@@ -445,6 +457,7 @@ public struct LibraryBrowseView: View {
                             // `scrollTo(startIndex)` lands on the right row.
                             .id(index)
                             .focused($focusedGridIndex, equals: index)
+                            .navigationEntryFocus(.content)
                         }
 
                     }

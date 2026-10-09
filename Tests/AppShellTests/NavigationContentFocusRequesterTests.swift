@@ -1,6 +1,7 @@
 #if os(tvOS)
 import XCTest
 import UIKit
+import CoreUI
 @testable import AppShell
 
 @MainActor
@@ -16,7 +17,7 @@ final class NavigationContentFocusRequesterTests: XCTestCase {
         defer { window.isHidden = true }
         let child = UIViewController()
         let content = ContentFocusContainer(frame: window.bounds)
-        content.page.frame = CGRect(x: 700, y: 150, width: 200, height: 70)
+        content.page.frame = CGRect(x: 100, y: 65, width: 200, height: 70)
         content.addSubview(content.page)
         child.view = content
         root.addChild(child)
@@ -40,6 +41,44 @@ final class NavigationContentFocusRequesterTests: XCTestCase {
             in: window, relativeTo: marker, isRightToLeft: false
         ), "Retained native controllers inside a hidden page must remain ineligible.")
         XCTAssertEqual(content.queryCount, 1)
+    }
+
+    func testEntryPrefersContentThenDeclaredFallbackAndWaitsForLoading() {
+        let window = RecreatedFocusItemsWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let page = UIView(frame: window.bounds)
+        window.addSubview(page)
+        window.page.frame = CGRect(x: 700, y: 100, width: 200, height: 70)
+        window.addSubview(window.page)
+        let recent = UIButton(frame: CGRect(x: 700, y: 350, width: 200, height: 250))
+        window.addSubview(recent)
+        window.extraItems = [recent]
+        let content = NavigationEntryFocusRegionView(frame: recent.frame)
+        content.preference = .content
+        window.addSubview(content)
+        let fallback = NavigationEntryFocusRegionView(frame: window.page.frame)
+        fallback.preference = .fallback
+        window.addSubview(fallback)
+        XCTAssertTrue(NavigationContentFocusRequester.firstTarget(
+            in: window, relativeTo: page, isRightToLeft: false
+        ) === recent)
+        recent.isEnabled = false
+        XCTAssertTrue(NavigationContentFocusRequester.firstTarget(
+            in: window, relativeTo: page, isRightToLeft: false
+        ) === window.page)
+        let pending = NavigationEntryFocusRegionView(frame: window.bounds)
+        pending.preference = .pending
+        window.addSubview(pending)
+        let waiting = NavigationContentFocusRequester.entrySelection(
+            in: window, relativeTo: page, isRightToLeft: false
+        )
+        XCTAssertTrue(waiting.isPending)
+        XCTAssertNil(waiting.target)
+        pending.preference = nil
+        XCTAssertFalse(NavigationContentFocusRequester.entrySelection(
+            in: window, relativeTo: page, isRightToLeft: false
+        ).isPending)
     }
 
     func testScrolledRowsOverlappingProfileAreAllExcluded() throws {
@@ -124,13 +163,14 @@ private final class RecreatedFocusItemsWindow: UIWindow {
     var profileFrame = CGRect(x: 36, y: 50, width: 428, height: 64)
     var scrolledRow: UIButton?
     var includesPage = true
+    var extraItems: [UIButton] = []
     private(set) var queryCount = 0
 
     override func focusItems(in rect: CGRect) -> [any UIFocusItem] {
         queryCount += 1
         let profile = UIButton(frame: profileFrame)
         addSubview(profile)
-        return (scrolledRow.map { [$0] } ?? []) + [profile] + (includesPage ? [page] : [])
+        return (scrolledRow.map { [$0] } ?? []) + [profile] + (includesPage ? [page] : []) + extraItems
     }
 }
 

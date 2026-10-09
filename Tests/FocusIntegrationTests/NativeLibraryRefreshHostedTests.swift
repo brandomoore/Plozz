@@ -196,12 +196,24 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         }
     }
 
+    func testPinnedNavigationWaitsForColdLibraryContent() async throws {
+        for shareLibrary in [false, true] {
+            try await withNavigatedLibrary(
+                style: .rail, pinnedHandoff: true, stagedLibraryEntry: true,
+                shareLibrary: shareLibrary, delayedContent: true
+            ) { _, window, _ in
+                XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+            }
+        }
+    }
+
     private func withNavigatedLibrary(
         style: NavigationStyle,
         artwork: ArtworkSettings = .default,
         pinnedHandoff: Bool = false,
         stagedLibraryEntry: Bool = false,
         shareLibrary: Bool = false,
+        delayedContent: Bool = false,
         body: (UIView, UIWindow, LibraryBrowseViewModel) async throws -> Void
     ) async throws {
         let provider = RefreshLibraryProvider(
@@ -213,7 +225,21 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: name) }
         let model = LibraryBrowseViewModel(
             provider: provider, containerID: "library", containerKind: .movie, defaults: defaults)
-        if shareLibrary { await model.loadFirstPage() } else { await model.loadRecommendationsIfNeeded() }
+        if delayedContent {
+            if shareLibrary { await provider.holdNextPage(at: 0) } else { await provider.holdNextRecommendations() }
+        } else if shareLibrary {
+            await model.loadFirstPage()
+        } else {
+            await model.loadRecommendationsIfNeeded()
+        }
+        defer {
+            if delayedContent {
+                Task {
+                    await provider.releasePage()
+                    await provider.releaseRecommendations()
+                }
+            }
+        }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -279,6 +305,18 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             switcher.handoff.begin(.settings)
             switcher.selection = .settings
             switcher.presented = .settings
+            if delayedContent {
+                let loading = ContinuousClock.now + .seconds(5)
+                while !(await provider.isHoldingEntryContent), ContinuousClock.now < loading {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertTrue(shareLibrary ? model.state.isLoading : model.recommendationState.isLoading)
+                try await Task.sleep(for: .milliseconds(150))
+                XCTAssertTrue(observer.railHasFocus, "Loading must retain the destination row, not enter Browse.")
+                let request = try XCTUnwrap(find(NavigationContentFocusRequester.RequestView.self, in: host.view))
+                XCTAssertNotNil(request.request, "The content-entry request must wait for the provider.")
+                if shareLibrary { await provider.releasePage() } else { await provider.releaseRecommendations() }
+            }
             let presented = ContinuousClock.now + .seconds(5)
             while switcher.handoff.isWaiting || observer.railHasFocus, ContinuousClock.now < presented {
                 try await Task.sleep(for: .milliseconds(20))
@@ -286,14 +324,15 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             XCTAssertFalse(switcher.handoff.isWaiting, "The newly selected stack must finish presentation.")
             XCTAssertFalse(observer.railHasFocus, "Selection must automatically transfer focus out of navigation.")
             window.layoutIfNeeded()
-            let header = try XCTUnwrap(findController(NativeLibraryHeaderController.self, in: host))
-            let first = focusItems(in: header.host.view).min {
-                (NavigationRowFocusRequester.frame(of: $0, relativeTo: window)?.minX ?? .infinity)
-                    < (NavigationRowFocusRequester.frame(of: $1, relativeTo: window)?.minX ?? .infinity)
+            let first: any UIFocusItem
+            if shareLibrary {
+                let collection = try XCTUnwrap(find(UICollectionView.self, in: host.view))
+                first = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: 0, section: 0)))
+            } else {
+                first = try XCTUnwrap(find(TVPosterView.self, in: host.view))
             }
-            XCTAssertNotNil(first)
             XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === first,
-                          "Entry must focus the first header without help from the fixture.")
+                          "Entry must focus the first media item without help from the fixture.")
             XCTAssertFalse(focusedProfileDuringHandoff, "Profile must never receive intermediate focus: \(transitions)")
             try await body(host.view, window, model)
             return
@@ -1786,7 +1825,10 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
     private var alphabetLetters = ["A", "M"]
     private var heldStart: Int?
     private var heldPage: CheckedContinuation<Void, Never>?
+    private var holdsRecommendations = false
+    private var heldRecommendations: CheckedContinuation<Void, Never>?
     var isHoldingPage: Bool { heldPage != nil }
+    var isHoldingEntryContent: Bool { heldPage != nil || heldRecommendations != nil }
 
     nonisolated func supportedSortFields(in containerID: String, kind: MediaItemKind) -> [SortField] {
         SortField.legacyFields
@@ -1825,6 +1867,11 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
         heldPage?.resume()
         heldPage = nil
     }
+    func holdNextRecommendations() { holdsRecommendations = true }
+    func releaseRecommendations() {
+        heldRecommendations?.resume()
+        heldRecommendations = nil
+    }
 
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         if fails { throw AppError.invalidResponse }
@@ -1848,6 +1895,10 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
     }
     func libraries() async throws -> [MediaLibrary] { [] }
     func libraryHubs(libraryID: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {
+        if holdsRecommendations {
+            holdsRecommendations = false
+            await withCheckedContinuation { heldRecommendations = $0 }
+        }
         var result: [LibrarySection] = []
         if recommendationHub { result.append(LibrarySection(
             id: "featured", title: "Featured",

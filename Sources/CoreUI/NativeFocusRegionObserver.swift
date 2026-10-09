@@ -2,6 +2,56 @@
 import SwiftUI
 import UIKit
 
+@MainActor
+public enum NativeFocusRegion {
+    public static func owningController(of item: any UIFocusEnvironment) -> UIViewController? {
+        var environment: (any UIFocusEnvironment)? = item
+        var seen = Set<ObjectIdentifier>()
+        while let current = environment, seen.insert(ObjectIdentifier(current)).inserted {
+            if let controller = current as? UIViewController { return controller }
+            if let view = current as? UIView {
+                var responder: UIResponder? = view
+                while let current = responder {
+                    if let controller = current as? UIViewController { return controller }
+                    responder = current.next
+                }
+            }
+            environment = current.parentFocusEnvironment
+        }
+        return nil
+    }
+
+    public static func contains(_ item: (any UIFocusItem)?, in region: UIView) -> Bool {
+        guard let window = region.window,
+              let root = owningController(of: region)?.viewIfLoaded ?? region.superview,
+              let item, item.canBecomeFocused, !region.bounds.isEmpty else { return false }
+        let frame: CGRect
+        if let view = item as? UIView {
+            guard view.window === window, view.isDescendant(of: root) else { return false }
+            frame = view.convert(view.bounds, to: region)
+        } else {
+            var parent = item.parentFocusEnvironment
+            var container: (any UIFocusItemContainer)?
+            var belongsToContent = false
+            var seen = Set<ObjectIdentifier>()
+            while let environment = parent, seen.insert(ObjectIdentifier(environment)).inserted {
+                if let view = environment as? UIView {
+                    guard view.window === window else { return false }
+                    if view.isDescendant(of: root) { belongsToContent = true }
+                }
+                if container == nil { container = environment.focusItemContainer }
+                if belongsToContent, container != nil { break }
+                parent = environment.parentFocusEnvironment
+            }
+            guard belongsToContent, let container else { return false }
+            let coordinates: any UICoordinateSpace = region
+            frame = coordinates.convert(item.frame, from: container.coordinateSpace)
+        }
+        guard !frame.isEmpty, !frame.isNull, !frame.isInfinite else { return false }
+        return region.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+    }
+}
+
 /// Observes UIKit focus entering a region, including native Menu controls whose
 /// focus can arrive before SwiftUI's FocusState binding catches up.
 public struct NativeFocusRegionObserver: UIViewRepresentable {
@@ -94,42 +144,7 @@ public struct NativeFocusRegionObserver: UIViewRepresentable {
         }
 
         func containsFocus(_ item: (any UIFocusItem)?) -> Bool {
-            guard let window, let root = contentRoot, let item,
-                  item.canBecomeFocused, !bounds.isEmpty else { return false }
-            let frame: CGRect
-            if let view = item as? UIView {
-                guard view.window === window, view.isDescendant(of: root) else { return false }
-                frame = view.convert(view.bounds, to: self)
-            } else {
-                var parent = item.parentFocusEnvironment
-                var container: (any UIFocusItemContainer)?
-                var belongsToContent = false
-                while let environment = parent {
-                    if let view = environment as? UIView {
-                        guard view.window === window else { return false }
-                        if view.isDescendant(of: root) { belongsToContent = true }
-                    }
-                    if container == nil { container = environment.focusItemContainer }
-                    if belongsToContent, container != nil { break }
-                    parent = environment.parentFocusEnvironment
-                }
-                guard belongsToContent, let container else { return false }
-                let coordinates: any UICoordinateSpace = self
-                frame = coordinates.convert(item.frame, from: container.coordinateSpace)
-            }
-            guard !frame.isEmpty, !frame.isNull, !frame.isInfinite else { return false }
-            return bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
-        }
-
-        private var contentRoot: UIView? {
-            var responder = next
-            while let current = responder {
-                if let controller = current as? UIViewController {
-                    return controller.viewIfLoaded
-                }
-                responder = current.next
-            }
-            return superview
+            NativeFocusRegion.contains(item, in: self)
         }
 
         deinit {

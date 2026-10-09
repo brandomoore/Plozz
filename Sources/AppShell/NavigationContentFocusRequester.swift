@@ -5,7 +5,7 @@ import FeatureHome
 import SwiftUI
 import UIKit
 
-/// New destinations start at their first visible control, not beside the expanded rail.
+/// New destinations honor the page's content-first entry preference.
 struct NavigationContentFocusRequester: UIViewRepresentable {
     let request: UInt64?
     let onCompleted: (UInt64, Bool) -> Void
@@ -86,6 +86,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
             didSet {
                 guard request != oldValue else { return }
                 stop()
+                updateObservation()
                 schedule()
             }
         }
@@ -94,11 +95,27 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
+            updateObservation()
             if window == nil { stop() } else { schedule() }
         }
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            schedule()
+        }
+
+        private func updateObservation() {
+            NotificationCenter.default.removeObserver(self, name: NavigationEntryFocusRegionView.didChange, object: nil)
+            guard request != nil, window != nil else { return }
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(entryPreferenceChanged(_:)),
+                name: NavigationEntryFocusRegionView.didChange, object: nil
+            )
+        }
+
+        @objc private func entryPreferenceChanged(_ notification: Notification) {
+            guard let region = notification.object as? NavigationEntryFocusRegionView,
+                  let window, region.window === window else { return }
             schedule()
         }
 
@@ -128,10 +145,14 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
             window.layoutIfNeeded()
             guard self.request == request, self.window === window else { return }
             let previous = returnFocus?.target(relativeTo: self)
-            guard let target = previous
-                ?? NavigationContentFocusRequester.firstTarget(
-                in: window, relativeTo: self, isRightToLeft: isRightToLeft
-            ) else {
+            let selection = previous.map { EntrySelection(target: $0, isPending: false) }
+                ?? NavigationContentFocusRequester.entrySelection(
+                    in: window, relativeTo: self, isRightToLeft: isRightToLeft
+                )
+            // A loading page will wake this request when its entry regions change.
+            // Do not focus its toolbar first and then visibly redirect into content.
+            guard !selection.isPending else { return }
+            guard let target = selection.target else {
                 PlozzLog.app.debug("New navigation page has no visible focus target yet")
                 complete(request, didFocus: false)
                 return
@@ -166,8 +187,34 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
     static func firstTarget(
         in window: UIWindow, relativeTo marker: UIView, isRightToLeft: Bool
     ) -> (any UIFocusItem)? {
-        guard !marker.bounds.isEmpty else { return nil }
-        let rows = railMarkers(in: window)
+        entrySelection(in: window, relativeTo: marker, isRightToLeft: isRightToLeft).target
+    }
+
+    struct EntrySelection {
+        let target: (any UIFocusItem)?
+        let isPending: Bool
+    }
+
+    static func entrySelection(
+        in window: UIWindow, relativeTo marker: UIView, isRightToLeft: Bool
+    ) -> EntrySelection {
+        guard !marker.bounds.isEmpty else { return EntrySelection(target: nil, isPending: false) }
+        var rows: [NavigationRowFocusRequester.RequestView] = []
+        var regions: [NavigationEntryFocusRegionView] = []
+        func visit(_ view: UIView) {
+            guard !view.isHidden, view.alpha > 0.01 else { return }
+            if let row = view as? NavigationRowFocusRequester.RequestView { rows.append(row) }
+            if let region = view as? NavigationEntryFocusRegionView,
+               region.preference != nil, !region.bounds.isEmpty,
+               marker.bounds.intersects(region.convert(region.bounds, to: marker)) {
+                regions.append(region)
+            }
+            for child in view.subviews { visit(child) }
+        }
+        visit(window)
+        if regions.contains(where: { $0.preference == .pending }) {
+            return EntrySelection(target: nil, isPending: true)
+        }
         var containers: [any UIFocusItemContainer] = [window]
         // A hosting view's virtual items omit controls in nested native controllers.
         var controllers = window.rootViewController.map { [$0] } ?? []
@@ -200,21 +247,36 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         // SwiftUI can recreate virtual focus items between queries. Resolve the
         // rail and page from one snapshot instead of comparing separate queries'
         // object identities (and walking the entire window once per rail row).
-        let railFrames = rows.filter { !$0.bounds.isEmpty }.map { $0.convert($0.bounds, to: marker) }
+        let railFrames = rows.filter { !$0.bounds.isEmpty }.map {
+            (frame: $0.convert($0.bounds, to: marker), owner: NativeFocusRegion.owningController(of: $0))
+        }
         // Scrolled rows can overlap Profile; exclude every item centered in the
         // row labels, not just one minimum-area match per label.
         candidates.removeAll { candidate in
-            railFrames.contains {
-                $0.insetBy(dx: -0.5, dy: -0.5).contains(CGPoint(x: candidate.frame.midX, y: candidate.frame.midY))
+            let owner = NativeFocusRegion.owningController(of: candidate.item)
+            return railFrames.contains {
+                // Expanded rail labels overlap legitimate leading page controls.
+                // A different native owner means this is content, not a rail row.
+                if let owner, let rowOwner = $0.owner, owner !== rowOwner { return false }
+                return $0.frame.insetBy(dx: -0.5, dy: -0.5)
+                    .contains(CGPoint(x: candidate.frame.midX, y: candidate.frame.midY))
             }
         }
-        guard let index = firstFrameIndex(candidates.map(\.frame), isRightToLeft: isRightToLeft) else { return nil }
-        return candidates[index].item
-    }
-
-    private static func railMarkers(in view: UIView) -> [NavigationRowFocusRequester.RequestView] {
-        if let marker = view as? NavigationRowFocusRequester.RequestView { return [marker] }
-        return view.subviews.flatMap { railMarkers(in: $0) }
+        for preference in [NavigationEntryFocusPreference.content, .fallback] {
+            let preferred = candidates.filter { candidate in
+                regions.contains { region in
+                    region.preference == preference && NativeFocusRegion.contains(candidate.item, in: region)
+                }
+            }
+            if !preferred.isEmpty {
+                candidates = preferred
+                break
+            }
+        }
+        guard let index = firstFrameIndex(candidates.map(\.frame), isRightToLeft: isRightToLeft) else {
+            return EntrySelection(target: nil, isPending: false)
+        }
+        return EntrySelection(target: candidates[index].item, isPending: false)
     }
 
     private static func isVisible(_ view: UIView, in window: UIWindow) -> Bool {
