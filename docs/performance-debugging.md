@@ -1021,6 +1021,13 @@ and a passing functional test are not substitutes for presented-frame timing.
   Empty/error states clear pending and use the remaining visible controls.
   Cancellation removes the observer, and a valid captured source still wins
   when closing navigation on the same page.
+  Native library cells also supply a weak exact focus item. If every visible
+  content region has one, resolve the first eligible card without enumerating
+  the window's unrelated focus containers. Revalidate attachment, visibility,
+  clipping, enabled state, ownership and viewport each time; mixed native/virtual
+  regions retain full discovery. This adds no preloading or idle observer.
+  A hosted share-library comparison reduced this lookup from roughly 3.4 ms
+  to 0.2 ms; that isolates lookup work, not physical-device page-load latency.
 - **Nested hosts must observe enabled-state changes.** Forwarding
   `context.environment` alone did not subscribe `NativeLibraryFocusHost` to
   `isEnabled`. A library could keep disabled controls after a shell gate

@@ -37,6 +37,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         addSubview(marker)
         addSubview(entryFocusRegion)
         entryFocusRegion.preference = .content
+        entryFocusRegion.nativeFocusItem = self
         caption.isUserInteractionEnabled = false
         marker.isUserInteractionEnabled = false
         marker.accessibilityElementsHidden = true

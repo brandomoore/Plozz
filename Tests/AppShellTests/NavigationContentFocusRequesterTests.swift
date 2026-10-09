@@ -6,6 +6,74 @@ import CoreUI
 
 @MainActor
 final class NavigationContentFocusRequesterTests: XCTestCase {
+    func testNativeEntrySkipsGlobalFocusQueriesAndRevalidatesTargets() {
+        let window = RecreatedFocusItemsWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let marker = UIView(frame: window.bounds)
+        window.addSubview(marker)
+        let cards = (0..<3).map { index in
+            let card = UIButton(frame: CGRect(x: 500 + index * 300, y: 300, width: 250, height: 350))
+            let region = NavigationEntryFocusRegionView(frame: card.bounds)
+            region.preference = .content
+            region.nativeFocusItem = card
+            card.addSubview(region)
+            window.addSubview(card)
+            return card
+        }
+        for (rtl, expected) in [(false, 0), (true, 2)] {
+            XCTAssertTrue(NavigationContentFocusRequester.firstTarget(
+                in: window, relativeTo: marker, isRightToLeft: rtl
+            ) === cards[expected])
+        }
+        let clipped = UIView(frame: CGRect(x: 0, y: 0, width: 400, height: 1080))
+        clipped.clipsToBounds = true
+        window.addSubview(clipped)
+        clipped.addSubview(cards[0])
+        XCTAssertTrue(NavigationContentFocusRequester.firstTarget(
+            in: window, relativeTo: marker, isRightToLeft: false
+        ) === cards[1], "A card clipped by its scroll container is not an entry target.")
+        clipped.clipsToBounds = false
+        clipped.isUserInteractionEnabled = false
+        XCTAssertTrue(NavigationContentFocusRequester.firstTarget(
+            in: window, relativeTo: marker, isRightToLeft: false
+        ) === cards[1])
+        window.addSubview(cards[0])
+        cards[0].isEnabled = false
+        XCTAssertTrue(NavigationContentFocusRequester.firstTarget(
+            in: window, relativeTo: marker, isRightToLeft: false
+        ) === cards[1])
+        cards[1].isHidden = true
+        XCTAssertTrue(NavigationContentFocusRequester.firstTarget(
+            in: window, relativeTo: marker, isRightToLeft: false
+        ) === cards[2])
+        XCTAssertEqual(window.queryCount, 0, "Known native cards must not enumerate the whole page or navigation.")
+    }
+
+    func testMixedNativeAndVirtualRegionsRetainFullDiscovery() {
+        let window = RecreatedFocusItemsWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let marker = UIView(frame: window.bounds)
+        window.addSubview(marker)
+        let native = UIButton(frame: CGRect(x: 900, y: 300, width: 250, height: 350))
+        let nativeRegion = NavigationEntryFocusRegionView(frame: native.bounds)
+        nativeRegion.preference = .content
+        nativeRegion.nativeFocusItem = native
+        native.addSubview(nativeRegion)
+        window.addSubview(native)
+        window.extraItems = [native]
+        window.page.frame = CGRect(x: 500, y: 300, width: 250, height: 350)
+        window.addSubview(window.page)
+        let virtualRegion = NavigationEntryFocusRegionView(frame: window.page.frame)
+        virtualRegion.preference = .content
+        window.addSubview(virtualRegion)
+        XCTAssertTrue(NavigationContentFocusRequester.firstTarget(
+            in: window, relativeTo: marker, isRightToLeft: false
+        ) === window.page, "A later native item must not hide an earlier virtual focus target.")
+        XCTAssertEqual(window.queryCount, 1)
+    }
+
     func testContentInNestedControllerIsNotOmittedByWindowQuery() {
         let window = RecreatedFocusItemsWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         window.includesPage = false
@@ -34,6 +102,15 @@ final class NavigationContentFocusRequesterTests: XCTestCase {
             in: window, relativeTo: marker, isRightToLeft: false
         )
         XCTAssertTrue(target === content.page)
+        XCTAssertEqual(window.queryCount, 1)
+        XCTAssertEqual(content.queryCount, 1)
+        let direct = NavigationEntryFocusRegionView(frame: content.page.bounds)
+        direct.preference = .content
+        direct.nativeFocusItem = content.page
+        content.page.addSubview(direct)
+        XCTAssertTrue(NavigationContentFocusRequester.firstTarget(
+            in: window, relativeTo: marker, isRightToLeft: false
+        ) === content.page, "Expanded rail overlap must not exclude the declared native page target.")
         XCTAssertEqual(window.queryCount, 1)
         XCTAssertEqual(content.queryCount, 1)
         wrapper.isHidden = true

@@ -41,6 +41,9 @@ private struct NavigationEntryFocusRegion: UIViewRepresentable {
 public final class NavigationEntryFocusRegionView: UIView {
     public static let didChange = Notification.Name("Plozz.NavigationEntryFocusRegionChanged")
 
+    /// Native cards can supply their exact item without enumerating unrelated focus containers.
+    public weak var nativeFocusItem: UIView?
+
     public var preference: NavigationEntryFocusPreference? {
         didSet {
             guard preference != oldValue else { return }

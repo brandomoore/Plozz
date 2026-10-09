@@ -215,6 +215,32 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         if regions.contains(where: { $0.preference == .pending }) {
             return EntrySelection(target: nil, isPending: true)
         }
+        let railFrames = rows.filter { !$0.bounds.isEmpty }.map {
+            (frame: $0.convert($0.bounds, to: marker), owner: NativeFocusRegion.owningController(of: $0))
+        }
+        func isInNavigation(_ item: any UIFocusItem, frame: CGRect) -> Bool {
+            let owner = NativeFocusRegion.owningController(of: item)
+            return railFrames.contains {
+                // Expanded rail labels can overlap content in another native host.
+                if let owner, let rowOwner = $0.owner, owner !== rowOwner { return false }
+                return $0.frame.insetBy(dx: -0.5, dy: -0.5)
+                    .contains(CGPoint(x: frame.midX, y: frame.midY))
+            }
+        }
+        let contentRegions = regions.filter { $0.preference == .content }
+        if !contentRegions.isEmpty, contentRegions.allSatisfy({ $0.nativeFocusItem != nil }) {
+            let direct = contentRegions.compactMap { region -> (item: UIView, frame: CGRect)? in
+                guard let item = region.nativeFocusItem,
+                      let frame = eligibleFrame(of: item, relativeTo: marker),
+                      isDirectTargetVisible(item, in: window),
+                      NativeFocusRegion.contains(item, in: region),
+                      !isInNavigation(item, frame: frame) else { return nil }
+                return (item, frame)
+            }
+            if let index = firstFrameIndex(direct.map(\.frame), isRightToLeft: isRightToLeft) {
+                return EntrySelection(target: direct[index].item, isPending: false)
+            }
+        }
         var containers: [any UIFocusItemContainer] = [window]
         // A hosting view's virtual items omit controls in nested native controllers.
         var controllers = window.rootViewController.map { [$0] } ?? []
@@ -235,32 +261,17 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
                 if let view = item as? UIView, !isVisible(view, in: window) { continue }
                 if let children = item.focusItemContainer { containers.append(children) }
                 if let view = item as? UIView { containers.append(view) }
-                guard item.canBecomeFocused, (item as? UIControl)?.isEnabled != false,
-                      !(item is UIScrollView),
-                      let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: marker),
-                      frame.width > 1, frame.height > 1,
-                      !frame.isNull, !frame.isInfinite,
-                      marker.bounds.contains(CGPoint(x: frame.midX, y: frame.midY)) else { continue }
+                guard let frame = eligibleFrame(of: item, relativeTo: marker) else { continue }
                 candidates.append((item, frame))
             }
         }
         // SwiftUI can recreate virtual focus items between queries. Resolve the
         // rail and page from one snapshot instead of comparing separate queries'
         // object identities (and walking the entire window once per rail row).
-        let railFrames = rows.filter { !$0.bounds.isEmpty }.map {
-            (frame: $0.convert($0.bounds, to: marker), owner: NativeFocusRegion.owningController(of: $0))
-        }
         // Scrolled rows can overlap Profile; exclude every item centered in the
         // row labels, not just one minimum-area match per label.
         candidates.removeAll { candidate in
-            let owner = NativeFocusRegion.owningController(of: candidate.item)
-            return railFrames.contains {
-                // Expanded rail labels overlap legitimate leading page controls.
-                // A different native owner means this is content, not a rail row.
-                if let owner, let rowOwner = $0.owner, owner !== rowOwner { return false }
-                return $0.frame.insetBy(dx: -0.5, dy: -0.5)
-                    .contains(CGPoint(x: candidate.frame.midX, y: candidate.frame.midY))
-            }
+            isInNavigation(candidate.item, frame: candidate.frame)
         }
         for preference in [NavigationEntryFocusPreference.content, .fallback] {
             let preferred = candidates.filter { candidate in
@@ -277,6 +288,30 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
             return EntrySelection(target: nil, isPending: false)
         }
         return EntrySelection(target: candidates[index].item, isPending: false)
+    }
+
+    private static func eligibleFrame(
+        of item: any UIFocusItem, relativeTo marker: UIView
+    ) -> CGRect? {
+        guard item.canBecomeFocused, (item as? UIControl)?.isEnabled != false,
+              !(item is UIScrollView),
+              let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: marker),
+              frame.width > 1, frame.height > 1,
+              !frame.isNull, !frame.isInfinite,
+              marker.bounds.contains(CGPoint(x: frame.midX, y: frame.midY)) else { return nil }
+        return frame
+    }
+
+    private static func isDirectTargetVisible(_ item: UIView, in window: UIWindow) -> Bool {
+        let center = CGPoint(x: item.bounds.midX, y: item.bounds.midY)
+        var ancestor: UIView? = item
+        while let current = ancestor {
+            guard current.isUserInteractionEnabled, !current.isHidden, current.alpha > 0.01 else { return false }
+            if current.clipsToBounds, !current.bounds.contains(item.convert(center, to: current)) { return false }
+            if current === window { return true }
+            ancestor = current.superview
+        }
+        return false
     }
 
     private static func isVisible(_ view: UIView, in window: UIWindow) -> Bool {
