@@ -449,7 +449,10 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
             let url = try seedLogo(monochrome: monochrome)
             defer { ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: url)) }
             let references = [ArtworkReference.remote(url)]
-            let key = HeroLogoMemo.key(for: references)
+            let key = HeroLogoMemo.key(
+                for: references,
+                providerPolicyIdentity: ArtworkPresentationPolicy().forPlacement(.logo).identity
+            )
             var baseline: [UInt8]?
             for theme in [AppTheme.dark, .light, .pureBlack] {
                 let palette = ThemePalette.palette(for: theme, systemColorScheme: .dark)

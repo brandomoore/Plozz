@@ -1214,8 +1214,14 @@ unchanged.
 Each test runner selects its own tvOS simulator matching Xcode 26.2's SDK; no
 simulator or mutable build directory crosses runners. A missing runtime fails
 instead of choosing an older installed runtime. The full matrix retains its
-40-minute wall-clock deadline, and hosted tests retain their existing
-20-minute deadline and authoritative `xcresult` checks. Each lane uploads
+40-minute wall-clock deadline. Hosted integration builds once with
+`build-for-testing`, then runs `test-without-building`, with separate 40-minute
+deadlines and retained build/test logs and result bundles. Cold compilation must
+not consume the test execution budget: run `38059892922` spent about 19 minutes
+building before the former combined 40-minute limit killed still-progressing
+tests. The hosted job has a 90-minute outer limit for both phases and setup;
+test failures, timeouts, and unreadable `xcresult` summaries still fail closed.
+Each lane uploads
 uniquely named diagnostics on success or failure, retained for seven days.
 The simulator app build also retains its raw log without replacing a build
 failure's exit status with the log writer's status.

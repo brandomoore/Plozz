@@ -404,6 +404,8 @@ is no prior in-memory history to migrate on the first updated launch.
   The current category remains identified. Leaving Search restores the
   original guide occurrence and time position; the video stays in the same player.
   On Apple TV, Back works from both the native keyboard and the results.
+  Completing programme-focus restoration retains that focus; it must not request
+  another native Search focus update that sends selection back to a different row.
   Search has a full-screen, transparent navigation host rather than an inset
   sheet. The old guide fades away, then the native search surface fades in
   without sliding down; closing reverses that handoff. Reduce Motion removes

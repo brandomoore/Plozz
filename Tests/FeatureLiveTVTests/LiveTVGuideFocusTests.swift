@@ -347,6 +347,10 @@ final class LiveTVGuideFocusTests: XCTestCase {
         XCTAssertTrue(probe.hasFocus)
         XCTAssertEqual(probe.selectedRow, probe.origin)
         XCTAssertEqual(probe.focusedProgram?.id, "current")
+        try await Task.sleep(for: .milliseconds(350))
+        XCTAssertTrue(probe.hasFocus)
+        XCTAssertEqual(probe.selectedRow, probe.origin)
+        XCTAssertEqual(probe.focusedProgram?.id, "current")
     }
 
     private func requireNativeFocus() async throws {

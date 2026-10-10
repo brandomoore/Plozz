@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -77,7 +78,8 @@ class WorkflowTests(unittest.TestCase):
                 self.assertIn("    needs: guards\n", block)
                 self.assertEqual(block.count("needs:"), 1)
                 self.assertIn("    runs-on: macos-15\n", block)
-                self.assertIn("    timeout-minutes: 60\n", block)
+                timeout = 90 if lane == "hosted-focus" else 60
+                self.assertIn(f"    timeout-minutes: {timeout}\n", block)
                 self.assertIn(f"          lane: {lane}\n", block)
                 self.assertIn("uses: ./.github/actions/ci-prepare", block)
         self.assertNotIn("strategy:", WORKFLOW)
@@ -221,6 +223,130 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(re.findall(r"\bproduct: (\w+)", targets[target]), ["AppShell"])
         self.assertIn("target: PlozzFocusHost", targets["PlozzFocusTests"])
         self.assertNotIn("CoreUI.framework", PREPARE + SAVE)
+
+
+class HostedRunnerTests(unittest.TestCase):
+    def setUp(self):
+        scratch = ROOT / ".build/ci-pipeline-tests"
+        scratch.mkdir(parents=True, exist_ok=True)
+        self.fixture = tempfile.TemporaryDirectory(dir=scratch, prefix="hosted runner ")
+        self.addCleanup(self.fixture.cleanup)
+        self.root = Path(self.fixture.name)
+        (self.root / "tools/lib").mkdir(parents=True)
+        (self.root / "Plozz.xcodeproj").mkdir()
+        (self.root / "Plozz.xcodeproj/project.pbxproj").touch()
+        for name in ("run-focus-tests.sh", "run-bounded.py", "xcresult-summary.py"):
+            shutil.copyfile(ROOT / "tools" / name, self.root / "tools" / name)
+        (self.root / "tools/lib/apple-build-lease.sh").write_text(
+            "acquire_apple_build_shared_lease() { :; }\ninstall_apple_build_lease_traps() { :; }\n"
+        )
+        (self.root / "tools/lib/swift-package-storage.sh").write_text(
+            'configure_plozz_package_resolution() { PACKAGE_RESOLUTION_ARGS=(-clonedSourcePackagesDirPath "$1"); }\n'
+        )
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        self.executable("xcodebuild", """
+            import json, os, sys
+            from pathlib import Path
+            with Path("calls.jsonl").open("a") as log:
+                log.write(json.dumps(sys.argv[1:]) + "\\n")
+            action = sys.argv[1]
+            code = "BUILD_EXIT" if action == "build-for-testing" else "TEST_EXIT"
+            sys.exit(int(os.environ.get(code, "0")))
+        """)
+        self.executable("xcrun", """
+            import json, os, sys
+            if sys.argv[1] == "simctl":
+                sys.exit(0)
+            if os.environ.get("UNREADABLE_RESULT"):
+                sys.exit(1)
+            failed = bool(os.environ.get("FAILED_RESULT"))
+            print(json.dumps(dict(
+                result="Failed" if failed else "Passed", totalTestCount=1,
+                passedTests=0 if failed else 1, failedTests=1 if failed else 0,
+                skippedTests=0, expectedFailures=0, testFailures=[]
+            )))
+        """)
+        self.executable("tee", """
+            import os, sys
+            from pathlib import Path
+            content = sys.stdin.read()
+            Path(sys.argv[1]).write_text(content)
+            print(content, end="")
+            code = "BUILD_LOG_EXIT" if sys.argv[1].endswith("/build.log") else "TEST_LOG_EXIT"
+            sys.exit(int(os.environ.get(code, "0")))
+        """)
+
+    def executable(self, name, body):
+        path = self.bin / name
+        path.write_text("#!/usr/bin/env python3\n" + textwrap.dedent(body))
+        path.chmod(0o755)
+
+    def run_runner(self, **overrides):
+        env = dict(os.environ)
+        for key in tuple(env):
+            if key.startswith("PLOZZ_"):
+                del env[key]
+        env.update(
+            PATH=f"{self.bin}:{env['PATH']}", PLOZZ_SIM_ID="owned-fixture-simulator",
+            PLOZZ_FOCUS_BUILD_TIMEOUT="11", PLOZZ_FOCUS_TEST_TIMEOUT="13", **overrides,
+        )
+        result = subprocess.run(
+            ["bash", "tools/run-focus-tests.sh", "-only-testing:PlozzFocusTests/Fixture"],
+            cwd=self.root, env=env, capture_output=True, text=True, timeout=30,
+        )
+        calls = [json.loads(line) for line in (self.root / "calls.jsonl").read_text().splitlines()]
+        return result, calls
+
+    def test_build_and_execution_have_separate_budgets_and_identical_inputs(self):
+        result, calls = self.run_runner()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual([call[0] for call in calls], ["build-for-testing", "test-without-building"])
+        for flag in ("-project", "-scheme", "-destination", "-derivedDataPath", "-clonedSourcePackagesDirPath"):
+            self.assertEqual(calls[0][calls[0].index(flag) + 1], calls[1][calls[1].index(flag) + 1])
+        for call in calls:
+            self.assertIn("-only-testing:PlozzFocusTests/Fixture", call)
+            self.assertIn("CODE_SIGNING_ALLOWED=NO", call)
+            self.assertEqual(call[call.index("-parallel-testing-enabled") + 1], "NO")
+        runner = (ROOT / "tools/run-focus-tests.sh").read_text()
+        self.assertIn('${PLOZZ_FOCUS_BUILD_TIMEOUT:-2400}', runner)
+        self.assertIn('${PLOZZ_FOCUS_TEST_TIMEOUT:-2400}', runner)
+        self.assertIn('tee "$RUN_DIR/build.log"', runner)
+        self.assertIn('tee "$RUN_DIR/xcodebuild.log"', runner)
+
+    def test_build_failure_does_not_execute_tests(self):
+        result, calls = self.run_runner(BUILD_EXIT="65", BUILD_LOG_EXIT="9")
+        self.assertEqual(result.returncode, 65)
+        self.assertEqual(len(calls), 1)
+
+    def test_build_timeout_does_not_execute_tests(self):
+        result, calls = self.run_runner(BUILD_EXIT="124")
+        self.assertEqual(result.returncode, 124)
+        self.assertEqual(len(calls), 1)
+
+    def test_failed_build_log_stops_before_tests(self):
+        result, calls = self.run_runner(BUILD_LOG_EXIT="9")
+        self.assertEqual(result.returncode, 9)
+        self.assertEqual(len(calls), 1)
+
+    def test_driver_failure_cannot_be_overridden_by_a_passing_summary(self):
+        result, _ = self.run_runner(TEST_EXIT="65", TEST_LOG_EXIT="9")
+        self.assertEqual(result.returncode, 65)
+
+    def test_failed_test_log_cannot_pass(self):
+        result, _ = self.run_runner(TEST_LOG_EXIT="9")
+        self.assertEqual(result.returncode, 9)
+
+    def test_test_timeout_preserves_original_status_without_a_result(self):
+        result, _ = self.run_runner(TEST_EXIT="124", UNREADABLE_RESULT="1")
+        self.assertEqual(result.returncode, 124)
+        self.assertIn("No readable hosted-test result", result.stderr)
+
+    def test_missing_summary_and_failed_summary_cannot_pass(self):
+        for flag in ("UNREADABLE_RESULT", "FAILED_RESULT"):
+            with self.subTest(flag=flag):
+                result, _ = self.run_runner(**{flag: "1"})
+                self.assertNotEqual(result.returncode, 0)
 
 
 class AggregateTests(unittest.TestCase):
