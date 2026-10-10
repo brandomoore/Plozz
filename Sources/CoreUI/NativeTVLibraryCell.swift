@@ -299,6 +299,8 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
                     Text(verbatim: $0.posterCaptionTitle(spoilerSettings: spoilerSettings).resolve(locale: environment.locale))
                 } : nil
             )
+            .clipShape(RoundedRectangle(
+                cornerRadius: PlozzTheme.Metrics.nativePosterArtworkCornerRadius, style: .continuous))
             .environment(\.self, environment)
             .plozzChromeFocused(isFocused)
         }.margins(.all, 0)
