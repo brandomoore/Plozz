@@ -157,6 +157,27 @@ pragmas, so an immediate reopen tolerates a previous connection's checkpoint.
 Committed imports are unchanged, and closing still rolls back unfinished work;
 do not disable journaling or skip closing to avoid a teardown hang.
 
+Xtream catalogue entries require a usable source ID, but a missing or empty
+display name does not invalidate an otherwise addressable entry. Such entries
+keep their native ID for both playback routing and fallback display, matching
+the existing episode-title fallback. Import logs report only the aggregate
+unnamed-entry count, never the source IDs or payload. Invalid identities,
+malformed JSON and truncated responses still roll back the entire replacement;
+unnamed entries are retained, not skipped.
+
+`IPTVPerformanceProbeTests.testOptInXtreamImportAndLibraryDiscovery` exercises
+real catalogue bytes through a separately owned loopback relay and dummy
+credentials. Its ignored `.build/iptv-xtream-performance-source.json` control
+file is an array of `{ "source": 1, "url": "http://127.0.0.1:PORT/CAPABILITY",
+"counts": { "live": 0, "movies": 0, "series": 0 } }` entries with expected
+unique source-ID counts. The probe checks all three catalogues, seven setup
+requests, sub-two-second cached discovery and decoding every persisted record
+after reopening. Without that control file it skips; ordinary tests never
+contact trial providers. Keep credentials and original response bodies out of
+the control file and Git, and report upstream transfer time separately from
+local replay/import time. Simulator measurements are not physical-device
+performance evidence.
+
 iOS detail-hero layout alternatives share one resolved action set per body
 evaluation. Do not call the action coordinator again from each derived button,
 overflow-menu, or `ViewThatFits` candidate: even an empty download registry used

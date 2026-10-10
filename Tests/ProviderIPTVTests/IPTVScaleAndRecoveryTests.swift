@@ -150,6 +150,44 @@ final class IPTVScaleAndRecoveryTests: XCTestCase {
         XCTAssertEqual(retried.count, 2_201)
     }
 
+    func testUnnamedXtreamMovieIsRetainedAndMalformedIdentityStillRollsBack() async throws {
+        let complete = Data(#"[{"stream_id":1,"name":"Before"},{"stream_id":2,"name":"","container_extension":"mp4"},{"stream_id":3,"name":"After"}]"#.utf8)
+        let replies = IPTVFixtureReplies(.init(data: complete))
+        let server = try IPTVTestHTTPServer { request in
+            if request.contains("action=get_vod_streams") { return replies.value }
+            if request.contains("action=") { return .init(data: Data("[]".utf8)) }
+            return .init(data: Data(#"{"user_info":{"auth":1,"status":"Active","allowed_output_formats":["ts"]}}"#.utf8))
+        }
+        addTeardownBlock { await server.stop() }
+        let credential = try IPTVCredential(
+            mode: .xtream, address: try await server.start(), username: "fixture", password: "fixture"
+        )
+        let directory = try temporaryDirectory()
+        let client = try IPTVClient(credential: credential, directory: directory)
+        try await client.ensureCatalog("movies")
+        let imported = try await client.page(library: "movies", kind: .movie, page: .init(limit: 10))
+        XCTAssertEqual(imported.totalCount, 3)
+        XCTAssertEqual(Set(imported.items.map(\.id)), ["movie:1", "movie:2", "movie:3"])
+        let unnamed = try await client.record("movie:2")
+        XCTAssertEqual(unnamed.item.title, "2")
+        XCTAssertEqual(unnamed.streamID, "2")
+        XCTAssertEqual(unnamed.container, "mp4")
+        let requests = await server.requestCount
+        let reopened = try IPTVClient(credential: credential, directory: directory)
+        let restored = try await reopened.page(library: "movies", kind: .movie, page: .init(limit: 10))
+        XCTAssertEqual(restored.items.map(\.id), imported.items.map(\.id))
+        let afterReopen = await server.requestCount
+        XCTAssertEqual(afterReopen, requests)
+
+        replies.value = .init(data: Data(#"[{"stream_id":4,"name":"Replacement"},{"name":""},{"stream_id":5,"name":"After"}]"#.utf8))
+        do {
+            try await client.ensureCatalog("movies", force: true)
+            XCTFail("An absent identity must fail the entire replacement, not silently skip a row.")
+        } catch { XCTAssertEqual(error as? IPTVError, .malformed) }
+        let retained = try await client.page(library: "movies", kind: .movie, page: .init(limit: 10))
+        XCTAssertEqual(retained.items.map(\.id), imported.items.map(\.id))
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

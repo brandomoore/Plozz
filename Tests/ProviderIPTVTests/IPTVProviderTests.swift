@@ -6,6 +6,36 @@ import Foundation
 import XCTest
 
 final class IPTVProviderTests: XCTestCase {
+    func testXtreamMissingNamesUseNativeIdentityWithoutChangingNamedEntries() throws {
+        for (library, field, prefix) in [
+            ("live", "stream_id", "live"), ("movies", "stream_id", "movie"),
+            ("series", "series_id", "series")
+        ] {
+            for name: IPTVValue? in [nil, .null, .text("")] {
+                var value: IPTVObject = [field: .number(123), "category_id": .text("7")]
+                value["name"] = name
+                let record = try IPTVMapping.listEntry(value, library: library, categories: ["7": "Fixture"])
+                XCTAssertEqual(record.item.id, "\(prefix):123")
+                XCTAssertEqual(record.streamID, "123")
+                XCTAssertEqual(record.item.title, "123")
+                XCTAssertEqual(record.item.tags, ["Fixture"])
+                XCTAssertEqual(record.isLive, library == "live")
+            }
+            let named = try IPTVMapping.listEntry(
+                [field: .text("00123"), "name": .text("  Provider title  ")], library: library
+            )
+            XCTAssertEqual(named.item.title, "  Provider title  ")
+            XCTAssertEqual(named.streamID, "00123")
+            for identifier: IPTVValue? in [nil, .null, .text(""), .text("invalid")] {
+                var value: IPTVObject = ["name": .text("")]
+                value[field] = identifier
+                XCTAssertThrowsError(try IPTVMapping.listEntry(value, library: library)) {
+                    XCTAssertEqual($0 as? IPTVError, .malformed)
+                }
+            }
+        }
+    }
+
     func testPlaylistDigestsPreserveLegacyIdentity() throws {
         for text in ["", "Leading zeros", "雪\u{1F}https://example.test/video", String(repeating: "x", count: 1_024)] {
             XCTAssertEqual(

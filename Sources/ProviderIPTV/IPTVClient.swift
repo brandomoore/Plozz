@@ -187,17 +187,22 @@ actor IPTVClient {
             progress(IPTVImportProgress(stage: stage, entries: 0))
             let categories = try await categories(library: library)
             var count = 0
+            var unnamedCount = 0
             defer { diagnostic?.record(entries: count) }
             var parser = IPTVJSONArrayStream()
             try await read(url: endpoint(action: action)) { data in
                 try parser.append(data) { bytes in
                     let value = try JSONDecoder().decode(IPTVObject.self, from: bytes)
                     try store(IPTVMapping.listEntry(value, library: library, categories: categories), into: .incoming)
+                    if value.text("name") == nil { unnamedCount += 1 }
                     count += 1
                     if count.isMultiple(of: 1_000) { progress(IPTVImportProgress(stage: stage, entries: count)) }
                 }
             }
             try parser.finish()
+            if unnamedCount > 0 {
+                PlozzLog.networking.info("IPTV catalogue contains \(unnamedCount) unnamed entries; using source IDs for display")
+            }
             progress(IPTVImportProgress(stage: stage, entries: count))
         }
         try Task.checkCancellation()
