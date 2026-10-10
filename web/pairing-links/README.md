@@ -1,7 +1,7 @@
 # Plozz pairing links Worker
 
 A tiny Cloudflare Worker that powers the **Universal Link** used by Sync & Setup
-("set up another device"), Trakt's native PKCE callback, and the Discord shortcut. It claims only the
+("set up another device"), Trakt's native PKCE callback, and community shortcuts. It claims only the
 paths below on `plozz.app`; everything
 else on the domain is still served by the existing `plozz-website` Pages project.
 
@@ -11,10 +11,11 @@ else on the domain is still served by the existing `plozz-website` Pages project
 | `/pair` | Universal Link target. If Plozz is installed, iOS opens the app before this loads (pairing payload rides in the URL `#fragment`, never sent here). If not installed, Safari shows a "get Plozz / finish setup" page. |
 | `/auth/trakt/callback` | Secretless PKCE callback intercepted by `ASWebAuthenticationSession`. A plain-text fallback never echoes or exchanges codes. |
 | `/discord`, `/discord/` | Temporary (302), non-cached redirect to the Plozz Discord invite. Query parameters are not forwarded. |
+| `/github`, `/github/` | Temporary (302), non-cached redirect to `https://github.com/brandomoore/Plozz`. Query parameters are not forwarded. |
 
-The `/discord*` route permits query strings on the shortcut. Other paths sharing
-that prefix are passed through to Pages unchanged. The invite is not permanently
-cached, so it can be replaced if Discord rotates it.
+The `/discord*` and `/github*` routes permit query strings on the shortcuts. Other
+paths sharing those prefixes are passed through to Pages unchanged. Targets are
+not permanently cached, so they can be replaced if an invite or repository moves.
 
 The AASA also declares `webcredentials` for the canonical app. Apple's HTTPS
 authentication-session callback requires this association and the matching
