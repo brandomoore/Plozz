@@ -27,11 +27,13 @@ actor LibraryQuerySession {
     private var ordered: [LibraryQueryRecord] = []
     private var orderedQuery: LibraryBrowsePreferences?
     private var revision = 0
+    private var invalidationGeneration = 0
     private let materialization = ConcurrencyLimiter(limit: 3)
     private var inventoryDate: Date?
     private var fileFacts: [LibraryQueryRecord]?
     private var fileFactsDate: Date?
     private var pendingInventory: (id: UUID, key: Key, task: Task<[LibraryQueryRecord], Error>)?
+    private var pendingRecovery: (id: UUID, task: Task<Bool, Never>)?
 
     private struct Key: Equatable {
         let files: Bool
@@ -46,9 +48,28 @@ actor LibraryQuerySession {
     }
 
     func invalidate(preservingFileFacts: Bool = false) async {
+        invalidationGeneration += 1
+        let generation = invalidationGeneration
         revision += 1
         let pending = pendingInventory
+        let recovery = pendingRecovery
         pending?.task.cancel()
+        recovery?.task.cancel()
+        clearInventory(preservingFileFacts: preservingFileFacts)
+        if let pending {
+            _ = await pending.task.result
+            if pendingInventory?.id == pending.id { pendingInventory = nil }
+        }
+        if let recovery {
+            _ = await recovery.task.value
+            if pendingRecovery?.id == recovery.id { pendingRecovery = nil }
+        }
+        if generation == invalidationGeneration {
+            await (provider as? any LibraryQueryFailureRecovering)?.resetLibraryQueryRecovery()
+        }
+    }
+
+    private func clearInventory(preservingFileFacts: Bool = false) {
         records = nil
         recordKey = nil
         ordered = []
@@ -57,10 +78,6 @@ actor LibraryQuerySession {
         if !preservingFileFacts {
             fileFacts = nil
             fileFactsDate = nil
-        }
-        if let pending {
-            _ = await pending.task.result
-            if pendingInventory?.id == pending.id { pendingInventory = nil }
         }
     }
 
@@ -74,16 +91,20 @@ actor LibraryQuerySession {
             return try await provider.items(in: containerID, kind: kind, page: page)
         }
         var correctedSources = Set<String>()
-        var generation = revision
+        let requestGeneration = invalidationGeneration
         while true {
-            try await prepare(source, page: page, progress: progress)
+            try Task.checkCancellation()
+            guard requestGeneration == invalidationGeneration else { throw CancellationError() }
+            let generation = revision
             do {
-                let result = try await materializedPage(page, source: source)
-                guard generation == revision else { throw CancellationError() }
-                return result
+                return try await indexedPage(source, page: page, progress: progress)
             } catch LibraryQueryFailure.refinedSources(let items) {
                 try Task.checkCancellation()
-                guard generation == revision else { throw CancellationError() }
+                guard requestGeneration == invalidationGeneration else { throw CancellationError() }
+                if generation != revision {
+                    guard page.startIndex == 0 else { throw LibraryQueryFailure.restartRequired }
+                    continue
+                }
                 let corrections = items.map { LibraryQueryRecord($0) }
                 let keys = Set(corrections.map(\.identityKey))
                 guard !keys.isEmpty, correctedSources.isDisjoint(with: keys),
@@ -112,17 +133,51 @@ actor LibraryQuerySession {
                 if fileFacts != nil { fileFacts = rebuilt }
                 orderedQuery = nil
                 revision += 1
-                generation = revision
                 // Recompute filters, rollups and offsets before publishing page
                 // zero. An exposed later page requires a visible restart.
                 guard page.startIndex == 0 else { throw LibraryQueryFailure.restartRequired }
+            } catch {
+                try Task.checkCancellation()
+                guard requestGeneration == invalidationGeneration else { throw CancellationError() }
+                if generation != revision {
+                    guard page.startIndex == 0 else { throw LibraryQueryFailure.restartRequired }
+                    continue
+                }
+                // Only an unpublished first page can change membership without
+                // moving already-visible cards underneath their current slots.
+                guard page.startIndex == 0,
+                      let failure = error as? LibrarySourceFailure,
+                      let recovery = provider as? any LibraryQueryFailureRecovering else { throw error }
+                let pending: (id: UUID, task: Task<Bool, Never>)
+                if let existing = pendingRecovery {
+                    pending = existing
+                } else {
+                    pending = (UUID(), Task {
+                        let recovered = await recovery.recoverLibraryQuery(after: failure)
+                        guard recovered, !Task.isCancelled, generation == revision,
+                              requestGeneration == invalidationGeneration else { return false }
+                        revision += 1
+                        clearInventory()
+                        return true
+                    })
+                    pendingRecovery = pending
+                }
+                let recovered = await pending.task.value
+                if pendingRecovery?.id == pending.id { pendingRecovery = nil }
+                try Task.checkCancellation()
+                guard requestGeneration == invalidationGeneration else { throw CancellationError() }
+                guard recovered else { throw error }
+                correctedSources.removeAll()
             }
         }
     }
 
-    private func materializedPage(_ page: PageRequest, source: any MediaLibraryQueryProviding)
-        async throws -> MediaPage
-    {
+    private func indexedPage(
+        _ source: any MediaLibraryQueryProviding, page: PageRequest,
+        progress: @escaping @Sendable (Int, Int) async -> Void
+    ) async throws -> MediaPage {
+        let generation = revision
+        try await prepare(source, page: page, progress: progress)
         try Task.checkCancellation()
         let start = min(page.startIndex, ordered.count)
         let selection = Array(ordered.dropFirst(start).prefix(page.limit))
@@ -150,6 +205,7 @@ actor LibraryQuerySession {
             }
             items += result
         }
+        guard generation == revision else { throw CancellationError() }
         return MediaPage(items: items, startIndex: page.startIndex, totalCount: total)
     }
 

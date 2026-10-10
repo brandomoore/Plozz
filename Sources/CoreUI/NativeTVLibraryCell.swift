@@ -20,6 +20,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     private let caption = SystemPosterCaption.CaptionView()
     private let plate = UIView()
     private let marker = DetailTransitionSourceView()
+    private let entryFocusRegion = NavigationEntryFocusRegionView()
     private let source = DetailTransitionSourceReference()
     private var overlay: (UIView & UIContentView)?
     private var overlayFocused = false
@@ -34,6 +35,9 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         sendSubviewToBack(plate)
         addSubview(caption)
         addSubview(marker)
+        addSubview(entryFocusRegion)
+        entryFocusRegion.preference = .content
+        entryFocusRegion.nativeFocusItem = self
         caption.isUserInteractionEnabled = false
         marker.isUserInteractionEnabled = false
         marker.accessibilityElementsHidden = true
@@ -165,6 +169,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             width: width, height: caption.intrinsicContentSize.height
         )
         marker.frame = contentView.frame
+        entryFocusRegion.frame = bounds
         let plateTop = max(0, Self.focusClearance - metrics.cardInset)
         plate.frame = CGRect(x: 0, y: plateTop, width: bounds.width, height: bounds.height - plateTop)
         plate.backgroundColor = UIColor(environment.themePalette.raised.fill)

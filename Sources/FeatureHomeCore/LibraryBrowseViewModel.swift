@@ -202,6 +202,13 @@ public final class LibraryBrowseViewModel {
     public var isMediaShare: Bool { provider.kind == .mediaShare }
     /// Stable share id used to select this grid's status from ShareScanStatusModel.
     public var sourceServerID: String { provider.session.server.id }
+    public private(set) var errorServers: [MediaServer] = []
+
+    private func failureServers(for error: Error) -> [MediaServer] {
+        if let failure = error as? LibrarySourceFailure { return failure.servers }
+        if provider is any LibraryQueryFailureRecovering { return [] }
+        return [provider.session.server]
+    }
 
     public var availableSortFields: [SortField] {
         _ = capabilitiesRevision
@@ -395,12 +402,16 @@ public final class LibraryBrowseViewModel {
 
     /// Loads (or reloads) the first page and sizes the grid to the full library.
     public func loadFirstPage() async {
+        let retriesFailedQuery: Bool
+        if case .failed = state { retriesFailedQuery = true }
+        else { retriesFailedQuery = false }
         firstPageTask?.cancel()
         loadGeneration += 1
         contentGeneration += 1
         let generation = loadGeneration
         let mode = contentMode
         state = .loading
+        errorServers = []
         loaded = []
         totalCount = 0
         pageError = nil
@@ -424,6 +435,10 @@ public final class LibraryBrowseViewModel {
             "LibraryBrowse: loading first page for \(containerID) (\(containerKind.rawValue)) firstPage=\(firstPageSize) steadyPage=\(subsequentPageSize)"
         )
         do {
+            if retriesFailedQuery {
+                await querySession.invalidate()
+                guard !Task.isCancelled, generation == loadGeneration else { return }
+            }
             if let source = provider as? any MediaLibraryQueryProviding, mode == .titles {
                 let before = availableSortFields
                 try await source.prepareLibraryQueryCapabilities()
@@ -465,15 +480,20 @@ public final class LibraryBrowseViewModel {
             return
         } catch let error as AppError {
             PlozzLog.app.error("LibraryBrowse: first page failed for \(containerID): \(String(describing: error))")
+            let servers = failureServers(for: error)
             guard !Task.isCancelled, generation == loadGeneration else { return }
+            errorServers = servers
             queryProgress = nil
             state = .failed(error)
         } catch {
             PlozzLog.app.error("LibraryBrowse: first page failed for \(containerID): \(String(describing: error))")
+            let servers = failureServers(for: error)
             guard !Task.isCancelled, generation == loadGeneration else { return }
+            errorServers = servers
             queryProgress = nil
-            queryMessage = (error as? LibraryQueryFailure)?.message
-            state = .failed(.unknown(""))
+            let underlying = LibrarySourceFailure.underlying(error)
+            queryMessage = (underlying as? LibraryQueryFailure)?.message
+            state = .failed((underlying as? AppError) ?? .unknown(""))
         }
     }
 
@@ -583,8 +603,9 @@ public final class LibraryBrowseViewModel {
             if !Task.isCancelled, generation == loadGeneration {
                 watchQueryDirty = true
                 needsRefreshRetry = true
-                pageError = (error as? AppError) ?? .unknown("")
-                queryMessage = (error as? LibraryQueryFailure)?.message
+                let underlying = LibrarySourceFailure.underlying(error)
+                pageError = (underlying as? AppError) ?? .unknown("")
+                queryMessage = (underlying as? LibraryQueryFailure)?.message
             }
         }
     }
@@ -950,7 +971,7 @@ public final class LibraryBrowseViewModel {
                 guard !Task.isCancelled, revision == queryPresentation.facetsRevision,
                       (error as? AppError) != .cancelled else { return }
                 PlozzLog.app.error("Library facets failed: \(String(describing: error))")
-                facetsError = (error as? AppError) ?? .unknown("")
+                facetsError = (LibrarySourceFailure.underlying(error) as? AppError) ?? .unknown("")
             }
         }
         queryPresentation.facetsTask = task
@@ -1065,7 +1086,9 @@ public final class LibraryBrowseViewModel {
         var sections: [LibrarySection] = []
         var firstError: AppError?
         func record(_ error: Error) {
-            let mapped = (error as? AppError) ?? .unknown(error.localizedDescription)
+            let underlying = LibrarySourceFailure.underlying(error)
+            let mapped = (underlying as? AppError) ?? .unknown(underlying.localizedDescription)
+            if firstError == nil { errorServers = failureServers(for: error) }
             firstError = firstError ?? mapped
             PlozzLog.app.error("Library recommendations failed for \(libraryID): \(String(describing: error))")
         }
@@ -1119,7 +1142,11 @@ public final class LibraryBrowseViewModel {
         if !sections.isEmpty {
             recommendationState = .loaded(sections)
         } else if let firstError {
-            if recommendationState.value == nil { recommendationState = .failed(firstError) }
+            if recommendationState.value == nil {
+                guard !Task.isCancelled, generation == recommendationGeneration,
+                      watchRevision == recommendationWatchRevision else { return }
+                recommendationState = .failed(firstError)
+            }
         } else {
             recommendationState = .empty
         }
@@ -1294,7 +1321,7 @@ public final class LibraryBrowseViewModel {
             guard !Task.isCancelled, generation == contentGeneration else { return }
             PlozzLog.app.error("LibraryBrowse: page \(page) failed for \(containerID): \(String(describing: error))")
             failedPages.insert(page)
-            pageError = .unknown("")
+            pageError = (LibrarySourceFailure.underlying(error) as? AppError) ?? .unknown("")
         }
     }
 

@@ -111,6 +111,21 @@ final class AggregatedLibraryProviderTests: XCTestCase {
         XCTAssertFalse(result.hasMore)
     }
 
+    func testAllOfflineThrowsAndRetryCanRecover() async throws {
+        let source = FakeMediaProvider(allItems: [movie("m", title: "Movie", year: 2024, tmdb: "1")])
+        source.alwaysFail = true
+        let provider = AggregatedLibraryProvider(sources: [self.source("owner", source)])
+        do {
+            _ = try await page(provider, start: 0, limit: 20)
+            XCTFail("Unavailable libraries must not appear empty")
+        } catch {
+            XCTAssertEqual(LibrarySourceFailure.underlying(error) as? AppError, .serverUnreachable)
+        }
+        source.alwaysFail = false
+        let recovered = try await page(provider, start: 0, limit: 20)
+        XCTAssertEqual(recovered.items.map(\.id), ["m"])
+    }
+
     func testCompactQueryUsesNewestWatchHistoryWithoutLosingRewatchProgress() throws {
         var old = movie("p", title: "Dune", year: 2021, tmdb: "1").taggingSource("plex")
         old.isPlayed = true
@@ -190,7 +205,8 @@ final class AggregatedLibraryProviderTests: XCTestCase {
         do {
             _ = try await provider.libraryHubs(libraryID: "merged", kind: .movie, limit: 10)
             XCTFail("An entirely failed recommendation feed must be retryable")
-        } catch AppError.serverUnreachable {
+        } catch {
+            XCTAssertEqual(LibrarySourceFailure.underlying(error) as? AppError, .serverUnreachable)
         }
     }
 

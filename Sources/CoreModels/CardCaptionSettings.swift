@@ -152,12 +152,15 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
         mixedOverrides.removeAll()
     }
 
-    private enum CodingKeys: String, CodingKey { case preference, showsLabels, overrides, mixedOverrides }
+    private enum CodingKeys: String, CodingKey {
+        case preference, showsLabels, overrides, mixedOverrides, homeDefaultVersion
+    }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        if let stored = try container.decodeIfPresent(CardCaptionPreference.self, forKey: .preference) {
-            preference = stored
+        let storedPreference = try container.decodeIfPresent(CardCaptionPreference.self, forKey: .preference)
+        if let storedPreference {
+            preference = storedPreference
         } else if let legacy = try container.decodeIfPresent(Bool.self, forKey: .showsLabels) {
             preference = legacy ? .show : .hide
         } else {
@@ -171,12 +174,22 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
         mixedOverrides = Set(mixed.compactMap(CardCaptionView.init(rawValue:)).filter {
             $0.customizationChoices.contains(.mixed) && overrides[$0] == nil
         })
+        if try container.decodeIfPresent(Int.self, forKey: .homeDefaultVersion) == nil,
+           mixed.isEmpty,
+           stored == [CardCaptionView.home.rawValue: false],
+           preference == .recommended || (storedPreference == nil && preference == .hide) {
+            // Older migration persisted the default-off Home flag as a customization.
+            // Its Home-only shape is ambiguous; reset it once, not explicit presets or other customizations.
+            preference = .recommended
+            overrides.removeValue(forKey: .home)
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(preference, forKey: .preference)
         try container.encode(showsLabels, forKey: .showsLabels)
+        try container.encode(1, forKey: .homeDefaultVersion)
         try container.encode(
             Dictionary(uniqueKeysWithValues: overrides.map { ($0.key.rawValue, $0.value) }),
             forKey: .overrides
@@ -213,13 +226,13 @@ public final class CardCaptionSettingsStore: CardCaptionSettingsStoring, @unchec
             }
             guard !defaults.bool(forKey: key + ".migrated") else { return .default }
             defaults.set(true, forKey: key + ".migrated")
-            // Preserve the old Home choice once, without turning an inherited
-            // default into a permanent exception for a newly created profile.
+            // Legacy Home labels defaulted off. Only an opt-in should become
+            // an override; all other profiles inherit the current app default.
             if let data = defaults.data(forKey: legacyKey) {
                 struct LegacyCaptions: Decodable { let showsCardCaptions: Bool? }
                 let legacy = try JSONDecoder().decode(LegacyCaptions.self, from: data)
-                if let showsLabels = legacy.showsCardCaptions {
-                    let migrated = CardCaptionSettings(overrides: [.home: showsLabels])
+                if legacy.showsCardCaptions == true {
+                    let migrated = CardCaptionSettings(overrides: [.home: true])
                     save(migrated)
                     return migrated
                 }

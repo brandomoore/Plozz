@@ -94,6 +94,8 @@ final class NativeLibraryHeaderController: UIViewController {
 struct NativeLibraryFocusHost<Content: View>: UIViewControllerRepresentable {
     let scrollTarget: NativeLibraryScrollTarget
     let content: Content
+    // Forwarding the whole environment does not subscribe to focus-gate changes.
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeUIViewController(context: Context) -> NativeLibraryFocusHostController {
         let controller = NativeLibraryFocusHostController()
@@ -103,7 +105,18 @@ struct NativeLibraryFocusHost<Content: View>: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: NativeLibraryFocusHostController, context: Context) {
         scrollTarget.focusOwner = controller
-        controller.host.rootView = AnyView(content.environment(\.self, context.environment))
+        let source = context.environment
+        controller.host.rootView = AnyView(content.transformEnvironment(\.self) { target in
+            target.copyHostedPresentation(from: source)
+            target.isEnabled = isEnabled
+            target.themeMusicController = source.themeMusicController
+            target.themeMusicSettings = source.themeMusicSettings
+            target.themeMusicAuthenticatedHTTPResolver = source.themeMusicAuthenticatedHTTPResolver
+            target.seasonRequestContextID = source.seasonRequestContextID
+            target[ShareScanStatusModel.self] = source[ShareScanStatusModel.self]
+            target[HeroTrailerController.self] = source[HeroTrailerController.self]
+            target[HeroBackgroundSettingsModel.self] = source[HeroBackgroundSettingsModel.self]
+        })
     }
 
     static func dismantleUIViewController(_ controller: NativeLibraryFocusHostController, coordinator: ()) {
@@ -227,6 +240,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
         layout.sectionHeadersPinToVisibleBounds = false
         view.addSubview(collection)
         addChild(headerHost)
+        headerHost.safeAreaRegions = []
         headerHost.view.backgroundColor = .clear
         headerHost.didMove(toParent: self)
         addChild(indicatorHider)
@@ -329,7 +343,6 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
             layout.headerReferenceSize = headerSize
             layout.invalidateLayout()
         }
-        headerHost.view.frame = CGRect(origin: .zero, size: headerSize)
         scheduleViewportReport()
     }
 
@@ -402,9 +415,17 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
         _ collectionView: UICollectionView, viewForSupplementaryElementOfKind kind: String, at indexPath: IndexPath
     ) -> UICollectionReusableView {
         let header = collectionView.dequeueReusableSupplementaryView(ofKind: kind, withReuseIdentifier: "header", for: indexPath)
-        if headerHost.view.superview !== header { header.addSubview(headerHost.view) }
-        headerHost.view.frame = header.bounds
-        headerHost.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        if headerHost.view.superview !== header {
+            let content = headerHost.view!
+            content.translatesAutoresizingMaskIntoConstraints = false
+            header.addSubview(content)
+            NSLayoutConstraint.activate([
+                content.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+                content.trailingAnchor.constraint(equalTo: header.trailingAnchor),
+                content.topAnchor.constraint(equalTo: header.topAnchor),
+                content.bottomAnchor.constraint(equalTo: header.bottomAnchor)
+            ])
+        }
         return header
     }
 

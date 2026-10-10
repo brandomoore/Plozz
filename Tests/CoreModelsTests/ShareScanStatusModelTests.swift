@@ -5,6 +5,24 @@ import XCTest
 /// "Updating library…" banner and the Settings last-scanned line.
 @MainActor
 final class ShareScanStatusModelTests: XCTestCase {
+    func testReachabilityDoesNotInferHealthFromCachedCatalogOrScanProgress() {
+        let model = ShareScanStatusModel()
+        XCTAssertTrue(model.offlineShareIDs.isEmpty)
+        model.reportReachability(shareID: "share", offline: true)
+        model.scanStarted(shareID: "share", name: "Library")
+        model.scanProgress(shareID: "share", directoriesScanned: 2, itemsFound: 10)
+        model.scanFinished(shareID: "share")
+        XCTAssertEqual(model.offlineShareIDs, ["share"])
+        model.reportReachability(shareID: "share", offline: false)
+        XCTAssertTrue(model.offlineShareIDs.isEmpty)
+        model.reportReachability(shareID: "share", offline: true)
+        model.removeShare(shareID: "share")
+        model.reportReachability(shareID: "share", offline: true)
+        XCTAssertTrue(model.offlineShareIDs.isEmpty)
+        model.registerShare(shareID: "share")
+        model.reportReachability(shareID: "share", offline: true)
+        XCTAssertEqual(model.offlineShareIDs, ["share"])
+    }
     func testPausedScanStopsAdvertisingWithoutInventingACompletionDate() {
         let model = ShareScanStatusModel()
         model.scanStarted(shareID: "source", name: "Library")

@@ -284,6 +284,18 @@ and return tour. Repeated headings are disambiguated using adjacent rows and car
 identities, not the heading alone. `--observe-home` captures accessibility evidence
 without sending directional input. These modes prove functional coverage only.
 
+`--run-pinned-navigation` exercises the existing Movies library without selecting
+another destination or changing settings. `PLOZZ_PINNED_LIBRARY_LABEL` overrides
+the expected selected library's localized title. Confirm the current process on
+Recommended with the pinned sidebar closed and a header control focused before
+posting `warm-ready`. Up to three observed preparatory Left presses position focus
+on Recommended. Six Left/Right pairs then verify the selected library row on every
+open and Recommended on every close, with the content mode unchanged. Failure
+stops input and preserves the final hierarchy, screenshot, and input timeline;
+there is no relaunch or recovery navigation. Checking only a burst's final state
+can mistake movement between Recommended and Browse for sidebar roundtrips.
+This checked workload is not rapid-reversal, cold-first-open, or hitch-free evidence.
+
 For a cold **Hero → Continue Watching** case, start the unbound runner before
 the externally controlled app launch and retain the new PID and launch timestamp.
 Use `PLOZZ_HOME_FIRST_DOWN_ONLY=1` with `--run-vertical-roundtrip` and one
@@ -782,6 +794,14 @@ A Time Profiler trace tells you *which threads burn CPU and in which binary* —
 on this app that immediately fingers the subsystem. The physical Apple TV is
 visible to Instruments under the **xctrace UDID** (not the devicectl id).
 
+For CPU attribution, disable **Record Waiting Threads** and verify the exported
+recording metadata (`record-waiting-threads="0"`). Waiting-thread stacks can locate
+blocked work, but their weights are not CPU usage or measured wait durations.
+Resolve raw addresses only against image mappings for that exact process and a
+UUID-matched executable/dSYM. Keep the app's hangs separate from test-runner hangs,
+and correlate accessibility snapshots before attributing a hang to remote input.
+An existing-app capture with no verified input is not a cold-open benchmark.
+
 Use the coordinated recorder for a live reproduction:
 ```bash
 tools/trace-device.sh --device "$DEVICE_ID" --time-limit 90s
@@ -953,11 +973,17 @@ and a passing functional test are not substitutes for presented-frame timing.
 - **Measure the focus result, not the request.** Enable `PLZHFOCUS_STDOUT=1`;
   compare `UIFocusSystem.focusedItem`, its frame and `canBecomeFocused`, then the
   visible highlight. A successful build or `FocusState` assignment proves neither.
-- **Known fix:** native Search retained focus after leaf-only requests.
-  `NavigationRowFocusRequester.handoff` requests the real row, then their shared
-  **window**, then calls `updateFocusIfNeeded` and confirms the actual target.
-  Reuse this path; extra yields, delays, layout resets, modifier reordering,
-  hiding the capsule and disabling content did not fix it.
+- **Request through the shared native owner.** Native Search and nested library
+  hosts can retain focus after leaf-only requests. `NavigationRailFocusHost`
+  temporarily prefers the exact target and requests the update from the owner
+  containing both current and requested focus. Confirm the actual focused item.
+  Opening navigation does not need to disable and re-enable the entire page;
+  retain the disabled-content gate only while a different destination is pending.
+  Keep rail interaction state inside that hosting boundary, not above it:
+  opening must not replace the whole hosted root or forward a newly captured
+  environment through the stationary page. Actual content and environment
+  changes still update the host. The native owner's focus flag is updated
+  independently from the rail's observed focus state.
 - **Return to real Search content.** `SearchPageFocusObserver` checks ownership by
   the native Search controller, not screen coordinates alone: outgoing Home
   content can occupy the same rectangle. Keep the capsule gated until entry.
@@ -968,6 +994,80 @@ and a passing functional test are not substitutes for presented-frame timing.
   the content actually depicts, not a requested identity that still shows old
   content. Older/cancelled callbacks must not release a newer request. Do not
   replace this with an immediate focus clear or a fixed loading delay.
+- **Closing pinned navigation restores its source.** Capture the real focused item
+  before opening navigation; retain it weakly and reject detached, hidden, disabled,
+  or no-longer-visible targets. Veto spatial Right while navigation owns focus so
+  the existing boundary observer requests restoration instead of choosing Browse
+  or a nearby card. The shared
+  `NavigationRailFocusHost` supplies the preferred target and requests the update:
+  UIKit ignores requests from a leaf or nested library host that does not contain
+  current focus. A removed source falls back to the page's entry preference;
+  switching destinations clears the source and uses the presentation fence above.
+  Query each native container once, including visible nested controller roots:
+  window queries alone omitted the share library's real header. Exclude every
+  candidate owned by the rail and centered in a rail label, not just one
+  minimum-area match. A nested page's controls can overlap the expanded labels
+  without belonging to the rail; compare native ownership before excluding them. Scrolled
+  rows overlap Profile and can have identical areas; virtual items can also be
+  recreated between queries. The physical failure explicitly requested a rail
+  item as page content, then moved again when the rail became disabled. Cross the
+  newly enabled page's render commit before resolving its content target.
+- **New-page entry prefers useful content.** `navigationEntryFocus` declares
+  content and fallback regions without changing ordinary directional navigation.
+  Libraries prefer their cards; Music prefers Recently Played, then Playlists.
+  Apply the preference to cards rather than scan banners or Now Playing header
+  accessories. Idle/loading pages declare a pending region; region changes wake
+  the active request after rendering, without polling or focusing a header first.
+  Empty/error states clear pending and use the remaining visible controls.
+  Cancellation removes the observer, and a valid captured source still wins
+  when closing navigation on the same page.
+  Native library cells also supply a weak exact focus item. If every visible
+  content region has one, resolve the first eligible card without enumerating
+  the window's unrelated focus containers. Revalidate attachment, visibility,
+  clipping, enabled state, ownership and viewport each time; mixed native/virtual
+  regions retain full discovery. This adds no preloading or idle observer.
+  A hosted share-library comparison reduced this lookup from roughly 3.4 ms
+  to 0.2 ms; that isolates lookup work, not physical-device page-load latency.
+- **Nested hosts must observe enabled-state changes.** Forwarding
+  `context.environment` alone did not subscribe `NativeLibraryFocusHost` to
+  `isEnabled`. A library could keep disabled controls after a shell gate
+  cleared. Explicitly observe and forward `isEnabled`; retain the regression
+  that holds the gate disabled with unchanged content before re-enabling it.
+- **Pinned expansion changes horizontal geometry only.** Both states use the
+  expanded panel's physical vertical inset. Interpolating vertical padding moved
+  every row by 36pt in the hosted reproduction. Reveal offscreen destinations with
+  minimal scrolling, not an unconditional centered jump; already-visible rows
+  must retain their vertical positions when an opening request repeats.
+  Each pending native-focus generation owns its reveal; do not also scroll for
+  the shell's opening token. Initial selection and destination-list changes
+  still reveal the selected destination independently.
+- **Do not copy a hosting tree's private accessibility environment.** A whole
+  `environment(\.self, ...)` bridge can leave a visibly rendered page absent from
+  the accessibility tree. Adding a containment accessibility modifier alone does
+  not repair it. Use `copyHostedPresentation(from:)` and explicitly forward the
+  host's required observable models and ambient media context. Cover profile
+  context changes as well as enabled-state changes across nested hosts.
+- **Test destination selection separately from roundtrips.** For the physical
+  pinned-navigation workload, `PLOZZ_PINNED_ENTER_LIBRARY=1` explicitly starts on
+  Home, opens navigation, and selects the requested matching library. Use
+  `PLOZZ_PINNED_LIBRARY_LABEL` and zero-based `PLOZZ_PINNED_LIBRARY_INDEX` when
+  providers have duplicate names. `PLOZZ_PINNED_ENTRY_SOURCE_LABEL` selects an
+  already-open source instead of Home. Require automatic page presentation,
+  navigation closure, and the expected header focus before six open/close pairs.
+  Share pages use `PLOZZ_PINNED_CONTENT_CONTROL='Browse Files'`, not Recommended;
+  exclude the disabled same-named rail button from that query.
+- **Measure menu animation separately.** `PLOZZ_PINNED_MEASURE_OPEN=1` runs three
+  native hitch/CPU measurements plus XCTest's warm-up. Only Left and a 600ms
+  settling interval are measured; accessibility assertions and Right resets are
+  outside each interval. Validate exported native metrics, not just successful
+  focus. The controlled Movies investigation recorded one 16.7ms hitch per
+  opening initially, then zero on the unchanged build and on two subsequent
+  shared-owner runs. A final installed-build repeat returned `[0, 1, 1]`
+  hitches, about 16.7ms each when present; intermittent hitches remain.
+  Sampled main-thread work across four openings was 1.114s before and 1.224s
+  after, with cloud publication also present in the latter.
+  This does not establish an aggregate CPU improvement or eliminate first-use
+  stutter; warm zero-hitch runs are not proof that app performance is flawless.
 - **Native Sidebar needs its own content gate.** `NativeSidebarFocusDestination`
   excludes inactive and not-yet-presented tab content without replacing native
   chrome. Final focus alone is not sufficient evidence: check the whole handoff
@@ -984,6 +1084,17 @@ and a passing functional test are not substitutes for presented-frame timing.
 
 ### Performance traps
 
+- **Receipt lookup must also be cheap.** Partition portable Live TV record IDs
+  once on the preparation actor and reuse their parsed profile ownership while
+  those IDs remain in the input. Do not repeatedly decode and re-encode every ID
+  for each profile on the main actor before taking the unchanged-capture path.
+  Payload edits must still invalidate content fingerprints; only ID ownership is
+  cached, and removed IDs must leave that cache.
+- **Avoid per-movie representative queries during scan finalization.** Resolve
+  all movie-group representatives in one grouped query, including members without
+  explicit filename IDs. Retain ambiguity rejection and orphan cleanup. This
+  reduces the cost of a required reconciliation; it does not make a resumed or
+  changed scan an unchanged scan.
 - **`Task {}` inside a `@MainActor` type inherits `@MainActor`.** Its body runs on
   the main actor. Use `Task.detached` (or hop to a background actor) for heavy work,
   or you'll measure main-actor saturation and blame the wrong thing.

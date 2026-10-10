@@ -5,6 +5,39 @@ import XCTest
 @testable import FeatureLiveTVCore
 
 final class LiveTVIndexedCacheTests: XCTestCase {
+    func testPortableRevisionTracksKeychainAndFileChangesAcrossCacheInstances() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let fileID = UUID()
+        let source = LiveTVPlaylistSource(
+            id: fileID.uuidString, name: "Source",
+            playlistURL: try XCTUnwrap(URL(string: "plozz-playlist://" + fileID.uuidString.lowercased()))
+        )
+        let configuration = LiveTVSourcesConfiguration(playlists: [source])
+        let initial = try await fixture.cache.portableSyncRevision(configuration: configuration)
+        let repeated = try await fixture.cache.portableSyncRevision(configuration: configuration)
+        XCTAssertEqual(initial, repeated)
+        let other = fixture.reopen()
+        try await other.setMapping(
+            .init(guideSourceID: "guide", guideChannelID: "station"), channelID: "channel"
+        )
+        let mapped = try await fixture.cache.portableSyncRevision(configuration: configuration)
+        XCTAssertNotEqual(initial, mapped)
+        let data = Data("#EXTM3U\n#EXTINF:-1 tvg-id=\"station\",Station\nhttps://example.test/live\n".utf8)
+        _ = try await other.storeImportedPlaylist(data: data, id: fileID)
+        let imported = try await fixture.cache.portableSyncRevision(configuration: configuration)
+        XCTAssertNotEqual(mapped, imported)
+        let stable = try await fixture.cache.portableSyncRevision(configuration: configuration)
+        XCTAssertEqual(imported, stable)
+        try await other.removeImportedPlaylist(id: fileID)
+        let removed = try await fixture.cache.portableSyncRevision(configuration: configuration)
+        XCTAssertNotEqual(imported, removed)
+        let resolved = try await other.reconcile(playlist([channel(0)]), sourceID: source.id)
+        try await other.storePlaylist(resolved.playlist, source: source, now: now)
+        let catalog = try await fixture.cache.portableSyncRevision(configuration: configuration)
+        XCTAssertNotEqual(removed, catalog)
+    }
+
     func testPortableMappingNotificationsAreChangedOnlyAndFollowDurableWrites() async throws {
         let fixture = try CacheFixture()
         defer { fixture.removeOwnedFiles() }

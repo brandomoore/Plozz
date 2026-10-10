@@ -82,6 +82,7 @@ public final class NavigationStyleSettingsModel {
     public var hasWatchlistItems = false
     public private(set) var contentLibraries: [AggregatedLibrary]
     public private(set) var discoveredAccountIDs: Set<String>
+    public private(set) var offlineAccountIDs: Set<String> = []
 
     public var resolvedLibraryLayout: NavigationLibraryLayout {
         libraryLayout.resolvingAutomaticVisibility(hidden: automaticallyHiddenKeys)
@@ -120,7 +121,8 @@ public final class NavigationStyleSettingsModel {
     public func updateContentLibraries(
         _ discovered: [AggregatedLibrary],
         accountIDs: Set<String>,
-        unreachableAccountIDs: Set<String>
+        unreachableAccountIDs: Set<String>,
+        failures: [String: AppError] = [:]
     ) {
         contentLibraries = NavigationContentAvailability.reconcileLibraries(
             discovered: discovered,
@@ -129,6 +131,10 @@ public final class NavigationStyleSettingsModel {
         ).filter { accountIDs.contains($0.accountID) }
         discoveredAccountIDs.formIntersection(accountIDs)
         discoveredAccountIDs.formUnion(accountIDs.subtracting(unreachableAccountIDs))
+        let offline = unreachableAccountIDs.intersection(accountIDs).filter {
+            failures[$0] == nil || failures[$0] == .serverUnreachable
+        }
+        if offlineAccountIDs != offline { offlineAccountIDs = offline }
         librariesSnapshotStore?.save(contentLibraries)
     }
 

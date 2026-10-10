@@ -2,6 +2,7 @@
 import SwiftUI
 import UIKit
 import FeatureHome
+import CoreNetworking
 
 /// Resolves the actual focusable control containing a row's label, rather than
 /// asking SwiftUI to focus a non-focusable layout/binding container.
@@ -70,7 +71,12 @@ struct NavigationRowFocusRequester: UIViewRepresentable {
                     return
                 }
                 HeroFocusDiagnostics.emit("sidebar.native-request token=\(request) target=\(String(describing: target)) frame=\(target.frame)")
-                let didFocus = NavigationRowFocusRequester.handoff(to: target, in: window, using: system)
+                guard let owner = NavigationRailFocusHostController.containing(self) else {
+                    PlozzLog.app.error("Navigation row has no shared native focus owner")
+                    self.complete(request, didFocus: false)
+                    return
+                }
+                let didFocus = owner.requestFocus(to: target, using: system)
                 HeroFocusDiagnostics.emit("sidebar.native-request result=\(didFocus) focused=\(String(describing: system.focusedItem))")
                 self.complete(request, didFocus: didFocus)
             }
@@ -83,23 +89,6 @@ struct NavigationRowFocusRequester: UIViewRepresentable {
         }
 
         deinit { pending?.cancel() }
-    }
-
-    static func handoff(
-        to target: any UIFocusItem,
-        in window: UIWindow,
-        using system: any NavigationFocusUpdating
-    ) -> Bool {
-        system.requestFocusUpdate(to: target)
-        system.updateFocusIfNeeded()
-        if system.focusedItem === target { return true }
-        // Native Search retains focus across its presentation boundary.
-        // Re-evaluate from their shared window, whose preferred rail row is the
-        // requested destination, only if the direct request did not succeed.
-        // Two requests before an update let the window override the chosen row.
-        system.requestFocusUpdate(to: window)
-        system.updateFocusIfNeeded()
-        return system.focusedItem === target
     }
 
     static func target(
@@ -162,14 +151,5 @@ struct NavigationRowFocusRequester: UIViewRepresentable {
         return nil
     }
 }
-
-@MainActor
-protocol NavigationFocusUpdating: AnyObject {
-    var focusedItem: (any UIFocusItem)? { get }
-    func requestFocusUpdate(to environment: any UIFocusEnvironment)
-    func updateFocusIfNeeded()
-}
-
-extension UIFocusSystem: NavigationFocusUpdating {}
 
 #endif

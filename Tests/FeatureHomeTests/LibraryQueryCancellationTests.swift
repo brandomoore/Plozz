@@ -5,6 +5,28 @@ import XCTest
 
 @MainActor
 final class LibraryQueryCancellationTests: XCTestCase {
+    func testInvalidationDuringRecoveryCannotExcludeSourcesFromTheNewQuery() async throws {
+        let provider = CancellationInventoryProvider(holdsRecovery: true)
+        let session = LibraryQuerySession(provider: provider, containerID: "lib", kind: .movie)
+        let request = PageRequest(filters: .init(filter: .atmos))
+        let first = Task { try await session.page(request, progress: { _, _ in }) }
+        await provider.waitUntilHeld()
+        let invalidation = Task { await session.invalidate() }
+        await provider.waitUntilRecoveryCancelled()
+        await provider.release()
+        await invalidation.value
+        do {
+            _ = try await first.value
+            XCTFail("The superseded query must not publish")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        let excluded = await provider.isExcluded
+        XCTAssertFalse(excluded)
+        let replacement = try await session.page(request, progress: { _, _ in })
+        XCTAssertEqual(replacement.totalCount, 0)
+    }
+
     func testReplacementFilterDoesNotReuseCancelledInventory() async throws {
         let provider = CancellationInventoryProvider()
         let session = LibraryQuerySession(provider: provider, containerID: "lib", kind: .movie)
@@ -51,7 +73,7 @@ final class LibraryQueryCancellationTests: XCTestCase {
     }
 }
 
-private actor CancellationInventoryProvider: MediaLibraryQueryProviding {
+private actor CancellationInventoryProvider: MediaLibraryQueryProviding, LibraryQueryFailureRecovering {
     nonisolated let kind: ProviderKind = .jellyfin
     nonisolated let session = UserSession(
         server: MediaServer(id: "query", name: "Query", baseURL: URL(string: "https://query.test")!, provider: .jellyfin),
@@ -60,6 +82,41 @@ private actor CancellationInventoryProvider: MediaLibraryQueryProviding {
     private var held: CheckedContinuation<Void, Never>?
     private var observers: [CheckedContinuation<Void, Never>] = []
     private(set) var requests = 0
+    private let holdsRecovery: Bool
+    private(set) var isExcluded = false
+    private var recoveryCancelled = false
+    private var cancellationObserver: CheckedContinuation<Void, Never>?
+
+    init(holdsRecovery: Bool = false) { self.holdsRecovery = holdsRecovery }
+
+    func recoverLibraryQuery(after failure: LibrarySourceFailure) async -> Bool {
+        guard holdsRecovery else { return false }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                held = continuation
+                let ready = observers
+                observers = []
+                ready.forEach { $0.resume() }
+            }
+        } onCancel: {
+            Task { await self.noteRecoveryCancellation() }
+        }
+        isExcluded = true
+        return true
+    }
+
+    func resetLibraryQueryRecovery() async { isExcluded = false }
+
+    private func noteRecoveryCancellation() {
+        recoveryCancelled = true
+        cancellationObserver?.resume()
+        cancellationObserver = nil
+    }
+
+    func waitUntilRecoveryCancelled() async {
+        guard !recoveryCancelled else { return }
+        await withCheckedContinuation { cancellationObserver = $0 }
+    }
 
     func waitUntilHeld() async {
         if held != nil { return }
@@ -79,6 +136,11 @@ private actor CancellationInventoryProvider: MediaLibraryQueryProviding {
     func libraryQueryInventory(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         requests += 1
         if requests == 1 {
+            if holdsRecovery {
+                throw LibrarySourceFailure(
+                    underlyingError: AppError.serverUnreachable,
+                    servers: [session.server], sourceKeys: ["source"])
+            }
             await withCheckedContinuation { continuation in
                 held = continuation
                 let ready = observers

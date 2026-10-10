@@ -1103,6 +1103,29 @@ to synchronous decoding. Pending-source lists reload asynchronously, while
 saving a source checks only its own descriptor record. Prepared journal data is
 discarded when the operation ends.
 
+Settled captures retain a bounded per-profile receipt, not decoded journals or
+schedule snapshots. Before reopening large payloads, the bridge checks current
+consent, namespace/account epoch, portable preferences, source configuration,
+definitions, playback holds, SQLite change counters, Keychain publication
+manifests and imported-file/journal metadata. SQLite counters cover writes from
+both the current connection and other connections; file identity checks reject
+evicted or replaced databases. The cloud fallback must also exactly match the
+previous capture's input, not its output: unacknowledged local uploads may differ
+from the server baseline. Reuse returns the previous local output. With unchanged
+inputs, polling skips journal decoding,
+snapshot reads, schedule partitioning and identity/guide exports.
+
+Only successful, settled captures qualify, after their inputs remain stable
+through a complete operation. Pending transfers and unresolved changes continue
+through normal reconciliation. Remote apply and account/profile/consent changes
+invalidate receipts. Stores without authoritative revision support retain the
+full path. Receipts keep compact SHA-256 fingerprints of the cloud input and only
+the local output that differs from it, rather than retaining another entire
+schedule collection. Fingerprint checks run off the main actor. Retained output
+is capped at 64 MiB, with 50,000 fingerprint/output entries across profiles; an
+unchanged collection larger than 64 MiB still qualifies. Wire formats, schedule
+agreement and polling cadence are unchanged.
+
 The journal enforces its 128 MiB serialized-storage bound before writing; the
 separate 64 MiB input bound applies to each preparation, not accumulated state.
 Replacing or deleting a known library definition retires snapshot parts only

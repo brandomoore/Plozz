@@ -1060,6 +1060,13 @@ final class ShareLocalArtworkTests: XCTestCase {
         let marker = try fixture.text("""
             SELECT value FROM meta WHERE key='artwork_reference_context_v2';
             """)
+        for _ in 0..<3 {
+            await firstStore.configureArtworkReferenceContext(
+                accountID: "art-account", credentialRevision: revision
+            )
+        }
+        let initialPreparations = await firstStore.artworkReferenceContextPreparationCountForTesting()
+        XCTAssertEqual(initialPreparations, 1, "Repeated reads must not enumerate the artwork catalog again.")
 
         // A new store models a process relaunch. The persisted marker must avoid a
         // synchronous catalog-wide rematerialization when account + revision match.
@@ -1068,6 +1075,8 @@ final class ShareLocalArtworkTests: XCTestCase {
             accountID: "art-account",
             credentialRevision: revision
         )
+        let relaunchedPreparations = await relaunchedStore.artworkReferenceContextPreparationCountForTesting()
+        XCTAssertEqual(relaunchedPreparations, 0, "A current persisted context needs no whole-catalog pass.")
 
         XCTAssertEqual(
             try fixture.text("""
@@ -1080,6 +1089,34 @@ final class ShareLocalArtworkTests: XCTestCase {
             try fixture.text("SELECT value FROM meta WHERE key='artwork_reference_context_v2';"),
             marker
         )
+    }
+
+    func testArtworkReferenceContextBackfillsLegacyIDsBeforeMarkingCurrent() async throws {
+        let fixture = ShareCatalogSQLiteFixture()
+        defer { fixture.cleanup() }
+        let store = fixture.makeStore()
+        let asset = movie()
+        let revision = CredentialRevision()
+        await store.upsert([asset], scanID: 1)
+        await store.upsertArtwork([candidate("Movies/Film/poster.jpg")], scanID: 1)
+        try fixture.execute("UPDATE local_artwork_files SET catalog_artwork_id=NULL;")
+
+        await store.configureArtworkReferenceContext(accountID: "art-account", credentialRevision: revision)
+
+        let loaded = await store.item(id: ShareCatalogID.file(asset.relPath))
+        let item = try XCTUnwrap(loaded)
+        guard case .networkFile(let reference) = try XCTUnwrap(item.artworkReferences(for: .poster).first) else {
+            return XCTFail("Expected the migrated artwork reference")
+        }
+        XCTAssertFalse(reference.catalogArtworkID.isEmpty)
+        let locator = await store.artworkLocator(for: reference)
+        XCTAssertEqual(locator?.relativePath, "Movies/Film/poster.jpg")
+
+        await store.configureArtworkReferenceContext(accountID: "art-account", credentialRevision: revision)
+        let preparations = await store.artworkReferenceContextPreparationCountForTesting()
+        XCTAssertEqual(preparations, 1)
+        XCTAssertEqual(try fixture.text("SELECT catalog_artwork_id FROM local_artwork_files;"),
+                       reference.catalogArtworkID)
     }
 
     func testRejectingExactFingerprintResurfacesExternalFallbackUntilFileChanges() async throws {

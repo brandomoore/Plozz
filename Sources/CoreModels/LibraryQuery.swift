@@ -191,14 +191,39 @@ extension MediaLibraryQueryProviding {
     }
 }
 
+/// Source identity belongs to this failure, never a provider-wide last-error slot.
+public struct LibrarySourceFailure: Error, Sendable, CustomStringConvertible {
+    public let underlyingError: any Error
+    public let servers: [MediaServer]
+    public let sourceKeys: Set<String>
+    public var description: String { "LibrarySourceFailure" } // l10n:content — secret-safe diagnostic token
+
+    public init(underlyingError: any Error, servers: [MediaServer], sourceKeys: Set<String>) {
+        self.underlyingError = underlyingError
+        self.servers = servers
+        self.sourceKeys = sourceKeys
+    }
+
+    public static func underlying(_ error: any Error) -> any Error {
+        (error as? LibrarySourceFailure)?.underlyingError ?? error
+    }
+}
+
+public protocol LibraryQueryFailureRecovering: Sendable {
+    func recoverLibraryQuery(after failure: LibrarySourceFailure) async -> Bool
+    func resetLibraryQueryRecovery() async
+}
+
 public struct LibraryQueryReference: Sendable {
     public var id: String
     public var accountID: String?
+    public var libraryID: String?
     public var sources: [MediaSourceRef]
 
-    public init(id: String, accountID: String? = nil, sources: [MediaSourceRef] = []) {
+    public init(id: String, accountID: String? = nil, libraryID: String? = nil, sources: [MediaSourceRef] = []) {
         self.id = id
         self.accountID = accountID
+        self.libraryID = libraryID
         self.sources = sources
     }
 }
@@ -233,7 +258,7 @@ public struct LibraryQueryRecord: Sendable {
 
     public init(_ item: MediaItem, includeFormats: Bool = true) {
         reference = LibraryQueryReference(
-            id: item.id, accountID: item.sourceAccountID,
+            id: item.id, accountID: item.sourceAccountID, libraryID: item.libraryID,
             sources: item.sources.map { source in
                 var copy = source
                 copy.versions = []
@@ -313,7 +338,7 @@ public struct LibraryQueryRecord: Sendable {
             runtime: runtime, resumePosition: inProgress ? max(1, progress * (runtime ?? 1)) : nil,
             playedPercentage: progress, isPlayed: isPlayed, hasBeenPlayed: completed || inProgress,
             providerIDs: providerIDs,
-            sourceAccountID: reference.accountID, sources: reference.sources,
+            sourceAccountID: reference.accountID, libraryID: reference.libraryID, sources: reference.sources,
             rejectedSourceIDs: rejectedSourceIDs,
             lastPlayedAt: lastPlayed, librarySortValues: values
         )

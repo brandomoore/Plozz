@@ -9,6 +9,47 @@ import MediaTransportCore
 /// throttle repeat walks — all without a real SMB server (an in-memory tree is
 /// injected as the directory lister).
 final class ShareScannerTests: XCTestCase {
+    private final class ReachabilityRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var events: [Bool] = []
+        func record(_ offline: Bool) { lock.withLock { events.append(offline) } }
+        var values: [Bool] { lock.withLock { events } }
+    }
+
+    func testRootTransportFailuresReportOfflineButAuthenticationAndChildErrorsDoNot() async {
+        let errors: [MediaTransportError] = [
+            .timeout, .transport(code: Int(ECONNREFUSED)), .transport(code: NSURLErrorCannotConnectToHost),
+            .authentication(reason: "test"), .permissionDenied, .cancelled, .protocolViolation(reason: "test")
+        ]
+        for error in errors {
+            let recorder = ReachabilityRecorder()
+            var reporter = ShareScanReporter.noop
+            reporter.reachability = { _, offline in recorder.record(offline) }
+            let store = ShareCatalogStore(accountKey: "reachability", directory: tempDir())
+            let scanner = ShareScanner(store: store, shareID: "share", reporter: reporter, makeLister: {
+                .init(list: { _ in throw error }, close: {})
+            })
+            await scanner.scan()
+            let isOffline = error == .timeout
+                || error == .transport(code: Int(ECONNREFUSED))
+                || error == .transport(code: NSURLErrorCannotConnectToHost)
+            XCTAssertEqual(recorder.values, isOffline ? [true] : [])
+        }
+        let recorder = ReachabilityRecorder()
+        var reporter = ShareScanReporter.noop
+        reporter.reachability = { _, offline in recorder.record(offline) }
+        let store = ShareCatalogStore(accountKey: "reachable-root", directory: tempDir())
+        let fake = FakeShare(standardTree())
+        let scanner = ShareScanner(store: store, shareID: "share", reporter: reporter, makeLister: {
+            .init(list: { path in
+                if !path.isEmpty { throw MediaTransportError.timeout }
+                return await fake.list(path)
+            }, close: {})
+        })
+        await scanner.scan()
+        XCTAssertEqual(recorder.values, [false])
+    }
+
     private final class AsyncCloseGate: @unchecked Sendable {
         private let lock = NSLock()
         private var started = false

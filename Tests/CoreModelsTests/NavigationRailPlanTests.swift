@@ -5,6 +5,23 @@ import XCTest
 /// they're wrong — a library that vanishes when a server is added, an order that
 /// resets, or a hidden library that comes back on relaunch.
 final class NavigationRailPlanTests: XCTestCase {
+    func testOfflineBadgesKeepDestinationsAndOnlyMarkAllLibrariesWhenAllAreOffline() {
+        let libraries = [
+            library("movies", title: "Movies", account: "a"),
+            library("shows", title: "Shows", account: "a", kind: .series),
+            library("movies", title: "Movies", account: "b")
+        ]
+        let baseline = NavigationRailPlan.entries(visibleLibraries: libraries, layout: .default)
+        for offline: Set<String> in [[], ["a"], ["a", "b"]] {
+            let entries = NavigationRailPlan.entries(
+                visibleLibraries: libraries, layout: .default, offlineAccountIDs: offline)
+            XCTAssertEqual(entries.map(\.id), baseline.map(\.id))
+            XCTAssertEqual(entries.map(\.destination), baseline.map(\.destination))
+            for entry in entries {
+                XCTAssertEqual(entry.isOffline, entry.library.map { offline.contains($0.accountID) } ?? (offline.count == 2))
+            }
+        }
+    }
     func testPreparedEntriesPreserveEachStylesOrderAndVisibility() {
         let libraries = [
             library("1", title: "Movies", account: "a"),

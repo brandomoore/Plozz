@@ -614,6 +614,56 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         XCTAssertEqual(Set(transports).count, 3, "The caption must retain each share's actual transport.")
     }
 
+    func testIPTVBadgeColorIsDistinctFromEveryOtherProviderInAllFocusAppearances() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            for focused in [false, true] {
+                let background: Color = focused
+                    ? (scheme == .dark ? .white : .black)
+                    : (scheme == .dark ? Color(white: 0.12) : Color(white: 0.94))
+                var colors: [ProviderKind: [Int]] = [:]
+                for provider in ProviderKind.allCases {
+                    let renderer = ImageRenderer(content:
+                        ProviderBrandMark(provider: provider, size: 76)
+                            .environment(\.settingsRowIsFocused, focused)
+                            .environment(\.colorScheme, scheme)
+                            .background(background)
+                    )
+                    renderer.scale = 3
+                    let image = try XCTUnwrap(renderer.cgImage)
+                    let bytes = try rgba(image)
+                    let index = ((image.height / 10) * image.width + image.width / 2) * 4
+                    colors[provider] = (0..<3).map { Int(bytes[index + $0]) }
+                }
+                let iptv = try XCTUnwrap(colors[.iptv])
+                for provider in ProviderKind.allCases where provider != .iptv {
+                    let other = try XCTUnwrap(colors[provider])
+                    let difference = zip(iptv, other).map { abs($0 - $1) }.max() ?? 0
+                    XCTAssertGreaterThanOrEqual(
+                        difference, 8, "IPTV must remain distinct from \(provider), \(scheme), focused=\(focused)")
+                }
+                let strip = ImageRenderer(content:
+                    HStack(spacing: 24) {
+                        ForEach(ProviderKind.allCases, id: \.self) { provider in
+                            VStack(spacing: 8) {
+                                ProviderBrandMark(provider: provider, size: 76)
+                                Text(verbatim: provider.displayName).font(.caption2)
+                            }
+                        }
+                    }
+                    .environment(\.settingsRowIsFocused, focused)
+                    .environment(\.colorScheme, scheme)
+                    .padding(24)
+                    .background(background)
+                )
+                strip.scale = 2
+                let attachment = XCTAttachment(image: try XCTUnwrap(strip.uiImage))
+                attachment.name = "Distinct IPTV color \(scheme) focused=\(focused)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
     func testTransportMarkIsUnclippedAndOpticallyCentered() throws {
         let sizes: [CGFloat] = [32, 52, 76]
         for size in sizes {

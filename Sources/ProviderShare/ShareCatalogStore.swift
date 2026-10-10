@@ -115,6 +115,7 @@ actor ShareCatalogStore {
     /// This avoids rematerializing every item after a process relaunch while never
     /// storing credentials or artwork paths in catalog metadata.
     private static let artworkReferenceContextMetaKey = "artwork_reference_context_v2"
+    private var artworkReferenceContextPreparationCount = 0
     static let libraryAnimeContextMetaKey = "library_anime_context"
     private var artworkAssociationMaterializationStats = ArtworkAssociationMaterializationStats(
         passes: 0,
@@ -250,6 +251,9 @@ actor ShareCatalogStore {
     }
     func schemaMigrationAttemptCountForTesting() -> Int {
         connection.schemaMigrationAttemptCount
+    }
+    func artworkReferenceContextPreparationCountForTesting() -> Int {
+        artworkReferenceContextPreparationCount
     }
 
     private func flushSuspendedCheckpoint() -> Bool {
@@ -828,12 +832,14 @@ actor ShareCatalogStore {
             path: Self.artworkReferenceContextMetaKey,
             fingerprint: credentialRevision.rawValue.uuidString
         )
-        let markerIsCurrent = meta(Self.artworkReferenceContextMetaKey) == marker
+        // This marker commits with the legacy ID backfill and reference rebuild.
+        // New artwork receives IDs on upsert; unchanged readers need neither pass.
+        guard meta(Self.artworkReferenceContextMetaKey) != marker else { return }
 
+        artworkReferenceContextPreparationCount += 1
         let itemIDs = allArtworkAssociatedItemIDs().sorted()
         _ = connection.withImmediateTransaction {
             guard artworkRepo.ensureCatalogArtworkIDs() else { return false }
-            if markerIsCurrent { return true }
             for itemID in itemIDs {
                 guard !Task.isCancelled,
                       materializeArtworkSelectionsInTransaction(
@@ -2444,18 +2450,26 @@ actor ShareCatalogStore {
             movieRows.append(MovieRow(relPath: relPath, groupKey: group, explicitJSON: self.columnText(stmt, 2)))
         }
         let movieRowsByGroup = Dictionary(grouping: movieRows, by: \.groupKey)
+        var representatives: [String: String] = [:]
+        if !movieRows.isEmpty {
+            // Resolve all representatives once, including members without explicit IDs.
+            query("""
+            SELECT COALESCE(movie_group_key, movie_key), MIN(rel_path) FROM assets
+            WHERE library='movies' AND kind='movie'
+            GROUP BY COALESCE(movie_group_key, movie_key);
+            """) { stmt in
+                guard let group = self.columnText(stmt, 0),
+                      let path = self.columnText(stmt, 1) else { return }
+                representatives[group] = path
+            }
+        }
         for (groupKey, rows) in movieRowsByGroup {
             let ids = ShareExplicitIDPolicy.unambiguous(
                 rows.compactMap { decodeJSON([String: String].self, $0.explicitJSON) }
             )
             guard !ids.isEmpty else { continue }
-            var rep: String?
-            query("""
-            SELECT MIN(rel_path) FROM assets
-            WHERE COALESCE(movie_group_key, movie_key)=? AND library='movies' AND kind='movie';
-            """, bind: { self.bindText($0, 1, groupKey) }) { stmt in rep = self.columnText(stmt, 0) }
             let fallbackPath = rows.map(\.relPath).min() ?? groupKey
-            materialized[ShareCatalogID.file(rep ?? fallbackPath)] = ids
+            materialized[ShareCatalogID.file(representatives[groupKey] ?? fallbackPath)] = ids
         }
 
         // Series: the explicit ids of ANY episode's path (usually a shared show-

@@ -51,6 +51,14 @@ public actor LiveTVIndexedCache {
     private var pendingPortableGuideChannelIDs: Set<String> = []
     private let catalogEncoder = JSONEncoder()
     private let catalogDecoder = JSONDecoder()
+    private var portableRevision = UUID()
+    private var portableRevisionState: PortableRevisionState?
+
+    private struct PortableRevisionState: Equatable {
+        let databaseChanges: [Double]
+        let manifests: [String?]
+        let importedFiles: [LiveTVSyncFileRevision?]
+    }
     #if DEBUG
     private var guideImportProgressForTesting: (@Sendable (Int) throws -> Void)?
 
@@ -182,22 +190,24 @@ public actor LiveTVIndexedCache {
         }
     }
 
-    private func importedPlaylistURL(_ id: UUID) throws -> URL {
+    private func importedPlaylistURL(_ id: UUID, createDirectory: Bool = true) throws -> URL {
         let base: URL
         if let importedFilesURL {
             base = importedFilesURL
         } else {
             base = try FileManager.default.url(
-                for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+                for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: createDirectory
             ).appendingPathComponent("LiveTVImports", isDirectory: true)
         }
         var directory = base.appendingPathComponent(durableScope, isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
-        )
-        var resourceValues = URLResourceValues()
-        resourceValues.isExcludedFromBackup = true
-        try directory.setResourceValues(resourceValues)
+        if createDirectory {
+            try FileManager.default.createDirectory(
+                at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+            )
+            var resourceValues = URLResourceValues()
+            resourceValues.isExcludedFromBackup = true
+            try directory.setResourceValues(resourceValues)
+        }
         return directory.appendingPathComponent(id.uuidString.lowercased() + ".sealed")
     }
 
@@ -768,6 +778,32 @@ public actor LiveTVIndexedCache {
         return Dictionary(uniqueKeysWithValues: records.map { ($0.channelID, $0.mapping) })
     }
 
+    /// Check publication generations, not the downloaded channels or guide payloads.
+    public func portableSyncRevision(configuration: LiveTVSourcesConfiguration) throws -> UUID {
+        let db = try database()
+        try db.checkFileIdentity()
+        guard let changes = try db.rows(
+            "SELECT total_changes(),data_version FROM pragma_data_version"
+        ).first else { throw LiveTVCacheError.unavailable }
+        let sources = configuration.playlists.sorted { $0.id < $1.id }
+        let names = [
+            secureName("key"), "liveTV.catalog." + scope + ".key", secureName("mappings"),
+            secureName("portable-identities")
+        ] + sources.flatMap { [secureName("identity." + $0.id), secureName("discovered." + $0.id)] }
+        let state = try PortableRevisionState(
+            databaseChanges: [changes.real(0), changes.real(1)],
+            manifests: names.map { try secureStore.readString(for: $0) },
+            importedFiles: sources.compactMap(\.importedPlaylistID).map {
+                try LiveTVSyncFileRevision.read(importedPlaylistURL($0, createDirectory: false))
+            }
+        )
+        if portableRevisionState != state {
+            portableRevisionState = state
+            portableRevision = UUID()
+        }
+        return portableRevision
+    }
+
     public func setMapping(_ mapping: LiveTVGuideMappingOverride?, channelID: String) throws {
         try validateMapping(mapping, channelID: channelID)
         var mappings = try mappingOverrides()
@@ -998,10 +1034,13 @@ private struct LiveTVCacheRow {
 private final class LiveTVCacheConnection {
     private var handle: OpaquePointer?
     private var statements: [String: OpaquePointer] = [:]
+    private let url: URL
+    private var openedFile: LiveTVSyncFileRevision?
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
     var changes: Int32 { sqlite3_changes(handle) }
 
     init(url: URL) throws {
+        self.url = url
         guard url.isFileURL, !url.path.isEmpty else { throw LiveTVCacheError.unavailable }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         guard sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
@@ -1029,6 +1068,7 @@ private final class LiveTVCacheConnection {
                 try execute("CREATE VIRTUAL TABLE IF NOT EXISTS program_search USING fts5(source UNINDEXED,id UNINDEXED,title,tokenize='unicode61')")
                 try execute("PRAGMA user_version=1")
             }
+            openedFile = try LiveTVSyncFileRevision.read(url)
         } catch {
             for statement in statements.values { sqlite3_finalize(statement) }
             statements.removeAll()
@@ -1041,6 +1081,11 @@ private final class LiveTVCacheConnection {
     deinit {
         for statement in statements.values { sqlite3_finalize(statement) }
         if let handle { sqlite3_close(handle) }
+    }
+
+    func checkFileIdentity() throws {
+        guard let openedFile, let current = try LiveTVSyncFileRevision.read(url),
+              current.isSameFile(as: openedFile) else { throw LiveTVCacheError.unavailable }
     }
 
     func transaction(_ body: () throws -> Void) throws {

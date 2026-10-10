@@ -151,7 +151,7 @@ final class CardCaptionSettingsTests: XCTestCase {
         XCTAssertEqual(settings.customization(in: .browse), .show)
     }
 
-    func testExistingHomeChoiceMigratesOnceAndResetDoesNotResurrectIt() throws {
+    func testExistingHomeDefaultIsOnAndLegacyOptInSurvivesUntilReset() throws {
         try withDefaults { defaults in
             for showsLabels in [false, true] {
                 let namespace = String(showsLabels)
@@ -159,7 +159,10 @@ final class CardCaptionSettingsTests: XCTestCase {
                 hero.showsCardCaptions = showsLabels
                 HeroSettingsStore(defaults: defaults, namespace: namespace).save(hero)
                 let store = CardCaptionSettingsStore(defaults: defaults, namespace: namespace)
-                XCTAssertEqual(store.load().overrides, [.home: showsLabels])
+                XCTAssertEqual(store.load().overrides, showsLabels ? [.home: true] : [:])
+                XCTAssertTrue(store.load().showsLabels(in: .home))
+                XCTAssertEqual(store.load().showsLabels(in: .home, isShowcase: true), showsLabels)
+                XCTAssertEqual(store.load().showsLabels(in: .home, hasArtworkTitle: true), showsLabels)
                 var settings = store.load()
                 settings.resetOverrides()
                 store.save(settings)
@@ -207,9 +210,123 @@ final class CardCaptionSettingsTests: XCTestCase {
                     .contains { $0.hasSuffix(".migrated") })
             }
             HeroSettingsStore(defaults: defaults, namespace: "fresh").save(legacy)
-            XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults, namespace: "fresh").load().overrides,
-                           [.home: false])
+            XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults, namespace: "fresh").load(), .default)
             XCTAssertEqual(source.load().overrides, [.browse: true])
+        }
+    }
+
+    func testAmbiguousHomeOnlyLegacyMigrationAdoptsAppDefaultInBothFormats() throws {
+        let payloads: [[String: Any]] = [
+            ["preference": "recommended", "showsLabels": true, "overrides": ["home": false]],
+            ["showsLabels": false, "overrides": ["home": false]],
+            ["preference": "recommended", "overrides": ["home": false], "mixedOverrides": []]
+        ]
+        try withDefaults { defaults in
+            for (index, payload) in payloads.enumerated() {
+                let namespace = index == 0 ? nil : "inactive"
+                let key = SettingsKey.scoped(CardCaptionSettingsStore.storageKey, namespace: namespace)
+                let data = try JSONSerialization.data(withJSONObject: payload)
+                defaults.set(data, forKey: key)
+                defaults.set(true, forKey: key + ".migrated")
+                let store = CardCaptionSettingsStore(defaults: defaults, namespace: namespace)
+                let migrated = store.load()
+                XCTAssertEqual(migrated, .default)
+                XCTAssertEqual(migrated.selectedPreset, .recommended)
+                for view in CardCaptionView.allCases {
+                    XCTAssertTrue(migrated.showsLabels(in: view))
+                }
+                XCTAssertFalse(migrated.showsLabels(in: .home, isShowcase: true))
+                XCTAssertFalse(migrated.showsLabels(in: .home, hasArtworkTitle: true))
+
+                var customized = migrated
+                customized.setOverride(.hide, for: .home)
+                store.save(customized)
+                XCTAssertEqual(store.load(), customized, "A new deliberate Home-off choice must survive.")
+                let savedData = try XCTUnwrap(defaults.data(forKey: key))
+                let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: savedData) as? [String: Any])
+                XCTAssertEqual(saved["homeDefaultVersion"] as? Int, 1)
+                XCTAssertNil(store.load().selectedPreset)
+            }
+        }
+    }
+
+    func testHomeDefaultCorrectionPreservesExplicitPresetsAndOtherCustomizations() throws {
+        var recommendedMixed = CardCaptionSettings(overrides: [.home: false])
+        recommendedMixed.setOverride(.mixed, for: .recommended)
+        var hiddenMixed = CardCaptionSettings(preference: .hide, overrides: [.home: false])
+        hiddenMixed.setOverride(.mixed, for: .recommended)
+        let cases: [([String: Any], CardCaptionSettings)] = [
+            (["preference": "hide", "overrides": ["home": false]],
+             .init(preference: .hide, overrides: [.home: false])),
+            (["preference": "show", "overrides": ["home": false]],
+             .init(preference: .show, overrides: [.home: false])),
+            (["preference": "recommended", "overrides": ["home": true]],
+             .init(overrides: [.home: true])),
+            (["preference": "recommended", "overrides": ["home": false, "browse": true]],
+             .init(overrides: [.home: false, .browse: true])),
+            (["showsLabels": false, "overrides": [:]],
+             .init(preference: .hide)),
+            (["showsLabels": false, "overrides": ["home": false, "search": false]],
+             .init(preference: .hide, overrides: [.home: false, .search: false])),
+            (["showsLabels": true, "overrides": ["home": false]],
+             .init(preference: .show, overrides: [.home: false])),
+            (["preference": "recommended", "overrides": ["home": false], "mixedOverrides": ["recommended"]],
+             recommendedMixed),
+            (["showsLabels": false, "overrides": ["home": false], "mixedOverrides": ["recommended"]],
+             hiddenMixed),
+            (["preference": "recommended", "overrides": ["home": false], "mixedOverrides": ["future"]],
+             .init(overrides: [.home: false])),
+            (["preference": "recommended", "overrides": ["home": false], "homeDefaultVersion": 1],
+             .init(overrides: [.home: false])),
+            (["preference": "recommended", "overrides": ["home": false], "homeDefaultVersion": 2],
+             .init(overrides: [.home: false]))
+        ]
+        for (payload, expected) in cases {
+            let data = try JSONSerialization.data(withJSONObject: payload)
+            XCTAssertEqual(try JSONDecoder().decode(CardCaptionSettings.self, from: data), expected)
+        }
+    }
+
+    func testHomeDefaultCorrectionAndSubsequentOptOutFollowProfileTransfers() throws {
+        try withDefaults { defaults in
+            let data = try JSONSerialization.data(withJSONObject: [
+                "preference": "recommended", "showsLabels": true, "overrides": ["home": false]
+            ])
+            defaults.set(data, forKey: CardCaptionSettingsStore.storageKey)
+            let oldSnapshot = ProfileSettingsTransfer.capture(namespace: nil, defaults: defaults)
+            let oldBlob = try XCTUnwrap(oldSnapshot[CardCaptionSettingsStore.storageKey])
+            ProfileSettingsTransfer.apply(oldSnapshot, namespace: "bulk", defaults: defaults)
+            ProfileSettingsTransfer.applyOne(
+                baseKey: CardCaptionSettingsStore.storageKey, blob: oldBlob,
+                namespace: "individual", defaults: defaults
+            )
+            for namespace in ["bulk", "individual"] {
+                XCTAssertEqual(
+                    CardCaptionSettingsStore(defaults: defaults, namespace: namespace).load(), .default
+                )
+            }
+
+            let source = CardCaptionSettingsStore(defaults: defaults)
+            var updated = source.load()
+            updated.setOverride(.hide, for: .home)
+            source.save(updated)
+            let newSnapshot = ProfileSettingsTransfer.capture(namespace: nil, defaults: defaults)
+            let newBlob = try XCTUnwrap(newSnapshot[CardCaptionSettingsStore.storageKey])
+            ProfileSettingsTransfer.apply(newSnapshot, namespace: "bulk", defaults: defaults)
+            ProfileSettingsTransfer.applyOne(
+                baseKey: CardCaptionSettingsStore.storageKey, blob: newBlob,
+                namespace: "individual", defaults: defaults
+            )
+            for namespace in ["bulk", "individual"] {
+                let store = CardCaptionSettingsStore(defaults: defaults, namespace: namespace)
+                XCTAssertEqual(store.load(), updated)
+                XCTAssertFalse(store.load().showsLabels(in: .home))
+                ProfileSettingsTransfer.removeOne(
+                    baseKey: CardCaptionSettingsStore.storageKey, namespace: namespace, defaults: defaults
+                )
+                XCTAssertEqual(store.load(), .default)
+            }
+            XCTAssertEqual(source.load(), updated, "Resetting another profile must not change this one.")
         }
     }
 

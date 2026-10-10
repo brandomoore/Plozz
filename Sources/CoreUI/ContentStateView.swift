@@ -13,6 +13,7 @@ public struct ContentStateView<Value: Sendable, Content: View>: View {
     private let content: (Value) -> Content
     private let emptyMessage: LocalizedStringResource
     private let errorMessage: LocalizedStringResource?
+    private let errorServers: [MediaServer]
     /// Optional custom view for the `.idle`/`.loading` states. When `nil` the
     /// default `LoadingMessagesView` (spinner → playful messages) is shown; Home
     /// passes a 1:1 skeleton here so the loading state matches the loaded layout.
@@ -22,12 +23,14 @@ public struct ContentStateView<Value: Sendable, Content: View>: View {
         state: LoadState<Value>,
         emptyMessage: LocalizedStringResource = "Nothing here yet.",
         errorMessage: LocalizedStringResource? = nil,
+        errorServers: [MediaServer] = [],
         onRetry: @escaping () -> Void,
         @ViewBuilder content: @escaping (Value) -> Content
     ) {
         self.state = state
         self.emptyMessage = emptyMessage
         self.errorMessage = errorMessage
+        self.errorServers = errorServers
         self.onRetry = onRetry
         self.content = content
         self.loadingContent = nil
@@ -39,6 +42,7 @@ public struct ContentStateView<Value: Sendable, Content: View>: View {
         state: LoadState<Value>,
         emptyMessage: LocalizedStringResource = "Nothing here yet.",
         errorMessage: LocalizedStringResource? = nil,
+        errorServers: [MediaServer] = [],
         onRetry: @escaping () -> Void,
         @ViewBuilder loadingContent: @escaping () -> Loading,
         @ViewBuilder content: @escaping (Value) -> Content
@@ -46,6 +50,7 @@ public struct ContentStateView<Value: Sendable, Content: View>: View {
         self.state = state
         self.emptyMessage = emptyMessage
         self.errorMessage = errorMessage
+        self.errorServers = errorServers
         self.onRetry = onRetry
         self.content = content
         self.loadingContent = { AnyView(loadingContent()) }
@@ -75,16 +80,23 @@ public struct ContentStateView<Value: Sendable, Content: View>: View {
             messageView(
                 icon: error == .serverUnreachable ? "wifi.slash" : "exclamationmark.triangle",
                 title: errorMessage ?? error.userMessage,
-                showRetry: true
+                showRetry: true,
+                servers: errorServers
             )
         }
     }
 
-    private func messageView(icon: String, title: LocalizedStringResource, showRetry: Bool) -> some View {
+    private func messageView(
+        icon: String, title: LocalizedStringResource, showRetry: Bool,
+        servers: [MediaServer] = []
+    ) -> some View {
         VStack(spacing: 24) {
             Image(systemName: icon)
                 .font(.system(size: 72))
                 .plozzForeground(.secondary)
+            ForEach(servers, id: \.self) { server in
+                ServerIdentityChip(server: server)
+            }
             Text(title)
                 .font(.title2)
                 .multilineTextAlignment(.center)
