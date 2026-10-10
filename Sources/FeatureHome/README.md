@@ -313,6 +313,18 @@ credentials, or Plex Home identity changes. They are not persisted or synced as
 ownership evidence; discovery items and synced identity hints remain unowned
 until a local provider verifies a copy.
 
+Watchlist publication uses the canonical alias resolver, including exact
+account/item identities and alias redirects, to match current library candidates.
+Sparse SMB titles do not need external IDs or a year to recover their library
+presentation after relaunch. An alias alone is not playback proof: without a
+current validated candidate, native owned source, or verified index match, the
+entry remains unresolved. Native entries share ownership only through their
+canonical alias, never through matching title/year text. Source and artwork
+come from the same deterministically selected owned entry without moving its row.
+The shared detail ownership search retains the seed's merge group even when a
+richer library copy becomes the display representative, and keeps the opened
+library source first. Discovery catalog IDs never become playable source refs.
+
 Enabled library rows start as soon as their inventory is known. Recently Added
 and recommendation requests complete independently, in stable library/row slots.
 Both shells use the same loading/error state; failed rows can be retried without

@@ -77,6 +77,102 @@ final class CrossServerSourceResolverTests: XCTestCase {
 
     // MARK: resolve — differing titles, matched by provider IDs
 
+    func testSparseDiscoveryResolvesRicherCopyOnItsOnlyServer() async {
+        for kind in [MediaItemKind.movie, .series] {
+            for accountID in [plexAccount, jellyAccount] {
+                let seed = MediaItem(
+                    id: "discover-id", title: "Fixture", kind: kind,
+                    providerIDs: ["Imdb": "tt1234567"],
+                    availability: .unknown, locallyValidatedPlayableSource: false,
+                    sourceAccountID: accountID
+                )
+                let owned = MediaItem(
+                    id: "library-id", title: seed.title, kind: kind,
+                    people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+                    providerIDs: seed.providerIDs
+                )
+                let sources = await CrossServerSourceResolver.resolve(
+                    primary: seed,
+                    otherAccountIDs: [accountID],
+                    search: { _, _ in [owned] },
+                    serverInfo: serverInfo
+                )
+
+                XCTAssertEqual(sources.map(\.itemID), [owned.id], "\(accountID) \(kind)")
+                XCTAssertEqual(sources.map(\.accountID), [accountID])
+                XCTAssertEqual(sources.first?.kind, kind)
+            }
+        }
+    }
+
+    func testRicherRepresentativeKeepsOpenedLibrarySourceFirst() async {
+        let primary = MediaItem(
+            id: "opened", title: "Fixture", kind: .movie,
+            providerIDs: ["Tmdb": "123"], sourceAccountID: jellyAccount
+        )
+        let richer = MediaItem(
+            id: "richer", title: primary.title, kind: .movie,
+            people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+            providerIDs: primary.providerIDs
+        )
+        let sources = await CrossServerSourceResolver.resolve(
+            primary: primary,
+            otherAccountIDs: [plexAccount],
+            search: { _, _ in [richer] },
+            serverInfo: serverInfo
+        )
+
+        XCTAssertEqual(sources.map(\.itemID), [primary.id, richer.id])
+        XCTAssertEqual(sources.map(\.accountID), [jellyAccount, plexAccount])
+    }
+
+    func testUnscopedDiscoveryUsesItsGroupNotAnUnrelatedSearchHit() async {
+        let seed = MediaItem(
+            id: "alias", title: "Fixture", kind: .movie,
+            providerIDs: ["Tmdb": "123"],
+            availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        let unrelated = MediaItem(
+            id: seed.id, title: "Another Film", kind: .movie,
+            providerIDs: ["Tmdb": "456"]
+        )
+        let owned = MediaItem(
+            id: "owned", title: seed.title, kind: .movie,
+            people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+            providerIDs: seed.providerIDs
+        )
+        let sources = await CrossServerSourceResolver.resolve(
+            primary: seed,
+            otherAccountIDs: [plexAccount],
+            search: { _, _ in [unrelated, owned] },
+            serverInfo: serverInfo
+        )
+
+        XCTAssertEqual(sources.map(\.itemID), [owned.id])
+    }
+
+    func testRicherContradictoryHitCannotEscapeTheMergeSplitGuard() async {
+        let seed = MediaItem(
+            id: "alias", title: "Original Film", kind: .movie,
+            productionYear: 1980, providerIDs: ["Tmdb": "123"],
+            availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        let unrelated = MediaItem(
+            id: "impostor", title: "Unrelated Sequel", kind: .movie,
+            productionYear: 2025,
+            people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+            providerIDs: seed.providerIDs
+        )
+        let sources = await CrossServerSourceResolver.resolve(
+            primary: seed,
+            otherAccountIDs: [plexAccount],
+            search: { _, _ in [unrelated] },
+            serverInfo: serverInfo
+        )
+
+        XCTAssertTrue(sources.isEmpty)
+    }
+
     func testResolvesDifferentlyTitledMovieAcrossServersByProviderID() async {
         // User opened the Jellyfin movie "Amélie"; Plex stores the same film under
         // its French release title. They share a TMDb id, so the picker must list

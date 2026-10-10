@@ -160,6 +160,14 @@ public enum CrossServerSourceResolver {
         guard !Task.isCancelled, !hits.isEmpty else { return [] }
 
         let merged = MediaItemMerger.merge([primary] + hits, serverInfo: serverInfo)
-        return merged.first(where: { $0.id == primary.id })?.sources ?? []
+        // Merge groups retain input order, including after the split guard, but
+        // their display representative may be a richer hit with a different ID.
+        var sources = merged.first?.sources ?? []
+        if let opened = sources.firstIndex(where: {
+            $0.accountID == primaryAccountID && $0.itemID == primaryItemID
+        }) {
+            sources.insert(sources.remove(at: opened), at: 0)
+        }
+        return sources
     }
 }

@@ -281,6 +281,7 @@ final class ItemDetailViewModelTests: XCTestCase {
                     kind: kind,
                     overview: "Library overview",
                     productionYear: 2021,
+                    people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
                     providerIDs: ids
                 )
                 let provider = FakeMediaProvider(
