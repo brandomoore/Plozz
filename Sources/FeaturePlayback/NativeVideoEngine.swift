@@ -1189,6 +1189,13 @@ public final class NativeVideoEngine: VideoEngine {
             if let track { option = await Self.legibleOption(for: track, in: group) }
             else { option = nil }
             guard !Task.isCancelled, self.player?.currentItem === item else { return }
+            if option != nil, self.isPaused {
+                self.nativeSubtitleOutput?.select(enabled: false)
+                item.select(nil, in: group)
+                // Let the old paused rendition detach before registering the replacement.
+                await Task.yield()
+                guard !Task.isCancelled, self.player?.currentItem === item else { return }
+            }
             // Register the replacement output against the requested rendition,
             // not an intermediate Off or the previous paused track.
             item.select(option, in: group)

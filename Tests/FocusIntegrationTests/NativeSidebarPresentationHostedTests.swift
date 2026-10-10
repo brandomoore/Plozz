@@ -13,12 +13,23 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
         let fixture = try await makeFixture()
         defer { fixture.close() }
         let model = LibraryStatusModel()
-        fixture.window.rootViewController = UIHostingController(rootView: LibraryStatusSidebar(model: model)
+        let host = UIHostingController(rootView: LibraryStatusSidebar(model: model)
             .environment(\.locale, Locale(identifier: "en_US")))
+        fixture.window.rootViewController = host
+        let focusSystem = try XCTUnwrap(UIFocusSystem.focusSystem(for: fixture.window))
         for appearance in [UIUserInterfaceStyle.dark, .light] {
             fixture.window.overrideUserInterfaceStyle = appearance
             for offline in [false, true, false] {
                 model.isOffline = offline
+                try await waitUntil {
+                    fixture.window.layoutIfNeeded()
+                    focusSystem.requestFocusUpdate(to: host)
+                    focusSystem.updateFocusIfNeeded()
+                    guard let item = focusSystem.focusedItem,
+                          let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: fixture.window)
+                    else { return false }
+                    return frame.width > 150
+                }
                 try await Task.sleep(for: .milliseconds(500))
                 fixture.window.layoutIfNeeded()
                 let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in

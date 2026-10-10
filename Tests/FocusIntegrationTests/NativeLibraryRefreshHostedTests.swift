@@ -210,6 +210,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
     private func withNavigatedLibrary(
         style: NavigationStyle,
         artwork: ArtworkSettings = .default,
+        posterURL: URL? = nil,
         pinnedHandoff: Bool = false,
         stagedLibraryEntry: Bool = false,
         shareLibrary: Bool = false,
@@ -218,7 +219,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
     ) async throws {
         let provider = RefreshLibraryProvider(
             kind: shareLibrary ? .mediaShare : .jellyfin,
-            supportsModes: !shareLibrary, recommendationHub: !shareLibrary
+            supportsModes: !shareLibrary, recommendationHub: !shareLibrary, posterURL: posterURL
         )
         let name = "LibraryNativeNavigation.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
@@ -479,20 +480,43 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
     }
 
     func testNativeBrowseKeepsPartiallyVisibleRowsMountedUntilTheyLeaveTheScreen() async throws {
+        let poster = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 300)).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 200, height: 300))
+        }
+        let data = try XCTUnwrap(poster.pngData())
+        let server = try IPTVTestHTTPServer { _ in
+            .init(data: data, headers: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"])
+        }
+        addTeardownBlock { await server.stop() }
+        let url = try await server.start().appendingPathComponent("poster.png")
+        let loaded = await ArtworkImageCache.shared.image(for: url, variant: .posterCard)
+        let bitmap = try XCTUnwrap(loaded)
         for style in [NavigationStyle.sidebar, .tabBar, .rail] {
-            try await withNavigatedLibrary(style: style, artwork: .init(preference: .online)) { root, window, model in
+            try await withNavigatedLibrary(style: style, artwork: .init(preference: .online), posterURL: url) {
+                root, window, model in
                 await model.setContentMode(.titles)
                 try await Task.sleep(for: .milliseconds(300))
                 window.layoutIfNeeded()
                 let collection = try XCTUnwrap(self.find(UICollectionView.self, in: root))
                 let path = IndexPath(item: 2, section: 0)
                 let cell = try XCTUnwrap(collection.cellForItem(at: path) as? NativeTVLibraryCell)
+                let deadline = ContinuousClock.now + .seconds(5)
+                while (cell.contentConfiguration as? TVMediaItemContentConfiguration)?.image !== bitmap,
+                      ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertTrue((cell.contentConfiguration as? TVMediaItemContentConfiguration)?.image === bitmap,
+                              "Compare actual artwork, not a system placeholder whose shading follows the viewport.")
                 let itemID = try XCTUnwrap(cell.item?.id)
                 let artworkFrame = cell.contentView.frame
                 let initialFrame = cell.convert(artworkFrame, to: window)
                 let sample = CGPoint(x: initialFrame.midX, y: initialFrame.maxY - 20)
                 let beforePixel = try self.pixel(
                     self.capture(window, name: "browse-before-scroll-\(style)", drawsHierarchy: true), at: sample)
+                XCTAssertGreaterThan(beforePixel[0], 180)
+                XCTAssertLessThan(beforePixel[1], 30)
+                XCTAssertLessThan(beforePixel[2], 30)
                 let origin = collection.contentOffset.y
                 let target = origin + initialFrame.maxY - 80
                 let movement = ScrollMountProbe()
@@ -1817,12 +1841,14 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
     private var recommendationHub: Bool
     private var secondaryRecommendationHub = false
     nonisolated let supportsFilters: Bool
+    private let posterURL: URL?
     init(kind: ProviderKind = .mediaShare, supportsModes: Bool = false, recommendationHub: Bool = false,
-         supportsFilters: Bool = false) {
+         supportsFilters: Bool = false, posterURL: URL? = nil) {
         self.kind = kind
         self.capabilities = supportsModes ? [.libraryCollections, .videoPlaylists] : []
         self.recommendationHub = recommendationHub
         self.supportsFilters = supportsFilters
+        self.posterURL = posterURL
         self.session = UserSession(
             server: MediaServer(
                 id: "fixture", name: "Fixture", baseURL: URL(string: "https://fixture.test")!,
@@ -1893,7 +1919,8 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
         let response = MediaPage(
             items: (min(page.startIndex, end)..<end).map {
                 MediaItem(id: "\(prefix)-\($0)",
-                          title: "\(alphabetEnabled ? ($0 < 140 ? "Alpha" : "Movie") : prefix) \($0)", kind: .movie)
+                          title: "\(alphabetEnabled ? ($0 < 140 ? "Alpha" : "Movie") : prefix) \($0)", kind: .movie,
+                          posterURL: posterURL)
             }, startIndex: page.startIndex, totalCount: total)
         if heldStart == page.startIndex {
             heldStart = nil

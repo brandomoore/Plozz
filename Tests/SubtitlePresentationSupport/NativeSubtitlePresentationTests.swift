@@ -604,6 +604,8 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         }
         XCTAssertTrue(engine.isPaused)
         XCTAssertFalse(cues.contains { $0.text == "Alpha" || $0.text == "Bravo" })
+        XCTAssertEqual(engine.subtitlePresentationTime, 2.5, accuracy: 1.0 / 24)
+        XCTAssertTrue(engine.underlyingPlayer?.currentItem === item)
         engine.selectSubtitleTrack(full)
         try await waitUntil(
             detail: "After reselecting Full: visible=\(model.primary.compactMap(\.text)), "

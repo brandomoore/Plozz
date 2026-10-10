@@ -320,6 +320,8 @@ prevent paused track switches from delivering cues on tvOS 26.2. The registratio
 order is covered independently of the runtime, alongside real paused HLS switching.
 Track changes select the requested rendition before registering its replacement
 output rather than registering against the previous track or an intermediate Off.
+Paused native switches first clear the old selection and yield its teardown,
+then select and register the requested rendition without seeking or resuming playback.
 Renderer handoffs likewise restore the rendition before adding the new output.
 Explicit Off still clears the selection and cue timeline.
 In-app drawing is suppressed at the native output, with an explicit selected-rendition handoff
