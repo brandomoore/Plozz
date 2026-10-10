@@ -393,10 +393,20 @@ is no prior in-memory history to migrate on the first updated launch.
   vertical position, or time. A leading-edge move out of the guide reveals the
   panel and focuses the selected category. Back still opens Search. Internal
   programme-to-programme moves keep their normal timeline behavior.
-  The guide consumes the category-reveal press through release, so the native
-  app sidebar cannot open from that same input. A separate leading press from
-  the category panel still opens app navigation. Remote regressions exercise
-  both directions inside a real native sidebar, not only the standalone guide.
+  Left/Right continues across the guide normally. Exactly one leading press
+  from the far-left channel column (far-right in RTL) must reveal categories
+  and Search, without revealing them early or also opening app navigation.
+  A separate leading press from the panel should reach the app menu.
+  This remains a known failure with the full native sidebar: it can expand
+  over the category panel even while a category retains focus. Recognizing the
+  press or checking settled focus alone does not prove that contract.
+  Remote regressions use the production destination handoff and full native
+  tab layout, checking ordinary, rapid, and held input in both directions and
+  with preview enabled. A native-focus counter detects transient focus theft;
+  screenshots must also be checked for expansion without a focus change.
+  The opt-in `PhysicalDiagnosticInputTests/testExistingLiveTVRevealsOnlyCategories`
+  checks the existing foreground app without installing, relaunching, selecting
+  channels, or changing settings; enable it only in an agreed physical testing window.
   With pinned navigation visible, the Live TV controls also clear its title-safe
   margin; native top-bar/sidebar styles keep their tighter leading spacing.
   The selected category uses a checkmark rather than a second focused-looking

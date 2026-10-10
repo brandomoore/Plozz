@@ -44,7 +44,7 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         )
         assertFocused(app.buttons["live-tv-preview-enable"])
         XCUIRemote.shared.press(.menu)
-        assertFocused(app.buttons["live-tv-channel-content-channels-1-whole"])
+        _ = focusFirstGuideContent(in: app)
         XCUIRemote.shared.press(.left)
         XCUIRemote.shared.press(.left)
         assertFocused(app.buttons["All categories"])
@@ -77,21 +77,31 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         exerciseNativeSidebar(rtl: true)
     }
 
-    private func exerciseNativeSidebar(rtl: Bool) {
+    func testLeadingEdgeRevealsOnlyCategoriesWithNativeSidebarAndPreview() {
+        exerciseNativeSidebar(rtl: false, preview: true)
+    }
+
+    private func exerciseNativeSidebar(rtl: Bool, preview: Bool = false) {
         let app = launch(
             suite: "PreviewIntroduction.\(UUID().uuidString)", reset: true, rtl: rtl, nativeSidebar: true
         )
-        defer { app.terminate() }
+        defer {
+            capture("native-sidebar-final-state", in: app)
+            app.terminate()
+        }
         let leading: XCUIRemote.Button = rtl ? .right : .left
         assertFocused(app.buttons["live-tv-preview-enable"])
-        XCUIRemote.shared.press(
-            app.buttons["live-tv-preview-disable"].frame.midX < app.buttons["live-tv-preview-enable"].frame.midX
-                ? .left : .right
-        )
-        assertFocused(app.buttons["live-tv-preview-disable"])
+        if !preview {
+            XCUIRemote.shared.press(
+                app.buttons["live-tv-preview-disable"].frame.midX < app.buttons["live-tv-preview-enable"].frame.midX
+                    ? .left : .right
+            )
+            assertFocused(app.buttons["live-tv-preview-disable"])
+        }
         XCUIRemote.shared.press(.select)
-        let content = app.buttons["live-tv-channel-content-channels-1-whole"]
-        assertFocused(content)
+        assertStatus(preview ? "chosen-on; playback=true" : "chosen-off; playback=false", in: app)
+        let content = focusFirstGuideContent(in: app, rtl: rtl)
+        let station = app.buttons["live-tv-channel-channels-1"]
         assertCategoriesHidden(in: app)
         for iteration in 0..<3 {
             if iteration > 0 {
@@ -101,17 +111,44 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
                 assertFocused(content)
                 assertCategoriesHidden(in: app)
             }
+            let nativeFocusVisits = app.staticTexts["preview-native-focus-visits"].label
             XCUIRemote.shared.press(leading)
-            XCUIRemote.shared.press(leading)
+            if iteration != 1 { assertFocused(station) }
+            if iteration == 2 { XCUIRemote.shared.press(leading, forDuration: 0.6) }
+            else { XCUIRemote.shared.press(leading) }
             assertFocused(app.buttons["All categories"])
-            XCTAssertFalse(app.buttons["Settings"].isHittable, "Revealing categories must not open the app menu")
+            XCTAssertTrue(app.buttons["All categories"].isEnabled)
+            XCTAssertEqual(app.staticTexts["preview-native-focus-visits"].label, nativeFocusVisits,
+                           "Native app navigation must not briefly steal focus before categories settle")
+            XCTAssertFalse(containsFocus(app.collectionViews["Sidebar"]),
+                           "Revealing categories must not open the app menu")
+            XCTAssertFalse(app.collectionViews["Sidebar"].staticTexts["Settings"].isHittable,
+                           "The app menu must stay collapsed even if a category still owns focus")
         }
         capture("native-sidebar-category-reveal", in: app)
         XCUIRemote.shared.press(leading)
-        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 5),
-                      "A subsequent Left from categories must still reach native navigation")
-        XCTAssertTrue(app.buttons["Settings"].isHittable)
+        if containsFocus(app.buttons["live-tv-search"]) {
+            XCUIRemote.shared.press(leading)
+        }
+        let navigationFocused = NSPredicate { _, _ in
+            self.containsFocus(app.collectionViews["Sidebar"]) || self.containsFocus(app.buttons["Live TV"])
+        }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: navigationFocused, object: nil)], timeout: 5
+        ), .completed, "Leading navigation through the category panel must still reach the app menu\n\(app.debugDescription)")
         capture("native-sidebar-after-categories", in: app)
+    }
+
+    private func focusFirstGuideContent(in app: XCUIApplication, rtl: Bool = false) -> XCUIElement {
+        let content = app.buttons["live-tv-channel-content-channels-1-whole"]
+        let station = app.buttons["live-tv-channel-channels-1"]
+        let guideEntered = NSPredicate { _, _ in self.containsFocus(content) || self.containsFocus(station) }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: guideEntered, object: nil)], timeout: 5
+        ), .completed, app.debugDescription)
+        if containsFocus(station) { XCUIRemote.shared.press(rtl ? .left : .right) }
+        assertFocused(content)
+        return content
     }
 
     func testRTLLeadingEdgeRevealsCategoriesAndReturnsToTheSameChannel() {
@@ -221,12 +258,17 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
 
     private func assertFocused(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(element.waitForExistence(timeout: 15), file: file, line: line)
-        let focused = NSPredicate { _, _ in element.hasFocus }
+        let focused = NSPredicate { _, _ in self.containsFocus(element) }
         XCTAssertEqual(XCTWaiter.wait(
             for: [XCTNSPredicateExpectation(predicate: focused, object: nil)], timeout: 5
         ), .completed, XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost").debugDescription,
                        file: file, line: line)
         XCTAssertGreaterThanOrEqual(element.frame.height, 50, file: file, line: line)
+    }
+
+    private func containsFocus(_ element: XCUIElement) -> Bool {
+        element.exists && (element.hasFocus || element.descendants(matching: .any)
+            .matching(NSPredicate(format: "hasFocus == true")).firstMatch.exists)
     }
 
     private func assertStatus(

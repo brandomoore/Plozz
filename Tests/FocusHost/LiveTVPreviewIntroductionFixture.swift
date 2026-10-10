@@ -3,10 +3,14 @@ import CoreUI
 import FeatureLiveTV
 import FeatureLiveTVCore
 import SwiftUI
+import UIKit
+@testable import AppShell
 
 struct LiveTVPreviewIntroductionFixture: View {
     @State private var previewStarted = false
     @State private var hidesNavigation = false
+    @State private var nativeSelection = NavigationRailDestination.liveTV
+    @State private var nativeHandoff = NavigationDestinationFocusHandoff()
     @State private var settings: LiveTVViewSettings
     private let store: LiveTVViewSettingsStore
     private let profileID: String
@@ -35,24 +39,57 @@ struct LiveTVPreviewIntroductionFixture: View {
     @ViewBuilder
     var body: some View {
         if ProcessInfo.processInfo.arguments.contains("--preview-native-sidebar") {
-            TabView {
-                Tab("Live TV", systemImage: "tv") {
-                    LiveTVNavigationContainer(hidesNavigation: hidesNavigation) { liveTV }
-                }
-                Tab("Settings", systemImage: "gearshape") {
-                    Text("Fixture settings")
+            TabView(selection: Binding(get: { nativeSelection }, set: { destination in
+                if destination != nativeSelection { nativeHandoff.begin(destination) }
+                nativeSelection = destination
+            })) {
+                ForEach(nativeDestinations, id: \.destination) { entry in
+                    Tab(value: entry.destination) {
+                        AnyView(NativeSidebarFocusDestination(
+                            destination: entry.destination, selection: nativeSelection,
+                            handoff: nativeHandoff,
+                            content: nativeContent(for: entry.destination)
+                        ).tvNavigationExitProtectionContent())
+                    } label: {
+                        AnyView(Label(entry.title, systemImage: entry.symbol))
+                    }
                 }
             }
             .tabViewStyle(.sidebarAdaptable)
+            .tvNavigationExitProtection(isEnabled: true)
             .environment(\.layoutDirection, ProcessInfo.processInfo.arguments.contains("--preview-rtl")
                 ? .rightToLeft : .leftToRight)
+            .onDisappear { nativeHandoff.cancel() }
         } else {
             liveTV
         }
     }
 
+    private var nativeDestinations: [(destination: NavigationRailDestination, title: String, symbol: String)] {
+        [
+            (.library("profile"), "Fixture profile", "person.crop.circle"),
+            (.home, "Home", "house"),
+            (.liveTV, "Live TV", "tv"),
+            (.search, "Search", "magnifyingglass"),
+            (.allLibraries, "All Libraries", "rectangle.stack"),
+            (.library("movies"), "Movies", "film"),
+            (.library("shows"), "TV Shows", "tv"),
+            (.settings, "Settings", "gearshape")
+        ]
+    }
+
+    @ViewBuilder
+    private func nativeContent(for destination: NavigationRailDestination) -> some View {
+        if destination == .liveTV {
+            LiveTVNavigationContainer(hidesNavigation: hidesNavigation) { liveTV }
+        } else {
+            Button("Fixture destination") {}
+        }
+    }
+
     private var liveTV: some View {
         LiveTVPrototypeView(
+            usesNativeFullscreen: ProcessInfo.processInfo.arguments.contains("--preview-native-sidebar"),
             preferencesStore: PreviewIntroductionPreferences(),
             viewSettingsStore: store,
             sourceStore: PreviewIntroductionSources(),
@@ -65,10 +102,13 @@ struct LiveTVPreviewIntroductionFixture: View {
             Color.black.onAppear { previewStarted = true }
         }
         .overlay(alignment: .topTrailing) {
-            Text(verbatim: "\(settings.hasChosenAutoPreview ? (settings.autoPreview ? "chosen-on" : "chosen-off") : "unanswered"); playback=\(previewStarted)")
-                .font(.caption2)
-                .padding(12)
-                .accessibilityIdentifier("preview-fixture-status")
+            VStack(alignment: .trailing) {
+                Text(verbatim: "\(settings.hasChosenAutoPreview ? (settings.autoPreview ? "chosen-on" : "chosen-off") : "unanswered"); playback=\(previewStarted)")
+                    .accessibilityIdentifier("preview-fixture-status")
+                NativeSidebarFocusVisits()
+            }
+            .font(.caption2)
+            .padding(12)
         }
         .onReceive(NotificationCenter.default.publisher(for: LiveTVViewSettingsStore.didChange)) { _ in
             settings = store.load()
@@ -77,6 +117,22 @@ struct LiveTVPreviewIntroductionFixture: View {
         .environment(\.colorScheme, .dark)
         .environment(\.layoutDirection, ProcessInfo.processInfo.arguments.contains("--preview-rtl")
             ? .rightToLeft : .leftToRight)
+    }
+}
+
+private struct NativeSidebarFocusVisits: View {
+    @State private var count = 0
+
+    var body: some View {
+        // Diagnostics must not invalidate the TabView that owns the focus transition.
+        Text(verbatim: "\(count)")
+            .accessibilityIdentifier("preview-native-focus-visits")
+            .onReceive(NotificationCenter.default.publisher(for: UIFocusSystem.didUpdateNotification)) { notification in
+                guard let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
+                    as? UIFocusUpdateContext else { return }
+                // Guide cells cannot focus; only the native tab sidebar owns focusable cells.
+                if context.nextFocusedItem is UICollectionViewCell { count += 1 }
+            }
     }
 }
 
