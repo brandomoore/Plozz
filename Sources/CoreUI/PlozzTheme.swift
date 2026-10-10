@@ -498,6 +498,8 @@ public enum PlozzTheme {
         /// Smallest the density-scaled progress bar is allowed to get, so it stays
         /// legible at the smallest display-size settings.
         public static let progressBarMinHeight: CGFloat = 9
+        /// Touch artwork uses a slimmer floor, independent of TV and resume chips.
+        public static let touchProgressBarMinHeight: CGFloat = 8
 
         /// Base leg length of the "unwatched" corner flag (the right-triangle in a
         /// card's top-trailing corner). Density-scaled (with a floor at

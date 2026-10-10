@@ -112,8 +112,8 @@ public struct MediaCardPlaybackIndicators: View {
         // the unwatched flag on an external credit was never information, and
         // the two never compete for the corner.
         if let libraryMark {
-            MediaLibraryMarkView(mark: libraryMark, size: libraryMarkSize)
-                .padding(badgeInset)
+            MediaLibraryMarkView(mark: libraryMark, size: metrics.watchedBadgeSize)
+                .padding(floatingBadgeInset)
         } else if let count = MediaPlaybackIndicatorPresentation.episodeCount(
             for: playback, enabled: showsUnwatchedEpisodeCount, hidesStatus: hidesStatus
         ) {
@@ -147,14 +147,6 @@ public struct MediaCardPlaybackIndicators: View {
     private var libraryMark: MediaLibraryMark? {
         guard !hidesStatus else { return nil }
         return playback.libraryMark(seerConnected: seerConnected)
-    }
-
-    /// Sized from the badge slot the card gave us rather than from a constant, so
-    /// the mark keeps its proportion on the 167pt in-player cast poster and the
-    /// 280pt person-page one alike. `watchedBadgeSize` is the check badge's
-    /// diameter on this card, which is already density-scaled.
-    private var libraryMarkSize: CGFloat {
-        max(metrics.watchedBadgeSize, PlozzTheme.Metrics.watchedBadgeMinSize)
     }
 
     @ViewBuilder
@@ -300,7 +292,7 @@ struct MediaEpisodeCountBadge: View {
 
     private var digits: some View {
         Text(count, format: .number.grouping(.never))
-            .font(.system(size: 24 * scale, weight: .semibold))
+            .font(.system(size: 24 * scale, weight: .bold))
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.5)
@@ -321,10 +313,10 @@ struct MediaEpisodeCountBadge: View {
                 .shadow(color: .black.opacity(0.2), radius: 3 * scale, y: scale)
         case .unwatched:
             let height = 56 * scale
-            let width = max(56, 32 + CGFloat(String(count).count) * 16) * scale
+            let width = max(48, 24 + CGFloat(String(count).count) * 16) * scale
             let radius = min(cornerRadius, height / 2)
             digits
-                .padding(.horizontal, 16 * scale)
+                .padding(.horizontal, 12 * scale)
                 .frame(maxWidth: width, minHeight: height, maxHeight: height)
                 // The artwork owns clipping; a tile-sized clip cuts this shadow into a square.
                 .background {

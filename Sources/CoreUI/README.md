@@ -13,6 +13,8 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   titles and a flush white count tile with matching outer and bottom-left
   curves. Fine edges and soft shadows keep both legible on pale artwork; only
   the artwork clips the curved tile's shadow, never the tile's own bounds.
+  Both count styles use bold system digits. At standard TV size the curved
+  tile has 12pt side padding and remains 56pt tall; Pearl spacing is unchanged.
   Floating marks have density-scaled clearance (16pt at standard TV size).
   Touch sizes and artwork radii remain proportionate. Episode cards and the
   watch-indicator Settings swatches reuse the same white check and flag.
@@ -26,6 +28,13 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   use online episode totals, or sum duplicate servers. Cross-server counts
   follow the same source as watch state. Child mutations invalidate snapshots
   until the next batched refresh instead of guessing a decrement.
+- **Discovery marks** — the requestable plus, requested clock, and unowned
+  binoculars fit the same density-scaled square and corner clearance as the
+  watched badge: 21pt on standard touch cards, 42pt on standard TV cards.
+  Symbol bounds, not font point sizes, determine their footprint; mobile marks
+  never inherit TV's 36pt minimum. Their existing grey/white treatment and
+  ownership/request meanings are unchanged. In-player credits use the same
+  renderer with their card-width-scaled size.
 - **Theme** — `Theme`, `ThemeOption` (System / Dark / Pure Black / Light) and
   the per-profile theme model, observed at the app root.
   Gradient Backgrounds is a separate default-on profile preference, transferred
@@ -91,6 +100,8 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   radius at every display size and responsive width. Borderless cards use that
   radius directly; glass frames add their inset to remain concentric. Loaded
   artwork, missing-art placeholders, and skeletons agree. TV rounding is unchanged.
+  Regular mobile artwork progress bars use an 8pt minimum height, leaving their
+  length and the separate Continue Watching, hero, and TV bars unchanged.
   Mobile library, episode, and download artwork uses the same metric, keeping
   its caption clearance consistent with its actual corners. Mobile captions use
   a shared 4pt horizontal inset from the artwork edge, independently of their

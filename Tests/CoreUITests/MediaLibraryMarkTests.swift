@@ -95,8 +95,21 @@ final class MediaLibraryMarkTests: XCTestCase {
 
     #if canImport(UIKit)
     @MainActor
+    func testEveryDiscoverySymbolFitsItsBadgeSlot() throws {
+        for size in [CGFloat(20), 21, 25, 36, 42, 50] {
+            for mark in [MediaLibraryMark.notInLibrary, .requestable, .requested] {
+                let renderer = ImageRenderer(content: MediaLibraryMarkView(mark: mark, size: size))
+                renderer.scale = 2
+                let image = try XCTUnwrap(renderer.cgImage)
+                XCTAssertEqual(image.width, Int(size * 2), "\(mark) must not exceed its badge width")
+                XCTAssertEqual(image.height, Int(size * 2), "\(mark) must share the same badge height")
+            }
+        }
+    }
+
+    @MainActor
     func testOutlinedClockKeepsTheSubtlePlusBadgeBackground() throws {
-        for size in [CGFloat(25), 42] {
+        for size in [CGFloat(20), 21, 25, 42] {
             let plusRenderer = ImageRenderer(content: MediaLibraryMarkView(mark: .requestable, size: size))
             let clockRenderer = ImageRenderer(content: MediaLibraryMarkView(mark: .requested, size: size))
             plusRenderer.scale = 2

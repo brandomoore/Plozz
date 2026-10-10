@@ -65,8 +65,8 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
         }
         let curved = try render(show, enabled: true, scheme: .dark, indicator: .unwatched, background: .white)
         attach(curved, name: "curved-count-white-artwork")
-        XCTAssertLessThan(try pixel(curved, at: CGPoint(x: 170, y: 20))[0], 250,
-                          "The soft shadow must extend left of the tile's 176pt boundary")
+        XCTAssertLessThan(try pixel(curved, at: CGPoint(x: 178, y: 20))[0], 250,
+                          "The soft shadow must extend left of the tile's 184pt boundary")
         XCTAssertLessThan(try pixel(curved, at: CGPoint(x: 226, y: 59))[0], 250,
                           "The shadow must extend below the tile's 56pt boundary")
         XCTAssertEqual(try pixel(curved, at: CGPoint(x: 145, y: 75))[0], 255)
@@ -74,6 +74,18 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
         XCTAssertEqual(try pixel(pearl, at: CGPoint(x: 230, y: 8))[0], 255,
                        "The floating Pearl tile must retain its top/right clearance")
         XCTAssertNotEqual(curved.pngData(), pearl.pngData())
+    }
+
+    func testCurvedCountPaddingAlsoNarrowsTheTile() throws {
+        let cases: [(Int, CGFloat)] = [(1, 48), (21, 56), (12345, 104)]
+        for (count, width) in cases {
+            let item = MediaItem(id: "show", title: "Show", kind: .series, unwatchedEpisodeCount: count)
+            let image = try render(item, enabled: true, scheme: .dark, indicator: .unwatched)
+            let left = 240 - width
+            XCTAssertLessThan(try pixel(image, at: CGPoint(x: left - 4, y: 8))[0], 180,
+                              "Reducing padding must narrow the actual tile for \(count), not just its text container")
+            XCTAssertGreaterThan(try pixel(image, at: CGPoint(x: left + 3, y: 8))[0], 210)
+        }
     }
 
     func testTouchCountsFitSmallArtworkAcrossDisplaySizes() throws {
@@ -86,6 +98,62 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
                 attach(image, name: "touch-count-\(density)-\(indicator)")
                 XCTAssertTrue(try recognizedText(image).contains { $0.text == "12345" },
                               "Exact counts must fit an 86pt touch poster at \(density)")
+            }
+        }
+    }
+
+    func testDiscoveryMarksShareTheWatchBadgeSlotAcrossPlatforms() throws {
+        let cases: [(MediaAvailabilityStatus, Bool, MediaLibraryMark)] = [
+            (.unknown, false, .notInLibrary),
+            (.unknown, true, .requestable),
+            (.pending, true, .requested)
+        ]
+        for density in UIDensity.allCases {
+            for metrics in [PlozzMetrics(density: density), PlozzMetrics.touch(density: density)] {
+                let width = metrics.posterWidth
+                let inset = max(8, 16 * metrics.watchedBadgeSize / 42)
+                for (availability, connected, mark) in cases {
+                    var item = MediaItem(id: "discovery", title: "Discovery", kind: .series, unwatchedEpisodeCount: 21)
+                    item.availability = availability
+                    let actual = try render(
+                        item, enabled: true, scheme: .dark, metrics: metrics,
+                        width: width, seerConnected: connected)
+                    let expected = ImageRenderer(content:
+                        Color.clear
+                            .overlay { MediaArtworkChromeScrim(top: true, bottom: false) }
+                            .overlay(alignment: .topTrailing) {
+                                MediaLibraryMarkView(mark: mark, size: metrics.watchedBadgeSize)
+                                    .padding(inset)
+                            }
+                            .frame(width: width, height: width * 1.5)
+                            .background(Color.gray)
+                            .environment(\.colorScheme, .dark)
+                    )
+                    expected.scale = 3
+                    XCTAssertEqual(
+                        actual.pngData(), try XCTUnwrap(expected.uiImage).pngData(),
+                        "\(mark) must use the \(metrics.watchedBadgeSize)pt watched slot at \(density)")
+                    attach(actual, name: "discovery-\(mark)-\(density)-\(Int(width))pt")
+                }
+            }
+        }
+    }
+
+    func testMobileArtworkProgressRendersEightPointHeight() throws {
+        for density in UIDensity.allCases {
+            let metrics = PlozzMetrics.touch(density: density)
+            for kind in [MediaItemKind.movie, .series] {
+                let item = MediaItem(id: "progress", title: "In progress", kind: kind, playedPercentage: 0.5)
+                let image = try render(
+                    item, enabled: false, scheme: .dark, metrics: metrics,
+                    width: 120, progressHeight: metrics.progressBarHeight)
+                var filledRows = 0
+                for row in 0..<16 {
+                    if try pixel(image, at: CGPoint(x: 20, y: 180 - CGFloat(row) - 0.5))[0] > 170 {
+                        filledRows += 1
+                    }
+                }
+                XCTAssertEqual(filledRows, 8, "The actual \(kind) bar must be 8pt tall at \(density)")
             }
         }
     }
@@ -224,10 +292,13 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
     private func render(
         _ item: MediaItem, enabled: Bool, scheme: ColorScheme, hidesStatus: Bool = false,
         indicator: WatchStatusIndicator = .watched, background: Color = .gray,
-        metrics: PlozzMetrics = .standard, width: CGFloat = 240, radius: CGFloat = 21
+        metrics: PlozzMetrics = .standard, width: CGFloat = 240, radius: CGFloat = 21,
+        seerConnected: Bool = false, progressHeight: CGFloat = 0
     ) throws -> UIImage {
         let renderer = ImageRenderer(content:
-            MediaCardPlaybackIndicators(item: item, hidesStatus: hidesStatus, badgeInset: 8, artworkCornerRadius: radius)
+            MediaCardPlaybackIndicators(
+                item: item, hidesStatus: hidesStatus, badgeInset: 8,
+                progressHeight: progressHeight, artworkCornerRadius: radius)
                 .frame(width: width, height: width * 1.5)
                 .background(background)
                 .environment(\.plozzMetrics, metrics)
@@ -236,6 +307,7 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
                 .environment(\.themePalette, scheme == .dark ? .dark : .light)
                 .environment(\.plozzWatchStatusIndicator, indicator)
                 .environment(\.plozzShowsUnwatchedEpisodeCount, enabled)
+                .environment(\.plozzSeerConnected, seerConnected)
         )
         renderer.scale = 3
         return try XCTUnwrap(renderer.uiImage)
