@@ -18,6 +18,112 @@ import XCTest
 /// production-year gap apart — and never splits on an absent signal (a movie with
 /// no title, a series with no year) or a cross-kind pair.
 final class IdentityIndexSplitGuardTests: XCTestCase {
+    func testFreshIDsRejectContradictoryExactSourceRecovery() async {
+        for kind in [MediaItemKind.movie, .series] {
+            let stale = MediaItem(
+                id: "retagged", title: "Same Title", kind: kind,
+                providerIDs: ["Imdb": "tt222", "Tmdb": "123"],
+                sourceAccountID: "server"
+            )
+            var wrongPeer = stale
+            wrongPeer.id = "wrong-peer"
+            var fresh = stale
+            fresh.providerIDs["Imdb"] = "tt111"
+            let index = IdentityIndex()
+            await index.ingest([stale, wrongPeer], accountID: "server")
+            let snapshot = await index.snapshot()
+
+            XCTAssertTrue(snapshot.sourceRefs(for: fresh).isEmpty)
+            XCTAssertTrue(snapshot.targets(for: fresh).isEmpty)
+            XCTAssertNil(snapshot.canonicalEvidence(for: fresh))
+
+            var correctPeer = fresh
+            correctPeer.id = "correct-peer"
+            await index.ingest([correctPeer], accountID: "server")
+            let updated = await index.snapshot()
+            XCTAssertEqual(updated.sourceRefs(for: fresh).map(\.itemID), [correctPeer.id])
+            XCTAssertEqual(updated.targets(for: fresh).map(\.itemID), [correctPeer.id])
+            XCTAssertEqual(updated.canonicalEvidence(for: fresh), .external(source: "imdb", value: "tt111"))
+        }
+    }
+
+    func testSparseSeedDoesNotResolveConflictingSourceGroups() async {
+        for kind in [MediaItemKind.movie, .series] {
+            let seed = MediaItem(
+                id: "discovery", title: "Same Title", kind: kind,
+                providerIDs: ["Tmdb": "123"],
+                availability: .unknown, locallyValidatedPlayableSource: false
+            )
+            var first = seed
+            first.id = "first"
+            first.providerIDs["Imdb"] = "tt111"
+            var second = first
+            second.id = "second"
+            second.providerIDs["Imdb"] = "tt222"
+            let index = IdentityIndex()
+            await index.ingest([first, second], accountID: "server")
+            let snapshot = await index.snapshot()
+            let identities = MediaItemIdentity.identities(for: seed)
+
+            XCTAssertTrue(snapshot.sourceRefs(for: seed).isEmpty)
+            XCTAssertTrue(snapshot.targets(for: seed).isEmpty)
+            XCTAssertTrue(snapshot.sources(forIdentities: identities, kind: kind).isEmpty)
+            XCTAssertTrue(snapshot.sources(forIdentities: identities).isEmpty)
+            XCTAssertNil(snapshot.canonicalEvidence(for: seed))
+        }
+    }
+
+    func testMergeChecksIndexAgainstAllAcceptedMemberIDs() async {
+        let identified = MediaItem(
+            id: "identified", title: "Same Title", kind: .movie,
+            providerIDs: ["Imdb": "tt111", "Tmdb": "123"], sourceAccountID: "server"
+        )
+        let richer = MediaItem(
+            id: "richer", title: identified.title, kind: .movie,
+            people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+            providerIDs: ["Tmdb": "123"], sourceAccountID: "server"
+        )
+        let wrong = MediaItem(
+            id: "wrong", title: identified.title, kind: .movie,
+            providerIDs: ["Imdb": "tt222", "Tmdb": "123"], sourceAccountID: "server"
+        )
+        let index = IdentityIndex()
+        await index.ingest([wrong], accountID: "server")
+        let snapshot = await index.snapshot()
+        let merged = MediaItemMerger.merge(
+            [identified, richer], identitySources: { snapshot.sourceRefs(for: $0) }
+        )
+
+        XCTAssertEqual(merged.count, 1)
+        XCTAssertEqual(merged.first?.id, richer.id)
+        XCTAssertEqual(Set(merged.first?.sources.map(\.itemID) ?? []), [identified.id, richer.id])
+    }
+
+    func testMergeDoesNotRestoreRejectedLoadedMemberFromSparseIndex() async {
+        let first = MediaItem(
+            id: "first", title: "Same Title", kind: .movie,
+            providerIDs: ["Imdb": "tt111", "Tmdb": "123"], sourceAccountID: "server"
+        )
+        var second = first
+        second.id = "second"
+        second.providerIDs["Imdb"] = "tt222"
+        var sparseFirst = first
+        sparseFirst.providerIDs = ["Tmdb": "123"]
+        var sparseSecond = second
+        sparseSecond.providerIDs = ["Tmdb": "123"]
+        let index = IdentityIndex()
+        await index.ingest([sparseFirst, sparseSecond], accountID: "server")
+        let snapshot = await index.snapshot()
+        let merged = MediaItemMerger.merge(
+            [first, second], identitySources: { snapshot.sourceRefs(for: $0) }
+        )
+
+        XCTAssertEqual(merged.count, 2)
+        for item in merged {
+            XCTAssertEqual(item.sources.map(\.itemID), [item.id])
+        }
+    }
+
     func testConflictingExternalIDRejectsSourceAndItsTransitivePeers() async {
         let seed = MediaItem(
             id: "discovery", title: "Same Title", kind: .movie,

@@ -338,7 +338,18 @@ public enum MediaItemMerger {
             // positive contradiction, so the index-membership merges we rely on are
             // never wrongly split; only a genuine mismatch separates.
             for group in refineComponent(members.map { items[$0] }) {
-                output.append(mergeGroup(group, serverInfo: serverInfo, identitySources: identitySources))
+                let acceptedSourceIDs = Set(group.compactMap { member in
+                    member.sourceAccountID.map { "\($0):\(member.id)" }
+                })
+                output.append(mergeGroup(
+                    group,
+                    serverInfo: serverInfo,
+                    identitySources: { item in
+                        identitySources(item).filter { ref in
+                            ownerByRef[ref.id] == nil || acceptedSourceIDs.contains(ref.id)
+                        }
+                    }
+                ))
             }
         }
         return output
@@ -453,6 +464,17 @@ public enum MediaItemMerger {
         primary.isMergedTitle = true
         primary.editionOpeningSource = nil
 
+        // Query the index with the whole accepted group's evidence, not only the
+        // richest member: a sparse representative can otherwise restore a source
+        // that contradicts a less detailed member.
+        var providerIDs = primary.providerIDs
+        for duplicate in duplicates {
+            for (key, value) in duplicate.providerIDs where providerIDs[key] == nil {
+                providerIDs[key] = value
+            }
+        }
+        primary.providerIDs = providerIDs
+
         // The eager index's known servers for this title (origin-agnostic SSOT),
         // resolved from the primary's identities. Folded in below so even a
         // single-source card carries its full cross-server set.
@@ -474,20 +496,6 @@ public enum MediaItemMerger {
             if cleaned.count != primary.sources.count { primary.sources = cleaned }
             return primary
         }
-
-        // Union external ids so the merged card carries every catalogue id.
-        //
-        // Every member is walked, not `dropFirst()`: the primary is chosen for its
-        // metadata rather than its position, so skipping index 0 would drop the ids
-        // of whichever member didn't win. An anime shelf holding AniList ids on the
-        // share copy and TMDb ids on the server copy would silently lose one side.
-        var providerIDs = primary.providerIDs
-        for duplicate in duplicates {
-            for (key, value) in duplicate.providerIDs where providerIDs[key] == nil {
-                providerIDs[key] = value
-            }
-        }
-        primary.providerIDs = providerIDs
 
         // Build one source ref per distinct (account, item), primary first. We
         // reuse any refs an already-merged input carried, then fold in each

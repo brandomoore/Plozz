@@ -332,6 +332,14 @@ missing IDs alone do not reject otherwise compatible library copies.
 Canonical labels never reuse the shared ID for both conflicting groups. Episode matching
 keeps explicit series IDs separate from episode IDs, including share payloads
 that repeat a series ID in the ordinary provider field.
+Exact-source recovery cannot add stale IDs that contradict the loaded item.
+Sparse index lookups return no ownership when their candidates contradict each
+other; they do not guess between groups. After search selects a compatible group,
+cached sources are looked up with that group's combined IDs, not the original
+sparse seed. The same ordering applies when enriching merged Home/Search cards.
+Freshly inspected sources rejected from that group cannot return through sparse
+cached entries that omit their conflicting IDs.
+Compatible cached sources remain available when search returns no results.
 
 Enabled library rows start as soon as their inventory is known. Recently Added
 and recommendation requests complete independently, in stable library/row slots.

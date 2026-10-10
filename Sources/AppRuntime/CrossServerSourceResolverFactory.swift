@@ -57,9 +57,7 @@ public func crossServerSourceResolver(
         uniquingKeysWith: { first, _ in first }
     )
     return { primary in
-        var sources = identitySources(primary)
-        var seen = Set(sources.map(\.id))
-        let resolved = await CrossServerSourceResolver.resolve(
+        await CrossServerSourceResolver.resolve(
             primary: primary,
             otherAccountIDs: orderedAccountIDs,
             search: { accountID, query in
@@ -71,17 +69,9 @@ public func crossServerSourceResolver(
                     seconds: 4
                 )
             },
-            serverInfo: { serverInfo[$0] }
+            serverInfo: { serverInfo[$0] },
+            identitySources: identitySources
         )
-
-        let resolvedIDs = Set(resolved.map(\.id))
-        sources.removeAll { resolvedIDs.contains($0.id) }
-        seen = resolvedIDs
-        var merged = resolved
-        for source in sources where seen.insert(source.id).inserted {
-            merged.append(source)
-        }
-        return merged
     }
 }
 
