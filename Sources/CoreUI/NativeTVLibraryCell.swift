@@ -285,7 +285,8 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             MediaCardPlaybackIndicators(
                 item: $0, hidesStatus: spoilerSettings.shouldHideThumbnail(for: $0),
                 showsProgressBar: true, badgeInset: 8, progressHeight: metrics.progressBarHeight,
-                progressHorizontalInset: 16, progressBottomInset: 16
+                progressHorizontalInset: 16, progressBottomInset: 16,
+                artworkCornerRadius: PlozzTheme.Metrics.nativePosterArtworkCornerRadius
             )
         }
 

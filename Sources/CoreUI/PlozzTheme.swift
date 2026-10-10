@@ -516,6 +516,8 @@ public enum PlozzTheme {
         /// instead of staying a fixed pixel size. Nudged a little larger than its
         /// former fixed 38pt so it reads better on large cards.
         public static let watchedBadgeSize: CGFloat = 42
+        /// TVUIKit's artwork corner, also used by flush numbered corner tiles.
+        public static let nativePosterArtworkCornerRadius: CGFloat = 21
         /// Smallest the density-scaled watched badge is allowed to get, so the
         /// check stays legible on the tiniest (micro-density) cards.
         public static let watchedBadgeMinSize: CGFloat = 36

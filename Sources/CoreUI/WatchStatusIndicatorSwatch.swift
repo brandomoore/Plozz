@@ -106,8 +106,7 @@ private struct WatchIndicatorMini: View {
                 )
             )
             // Neutral grey stand-in art (see `tileArt`); no saturation trim needed
-            // since it's already grey, so the brand-blue flag/check and progress
-            // bar keep their full saturation and stay the focus.
+            // since it's already grey, so the white marks and progress stay the focus.
             .overlay(alignment: .topTrailing) { cornerMark(for: state, tileWidth: width) }
             .overlay(alignment: .bottom) { progressBar(for: state, tileWidth: width, tileHeight: height) }
             .overlay(
@@ -126,23 +125,11 @@ private struct WatchIndicatorMini: View {
         switch (indicator, state) {
         case (.watched, .finished):
             let d = tileWidth * 0.47
-            Image(systemName: "checkmark")
-                .font(.system(size: d * 0.52, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: d, height: d)
-                .background(Circle().fill(ThemePalette.brandBlue))
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.4), lineWidth: 1))
-                .padding(tileWidth * 0.09)
+            MediaWatchedBadge(size: d)
+                .padding(MediaWatchIndicatorStyle.floatingInset(for: d))
         case (.unwatched, .new):
             let s = tileWidth * 0.62
-            TopTrailingCornerFlag()
-                .fill(ThemePalette.brandBlue)
-                .shadow(color: .black.opacity(0.28), radius: s * 0.16)
-                .overlay(alignment: .topTrailing) {
-                    TopTrailingCornerFlagEdge()
-                        .stroke(Color.black.opacity(0.3), lineWidth: 1)
-                }
-                .frame(width: s, height: s)
+            MediaUnwatchedCorner(size: s)
         default:
             EmptyView()
         }
@@ -158,7 +145,7 @@ private struct WatchIndicatorMini: View {
             let inset = tileWidth * 0.12
             ZStack(alignment: .leading) {
                 Capsule().fill(WatchIndicatorPreviewColors.progressTrack)
-                Capsule().fill(ThemePalette.brandBlue)
+                Capsule().fill(PlozzMediaChrome.foreground(isFocused: false))
                     .frame(width: (tileWidth - inset * 2) * 0.55)
             }
             .frame(height: barH)

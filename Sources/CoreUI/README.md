@@ -7,7 +7,15 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 ## Responsibility
 
 - **Unwatched episode counts** — a default-on profile preference replaces the
-  top-right watch-status mark with a blue number on series/season cards.
+  top-right watch-status mark with a number on series/season cards.
+  Watched mode uses an inset pearl count tile and a matching white completed
+  circle with a dark check. Unwatched mode uses a white triangle for unnumbered
+  titles and a flush white count tile with matching outer and bottom-left
+  curves. Fine edges and soft shadows keep both legible on pale artwork; only
+  the artwork clips the curved tile's shadow, never the tile's own bounds.
+  Floating marks have density-scaled clearance (16pt at standard TV size).
+  Touch sizes and artwork radii remain proportionate. Episode cards and the
+  watch-indicator Settings swatches reuse the same white check and flag.
   Positive exact library counts take priority; unknown counts retain the
   existing watched/unwatched style. Completed containers retain its completion
   behavior. Movies, episodes, ownership/request marks and spoiler protection

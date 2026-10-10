@@ -3651,7 +3651,8 @@ struct PlozziOSInlineEpisodeEntry: View {
                 MediaCardPlaybackIndicators(
                     item: episode,
                     showsProgressBar: false,
-                    badgeInset: 8
+                    badgeInset: 8,
+                    artworkCornerRadius: metrics.landscapeArtworkCornerRadius
                 )
                 .clipShape(
                     RoundedRectangle(

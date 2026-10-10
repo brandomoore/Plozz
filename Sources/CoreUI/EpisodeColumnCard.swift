@@ -279,29 +279,12 @@ public struct EpisodeColumnCard: View, Equatable {
             switch watchStatusIndicator {
             case .watched:
                 if presentation.isWatched {
-                    let size = metrics.watchedBadgeSize
-                    Image(systemName: "checkmark")
-                        .font(.system(size: size * 0.53, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: size, height: size)
-                        .background(Circle().fill(ThemePalette.brandBlue))
-                        .overlay {
-                            Circle()
-                                .inset(by: -0.5)
-                                .stroke(
-                                    palette.isLight ? .black.opacity(0.15) : .white.opacity(0.4),
-                                    lineWidth: max(1.5, size * 0.04)
-                                )
-                        }
-                        .padding(12)
-                        .shadow(color: .black.opacity(0.4), radius: size * 0.08, y: size * 0.026)
+                    MediaWatchedBadge(size: metrics.watchedBadgeSize)
+                        .padding(max(12, MediaWatchIndicatorStyle.floatingInset(for: metrics.watchedBadgeSize)))
                 }
             case .unwatched:
                 if !presentation.isWatched, presentation.progress == nil {
-                    TopTrailingCornerFlag()
-                        .fill(ThemePalette.brandBlue)
-                        .shadow(color: .black.opacity(0.28), radius: 8)
-                        .frame(width: metrics.unwatchedFlagSize, height: metrics.unwatchedFlagSize)
+                    MediaUnwatchedCorner(size: metrics.unwatchedFlagSize)
                 }
             }
         }

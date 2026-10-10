@@ -359,7 +359,8 @@ public struct PosterCardView: View {
                 progressHeight: metrics.progressBarHeight,
                 progressHorizontalInset: borderlessProgressInset,
                 progressBottomInset: borderlessProgressInset,
-                downloadState: showsResumeChip ? nil : downloadState
+                downloadState: showsResumeChip ? nil : downloadState,
+                artworkCornerRadius: PlozzTheme.Metrics.nativePosterArtworkCornerRadius
             )
             resumeChip
             pendingRemovalOverlay
@@ -386,7 +387,8 @@ public struct PosterCardView: View {
                         progressHeight: metrics.progressBarHeight,
                         progressHorizontalInset: 16,
                         progressBottomInset: 16,
-                        downloadState: showsResumeChip ? nil : downloadState
+                        downloadState: showsResumeChip ? nil : downloadState,
+                        artworkCornerRadius: metrics.posterArtworkCornerRadius
                     )
                 }
                 .overlay { resumeChip }
@@ -472,7 +474,8 @@ public struct PosterCardView: View {
                         progressHeight: metrics.progressBarHeight,
                         progressHorizontalInset: 16,
                         progressBottomInset: 16,
-                        downloadState: showsResumeChip ? nil : downloadState
+                        downloadState: showsResumeChip ? nil : downloadState,
+                        artworkCornerRadius: metrics.landscapeArtworkCornerRadius
                     )
                 }
                 .overlay { resumeChip }
@@ -575,7 +578,8 @@ public struct PosterCardView: View {
                     progressHeight: metrics.progressBarHeight,
                     progressHorizontalInset: borderlessProgressInset,
                     progressBottomInset: borderlessProgressInset,
-                    downloadState: showsResumeChip ? nil : downloadState
+                    downloadState: showsResumeChip ? nil : downloadState,
+                    artworkCornerRadius: borderlessCornerRadius
                 )
             }
             .overlay { resumeChip }
