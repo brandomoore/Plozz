@@ -7,6 +7,39 @@ import XCTest
 
 @MainActor
 final class LiveTVPortableLibraryImportTests: XCTestCase {
+    func testOversizedCaptureReportsLimitWithoutReadingSnapshotsOrReplacingFallback() async throws {
+        let fixture = try fixture()
+        let profileID = fixture.profiles.activeProfileID
+        let (_, definition) = try library(profileID: profileID)
+        let maximum = LibraryChannelPortableState.maximumDefinitions
+        let values = (0...maximum).map { _ in
+            LibraryChannelDefinition(profileID: profileID, revisions: definition.revisions)
+        }
+        let definitions = PortableImportDefinitions(values: values)
+        let snapshots = RetainingImportSnapshots()
+        let bridge = fixture.bridge(definitions: definitions, snapshots: snapshots)
+        let key = LiveTVPortableRecordKey(
+            profileID: profileID, kind: .library, entityID: definition.id.uuidString
+        ).recordName
+        let previous = try LiveTVPortableRecord(library: definition).encoded()
+        let measured = expectation(forNotification: LiveTVSyncLimitDiagnostic.notification, object: nil) { note in
+            guard let value = note.object as? LiveTVSyncLimitDiagnostic else { return false }
+            return value.limit == .libraryDefinitions && value.observed == maximum + 1 && value.maximum == maximum
+        }
+        let failed = expectation(forNotification: LiveTVSyncDiagnostic.notification, object: nil) { note in
+            guard let value = note.object as? LiveTVSyncDiagnostic else { return false }
+            return value.operation == .capture && value.stage == .libraryState
+                && value.outcome == .failed && value.failure?.reason == .tooLarge
+        }
+        let result = await bridge.capture(fallback: [key: previous])
+        await fulfillment(of: [measured, failed], timeout: 1)
+        let reads = await snapshots.readCount
+        XCTAssertEqual(reads, 0)
+        XCTAssertEqual(result[key], previous)
+        XCTAssertEqual(try definitions.load(), values)
+        XCTAssertEqual(bridge.statuses[profileID], .unavailable)
+    }
+
     func testProfilePartitionReusesParsedIDsButAlwaysUsesCurrentPayloads() async throws {
         let worker = LiveTVPortableLibraryPreparation()
         let first = LiveTVPortableRecordKey(profileID: "first", kind: .channel, entityID: "one").recordName

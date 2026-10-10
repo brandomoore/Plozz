@@ -435,6 +435,10 @@ public final class LiveTVPortableSyncBridge {
         let required = Set(original.flatMap(\.revisions).map(\.snapshotID))
         guard original.count <= LibraryChannelPortableState.maximumDefinitions,
               required.count <= LibraryChannelPortableState.maximumDefinitions * 32 else {
+            LiveTVSyncLimitDiagnostic.record(.libraryDefinitions, observed: original.count,
+                                              maximum: LibraryChannelPortableState.maximumDefinitions)
+            LiveTVSyncLimitDiagnostic.record(.librarySnapshots, observed: required.count,
+                                              maximum: LibraryChannelPortableState.maximumDefinitions * 32)
             throw LibraryChannelError.catalogTooLarge
         }
         var values: [LibraryChannelSnapshot] = []
@@ -445,7 +449,11 @@ public final class LiveTVPortableSyncBridge {
             }
             guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
             itemCount += snapshot.items.count
-            guard itemCount <= LibraryChannelPortableState.maximumItems else { throw LibraryChannelError.catalogTooLarge }
+            guard itemCount <= LibraryChannelPortableState.maximumItems else {
+                LiveTVSyncLimitDiagnostic.record(.libraryItems, observed: itemCount,
+                                                  maximum: LibraryChannelPortableState.maximumItems)
+                throw LibraryChannelError.catalogTooLarge
+            }
             values.append(snapshot)
         }
         guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
@@ -503,12 +511,18 @@ public final class LiveTVPortableSyncBridge {
         guard mayApply(profileID, epoch: epoch) else { return }
         let required = Set(original.flatMap(\.revisions).map(\.snapshotID)).union(incomingIDs)
         guard required.count <= LibraryChannelPortableState.maximumDefinitions * 32 else {
+            LiveTVSyncLimitDiagnostic.record(.librarySnapshots, observed: required.count,
+                                              maximum: LibraryChannelPortableState.maximumDefinitions * 32)
             throw LibraryChannelError.catalogTooLarge
         }
         let supplied = report.snapshots.filter { required.contains($0.id) }
         var indexed = Dictionary(uniqueKeysWithValues: supplied.map { ($0.id, $0) })
         var itemCount = supplied.reduce(0) { $0 + $1.items.count }
-        guard itemCount <= LibraryChannelPortableState.maximumItems else { throw LibraryChannelError.catalogTooLarge }
+        guard itemCount <= LibraryChannelPortableState.maximumItems else {
+            LiveTVSyncLimitDiagnostic.record(.libraryItems, observed: itemCount,
+                                              maximum: LibraryChannelPortableState.maximumItems)
+            throw LibraryChannelError.catalogTooLarge
+        }
         for id in required.sorted(by: { $0.uuidString < $1.uuidString }) {
             let stored = try await staging.snapshot(id: id, profileID: profileID)
             guard mayApply(profileID, epoch: epoch) else { return }
@@ -517,7 +531,11 @@ public final class LiveTVPortableSyncBridge {
                     guard received == stored else { throw LibraryChannelError.invalidSnapshot }
                 } else {
                     itemCount += stored.items.count
-                    guard itemCount <= LibraryChannelPortableState.maximumItems else { throw LibraryChannelError.catalogTooLarge }
+                    guard itemCount <= LibraryChannelPortableState.maximumItems else {
+                        LiveTVSyncLimitDiagnostic.record(.libraryItems, observed: itemCount,
+                                                          maximum: LibraryChannelPortableState.maximumItems)
+                        throw LibraryChannelError.catalogTooLarge
+                    }
                     indexed[id] = stored
                 }
             }

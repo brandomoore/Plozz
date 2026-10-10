@@ -26,7 +26,10 @@ public struct LiveTVPortableLibraryExport: Sendable {
                 try record.validate(key: .init(profileID: profileID, kind: .snapshot, entityID: part.entityID))
                 let bytes = try record.encoded()
                 byteCount += bytes.count
-                guard byteCount <= 64 * 1_024 * 1_024 else { throw LiveTVPortableStateError.tooLarge }
+                guard byteCount <= 64 * 1_024 * 1_024 else {
+                    LiveTVSyncLimitDiagnostic.record(.libraryExportBytes, observed: byteCount, maximum: 64 * 1_024 * 1_024)
+                    throw LiveTVPortableStateError.tooLarge
+                }
                 records[part.entityID] = SnapshotRecord(value: record, bytes: bytes)
             }
         }
@@ -497,7 +500,10 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             let urls = try FileManager.default.contentsOfDirectory(
                 at: directory, includingPropertiesForKeys: nil
             ).filter { $0.pathExtension == "record" || $0.lastPathComponent == "observed-local.json" }
-            guard urls.count <= Self.maximumRecords + 1 else { throw LiveTVPortableStateError.tooLarge }
+            guard urls.count <= Self.maximumRecords + 1 else {
+                LiveTVSyncLimitDiagnostic.record(.journalFiles, observed: urls.count, maximum: Self.maximumRecords + 1)
+                throw LiveTVPortableStateError.tooLarge
+            }
             for url in urls {
                 try Task.checkCancellation()
                 guard let revision = try LiveTVSyncFileRevision.read(url) else {
@@ -969,9 +975,15 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
                 .appendingPathExtension("record")
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
             let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
-            guard size <= LiveTVPortableRecord.maximumBytes * 2 else { throw LiveTVPortableStateError.tooLarge }
+            guard size <= LiveTVPortableRecord.maximumBytes * 2 else {
+                LiveTVSyncLimitDiagnostic.record(.journalRecordBytes, observed: size, maximum: LiveTVPortableRecord.maximumBytes * 2)
+                throw LiveTVPortableStateError.tooLarge
+            }
             let data = try Data(contentsOf: url)
-            guard data.count <= LiveTVPortableRecord.maximumBytes * 2 else { throw LiveTVPortableStateError.tooLarge }
+            guard data.count <= LiveTVPortableRecord.maximumBytes * 2 else {
+                LiveTVSyncLimitDiagnostic.record(.journalRecordBytes, observed: data.count, maximum: LiveTVPortableRecord.maximumBytes * 2)
+                throw LiveTVPortableStateError.tooLarge
+            }
             let stored = try JSONDecoder().decode(StoredRecord.self, from: data)
             guard stored.name == recordKey.recordName else { throw LiveTVPortableStateError.wrongProfile }
             record = try decodedRecord(stored.value, key: recordKey, allowUnpreparedSource: true)
@@ -1278,6 +1290,10 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             // Legacy synchronous callers can still decode on demand; a cache
             // capacity limit must not turn their otherwise valid record into a rejection.
             guard requiresPreparedJournal else { return }
+            LiveTVSyncLimitDiagnostic.record(.inputBytes, observed: count, maximum: Self.maximumInputBytes)
+            LiveTVSyncLimitDiagnostic.record(.inputRecords,
+                observed: (preparedJournal?.local.count ?? 0) + (preparedJournal?.local[name] == nil ? 1 : 0),
+                maximum: Self.maximumRecords)
             throw LiveTVPortableStateError.tooLarge
         }
         preparedJournal?.local[name] = ValidatedRecord(bytes: bytes, value: record)
@@ -1315,7 +1331,10 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         _ bytes: Data, key: LiveTVPortableRecordKey, allowUnpreparedSource: Bool = false
     ) throws -> LiveTVPortableRecord {
         try ensureCurrentPreparation()
-        guard bytes.count <= LiveTVPortableRecord.maximumBytes else { throw LiveTVPortableStateError.tooLarge }
+        guard bytes.count <= LiveTVPortableRecord.maximumBytes else {
+            LiveTVSyncLimitDiagnostic.record(.recordBytes, observed: bytes.count, maximum: LiveTVPortableRecord.maximumBytes)
+            throw LiveTVPortableStateError.tooLarge
+        }
         if let cached = cachedRecord(bytes, key: key) {
             guard let value = cached.value else { throw LiveTVPortableStateError.invalidRecord }
             return value
@@ -1412,7 +1431,12 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
                     total += entry.bytes.count
                     if entry.value == nil { rejectedCount += 1 } else { validCount += 1 }
                     guard total <= Self.maximumInputBytes, validCount <= Self.maximumRecords,
-                          rejectedCount <= Self.maximumRecords else { throw LiveTVPortableStateError.tooLarge }
+                          rejectedCount <= Self.maximumRecords else {
+                        LiveTVSyncLimitDiagnostic.record(.inputBytes, observed: total, maximum: Self.maximumInputBytes)
+                        LiveTVSyncLimitDiagnostic.record(.inputRecords, observed: max(validCount, rejectedCount),
+                                                          maximum: Self.maximumRecords)
+                        throw LiveTVPortableStateError.tooLarge
+                    }
                     incoming[name] = entry
                 }
                 for previous in [prepared.incoming, prepared.retainedIncoming] {
@@ -1451,7 +1475,10 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
     private func prepareSnapshotComparisons(
         _ library: LiveTVPortableLibraryExport, using prepared: PreparedJournal
     ) throws -> [String: PreparedSnapshotComparison] {
-        guard library.snapshotRecords.count <= Self.maximumRecords else { throw LiveTVPortableStateError.tooLarge }
+        guard library.snapshotRecords.count <= Self.maximumRecords else {
+            LiveTVSyncLimitDiagnostic.record(.inputRecords, observed: library.snapshotRecords.count, maximum: Self.maximumRecords)
+            throw LiveTVPortableStateError.tooLarge
+        }
         guard library.state.definitions.allSatisfy({ $0.profileID == profileID }) else {
             throw LiveTVPortableStateError.wrongProfile
         }
@@ -1586,17 +1613,30 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         guard FileManager.default.fileExists(atPath: directory.path) else { return Journal() }
         let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey])
             .filter { $0.pathExtension == "record" }
-        guard files.count <= Self.maximumRecords else { throw LiveTVPortableStateError.tooLarge }
+        guard files.count <= Self.maximumRecords else {
+            LiveTVSyncLimitDiagnostic.record(.journalRecords, observed: files.count, maximum: Self.maximumRecords)
+            throw LiveTVPortableStateError.tooLarge
+        }
         var journal = Journal(directoryExists: true)
         var total = 0
         for file in files {
             try Task.checkCancellation()
             let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
-            guard size <= LiveTVPortableRecord.maximumBytes * 2 else { throw LiveTVPortableStateError.tooLarge }
-            guard size <= Self.maximumJournalBytes - total else { throw LiveTVPortableStateError.tooLarge }
+            guard size <= LiveTVPortableRecord.maximumBytes * 2 else {
+                LiveTVSyncLimitDiagnostic.record(.journalRecordBytes, observed: size, maximum: LiveTVPortableRecord.maximumBytes * 2)
+                throw LiveTVPortableStateError.tooLarge
+            }
+            guard size <= Self.maximumJournalBytes - total else {
+                LiveTVSyncLimitDiagnostic.record(.journalBytes, observed: total + size, maximum: Self.maximumJournalBytes)
+                throw LiveTVPortableStateError.tooLarge
+            }
             let data = try Data(contentsOf: file)
             guard data.count <= LiveTVPortableRecord.maximumBytes * 2,
-                  data.count <= Self.maximumJournalBytes - total else { throw LiveTVPortableStateError.tooLarge }
+                  data.count <= Self.maximumJournalBytes - total else {
+                LiveTVSyncLimitDiagnostic.record(.journalRecordBytes, observed: data.count, maximum: LiveTVPortableRecord.maximumBytes * 2)
+                LiveTVSyncLimitDiagnostic.record(.journalBytes, observed: total + data.count, maximum: Self.maximumJournalBytes)
+                throw LiveTVPortableStateError.tooLarge
+            }
             total += data.count
             let stored = try JSONDecoder().decode(StoredRecord.self, from: data)
             guard let recordKey = LiveTVPortableRecordKey.parse(stored.name),
@@ -1626,6 +1666,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         _ records: [String: Data], appliedNames: Set<String> = [], receivedFingerprints: [String: String] = [:]
     ) throws {
         guard records.count <= Self.maximumRecords else {
+            LiveTVSyncLimitDiagnostic.record(.journalRecords, observed: records.count, maximum: Self.maximumRecords)
             throw LiveTVPortableStateError.tooLarge
         }
         var journal = try readJournal()
@@ -1648,6 +1689,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
                old?.pendingRemoteFingerprint == pending,
                let size = journal.storedByteCounts[name] {
                 guard size <= Self.maximumJournalBytes - total else {
+                    LiveTVSyncLimitDiagnostic.record(.journalBytes, observed: total + size, maximum: Self.maximumJournalBytes)
                     throw LiveTVPortableStateError.tooLarge
                 }
                 total += size
@@ -1662,6 +1704,8 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             let encoded = try JSONEncoder().encode(stored)
             guard encoded.count <= LiveTVPortableRecord.maximumBytes * 2,
                   encoded.count <= Self.maximumJournalBytes - total else {
+                LiveTVSyncLimitDiagnostic.record(.journalRecordBytes, observed: encoded.count, maximum: LiveTVPortableRecord.maximumBytes * 2)
+                LiveTVSyncLimitDiagnostic.record(.journalBytes, observed: total + encoded.count, maximum: Self.maximumJournalBytes)
                 throw LiveTVPortableStateError.tooLarge
             }
             total += encoded.count
@@ -1715,16 +1759,25 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         let url = directory.appendingPathComponent("observed-local.json")
         guard FileManager.default.fileExists(atPath: url.path) else { return ObservedLocal() }
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
-        guard size <= 2 * 1_024 * 1_024 else { throw LiveTVPortableStateError.tooLarge }
+        guard size <= 2 * 1_024 * 1_024 else {
+            LiveTVSyncLimitDiagnostic.record(.observedStateBytes, observed: size, maximum: 2 * 1_024 * 1_024)
+            throw LiveTVPortableStateError.tooLarge
+        }
         let data = try Data(contentsOf: url)
-        guard data.count <= 2 * 1_024 * 1_024 else { throw LiveTVPortableStateError.tooLarge }
+        guard data.count <= 2 * 1_024 * 1_024 else {
+            LiveTVSyncLimitDiagnostic.record(.observedStateBytes, observed: data.count, maximum: 2 * 1_024 * 1_024)
+            throw LiveTVPortableStateError.tooLarge
+        }
         return try JSONDecoder().decode(ObservedLocal.self, from: data)
     }
 
     private func writeObserved(_ observed: ObservedLocal) throws {
         guard preparedJournal?.observed != observed else { return }
         let data = try JSONEncoder().encode(observed)
-        guard data.count <= 2 * 1_024 * 1_024 else { throw LiveTVPortableStateError.tooLarge }
+        guard data.count <= 2 * 1_024 * 1_024 else {
+            LiveTVSyncLimitDiagnostic.record(.observedStateBytes, observed: data.count, maximum: 2 * 1_024 * 1_024)
+            throw LiveTVPortableStateError.tooLarge
+        }
         try mutateJournal {
             try writeJournalFile(data, to: directory.appendingPathComponent("observed-local.json"))
             preparedJournal?.observed = observed

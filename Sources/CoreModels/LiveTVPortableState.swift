@@ -278,12 +278,18 @@ public struct LiveTVPortableRecord: Codable, Equatable, Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(self)
-        guard data.count <= Self.maximumBytes else { throw LiveTVPortableStateError.tooLarge }
+        guard data.count <= Self.maximumBytes else {
+            LiveTVSyncLimitDiagnostic.record(.recordBytes, observed: data.count, maximum: Self.maximumBytes)
+            throw LiveTVPortableStateError.tooLarge
+        }
         return data
     }
 
     public static func decode(_ data: Data, key: LiveTVPortableRecordKey) throws -> Self {
-        guard data.count <= maximumBytes else { throw LiveTVPortableStateError.tooLarge }
+        guard data.count <= maximumBytes else {
+            LiveTVSyncLimitDiagnostic.record(.recordBytes, observed: data.count, maximum: maximumBytes)
+            throw LiveTVPortableStateError.tooLarge
+        }
         let record = try JSONDecoder().decode(Self.self, from: data)
         try record.validate(key: key)
         return record
@@ -394,7 +400,10 @@ public enum LiveTVPortableSnapshots {
         let encoder = JSONEncoder()
         for item in snapshot.items {
             let size = try encoder.encode(item).count
-            guard size <= 128 * 1_024 else { throw LiveTVPortableStateError.tooLarge }
+            guard size <= 128 * 1_024 else {
+                LiveTVSyncLimitDiagnostic.record(.snapshotItemBytes, observed: size, maximum: 128 * 1_024)
+                throw LiveTVPortableStateError.tooLarge
+            }
             if !current.isEmpty && (current.count == 256 || bytes + size > 128 * 1_024) {
                 groups.append(current)
                 current = []
@@ -404,7 +413,10 @@ public enum LiveTVPortableSnapshots {
             bytes += size
         }
         if !current.isEmpty { groups.append(current) }
-        guard groups.count <= 1_024 else { throw LiveTVPortableStateError.tooLarge }
+        guard groups.count <= 1_024 else {
+            LiveTVSyncLimitDiagnostic.record(.snapshotParts, observed: groups.count, maximum: 1_024)
+            throw LiveTVPortableStateError.tooLarge
+        }
         return groups.enumerated().map { index, items in
             LiveTVPortableSnapshotPart(
                 snapshotID: snapshot.id, part: index, partCount: groups.count, contentDigest: digest,

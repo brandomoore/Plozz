@@ -91,11 +91,20 @@ public actor LibraryChannelSnapshotStore: LibraryChannelSnapshotStaging {
             return
         }
         let data = try JSONEncoder().encode(snapshot)
-        guard data.count <= 64_000_000 else { throw LibraryChannelError.catalogTooLarge }
+        guard data.count <= 64_000_000 else {
+            LiveTVSyncLimitDiagnostic.record(.snapshotBytes, observed: data.count, maximum: 64_000_000)
+            throw LibraryChannelError.catalogTooLarge
+        }
         try connection.statement("SELECT COALESCE(SUM(length(payload)),0),COUNT(*) FROM snapshots", values: []) {
             guard sqlite3_step($0) == SQLITE_ROW else { throw LibraryChannelError.storageFailed }
             guard sqlite3_column_int64($0, 0) + Int64(data.count) <= 512_000_000,
-                  sqlite3_column_int64($0, 1) < 3_200 else { throw LibraryChannelError.catalogTooLarge }
+                  sqlite3_column_int64($0, 1) < 3_200 else {
+                LiveTVSyncLimitDiagnostic.record(.snapshotStoreBytes,
+                    observed: Int(sqlite3_column_int64($0, 0)) + data.count, maximum: 512_000_000)
+                LiveTVSyncLimitDiagnostic.record(.snapshotStoreCount,
+                    observed: Int(sqlite3_column_int64($0, 1)) + 1, maximum: 3_200)
+                throw LibraryChannelError.catalogTooLarge
+            }
         }
         try connection.statement("""
             INSERT INTO snapshots(profile,id,payload)
@@ -124,7 +133,11 @@ public actor LibraryChannelSnapshotStore: LibraryChannelSnapshotStaging {
         for snapshot in snapshots {
             try snapshot.validate()
             count += snapshot.items.count
-            guard count <= LibraryChannelPortableState.maximumItems else { throw LibraryChannelError.catalogTooLarge }
+            guard count <= LibraryChannelPortableState.maximumItems else {
+                LiveTVSyncLimitDiagnostic.record(.libraryItems, observed: count,
+                                                  maximum: LibraryChannelPortableState.maximumItems)
+                throw LibraryChannelError.catalogTooLarge
+            }
         }
         let lease = try LibrarySnapshotPins.shared.pin(
             ids: Set(snapshots.map(\.id)), key: pinKey(profileID)

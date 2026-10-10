@@ -32,7 +32,10 @@ public struct LibraryChannelPortableState: Codable, Equatable, Sendable {
         for snapshot in snapshots {
             try snapshot.validate()
             itemCount += snapshot.items.count
-            guard itemCount <= Self.maximumItems else { throw LibraryChannelError.catalogTooLarge }
+            guard itemCount <= Self.maximumItems else {
+                LiveTVSyncLimitDiagnostic.record(.libraryItems, observed: itemCount, maximum: Self.maximumItems)
+                throw LibraryChannelError.catalogTooLarge
+            }
         }
         let indexed = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
         for definition in definitions {

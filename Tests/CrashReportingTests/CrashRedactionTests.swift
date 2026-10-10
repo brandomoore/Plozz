@@ -5,6 +5,53 @@ import XCTest
 @testable import CrashReporting
 
 final class CrashRedactionTests: XCTestCase {
+    func testSyncLimitBreadcrumbRetainsOnlyMeasuredCountsAndKnownLimit() throws {
+        let diagnostic = try XCTUnwrap(LiveTVSyncLimitDiagnostic(
+            limit: .libraryExportBytes, observed: 67_110_000, maximum: 67_108_864
+        ))
+        let crumb = SentryCrashReporter.syncLimitBreadcrumb(diagnostic)
+        crumb.message = "Private profile https://private.test/secret"
+        crumb.data?["profile"] = "Private profile"
+        crumb.data?["payload"] = ["Private movie": "https://private.test/secret"]
+        let event = Event(level: .error)
+        event.breadcrumbs = [crumb]
+        let cleaned = try XCTUnwrap(CrashRedaction.scrub(event)?.breadcrumbs?.first)
+        XCTAssertEqual(cleaned.message, "Live TV sync size limit")
+        XCTAssertEqual(Set(try XCTUnwrap(cleaned.data).keys), ["limit", "observed", "maximum"])
+        XCTAssertEqual(cleaned.data?["limit"] as? String, "libraryExportBytes")
+        XCTAssertEqual(cleaned.data?["observed"] as? Int, 67_110_000)
+        XCTAssertEqual(cleaned.data?["maximum"] as? Int, 67_108_864)
+    }
+
+    func testSyncLimitBreadcrumbRejectsInvalidMeasurementsAndUnknownLimits() throws {
+        let diagnostic = try XCTUnwrap(LiveTVSyncLimitDiagnostic(limit: .libraryItems, observed: 200_001, maximum: 200_000))
+        for key in ["observed", "maximum"] {
+            for invalid: Any in [true, "200001", -1, 0, Double.nan, Double.infinity, 1.5, Int.max] {
+                let crumb = SentryCrashReporter.syncLimitBreadcrumb(diagnostic)
+                crumb.data?[key] = invalid
+                XCTAssertNil(CrashRedaction.scrub(crumb))
+            }
+        }
+        let crumb = SentryCrashReporter.syncLimitBreadcrumb(diagnostic)
+        crumb.data?["limit"] = "Private channel"
+        XCTAssertNil(CrashRedaction.scrub(crumb))
+        crumb.data?["limit"] = "libraryItems"
+        crumb.data?["observed"] = 200_000
+        XCTAssertNil(CrashRedaction.scrub(crumb), "An unexceeded limit must not be reported as a failure.")
+    }
+
+    func testSyncLimitBreadcrumbRateIsBoundedPerLimitWithoutSuppressingLaterFailures() {
+        let gate = SyncLimitDiagnosticGate()
+        for limit in LiveTVSyncLimitDiagnostic.Limit.allCases {
+            XCTAssertTrue(gate.accept(limit, uptime: 100))
+            for _ in 0..<1_000 { XCTAssertFalse(gate.accept(limit, uptime: 100)) }
+            XCTAssertFalse(gate.accept(limit, uptime: 159))
+            XCTAssertTrue(gate.accept(limit, uptime: 160))
+        }
+        gate.reset()
+        XCTAssertTrue(gate.accept(.libraryExportBytes, uptime: 160))
+    }
+
     func testPlaybackFailuresRetainTypedEvidenceButScrubPrivatePayloads() throws {
         let event = try playbackFailure(status: 403)
         event.context?["playback_failure"]?["url"] = "https://private.test/token"

@@ -102,6 +102,28 @@ enum CrashRedaction {
     /// Only our closed-vocabulary diagnostics survive, including SDK integrations
     /// enabled in future. Free-form messages/data are never forwarded.
     static func scrub(_ crumb: Breadcrumb) -> Breadcrumb? {
+        if crumb.category == "plozz.live_tv_sync_limit" {
+            guard let raw = crumb.data,
+                  let limit = (raw["limit"] as? String).flatMap(LiveTVSyncLimitDiagnostic.Limit.init(rawValue:))
+            else { return nil }
+            func count(_ key: String) -> Int? {
+                guard let value = raw[key] as? NSNumber,
+                      CFGetTypeID(value) != CFBooleanGetTypeID(),
+                      value.doubleValue.isFinite, value.doubleValue > 0,
+                      value.doubleValue.rounded(.down) == value.doubleValue,
+                      value.doubleValue <= Double(LiveTVSyncLimitDiagnostic.maximumMeasurement) else { return nil }
+                return value.intValue
+            }
+            guard let observed = count("observed"), let maximum = count("maximum"),
+                  let diagnostic = LiveTVSyncLimitDiagnostic(limit: limit, observed: observed, maximum: maximum)
+            else { return nil }
+            crumb.type = "default"
+            crumb.message = "Live TV sync size limit"
+            crumb.data = [
+                "limit": diagnostic.limit.rawValue, "observed": diagnostic.observed, "maximum": diagnostic.maximum
+            ]
+            return crumb
+        }
         if crumb.category == "plozz.iptv_setup" {
             guard let raw = crumb.data, let data = setupData(raw) else { return nil }
             crumb.type = "default"

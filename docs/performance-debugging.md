@@ -108,6 +108,19 @@ are added. Restarting reporting invalidates old attempts instead of replaying
 them. The final Sentry scrub revalidates every field and preserves only coarse
 app/OS/hardware/screen tags and the existing numeric memory evidence.
 
+Live TV sync size guards also emit a `plozz.live_tv_sync_limit` breadcrumb with
+only a closed limit name and the already-measured `observed`/`maximum` counts.
+These distinguish schedule/item counts, encoded snapshot/record/export bytes,
+and journal/input/storage limits without attaching identifiers or content.
+They run only on the existing failure branches: no additional serialization,
+catalogue scans, I/O, timers or per-record notifications occur on successful syncs.
+The reporter adds at most one breadcrumb per limit per minute to its existing
+100-breadcrumb buffer, and never creates a separate issue for the measurement.
+Normal reporting consent still applies; unknown sizes and non-integer values
+are omitted. Existing errors, safety limits and all-or-nothing publication are
+unchanged. Look at the breadcrumb chronology alongside the sync stage; do not
+attribute an older size measurement to an unrelated failure.
+
 Missing breadcrumbs in a shared issue or formatted summary are not proof that
 the original event contained none. Check the event and its debug images: an app
 image with `debug_status: missing` specifically means Sentry lacks its matching
