@@ -76,13 +76,17 @@ Profiles without a saved navigation choice default to **Pinned Sidebar**.
 The first-run, new-profile, and Settings pickers list Pinned Sidebar, Sidebar,
 then Top Bar. Saved profile choices are not overwritten.
 
-Search and the active-channel artwork share a 32-point content inset below
-the native header. The full-height
-Search/categories pane slides and fades over 0.28 seconds while the guide resizes;
+Search and the active-channel artwork stay aligned, with an additional 16-point
+clearance below native navigation. Pinned navigation keeps its existing inset.
+The full-height Search/categories pane slides and fades over 0.28 seconds while the guide resizes;
 Reduce Motion suppresses this animation. iPhone/iPad retain their existing layout.
+The pane has one geometry group, so button-local focus styling
+cannot cancel Search or Multiviews movement independently of the categories.
+The category list remains lazy; no per-row animation timers or rasterized
+snapshots are used.
 Native-menu round trips, selected-category restoration, and preview-session
-identity have remote regressions; hosted presentation-frame tests cover panel
-travel and rapid reversal.
+identity have remote regressions; hosted rendered-pixel tests cover synchronized
+Search/Multiviews/category movement, guide travel, and rapid reversal.
 
 ### IPTV accounts and large catalogues
 

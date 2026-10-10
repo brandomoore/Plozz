@@ -125,7 +125,7 @@ struct LiveTVPreviewIntroductionFixture: View {
                 if let artwork = anchors["artwork"] {
                     let origin = geometry.frame(in: .global).minY
                     let searchY = anchors["sidebar-search"].map { geometry[$0].minY + origin } ?? -1
-                    Text(verbatim: "\(searchY),\(geometry[artwork].minY + origin)")
+                    Text(verbatim: "\(searchY),\(geometry[artwork].minY + origin),\(origin)")
                         .font(.caption2)
                         .accessibilityIdentifier("preview-browse-top-alignment")
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)

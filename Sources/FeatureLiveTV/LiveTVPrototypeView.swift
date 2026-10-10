@@ -339,7 +339,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         GeometryReader { geometry in
             let layout = PrototypePreviewLayout(
                 size: geometry.size, safeAreaInsets: geometry.safeAreaInsets,
-                navigationInset: navigationInset, largeText: typeSize.isAccessibilitySize,
+                navigationInset: navigationInset, nativeNavigation: usesNativeFullscreen,
+                largeText: typeSize.isAccessibilitySize,
                 isSearching: isSearching, hidesSidebar: categorySidebarCollapsed
             )
             let expanded = multiviewSelection == nil && (preview.isExpanded || multiview.isEnabled)

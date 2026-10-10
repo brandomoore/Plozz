@@ -89,7 +89,8 @@ struct PrototypePreviewLayout {
 
     init(
         size: CGSize, safeAreaInsets: EdgeInsets = EdgeInsets(),
-        navigationInset: CGFloat = 0, largeText: Bool = false, isSearching: Bool = false,
+        navigationInset: CGFloat = 0, nativeNavigation: Bool = false,
+        largeText: Bool = false, isSearching: Bool = false,
         hidesSidebar: Bool = false
     ) {
         #if os(tvOS)
@@ -108,7 +109,7 @@ struct PrototypePreviewLayout {
         // The rail and guide share physical-screen coordinates. Title-safe insets
         // can change during mounting and must not move or resize the pinned guide.
         let leading = side + (navigationInset > 0 ? PrototypeLayout.inset : 0)
-        let top = max(32, safeAreaInsets.top)
+        let top = max(32, safeAreaInsets.top) + (nativeNavigation ? 16 : 0)
         let bottom: CGFloat = 20
         guideSideBleed = 0
         #else
@@ -187,6 +188,8 @@ struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
                     sidebar()
                         .frame(width: layout.availableSidebarWidth)
                         #if os(tvOS)
+                        // Button focus styling cancels leaf animations; move and fade the pane as one unit.
+                        .geometryGroup()
                         .transition(.move(edge: .leading).combined(with: .opacity))
                         #endif
                 }

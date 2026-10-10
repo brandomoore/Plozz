@@ -629,6 +629,27 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         #endif
     }
 
+    func testNativeNavigationAddsSixteenPointsAboveBrowsingWithoutMovingVideo() {
+        for safeTop: CGFloat in [0, 60, 120] {
+            let insets = EdgeInsets(top: safeTop, leading: 80, bottom: 60, trailing: 80)
+            let plain = PrototypePreviewLayout(size: CGSize(width: 1_760, height: 900), safeAreaInsets: insets)
+            let native = PrototypePreviewLayout(
+                size: CGSize(width: 1_760, height: 900), safeAreaInsets: insets, nativeNavigation: true
+            )
+            #if os(tvOS)
+            XCTAssertEqual(native.contentFrame.minY - plain.contentFrame.minY, 16)
+            XCTAssertEqual(plain.contentFrame.height - native.contentFrame.height, 16)
+            #else
+            XCTAssertEqual(native.contentFrame, plain.contentFrame)
+            #endif
+            XCTAssertEqual(native.contentFrame.maxY, plain.contentFrame.maxY)
+            XCTAssertEqual(native.contentFrame.minX, plain.contentFrame.minX)
+            XCTAssertEqual(native.contentFrame.width, plain.contentFrame.width)
+            XCTAssertEqual(native.bounds, plain.bounds)
+            XCTAssertEqual(native.videoFrame, plain.videoFrame)
+        }
+    }
+
     func testTVLayoutLeavesRoomForFourRoomyRows() {
         #if os(tvOS)
         let layout = PrototypePreviewLayout(

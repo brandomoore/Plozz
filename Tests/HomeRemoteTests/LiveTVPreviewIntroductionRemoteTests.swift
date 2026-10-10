@@ -327,12 +327,15 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         let measurement = app.staticTexts["preview-browse-top-alignment"]
         XCTAssertTrue(measurement.waitForExistence(timeout: 5))
         let values = measurement.label.split(separator: ",").compactMap { Double($0) }
-        XCTAssertEqual(values.count, 2)
-        guard values.count == 2 else { return }
+        XCTAssertEqual(values.count, 3)
+        guard values.count == 3 else { return }
         XCTAssertEqual(values[0], values[1], accuracy: 1, "Search and active-channel artwork must align")
         if fullHeight {
             XCTAssertLessThanOrEqual(values[1], 40, "Native navigation must not reserve a top band")
             XCTAssertGreaterThanOrEqual(values[1], 24, "Keep a small intentional screen-edge inset")
+        } else {
+            XCTAssertEqual(values[1] - values[2], 16, accuracy: 1,
+                           "Keep sixteen points below the actual native content inset")
         }
     }
 
