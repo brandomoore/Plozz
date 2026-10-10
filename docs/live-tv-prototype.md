@@ -397,12 +397,16 @@ is no prior in-memory history to migrate on the first updated launch.
   from the far-left channel column (far-right in RTL) must reveal categories
   and Search, without revealing them early or also opening app navigation.
   A separate leading press from the panel should reach the app menu.
-  This remains a known failure with the full native sidebar: it can expand
-  over the category panel even while a category retains focus. Recognizing the
-  press or checking settled focus alone does not prove that contract.
+  The guide's boundary recognizer gives ancestor horizontal navigation
+  recognizers a failure dependency: they wait until the guide decides whether
+  it owns the press. Otherwise window-level navigation can begin before the
+  guide receives the press and expand over the focused category. Non-boundary
+  input fails immediately, preserving normal guide navigation; boundary input
+  remains owned through release.
   Remote regressions use the production destination handoff and full native
   tab layout, checking ordinary, rapid, and held input in both directions and
-  with preview enabled. A native-focus counter detects transient focus theft;
+  with preview enabled and a non-default category selected. A native-focus counter
+  detects transient focus theft;
   screenshots must also be checked for expansion without a focus change.
   The opt-in `PhysicalDiagnosticInputTests/testExistingLiveTVRevealsOnlyCategories`
   checks the existing foreground app without installing, relaunching, selecting

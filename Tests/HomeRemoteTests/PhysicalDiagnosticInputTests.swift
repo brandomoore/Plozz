@@ -61,9 +61,12 @@ final class PhysicalDiagnosticInputTests: XCTestCase {
                 categories.exists && categories.isEnabled && self.containsNavigationFocus(categories)
                     && !self.containsNavigationFocus(navigation)
             }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [revealed], timeout: 5), .completed,
-                           "Left must reveal only categories, not the native app menu.")
+            let result = XCTWaiter.wait(for: [revealed], timeout: 5)
             captureCategoryNavigation("categories-\(iteration + 1)", in: app)
+            XCTAssertEqual(result, .completed,
+                           "Left must reveal only categories, not the native app menu.")
+            XCTAssertTrue(!navigation.exists || navigation.frame.isEmpty,
+                          "The app menu must stay collapsed even if a category still owns focus.")
         }
         XCUIRemote.shared.press(.right)
         XCTAssertNotNil(focusedGuideButton(), "Leave the user's app on the guide.")

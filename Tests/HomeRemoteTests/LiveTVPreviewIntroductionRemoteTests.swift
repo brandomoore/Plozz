@@ -102,7 +102,10 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         assertStatus(preview ? "chosen-on; playback=true" : "chosen-off; playback=false", in: app)
         let content = focusFirstGuideContent(in: app, rtl: rtl)
         let station = app.buttons["live-tv-channel-channels-1"]
+        let appMenu = app.collectionViews["Sidebar"]
         assertCategoriesHidden(in: app)
+        XCTAssertTrue(!appMenu.exists || appMenu.frame.isEmpty)
+        var selectedCategory = "All categories"
         for iteration in 0..<3 {
             if iteration > 0 {
                 XCUIRemote.shared.press(rtl ? .left : .right)
@@ -116,16 +119,29 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
             if iteration != 1 { assertFocused(station) }
             if iteration == 2 { XCUIRemote.shared.press(leading, forDuration: 0.6) }
             else { XCUIRemote.shared.press(leading) }
-            assertFocused(app.buttons["All categories"])
-            XCTAssertTrue(app.buttons["All categories"].isEnabled)
+            assertFocused(app.buttons[selectedCategory])
+            XCTAssertTrue(app.buttons[selectedCategory].isEnabled)
             XCTAssertEqual(app.staticTexts["preview-native-focus-visits"].label, nativeFocusVisits,
                            "Native app navigation must not briefly steal focus before categories settle")
             XCTAssertFalse(containsFocus(app.collectionViews["Sidebar"]),
                            "Revealing categories must not open the app menu")
-            XCTAssertFalse(app.collectionViews["Sidebar"].staticTexts["Settings"].isHittable,
+            // Collapsed native menus retain AX elements with empty frames.
+            // On tvOS 27, even expanded native rows can report not hittable.
+            XCTAssertTrue(!appMenu.exists || appMenu.frame.isEmpty,
                            "The app menu must stay collapsed even if a category still owns focus")
+            if iteration == 0 {
+                selectedCategory = "Entertainment & Lifestyle"
+                XCUIRemote.shared.press(.down)
+                assertFocused(app.buttons[selectedCategory])
+                XCUIRemote.shared.press(.select)
+                XCTAssertTrue(app.buttons[selectedCategory].isSelected)
+            }
         }
         capture("native-sidebar-category-reveal", in: app)
+        let collapsedTree = XCTAttachment(string: app.debugDescription)
+        collapsedTree.name = "native-sidebar-category-reveal"
+        collapsedTree.lifetime = .keepAlways
+        add(collapsedTree)
         XCUIRemote.shared.press(leading)
         if containsFocus(app.buttons["live-tv-search"]) {
             XCUIRemote.shared.press(leading)
@@ -136,7 +152,16 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(
             for: [XCTNSPredicateExpectation(predicate: navigationFocused, object: nil)], timeout: 5
         ), .completed, "Leading navigation through the category panel must still reach the app menu\n\(app.debugDescription)")
+        let menuVisible = NSPredicate { _, _ in appMenu.exists && !appMenu.frame.isEmpty }
+        let menuResult = XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: menuVisible, object: nil)], timeout: 5
+        )
         capture("native-sidebar-after-categories", in: app)
+        let navigationTree = XCTAttachment(string: app.debugDescription)
+        navigationTree.name = "native-sidebar-after-categories"
+        navigationTree.lifetime = .keepAlways
+        add(navigationTree)
+        XCTAssertEqual(menuResult, .completed, "The app menu must expand after leaving categories")
     }
 
     private func focusFirstGuideContent(in app: XCUIApplication, rtl: Bool = false) -> XCUIElement {

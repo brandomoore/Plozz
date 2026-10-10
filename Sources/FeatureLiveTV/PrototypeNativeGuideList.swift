@@ -427,6 +427,17 @@ private final class GuideHorizontalPressRecognizer: UIGestureRecognizer {
     override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { consumedPress != nil }
     override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
 
+    override func shouldBeRequiredToFail(by otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        // Ancestor navigation can begin before descendant press delivery.
+        // It must wait for our boundary decision, not just canPrevent.
+        guard let view, let ancestor = otherGestureRecognizer.view,
+              view !== ancestor, view.isDescendant(of: ancestor) else { return false }
+        return otherGestureRecognizer.allowedPressTypes.contains {
+            $0.intValue == UIPress.PressType.leftArrow.rawValue
+                || $0.intValue == UIPress.PressType.rightArrow.rawValue
+        }
+    }
+
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent) {
         guard let press = presses.first(where: { $0.type == .leftArrow || $0.type == .rightArrow }),
               DetailTransitionNavigation.navigationInputEpoch(in: view) != nil else {
