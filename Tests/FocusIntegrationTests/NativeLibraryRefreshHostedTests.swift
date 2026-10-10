@@ -495,17 +495,27 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                     self.capture(window, name: "browse-before-scroll-\(style)", drawsHierarchy: true), at: sample)
                 let origin = collection.contentOffset.y
                 let target = origin + initialFrame.maxY - 80
+                let movement = ScrollMountProbe()
+                // Observe UIKit's movement directly; a busy runner can resume a timer after the animation ends.
+                let observation = collection.observe(\.contentOffset, options: [.new]) { _, change in
+                    MainActor.assumeIsolated {
+                        guard let offset = change.newValue?.y, offset > origin + 1, offset < target - 1 else { return }
+                        movement.intermediateFrames += 1
+                        XCTAssertTrue(cell.window === window)
+                        XCTAssertFalse(cell.isHidden)
+                        XCTAssertEqual(cell.alpha, 1, accuracy: 0.01)
+                    }
+                }
+                defer { observation.invalidate() }
                 collection.setContentOffset(CGPoint(x: 0, y: target), animated: true)
-                var intermediateFrames = 0
                 for _ in 0..<25 {
                     try await Task.sleep(for: .milliseconds(20))
-                    let offset = collection.contentOffset.y
-                    if offset > origin + 1, offset < target - 1 { intermediateFrames += 1 }
                     XCTAssertTrue(cell.window === window)
                     XCTAssertFalse(cell.isHidden)
                     XCTAssertEqual(cell.alpha, 1, accuracy: 0.01)
                 }
-                XCTAssertGreaterThan(intermediateFrames, 0, "Exercise the moving viewport, not only its endpoint.")
+                observation.invalidate()
+                XCTAssertGreaterThan(movement.intermediateFrames, 0, "Exercise the moving viewport, not only its endpoint.")
                 collection.layoutIfNeeded()
 
                 let attributes = try XCTUnwrap(collection.layoutAttributesForItem(at: path))
@@ -545,6 +555,10 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 XCTAssertTrue(restored.onRequestFocus?() == true, "A returning card must retain native focus behavior.")
             }
         }
+    }
+
+    private final class ScrollMountProbe {
+        var intermediateFrames = 0
     }
 
     func testRemovingEarlierHubKeepsFocusedHubMounted() async throws {
