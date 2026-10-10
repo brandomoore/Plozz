@@ -324,6 +324,14 @@ come from the same deterministically selected owned entry without moving its row
 The shared detail ownership search retains the seed's merge group even when a
 richer library copy becomes the display representative, and keeps the opened
 library source first. Discovery catalog IDs never become playable source refs.
+Sharing one external ID does not override a conflicting ID in another namespace.
+Search rejects contradictory hits before stopping its title-query sequence, and
+the same rule guards item merging and index lookup. A populated index cannot
+restore a rejected ownership match or traverse that match to unrelated sources;
+missing IDs alone do not reject otherwise compatible library copies.
+Canonical labels never reuse the shared ID for both conflicting groups. Episode matching
+keeps explicit series IDs separate from episode IDs, including share payloads
+that repeat a series ID in the ordinary provider field.
 
 Enabled library rows start as soon as their inventory is known. Recently Added
 and recommendation requests complete independently, in stable library/row slots.

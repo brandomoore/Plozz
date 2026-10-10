@@ -205,6 +205,9 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
         for identity in identities {
             guard let sources = byIdentity[identity] else { continue }
             for source in sources where seen.insert(source.id).inserted {
+                guard !MediaItemIdentity.externalIdentitiesConflict(
+                    identities, bySource[source.id] ?? []
+                ) else { continue }
                 result.append(source)
             }
         }
@@ -241,8 +244,8 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
     /// split on title/year) and a mis-tagged **series** pair (a server emitting one
     /// TVDb id for both the 1999 anime and 2023 live-action "One Piece", split on the
     /// large production-year gap). `nil`/kind-unknown anchor = the prior unguarded
-    /// union, so legacy callers behave exactly as before. Absent title/year signals
-    /// on a source never contradict, so a sparse twin is never split.
+    /// title/year union. Conflicting external IDs are always excluded before
+    /// traversal; missing IDs or title/year signals alone never reject a source.
     public func sources(
         forIdentities identities: [MediaIdentity],
         kind: MediaItemKind?,
@@ -276,6 +279,9 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
             guard visitedIdentities.insert(identity).inserted else { continue }
             guard let sources = byIdentity[identity] else { continue }
             for source in sources where source.kind == kind {
+                guard !MediaItemIdentity.externalIdentitiesConflict(
+                    identities, bySource[source.id] ?? []
+                ) else { continue }
                 // A source that plausibly contradicts the anchor is a different work
                 // riding a bad shared id: exclude it from the result AND from the
                 // frontier, so nothing reachable only *through* it leaks in either.
@@ -390,6 +396,9 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
         for identity in identities where visited.insert(identity).inserted {
             guard let sources = byIdentity[identity] else { continue }
             for source in sources where source.kind == item.kind {
+                guard !MediaItemIdentity.externalIdentitiesConflict(
+                    identities, bySource[source.id] ?? []
+                ) else { continue }
                 // A source that positively contradicts the asking item is a different
                 // work riding a bad shared id — its label must not be adopted.
                 if MediaItemIdentity.titlesPlausiblyContradict(

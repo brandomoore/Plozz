@@ -5,6 +5,39 @@ import XCTest
 @testable import AppRuntime
 
 final class CrossServerIdentityHydrationTests: XCTestCase {
+  func testConflictingOwnershipStaysRejectedWithColdAndWarmIndex() async throws {
+    for kind in [MediaItemKind.movie, .series] {
+      let seed = MediaItem(
+        id: "discovery", title: "Same Title", kind: kind,
+        providerIDs: ["Imdb": "tt111", "Tmdb": "123"],
+        availability: .unknown, locallyValidatedPlayableSource: false
+      )
+      let hit = MediaItem(
+        id: "wrong", title: seed.title, kind: kind,
+        people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+        providerIDs: ["Imdb": "tt222", "Tmdb": "123"]
+      )
+      let session = UserSession(
+        server: MediaServer(
+          id: "server", name: "Server", baseURL: URL(string: "https://server.test")!, provider: .silo),
+        userID: "viewer", userName: "Viewer", deviceID: "fixture", accessToken: "TEST-ONLY"
+      )
+      let provider = PartialIdentityProvider(session: session, sparse: hit, full: hit)
+      let accounts = [ResolvedAccount(account: Account(id: "server", from: session), provider: provider)]
+      let index = IdentityIndex()
+      await index.ingest([hit], accountID: "server")
+      let warm = await index.snapshot()
+      for snapshot in [IdentityIndexSnapshot.empty, warm] {
+        let resolve = try XCTUnwrap(crossServerSourceResolver(
+          in: accounts, identitySources: { snapshot.sourceRefs(for: $0) }
+        ))
+        let sources = await resolve(seed)
+        XCTAssertTrue(sources.isEmpty, "\(kind), warm: \(!snapshot.isEmpty)")
+        XCTAssertTrue(TitleClassifier.isDiscoveryRouting(seed, identitySources: sources))
+      }
+    }
+  }
+
   func testSourceLookupHydratesPartialIDsWithoutTitleOnlyMatching() async throws {
     let primary = MediaItem(
       id: "tmdb:series:202879", title: "Star Wars: Skeleton Crew", kind: .series,

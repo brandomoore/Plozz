@@ -18,6 +18,43 @@ import XCTest
 /// production-year gap apart — and never splits on an absent signal (a movie with
 /// no title, a series with no year) or a cross-kind pair.
 final class IdentityIndexSplitGuardTests: XCTestCase {
+    func testConflictingExternalIDRejectsSourceAndItsTransitivePeers() async {
+        let seed = MediaItem(
+            id: "discovery", title: "Same Title", kind: .movie,
+            providerIDs: ["Imdb": "tt111", "Tmdb": "123"],
+            availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        let wrong = MediaItem(
+            id: "wrong", title: seed.title, kind: .movie,
+            providerIDs: ["Imdb": "tt222", "Tmdb": "123", "Tvdb": "456"]
+        )
+        let peer = MediaItem(
+            id: "wrong-peer", title: seed.title, kind: .movie,
+            providerIDs: ["Tvdb": "456"]
+        )
+        let index = IdentityIndex()
+        await index.ingest([wrong, peer], accountID: "only-server")
+        let snapshot = await index.snapshot()
+
+        XCTAssertTrue(snapshot.sourceRefs(for: seed).isEmpty)
+        XCTAssertTrue(snapshot.targets(for: seed).isEmpty)
+        XCTAssertNil(snapshot.canonicalEvidence(for: seed))
+    }
+
+    func testMergerDoesNotCombineSharedIDWithContradictoryStrongID() {
+        let first = MediaItem(
+            id: "first", title: "Same Title", kind: .movie,
+            providerIDs: ["Imdb": "tt111", "Tmdb": "123"], sourceAccountID: "server"
+        )
+        let second = MediaItem(
+            id: "second", title: first.title, kind: .movie,
+            people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+            providerIDs: ["Imdb": "tt222", "Tmdb": "123"], sourceAccountID: "server"
+        )
+
+        XCTAssertEqual(MediaItemMerger.merge([first, second]).map(\.id), [first.id, second.id])
+    }
+
     /// A movie the index would have ingested, carrying the title/year the guard
     /// compares. `tmdb` is the (possibly bad, shared) external id both films key on.
     private func indexedMovie(

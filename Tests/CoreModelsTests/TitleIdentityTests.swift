@@ -74,6 +74,27 @@ final class TitleIdentityTests: XCTestCase {
 
     // MARK: - Component labelling
 
+    func testConflictingIDsNeverShareCanonicalEvidence() async throws {
+        for namespace in ["Imdb", "Tmdb"] {
+            let first = item(
+                "first", title: "Same Title", year: 2020,
+                providerIDs: ["Imdb": "tt111", "Tmdb": "123"], account: "server"
+            )
+            var second = first
+            second.id = "second"
+            second.providerIDs[namespace] = "different"
+            let index = IdentityIndex()
+            await index.ingest([first, second], accountID: "server")
+            let snapshot = await index.snapshot()
+            let firstEvidence = try XCTUnwrap(snapshot.canonicalEvidence(for: first))
+            let secondEvidence = try XCTUnwrap(snapshot.canonicalEvidence(for: second))
+            XCTAssertNotEqual(firstEvidence, secondEvidence)
+
+            let resolver = TitleIdentityResolver(index: snapshot)
+            XCTAssertEqual(resolver.deduplicated([first, second]).count, 2)
+        }
+    }
+
     /// The counter-example that killed the original per-item-walk design.
     ///
     /// ```

@@ -332,7 +332,8 @@ public enum MediaItemMerger {
             // its predecessor's TMDb/IMDb id) would otherwise collapse two distinct
             // films into one card. Refine the union component into sub-groups of
             // mutually-plausible items, ejecting any member that POSITIVELY
-            // contradicts the others (titles disagree AND years don't corroborate).
+            // contradicts the others (external IDs conflict, or titles disagree
+            // without corroborating years).
             // Conservative by construction — sparse-metadata / id-less rows carry no
             // positive contradiction, so the index-membership merges we rely on are
             // never wrongly split; only a genuine mismatch separates.
@@ -403,11 +404,15 @@ public enum MediaItemMerger {
 
     /// Whether two items are almost certainly *different* works despite sharing a
     /// merge key — the positive-contradiction signal the split-guard ejects on.
-    /// Delegates to the shared, index-reusable primitive so a bad shared external
+    /// Delegates to the shared, index-reusable primitives so a bad shared external
     /// id is split identically here (full-item merges) and inside the identity
-    /// index's membership walk (which stores only title/year per source).
+    /// index's membership walk (which retains identities and title/year per source).
     static func plausiblyContradicts(_ a: MediaItem, _ b: MediaItem) -> Bool {
-        MediaItemIdentity.titlesPlausiblyContradict(
+        guard a.kind == b.kind else { return false }
+        return MediaItemIdentity.externalIdentitiesConflict(
+            MediaItemIdentity.identities(for: a),
+            MediaItemIdentity.identities(for: b)
+        ) || MediaItemIdentity.titlesPlausiblyContradict(
             titleA: a.title,
             yearA: a.productionYear,
             kindA: a.kind,

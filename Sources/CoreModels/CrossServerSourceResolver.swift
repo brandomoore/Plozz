@@ -101,8 +101,9 @@ public enum CrossServerSourceResolver {
         // recall for a *differently-titled* copy we've now already found by id, so
         // we stop early and free that account's search budget (each query carries
         // its own 4s deadline; a cold Plex exhausting all four is up to ~16s).
+        let primaryIdentities = MediaItemIdentity.identities(for: primary)
         let primaryStrongIDs = Set(
-            MediaItemIdentity.identities(for: primary).filter {
+            primaryIdentities.filter {
                 if case .external = $0 { return true }
                 return false
             }
@@ -124,7 +125,15 @@ public enum CrossServerSourceResolver {
                     // raw and normalized passes don't double-count the same hit.
                     for query in queries {
                         guard !Task.isCancelled else { return (index, []) }
-                        for hit in await search(accountID, query) where seenItemIDs.insert(hit.id).inserted {
+                        for hit in await search(accountID, query) {
+                            // Reject before deduplication and early exit: a bad
+                            // shared ID must not stop a later query finding the copy.
+                            guard hit.kind == primary.kind,
+                                  !MediaItemIdentity.externalIdentitiesConflict(
+                                    primaryIdentities,
+                                    MediaItemIdentity.identities(for: hit)
+                                  ),
+                                  seenItemIDs.insert(hit.id).inserted else { continue }
                             accountHits.append(hit.taggingSource(accountID))
                         }
                         // Strong-id match found → further title queries are
