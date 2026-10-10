@@ -1,6 +1,6 @@
 // Plozz pairing links Worker.
 //
-// Serves the pairing and Trakt authentication paths (see wrangler.toml routes):
+// Serves pairing, Trakt authentication, and community shortcuts (see wrangler.toml routes):
 //   1. /.well-known/apple-app-site-association
 //        The Apple App Site Association (AASA) file that lets iOS treat
 //        https://plozz.app/pair as a Universal Link into the Plozz app.
@@ -19,6 +19,10 @@ const APP_ID = "N8Z5T4AK3X.com.thatcube.Plozz";
 // Public install URL for Plozz. TestFlight public link (works before an App
 // Store release). The /pair page adapts its copy if this is ever emptied.
 const APP_STORE_URL = "https://testflight.apple.com/join/EKfReNMu";
+const SHORTLINKS = [
+  { path: "/discord", target: "https://discord.gg/YkXnmB8rcF" },
+  { path: "/github", target: "https://github.com/brandomoore/Plozz" },
+];
 
 const AASA = {
   webcredentials: { apps: [APP_ID] },
@@ -38,6 +42,18 @@ const AASA = {
 export default {
   async fetch(request) {
     const url = new URL(request.url);
+
+    const shortcut = SHORTLINKS.find(({ path }) => url.pathname === path || url.pathname === `${path}/`);
+    if (shortcut) {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: shortcut.target,
+          "cache-control": "no-store",
+          "referrer-policy": "no-referrer",
+        },
+      });
+    }
 
     if (url.pathname === "/.well-known/apple-app-site-association") {
       return new Response(JSON.stringify(AASA), {
@@ -72,6 +88,11 @@ export default {
           },
         },
       );
+    }
+
+    // The wildcards also catch similarly prefixed pages; keep those on Pages.
+    if (SHORTLINKS.some(({ path }) => url.pathname.startsWith(path))) {
+      return fetch(request);
     }
 
     // Should not happen given the routes, but fall through gracefully.

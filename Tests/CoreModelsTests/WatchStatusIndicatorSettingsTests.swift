@@ -13,6 +13,7 @@ final class WatchStatusIndicatorSettingsStoreTests: XCTestCase {
         let store = WatchStatusIndicatorSettingsStore(defaults: makeDefaults())
         XCTAssertEqual(store.load(), .unwatched)
         XCTAssertEqual(WatchStatusIndicator.default, .unwatched)
+        XCTAssertTrue(store.loadShowsUnwatchedEpisodeCount())
     }
 
     func testRoundTripForEveryIndicator() {
@@ -65,5 +66,22 @@ final class WatchStatusIndicatorSettingsStoreTests: XCTestCase {
         let model = WatchStatusIndicatorSettingsModel(store: WatchStatusIndicatorSettingsStore(defaults: defaults))
         model.indicator = .unwatched
         XCTAssertEqual(WatchStatusIndicatorSettingsStore(defaults: defaults).load(), .unwatched)
+        model.showsUnwatchedEpisodeCount = false
+        XCTAssertFalse(WatchStatusIndicatorSettingsStore(defaults: defaults).loadShowsUnwatchedEpisodeCount())
+        XCTAssertEqual(model.indicator, .unwatched, "Count is independent of the indicator style")
+    }
+
+    func testEpisodeCountPreferenceIsProfileScopedAndTransferable() {
+        let defaults = makeDefaults()
+        let alice = WatchStatusIndicatorSettingsStore(defaults: defaults, namespace: "alice")
+        alice.saveShowsUnwatchedEpisodeCount(false)
+        XCTAssertFalse(alice.loadShowsUnwatchedEpisodeCount())
+        XCTAssertTrue(WatchStatusIndicatorSettingsStore(defaults: defaults).loadShowsUnwatchedEpisodeCount())
+        XCTAssertTrue(WatchStatusIndicatorSettingsStore(defaults: defaults, namespace: "bob").loadShowsUnwatchedEpisodeCount())
+        let snapshot = ProfileSettingsTransfer.capture(namespace: "alice", defaults: defaults)
+        let destination = makeDefaults()
+        ProfileSettingsTransfer.apply(snapshot, namespace: "alice", defaults: destination)
+        XCTAssertFalse(WatchStatusIndicatorSettingsStore(defaults: destination, namespace: "alice").loadShowsUnwatchedEpisodeCount())
+        XCTAssertTrue(WatchStatusIndicatorSettingsStore(defaults: destination).loadShowsUnwatchedEpisodeCount())
     }
 }

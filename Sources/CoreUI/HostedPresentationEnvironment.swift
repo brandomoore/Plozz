@@ -21,6 +21,7 @@ public extension EnvironmentValues {
         plozzArtworkProviders = source.plozzArtworkProviders
         plozzArtworkArea = source.plozzArtworkArea
         plozzWatchStatusIndicator = source.plozzWatchStatusIndicator
+        plozzShowsUnwatchedEpisodeCount = source.plozzShowsUnwatchedEpisodeCount
         plozzSeerConnected = source.plozzSeerConnected
         plozzReduceTransparency = source.plozzReduceTransparency
         plozzNavigationStyle = source.plozzNavigationStyle

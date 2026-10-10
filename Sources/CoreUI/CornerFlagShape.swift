@@ -35,4 +35,22 @@ public struct TopTrailingCornerFlagEdge: Shape {
         return path
     }
 }
+
+struct TopTrailingCurvedCornerEdge: Shape {
+    let radius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let radius = max(0, min(radius, min(rect.width, rect.height)))
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - radius))
+        path.addArc(
+            center: CGPoint(x: rect.minX + radius, y: rect.maxY - radius),
+            radius: radius, startAngle: .degrees(180), endAngle: .degrees(90),
+            clockwise: true
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        return path
+    }
+}
 #endif

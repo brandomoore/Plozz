@@ -10,4 +10,7 @@ routes = [
   { pattern = "plozz.app/.well-known/apple-app-site-association", zone_name = "plozz.app" },
   { pattern = "plozz.app/pair", zone_name = "plozz.app" },
   { pattern = "plozz.app/auth/trakt/callback", zone_name = "plozz.app" },
+  # The wildcard permits query strings; the Worker passes non-shortcut paths through.
+  { pattern = "plozz.app/discord*", zone_name = "plozz.app" },
+  { pattern = "plozz.app/github*", zone_name = "plozz.app" },
 ]

@@ -5,6 +5,15 @@ import CoreModels
 @testable import CoreUI
 
 final class PlozzMetricsTests: XCTestCase {
+    func testMobileArtworkProgressIsSlimmerWithoutChangingTelevision() {
+        for density in UIDensity.allCases {
+            XCTAssertEqual(PlozzMetrics.touch(density: density).progressBarHeight, 8)
+            XCTAssertEqual(
+                PlozzMetrics(density: density).progressBarHeight,
+                max((12 * CGFloat(density.scale)).rounded(), 9))
+        }
+    }
+
     func testTouchCardsUseProportionateBadgesAndCaptionSpacing() {
         let touch = PlozzMetrics.touch(density: .standard)
         let tv = PlozzMetrics.standard

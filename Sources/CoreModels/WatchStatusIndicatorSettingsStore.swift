@@ -10,11 +10,16 @@ import Observation
 public protocol WatchStatusIndicatorSettingsStoring: Sendable {
     func load() -> WatchStatusIndicator
     func save(_ indicator: WatchStatusIndicator)
+    func loadShowsUnwatchedEpisodeCount() -> Bool
+    func saveShowsUnwatchedEpisodeCount(_ enabled: Bool)
 }
 
 public final class WatchStatusIndicatorSettingsStore: WatchStatusIndicatorSettingsStoring, @unchecked Sendable {
     private let defaults: UserDefaults
     private let key: String
+    private let episodeCountKey: String
+    public static let episodeCountStorageKey = "com.plozz.showsUnwatchedEpisodeCount"
+    public static let defaultShowsUnwatchedEpisodeCount = true
 
     /// - Parameter namespace: per-profile scope. `nil` (the default/primary
     ///   profile) uses the legacy un-suffixed key; other profiles pass their
@@ -22,6 +27,7 @@ public final class WatchStatusIndicatorSettingsStore: WatchStatusIndicatorSettin
     public init(defaults: UserDefaults = .standard, namespace: String? = nil) {
         self.defaults = defaults
         self.key = SettingsKey.scoped("com.plozz.watchStatusIndicator", namespace: namespace)
+        self.episodeCountKey = SettingsKey.scoped(Self.episodeCountStorageKey, namespace: namespace)
     }
 
     public func load() -> WatchStatusIndicator {
@@ -35,6 +41,14 @@ public final class WatchStatusIndicatorSettingsStore: WatchStatusIndicatorSettin
     public func save(_ indicator: WatchStatusIndicator) {
         defaults.set(indicator.rawValue, forKey: key)
     }
+
+    public func loadShowsUnwatchedEpisodeCount() -> Bool {
+        defaults.object(forKey: episodeCountKey) as? Bool ?? Self.defaultShowsUnwatchedEpisodeCount
+    }
+
+    public func saveShowsUnwatchedEpisodeCount(_ enabled: Bool) {
+        defaults.set(enabled, forKey: episodeCountKey)
+    }
 }
 
 /// Observable wrapper so SwiftUI settings screens can two-way bind and have the
@@ -46,11 +60,15 @@ public final class WatchStatusIndicatorSettingsModel {
     public var indicator: WatchStatusIndicator {
         didSet { store.save(indicator) }
     }
+    public var showsUnwatchedEpisodeCount: Bool {
+        didSet { store.saveShowsUnwatchedEpisodeCount(showsUnwatchedEpisodeCount) }
+    }
 
     private let store: WatchStatusIndicatorSettingsStoring
 
     public init(store: WatchStatusIndicatorSettingsStoring = WatchStatusIndicatorSettingsStore()) {
         self.store = store
         self.indicator = store.load()
+        self.showsUnwatchedEpisodeCount = store.loadShowsUnwatchedEpisodeCount()
     }
 }

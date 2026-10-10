@@ -122,6 +122,7 @@ final class ShareSeasonWatchStateTests: XCTestCase {
         let s1 = try XCTUnwrap(result.first { $0.seasonNumber == 1 })
         XCTAssertTrue(s1.isPlayed, "every episode watched must mark the season played")
         XCTAssertEqual(s1.playedPercentage, 1.0)
+        XCTAssertEqual(s1.unwatchedEpisodeCount, 0)
     }
 
     func testPartlyWatchedSeasonReportsProgressNotPlayed() async throws {
@@ -135,6 +136,7 @@ final class ShareSeasonWatchStateTests: XCTestCase {
         XCTAssertFalse(s2.isPlayed)
         XCTAssertEqual(try XCTUnwrap(s2.playedPercentage), 0.5, accuracy: 0.0001)
         XCTAssertTrue(s2.hasBeenPlayed)
+        XCTAssertEqual(s2.unwatchedEpisodeCount, 1)
     }
 
     func testUntouchedSeasonReportsNothing() async throws {
@@ -148,6 +150,7 @@ final class ShareSeasonWatchStateTests: XCTestCase {
         XCTAssertFalse(s2.isPlayed)
         XCTAssertFalse(s2.hasBeenPlayed)
         XCTAssertNil(s2.playedPercentage, "no progress must be nil, not a zeroed bar")
+        XCTAssertEqual(s2.unwatchedEpisodeCount, 2)
     }
 
     /// The bug this fixes, stated as behaviour: with S1 complete and S2 started,
@@ -201,8 +204,7 @@ final class ShareSeasonWatchStateTests: XCTestCase {
         XCTAssertEqual(s1.playedPercentage, 1.0)
     }
 
-    /// A series with no watch history at all must not pay for a rollup or come
-    /// back with invented state.
+    /// No watch records means all known catalog episodes are unwatched.
     func testNoHistoryLeavesSeasonsUntouched() async throws {
         let durableStore = try makeDurableStore()
         let catalog = await makeCatalog()
@@ -213,6 +215,7 @@ final class ShareSeasonWatchStateTests: XCTestCase {
             XCTAssertFalse(season.isPlayed)
             XCTAssertFalse(season.hasBeenPlayed)
             XCTAssertNil(season.playedPercentage)
+            XCTAssertEqual(season.unwatchedEpisodeCount, 2)
         }
     }
 }

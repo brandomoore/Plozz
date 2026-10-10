@@ -1607,6 +1607,9 @@ public final class ItemDetailViewModel {
                 var updated = mutation.applied(to: child)
                 if let seriesPlayedCascade {
                     updated.isPlayed = seriesPlayedCascade
+                    if updated.kind == .season {
+                        updated.unwatchedEpisodeCount = seriesPlayedCascade ? 0 : nil
+                    }
                 }
                 return updated
             }
@@ -2602,6 +2605,7 @@ public final class ItemDetailViewModel {
             seeded.edition = primary.edition
             seeded.resumePosition = primary.resumePosition
             seeded.playedPercentage = primary.playedPercentage
+            seeded.unwatchedEpisodeCount = primary.unwatchedEpisodeCount
             seeded.isPlayed = primary.isPlayed
             seeded.isFavorite = primary.isFavorite
             seeded.lastPlayedAt = primary.lastPlayedAt
@@ -2666,6 +2670,7 @@ public final class ItemDetailViewModel {
         if !preservingWatchState {
             seeded.resumePosition = primary.resumePosition
             seeded.playedPercentage = primary.playedPercentage
+            seeded.unwatchedEpisodeCount = primary.unwatchedEpisodeCount
             seeded.isPlayed = primary.isPlayed
             seeded.isFavorite = primary.isFavorite
             seeded.lastPlayedAt = primary.lastPlayedAt
@@ -2823,6 +2828,7 @@ public final class ItemDetailViewModel {
         var edition: String?
         var resumePosition: TimeInterval?
         var playedPercentage: Double?
+        var unwatchedEpisodeCount: Int?
         var isPlayed: Bool
         var isFavorite: Bool
         var lastPlayedAt: Date?
@@ -2911,6 +2917,7 @@ public final class ItemDetailViewModel {
                         edition: tagged.edition,
                         resumePosition: tagged.resumePosition,
                         playedPercentage: tagged.playedPercentage,
+                        unwatchedEpisodeCount: tagged.unwatchedEpisodeCount,
                         isPlayed: tagged.isPlayed,
                         isFavorite: tagged.isFavorite,
                         lastPlayedAt: tagged.lastPlayedAt
@@ -2986,6 +2993,7 @@ public final class ItemDetailViewModel {
             source.edition = update.edition
             source.resumePosition = update.resumePosition
             source.playedPercentage = update.playedPercentage
+            source.unwatchedEpisodeCount = update.unwatchedEpisodeCount
             source.isPlayed = update.isPlayed
             source.isFavorite = update.isFavorite
             source.lastPlayedAt = update.lastPlayedAt
@@ -3013,6 +3021,7 @@ public final class ItemDetailViewModel {
         detail.item.rejectedSourceIDs.formUnion(rejectedSourceIDs)
         detail.item.resumePosition = unified.resumePosition
         detail.item.playedPercentage = unified.playedPercentage
+        detail.item.unwatchedEpisodeCount = unified.unwatchedEpisodeCount
         detail.item.isPlayed = unified.isPlayed
         detail.item.lastPlayedAt = unified.lastPlayedAt
         detail.item = applyingDetailWatchMutations(to: detail.item)

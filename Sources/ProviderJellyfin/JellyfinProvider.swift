@@ -2119,6 +2119,8 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             runtime: runtime,
             resumePosition: resumePosition,
             playedPercentage: playedPercentage,
+            unwatchedEpisodeCount: isContainer
+                ? dto.UserData?.UnplayedItemCount.flatMap { $0 >= 0 ? $0 : nil } : nil,
             isPlayed: serverPlayed && !isRewatching,
             hasBeenPlayed: serverPlayed || hasContainerHistory,
             posterURL: Self.imageURL(for: dto, kind: .primary, maxWidth: 500, client: client),

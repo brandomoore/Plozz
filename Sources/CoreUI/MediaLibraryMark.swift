@@ -128,6 +128,7 @@ public enum MediaLibraryMark: Equatable, Sendable {
 /// the same white, it no longer competes with it.
 public struct MediaLibraryMarkView: View {
     private let mark: MediaLibraryMark
+    /// The rendered symbol's square slot, not its typographic point size.
     private let size: CGFloat
 
     /// Grey 50% at 70% opacity, chosen on-device from a 10-grey × 7-alpha matrix
@@ -142,9 +143,14 @@ public struct MediaLibraryMarkView: View {
 
     public var body: some View {
         Image(systemName: mark.systemImage)
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
             .background {
                 if mark == .requested {
                     Image(systemName: "circle.fill")
+                        .resizable()
+                        .scaledToFit()
                         .foregroundStyle(Self.secondaryLayer)
                         .accessibilityHidden(true)
                 }

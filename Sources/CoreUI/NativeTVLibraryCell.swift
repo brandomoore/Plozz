@@ -79,6 +79,14 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         accessibilityLabel = item?.posterCaptionTitle(spoilerSettings: spoilerSettings).resolve(locale: environment.locale)
             ?? loadingTitle
         accessibilityValue = item?.posterCaptionSubtitle()
+        if let item, var countLabel = MediaPlaybackIndicatorState(item).episodeCountAccessibilityLabel(
+            enabled: environment.plozzShowsUnwatchedEpisodeCount,
+            hidesStatus: spoilerSettings.shouldHideThumbnail(for: item)
+        ) {
+            countLabel.locale = environment.locale
+            let count = String(localized: countLabel) // l10n:content — UIKit accessibility boundary; resolved from the current environment
+            accessibilityValue = [accessibilityValue, count].compactMap { $0 }.joined(separator: ", ")
+        }
         accessibilityTraits = item == nil || !environment.isEnabled ? [.button, .notEnabled] : .button
         accessibilityHint = nil
         if item?.kind == .folder {
@@ -277,7 +285,8 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             MediaCardPlaybackIndicators(
                 item: $0, hidesStatus: spoilerSettings.shouldHideThumbnail(for: $0),
                 showsProgressBar: true, badgeInset: 8, progressHeight: metrics.progressBarHeight,
-                progressHorizontalInset: 16, progressBottomInset: 16
+                progressHorizontalInset: 16, progressBottomInset: 16,
+                artworkCornerRadius: PlozzTheme.Metrics.nativePosterArtworkCornerRadius
             )
         }
 

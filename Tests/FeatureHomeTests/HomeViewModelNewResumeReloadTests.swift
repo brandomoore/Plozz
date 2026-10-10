@@ -334,6 +334,25 @@ final class HomeViewModelNewResumeReloadTests: XCTestCase {
         XCTAssertEqual(provider.librariesCallCount, 1)
     }
 
+    func testCountConfirmationRefreshesHomeWithoutReplayingWatchState() async throws {
+        for kind in [MediaItemKind.series, .season, .episode] {
+            let provider = FakeMediaProvider(allItems: [])
+            provider.continueWatchingItems = [
+                MediaItem(id: "newer-play", title: "Newer play", kind: .episode, resumePosition: 120)
+            ]
+            let vm = makeViewModel(provider: provider)
+            await vm.load()
+            let confirmation = WatchMutation(
+                capturedAt: Date(), canonicalMediaID: "show", played: false,
+                targets: [.init(accountID: "a", itemID: "show")], kind: kind)
+            let mutation = try XCTUnwrap(MediaItemMutation(confirmedWatchMutation: confirmation))
+            XCTAssertFalse(mutation.refreshContinueWatching)
+            vm.applyWatchedState(mutation)
+            await waitUntil { provider.librariesCallCount == 2 && !vm.isRefreshing }
+            XCTAssertEqual(cw(vm).first?.resumePosition, 120)
+        }
+    }
+
     func testOffscreenModelReceivesCompletionAndConfirmationWithoutAHomeView() async throws {
         let provider = FakeMediaProvider(allItems: [], kind: .emby)
         let episode = MediaItem(id: "e3", title: "Episode 3", kind: .episode, sourceAccountID: "a")

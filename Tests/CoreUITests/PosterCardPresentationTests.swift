@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import XCTest
+import SwiftUI
 import CoreModels
 @testable import CoreUI
 final class MediaFileBrowserNavigationTests: XCTestCase {
@@ -219,6 +220,37 @@ final class PosterCardPresentationTests: XCTestCase {
         )
 
         XCTAssertFalse(MediaPlaybackIndicatorPresentation.showsProgress(for: MediaPlaybackIndicatorState(item)))
+    }
+
+    func testEpisodeCountsAreExactAndOnlyForVisibleOwnedContainers() {
+        for kind in [MediaItemKind.series, .season, .episode, .movie] {
+            for count in [nil, -1, 0, 1, 8, 999, 12_345] as [Int?] {
+                var item = MediaItem(id: "item", title: "Item", kind: kind, playedPercentage: 0.3, unwatchedEpisodeCount: count)
+                let expected = (kind == .series || kind == .season) && (count ?? 0) > 0 ? count : nil
+                XCTAssertEqual(MediaPlaybackIndicatorPresentation.episodeCount(
+                    for: MediaPlaybackIndicatorState(item), enabled: true, hidesStatus: false), expected)
+                XCTAssertNil(MediaPlaybackIndicatorPresentation.episodeCount(
+                    for: MediaPlaybackIndicatorState(item), enabled: false, hidesStatus: false))
+                XCTAssertNil(MediaPlaybackIndicatorPresentation.episodeCount(
+                    for: MediaPlaybackIndicatorState(item), enabled: true, hidesStatus: true))
+                item.availability = .unknown
+                XCTAssertNil(MediaPlaybackIndicatorPresentation.episodeCount(
+                    for: MediaPlaybackIndicatorState(item), enabled: true, hidesStatus: false))
+            }
+        }
+    }
+
+    func testHostedEnvironmentCarriesIndependentEpisodeCountPreference() {
+        var source = EnvironmentValues()
+        source.plozzShowsUnwatchedEpisodeCount = true
+        source.plozzWatchStatusIndicator = .watched
+        var hosted = EnvironmentValues()
+        hosted.copyHostedPresentation(from: source)
+        XCTAssertTrue(hosted.plozzShowsUnwatchedEpisodeCount)
+        XCTAssertEqual(hosted.plozzWatchStatusIndicator, .watched)
+        source.plozzShowsUnwatchedEpisodeCount = false
+        hosted.copyHostedPresentation(from: source)
+        XCTAssertFalse(hosted.plozzShowsUnwatchedEpisodeCount)
     }
 
     func testProgressTakesPriorityOverWatchedBadge() {

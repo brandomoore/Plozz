@@ -353,7 +353,8 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
             cascadesToSeasonEpisodes: item.kind == .season,
             played: played,
             resumePosition: played ? 0 : nil,
-            playedPercentage: played ? 1 : nil
+            playedPercentage: played ? 1 : nil,
+            item: item
         ).post()
 
         enqueueWatchMutation(mutation)
@@ -412,7 +413,8 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
             scopedItemIDs: scoped,
             played: true,
             resumePosition: 0,
-            playedPercentage: 1
+            playedPercentage: 1,
+            kind: item.kind
         ).post()
         Task {
             for id in ids {

@@ -37,6 +37,7 @@ public enum DetailPlaybackSelection {
         var copy = item
         copy.resumePosition = resume.resumePosition
         copy.playedPercentage = resume.playedPercentage
+        copy.unwatchedEpisodeCount = resume.unwatchedEpisodeCount
         copy.isPlayed = resume.isPlayed
         copy.hasBeenPlayed = resume.hasBeenPlayed
         copy.lastPlayedAt = resume.lastPlayedAt

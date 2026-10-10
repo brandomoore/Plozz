@@ -136,6 +136,7 @@ public enum HeroCandidateWatchStateEnricher {
                 if let item = state.item {
                     ref.resumePosition = item.resumePosition
                     ref.playedPercentage = item.playedPercentage
+                    ref.unwatchedEpisodeCount = item.unwatchedEpisodeCount
                     ref.isPlayed = item.isPlayed
                     ref.hasBeenPlayed = item.hasBeenPlayed || (isDiscovery && item.isPlayed)
                     ref.isFavorite = item.isFavorite
@@ -148,6 +149,7 @@ public enum HeroCandidateWatchStateEnricher {
                 let watchState = MediaItemMerger.unifiedWatchState(from: enriched[index].sources)
                 enriched[index].resumePosition = watchState.resumePosition
                 enriched[index].playedPercentage = watchState.playedPercentage
+                enriched[index].unwatchedEpisodeCount = watchState.unwatchedEpisodeCount
                 enriched[index].isPlayed = watchState.isPlayed
                 enriched[index].hasBeenPlayed = enriched[index].sources.contains {
                     $0.hasBeenPlayed || $0.isPlayed

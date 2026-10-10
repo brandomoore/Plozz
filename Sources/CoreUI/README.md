@@ -6,6 +6,37 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+- **Unwatched episode counts** — a default-on profile preference replaces the
+  top-right watch-status mark with a number on series/season cards.
+  Watched mode uses an inset pearl count tile and a matching white completed
+  circle with a dark check. Unwatched mode uses a white triangle for unnumbered
+  titles and a flush white count tile with matching outer and bottom-left
+  curves. Fine edges and soft shadows keep both legible on pale artwork; only
+  the artwork clips the curved tile's shadow, never the tile's own bounds.
+  Both count styles use bold system digits. At standard TV size the curved
+  tile has 12pt side padding and remains 56pt tall; Pearl spacing is unchanged.
+  Floating marks have density-scaled clearance (16pt at standard TV size).
+  Touch sizes and artwork radii remain proportionate. Episode cards and the
+  watch-indicator Settings swatches reuse the same white check and flag.
+  Positive exact library counts take priority; unknown counts retain the
+  existing watched/unwatched style. Completed containers retain its completion
+  behavior. Movies, episodes, ownership/request marks and spoiler protection
+  are unchanged. Native and SwiftUI cards share the renderer and preference,
+  including native hosting and accessibility.
+  Counts use Plex leaf/viewed-leaf fields, Jellyfin/Emby unplayed-item counts,
+  and existing local Share episode rollups. They never query episodes per card,
+  use online episode totals, or sum duplicate servers. Cross-server counts
+  follow the same source as watch state. Child mutations invalidate snapshots
+  until the next batched refresh instead of guessing a decrement. Movie actions
+  never invalidate unrelated episode counts. Count-only refreshes wait for
+  confirmed server delivery so they cannot undo an optimistic watched action.
+- **Discovery marks** — the requestable plus, requested clock, and unowned
+  binoculars fit the same density-scaled square and corner clearance as the
+  watched badge: 21pt on standard touch cards, 42pt on standard TV cards.
+  Symbol bounds, not font point sizes, determine their footprint; mobile marks
+  never inherit TV's 36pt minimum. Their existing grey/white treatment and
+  ownership/request meanings are unchanged. In-player credits use the same
+  renderer with their card-width-scaled size.
 - **Theme** — `Theme`, `ThemeOption` (System / Dark / Pure Black / Light) and
   the per-profile theme model, observed at the app root.
   Gradient Backgrounds is a separate default-on profile preference, transferred
@@ -71,6 +102,8 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   radius at every display size and responsive width. Borderless cards use that
   radius directly; glass frames add their inset to remain concentric. Loaded
   artwork, missing-art placeholders, and skeletons agree. TV rounding is unchanged.
+  Regular mobile artwork progress bars use an 8pt minimum height, leaving their
+  length and the separate Continue Watching, hero, and TV bars unchanged.
   Mobile library, episode, and download artwork uses the same metric, keeping
   its caption clearance consistent with its actual corners. Mobile captions use
   a shared 4pt horizontal inset from the artwork edge, independently of their

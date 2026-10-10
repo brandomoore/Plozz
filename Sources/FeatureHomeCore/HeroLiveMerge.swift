@@ -405,6 +405,7 @@ public enum HeroLiveMerge {
         let state = MediaItemMerger.unifiedWatchState(from: verified)
         kept.resumePosition = state.resumePosition
         kept.playedPercentage = state.playedPercentage
+        kept.unwatchedEpisodeCount = state.unwatchedEpisodeCount
         kept.isPlayed = state.isPlayed
         kept.lastPlayedAt = state.lastPlayedAt
         kept.hasBeenPlayed = fresh.hasBeenPlayed || verified.contains { $0.hasBeenPlayed || $0.isPlayed }

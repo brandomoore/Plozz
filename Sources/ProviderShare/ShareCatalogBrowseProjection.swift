@@ -460,6 +460,7 @@ struct ShareCatalogBrowseProjection {
         item.watchlistAliasID = live.watchlistAliasID ?? catalog.watchlistAliasID
         item.resumePosition = live.resumePosition
         item.playedPercentage = live.playedPercentage
+        item.unwatchedEpisodeCount = live.unwatchedEpisodeCount
         item.isPlayed = live.isPlayed
         item.hasBeenPlayed = live.hasBeenPlayed
         item.isFavorite = live.isFavorite

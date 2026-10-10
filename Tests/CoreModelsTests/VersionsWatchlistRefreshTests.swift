@@ -90,11 +90,16 @@ final class MediaItemMutationOptionalTests: XCTestCase {
         XCTAssertEqual(mutation.applied(to: newer).resumePosition, 120)
         let note = Notification(
             name: .mediaItemDidMutate,
-            userInfo: ["itemIDs": ["e3"], "scopedItemIDs": ["a:e3"], "refreshContinueWatching": true]
+            userInfo: [
+                "itemIDs": ["e3"], "scopedItemIDs": ["a:e3"], "kind": "episode",
+                "refreshContinueWatching": true, "refreshEpisodeCounts": true
+            ]
         )
         XCTAssertEqual(MediaItemMutation.from(note), mutation)
         confirmation.played = false
-        XCTAssertNil(MediaItemMutation(confirmedWatchMutation: confirmation))
+        let unwatched = try XCTUnwrap(MediaItemMutation(confirmedWatchMutation: confirmation))
+        XCTAssertTrue(unwatched.refreshEpisodeCounts)
+        XCTAssertFalse(unwatched.refreshContinueWatching)
         confirmation.played = true
         confirmation.kind = .movie
         XCTAssertNil(MediaItemMutation(confirmedWatchMutation: confirmation))

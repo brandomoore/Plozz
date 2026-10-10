@@ -38,6 +38,7 @@ public enum HeroDurableSnapshot {
             var probe = item
             probe.resumePosition = source.resumePosition
             probe.playedPercentage = source.playedPercentage
+            probe.unwatchedEpisodeCount = source.unwatchedEpisodeCount
             probe.isPlayed = source.isPlayed
             return claimsPosition(probe)
         }

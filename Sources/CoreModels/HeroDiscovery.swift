@@ -228,6 +228,7 @@ public extension MediaItem {
         item.mediaInfo = nil
         item.resumePosition = nil
         item.playedPercentage = nil
+        item.unwatchedEpisodeCount = nil
         item.isPlayed = false
         item.hasBeenPlayed = false
         item.lastPlayedAt = nil

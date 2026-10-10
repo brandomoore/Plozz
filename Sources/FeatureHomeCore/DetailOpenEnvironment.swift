@@ -126,6 +126,7 @@ public struct DetailOpenEnvironment {
             }
             source.resumePosition = item.resumePosition
             source.playedPercentage = item.playedPercentage
+            source.unwatchedEpisodeCount = item.unwatchedEpisodeCount
             source.isPlayed = item.isPlayed
             source.hasBeenPlayed = item.hasBeenPlayed
             source.isFavorite = item.isFavorite
