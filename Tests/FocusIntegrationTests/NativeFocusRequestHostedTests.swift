@@ -518,7 +518,10 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         )
         defer { cache.removeCachedResponse(for: request) }
         let references = [ArtworkReference.remote(url)]
-        let key = HeroLogoMemo.key(for: references)
+        let key = HeroLogoMemo.key(
+            for: references,
+            providerPolicyIdentity: ArtworkPresentationPolicy().forPlacement(.logo).identity
+        )
         XCTAssertNil(HeroLogoMemo.value(for: key))
         let probe = LogoHostProbe()
         let host = UIHostingController(rootView: LogoHostFixture(
@@ -558,11 +561,12 @@ final class NativeFocusRequestHostedTests: XCTestCase {
 
     private struct BitmapFixture: View {
         let model: BitmapFixtureModel
+        let artworkPolicy: ArtworkPresentationPolicy
         @PlozzCardFocus private var focused
 
         var body: some View {
             FallbackAsyncImage(
-                references: model.references, variant: .posterCard,
+                references: model.references, variant: .posterCard, artworkPolicy: artworkPolicy,
                 pinIdentity: "native-bitmap-fixture",
                 content: { _ in EmptyView() }, placeholder: { EmptyView() }
             )
@@ -630,7 +634,7 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         ))
         let model = BitmapFixtureModel()
         model.references = [reference]
-        let host = UIHostingController(rootView: BitmapFixture(model: model)
+        let host = UIHostingController(rootView: BitmapFixture(model: model, artworkPolicy: .init())
             .environment(\.plozzCardFocusStyle, .system))
         fixture.window.rootViewController = host
         fixture.window.layoutIfNeeded()
@@ -660,15 +664,16 @@ final class NativeFocusRequestHostedTests: XCTestCase {
             $0.fill(CGRect(x: 0, y: 0, width: 200, height: 300))
         }
         let identity = UUID().uuidString
+        let policy = ArtworkPresentationPolicy()
         let key = ArtworkResolveKey.make(
             references: [reference], variant: .posterCard, maxAspectRatio: nil,
             pinIdentity: identity,
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(MetadataProviderSettingsStore().load())
+            providerPolicyIdentity: policy.identity
         )
         ArtworkSeedMemo.store(image, reference: reference, for: key)
         let probe = BitmapProbe()
         let host = UIHostingController(rootView: FallbackAsyncImage(
-            references: [reference], variant: .posterCard, pinIdentity: identity,
+            references: [reference], variant: .posterCard, artworkPolicy: policy, pinIdentity: identity,
             content: { _ in EmptyView() }, placeholder: { EmptyView() }
         ).resolvedBitmap { value in
             BitmapCreationProbe(image: value, probe: probe)
@@ -682,8 +687,9 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         let fixture = try await makeFixture()
         defer { fixture.close() }
         let model = BitmapFixtureModel()
+        let policy = ArtworkPresentationPolicy()
         let outerResolution = ArtworkResolutionState()
-        let host = UIHostingController(rootView: BitmapFixture(model: model)
+        let host = UIHostingController(rootView: BitmapFixture(model: model, artworkPolicy: policy)
             .environment(\.plozzCardFocusStyle, .system)
             .environment(\.artworkResolutionState, outerResolution))
         fixture.window.rootViewController = host
@@ -700,7 +706,7 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         let key = ArtworkResolveKey.make(
             references: [reference], variant: .posterCard, maxAspectRatio: nil,
             pinIdentity: "native-bitmap-fixture",
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(MetadataProviderSettingsStore().load())
+            providerPolicyIdentity: policy.identity
         )
         ArtworkSeedMemo.store(image, reference: reference, for: key)
         model.references = [reference]

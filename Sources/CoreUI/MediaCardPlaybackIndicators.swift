@@ -312,7 +312,7 @@ struct MediaEpisodeCountBadge: View {
                 }
                 .shadow(color: .black.opacity(0.2), radius: 3 * scale, y: scale)
         case .unwatched:
-            let height = 56 * scale
+            let height = 52 * scale
             let width = max(48, 24 + CGFloat(String(count).count) * 16) * scale
             let radius = min(cornerRadius, height / 2)
             digits

@@ -67,8 +67,8 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
         attach(curved, name: "curved-count-white-artwork")
         XCTAssertLessThan(try pixel(curved, at: CGPoint(x: 178, y: 20))[0], 250,
                           "The soft shadow must extend left of the tile's 184pt boundary")
-        XCTAssertLessThan(try pixel(curved, at: CGPoint(x: 226, y: 59))[0], 250,
-                          "The shadow must extend below the tile's 56pt boundary")
+        XCTAssertLessThan(try pixel(curved, at: CGPoint(x: 226, y: 55))[0], 250,
+                          "The shadow must extend below the tile's 52pt boundary")
         XCTAssertEqual(try pixel(curved, at: CGPoint(x: 145, y: 75))[0], 255)
         let pearl = try render(show, enabled: true, scheme: .dark, indicator: .watched, background: .white)
         XCTAssertEqual(try pixel(pearl, at: CGPoint(x: 230, y: 8))[0], 255,
@@ -76,7 +76,7 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
         XCTAssertNotEqual(curved.pngData(), pearl.pngData())
     }
 
-    func testCurvedCountPaddingAlsoNarrowsTheTile() throws {
+    func testCurvedCountPaddingNarrowsAndShortensTheTile() throws {
         let cases: [(Int, CGFloat)] = [(1, 48), (21, 56), (12345, 104)]
         for (count, width) in cases {
             let item = MediaItem(id: "show", title: "Show", kind: .series, unwatchedEpisodeCount: count)
@@ -85,6 +85,9 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
             XCTAssertLessThan(try pixel(image, at: CGPoint(x: left - 4, y: 8))[0], 180,
                               "Reducing padding must narrow the actual tile for \(count), not just its text container")
             XCTAssertGreaterThan(try pixel(image, at: CGPoint(x: left + 3, y: 8))[0], 210)
+            XCTAssertGreaterThan(try pixel(image, at: CGPoint(x: 226, y: 51))[0], 210)
+            XCTAssertLessThan(try pixel(image, at: CGPoint(x: 226, y: 53))[0], 180,
+                              "Removing 2pt above and below the number must reduce the tile height to 52pt")
         }
     }
 

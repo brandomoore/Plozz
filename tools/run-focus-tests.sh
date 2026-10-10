@@ -29,14 +29,25 @@ python3 tools/run-bounded.py 300 "focus simulator startup" -- \
 RESULTS="${PLOZZ_FOCUS_RESULTS:-$PWD/.build/focus-test-results}"
 mkdir -p "$RESULTS"
 RUN_DIR="$(mktemp -d "$RESULTS/Run-XXXXXXXX")"
+BUILD_ARGS=(
+  -project Plozz.xcodeproj -scheme PlozzFocusTests
+  -destination "platform=tvOS Simulator,id=$PLOZZ_SIM_ID"
+  -parallel-testing-enabled NO
+  -derivedDataPath "${PLOZZ_FOCUS_DERIVED_DATA:-$PWD/.build/focus-shared-root-derived-data}"
+  "${PACKAGE_RESOLUTION_ARGS[@]}" "$@" CODE_SIGNING_ALLOWED=NO
+)
 set +e
+python3 tools/run-bounded.py "${PLOZZ_FOCUS_BUILD_TIMEOUT:-2400}" "hosted focus build" -- \
+  xcodebuild build-for-testing "${BUILD_ARGS[@]}" \
+  -resultBundlePath "$RUN_DIR/Build.xcresult" 2>&1 | tee "$RUN_DIR/build.log"
+PIPE_STATUSES=("${PIPESTATUS[@]}")
+if [[ "${PIPE_STATUSES[0]}" -ne 0 ]]; then exit "${PIPE_STATUSES[0]}"; fi
+if [[ "${PIPE_STATUSES[1]}" -ne 0 ]]; then exit "${PIPE_STATUSES[1]}"; fi
+
 python3 tools/run-bounded.py "${PLOZZ_FOCUS_TEST_TIMEOUT:-2400}" "hosted focus tests" -- \
-  xcodebuild test -project Plozz.xcodeproj -scheme PlozzFocusTests \
-  -destination "platform=tvOS Simulator,id=$PLOZZ_SIM_ID" \
-  -parallel-testing-enabled NO -collect-test-diagnostics never \
-  -derivedDataPath "${PLOZZ_FOCUS_DERIVED_DATA:-$PWD/.build/focus-shared-root-derived-data}" \
+  xcodebuild test-without-building "${BUILD_ARGS[@]}" -collect-test-diagnostics never \
   -resultBundlePath "$RUN_DIR/Test.xcresult" \
-  "${PACKAGE_RESOLUTION_ARGS[@]}" "$@" CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUN_DIR/xcodebuild.log"
+  2>&1 | tee "$RUN_DIR/xcodebuild.log"
 PIPE_STATUSES=("${PIPESTATUS[@]}")
 STATUS=${PIPE_STATUSES[0]}
 if [[ "$STATUS" -eq 0 && "${PIPE_STATUSES[1]}" -ne 0 ]]; then

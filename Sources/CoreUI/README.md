@@ -14,7 +14,7 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   curves. Fine edges and soft shadows keep both legible on pale artwork; only
   the artwork clips the curved tile's shadow, never the tile's own bounds.
   Both count styles use bold system digits. At standard TV size the curved
-  tile has 12pt side padding and remains 56pt tall; Pearl spacing is unchanged.
+  tile has 12pt side padding and is 52pt tall; Pearl spacing is unchanged.
   Floating marks have density-scaled clearance (16pt at standard TV size).
   Touch sizes and artwork radii remain proportionate. Episode cards and the
   watch-indicator Settings swatches reuse the same white check and flag.

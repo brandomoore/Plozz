@@ -90,7 +90,8 @@ struct PrototypeNativeSearch<Results: View>: UIViewControllerRepresentable {
         search.reduceMotion = reduceMotion
         if search.restoresGuideFocus != restoresGuideFocus {
             search.restoresGuideFocus = restoresGuideFocus
-            search.setNeedsFocusUpdate()
+            // Completing restoration must retain the programme that just acquired focus.
+            if restoresGuideFocus { search.setNeedsFocusUpdate() }
         }
         context.coordinator.synchronizePresentation()
     }
