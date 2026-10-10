@@ -43,6 +43,7 @@ public enum ProfileSettingsTransfer {
         CardCaptionSettingsStore.storageKey,
         ArtworkSettingsStore.storageKey,
         "com.plozz.watchStatusIndicator",
+        WatchStatusIndicatorSettingsStore.episodeCountStorageKey,
         "com.plozz.nightShift",
         "com.plozz.playbackSettings",
         "com.plozz.playback.preferredVersions",

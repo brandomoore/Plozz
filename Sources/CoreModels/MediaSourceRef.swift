@@ -67,6 +67,7 @@ public struct MediaSourceRef: Codable, Hashable, Identifiable, Sendable {
     public var resumePosition: TimeInterval?
     /// Fractional watched progress in `0...1` on this server, if reported.
     public var playedPercentage: Double?
+    public var unwatchedEpisodeCount: Int?
     /// Whether this server considers the title fully played.
     public var isPlayed: Bool
     /// Whether this server reports that the title was completed previously,
@@ -91,6 +92,7 @@ public struct MediaSourceRef: Codable, Hashable, Identifiable, Sendable {
         edition: String? = nil,
         resumePosition: TimeInterval? = nil,
         playedPercentage: Double? = nil,
+        unwatchedEpisodeCount: Int? = nil,
         isPlayed: Bool = false,
         hasBeenPlayed: Bool? = nil,
         isFavorite: Bool = false,
@@ -108,6 +110,7 @@ public struct MediaSourceRef: Codable, Hashable, Identifiable, Sendable {
         self.edition = edition
         self.resumePosition = resumePosition
         self.playedPercentage = playedPercentage
+        self.unwatchedEpisodeCount = unwatchedEpisodeCount
         self.isPlayed = isPlayed
         self.hasBeenPlayed = hasBeenPlayed ?? isPlayed
         self.isFavorite = isFavorite
@@ -117,7 +120,7 @@ public struct MediaSourceRef: Codable, Hashable, Identifiable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case accountID, itemID, libraryID, kind, providerKind, serverName, accountName
         case locality, versions, edition, resumePosition, playedPercentage, isPlayed
-        case hasBeenPlayed, isFavorite, lastPlayedAt
+        case hasBeenPlayed, isFavorite, lastPlayedAt, unwatchedEpisodeCount
     }
 
     public init(from decoder: Decoder) throws {
@@ -134,6 +137,7 @@ public struct MediaSourceRef: Codable, Hashable, Identifiable, Sendable {
         edition = try container.decodeIfPresent(String.self, forKey: .edition)
         resumePosition = try container.decodeIfPresent(TimeInterval.self, forKey: .resumePosition)
         playedPercentage = try container.decodeIfPresent(Double.self, forKey: .playedPercentage)
+        unwatchedEpisodeCount = try container.decodeIfPresent(Int.self, forKey: .unwatchedEpisodeCount)
         isPlayed = try container.decodeIfPresent(Bool.self, forKey: .isPlayed) ?? false
         hasBeenPlayed = try container.decodeIfPresent(Bool.self, forKey: .hasBeenPlayed) ?? isPlayed
         isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false

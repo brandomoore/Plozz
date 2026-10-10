@@ -589,6 +589,7 @@ final class LibraryQuerySessionTests: XCTestCase {
                                                filters: .init(filter: .inProgress)), progress: { _, _ in })
         let item = try XCTUnwrap(page.items.first)
         XCTAssertEqual(item.playedPercentage, 0.75)
+        XCTAssertEqual(item.unwatchedEpisodeCount, 1, "Alternate files count once; an in-progress episode is unfinished")
         XCTAssertEqual(item.librarySortValues?.playCount, 2)
         XCTAssertFalse(item.isPlayed)
         XCTAssertTrue(item.hasBeenPlayed)

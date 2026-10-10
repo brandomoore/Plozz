@@ -6,6 +6,18 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+- **Unwatched episode counts** — a default-on profile preference replaces the
+  top-right watch-status mark with a blue number on series/season cards.
+  Positive exact library counts take priority; unknown counts retain the
+  existing watched/unwatched style. Completed containers retain its completion
+  behavior. Movies, episodes, ownership/request marks and spoiler protection
+  are unchanged. Native and SwiftUI cards share the renderer and preference,
+  including native hosting and accessibility.
+  Counts use Plex leaf/viewed-leaf fields, Jellyfin/Emby unplayed-item counts,
+  and existing local Share episode rollups. They never query episodes per card,
+  use online episode totals, or sum duplicate servers. Cross-server counts
+  follow the same source as watch state. Child mutations invalidate snapshots
+  until the next batched refresh instead of guessing a decrement.
 - **Theme** — `Theme`, `ThemeOption` (System / Dark / Pure Black / Light) and
   the per-profile theme model, observed at the app root.
   Gradient Backgrounds is a separate default-on profile preference, transferred

@@ -5,6 +5,10 @@ and the single place caption customization lives.
 
 ## Responsibility
 
+- `CardAppearanceControls` — the independent **Show unwatched episode count**
+  toggle lives beside Watched Indicator on both platforms. It defaults on,
+  persists per profile, and transfers/syncs with that profile without changing
+  its watched/unwatched style.
 - `SettingsView` — the root focused list (themes, profiles, servers &
   libraries, integrations, captions, about). `SettingsRowStyle` &
   `SettingsContext` provide the shared look + the environment needed by

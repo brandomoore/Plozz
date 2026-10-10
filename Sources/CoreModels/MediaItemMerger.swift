@@ -44,16 +44,21 @@ public struct UnifiedWatchState: Sendable, Hashable {
     public var resumePosition: TimeInterval?
     /// Fractional progress to surface in `0...1`, or `nil` when unknown.
     public var playedPercentage: Double?
+    public var unwatchedEpisodeCount: Int?
     /// Whether the title should read as fully watched.
     public var isPlayed: Bool
     /// The newest play timestamp seen across servers, or `nil` when none reported.
     public var lastPlayedAt: Date?
 
-    public init(resumePosition: TimeInterval?, playedPercentage: Double?, isPlayed: Bool, lastPlayedAt: Date?) {
+    public init(
+        resumePosition: TimeInterval?, playedPercentage: Double?, isPlayed: Bool, lastPlayedAt: Date?,
+        unwatchedEpisodeCount: Int? = nil
+    ) {
         self.resumePosition = resumePosition
         self.playedPercentage = playedPercentage
         self.isPlayed = isPlayed
         self.lastPlayedAt = lastPlayedAt
+        self.unwatchedEpisodeCount = unwatchedEpisodeCount
     }
 }
 
@@ -549,6 +554,7 @@ public enum MediaItemMerger {
         let unified = unifiedWatchState(from: sources)
         primary.resumePosition = unified.resumePosition
         primary.playedPercentage = unified.playedPercentage
+        primary.unwatchedEpisodeCount = unified.unwatchedEpisodeCount
         primary.isPlayed = unified.isPlayed
         primary.hasBeenPlayed = sources.contains(where: \.hasBeenPlayed)
             || duplicates.contains(where: \.hasBeenPlayed)
@@ -618,6 +624,7 @@ public enum MediaItemMerger {
             edition: item.edition,
             resumePosition: item.resumePosition,
             playedPercentage: item.playedPercentage,
+            unwatchedEpisodeCount: item.unwatchedEpisodeCount,
             isPlayed: item.isPlayed,
             hasBeenPlayed: item.hasBeenPlayed,
             isFavorite: item.isFavorite,
@@ -649,21 +656,25 @@ public enum MediaItemMerger {
                 resumePosition: winner.isPlayed ? nil : winner.resumePosition,
                 playedPercentage: winner.playedPercentage,
                 isPlayed: winner.isPlayed,
-                lastPlayedAt: winner.lastPlayedAt
+                lastPlayedAt: winner.lastPlayedAt,
+                unwatchedEpisodeCount: winner.unwatchedEpisodeCount
             )
         }
 
         // No timestamps anywhere — best-known progress.
         let isPlayed = sources.contains { $0.isPlayed }
         if isPlayed {
-            return UnifiedWatchState(resumePosition: nil, playedPercentage: 1.0, isPlayed: true, lastPlayedAt: nil)
+            return UnifiedWatchState(
+                resumePosition: nil, playedPercentage: 1.0, isPlayed: true, lastPlayedAt: nil,
+                unwatchedEpisodeCount: sources.first(where: \.isPlayed)?.unwatchedEpisodeCount)
         }
         let mostProgressed = sources.max(by: { ($0.resumePosition ?? 0) < ($1.resumePosition ?? 0) })
         return UnifiedWatchState(
             resumePosition: mostProgressed?.resumePosition,
             playedPercentage: mostProgressed?.playedPercentage,
             isPlayed: false,
-            lastPlayedAt: nil
+            lastPlayedAt: nil,
+            unwatchedEpisodeCount: mostProgressed?.unwatchedEpisodeCount
         )
     }
 

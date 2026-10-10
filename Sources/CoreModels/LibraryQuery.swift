@@ -242,6 +242,7 @@ public struct LibraryQueryRecord: Sendable {
     public var genres: [String]
     public var runtime: Double?
     public var isPlayed: Bool
+    public var unwatchedEpisodeCount: Int?
     public var inProgress: Bool
     public var progress: Double
     public var lastPlayed: Date?
@@ -278,6 +279,7 @@ public struct LibraryQueryRecord: Sendable {
         genres = item.genres
         runtime = item.runtime
         isPlayed = item.isPlayed
+        unwatchedEpisodeCount = item.unwatchedEpisodeCount
         completed = item.librarySortValues?.watched ?? item.isPlayed
         let resumed = item.runtime.flatMap { duration in
             duration > 0 ? item.resumePosition.map { $0 / duration } : nil
@@ -334,7 +336,8 @@ public struct LibraryQueryRecord: Sendable {
             productionYear: year, releaseDate: releaseDate,
             officialRating: contentRating, genres: genres, seriesID: seriesID,
             runtime: runtime, resumePosition: inProgress ? max(1, progress * (runtime ?? 1)) : nil,
-            playedPercentage: progress, isPlayed: isPlayed, hasBeenPlayed: completed || inProgress,
+            playedPercentage: progress, unwatchedEpisodeCount: unwatchedEpisodeCount,
+            isPlayed: isPlayed, hasBeenPlayed: completed || inProgress,
             providerIDs: providerIDs,
             sourceAccountID: reference.accountID, libraryID: reference.libraryID, sources: reference.sources,
             lastPlayedAt: lastPlayed, librarySortValues: values
@@ -396,6 +399,7 @@ public struct LibraryQueryRecord: Sendable {
         guard values?.episodeWatchRollup == true else { return item }
         var result = item
         result.isPlayed = isPlayed
+        result.unwatchedEpisodeCount = unwatchedEpisodeCount
         result.hasBeenPlayed = completed || inProgress
         result.playedPercentage = progress
         result.lastPlayedAt = lastPlayed

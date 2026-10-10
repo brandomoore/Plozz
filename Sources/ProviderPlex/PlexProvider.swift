@@ -1786,6 +1786,12 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         let viewCount = dto.viewCount ?? 0
         let viewedLeafCount = dto.viewedLeafCount ?? 0
         let leafCount = dto.leafCount ?? 0
+        let unwatchedEpisodeCount: Int? = {
+            guard kind == .series || kind == .season,
+                  let total = dto.leafCount, let watched = dto.viewedLeafCount,
+                  total >= 0, watched >= 0, watched <= total else { return nil }
+            return total - watched
+        }()
         // Containers express progress through leaf counts, not `viewCount` — Plex
         // does not increment `viewCount` on a series or a season, only on the
         // leaves. This previously applied to `.series` alone, which left every
@@ -1845,6 +1851,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             runtime: runtime,
             resumePosition: resume,
             playedPercentage: percentage,
+            unwatchedEpisodeCount: unwatchedEpisodeCount,
             isPlayed: completedContainer || (viewCount > 0 && (resume ?? 0) == 0),
             hasBeenPlayed: hasBeenPlayed,
             posterURL: client.imageURL(path: posterPath, maxWidth: 500),

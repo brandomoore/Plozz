@@ -47,6 +47,7 @@ final class PlexSeasonWatchStateTests: XCTestCase {
             "every episode watched must mark the season played — Plex sends no viewCount for a container"
         )
         XCTAssertEqual(s1.playedPercentage, 1.0)
+        XCTAssertEqual(s1.unwatchedEpisodeCount, 0)
     }
 
     func testPartlyWatchedSeasonReportsProgressButNotPlayed() async throws {
@@ -56,6 +57,7 @@ final class PlexSeasonWatchStateTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(s2.playedPercentage), 0.4, accuracy: 0.0001,
                        "a container's progress is its watched fraction, not a resume ratio")
         XCTAssertTrue(s2.hasBeenPlayed, "a partly-watched season has been started")
+        XCTAssertEqual(s2.unwatchedEpisodeCount, 6)
     }
 
     func testUntouchedSeasonReportsNothing() async throws {
@@ -64,6 +66,7 @@ final class PlexSeasonWatchStateTests: XCTestCase {
         XCTAssertFalse(s3.isPlayed)
         XCTAssertFalse(s3.hasBeenPlayed)
         XCTAssertNil(s3.playedPercentage)
+        XCTAssertEqual(s3.unwatchedEpisodeCount, 10)
     }
 
     /// The bug this fixes, stated as behaviour: with S1 complete and S2 started,
@@ -90,6 +93,23 @@ final class PlexSeasonWatchStateTests: XCTestCase {
         """)
         let seasons = try await PlexProvider(session: makeSession(), http: stub).children(of: "9")
         XCTAssertFalse(try XCTUnwrap(seasons.first).isPlayed)
+        XCTAssertEqual(seasons.first?.unwatchedEpisodeCount, 0)
+    }
+
+    func testCountsRejectMissingAndMalformedFieldsWithoutFetchingEpisodes() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/library/metadata/9/children", json: """
+        {"MediaContainer":{"size":5,"Metadata":[
+          {"ratingKey":"missing","type":"season","leafCount":10},
+          {"ratingKey":"negative","type":"season","leafCount":10,"viewedLeafCount":-1},
+          {"ratingKey":"over","type":"season","leafCount":10,"viewedLeafCount":11},
+          {"ratingKey":"show","type":"show","leafCount":120,"viewedLeafCount":12},
+          {"ratingKey":"episode","type":"episode","leafCount":10,"viewedLeafCount":0}
+        ]}}
+        """)
+        let items = try await PlexProvider(session: makeSession(), http: stub).children(of: "9")
+        XCTAssertEqual(items.map(\.unwatchedEpisodeCount), [nil, nil, nil, 108, nil])
+        XCTAssertEqual(stub.sentPaths.count, 1, "Reading counts must not enumerate episodes")
     }
 
     /// Episodes keep resume-ratio progress — the container rule must not leak

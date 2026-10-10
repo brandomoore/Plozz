@@ -11,7 +11,16 @@ private struct PlozzWatchStatusIndicatorKey: EnvironmentKey {
     static let defaultValue: WatchStatusIndicator = .default
 }
 
+private struct PlozzUnwatchedEpisodeCountKey: EnvironmentKey {
+    static let defaultValue = WatchStatusIndicatorSettingsStore.defaultShowsUnwatchedEpisodeCount
+}
+
 public extension EnvironmentValues {
+    var plozzShowsUnwatchedEpisodeCount: Bool {
+        get { self[PlozzUnwatchedEpisodeCountKey.self] }
+        set { self[PlozzUnwatchedEpisodeCountKey.self] = newValue }
+    }
+
     /// The live, per-profile watch-status indicator (a "watched" check badge vs
     /// an "unwatched" corner flag). Set once at the app root; read by
     /// `PosterCardView`.

@@ -26,6 +26,7 @@ public struct MediaCardPlaybackIndicators: View {
 
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzWatchStatusIndicator) private var watchStatusIndicator
+    @Environment(\.plozzShowsUnwatchedEpisodeCount) private var showsUnwatchedEpisodeCount
     /// Whether an unowned title can be requested, or is merely flagged as absent.
     @Environment(\.plozzSeerConnected) private var seerConnected
     @Environment(\.themePalette) private var palette
@@ -111,6 +112,10 @@ public struct MediaCardPlaybackIndicators: View {
         if let libraryMark {
             MediaLibraryMarkView(mark: libraryMark, size: libraryMarkSize)
                 .padding(badgeInset)
+        } else if let count = MediaPlaybackIndicatorPresentation.episodeCount(
+            for: playback, enabled: showsUnwatchedEpisodeCount, hidesStatus: hidesStatus
+        ) {
+            episodeCountBadge(count)
         } else if PosterCardPresentation.showsWatchStatus(for: playback.kind) {
             switch watchStatusIndicator {
             case .watched:
@@ -119,6 +124,27 @@ public struct MediaCardPlaybackIndicators: View {
                 unwatchedCorner
             }
         }
+    }
+
+    private func episodeCountBadge(_ count: Int) -> some View {
+        let size = metrics.watchedBadgeSize
+        return Text(count, format: .number.grouping(.never))
+            .font(.system(size: size * 0.53, weight: .semibold))
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
+            .foregroundStyle(.white)
+            .padding(.horizontal, size * 0.24)
+            .frame(minWidth: size, minHeight: size)
+            .background(Capsule().fill(ThemePalette.brandBlue))
+            .overlay {
+                Capsule().inset(by: -0.5).stroke(
+                    palette.isLight ? .black.opacity(0.15) : .white.opacity(0.4),
+                    lineWidth: max(1.5, size * 0.04))
+            }
+            .padding(badgeInset)
+            .shadow(color: .black.opacity(0.4), radius: size * 0.08, y: size * 0.026)
+            .accessibilityLabel(Text("Unwatched episodes: \(count)"))
     }
 
     /// The absent, requestable, or requested mark for this card, if it needs one.
@@ -269,6 +295,7 @@ public struct MediaPlaybackIndicatorState: Equatable, Sendable {
     public let kind: MediaItemKind
     public let isPlayed: Bool
     public let playedPercentage: Double?
+    public let unwatchedEpisodeCount: Int?
     public let resumePosition: Double?
     /// Ownership and request availability are separate: a pending request is
     /// still unowned, but must invalidate the snapshot to replace the plus.
@@ -279,12 +306,20 @@ public struct MediaPlaybackIndicatorState: Equatable, Sendable {
         kind = item.kind
         isPlayed = item.isPlayed
         playedPercentage = item.playedPercentage
+        unwatchedEpisodeCount = item.unwatchedEpisodeCount
         resumePosition = item.resumePosition
         // Same shared classifier the corner mark and the detail page use, so a card
         // and its page can't disagree. Cards judge the item alone (no index work in
         // a card path), which is exactly `identitySources: []`.
         isNotInLibrary = TitleClassifier.isNotOwnedForBadge(item)
         availability = item.availability
+    }
+
+    public func episodeCountAccessibilityLabel(enabled: Bool, hidesStatus: Bool) -> LocalizedStringResource? {
+        guard let count = MediaPlaybackIndicatorPresentation.episodeCount(
+            for: self, enabled: enabled, hidesStatus: hidesStatus
+        ) else { return nil }
+        return LocalizedStringResource("Unwatched episodes: \(count)")
     }
 
     /// The corner mark this card should wear, if any. Shares
@@ -299,6 +334,15 @@ public struct MediaPlaybackIndicatorState: Equatable, Sendable {
 }
 
 enum MediaPlaybackIndicatorPresentation {
+    static func episodeCount(
+        for item: MediaPlaybackIndicatorState, enabled: Bool, hidesStatus: Bool
+    ) -> Int? {
+        guard enabled, !hidesStatus, !item.isNotInLibrary,
+              item.kind == .series || item.kind == .season,
+              let count = item.unwatchedEpisodeCount, count > 0 else { return nil }
+        return count
+    }
+
     /// Whether this card should wear a progress bar.
     ///
     /// A saved resume point is progress however small it looks as a fraction. The

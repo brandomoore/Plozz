@@ -72,6 +72,24 @@ final class JellyfinTicksTests: XCTestCase {
 }
 
 final class JellyfinProviderMappingTests: XCTestCase {
+    func testEpisodeCountsUseUnplayedCountNotSeriesChildCount() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/u1/Items", json: """
+        {"Items":[
+          {"Id":"show","Name":"Show","Type":"Series","ChildCount":2,"UserData":{"UnplayedItemCount":18}},
+          {"Id":"season","Name":"Season","Type":"Season","ChildCount":10,"UserData":{"UnplayedItemCount":3}},
+          {"Id":"complete","Name":"Complete","Type":"Series","UserData":{"Played":true,"UnplayedItemCount":0}},
+          {"Id":"unknown","Name":"Unknown","Type":"Series","ChildCount":2},
+          {"Id":"invalid","Name":"Invalid","Type":"Series","UserData":{"UnplayedItemCount":-1}},
+          {"Id":"movie","Name":"Movie","Type":"Movie","UserData":{"UnplayedItemCount":8}}
+        ],"TotalRecordCount":6}
+        """)
+        let provider = JellyfinProvider(session: makeSession(), http: stub)
+        let page = try await provider.items(in: "lib", kind: .series, page: PageRequest(startIndex: 0, limit: 60))
+        XCTAssertEqual(page.items.map(\.unwatchedEpisodeCount), [18, 3, 0, nil, nil, nil])
+        XCTAssertEqual(stub.sentPaths.count, 1, "Existing listing response must supply all counts")
+    }
+
     private func makeSession(
         baseURL: URL = URL(string: "http://host:8096")!,
         token: String = "TOKEN"

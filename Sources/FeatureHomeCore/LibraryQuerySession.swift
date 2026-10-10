@@ -433,6 +433,7 @@ actor LibraryQuerySession {
                     playCounts.isEmpty ? nil : playCounts.reduce(0, +)
                 if records[index].values?.episodeWatchRollup == true {
                     let played = states.values.filter(\.played).count
+                    records[index].unwatchedEpisodeCount = states.count - played
                     records[index].completed = played == states.count
                     records[index].progress =
                         states.values.reduce(0) { $0 + $1.progress } / Double(states.count)

@@ -65,6 +65,7 @@ public struct PosterCardView: View {
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.locale) private var locale
+    @Environment(\.plozzShowsUnwatchedEpisodeCount) private var showsUnwatchedEpisodeCount
     /// Per-profile card presentation (framed glass card vs borderless artwork).
     @Environment(\.plozzCardStyle) private var cardStyle
     /// Per-profile focus treatment. With the outline off, a framed card keeps its
@@ -154,6 +155,16 @@ public struct PosterCardView: View {
         #else
         nil
         #endif
+    }
+
+    private var cardAccessibilityValue: String? {
+        let subtitle = showsSeriesArtwork ? nil : subtitleText
+        guard var count = MediaPlaybackIndicatorState(item).episodeCountAccessibilityLabel(
+            enabled: showsUnwatchedEpisodeCount, hidesStatus: hideThumbnail
+        ) else { return subtitle }
+        count.locale = locale
+        let label = String(localized: count) // l10n:content — native card accessibility boundary; uses the current environment locale
+        return [subtitle, label].compactMap { $0 }.joined(separator: ", ")
     }
 
     /// Title/subtitle colour, flipped to dark ink over a focused card's opaque
@@ -298,7 +309,7 @@ public struct PosterCardView: View {
                     aspectRatio: borderlessAspectRatio,
                     fallbackWidth: size.width,
                     title: nativePosterTitle,
-                    subtitle: showsSeriesArtwork ? nil : subtitleText,
+                    subtitle: cardAccessibilityValue,
                     overlay: nativePosterOverlay(hasArtwork: image != nil),
                     focus: $isFocused,
                     source: detailTransitionSource,
@@ -413,7 +424,7 @@ public struct PosterCardView: View {
         )
         .focusableCard(
             isFocused: $isFocused, cornerRadius: metrics.posterCardCornerRadius,
-            accessibilityLabel: cardAccessibilityTitle, action: selectCard
+            accessibilityLabel: cardAccessibilityTitle, accessibilityValue: cardAccessibilityValue, action: selectCard
         )
         .plozzCardFocusTransition(isFocused: isFocused)
     }
@@ -494,7 +505,7 @@ public struct PosterCardView: View {
         )
         .focusableCard(
             isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius,
-            accessibilityLabel: cardAccessibilityTitle, action: selectCard
+            accessibilityLabel: cardAccessibilityTitle, accessibilityValue: cardAccessibilityValue, action: selectCard
         )
         .plozzCardFocusTransition(isFocused: isFocused)
     }
@@ -536,7 +547,9 @@ public struct PosterCardView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(verbatim: nativePosterTitle.resolve(locale: locale)))
         #endif
-        .focusableCard(isFocused: $isFocused, cornerRadius: borderlessCornerRadius, action: selectCard)
+        .focusableCard(
+            isFocused: $isFocused, cornerRadius: borderlessCornerRadius,
+            accessibilityValue: cardAccessibilityValue, action: selectCard)
         // A borderless card's focus halo + scale bloom extend *beyond* the layout
         // bounds. `compositingGroup` composites them as one unit without clipping;
         // `drawingGroup` (what `plozzCardRasterize` uses under Reduce Transparency)

@@ -123,6 +123,7 @@ public struct HeroDiscoveryRuntime: Sendable {
             let state = MediaItemMerger.unifiedWatchState(from: merged.sources)
             merged.resumePosition = state.resumePosition
             merged.playedPercentage = state.playedPercentage
+            merged.unwatchedEpisodeCount = state.unwatchedEpisodeCount
             merged.isPlayed = state.isPlayed
             merged.lastPlayedAt = state.lastPlayedAt
             merged.hasBeenPlayed = owned.contains { $0.hasBeenPlayed || $0.isPlayed }

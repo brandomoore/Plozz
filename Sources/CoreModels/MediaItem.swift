@@ -281,6 +281,9 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     public var resumePosition: TimeInterval?
     /// Fractional watched progress in `0...1`, if the backend reports it.
     public var playedPercentage: Double?
+    /// Provider/library-reported unfinished episodes for a series or season.
+    /// `nil` means unknown; never infer this from rounded progress or online metadata.
+    public var unwatchedEpisodeCount: Int?
     public var isPlayed: Bool
     /// Whether this profile has completed the title before, independent of its
     /// current resume/completion state. A Plex rewatch can be both historically
@@ -531,6 +534,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         runtime: TimeInterval? = nil,
         resumePosition: TimeInterval? = nil,
         playedPercentage: Double? = nil,
+        unwatchedEpisodeCount: Int? = nil,
         isPlayed: Bool = false,
         hasBeenPlayed: Bool? = nil,
         posterURL: URL? = nil,
@@ -599,6 +603,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         self.runtime = runtime
         self.resumePosition = resumePosition
         self.playedPercentage = playedPercentage
+        self.unwatchedEpisodeCount = unwatchedEpisodeCount
         self.isPlayed = isPlayed
         self.hasBeenPlayed = hasBeenPlayed ?? isPlayed
         self.posterURL = posterURL
@@ -657,7 +662,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         case productionYear, releaseDate, officialRating, genres, people, studios, tags, taglines
         case librarySortValues
         case familyGuidance
-        case seriesID, seasonID, runtime, resumePosition, playedPercentage, isPlayed, hasBeenPlayed
+        case seriesID, seasonID, runtime, resumePosition, playedPercentage, unwatchedEpisodeCount, isPlayed, hasBeenPlayed
         case posterURL, seriesPosterURL, backdropURL, heroBackdropURL
         case fallbackArtworkURL, logoURL, ratings, providerIDs, metadataProvenance
         case usesProviderRatings
@@ -710,6 +715,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         runtime = try container.decodeIfPresent(TimeInterval.self, forKey: .runtime)
         resumePosition = try container.decodeIfPresent(TimeInterval.self, forKey: .resumePosition)
         playedPercentage = try container.decodeIfPresent(Double.self, forKey: .playedPercentage)
+        unwatchedEpisodeCount = try container.decodeIfPresent(Int.self, forKey: .unwatchedEpisodeCount)
         isPlayed = try container.decodeIfPresent(Bool.self, forKey: .isPlayed) ?? false
         hasBeenPlayed = try container.decodeIfPresent(Bool.self, forKey: .hasBeenPlayed) ?? isPlayed
         posterURL = try container.decodeIfPresent(URL.self, forKey: .posterURL)
@@ -1204,6 +1210,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         }
         copy.resumePosition = source.resumePosition
         copy.playedPercentage = source.playedPercentage
+        copy.unwatchedEpisodeCount = source.unwatchedEpisodeCount
         copy.isPlayed = source.isPlayed
         copy.hasBeenPlayed = source.hasBeenPlayed
         copy.isFavorite = source.isFavorite
@@ -1341,6 +1348,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
                 accountID: account, itemID: copy.id, libraryID: copy.libraryID,
                 kind: copy.kind, versions: copy.versions, edition: copy.edition,
                 resumePosition: copy.resumePosition, playedPercentage: copy.playedPercentage,
+                unwatchedEpisodeCount: copy.unwatchedEpisodeCount,
                 isPlayed: copy.isPlayed, hasBeenPlayed: copy.hasBeenPlayed,
                 isFavorite: copy.isFavorite, lastPlayedAt: copy.lastPlayedAt
             )

@@ -20,6 +20,7 @@ public struct CardAppearanceControls: View {
             }
             SettingsDetailGroup(title: "Watched Indicator") {
                 CompactWatchIndicatorPicker(selection: $watchIndicator.indicator, swatchHeight: 150)
+                episodeCountToggle
             }
             SettingsDetailGroup(
                 title: LocalizedStringResource(
@@ -41,6 +42,7 @@ public struct CardAppearanceControls: View {
             }
             SettingsSectionGroup("Watched Indicator") {
                 CompactWatchIndicatorPicker(selection: $watchIndicator.indicator, swatchHeight: 112)
+                episodeCountToggle
             }
             SettingsSectionGroup("Style") {
                 CompactCardStylePicker(selection: $cards.style, swatchHeight: 112)
@@ -51,6 +53,10 @@ public struct CardAppearanceControls: View {
         #endif
     }
 
+    private var episodeCountToggle: some View {
+        Toggle("Show unwatched episode count", isOn: $watchIndicator.showsUnwatchedEpisodeCount)
+            .accessibilityIdentifier("unwatched-episode-count-toggle")
+    }
 }
 
 struct CardLabelControls: View {

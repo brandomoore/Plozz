@@ -334,10 +334,21 @@ public struct MediaItemMutation: Sendable, Equatable {
     /// is normalised to `nil` (no resume point) so finished/restarted titles drop
     /// their progress bar.
     public func applied(to item: MediaItem) -> MediaItem {
-        guard targets(item) else { return item }
+        guard targets(item) else {
+            guard invalidatesEpisodeCount(in: item) else { return item }
+            var copy = item
+            copy.unwatchedEpisodeCount = nil
+            for index in copy.sources.indices {
+                copy.sources[index].unwatchedEpisodeCount = nil
+            }
+            return copy
+        }
         var copy = item
         if let played {
             copy.isPlayed = played
+            if item.kind == .series || item.kind == .season {
+                copy.unwatchedEpisodeCount = played ? 0 : nil
+            }
         }
         if let favorite { copy.isFavorite = favorite }
         if let resumePosition { copy.resumePosition = resumePosition > 0 ? resumePosition : nil }
@@ -367,6 +378,27 @@ public struct MediaItemMutation: Sendable, Equatable {
         return copy
     }
 
+    /// A child change cannot be subtracted from a snapshot safely: notifications
+    /// may be repeated and another version may already be watched. Wait for the
+    /// next batched library refresh rather than display a guessed count.
+    private func invalidatesEpisodeCount(in container: MediaItem) -> Bool {
+        guard played != nil || refreshContinueWatching,
+              container.kind == .series || container.kind == .season else { return false }
+        if let changed = item {
+            guard changed.kind == .episode || changed.kind == .season else { return false }
+            let parentID = container.kind == .series ? changed.seriesID : changed.seasonID
+            if let parentID {
+                return (container.id == parentID && container.sourceAccountID == changed.sourceAccountID)
+                    || container.sources.contains {
+                        $0.itemID == parentID && $0.accountID == changed.sourceAccountID
+                    }
+            }
+        }
+        guard !scopedItemIDs.isEmpty else { return true }
+        let accounts = Set(container.sources.map(\.accountID) + [container.sourceAccountID].compactMap { $0 })
+        return accounts.contains { account in scopedItemIDs.contains { $0.hasPrefix("\(account):") } }
+    }
+
     /// Applies the same fields to a standalone source record without changing its
     /// provider identity, versions, or unrelated watch state.
     public func applied(to source: MediaSourceRef) -> MediaSourceRef {
@@ -379,6 +411,9 @@ public struct MediaItemMutation: Sendable, Equatable {
         if let played {
             updated.isPlayed = played
             updated.hasBeenPlayed = played
+            if source.kind == .series || source.kind == .season || source.unwatchedEpisodeCount != nil {
+                updated.unwatchedEpisodeCount = played ? 0 : nil
+            }
         }
         if let favorite { updated.isFavorite = favorite }
         if let resumePosition { updated.resumePosition = resumePosition > 0 ? resumePosition : nil }

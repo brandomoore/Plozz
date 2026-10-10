@@ -104,7 +104,6 @@ struct ShareWatchStateService: Sendable {
         guard !identities.isEmpty else { return seasons }
 
         let records = await watchStore.records(for: Set(identities.map(\.fileID)))
-        guard !records.isEmpty else { return seasons }
 
         // season → logical episode → the records of every file backing it
         var bySeason: [Int: [String: [ShareWatchStore.Record]]] = [:]
@@ -131,6 +130,7 @@ struct ShareWatchStateService: Sendable {
             let latest = episodes.values.flatMap { $0 }.map(\.updatedAt).max()
 
             var copy = season
+            copy.unwatchedEpisodeCount = episodes.count - played
             copy.isPlayed = played == episodes.count
             copy.playedPercentage = played > 0
                 ? min(1, Double(played) / Double(episodes.count))
