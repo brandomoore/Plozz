@@ -425,6 +425,7 @@ final class PlozziOSDownloadsModel {
     /// is the already-loaded published snapshot, so this needs no actor hop.
     func cachedRecord(forSelectedVersionOf item: MediaItem) -> DownloadedMediaRecord? {
         let indexedRecords = recordIndex.records
+        guard !indexedRecords.isEmpty else { return nil }
         // An item can carry SEVERAL identities (the same title on more than one
         // server), so match the registry's own resolution rather than assuming a
         // single key — otherwise a download made from one server is invisible to
@@ -433,14 +434,15 @@ final class PlozziOSDownloadsModel {
             return cachedRecord(for: item)
         }
 
-        for identity in MediaItemIdentity.identities(for: item) {
+        let identities = MediaItemIdentity.identities(for: item)
+        for identity in identities {
             let key = MediaIdentityKey.string(
                 for: identity,
                 versionID: versionID
             )
             if let record = recordIndex.record(forKey: key) { return record }
         }
-        if let identity = DownloadMediaIdentity.primary(for: item),
+        if identities.isEmpty, let identity = DownloadMediaIdentity.primary(for: item),
            let record = recordIndex.record(forKey:
                MediaIdentityKey.string(for: identity, versionID: versionID)
            ) {
@@ -494,6 +496,7 @@ final class PlozziOSDownloadsModel {
     /// its badge just as the registry's authoritative `record(for:)` lookup does.
     func cachedRecord(for item: MediaItem) -> DownloadedMediaRecord? {
         let indexedRecords = recordIndex.records
+        guard !indexedRecords.isEmpty else { return nil }
         let identities = MediaItemIdentity.identities(for: item)
         for identity in identities {
             let key = MediaIdentityKey.string(for: identity)
@@ -502,7 +505,7 @@ final class PlozziOSDownloadsModel {
                 return recordIndex.record(forKey: record.identityKey)
             }
         }
-        if let identity = DownloadMediaIdentity.primary(for: item) {
+        if identities.isEmpty, let identity = DownloadMediaIdentity.primary(for: item) {
             let key = MediaIdentityKey.string(for: identity)
             if let record = recordsByKey[key]
                 ?? recordsByIdentityKey[key]?.first {

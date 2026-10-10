@@ -1,5 +1,5 @@
 {
-  "originHash" : "3c43a082978bc9a3c7b96e664706c8f3e242927489bb09b25464d9f968851c7e",
+  "originHash" : "e7a2365ab41fbe1f95326627ccb0a750b1577141d5e854432d783ae9bb040473",
   "pins" : [
     {
       "identity" : "aetherengine",
@@ -41,7 +41,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/thatcube/SMBClient.git",
       "state" : {
-        "revision" : "d8baadc1a4f1287ebf1e8b4702ca38bd6e237fef"
+        "revision" : "2c383ad5e5a7b3063160f6a0d00190c57e295cc3"
       }
     },
     {

@@ -157,6 +157,21 @@ pragmas, so an immediate reopen tolerates a previous connection's checkpoint.
 Committed imports are unchanged, and closing still rolls back unfinished work;
 do not disable journaling or skip closing to avoid a teardown hang.
 
+iOS detail-hero layout alternatives share one resolved action set per body
+evaluation. Do not call the action coordinator again from each derived button,
+overflow-menu, or `ViewThatFits` candidate: even an empty download registry used
+to trigger repeated provider-identity normalization. Empty download lookups still
+observe index membership, so the first download appears without a forced reload.
+Nonempty lookups retain version/account matching and per-record progress updates.
+
+The pinned SMB fork validates Direct TCP frame boundaries, decrypted SMB2 header
+sizes, compound offsets, and the fields consumed by the error decoder before
+unchecked reads. Invalid envelopes close the connection and return
+`ConnectionError.invalidResponse`; incomplete transport frames return
+`ConnectionError.disconnected`. Pending replies use the same buffered framing
+path, and a compound response is returned only once. This guards the receive
+envelope, not every command-specific payload decoder.
+
 Live TV portable journal commits keep consent checks and authoritative local-store
 changes on the main actor, then await atomic file writes on a worker. The journal
 revision is fenced until completion, and observation receipts are written after
