@@ -266,7 +266,7 @@ let package = Package(
         // upstream as kishikawakatsumi/SMBClient#234; switch back to
         //   .package(url: "https://github.com/kishikawakatsumi/SMBClient", from: "0.3.1"),
         // once that lands.
-        .package(url: "https://github.com/thatcube/SMBClient.git", revision: "d8baadc1a4f1287ebf1e8b4702ca38bd6e237fef"),
+        .package(url: "https://github.com/thatcube/SMBClient.git", revision: "2c383ad5e5a7b3063160f6a0d00190c57e295cc3"),
 
         // swift-nio-ssh — Apple's pure-Swift SSH protocol implementation
         // (Apache-2.0), used ONLY by the isolated **MediaTransportSFTP** adapter.

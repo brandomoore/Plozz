@@ -11,9 +11,10 @@ enum IPTVMapping {
     static func listEntry(_ value: IPTVObject, library: String, categories: [String: String] = [:]) throws -> IPTVRecord {
         let kind: MediaItemKind = library == "series" ? .series : library == "movies" ? .movie : .video
         guard let nativeID = value.text(kind == .series ? "series_id" : "stream_id"),
-              nativeID.allSatisfy(\.isNumber), let name = value.text("name") else {
+              nativeID.allSatisfy(\.isNumber) else {
             throw IPTVError.malformed
         }
+        let name = value.text("name") ?? nativeID
         let prefix = kind == .series ? "series" : kind == .movie ? "movie" : "live"
         var record = IPTVRecord(
             item: MediaItem(

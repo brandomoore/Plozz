@@ -59,6 +59,30 @@ public struct LibraryChannelPlaybackContext: Sendable {
         return service.playbackAuthorizationID(channelID: channelID)
     }
 
+    /// Presentation and generation checks only; never a durable playback grant.
+    public var eligibilityID: String? {
+        guard generation == service.generation else { return nil }
+        return service.playbackEligibilityID(channelID: channelID)
+    }
+
+    public func validateAuthorization() async -> String? {
+        guard eligibilityID != nil else { return nil }
+        let result = await service.validatePlaybackAuthorization(channelID: channelID)
+        guard eligibilityID == result else { return nil }
+        return result
+    }
+
+    /// Used with validateAuthorization at playback execution boundaries.
+    public func eligibleSchedule() -> LibraryChannelSchedule? {
+        guard eligibilityID != nil else { return nil }
+        return service.locallyEligibleSchedule(channelID: channelID)
+    }
+
+    public func eligibleProvider(for item: LibraryChannelItem) -> (any LibraryChannelPlaybackProviding)? {
+        guard eligibilityID != nil else { return nil }
+        return service.playbackProvider(for: item)
+    }
+
     public func schedule() -> LibraryChannelSchedule? {
         guard generation == service.generation else { return nil }
         return service.schedule(channelID: channelID)
@@ -542,15 +566,22 @@ public final class LibraryChannelService {
     }
 
     public func playbackContext(catalogID: String) throws -> LibraryChannelPlaybackContext {
+        let context = try playbackCandidate(catalogID: catalogID)
+        guard context.authorizationID != nil else { throw LibraryChannelError.sourceUnavailable }
+        return context
+    }
+
+    /// Preparing UI identity is I/O-free. The player must validate durable authority before use.
+    public func playbackCandidate(catalogID: String) throws -> LibraryChannelPlaybackContext {
         guard let definition = definitions.first(where: { $0.catalogID == catalogID }),
-              playbackAuthorizationID(channelID: definition.id) != nil else {
+              playbackEligibilityID(channelID: definition.id) != nil else {
             throw LibraryChannelError.sourceUnavailable
         }
         guard schedules[definition.id] != nil else { throw LibraryChannelError.snapshotUnavailable }
         return LibraryChannelPlaybackContext(definition: definition, service: self)
     }
 
-    public func playbackAuthorizationID(channelID: UUID) -> String? {
+    public func playbackEligibilityID(channelID: UUID) -> String? {
         guard isActive(), let definition = definitions.first(where: { $0.id == channelID }),
               definition.profileID == profileID, definition.isEnabled, isSourceAllowed(definition.sourceID),
               let recipe = definition.revisions.last?.recipe,
@@ -558,16 +589,61 @@ public final class LibraryChannelService {
                   contexts[$0.accountID]?.allowedLibraryIDs.contains($0.libraryID) == true
                       && (discoveredLibraries?.contains($0) ?? true)
               }) else { return nil }
+        return "\(profileID):\(generation.uuidString):\(definition.sourceID.uuidString)"
+    }
+
+    public func playbackAuthorizationID(channelID: UUID) -> String? {
+        guard let expected = playbackEligibilityID(channelID: channelID) else { return nil }
         do {
-            // A held schedule can outlive its durable authority, but a newer revision is not revocation.
-            let matches = try store.load().filter { $0.id == channelID }
-            guard matches.count == 1, let current = matches.first,
-                  current.isEnabled, current.sourceID == definition.sourceID,
-                  current.profileID == profileID else { return nil }
+            guard matchesDurableAuthority(try store.load(), channelID: channelID) else { return nil }
+            return expected
         } catch {
+            HandoffDiagnostics.emit("LIBRARY_CHANNEL event=authorityReadFailed")
             return nil
         }
-        return "\(profileID):\(generation.uuidString):\(definition.sourceID.uuidString)"
+    }
+
+    public func validatePlaybackAuthorization(channelID: UUID) async -> String? {
+        guard let expected = playbackEligibilityID(channelID: channelID) else { return nil }
+        for _ in 0..<3 {
+            let revision = store.changeRevision
+            let worker = Task.detached(priority: .userInitiated) { [store] in
+                try Task.checkCancellation()
+                return try store.load()
+            }
+            do {
+                let stored = try await withTaskCancellationHandler {
+                    try await worker.value
+                } onCancel: {
+                    worker.cancel()
+                }
+                try Task.checkCancellation()
+                guard playbackEligibilityID(channelID: channelID) == expected else { return nil }
+                guard store.changeRevision == revision else { continue }
+                guard matchesDurableAuthority(stored, channelID: channelID) else { return nil }
+                return expected
+            } catch is CancellationError {
+                return nil
+            } catch {
+                HandoffDiagnostics.emit("LIBRARY_CHANNEL event=authorityReadFailed")
+                return nil
+            }
+        }
+        HandoffDiagnostics.emit("LIBRARY_CHANNEL event=authorityReadConflict")
+        return nil
+    }
+
+    private func matchesDurableAuthority(_ stored: [LibraryChannelDefinition], channelID: UUID) -> Bool {
+        // A held schedule can outlive its durable authority, but a newer revision is not revocation.
+        guard let definition = definitions.first(where: { $0.id == channelID }) else { return false }
+        let matches = stored.filter { $0.id == channelID }
+        guard matches.count == 1, let current = matches.first else { return false }
+        return current.isEnabled && current.sourceID == definition.sourceID && current.profileID == profileID
+    }
+
+    fileprivate func locallyEligibleSchedule(channelID: UUID) -> LibraryChannelSchedule? {
+        guard playbackEligibilityID(channelID: channelID) != nil else { return nil }
+        return schedules[channelID]
     }
 
     public func schedule(channelID: UUID) -> LibraryChannelSchedule? {

@@ -283,9 +283,13 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                   let definition = libraryService.definitions.first(where: {
                       $0.catalogID == channel.id && $0.isEnabled
                   }) else { return nil }
-            _ = try libraryService.slot(channelID: definition.id, at: Date())
-            let context = try libraryService.playbackContext(catalogID: channel.id)
-            guard let authorizationID = context.authorizationID else {
+            let context = try libraryService.playbackCandidate(catalogID: channel.id)
+            guard let schedule = context.eligibleSchedule() else {
+                throw LibraryChannelError.snapshotUnavailable
+            }
+            let slot = try schedule.slot(at: Date())
+            guard libraryService.isAuthorized(slot.item), context.channelID == definition.id,
+                  let authorizationID = context.eligibilityID else {
                 throw LiveTVPlaybackPreparationError.authorizationChanged
             }
             return LiveTVLibraryChannelReference(channelID: context.channelID, authorizationID: authorizationID)
@@ -1695,7 +1699,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
               ) else { return false }
         if case .libraryChannel(let id, let authorizationID) = prepared.input {
             return prepared.authorizationID == authorizationID
-                && libraryService?.playbackAuthorizationID(channelID: id) == authorizationID
+                && libraryService?.playbackEligibilityID(channelID: id) == authorizationID
         }
         return true
     }

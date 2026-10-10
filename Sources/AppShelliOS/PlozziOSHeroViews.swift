@@ -1841,7 +1841,7 @@ struct PlozziOSHomeHeroForeground: View {
     }
 }
 
-private struct PlozziOSDetailHeroForeground: View {
+struct PlozziOSDetailHeroForeground: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(PlozziOSAppModel.self) private var appModel
 
@@ -1930,29 +1930,16 @@ private struct PlozziOSDetailHeroForeground: View {
         }
     }
 
-    private var primaryActions: [ActionEntry] {
-        actions.filter(\.action.isPrimaryDetailAction)
-    }
-
     private var contextActions: [ActionEntry] {
-        actions.filter {
-            !$0.action.isPrimaryDetailAction && $0.id != parentNavigationEntry?.id
+        let entries = actions
+        let parentID = entries.first { $0.action == .goToSeason }?.id
+        return entries.filter {
+            !$0.action.isPrimaryDetailAction && $0.id != parentID
         }
-    }
-
-    /// The navigation action shown as its own button in the action row, so an
-    /// episode page has a *visible* way back to its show rather than one buried
-    /// in a long-press menu.
-    private var parentNavigationEntry: ActionEntry? {
-        actions.first { $0.action == .goToSeason }
     }
 
     private var hasSourceVersionOptions: Bool {
         sources.count > 1 || versions.count > 1
-    }
-
-    private var fileBrowserAction: ActionEntry? {
-        actions.first { $0.action == .browseFiles }
     }
 
     /// The episode's own 16:9 still, shown above its details on an episode page.
@@ -1983,6 +1970,11 @@ private struct PlozziOSDetailHeroForeground: View {
     }
 
     var body: some View {
+        // ViewThatFits evaluates several layouts; resolve authority/status once,
+        // not again for every candidate and every derived action getter.
+        let entries = actions
+        let extras = orderedInlineExtras(from: entries)
+        let parentNavigationEntry = entries.first { $0.action == .goToSeason }
         VStack(
             alignment: style == .compactPortrait ? .center : .leading,
             spacing: 12
@@ -2021,9 +2013,10 @@ private struct PlozziOSDetailHeroForeground: View {
                 // Widest first: everything inline with Trailer labelled, then the
                 // same row with Trailer reduced to its glyph, and only then start
                 // folding actions into "…".
-                actionRow(collapsing: 0, labelledTrailer: true, resume: .full)
-                ForEach(0...orderedInlineExtras.count, id: \.self) { collapseCount in
+                actionRow(actions: entries, collapsing: 0, labelledTrailer: true, resume: .full)
+                ForEach(0...extras.count, id: \.self) { collapseCount in
                     actionRow(
+                        actions: entries,
                         collapsing: collapseCount,
                         labelledTrailer: false,
                         resume: .full
@@ -2035,17 +2028,20 @@ private struct PlozziOSDetailHeroForeground: View {
                 // long "Resume S12, E7 • 43m" overflowed the text column and
                 // dragged the whole hero off to one side.
                 actionRow(
-                    collapsing: orderedInlineExtras.count,
+                    actions: entries,
+                    collapsing: extras.count,
                     labelledTrailer: false,
                     resume: .seasonEpisodeOnly
                 )
                 actionRow(
-                    collapsing: orderedInlineExtras.count,
+                    actions: entries,
+                    collapsing: extras.count,
                     labelledTrailer: false,
                     resume: .hidden
                 )
                 actionRow(
-                    collapsing: orderedInlineExtras.count,
+                    actions: entries,
+                    collapsing: extras.count,
                     labelledTrailer: false,
                     resume: .full,
                     stacksVertically: true
@@ -2100,17 +2096,17 @@ private struct PlozziOSDetailHeroForeground: View {
     /// The trailer reads as part of the play affordance so it sits beside Play,
     /// yet it must survive longest, and those two facts pull in opposite
     /// directions if one list has to express both.
-    private var orderedInlineExtras: [InlineExtra] {
+    private func orderedInlineExtras(from actions: [ActionEntry]) -> [InlineExtra] {
         var extras: [InlineExtra] = []
         // Next to Play: on a title you don't have, the trailer and Request are
         // the only two things you can actually do.
         if trailerItem != nil, onPlayTrailer != nil {
             extras.append(.trailer)
         }
-        extras.append(contentsOf: primaryActions.map { InlineExtra.primary($0) })
+        extras.append(contentsOf: actions.filter(\.action.isPrimaryDetailAction).map { InlineExtra.primary($0) })
         // On an episode page the breadcrumb above the title carries this, so it
         // isn't repeated as a button in a row of watch-state actions.
-        if !presentsEpisodeStill, let parentNavigationEntry {
+        if !presentsEpisodeStill, let parentNavigationEntry = actions.first(where: { $0.action == .goToSeason }) {
             extras.append(.primary(parentNavigationEntry))
         }
         return extras
@@ -2132,12 +2128,13 @@ private struct PlozziOSDetailHeroForeground: View {
     /// the last `collapseCount` of them into the "…" menu. ViewThatFits chooses the
     /// widest candidate (fewest collapsed) that still fits the hero width.
     private func actionRow(
+        actions: [ActionEntry],
         collapsing collapseCount: Int,
         labelledTrailer: Bool,
         resume: PlayResumeButtonLabel.ResumeTrailingStyle,
         stacksVertically: Bool = false
     ) -> some View {
-        let extras = orderedInlineExtras
+        let extras = orderedInlineExtras(from: actions)
         // Fold by priority, then render what survives in display order, so the
         // row never reshuffles as it narrows — buttons only disappear.
         let doomed = extras
@@ -2152,7 +2149,8 @@ private struct PlozziOSDetailHeroForeground: View {
             .filter { !doomedOffsets.contains($0.offset) }
             .map(\.element)
         let collapsed = doomed.map(\.element)
-        let menu = menuActions(collapsing: collapsed)
+        let menu = menuActions(collapsing: collapsed, from: actions)
+        let fileBrowserAction = actions.first { $0.action == .browseFiles }
         return HeroActionRow(
             stacksVertically: stacksVertically,
             alignment: style == .compactPortrait ? .center : .leading
@@ -2163,7 +2161,7 @@ private struct PlozziOSDetailHeroForeground: View {
                 inlineExtraButton(extra, labelled: labelledTrailer)
             }
             if hasSourceVersionOptions || !menu.isEmpty || fileBrowserAction != nil {
-                sourceVersionMenuButton(actions: menu)
+                sourceVersionMenuButton(actions: menu, fileBrowserAction: fileBrowserAction)
             }
         }
     }
@@ -2171,9 +2169,11 @@ private struct PlozziOSDetailHeroForeground: View {
     /// Overflow-menu entries for the collapsed extras, preserving the canonical
     /// menu ordering regardless of which subset
     /// happens to be collapsed at the current width.
-    private func menuActions(collapsing extras: [InlineExtra]) -> [PlaybackSourceMenuAction] {
+    private func menuActions(
+        collapsing extras: [InlineExtra], from actions: [ActionEntry]
+    ) -> [PlaybackSourceMenuAction] {
         let ids = Set(extras.map(\.id))
-        return compactPanelActions.filter { ids.contains($0.id) }
+        return compactPanelActions(from: actions).filter { ids.contains($0.id) }
     }
 
     @ViewBuilder
@@ -2280,7 +2280,8 @@ private struct PlozziOSDetailHeroForeground: View {
     }
 
     private func sourceVersionMenuButton(
-        actions: [PlaybackSourceMenuAction] = []
+        actions: [PlaybackSourceMenuAction],
+        fileBrowserAction: ActionEntry?
     ) -> some View {
         PlaybackSourceMenuButton(
             sources: sources,
@@ -2310,8 +2311,8 @@ private struct PlozziOSDetailHeroForeground: View {
         .accessibilityLabel("More actions")
     }
 
-    private var compactPanelActions: [PlaybackSourceMenuAction] {
-        var result = inlineActionEntries.map { entry in
+    private func compactPanelActions(from actions: [ActionEntry]) -> [PlaybackSourceMenuAction] {
+        var result = inlineActionEntries(from: actions).map { entry in
             PlaybackSourceMenuAction(
                 id: "media.\(entry.action.rawValue)",
                 title: entry.action.title,
@@ -2330,7 +2331,8 @@ private struct PlozziOSDetailHeroForeground: View {
     }
 
     private func performCompactPanelAction(_ id: String) {
-        if id == "media.browseFiles", let fileBrowserAction {
+        let entries = actions
+        if id == "media.browseFiles", let fileBrowserAction = entries.first(where: { $0.action == .browseFiles }) {
             perform(fileBrowserAction)
             return
         }
@@ -2339,7 +2341,7 @@ private struct PlozziOSDetailHeroForeground: View {
             return
         }
         guard id.hasPrefix("media."),
-              let entry = inlineActionEntries.first(where: {
+              let entry = inlineActionEntries(from: entries).first(where: {
                   "media.\($0.action.rawValue)" == id
               }) else {
             return
@@ -2349,8 +2351,9 @@ private struct PlozziOSDetailHeroForeground: View {
 
     /// Every entry that can appear inline, in the same order — so a collapsed
     /// one keeps its title/symbol and stays actionable from the "…" menu.
-    private var inlineActionEntries: [ActionEntry] {
-        primaryActions + (parentNavigationEntry.map { [$0] } ?? [])
+    private func inlineActionEntries(from actions: [ActionEntry]) -> [ActionEntry] {
+        actions.filter(\.action.isPrimaryDetailAction)
+            + (actions.first { $0.action == .goToSeason }.map { [$0] } ?? [])
     }
 
     private func primaryActionSymbol(for entry: ActionEntry) -> String {

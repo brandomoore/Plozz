@@ -1,6 +1,7 @@
 #if os(iOS)
 import CoreModels
 import CoreUI
+import FeatureHomeCore
 import Foundation
 import MediaDownloads
 import MediaTransportCore
@@ -13,6 +14,41 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    func testDetailHeroResolvesActionsOnceForAllLayoutCandidates() throws {
+        let model = makeModel(
+            registry: DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore()),
+            storage: try temporaryStorage(),
+            probe: ArtworkProbe(data: imageData()), startsActive: false
+        )
+        defer { model.beginProfileTransition() }
+        let handler = DetailActionLookupProbe(model: model)
+        let app = PlozziOSAppModel()
+        let item = MediaItem(
+            id: "share-movie", title: "A Movie", kind: .movie,
+            providerIDs: ["Tmdb": "42", "SharePath": "Movies/A Movie.mkv"],
+            sourceAccountID: "share"
+        )
+        let presentation = HeroPresentation(item: item, artworkStyle: .compactPortrait, surface: .detail)
+        let renderer = ImageRenderer(content:
+            PlozziOSDetailHeroForeground(
+                item: item, rootItem: item, playableItem: item,
+                sources: [], selectedSourceAccountID: nil,
+                versions: [], selectedVersionID: nil,
+                onSelectSource: { _ in }, onSelectVersion: { _ in },
+                presentation: presentation, fallbackPresentation: presentation,
+                style: .compactPortrait, actionHandler: handler, onPlay: { _, _ in },
+                trailerItem: item, onPlayTrailer: { _ in }
+            )
+            .environment(app)
+            .frame(width: 350)
+        )
+        let start = CFAbsoluteTimeGetCurrent()
+        XCTAssertNotNil(renderer.uiImage)
+        print("Detail hero action lookups: \(handler.calls); render: \(CFAbsoluteTimeGetCurrent() - start)s")
+        XCTAssertGreaterThan(handler.calls, 0)
+        XCTAssertLessThanOrEqual(handler.calls, 6, "Layout alternatives must reuse one action set per body evaluation.")
+    }
+
     func testNativeDownloadTabProgressNeverChangesTheWatchlistSymbol() async throws {
         var download = record()
         download.status = .downloading
@@ -658,6 +694,30 @@ final class DownloadPresentationTests: XCTestCase {
         try await waitUntil { model.cachedRecord(forSelectedVersionOf: absent)?.status == .completed }
     }
 
+    func testEmptyDownloadLookupsObserveTheFirstDownload() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let model = makeModel(
+            registry: registry, storage: try temporaryStorage(),
+            probe: ArtworkProbe(data: imageData()), startsActive: false
+        )
+        defer { model.beginProfileTransition() }
+        let item = MediaItem(id: "new", title: "New", kind: .episode, sourceAccountID: "emby")
+        let changed = expectation(description: "Both empty lookups observe membership")
+        changed.expectedFulfillmentCount = 2
+        withObservationTracking {
+            XCTAssertNil(model.cachedRecord(for: item))
+        } onChange: { changed.fulfill() }
+        withObservationTracking {
+            XCTAssertNil(model.cachedRecord(forSelectedVersionOf: item))
+        } onChange: { changed.fulfill() }
+        _ = try await registry.beginDownload(record(id: "new"))
+        await fulfillment(of: [changed], timeout: 2)
+        try await waitUntil {
+            model.cachedRecord(for: item) != nil
+                && model.cachedRecord(forSelectedVersionOf: item) != nil
+        }
+    }
+
     func testUnavailableBackdropFallsBackToDecodablePoster() async throws {
         let data = imageData()
         let prefix = "https://download-artwork.invalid/\(UUID())"
@@ -938,6 +998,19 @@ final class DownloadPresentationTests: XCTestCase {
         let satisfied = await predicate()
         XCTAssertTrue(satisfied)
     }
+}
+
+@MainActor
+private final class DetailActionLookupProbe: MediaItemActionHandling {
+    let model: PlozziOSDownloadsModel
+    var calls = 0
+    init(model: PlozziOSDownloadsModel) { self.model = model }
+    func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] {
+        calls += 1
+        _ = model.cachedRecord(for: item)
+        return [.markWatched, .addToWatchlist]
+    }
+    func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {}
 }
 
 @MainActor

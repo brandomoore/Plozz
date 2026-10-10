@@ -1,8 +1,15 @@
 import Foundation
+import os
 
 public protocol LibraryChannelDefinitionStoring: Sendable {
+    /// I/O-free mutation fence for reads that suspend before consuming their result.
+    var changeRevision: UUID? { get }
     func load() throws -> [LibraryChannelDefinition]
     func save(_ definitions: [LibraryChannelDefinition]) throws
+}
+
+public extension LibraryChannelDefinitionStoring {
+    var changeRevision: UUID? { nil }
 }
 
 public protocol LibraryChannelDefinitionCompareAndSwapping: LibraryChannelDefinitionStoring {
@@ -19,12 +26,16 @@ public final class LibraryChannelDefinitionStore: LibraryChannelDefinitionCompar
     private let secureStore: any SecureStoring
     private let key: String
     private static let lock = NSRecursiveLock()
+    private static let revisions = OSAllocatedUnfairLock(initialState: [String: UUID]())
     private var cachedDocument: (bytes: String, definitions: [LibraryChannelDefinition])?
 
     public init(secureStore: any SecureStoring, namespace: String? = nil) {
         self.secureStore = secureStore
         key = SettingsKey.scoped("com.plozz.liveTV.libraryChannels", namespace: namespace)
+        Self.revisions.withLock { $0[key] = $0[key] ?? UUID() }
     }
+
+    public var changeRevision: UUID? { Self.revisions.withLock { $0[key] } }
 
     public func load() throws -> [LibraryChannelDefinition] {
         Self.lock.lock()
@@ -59,6 +70,9 @@ public final class LibraryChannelDefinitionStore: LibraryChannelDefinitionCompar
             throw LibraryChannelError.invalidRecipe
         }
         for definition in definitions { try definition.validate() }
+        // Do not share the Keychain I/O lock with main-actor revision checks.
+        Self.revisions.withLock { $0[key] = UUID() }
+        defer { Self.revisions.withLock { $0[key] = UUID() } }
         Self.lock.lock()
         defer { Self.lock.unlock() }
         let previous = try read()

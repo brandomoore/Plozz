@@ -137,6 +137,64 @@ Sign-out and purge use the same queue, invalidate older publications, and hide
 pending removals from auto-connect. Turning sync off cancels queued publication;
 an already executing Security call cannot be interrupted.
 
+Library-channel playback keeps display eligibility separate from durable
+authorization. Focus, title and status getters use only the current in-memory
+profile/account/source state. The runtime supplies a separate asynchronous
+validator for initial load, provider/decoder/seek completion, resume, periodic
+reconciliation and history commits; its definition-store read runs off the main
+thread. A slow periodic check is coalesced, not queued again on every UI tick.
+Storage errors deny access rather than reuse a cached grant. Generation checks
+discard superseded results, and an I/O-free, namespace-scoped store revision
+fences cross-instance writes while a read is suspended. Candidate IDs and
+rendered titles must never be treated as permission to execute playback.
+After decoder loading, pause intent is restored before durable validation
+suspends, so a paused start or foreground reload cannot autoplay during the read.
+
+IPTV catalogue teardown can reach SQLite WAL checkpoint writes even without an
+explicit save. If the final provider reference is released on the main thread,
+the catalogue transfers its connection and cached statements to a serial utility
+queue for finalization and close. Non-main-thread teardown remains synchronous.
+Opening a connection installs the existing busy timeout before WAL/schema
+pragmas, so an immediate reopen tolerates a previous connection's checkpoint.
+Committed imports are unchanged, and closing still rolls back unfinished work;
+do not disable journaling or skip closing to avoid a teardown hang.
+
+Xtream catalogue entries require a usable source ID, but a missing or empty
+display name does not invalidate an otherwise addressable entry. Such entries
+keep their native ID for both playback routing and fallback display, matching
+the existing episode-title fallback. Import logs report only the aggregate
+unnamed-entry count, never the source IDs or payload. Invalid identities,
+malformed JSON and truncated responses still roll back the entire replacement;
+unnamed entries are retained, not skipped.
+
+`IPTVPerformanceProbeTests.testOptInXtreamImportAndLibraryDiscovery` exercises
+real catalogue bytes through a separately owned loopback relay and dummy
+credentials. Its ignored `.build/iptv-xtream-performance-source.json` control
+file is an array of `{ "source": 1, "url": "http://127.0.0.1:PORT/CAPABILITY",
+"counts": { "live": 0, "movies": 0, "series": 0 } }` entries with expected
+unique source-ID counts. The probe checks all three catalogues, seven setup
+requests, sub-two-second cached discovery and decoding every persisted record
+after reopening. Without that control file it skips; ordinary tests never
+contact trial providers. Keep credentials and original response bodies out of
+the control file and Git, and report upstream transfer time separately from
+local replay/import time. Simulator measurements are not physical-device
+performance evidence.
+
+iOS detail-hero layout alternatives share one resolved action set per body
+evaluation. Do not call the action coordinator again from each derived button,
+overflow-menu, or `ViewThatFits` candidate: even an empty download registry used
+to trigger repeated provider-identity normalization. Empty download lookups still
+observe index membership, so the first download appears without a forced reload.
+Nonempty lookups retain version/account matching and per-record progress updates.
+
+The pinned SMB fork validates Direct TCP frame boundaries, decrypted SMB2 header
+sizes, compound offsets, and the fields consumed by the error decoder before
+unchecked reads. Invalid envelopes close the connection and return
+`ConnectionError.invalidResponse`; incomplete transport frames return
+`ConnectionError.disconnected`. Pending replies use the same buffered framing
+path, and a compound response is returned only once. This guards the receive
+envelope, not every command-specific payload decoder.
+
 Live TV portable journal commits keep consent checks and authoritative local-store
 changes on the main actor, then await atomic file writes on a worker. The journal
 revision is fenced until completion, and observation receipts are written after

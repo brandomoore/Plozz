@@ -22,10 +22,11 @@ struct IPTVRecord: Codable, Sendable {
 /// delivery URLs are sealed separately from the searchable catalogue columns.
 final class IPTVCatalog {
     enum Table: String { case entries, incoming }
-    private var db: OpaquePointer?
+    private(set) var db: OpaquePointer?
     private let key: SymmetricKey
     private var writeStatements: [String: OpaquePointer] = [:]
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    private static let teardownQueue = DispatchQueue(label: "com.plozz.iptv.catalog-teardown", qos: .utility)
     private static let indexes = [
         ("catalogue_browse", "library,kind,title,id"),
         ("catalogue_parent", "parent,ordinal,id"),
@@ -43,16 +44,17 @@ final class IPTVCatalog {
         guard sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil)
                 == SQLITE_OK, let handle else {
             let error = Self.databaseError(sqlite3_extended_errcode(handle))
-            if let handle { sqlite3_close(handle) }
+            if let handle { Self.retire(handle) }
             throw error
         }
         db = handle
         do {
+            // A previous connection may still be completing its off-main WAL checkpoint.
+            try execute("PRAGMA busy_timeout=15000")
             try execute("PRAGMA journal_mode=WAL")
             try execute("PRAGMA synchronous=NORMAL")
             try execute("PRAGMA cache_size=-4096")
             try execute("PRAGMA temp_store=FILE")
-            try execute("PRAGMA busy_timeout=15000")
             try execute("""
                 CREATE TABLE IF NOT EXISTS entries (
                     id TEXT PRIMARY KEY, kind TEXT NOT NULL, library TEXT NOT NULL,
@@ -63,15 +65,38 @@ final class IPTVCatalog {
                 """)
             try createIndexes()
         } catch {
-            sqlite3_close(handle)
             db = nil
+            Self.retire(handle)
             throw error
         }
     }
 
     deinit {
-        for statement in writeStatements.values { sqlite3_finalize(statement) }
-        if let db { sqlite3_close(db) }
+        if let db { Self.retire(db, statements: Array(writeStatements.values)) }
+    }
+
+    private static func retire(_ db: OpaquePointer, statements: [OpaquePointer] = []) {
+        let teardown = ConnectionTeardown(db: db, statements: statements)
+        if Thread.isMainThread {
+            teardownQueue.async { teardown.close() }
+        } else {
+            teardown.close()
+        }
+    }
+
+    // Ownership transfers only after the catalogue has stopped using every handle.
+    // SQLite close may checkpoint the WAL; never make view teardown wait for disk I/O.
+    private struct ConnectionTeardown: @unchecked Sendable {
+        let db: OpaquePointer
+        let statements: [OpaquePointer]
+
+        func close() {
+            for statement in statements { sqlite3_finalize(statement) }
+            let status = sqlite3_close(db)
+            if status != SQLITE_OK {
+                PlozzLog.networking.error("IPTV catalogue close failed sqlite=\(status)")
+            }
+        }
     }
 
     func execute(_ sql: String, cancellable: Bool = false) throws {

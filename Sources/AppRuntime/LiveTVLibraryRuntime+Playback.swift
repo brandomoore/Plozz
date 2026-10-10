@@ -14,33 +14,42 @@ extension LiveTVLibraryRuntime {
             guard let runtimeAuthorization = authorizationID else {
                 throw LibraryChannelError.authorizationChanged
             }
-            let context = try service.playbackContext(catalogID: "library:\(id.uuidString)")
+            let context = try service.playbackCandidate(catalogID: "library:\(id.uuidString)")
             guard context.channelID == id, context.profileID == profileID,
-                  context.authorizationID == expectedAuthorization else {
+                  await context.validateAuthorization() == expectedAuthorization,
+                  authorizationID == runtimeAuthorization else {
                 throw LibraryChannelError.authorizationChanged
             }
             let currentAuthorization: @MainActor @Sendable () -> String? = { [self] in
                 guard authorizationID == runtimeAuthorization,
-                      context.authorizationID == expectedAuthorization else { return nil }
+                      context.eligibilityID == expectedAuthorization else { return nil }
                 return expectedAuthorization
             }
             let session = LibraryChannelPlaybackSession(
                 channelID: id,
                 engine: decoder,
-                schedule: { currentAuthorization() == nil ? nil : context.schedule() },
+                schedule: { currentAuthorization() == nil ? nil : context.eligibleSchedule() },
                 provider: { item in
                     guard currentAuthorization() != nil else { return nil }
-                    return context.provider(for: item)
+                    return context.eligibleProvider(for: item)
                 },
                 authorization: currentAuthorization,
+                validateAuthorization: {
+                    guard currentAuthorization() != nil,
+                          await context.validateAuthorization() == expectedAuthorization,
+                          currentAuthorization() != nil else { return nil }
+                    return expectedAuthorization
+                },
                 historyAuthorization: { [history] in
                     guard currentAuthorization() != nil else { return nil }
                     return history.authorizationID
                 },
                 historyReporting: .externalCompletion { [history] scheduled, item, token in
                     try Task.checkCancellation()
-                    guard currentAuthorization() != nil, history.authorizationID == token,
-                          context.provider(for: scheduled) != nil else {
+                    guard currentAuthorization() != nil,
+                          await context.validateAuthorization() == expectedAuthorization,
+                          currentAuthorization() != nil, history.authorizationID == token,
+                          context.eligibleProvider(for: scheduled) != nil else {
                         throw LibraryChannelError.authorizationChanged
                     }
                     try onCompleted(Self.completedItem(item, scheduled: scheduled), token)

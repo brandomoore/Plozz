@@ -12,7 +12,7 @@ import AVKit
 @MainActor
 public final class LibraryLiveChannelEngine: LiveChannelEngine {
     public typealias LibrarySessionFactory =
-        @MainActor (UUID, String, any VideoEngine) throws -> LibraryChannelPlaybackSession
+        @MainActor (UUID, String, any VideoEngine) async throws -> LibraryChannelPlaybackSession
 
     public let underlyingEngine: any LiveChannelEngine
     public private(set) var currentInput: LiveChannelInput?
@@ -95,7 +95,8 @@ public final class LibraryLiveChannelEngine: LiveChannelEngine {
             case .libraryChannel(let id, let authorizationID):
                 guard !authorizationID.isEmpty else { throw LibraryChannelError.authorizationChanged }
                 guard let librarySessionFactory else { throw LiveChannelInputError.unsupportedSource }
-                let session = try librarySessionFactory(id, authorizationID, underlyingEngine)
+                let session = try await librarySessionFactory(id, authorizationID, underlyingEngine)
+                try check(stamp)
                 guard session.channelID == id,
                       session.engine === underlyingEngine else {
                     throw LiveChannelInputError.unsupportedSource

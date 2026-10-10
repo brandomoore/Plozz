@@ -121,9 +121,11 @@ final class LibraryChannelPlaybackSessionTests: XCTestCase {
     }
 
     private func fixture(
-        offset: Double = 0, history: Bool = false, externalHistory: Bool = false
+        offset: Double = 0, history: Bool = false, externalHistory: Bool = false, durableValidation: Bool = false
     ) throws -> LibraryPlaybackFixture {
-        try LibraryPlaybackFixture(offset: offset, history: history, externalHistory: externalHistory)
+        try LibraryPlaybackFixture(
+            offset: offset, history: history, externalHistory: externalHistory, durableValidation: durableValidation
+        )
     }
 
     private func settle(_ condition: @MainActor () -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
@@ -617,6 +619,42 @@ final class LibraryChannelPlaybackSessionTests: XCTestCase {
         XCTAssertEqual(fixture.engine.currentTime, 20)
     }
 
+    func testPausedLoadDoesNotAutoplayDuringPostLoadAuthorityValidation() async throws {
+        for foregroundReload in [false, true] {
+            let fixture = try fixture(offset: 20, durableValidation: true)
+            defer { fixture.player.stop() }
+            if foregroundReload {
+                fixture.player.tune()
+                try await fixture.player.waitUntilSettled()
+            }
+            fixture.player.pause()
+            let gate = LibraryPlaybackGate()
+            defer { gate.open() }
+            fixture.engine.loadHook = { [weak fixture] in
+                fixture?.state.validationHook = { await gate.wait(); return "authorized" }
+            }
+            if foregroundReload {
+                fixture.state.advance(12)
+                fixture.player.foreground()
+            } else {
+                fixture.player.tune()
+            }
+            await settle { gate.isWaiting }
+            XCTAssertTrue(fixture.engine.isPaused, "The decoder must preserve pause while durable validation waits.")
+            XCTAssertEqual(fixture.engine.currentTime, 20)
+            fixture.engine.loadHook = nil
+            fixture.state.validationHook = nil
+            gate.open()
+            try await fixture.player.waitUntilSettled()
+            XCTAssertEqual(fixture.player.state, .paused)
+            XCTAssertTrue(fixture.engine.isPaused)
+            XCTAssertEqual(fixture.engine.currentTime, 20)
+            fixture.player.resume()
+            await settle { fixture.player.state == .playing }
+            XCTAssertFalse(fixture.engine.isPaused)
+        }
+    }
+
     func testRebufferRecoveryRejoinsWithoutCreditingTheMissedInterval() async throws {
         let fixture = try fixture(history: true)
         defer { fixture.player.stop() }
@@ -650,6 +688,132 @@ final class LibraryChannelPlaybackSessionTests: XCTestCase {
         } catch { XCTAssertEqual(error as? LibraryChannelError, .authorizationChanged) }
         XCTAssertTrue(fixture.engine.isPaused)
     }
+
+    func testPresentationDoesNotReadAuthorityAndSlowTicksAreCoalesced() async throws {
+        let fixture = try fixture(durableValidation: true)
+        defer { fixture.player.stop() }
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        let gate = LibraryPlaybackGate()
+        defer { gate.open() }
+        fixture.state.validationHook = { await gate.wait(); return "authorized" }
+        fixture.player.tick()
+        await settle { gate.isWaiting }
+        let reads = fixture.state.authorityReads
+        let started = ContinuousClock.now
+        for _ in 0..<100 {
+            XCTAssertNotNil(fixture.player.navigationItem)
+            XCTAssertNil(fixture.player.recoverableProgrammeIssue)
+            fixture.player.tick()
+        }
+        XCTAssertLessThan(started.duration(to: .now), .milliseconds(100))
+        XCTAssertEqual(fixture.state.authorityReads, reads)
+        fixture.state.authorization = nil
+        XCTAssertNil(fixture.player.navigationItem, "Local profile revocation remains immediate.")
+        gate.open()
+        await settle { fixture.player.state == .unavailable(.authorizationChanged) }
+    }
+
+    func testDurableRevocationRejectsInitialLoadAndPostResolutionLoad() async throws {
+        for revokeAfterResolution in [false, true] {
+            let fixture = try fixture(durableValidation: true)
+            defer { fixture.player.stop() }
+            if revokeAfterResolution {
+                fixture.state.resolveHook = { [weak fixture] _ in fixture?.state.durableAuthorization = nil }
+            } else {
+                fixture.state.durableAuthorization = nil
+            }
+            fixture.player.tune()
+            await settle { fixture.player.state == .unavailable(.authorizationChanged) }
+            XCTAssertTrue(fixture.engine.loads.isEmpty)
+            XCTAssertEqual(fixture.state.resolved.count, revokeAfterResolution ? 1 : 0)
+        }
+    }
+
+    func testDurableRevocationStopsAnAlreadySettledPaneAndPreventsResume() async throws {
+        for resume in [false, true] {
+            let fixture = try fixture(durableValidation: true)
+            defer { fixture.player.stop() }
+            fixture.player.tune()
+            try await fixture.player.waitUntilSettled()
+            fixture.state.durableAuthorization = nil
+            if resume {
+                fixture.player.pause()
+                fixture.player.resume()
+                await settle { fixture.player.state == .unavailable(.authorizationChanged) }
+            } else {
+                do {
+                    try await fixture.player.waitUntilSettled()
+                    XCTFail("A rendered title must not act as a cached playback grant.")
+                } catch { XCTAssertEqual(error as? LibraryChannelError, .authorizationChanged) }
+            }
+            XCTAssertTrue(fixture.engine.isPaused)
+        }
+    }
+
+    func testLateAuthorityDenialCannotStopANewerTune() async throws {
+        let fixture = try fixture(durableValidation: true)
+        defer { fixture.player.stop() }
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        let gate = LibraryPlaybackGate()
+        defer { gate.open() }
+        fixture.state.validationHook = { await gate.wait(); return nil }
+        fixture.player.tick()
+        await settle { gate.isWaiting }
+        fixture.state.validationHook = nil
+        fixture.player.goLive()
+        try await fixture.player.waitUntilSettled()
+        gate.open()
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(fixture.player.state, .playing)
+        XCTAssertFalse(fixture.engine.isPaused)
+    }
+
+    func testSlowResumeValidationCannotOverwriteADecoderFailure() async throws {
+        let fixture = try fixture(durableValidation: true)
+        defer { fixture.player.stop() }
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        fixture.player.pause()
+        let gate = LibraryPlaybackGate()
+        defer { gate.open() }
+        fixture.state.validationHook = { await gate.wait(); return "authorized" }
+        fixture.player.resume()
+        await settle { gate.isWaiting }
+        fixture.engine.status = .failed(.notFound)
+        fixture.engine.onFailure?(.notFound)
+        let failure = fixture.player.state
+        guard case .unavailable = failure else { return XCTFail("Expected a decoder failure.") }
+        gate.open()
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(fixture.player.state, failure)
+        XCTAssertTrue(fixture.engine.isPaused)
+    }
+
+    func testCancelledSettledValidationDoesNotPublishAuthorizationFailure() async throws {
+        let fixture = try fixture(durableValidation: true)
+        defer { fixture.player.stop() }
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        let gate = LibraryPlaybackGate()
+        defer { gate.open() }
+        fixture.state.validationHook = { await gate.wait(); return "authorized" }
+        var failures: [LibraryChannelError] = []
+        fixture.player.onPlaybackFailure = { failures.append($0) }
+        let waiting = Task { try await fixture.player.waitUntilSettled() }
+        await settle { gate.isWaiting }
+        waiting.cancel()
+        gate.open()
+        do {
+            try await waiting.value
+            XCTFail("Cancelled validation should throw cancellation.")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertEqual(fixture.player.state, .playing)
+    }
 }
 
 @MainActor
@@ -659,7 +823,7 @@ private final class LibraryPlaybackFixture {
     let schedule: LibraryChannelSchedule
     let player: LibraryChannelPlaybackSession
 
-    init(offset: Double, history: Bool, externalHistory: Bool) throws {
+    init(offset: Double, history: Bool, externalHistory: Bool, durableValidation: Bool) throws {
         let library = LibraryChannelLibrary(accountID: "account", libraryID: "library")
         let items = try ["first", "second"].enumerated().map { index, id in
             var item = MediaItem(id: id, title: id, kind: .episode, runtime: 100)
@@ -692,9 +856,17 @@ private final class LibraryPlaybackFixture {
                 onCompleted: { _, _, _ in fixtureState.checkpoints += 1 }
             )
         }
+        let validator: (@MainActor @Sendable () async -> String?)?
+        if durableValidation {
+            validator = { await fixtureState.validateAuthority() }
+        } else {
+            validator = nil
+        }
         player = LibraryChannelPlaybackSession(
             channelID: definition.id, engine: engine, schedule: { channelSchedule }, provider: { _ in provider },
-            authorization: { fixtureState.authorization }, historyAuthorization: { fixtureState.historyToken },
+            authorization: { fixtureState.authorization },
+            validateAuthorization: validator,
+            historyAuthorization: { fixtureState.historyToken },
             historyReporting: reporting,
             clock: { fixtureState.now }, uptime: { fixtureState.uptime }
         )
@@ -713,6 +885,9 @@ private final class LibraryPlaybackStateFixture {
     var now = Date(timeIntervalSince1970: 1_700_000_000)
     var uptime: Double = 0
     var authorization: String? = "authorized"
+    var durableAuthorization: String? = "authorized"
+    var authorityReads = 0
+    var validationHook: (@MainActor @Sendable () async -> String?)?
     var historyToken: UUID?
     var resolved: [String] = []
     var completed: [String] = []
@@ -726,6 +901,12 @@ private final class LibraryPlaybackStateFixture {
     var externalError: LibraryChannelError?
     var resolveHook: (@MainActor (LibraryChannelItem) async throws -> Void)?
     var completionHook: (@MainActor () async -> Void)?
+
+    func validateAuthority() async -> String? {
+        authorityReads += 1
+        if let validationHook { return await validationHook() }
+        return durableAuthorization
+    }
 
     func advance(_ seconds: Double) { now = now.addingTimeInterval(seconds); uptime += seconds }
 
