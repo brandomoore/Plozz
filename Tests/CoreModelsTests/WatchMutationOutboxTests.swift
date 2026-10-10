@@ -331,6 +331,180 @@ final class WatchOutboxColdStartTests: XCTestCase {
 // MARK: - Durability across relaunch (offline write survives, no rewind)
 
 final class WatchOutboxDurabilityTests: XCTestCase {
+    func testFanoutProtectsEveryTargetFromStaleCorrectedMetadata() async throws {
+        for expand in [false, true] {
+            let durable = try DurableLocalStateStore(secureStore: WatchOutboxMemoryStore())
+            let store = try DurableWatchMutationStore(store: durable, profileID: "profile")
+            let applier = FakeWatchApplier()
+            applier.targetExpansion = .init(targets: [target("server", "a")])
+            let reconciler = WatchStateReconciler(store: store, applier: applier)
+            var newer = playedMutation(capturedAt: Date(timeIntervalSince1970: 2_000),
+                                       targets: [target("server", "b")] + (expand ? [] : [target("server", "a")]))
+            newer.kind = .movie
+            newer.expansionPending = expand
+            newer.identities = [.external(source: "imdb", value: "tt111"), .external(source: "tmdb", value: "123")]
+            var older = playedMutation(played: false, capturedAt: Date(timeIntervalSince1970: 1_000),
+                                       targets: [target("server", "a")])
+            older.kind = .movie
+            older.identities = [.external(source: "imdb", value: "tt111"), .external(source: "tmdb", value: "999")]
+            await reconciler.enqueue(newer)
+            await reconciler.enqueue(older)
+            let restoredStore = try DurableWatchMutationStore(store: durable, profileID: "profile")
+            let restored = WatchStateReconciler(store: restoredStore, applier: applier)
+            await restored.drain()
+            XCTAssertEqual(applier.playedWrites, [
+                .init(played: true, accountID: "server", itemID: "b"),
+                .init(played: true, accountID: "server", itemID: "a")
+            ])
+        }
+    }
+
+    func testMetadataCorrectionsCannotRewindTheSamePhysicalSource() async throws {
+      for changesCanonicalKey in [false, true] {
+        for newestFirst in [false, true] {
+            let durable = try DurableLocalStateStore(secureStore: WatchOutboxMemoryStore())
+            let store = try DurableWatchMutationStore(store: durable, profileID: "profile")
+            let applier = FakeWatchApplier()
+            let reconciler = WatchStateReconciler(store: store, applier: applier)
+            var newer = playedMutation(capturedAt: Date(timeIntervalSince1970: 2_000),
+                                       targets: [target("server", "1")])
+            newer.kind = .movie
+            newer.identities = [.external(source: "imdb", value: "tt111"),
+                                .external(source: "tmdb", value: "222")]
+            var older = newer
+            older.id = UUID()
+            older.capturedAt = Date(timeIntervalSince1970: 1_000)
+            older.played = false
+            older.identities = [.external(source: "imdb", value: "tt111"),
+                                .external(source: "tmdb", value: "111")]
+            if changesCanonicalKey {
+                newer.canonicalMediaID = "imdb:tt222"
+                newer.identities = [.external(source: "imdb", value: "tt222"),
+                                    .external(source: "tmdb", value: "111")]
+            }
+            for mutation in newestFirst ? [newer, older] : [older, newer] {
+                let accepted = await reconciler.enqueue(mutation)
+                XCTAssertEqual(accepted, !newestFirst || mutation.id == newer.id)
+            }
+            let restoredStore = try DurableWatchMutationStore(store: durable, profileID: "profile")
+            let restored = WatchStateReconciler(store: restoredStore, applier: applier)
+            await restored.drain()
+            XCTAssertEqual(applier.playedWrites, [.init(played: true, accountID: "server", itemID: "1")])
+        }
+      }
+    }
+
+    func testCoalescedClockRetainsRejectionAcrossSparseActionsAndRelaunch() async throws {
+        let durable = try DurableLocalStateStore(secureStore: WatchOutboxMemoryStore())
+        let store = try DurableWatchMutationStore(store: durable, profileID: "profile")
+        let applier = FakeWatchApplier()
+        let reconciler = WatchStateReconciler(store: store, applier: applier)
+        var a = playedMutation(capturedAt: Date(timeIntervalSince1970: 1_000), targets: [target("server", "a")])
+        a.rejectedSourceIDs = ["server:b"]
+        let b = playedMutation(played: false, capturedAt: Date(timeIntervalSince1970: 2_000),
+                               targets: [target("server", "b")])
+        let newerA = playedMutation(capturedAt: Date(timeIntervalSince1970: 3_000),
+                                    targets: [target("server", "a")])
+        await reconciler.enqueue(a)
+        await reconciler.enqueue(b)
+        await reconciler.enqueue(newerA)
+        let restoredStore = try DurableWatchMutationStore(store: durable, profileID: "profile")
+        let restored = WatchStateReconciler(store: restoredStore, applier: applier)
+        await restored.drain()
+        XCTAssertEqual(applier.playedWrites, [
+            .init(played: true, accountID: "server", itemID: "a"),
+            .init(played: false, accountID: "server", itemID: "b")
+        ])
+        var stale = newerA
+        stale.capturedAt = Date(timeIntervalSince1970: 2_500)
+        let accepted = await restored.enqueue(stale)
+        XCTAssertFalse(accepted)
+    }
+
+    func testSameCanonicalMisTaggedTitlesKeepSeparateWritesAndClocks() async {
+        let store = InMemoryWatchMutationStore()
+        let applier = FakeWatchApplier()
+        let reconciler = WatchStateReconciler(store: store, applier: applier)
+        var a = playedMutation(capturedAt: Date(timeIntervalSince1970: 1_000), targets: [target("a", "1")])
+        a.kind = .movie
+        a.anchorTitle = "scream 6"
+        a.anchorYear = 2023
+        var b = a
+        b.id = UUID()
+        b.anchorTitle = "scream 7"
+        b.anchorYear = 2026
+        b.capturedAt = Date(timeIntervalSince1970: 2_000)
+        b.played = false
+        b.targets = [target("b", "1")]
+        b.optimisticTargets = b.targets
+        await reconciler.enqueue(a)
+        await reconciler.enqueue(b)
+        let restored = WatchStateReconciler(store: store, applier: applier)
+        await restored.drain()
+        XCTAssertEqual(applier.playedWrites, [
+            .init(played: true, accountID: "a", itemID: "1"),
+            .init(played: false, accountID: "b", itemID: "1")
+        ])
+    }
+
+    func testConflictingSameCanonicalActionsBothDeliverAcrossRelaunch() async throws {
+        let store = InMemoryWatchMutationStore()
+        let applier = FakeWatchApplier()
+        let reconciler = WatchStateReconciler(store: store, applier: applier)
+        var a = playedMutation(capturedAt: Date(timeIntervalSince1970: 1_000), targets: [target("a", "1")])
+        a.rejectedSourceIDs = ["b:1"]
+        var b = a
+        b.id = UUID()
+        b.capturedAt = Date(timeIntervalSince1970: 2_000)
+        b.played = false
+        b.targets = [target("b", "1")]
+        b.optimisticTargets = b.targets
+        b.rejectedSourceIDs = ["a:1"]
+        await reconciler.enqueue(a)
+        await reconciler.enqueue(b)
+        let restored = WatchStateReconciler(store: store, applier: applier)
+        await restored.drain()
+        XCTAssertEqual(applier.playedWrites, [
+            .init(played: true, accountID: "a", itemID: "1"),
+            .init(played: false, accountID: "b", itemID: "1")
+        ])
+        var stale = a
+        stale.id = UUID()
+        stale.capturedAt = Date(timeIntervalSince1970: 900)
+        let accepted = await restored.enqueue(stale)
+        XCTAssertFalse(accepted)
+    }
+
+    func testRejectedSourcesSurviveCoalescingPersistenceAndQueuedExpansion() async throws {
+        let origin = target("server", "owned")
+        let wrong = target("server", "wrong")
+        let older = playedMutation(
+            capturedAt: Date(timeIntervalSince1970: 1_000), targets: [origin, wrong]
+        )
+        var newer = playedMutation(
+            capturedAt: Date(timeIntervalSince1970: 2_000), targets: [origin]
+        )
+        newer.rejectedSourceIDs = [wrong.id]
+        newer.expansionPending = true
+        let coalesced = WatchStateReconciler.coalesce(existing: older, incoming: newer)
+        XCTAssertEqual(coalesced.targets, [origin])
+        XCTAssertEqual(coalesced.optimisticTargets, [origin])
+        let encoded = try JSONEncoder().encode(coalesced)
+        let restored = try JSONDecoder().decode(WatchMutation.self, from: encoded)
+        XCTAssertEqual(restored.rejectedSourceIDs, [wrong.id])
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "rejectedSourceIDs")
+        XCTAssertThrowsError(try JSONDecoder().decode(
+            WatchMutation.self, from: JSONSerialization.data(withJSONObject: object)
+        ))
+        let applier = FakeWatchApplier()
+        applier.targetExpansion = WatchTargetExpansion(targets: [origin, wrong])
+        let reconciler = WatchStateReconciler(store: InMemoryWatchMutationStore(), applier: applier)
+        await reconciler.enqueue(restored)
+        await reconciler.drain()
+        XCTAssertEqual(applier.playedWrites, [.init(played: true, accountID: "server", itemID: "owned")])
+    }
+
     /// An offline write must survive an app relaunch: the intent is persisted before
     /// the (failing) network call, reloaded from disk by a fresh reconciler, and then
     /// applied once the server is reachable — never silently dropped.

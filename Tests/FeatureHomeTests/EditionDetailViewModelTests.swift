@@ -188,10 +188,10 @@ final class EditionDetailViewModelTests: XCTestCase {
             crossServerSourceResolver: { primary in
                 XCTAssertEqual(primary.sourceAccountID, "plex")
                 XCTAssertEqual(primary.edition, "Director's Cut")
-                return [
+                return .init(sources: [
                     MediaSourceRef(accountID: "plex", itemID: "10", kind: .movie),
                     alternateSource
-                ]
+                ])
             }
         )
         await model.load()

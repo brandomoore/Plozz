@@ -136,6 +136,24 @@ public enum MediaItemMerger {
         identitySources: (MediaItem) -> [MediaSourceRef] = { _ in [] }
     ) -> [MediaItem] {
         guard !items.isEmpty else { return items }
+        var items = items
+        var loadedByRef: [String: [Int]] = [:]
+        for index in items.indices {
+            guard let account = items[index].sourceAccountID else { continue }
+            loadedByRef["\(account):\(items[index].id)", default: []].append(index)
+        }
+        // Carried membership is evidence to validate, not a new merge key.
+        for index in items.indices {
+            guard let account = items[index].sourceAccountID else { continue }
+            let ownID = "\(account):\(items[index].id)"
+            for ref in items[index].sources where ref.id != ownID {
+                for owner in loadedByRef[ref.id] ?? []
+                    where plausiblyContradicts(items[index], items[owner]) {
+                    items[index].rejectedSourceIDs.insert(ref.id)
+                    items[owner].rejectedSourceIDs.insert(ownID)
+                }
+            }
+        }
 
         var parent = Array(items.indices)
 
@@ -332,12 +350,24 @@ public enum MediaItemMerger {
             // its predecessor's TMDb/IMDb id) would otherwise collapse two distinct
             // films into one card. Refine the union component into sub-groups of
             // mutually-plausible items, ejecting any member that POSITIVELY
-            // contradicts the others (titles disagree AND years don't corroborate).
+            // contradicts the others (external IDs conflict, or titles disagree
+            // without corroborating years).
             // Conservative by construction — sparse-metadata / id-less rows carry no
             // positive contradiction, so the index-membership merges we rely on are
             // never wrongly split; only a genuine mismatch separates.
             for group in refineComponent(members.map { items[$0] }) {
-                output.append(mergeGroup(group, serverInfo: serverInfo, identitySources: identitySources))
+                let groupSourceIDs = Set(group.compactMap { item in
+                    item.sourceAccountID.map { "\($0):\(item.id)" }
+                })
+                let rejected = Set(members.compactMap { index in
+                    items[index].sourceAccountID.map { "\($0):\(items[index].id)" }
+                }).subtracting(groupSourceIDs)
+                output.append(mergeGroup(
+                    group,
+                    serverInfo: serverInfo,
+                    identitySources: identitySources,
+                    rejectedSourceIDs: rejected
+                ))
             }
         }
         return output
@@ -403,11 +433,17 @@ public enum MediaItemMerger {
 
     /// Whether two items are almost certainly *different* works despite sharing a
     /// merge key — the positive-contradiction signal the split-guard ejects on.
-    /// Delegates to the shared, index-reusable primitive so a bad shared external
+    /// Delegates to the shared, index-reusable primitives so a bad shared external
     /// id is split identically here (full-item merges) and inside the identity
-    /// index's membership walk (which stores only title/year per source).
-    static func plausiblyContradicts(_ a: MediaItem, _ b: MediaItem) -> Bool {
-        MediaItemIdentity.titlesPlausiblyContradict(
+    /// index's membership walk (which retains identities and title/year per source).
+    public static func plausiblyContradicts(_ a: MediaItem, _ b: MediaItem) -> Bool {
+        guard a.kind == b.kind else { return false }
+        if let account = a.sourceAccountID, b.rejectedSourceIDs.contains("\(account):\(a.id)") { return true }
+        if let account = b.sourceAccountID, a.rejectedSourceIDs.contains("\(account):\(b.id)") { return true }
+        return MediaItemIdentity.externalIdentitiesConflict(
+            MediaItemIdentity.identities(for: a),
+            MediaItemIdentity.identities(for: b)
+        ) || MediaItemIdentity.titlesPlausiblyContradict(
             titleA: a.title,
             yearA: a.productionYear,
             kindA: a.kind,
@@ -415,6 +451,20 @@ public enum MediaItemMerger {
             yearB: b.productionYear,
             kindB: b.kind
         )
+    }
+
+    public static func rejectionsIncludingDependentSources(
+        _ rejected: Set<String>,
+        for item: MediaItem,
+        identitySources: (MediaItem) -> [MediaSourceRef]
+    ) -> Set<String> {
+        guard !rejected.isEmpty else { return rejected }
+        var probe = item
+        probe.rejectedSourceIDs.subtract(rejected)
+        let before = Set(identitySources(probe).map(\.id))
+        probe.rejectedSourceIDs.formUnion(rejected)
+        let after = Set(identitySources(probe).map(\.id))
+        return rejected.union(before.subtracting(after))
     }
 
     /// Normalized titles are compatible when identical or one is a word-boundary
@@ -432,7 +482,8 @@ public enum MediaItemMerger {
     public static func mergeGroup(
         _ duplicates: [MediaItem],
         serverInfo: (String) -> SourceServerInfo? = { _ in nil },
-        identitySources: (MediaItem) -> [MediaSourceRef] = { _ in [] }
+        identitySources: (MediaItem) -> [MediaSourceRef] = { _ in [] },
+        rejectedSourceIDs: Set<String> = []
     ) -> MediaItem {
         guard !duplicates.isEmpty else {
             preconditionFailure("mergeGroup requires at least one item")
@@ -448,34 +499,9 @@ public enum MediaItemMerger {
         primary.isMergedTitle = true
         primary.editionOpeningSource = nil
 
-        // The eager index's known servers for this title (origin-agnostic SSOT),
-        // resolved from the primary's identities. Folded in below so even a
-        // single-source card carries its full cross-server set.
-        let indexSources = identitySources(primary)
-        // Every co-merged member's own physical identity. Used as the allow-list for
-        // legacy untyped refs when enforcing the cross-kind boundary: an item's own
-        // source is always kept, but an untyped *peer* (a stale cross-kind twin a
-        // pre-`kind` cache may have frozen in) is dropped.
-        let memberSelfIDs = Set(duplicates.compactMap { member in
-            member.sourceAccountID.map { "\($0):\(member.id)" }
-        })
-        guard duplicates.count > 1 || !indexSources.isEmpty else {
-            // Single-source card: still sanitize its own `.sources` so a stale
-            // cross-kind ref frozen in an on-disk cache (e.g. an episode carrying a
-            // movie ref) can't survive to retarget playback / the picker.
-            let cleaned = MediaSourceRef.retainingKindCompatible(
-                primary.sources, itemKind: primary.kind, selfIDs: memberSelfIDs
-            )
-            if cleaned.count != primary.sources.count { primary.sources = cleaned }
-            return primary
-        }
-
-        // Union external ids so the merged card carries every catalogue id.
-        //
-        // Every member is walked, not `dropFirst()`: the primary is chosen for its
-        // metadata rather than its position, so skipping index 0 would drop the ids
-        // of whichever member didn't win. An anime shelf holding AniList ids on the
-        // share copy and TMDb ids on the server copy would silently lose one side.
+        // Query the index with the whole accepted group's evidence, not only the
+        // richest member: a sparse representative can otherwise restore a source
+        // that contradicts a less detailed member.
         var providerIDs = primary.providerIDs
         for duplicate in duplicates {
             for (key, value) in duplicate.providerIDs where providerIDs[key] == nil {
@@ -484,13 +510,44 @@ public enum MediaItemMerger {
         }
         primary.providerIDs = providerIDs
 
+        // Every co-merged member's own physical identity. Used as the allow-list for
+        // legacy untyped refs when enforcing the cross-kind boundary: an item's own
+        // source is always kept, but an untyped *peer* (a stale cross-kind twin a
+        // pre-`kind` cache may have frozen in) is dropped.
+        let memberSelfIDs = Set(duplicates.compactMap { member in
+            member.sourceAccountID.map { "\($0):\(member.id)" }
+        })
+        var rejected = duplicates.reduce(into: rejectedSourceIDs) {
+            $0.formUnion($1.rejectedSourceIDs)
+        }
+        rejected = rejectionsIncludingDependentSources(rejected, for: primary, identitySources: identitySources)
+        rejected.subtract(memberSelfIDs)
+        primary.rejectedSourceIDs = rejected
+        let indexed = identitySources(primary)
+        // A loaded source excluded from this group stays excluded, regardless of
+        // whether it returns through the index or an input card's carried refs.
+        func accepts(_ ref: MediaSourceRef) -> Bool {
+            !rejected.contains(ref.id)
+        }
+        let indexSources = indexed.filter(accepts)
+        guard duplicates.count > 1 || !indexSources.isEmpty else {
+            // Single-source card: still sanitize its own `.sources` so a stale
+            // cross-kind ref frozen in an on-disk cache (e.g. an episode carrying a
+            // movie ref) can't survive to retarget playback / the picker.
+            let cleaned = MediaSourceRef.retainingKindCompatible(
+                primary.sources, itemKind: primary.kind, selfIDs: memberSelfIDs
+            ).filter(accepts)
+            if cleaned.count != primary.sources.count { primary.sources = cleaned }
+            return primary
+        }
+
         // Build one source ref per distinct (account, item), primary first. We
         // reuse any refs an already-merged input carried, then fold in each
         // member's own self-ref, so re-merging is idempotent and order-stable.
         var sources: [MediaSourceRef] = []
         var seenSourceIDs = Set<String>()
         func appendSource(_ ref: MediaSourceRef) {
-            guard seenSourceIDs.insert(ref.id).inserted else { return }
+            guard accepts(ref), seenSourceIDs.insert(ref.id).inserted else { return }
             sources.append(ref)
         }
         // The PRIMARY's refs lead, then the rest in their original order.

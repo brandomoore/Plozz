@@ -85,64 +85,6 @@ public struct WatchlistUnion: Sendable, Equatable {
         var entries: [WatchlistUnionEntry] = []
         var seen: Set<MediaAliasID> = []
 
-        // Explicit intent first, in the order the viewer arranged it. Adds
-        // allocate at the front, so this is already the list they built.
-        // What each server said it owns, keyed by alias, so an explicit intent
-        // that a server ALSO holds still picks up the owned copy.
-        var ownedByAlias: [MediaAliasID: MediaSourceRef] = [:]
-        var ownedPresentationByAlias:
-            [MediaAliasID: MediaAliasPresentation] = [:]
-        var ownedArtworkAccountByAlias: [MediaAliasID: String] = [:]
-        var ownedEntryByTitleKey: [String: NativeWatchlistEntry] = [:]
-        for (rawID, bucket) in nativeView.bucketsByDestinationID {
-            guard let destinationID = WatchlistDestinationID(rawValue: rawID),
-                  enabledDestinationIDs.contains(destinationID) else { continue }
-            for entry in bucket.entries where entry.ownedSource != nil {
-                let aliasID = aliasSnapshot.resolvedAliasID(for: entry.aliasID)
-                    ?? entry.aliasID
-                if ownedByAlias[aliasID] == nil {
-                    ownedByAlias[aliasID] = entry.ownedSource
-                    ownedPresentationByAlias[aliasID] =
-                        entry.ownedPresentation
-                    if entry.ownedPresentation != nil {
-                        ownedArtworkAccountByAlias[aliasID] =
-                            entry.ownedSource?.accountID
-                    }
-                }
-                if let key = Self.titleKey(
-                    kind: entry.kind,
-                    presentation: entry.presentation
-                ), ownedEntryByTitleKey[key] == nil {
-                    ownedEntryByTitleKey[key] = entry
-                }
-            }
-        }
-
-        // Older peers can replay imported evidence after the one-time migration.
-        // Retain sync bytes for round-trip fidelity, but never revive it as intent.
-        for intent in snapshot.orderedEntries where intent.origin != .nativeImport {
-            let aliasID = aliasSnapshot.resolvedAliasID(for: intent.aliasID)
-                ?? snapshot.resolvedAliasID(for: intent.aliasID)
-            guard seen.insert(aliasID).inserted else { continue }
-            entries.append(WatchlistUnionEntry(
-                aliasID: aliasID,
-                kind: intent.kind,
-                // An explicit intent determines order and membership, not which
-                // poster is best. When a server has proved the owned copy, keep
-                // its presentation with the source so the badge and artwork
-                // upgrade together.
-                presentation:
-                    ownedPresentationByAlias[aliasID] ?? intent.presentation,
-                isExplicit: true,
-                ownedSource: ownedByAlias[aliasID],
-                artworkSourceAccountID:
-                    ownedArtworkAccountByAlias[aliasID]
-            ))
-        }
-
-        // Then the servers'. Sorted by destination so two devices reading the
-        // same set agree, and by the destination's own list position within it
-        // so the order doesn't shuffle between reads.
         var stale = false
         var native: [(WatchlistDestinationID, NativeWatchlistEntry)] = []
         for (rawID, bucket) in nativeView.bucketsByDestinationID {
@@ -159,23 +101,48 @@ public struct WatchlistUnion: Sendable, Equatable {
             return $0.1.aliasID < $1.1.aliasID
         }
 
-        for (destinationID, originalEntry) in native {
-            var entry = originalEntry
-            var aliasID = aliasSnapshot.resolvedAliasID(for: entry.aliasID)
+        // Canonical identity controls both deduplication and ownership. Keep the
+        // chosen source and its presentation together, in stable destination order.
+        var ownedByAlias: [MediaAliasID: NativeWatchlistEntry] = [:]
+        for (_, entry) in native where entry.ownedSource != nil {
+            let aliasID = aliasSnapshot.resolvedAliasID(for: entry.aliasID)
                 ?? snapshot.resolvedAliasID(for: entry.aliasID)
-            // Keep the first server slot, but render it with the owned copy a
-            // later destination supplied. Ownership is presentation evidence,
-            // not a reason to reorder the viewer's server list.
-            if entry.ownedSource == nil,
-               let key = Self.titleKey(
-                kind: entry.kind,
-                presentation: entry.presentation
-               ),
-               let ownedEntry = ownedEntryByTitleKey[key] {
-                entry = ownedEntry
-                aliasID = aliasSnapshot.resolvedAliasID(for: ownedEntry.aliasID)
-                    ?? snapshot.resolvedAliasID(for: ownedEntry.aliasID)
+            if ownedByAlias[aliasID] == nil {
+                ownedByAlias[aliasID] = entry
             }
+        }
+
+        // Explicit intent first, in the order the viewer arranged it. Adds
+        // allocate at the front, so this is already the list they built.
+        // Older peers can replay imported evidence after the one-time migration.
+        // Retain sync bytes for round-trip fidelity, but never revive it as intent.
+        for intent in snapshot.orderedEntries where intent.origin != .nativeImport {
+            let aliasID = aliasSnapshot.resolvedAliasID(for: intent.aliasID)
+                ?? snapshot.resolvedAliasID(for: intent.aliasID)
+            guard seen.insert(aliasID).inserted else { continue }
+            let owned = ownedByAlias[aliasID]
+            entries.append(WatchlistUnionEntry(
+                aliasID: aliasID,
+                kind: intent.kind,
+                // An explicit intent determines order and membership, not which
+                // poster is best. When a server has proved the owned copy, keep
+                // its presentation with the source so the badge and artwork
+                // upgrade together.
+                presentation:
+                    owned?.ownedPresentation ?? intent.presentation,
+                isExplicit: true,
+                ownedSource: owned?.ownedSource,
+                artworkSourceAccountID: owned?.ownedPresentation != nil
+                    ? owned?.ownedSource?.accountID : nil
+            ))
+        }
+
+        // Then the servers'. Sorted by destination so two devices reading the
+        // same set agree, and by the destination's own list position within it
+        // so the order doesn't shuffle between reads.
+        for (destinationID, entry) in native {
+            let aliasID = aliasSnapshot.resolvedAliasID(for: entry.aliasID)
+                ?? snapshot.resolvedAliasID(for: entry.aliasID)
             guard seen.insert(aliasID).inserted else { continue }
             // A removal the viewer made here outranks a server that still lists
             // the title. Without this, deleting something that lives on Plex
@@ -185,15 +152,16 @@ public struct WatchlistUnion: Sendable, Equatable {
                intent.metadata.suppressesNativePresence {
                 continue
             }
+            let owned = ownedByAlias[aliasID]
             entries.append(WatchlistUnionEntry(
                 aliasID: aliasID,
                 kind: entry.kind,
                 presentation:
-                    entry.ownedPresentation ?? entry.presentation,
+                    owned?.ownedPresentation ?? entry.presentation,
                 isExplicit: false,
-                ownedSource: entry.ownedSource ?? ownedByAlias[aliasID],
-                artworkSourceAccountID: entry.ownedPresentation != nil
-                    ? entry.ownedSource?.accountID
+                ownedSource: owned?.ownedSource,
+                artworkSourceAccountID: owned?.ownedPresentation != nil
+                    ? owned?.ownedSource?.accountID
                     : entry.presentationAccountID
                         ?? Self.presentationAccountID(
                             from: destinationID
@@ -219,19 +187,6 @@ public struct WatchlistUnion: Sendable, Equatable {
             return accountID.isEmpty ? nil : accountID
         }
         return nil
-    }
-
-    /// A conservative "same title" key for suppressing an unowned duplicate.
-    /// `nil` when there isn't enough to be sure — no title, or no year — so a
-    /// sparse entry is never suppressed on a guess.
-    public static func titleKey(
-        kind: MediaItemKind,
-        presentation: MediaAliasPresentation?
-    ) -> String? {
-        guard let presentation, let year = presentation.year else { return nil }
-        let title = MediaItemIdentity.normalizedTitle(presentation.title)
-        guard !title.isEmpty else { return nil }
-        return "\(kind.rawValue)|\(title)|\(year)"
     }
 
     public func contains(aliasID: MediaAliasID) -> Bool {

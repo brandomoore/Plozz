@@ -113,7 +113,7 @@ final class MediaItemIdentityTests: XCTestCase {
         XCTAssertEqual(Set(merged[0].sources.map(\.id)), ["plex:plex-e5", "smb:smb-e5"])
     }
 
-    func testSeriesEpisodeIdentityBridgesManagedAndFilesystemIDs() {
+    func testSeriesEpisodeIdentityBridgesManagedAndFilesystemIDs() async {
         let plex = MediaItem(
             id: "plex-e4",
             title: "The Water Falls, the Stones Emerge",
@@ -147,6 +147,29 @@ final class MediaItemIdentityTests: XCTestCase {
 
         XCTAssertEqual(merged.count, 1)
         XCTAssertEqual(Set(merged[0].sources.map(\.id)), ["plex:plex-e4", "share:share-e4"])
+
+        let sources = await CrossServerSourceResolver.resolve(
+            primary: plex, otherAccountIDs: ["share"], search: { _, _ in [share] }
+        )
+        XCTAssertEqual(Set(sources.map(\.id)), ["plex:plex-e4", "share:share-e4"])
+    }
+
+    func testConflictingEpisodeAndSeriesIDsRemainConflicts() {
+        for conflictingNamespace in ["Tvdb", "SeriesTvdb"] {
+            let first = MediaItem(
+                id: "first", title: "Episode", kind: .episode,
+                seasonNumber: 1, episodeNumber: 1,
+                providerIDs: ["Tvdb": "episode-1", "SeriesTvdb": "series-1"]
+            ).taggingSource("plex")
+            var second = first.taggingSource("share")
+            second.id = "second"
+            second.providerIDs[conflictingNamespace] = "different"
+            XCTAssertTrue(MediaItemIdentity.externalIdentitiesConflict(
+                MediaItemIdentity.identities(for: first),
+                MediaItemIdentity.identities(for: second)
+            ))
+            XCTAssertEqual(MediaItemMerger.merge([first, second]).count, 2)
+        }
     }
 
     func testSeriesEpisodeIdentityDoesNotMergeDifferentSeriesIDs() {

@@ -520,12 +520,13 @@ public final class AppState {
             indexedSeriesSources: { [identitySnapshotStore = identityIndex.identitySnapshotStore] originSeries in
                 identitySnapshotStore.current.sources(for: originSeries).filter { $0.kind == .series }
             },
-            indexedSources: { [identitySnapshotStore = identityIndex.identitySnapshotStore] identities, kind, anchorTitle, anchorYear in
+            indexedSources: { [identitySnapshotStore = identityIndex.identitySnapshotStore] identities, kind, anchorTitle, anchorYear, rejectedSourceIDs in
                 identitySnapshotStore.current.sources(
                     forIdentities: identities,
                     kind: kind,
                     anchorTitle: anchorTitle,
-                    anchorYear: anchorYear
+                    anchorYear: anchorYear,
+                    rejectedSourceIDs: rejectedSourceIDs
                 )
             },
             indexedAccountIDs: { [identitySnapshotStore = identityIndex.identitySnapshotStore] in

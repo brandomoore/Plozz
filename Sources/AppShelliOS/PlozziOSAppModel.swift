@@ -1971,12 +1971,13 @@ final class PlozziOSAppModel {
             },
             indexedSources: {
                 [identitySnapshotStore = identityIndex.identitySnapshotStore]
-                identities, kind, anchorTitle, anchorYear in
+                identities, kind, anchorTitle, anchorYear, rejectedSourceIDs in
                 identitySnapshotStore.current.sources(
                     forIdentities: identities,
                     kind: kind,
                     anchorTitle: anchorTitle,
-                    anchorYear: anchorYear
+                    anchorYear: anchorYear,
+                    rejectedSourceIDs: rejectedSourceIDs
                 )
             },
             indexedAccountIDs: {

@@ -4,12 +4,14 @@ import Foundation
 public enum LibraryQueryFailure: Error, Sendable {
     case memoryBudget
     case changedInventory
+    case refinedSources([MediaItem])
+    case restartRequired
 
     public var message: LocalizedStringResource {
         switch self {
         case .memoryBudget:
             "This library is too large to index safely on this device. Use a server-supported filter or sort."
-        case .changedInventory:
+        case .changedInventory, .refinedSources, .restartRequired:
             "The library changed while preparing this filter. Try again."
         }
     }
@@ -88,6 +90,7 @@ actor LibraryQuerySession {
         else {
             return try await provider.items(in: containerID, kind: kind, page: page)
         }
+        var correctedSources = Set<String>()
         let requestGeneration = invalidationGeneration
         while true {
             try Task.checkCancellation()
@@ -95,10 +98,51 @@ actor LibraryQuerySession {
             let generation = revision
             do {
                 return try await indexedPage(source, page: page, progress: progress)
+            } catch LibraryQueryFailure.refinedSources(let items) {
+                try Task.checkCancellation()
+                guard requestGeneration == invalidationGeneration else { throw CancellationError() }
+                if generation != revision {
+                    guard page.startIndex == 0 else { throw LibraryQueryFailure.restartRequired }
+                    continue
+                }
+                let corrections = items.map { LibraryQueryRecord($0) }
+                let keys = Set(corrections.map(\.identityKey))
+                guard !keys.isEmpty, correctedSources.isDisjoint(with: keys),
+                      let existing = records else { throw LibraryQueryFailure.changedInventory }
+                correctedSources.formUnion(keys)
+                let byKey = Dictionary(uniqueKeysWithValues: corrections.map { ($0.identityKey, $0) })
+                guard keys.isSubset(of: Set(existing.map(\.identityKey))) else {
+                    throw LibraryQueryFailure.changedInventory
+                }
+                // Keep the original per-source episode/file facts. Only identity
+                // evidence was refined by the parent-item fetch.
+                let rebuilt = existing.map { record in
+                    guard let correction = byKey[record.identityKey] else { return record }
+                    var updated = record
+                    updated.providerIDs = correction.providerIDs
+                    updated.rejectedSourceIDs.formUnion(correction.rejectedSourceIDs)
+                    updated.title = correction.title
+                    updated.originalTitle = correction.originalTitle
+                    updated.year = correction.year
+                    return updated
+                }
+                guard rebuilt.reduce(0, { $0 + $1.estimatedStorageBytes }) <= 24 * 1024 * 1024 else {
+                    throw LibraryQueryFailure.memoryBudget
+                }
+                records = rebuilt
+                if fileFacts != nil { fileFacts = rebuilt }
+                orderedQuery = nil
+                revision += 1
+                // Recompute filters, rollups and offsets before publishing page
+                // zero. An exposed later page requires a visible restart.
+                guard page.startIndex == 0 else { throw LibraryQueryFailure.restartRequired }
             } catch {
                 try Task.checkCancellation()
                 guard requestGeneration == invalidationGeneration else { throw CancellationError() }
-                if generation != revision { continue }
+                if generation != revision {
+                    guard page.startIndex == 0 else { throw LibraryQueryFailure.restartRequired }
+                    continue
+                }
                 // Only an unpublished first page can change membership without
                 // moving already-visible cards underneath their current slots.
                 guard page.startIndex == 0,
@@ -123,6 +167,7 @@ actor LibraryQuerySession {
                 try Task.checkCancellation()
                 guard requestGeneration == invalidationGeneration else { throw CancellationError() }
                 guard recovered else { throw error }
+                correctedSources.removeAll()
             }
         }
     }
@@ -284,7 +329,7 @@ actor LibraryQuerySession {
         }
         let query = LibraryBrowsePreferences(sort: page.sort, filters: page.filters)
         if orderedQuery != query {
-            ordered = (records ?? []).filter { $0.matches(page.filters) }
+            ordered = source.libraryQueryMergeInventory(records ?? []).filter { $0.matches(page.filters) }
                 .sorted { $0.isOrdered(before: $1, by: page.sort) }
             orderedQuery = query
         }
@@ -448,7 +493,7 @@ actor LibraryQuerySession {
                 }
             }
         }
-        return source.libraryQueryMergeInventory(records)
+        return records
     }
 
     private static func seriesKey(accountID: String?, id: String) -> String {

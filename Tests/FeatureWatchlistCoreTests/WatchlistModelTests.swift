@@ -52,6 +52,39 @@ final class WatchlistModelTests: XCTestCase {
         XCTAssertFalse(try localPresentationRow(model).locallyValidatedPlayableSource)
     }
 
+    func testRestoredWatchlistRecoversSparseLocalCandidateWithoutPersistingOwnership() throws {
+        let store = InMemoryWatchlistIntentStore()
+        let model = WatchlistModel(storeFactory: { _ in store })
+        let item = MediaItem(
+            id: "folder/custom-film.mkv", title: "Custom Film", kind: .movie,
+            sourceAccountID: "share"
+        )
+        let evidence = try XCTUnwrap(MediaAliasEvidence(item: item))
+        let record = try XCTUnwrap(MediaAliasRecord(
+            kind: .movie, presentation: evidence.presentation, localSources: evidence.localSources
+        ))
+        let aliases = MediaAliasSnapshot(records: [record])
+        try model.activate(profileID: "p")
+        try model.add(
+            profileID: "p", aliasID: record.id, kind: .movie,
+            presentation: evidence.presentation
+        )
+        model.retainLocalPresentation(item, aliasID: record.id, scope: "p/server/revision")
+
+        let restored = WatchlistModel(storeFactory: { _ in store })
+        try restored.activate(profileID: "p")
+        XCTAssertFalse(try localPresentationRow(restored, aliases: aliases).locallyValidatedPlayableSource)
+        let candidates = WatchlistPresentationResolver.indexCurrentItems([item], in: aliases)
+        let row = try localPresentationRow(restored, aliases: aliases, candidates: candidates)
+
+        XCTAssertEqual(row.id, item.id)
+        XCTAssertEqual(row.sourceAccountID, item.sourceAccountID)
+        XCTAssertEqual(row.watchlistAliasID, record.id)
+        XCTAssertTrue(row.locallyValidatedPlayableSource)
+        XCTAssertFalse(TitleClassifier.isDiscoveryRouting(row, identitySources: []))
+        XCTAssertTrue(row.ownershipPresentation().canPlay)
+    }
+
     func testRemovingOrChangingScopeDiscardsRetainedOwnership() throws {
         let model = WatchlistModel()
         let aliasID = MediaAliasID()

@@ -12,7 +12,7 @@ import CoreModels
 final class WatchIdentityExpansionTests: XCTestCase {
     private func applier(
         allAccounts: @escaping @Sendable () async -> [String],
-        indexedSources: @escaping @Sendable ([MediaIdentity], MediaItemKind?, String?, Int?) -> [IndexedSource],
+        indexedSources: @escaping @Sendable ([MediaIdentity], MediaItemKind?, String?, Int?, Set<String>) -> [IndexedSource],
         indexedAccountIDs: @escaping @Sendable () -> Set<String>,
         maxAttempts: Int = 6,
         isActive: @escaping @Sendable () async -> Bool = { true }
@@ -35,7 +35,7 @@ final class WatchIdentityExpansionTests: XCTestCase {
     func testInactiveProfileKeepsExpansionInconclusive() async {
         let applier = applier(
             allAccounts: { ["a"] },
-            indexedSources: { _, _, _, _ in [] },
+            indexedSources: { _, _, _, _, _ in [] },
             indexedAccountIDs: { [] },
             isActive: { false }
         )
@@ -68,7 +68,7 @@ final class WatchIdentityExpansionTests: XCTestCase {
         var union: [IndexedSource] = [IndexedSource(accountID: "a", itemID: "420", providerKind: .plex, kind: .movie)]
         let applier = applier(
             allAccounts: { ["a", "b", "c", "d"] },
-            indexedSources: { _, _, _, _ in union },
+            indexedSources: { _, _, _, _, _ in union },
             indexedAccountIDs: { indexed }
         )
         let mutation = movieMutation()
@@ -97,7 +97,7 @@ final class WatchIdentityExpansionTests: XCTestCase {
     func testAttemptBudgetForcesConclusionSoOutboxCantLeak() async {
         let applier = applier(
             allAccounts: { ["a", "ghost"] },
-            indexedSources: { _, _, _, _ in [IndexedSource(accountID: "a", itemID: "420", kind: .movie)] },
+            indexedSources: { _, _, _, _, _ in [IndexedSource(accountID: "a", itemID: "420", kind: .movie)] },
             indexedAccountIDs: { ["a"] }, // "ghost" never indexes
             maxAttempts: 3
         )
@@ -115,7 +115,7 @@ final class WatchIdentityExpansionTests: XCTestCase {
     func testIdentitylessMutationIsConclusiveNoOp() async {
         let applier = applier(
             allAccounts: { ["a", "b"] },
-            indexedSources: { _, _, _, _ in [] },
+            indexedSources: { _, _, _, _, _ in [] },
             indexedAccountIDs: { ["a"] }
         )
         var mutation = movieMutation()
@@ -148,8 +148,9 @@ final class WatchIdentityExpansionTests: XCTestCase {
         // as AppState wires it in production.
         let applier = applier(
             allAccounts: { ["plex", "jf"] },
-            indexedSources: { identities, kind, anchorTitle, anchorYear in
-                snapshot.sources(forIdentities: identities, kind: kind, anchorTitle: anchorTitle, anchorYear: anchorYear)
+            indexedSources: { identities, kind, anchorTitle, anchorYear, rejectedSourceIDs in
+                snapshot.sources(forIdentities: identities, kind: kind, anchorTitle: anchorTitle,
+                                 anchorYear: anchorYear, rejectedSourceIDs: rejectedSourceIDs)
             },
             indexedAccountIDs: { ["plex", "jf"] }
         )

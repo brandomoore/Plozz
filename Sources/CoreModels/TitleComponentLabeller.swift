@@ -27,11 +27,10 @@ import Foundation
 ///
 /// This pass instead does what ``MediaItemMerger`` does for whole items: union by
 /// shared identity, then **refine** each component into sub-groups of mutually
-/// non-contradicting members using the same
-/// ``MediaItemIdentity/titlesPlausiblyContradict(titleA:yearA:kindA:titleB:yearB:kindB:)``
-/// primitive. In the example that yields `{A, B}` and `{C}` (or `{A}` and `{B, C}`
+/// non-contradicting members using the same external-ID and title/year conflict
+/// primitives. In the example that yields `{A, B}` and `{C}` (or `{A}` and `{B, C}`
 /// depending on order — either way A and C are never named the same), and each refined
-/// group gets the deterministic minimum of *its own members'* identities.
+/// group gets a deterministic identity without reusing another group's label.
 ///
 /// The result is a table, so a lookup is O(1) instead of a per-item graph walk with
 /// two set allocations and a sort — which matters because card, search, related and
@@ -100,9 +99,26 @@ public enum TitleComponentLabeller {
         var result: [String: MediaIdentity] = [:]
         for root in membersByRoot.keys.sorted() {
             let members = (membersByRoot[root] ?? []).compactMap { sourcesByID[$0] }
-            for group in refine(members) {
-                guard let canonical = canonicalIdentity(for: group, bySource: bySource) else {
-                    continue
+            let groups = refine(members, bySource: bySource)
+            let preferred = groups.map { canonicalIdentity(for: $0, bySource: bySource) }
+            var labelCounts: [MediaIdentity: Int] = [:]
+            for label in preferred.compactMap({ $0 }) {
+                labelCounts[label, default: 0] += 1
+            }
+            var identityGroupCounts: [MediaIdentity: Int] = [:]
+            for group in groups {
+                for identity in Set(group.flatMap { bySource[$0.id] ?? [] }) {
+                    identityGroupCounts[identity, default: 0] += 1
+                }
+            }
+            let ambiguous = Set(identityGroupCounts.compactMap { $0.value > 1 ? $0.key : nil })
+            for (group, label) in zip(groups, preferred) {
+                guard var canonical = label else { continue }
+                if labelCounts[canonical, default: 0] > 1 {
+                    guard let distinct = canonicalIdentity(
+                        for: group, bySource: bySource, excluding: ambiguous
+                    ) else { continue }
+                    canonical = distinct
                 }
                 for member in group {
                     result[member.id] = canonical
@@ -114,13 +130,20 @@ public enum TitleComponentLabeller {
 
     /// Greedy partition of one union component into sub-groups whose members do not
     /// positively contradict each other. Mirrors ``MediaItemMerger/refineComponent(_:)``
-    /// exactly, but over the index's lean `(normalizedTitle, year, kind)` facts.
-    static func refine(_ members: [IndexedSource]) -> [[IndexedSource]] {
+    /// using the index's lean title/year facts and reverse identity map.
+    static func refine(
+        _ members: [IndexedSource],
+        bySource: [String: [MediaIdentity]]
+    ) -> [[IndexedSource]] {
         guard members.count > 1 else { return members.isEmpty ? [] : [members] }
         var groups: [[IndexedSource]] = []
         for member in members {
             if let index = groups.firstIndex(where: { group in
-                !group.contains(where: { contradicts($0, member) })
+                !group.contains(where: {
+                    MediaItemIdentity.externalIdentitiesConflict(
+                        bySource[$0.id] ?? [], bySource[member.id] ?? []
+                    ) || contradicts($0, member)
+                })
             }) {
                 groups[index].append(member)
             } else {
@@ -146,7 +169,8 @@ public enum TitleComponentLabeller {
     /// component is never named after a mutable title while a catalogue id exists.
     static func canonicalIdentity(
         for group: [IndexedSource],
-        bySource: [String: [MediaIdentity]]
+        bySource: [String: [MediaIdentity]],
+        excluding ambiguous: Set<MediaIdentity> = []
     ) -> MediaIdentity? {
         var identities: Set<MediaIdentity> = []
         for member in group {
@@ -157,6 +181,7 @@ public enum TitleComponentLabeller {
         if identities.contains(where: { if case .external = $0 { return true } else { return false } }) {
             identities = identities.filter { if case .title = $0 { return false } else { return true } }
         }
+        identities.subtract(ambiguous)
         return identities.min(by: MediaIdentity.isCanonicallyOrderedBefore)
     }
 

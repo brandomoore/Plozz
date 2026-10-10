@@ -81,6 +81,10 @@ public struct IncrementalMediaItemMerger {
     /// `"<accountID>:<itemID>"` named by some cluster's identity-index membership →
     /// the slots that named it. A later item whose own ref matches must join them.
     private var claimsByRef: [String: [Int]] = [:]
+    /// Cached roots that have exposed a source, including refs carried by input
+    /// cards. Fresh evidence for that source invalidates only its dependent cards.
+    private var sourceReaders: [String: Set<Int>] = [:]
+    private var rejectionsBySource: [String: Set<String>] = [:]
 
     /// The flattened merged output, rebuilt only when a batch actually changed
     /// something.
@@ -189,6 +193,8 @@ public struct IncrementalMediaItemMerger {
         serverItemOwner.removeAll(keepingCapacity: true)
         ownerByRef.removeAll(keepingCapacity: true)
         claimsByRef.removeAll(keepingCapacity: true)
+        sourceReaders.removeAll(keepingCapacity: true)
+        rejectionsBySource.removeAll(keepingCapacity: true)
         nextOrdinal = 0
         for item in retained { _ = insert(item) }
         isFlattenedStale = true
@@ -204,6 +210,11 @@ public struct IncrementalMediaItemMerger {
         let serverScope = item.sourceAccountID.flatMap { serverInfo($0)?.serverID } ?? item.sourceAccountID
         let serverKey = serverScope.map { "\($0)\u{1F}\(kind.rawValue)\u{1F}\(item.id)" }
         let ownRefKey = item.sourceAccountID.map { "\($0):\(item.id)" }
+        if let ownRefKey {
+            for reader in sourceReaders[ownRefKey] ?? [] {
+                cards[find(reader)] = nil
+            }
+        }
         let claimedRefs = identitySources(item).map { "\($0.accountID):\($0.itemID)" }
 
         var candidates: [Int] = []
@@ -227,6 +238,28 @@ public struct IncrementalMediaItemMerger {
             }
         }
 
+        if let ownRefKey {
+            var evidenceRoots = Set(candidates)
+            for reader in sourceReaders[ownRefKey] ?? [] {
+                evidenceRoots.insert(find(reader))
+            }
+            for ref in item.sources {
+                if let owner = ownerByRef[ref.id] { evidenceRoots.insert(find(owner)) }
+            }
+            for candidate in evidenceRoots {
+                for group in MediaItemMerger.refineComponent(members[candidate].map(\.item))
+                    where group.contains(where: { MediaItemMerger.plausiblyContradicts($0, item) }) {
+                    for previous in group {
+                        guard let account = previous.sourceAccountID else { continue }
+                        let previousID = "\(account):\(previous.id)"
+                        guard previousID != ownRefKey else { continue }
+                        rejectionsBySource[ownRefKey, default: []].insert(previousID)
+                        rejectionsBySource[previousID, default: []].insert(ownRefKey)
+                        cards[candidate] = nil
+                    }
+                }
+            }
+        }
         let member = Member(ordinal: nextOrdinal, item: item)
         nextOrdinal += 1
 
@@ -286,6 +319,9 @@ public struct IncrementalMediaItemMerger {
         }
         for ref in claimedRefs {
             claimsByRef[ref, default: []].append(slot)
+        }
+        for ref in item.sources {
+            sourceReaders[ref.id, default: []].insert(slot)
         }
         return slot
     }
@@ -376,14 +412,29 @@ public struct IncrementalMediaItemMerger {
                 continue
             }
             var produced: [MediaItem] = []
+            let componentSourceIDs = Set(members[slot].compactMap { member in
+                member.item.sourceAccountID.map { "\($0):\(member.item.id)" }
+            })
             for group in MediaItemMerger.refineComponent(members[slot].map(\.item)) {
+                let groupSourceIDs = Set(group.compactMap { member in
+                    member.sourceAccountID.map { "\($0):\(member.id)" }
+                })
+                let rejected = group.reduce(into: componentSourceIDs.subtracting(groupSourceIDs)) { result, member in
+                    if let account = member.sourceAccountID {
+                        result.formUnion(rejectionsBySource["\(account):\(member.id)"] ?? [])
+                    }
+                }
                 produced.append(
                     MediaItemMerger.mergeGroup(
                         group,
                         serverInfo: serverInfo,
-                        identitySources: identitySources
+                        identitySources: identitySources,
+                        rejectedSourceIDs: rejected
                     )
                 )
+            }
+            for source in produced.flatMap(\.sources) {
+                sourceReaders[source.id, default: []].insert(slot)
             }
             cards[slot] = produced
             output.append(contentsOf: produced)

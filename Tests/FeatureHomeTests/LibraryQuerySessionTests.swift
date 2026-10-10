@@ -6,6 +6,132 @@ import XCTest
 
 @MainActor
 final class LibraryQuerySessionTests: XCTestCase {
+    func testOfflineRecoveryPreservesHydratedIdentityRefinement() async throws {
+        let a = MediaItem(id: "a", title: "Movie", kind: .movie,
+                          providerIDs: ["Tmdb": "123", "Imdb": "tt111"],
+                          librarySortValues: .init(hasAtmos: true))
+        var b = a
+        b.id = "b"
+        b.providerIDs["Imdb"] = "tt222"
+        let sparse = [a, b].map { item in
+            var result = item
+            result.providerIDs = ["Tmdb": "123"]
+            return result
+        }
+        let healthy = QueryInventoryProvider(items: sparse, fullItems: [a, b])
+        let lost = QueryInventoryProvider(items: [
+            MediaItem(id: "lost", title: "Unavailable", kind: .movie,
+                      providerIDs: ["Tmdb": "456"], librarySortValues: .init(hasAtmos: true))
+        ])
+        await lost.setHydrationFailure(.serverUnreachable)
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "healthy", containerID: "movies", provider: healthy, kind: .movie),
+            .init(accountID: "lost", containerID: "movies", provider: lost, kind: .movie)
+        ])
+        let session = LibraryQuerySession(provider: provider, containerID: "all", kind: .movie)
+        let page = try await session.page(.init(filters: .init(filter: .atmos)), progress: { _, _ in })
+        XCTAssertEqual(page.totalCount, 2)
+        XCTAssertEqual(Set(page.items.map(\.id)), ["a", "b"])
+        XCTAssertTrue(page.items.allSatisfy { item in
+            item.sources.allSatisfy { $0.accountID == "healthy" && $0.itemID == item.id }
+        })
+    }
+
+    func testLateRefinementRestartsPreviouslyExposedBrowsePages() async throws {
+        let a = MediaItem(id: "a", title: "A", kind: .movie, providerIDs: ["Tmdb": "1"],
+                          librarySortValues: .init(hasAtmos: true))
+        let b = MediaItem(id: "b", title: "B", kind: .movie, providerIDs: ["Tmdb": "2", "Imdb": "tt111"],
+                          librarySortValues: .init(hasAtmos: true))
+        var twin = b
+        twin.id = "twin"
+        twin.providerIDs["Imdb"] = "tt222"
+        let c = MediaItem(id: "c", title: "C", kind: .movie, providerIDs: ["Tmdb": "3"],
+                          librarySortValues: .init(hasAtmos: true))
+        var sparseB = b
+        sparseB.providerIDs = ["Tmdb": "2"]
+        var sparseTwin = sparseB
+        sparseTwin.id = twin.id
+        let source = QueryInventoryProvider(items: [a, sparseB, sparseTwin, c], fullItems: [b, twin])
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "account", containerID: "library", provider: source, kind: .movie)
+        ])
+        let name = "LibraryRefinement.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = LibraryBrowseViewModel(provider: provider, containerID: "library", containerKind: .movie,
+                                           pageSize: 1, defaults: defaults, initialContentMode: .titles)
+        await model.setFilters(.init(filter: .atmos))
+        await model.itemAppeared(at: 2)
+        await model.itemAppeared(at: 1)
+        await model.itemAppeared(at: 1)
+        await model.itemAppeared(at: 2)
+        await model.itemAppeared(at: 3)
+        XCTAssertEqual(model.totalCount, 4)
+        XCTAssertEqual(Set((0..<4).compactMap { model.item(at: $0)?.id }), ["a", "b", "twin", "c"])
+    }
+
+    func testHydratedIdentityConflictRebuildsFilteredInventoryWithoutLosingTitles() async throws {
+        let first = MediaItem(
+            id: "first", title: "Same Title", kind: .movie,
+            providerIDs: ["Tmdb": "123", "Imdb": "tt111"],
+            librarySortValues: .init(hasAtmos: true)
+        )
+        var second = first
+        second.id = "second"
+        second.providerIDs["Imdb"] = "tt222"
+        let sparse = [first, second].map { item in
+            var item = item
+            item.providerIDs = ["Tmdb": "123"]
+            return item
+        }
+        let unaffected = [
+            MediaItem(id: "c", title: "Unrelated", kind: .movie, providerIDs: ["Tmdb": "456"],
+                      librarySortValues: .init(hasAtmos: true)),
+            MediaItem(id: "d", title: "Unrelated", kind: .movie, providerIDs: ["Tmdb": "456"],
+                      librarySortValues: .init(hasAtmos: true))
+        ]
+        for filter in [LibraryFilter.duplicates, .atmos] {
+            let source = QueryInventoryProvider(items: sparse + unaffected, fullItems: [first, second])
+            let provider = AggregatedLibraryProvider(sources: [
+                .init(accountID: "account", containerID: "library", provider: source, kind: .movie)
+            ])
+            let session = LibraryQuerySession(provider: provider, containerID: "library", kind: .movie)
+            let page = try await session.page(.init(filters: .init(filter: filter)), progress: { _, _ in })
+            XCTAssertEqual(page.totalCount, filter == .duplicates ? 1 : 3)
+            XCTAssertEqual(Set(page.items.map(\.id)), filter == .duplicates ? ["c"] : ["first", "second", "c"])
+            XCTAssertEqual(Set(page.items.first { $0.id == "c" }?.sources.map(\.itemID) ?? []), ["c", "d"])
+            for item in page.items where item.id != "c" {
+                XCTAssertTrue(item.sources.allSatisfy { $0.itemID == item.id })
+                XCTAssertTrue(item.rejectedSourceIDs.contains("account:\(item.id == "first" ? "second" : "first")"))
+            }
+        }
+    }
+
+    func testSeriesInventoryRepairKeepsEpisodeDerivedFileFacts() async throws {
+        let first = MediaItem(id: "first", title: "Show", kind: .series,
+                              providerIDs: ["Imdb": "tt111", "Tmdb": "123"])
+        var second = first
+        second.id = "second"
+        second.providerIDs["Imdb"] = "tt222"
+        let sparse = [first, second].map { item in
+            var item = item
+            item.providerIDs = ["Tmdb": "123"]
+            return item
+        }
+        let episodes = [first, second].map {
+            MediaItem(id: "\($0.id)-episode", title: "Episode", kind: .episode, seasonNumber: 1,
+                      episodeNumber: 1, seriesID: $0.id, librarySortValues: .init(hasAtmos: true))
+        }
+        let source = QueryInventoryProvider(items: sparse, fullItems: [first, second], episodes: episodes)
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "account", containerID: "shows", provider: source, kind: .series)
+        ])
+        let session = LibraryQuerySession(provider: provider, containerID: "shows", kind: .series)
+        let page = try await session.page(.init(filters: .init(filter: .atmos)), progress: { _, _ in })
+        XCTAssertEqual(Set(page.items.map(\.id)), ["first", "second"])
+        XCTAssertEqual(page.totalCount, 2)
+    }
+
     func testConcurrentFirstPagesShareOfflineRecovery() async throws {
         let lost = QueryInventoryProvider(items: queryItems(1), delay: 5_000_000)
         let healthy = QueryInventoryProvider(items: queryItems(10))
@@ -672,6 +798,7 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
     nonisolated let kind: ProviderKind = .mediaShare
     nonisolated let session: UserSession
     private var allItems: [MediaItem]
+    private let fullItems: [MediaItem]
     private let episodes: [MediaItem]
     private let broken: Broken?
     private let delay: UInt64
@@ -692,13 +819,14 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
     private var materializing = 0
     private(set) var maximumMaterialization = 0
 
-    init(items: [MediaItem], episodes: [MediaItem] = [], broken: Broken? = nil, delay: UInt64 = 0,
+    init(items: [MediaItem], fullItems: [MediaItem] = [], episodes: [MediaItem] = [], broken: Broken? = nil, delay: UInt64 = 0,
          facets: LibraryQueryFacets = .init(genres: ["Drama"], years: [2024]), supportsFacets: Bool = true,
          serverID: String = "query-server", serverName: String = "Query") {
         session = UserSession(
             server: MediaServer(id: serverID, name: serverName, baseURL: URL(string: "https://query.test")!, provider: .mediaShare),
             userID: "user", userName: "User", deviceID: "device", accessToken: "test")
         allItems = items
+        self.fullItems = fullItems
         self.episodes = episodes
         self.broken = broken
         self.delay = delay
@@ -802,7 +930,7 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
         maximumMaterialization = max(maximumMaterialization, materializing)
         defer { materializing -= 1 }
         if delay > 0 { try await Task.sleep(nanoseconds: delay) }
-        guard let item = allItems.first(where: { $0.id == id }) else { throw AppError.notFound }
+        guard let item = (fullItems + allItems).first(where: { $0.id == id }) else { throw AppError.notFound }
         return item
     }
     func children(of itemID: String) async throws -> [MediaItem] { [] }

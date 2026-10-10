@@ -338,6 +338,56 @@ credentials, or Plex Home identity changes. They are not persisted or synced as
 ownership evidence; discovery items and synced identity hints remain unowned
 until a local provider verifies a copy.
 
+Watchlist publication uses the canonical alias resolver, including exact
+account/item identities and alias redirects, to match current library candidates.
+Sparse SMB titles do not need external IDs or a year to recover their library
+presentation after relaunch. An alias alone is not playback proof: without a
+current validated candidate, native owned source, or verified index match, the
+entry remains unresolved. Native entries share ownership only through their
+canonical alias, never through matching title/year text. Source and artwork
+come from the same deterministically selected owned entry without moving its row.
+The shared detail ownership search retains the seed's merge group even when a
+richer library copy becomes the display representative, and keeps the opened
+library source first. Discovery catalog IDs never become playable source refs.
+Sharing one external ID does not override a conflicting ID in another namespace.
+Search rejects contradictory hits before stopping its title-query sequence, and
+the same rule guards item merging and index lookup. A populated index cannot
+restore a rejected ownership match or traverse that match to unrelated sources;
+missing IDs alone do not reject otherwise compatible library copies.
+Canonical labels never reuse the shared ID for both conflicting groups. Episode matching
+keeps explicit series IDs separate from episode IDs, including share payloads
+that repeat a series ID in the ordinary provider field.
+Exact-source recovery cannot add stale IDs that contradict the loaded item.
+Sparse index lookups return no ownership when their candidates contradict each
+other; they do not guess between groups. After search selects a compatible group,
+cached sources are looked up with that group's combined IDs, not the original
+sparse seed. The same ordering applies when enriching merged Home/Search cards.
+Freshly inspected sources rejected from that group cannot return through sparse
+cached entries that omit their conflicting IDs.
+Compatible cached sources remain available when search returns no results.
+Compatible sparse search hits recover exact indexed membership before grouping;
+seeing an incomplete hit is not itself a rejection. Batch and incremental
+browsing filter both cached and carried sources against the accepted group.
+Incremental pages invalidate source-dependent cached cards when new loaded
+evidence arrives, even without a shared merge key, without moving already exposed
+card positions. Sparse members stay with their refined group; compatible cards
+kept separate for paging stability are not treated as rejected matches.
+Positive source rejections travel with cached items and detail snapshots.
+Sparse reloads cannot clear them, and detail discovery distinguishes explicit
+rejection from a missing search result. Successfully fetched alternate details
+must pass the same identity checks before contributing versions or watch state.
+Rejecting an indexed bridge also removes membership supported only through that
+bridge, including references already carried by an open detail page.
+Watch actions preserve these exclusions through queued persistence, coalescing,
+and later identity expansion; contradictory titles retain separate intents.
+Durable, viewer-scoped clocks protect each physical target even when its metadata
+or canonical ID changes. Seeded and expanded targets receive the same ordering
+protection, rechecked after provider resolution before dispatching a write.
+Filtered browsing revalidates hydrated groups and corrects source-level inventory
+before publishing its first page, preserving unrelated peers and episode-derived
+query facts. A change to already exposed paging requires an explicit restart
+rather than silently shifting offsets.
+
 Enabled library rows start as soon as their inventory is known. Recently Added
 and recommendation requests complete independently, in stable library/row slots.
 Both shells use the same loading/error state; failed rows can be retried without

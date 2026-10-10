@@ -10,6 +10,99 @@ import XCTest
 /// silently appearing twice (or vanishing) partway down a long combined browse,
 /// which is exactly the class of bug that is hard to spot by eye on device.
 final class IncrementalMediaItemMergerTests: XCTestCase {
+    func testSparseMemberStaysWithItsRefinedGroup() async throws {
+        let a = item("a", title: "Movie", account: "server", ids: ["Imdb": "tt111", "Tmdb": "123"])
+        let b = item("b", title: "Movie", account: "server", ids: ["Tmdb": "123"])
+        let c = item("c", title: "Movie", account: "server", ids: ["Imdb": "tt222", "Tmdb": "123"])
+        let index = IdentityIndex()
+        await index.ingest([a, b, c].map {
+            item($0.id, title: "Movie", account: "server", ids: ["Tmdb": "123"])
+        }, accountID: "server")
+        let snapshot = await index.snapshot()
+        for expose in [false, true] {
+            var merger = IncrementalMediaItemMerger(identitySources: { snapshot.sourceRefs(for: $0) })
+            merger.append([a, b])
+            if expose { _ = merger.mergedItems() }
+            merger.append([c])
+            let cards = merger.mergedItems()
+            XCTAssertEqual(cards.count, 2)
+            let conflicting = try XCTUnwrap(cards.first { $0.id == "c" })
+            XCTAssertEqual(conflicting.sources.map(\.id), ["server:c"])
+            XCTAssertTrue(conflicting.rejectedSourceIDs.contains("server:b"))
+        }
+    }
+
+    func testCarriedSourcesRejectLoadedContradictionsWithoutSharedMergeKeys() throws {
+        var a = item("a", title: "Movie", account: "server", ids: ["Imdb": "tt111"])
+        let b = item("b", title: "Movie", account: "server", ids: ["Imdb": "tt222"])
+        a.sources = ["a", "b"].map { MediaSourceRef(accountID: "server", itemID: $0, kind: .movie) }
+        for inputs in [[a, b], [b, a]] {
+            var results = [MediaItemMerger.merge(inputs)]
+            for expose in [false, true] {
+                var merger = IncrementalMediaItemMerger()
+                merger.append([inputs[0]])
+                if expose { _ = merger.mergedItems() }
+                merger.append([inputs[1]])
+                results.append(merger.mergedItems())
+            }
+            for cards in results {
+                XCTAssertEqual(cards.count, 2)
+                let owned = try XCTUnwrap(cards.first { $0.id == "a" })
+                XCTAssertEqual(owned.sources.map(\.id), ["server:a"])
+                XCTAssertTrue(owned.rejectedSourceIDs.contains("server:b"))
+            }
+        }
+    }
+
+    func testExposedCompatibleClustersAreNotRejectedWhenIndexWarms() {
+        let a = item("a", title: "Movie", account: "server", ids: ["Imdb": "tt111"])
+        let b = item("b", title: "Movie", account: "server", ids: ["Tmdb": "123"])
+        let c = item("c", title: "Movie", account: "server", ids: ["Imdb": "tt111", "Tmdb": "123"])
+        var refs: [MediaSourceRef] = []
+        var merger = IncrementalMediaItemMerger(identitySources: { _ in refs })
+        merger.append([a, b])
+        XCTAssertEqual(merger.mergedItems().count, 2)
+        refs = ["a", "b", "c"].map { MediaSourceRef(accountID: "server", itemID: $0, kind: .movie) }
+        merger.append([c])
+        let cards = merger.mergedItems()
+        XCTAssertEqual(cards.count, 2, "Keep exposed positions stable")
+        XCTAssertTrue(cards.allSatisfy { $0.rejectedSourceIDs.isEmpty })
+        XCTAssertTrue(cards[0].sources.contains { $0.itemID == "b" })
+    }
+
+    func testColdIndexRecordsRejectionsBeforeAndAfterExposingPages() {
+        let a = item("a", title: "Movie", account: "server", ids: ["Imdb": "tt111", "Tmdb": "123"])
+        let b = item("b", title: "Movie", account: "server", ids: ["Imdb": "tt222", "Tmdb": "123"])
+        for expose in [true, false] {
+            var merger = IncrementalMediaItemMerger()
+            merger.append([a])
+            if expose { _ = merger.mergedItems() }
+            merger.append([b])
+            let cards = merger.mergedItems()
+            XCTAssertEqual(cards.count, 2)
+            XCTAssertTrue(cards[0].rejectedSourceIDs.contains("server:b"))
+            XCTAssertTrue(cards[1].rejectedSourceIDs.contains("server:a"))
+        }
+    }
+
+    func testSparseReloadCannotClearPersistedPeerRejection() throws {
+        let a = MediaItem(id: "a", title: "Movie", kind: .movie,
+                          providerIDs: ["Imdb": "tt111", "Tmdb": "123"], sourceAccountID: "server",
+                          rejectedSourceIDs: ["server:b"])
+        let b = MediaItem(id: "b", title: "Movie", kind: .movie,
+                          providerIDs: ["Tmdb": "123"], sourceAccountID: "server")
+        let restored = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(a))
+        let refs = [MediaSourceRef(accountID: "server", itemID: "a", kind: .movie),
+                    MediaSourceRef(accountID: "server", itemID: "b", kind: .movie)]
+        for cards in [
+            MediaItemMerger.merge([restored, b], identitySources: { _ in refs }),
+            merged([[restored], [b]], identitySources: { _ in refs })
+        ] {
+            XCTAssertEqual(cards.count, 2)
+            XCTAssertTrue(cards.first?.rejectedSourceIDs.contains("server:b") == true)
+            XCTAssertFalse(cards.first?.sources.contains { $0.itemID == "b" } == true)
+        }
+    }
 
     private func item(
         _ id: String,
@@ -63,8 +156,8 @@ final class IncrementalMediaItemMergerTests: XCTestCase {
             line: line
         )
         XCTAssertEqual(
-            incremental.map { Set($0.sources.map(\.accountID)) },
-            batch.map { Set($0.sources.map(\.accountID)) },
+            incremental.map { Set($0.sources.map(\.id)) },
+            batch.map { Set($0.sources.map(\.id)) },
             "per-card source fan-out diverged from the batch merger",
             file: file,
             line: line
@@ -72,6 +165,51 @@ final class IncrementalMediaItemMergerTests: XCTestCase {
     }
 
     // MARK: Equivalence with the batch merger
+
+    func testConflictingSourcesStayIsolatedAcrossPageBoundaries() async {
+        for kind in [MediaItemKind.movie, .series] {
+            for carried in [false, true] {
+                var first = item(
+                    "first", title: "Same Title", kind: kind, account: "server",
+                    ids: ["Imdb": "tt111", "Tmdb": "123"]
+                )
+                var second = item(
+                    "second", title: "Same Title", kind: kind, account: "server",
+                    ids: ["Imdb": "tt222", "Tmdb": "123"]
+                )
+                if carried {
+                    let refs = [first, second].map {
+                        MediaSourceRef(accountID: "server", itemID: $0.id, kind: kind)
+                    }
+                    first.sources = refs
+                    second.sources = refs
+                }
+                let index = IdentityIndex()
+                var sparseFirst = first
+                sparseFirst.providerIDs = ["Tmdb": "123"]
+                var sparseSecond = second
+                sparseSecond.providerIDs = ["Tmdb": "123"]
+                await index.ingest([sparseFirst, sparseSecond], accountID: "server")
+                let snapshot = await index.snapshot()
+                for exposeFirstPage in [false, true] {
+                    var merger = IncrementalMediaItemMerger(
+                        identitySources: { snapshot.sourceRefs(for: $0) }
+                    )
+                    merger.append([first])
+                    if exposeFirstPage {
+                        XCTAssertEqual(merger.slice(from: 0, limit: 1).map(\.id), [first.id])
+                    }
+                    merger.append([second])
+                    let result = merger.mergedItems()
+                    XCTAssertEqual(result.map(\.id), [first.id, second.id])
+                    for card in result {
+                        XCTAssertEqual(card.sources.map(\.itemID), [card.id])
+                    }
+                }
+                assertMatchesBatch([[first], [second]], identitySources: { snapshot.sourceRefs(for: $0) })
+            }
+        }
+    }
 
     func testEmptyInputProducesNothing() {
         XCTAssertTrue(merged([]).isEmpty)
