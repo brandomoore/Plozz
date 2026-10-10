@@ -1,22 +1,223 @@
 #if os(tvOS)
+import CoreModels
+import CoreNetworking
+import CoreUI
 import SwiftUI
 import UIKit
 
-/// Live TV is the navigation root, not a dismissible page above an empty root.
-/// The owning stack receives chrome visibility without moving the live player.
+/// Preserve native tab navigation while browsing in one retained fullscreen host.
 public struct LiveTVNavigationContainer<Content: View>: View {
-    private let hidesNavigation: Bool
+    private let isActive: Bool
     private let content: Content
 
-    public init(hidesNavigation: Bool, @ViewBuilder content: () -> Content) {
-        self.hidesNavigation = hidesNavigation
+    public init(isActive: Bool = true, @ViewBuilder content: () -> Content) {
+        self.isActive = isActive
         self.content = content()
     }
 
     public var body: some View {
-        NavigationStack { content }
-            .toolbar(hidesNavigation ? .hidden : .visible, for: .tabBar)
-            .toolbar(.hidden, for: .navigationBar)
+        // Native TabView can replace an unstacked destination during presentation.
+        NavigationStack {
+            NativeLiveTVPresentation(isActive: isActive, content: AnyView(NavigationStack {
+                content.ignoresSafeArea(.container, edges: .top)
+                    .toolbar(.hidden, for: .navigationBar)
+            }))
+        }
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+private struct NativeLiveTVPresentation: UIViewControllerRepresentable {
+    let isActive: Bool
+    let content: AnyView
+    @Environment(ProfilesModel.self) private var profiles: ProfilesModel?
+    @Environment(GlassPerformanceModel.self) private var glassPerformance: GlassPerformanceModel?
+
+    func makeUIViewController(context: Context) -> Controller {
+        Controller()
+    }
+
+    static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
+        controller.invalidate()
+    }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        let environment = context.environment
+        // The new hosting root must establish its own focus and dismissal context.
+        controller.content = AnyView(content
+            .environment(profiles)
+            .environment(glassPerformance)
+            .environment(\.themePalette, environment.themePalette)
+            .environment(\.plozzReduceTransparency, environment.plozzReduceTransparency)
+            .environment(\.plozzReducePanelGlass, environment.plozzReducePanelGlass)
+            .environment(\.gradientBackgroundsEnabled, environment.gradientBackgroundsEnabled)
+            .environment(\.plozzMetrics, environment.plozzMetrics)
+            .environment(\.plozzArtworkSettings, environment.plozzArtworkSettings)
+            .environment(\.plozzArtworkProviders, environment.plozzArtworkProviders)
+            .environment(\.plozzCardFocusStyle, environment.plozzCardFocusStyle)
+            .environment(\.channelLogoPreservesSourceCorners, environment.channelLogoPreservesSourceCorners)
+            .environment(\.plozzHDRDisplayActive, environment.plozzHDRDisplayActive)
+            .environment(\.managedProviderSetupRouter, environment.managedProviderSetupRouter)
+            .environment(\.colorScheme, environment.colorScheme)
+            .environment(\.layoutDirection, environment.layoutDirection)
+            .environment(\.dynamicTypeSize, environment.dynamicTypeSize)
+            .environment(\.locale, environment.locale)
+            .environment(\.calendar, environment.calendar)
+            .environment(\.timeZone, environment.timeZone)
+            .environment(\.scenePhase, environment.scenePhase)
+            .environment(\.isEnabled, environment.isEnabled))
+        controller.updateContent()
+        controller.setActive(isActive)
+    }
+
+    final class Controller: UIViewController {
+        var content = AnyView(EmptyView())
+        private var host: Host?
+        private var immersive = false
+        private var transitioning = false
+        private var hasEntered = false
+        private var isActive = true
+        private var invalidated = false
+        private let lifecycle = LiveTVPresentationLifecycle()
+
+        override func loadView() {
+            view = UIView()
+            view.backgroundColor = .clear
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            if !hasEntered {
+                hasEntered = true
+                enter()
+            }
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            if host?.parent === self { host?.view.frame = view.bounds }
+        }
+
+        func updateContent() {
+            let root = AnyView(content.environment(lifecycle)
+                .onExitCommand { [weak self] in self?.leave() })
+            if let host {
+                host.rootView = root
+            } else {
+                let host = Host(rootView: root)
+                host.returnedToContent = { [weak self] in
+                    guard let self, hasEntered, !immersive, !transitioning else { return }
+                    enter()
+                }
+                self.host = host
+            }
+        }
+
+        func setActive(_ active: Bool) {
+            isActive = active
+            if !active { leave() }
+        }
+
+        func invalidate() {
+            invalidated = true
+            lifecycle.isRelocating = false
+            host?.returnedToContent = nil
+            if host?.presentingViewController != nil { host?.dismiss(animated: false) }
+            if let host, host.parent === self {
+                host.willMove(toParent: nil)
+                host.view.removeFromSuperview()
+                host.removeFromParent()
+            }
+            host = nil
+        }
+
+        private func attach() {
+            guard let host, host.parent == nil else { return }
+            addChild(host)
+            host.view.frame = view.bounds
+            host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            view.addSubview(host.view)
+            host.didMove(toParent: self)
+        }
+
+        private func enter() {
+            guard let host, isActive, !invalidated, !transitioning, !immersive, view.window != nil else { return }
+            transitioning = true
+            lifecycle.isRelocating = true
+            if host.parent != nil {
+                host.willMove(toParent: nil)
+                host.view.removeFromSuperview()
+                host.removeFromParent()
+            }
+            host.modalPresentationStyle = .overFullScreen
+            present(host, animated: false) { [weak self] in
+                guard let self, !invalidated else { return }
+                immersive = true
+                transitioning = false
+                lifecycle.isRelocating = false
+                if isActive {
+                    let focus = UIFocusSystem.focusSystem(for: host)
+                    focus?.requestFocusUpdate(to: host)
+                    focus?.updateFocusIfNeeded()
+                } else { leave() }
+            }
+            if host.presentingViewController == nil {
+                PlozzLog.app.error("Live TV fullscreen presentation was not accepted")
+                attach()
+                transitioning = false
+                lifecycle.isRelocating = false
+            }
+        }
+
+        private func leave() {
+            guard let host, immersive, !transitioning else { return }
+            // Search and player presentations consume their own Back press.
+            if isActive, containsPresentation(host) { return }
+            transitioning = true
+            lifecycle.isRelocating = isActive
+            host.view.isUserInteractionEnabled = false
+            host.dismiss(animated: false) { [weak self] in
+                guard let self, !invalidated else { return }
+                immersive = false
+                attach()
+                host.view.isUserInteractionEnabled = true
+                transitioning = false
+                lifecycle.isRelocating = false
+            }
+        }
+
+        private func containsPresentation(_ controller: UIViewController) -> Bool {
+            controller.presentedViewController != nil || controller.children.contains(where: containsPresentation)
+        }
+    }
+
+    final class Host: UIHostingController<AnyView> {
+        var returnedToContent: (() -> Void)?
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+            view.backgroundColor = .clear
+        }
+
+        override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+            super.didUpdateFocus(in: context, with: coordinator)
+            guard context.previouslyFocusedItem != nil,
+                  contains(context.nextFocusedItem), !contains(context.previouslyFocusedItem) else { return }
+            // Moving a newly focused environment during the focus update is illegal.
+            coordinator.addCoordinatedAnimations(nil) { [weak self] in
+                guard let self, contains(UIFocusSystem.focusSystem(for: self)?.focusedItem) else { return }
+                returnedToContent?()
+            }
+        }
+
+        private func contains(_ item: (any UIFocusItem)?) -> Bool {
+            var environment: (any UIFocusEnvironment)? = item
+            while let current = environment {
+                if current === self || current === view { return true }
+                environment = current.parentFocusEnvironment
+            }
+            return false
+        }
     }
 }
 

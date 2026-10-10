@@ -29,6 +29,14 @@ struct PrototypePreviewLayout {
         return CGSize(width: (height * 16 / 9).rounded(), height: height.rounded())
     }
 
+    var heroAlignment: Alignment {
+        #if os(tvOS)
+        .topLeading
+        #else
+        .bottomLeading
+        #endif
+    }
+
     var availableSidebarWidth: CGFloat {
         guard contentFrame.width >= 960,
               contentFrame.height - heroHeight - PrototypeLayout.sectionGap >= 420 else { return 0 }
@@ -148,6 +156,7 @@ struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
     @ViewBuilder let header: () -> Header
     @ViewBuilder let sidebar: () -> Sidebar
     @ViewBuilder let guide: () -> Guide
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         #if os(tvOS)
@@ -159,6 +168,7 @@ struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
             }
             .frame(width: layout.guideWidth)
         }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: layout.hidesSidebar)
         #else
         VStack(spacing: layout.sectionGap) {
             header()
@@ -176,6 +186,9 @@ struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
                 if layout.sidebarWidth > 0 {
                     sidebar()
                         .frame(width: layout.availableSidebarWidth)
+                        #if os(tvOS)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                        #endif
                 }
             }
             .frame(width: layout.sidebarWidth, alignment: .leading)
@@ -305,7 +318,7 @@ struct PrototypePreviewHero: View {
                 .frame(width: layout.metadataWidth, alignment: .leading)
             }
         }
-        .frame(width: layout.heroWidth, height: layout.heroHeight, alignment: .bottomLeading)
+        .frame(width: layout.heroWidth, height: layout.heroHeight, alignment: layout.heroAlignment)
         .clipped()
         #if DEBUG
         .modifier(PrototypeHeroLayoutObservation(phase: isLoading ? "loading" : "content"))
@@ -402,6 +415,9 @@ struct PrototypePreviewHero: View {
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.logoRadius, style: .continuous))
+        #if DEBUG
+        .modifier(PrototypeBrowseLayoutObservation(element: "artwork"))
+        #endif
         .accessibilityHidden(true)
     }
 

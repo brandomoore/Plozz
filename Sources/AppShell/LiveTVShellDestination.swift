@@ -89,7 +89,7 @@ struct LiveTVShellDestination: View {
     @ViewBuilder
     var body: some View {
         if usesNativeNavigation {
-            LiveTVNavigationContainer(hidesNavigation: hidesNavigation) {
+            LiveTVNavigationContainer(isActive: isActive) {
                 liveTVContent
             }
         } else {

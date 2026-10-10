@@ -1,6 +1,6 @@
 import CoreModels
 import CoreUI
-import FeatureLiveTV
+@testable import FeatureLiveTV
 import FeatureLiveTVCore
 import SwiftUI
 import UIKit
@@ -8,7 +8,8 @@ import UIKit
 
 struct LiveTVPreviewIntroductionFixture: View {
     @State private var previewStarted = false
-    @State private var hidesNavigation = false
+    @State private var preferences = PreviewIntroductionPreferences()
+    @State private var playbackID: UUID?
     @State private var nativeSelection = NavigationRailDestination.liveTV
     @State private var nativeHandoff = NavigationDestinationFocusHandoff()
     @State private var settings: LiveTVViewSettings
@@ -38,35 +39,51 @@ struct LiveTVPreviewIntroductionFixture: View {
 
     @ViewBuilder
     var body: some View {
-        if ProcessInfo.processInfo.arguments.contains("--preview-native-sidebar") {
-            TabView(selection: Binding(get: { nativeSelection }, set: { destination in
-                if destination != nativeSelection { nativeHandoff.begin(destination) }
-                nativeSelection = destination
-            })) {
-                ForEach(nativeDestinations, id: \.destination) { entry in
-                    Tab(value: entry.destination) {
-                        AnyView(NativeSidebarFocusDestination(
-                            destination: entry.destination, selection: nativeSelection,
-                            handoff: nativeHandoff,
-                            content: nativeContent(for: entry.destination)
-                        ).tvNavigationExitProtectionContent())
-                    } label: {
-                        AnyView(Label(entry.title, systemImage: entry.symbol))
-                    }
-                }
-            }
-            .tabViewStyle(.sidebarAdaptable)
-            .tvNavigationExitProtection(isEnabled: true)
-            .environment(\.layoutDirection, ProcessInfo.processInfo.arguments.contains("--preview-rtl")
-                ? .rightToLeft : .leftToRight)
-            .onDisappear { nativeHandoff.cancel() }
+        if usesNativeNavigation {
+            nativeNavigation
+                .tvNavigationExitProtection(isEnabled: true)
+                .environment(\.layoutDirection, ProcessInfo.processInfo.arguments.contains("--preview-rtl")
+                    ? .rightToLeft : .leftToRight)
+                .onDisappear { nativeHandoff.cancel() }
         } else {
             liveTV
         }
     }
 
+    private var usesNativeTopBar: Bool {
+        ProcessInfo.processInfo.arguments.contains("--preview-native-top-bar")
+    }
+
+    private var usesNativeNavigation: Bool {
+        usesNativeTopBar || ProcessInfo.processInfo.arguments.contains("--preview-native-sidebar")
+    }
+
+    @ViewBuilder private var nativeNavigation: some View {
+        if usesNativeTopBar { nativeTabs.tabViewStyle(.tabBarOnly) }
+        else { nativeTabs.tabViewStyle(.sidebarAdaptable) }
+    }
+
+    private var nativeTabs: some View {
+        TabView(selection: Binding(get: { nativeSelection }, set: { destination in
+            if destination != nativeSelection { nativeHandoff.begin(destination) }
+            nativeSelection = destination
+        })) {
+            ForEach(nativeDestinations, id: \.destination) { entry in
+                Tab(value: entry.destination) {
+                    AnyView(NativeSidebarFocusDestination(
+                        destination: entry.destination, selection: nativeSelection,
+                        handoff: nativeHandoff,
+                        content: nativeContent(for: entry.destination)
+                    ).tvNavigationExitProtectionContent())
+                } label: {
+                    AnyView(Label(entry.title, systemImage: entry.symbol))
+                }
+            }
+        }
+    }
+
     private var nativeDestinations: [(destination: NavigationRailDestination, title: String, symbol: String)] {
-        [
+        let entries: [(NavigationRailDestination, String, String)] = [
             (.library("profile"), "Fixture profile", "person.crop.circle"),
             (.home, "Home", "house"),
             (.liveTV, "Live TV", "tv"),
@@ -76,12 +93,13 @@ struct LiveTVPreviewIntroductionFixture: View {
             (.library("shows"), "TV Shows", "tv"),
             (.settings, "Settings", "gearshape")
         ]
+        return usesNativeTopBar ? entries.filter { [.home, .liveTV, .settings].contains($0.0) } : entries
     }
 
     @ViewBuilder
     private func nativeContent(for destination: NavigationRailDestination) -> some View {
         if destination == .liveTV {
-            LiveTVNavigationContainer(hidesNavigation: hidesNavigation) { liveTV }
+            LiveTVNavigationContainer(isActive: nativeSelection == .liveTV) { liveTV }
         } else {
             Button("Fixture destination") {}
         }
@@ -89,23 +107,39 @@ struct LiveTVPreviewIntroductionFixture: View {
 
     private var liveTV: some View {
         LiveTVPrototypeView(
-            usesNativeFullscreen: ProcessInfo.processInfo.arguments.contains("--preview-native-sidebar"),
-            preferencesStore: PreviewIntroductionPreferences(),
+            isActive: !usesNativeNavigation || nativeSelection == .liveTV,
+            usesNativeFullscreen: usesNativeNavigation,
+            preferencesStore: preferences,
             viewSettingsStore: store,
             sourceStore: PreviewIntroductionSources(),
-            onExpandedChange: { hidesNavigation = $0 },
             sourceLoader: PreviewIntroductionLoader(),
             profileID: profileID,
             preferencesNamespace: namespace,
             sourceApprovalContext: { approval }
-        ) { _ in
+        ) { playback in
             Color.black.onAppear { previewStarted = true }
+                .onChange(of: playback.reportingID, initial: true) { _, id in playbackID = id }
+        }
+        .overlayPreferenceValue(PrototypeBrowseBoundsKey.self) { anchors in
+            GeometryReader { geometry in
+                if let artwork = anchors["artwork"] {
+                    let origin = geometry.frame(in: .global).minY
+                    let searchY = anchors["sidebar-search"].map { geometry[$0].minY + origin } ?? -1
+                    Text(verbatim: "\(searchY),\(geometry[artwork].minY + origin)")
+                        .font(.caption2)
+                        .accessibilityIdentifier("preview-browse-top-alignment")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
+            }
+            .allowsHitTesting(false)
         }
         .overlay(alignment: .topTrailing) {
             VStack(alignment: .trailing) {
                 Text(verbatim: "\(settings.hasChosenAutoPreview ? (settings.autoPreview ? "chosen-on" : "chosen-off") : "unanswered"); playback=\(previewStarted)")
                     .accessibilityIdentifier("preview-fixture-status")
                 NativeSidebarFocusVisits()
+                Text(verbatim: playbackID?.uuidString ?? "none")
+                    .accessibilityIdentifier("preview-playback-session")
             }
             .font(.caption2)
             .padding(12)
@@ -136,18 +170,21 @@ private struct NativeSidebarFocusVisits: View {
     }
 }
 
-private struct PreviewIntroductionPreferences: LiveTVPreferencesStoring {
-    func load() throws -> LiveTVPreferences {
-        guard ProcessInfo.processInfo.arguments.contains("--preview-saved-multiviews") else { return .empty }
-        return LiveTVPreferences(favoriteMultiviews: (1...8).map { index in
+private final class PreviewIntroductionPreferences: LiveTVPreferencesStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var preferences: LiveTVPreferences
+
+    init() {
+        preferences = LiveTVPreferences(favoriteMultiviews: ProcessInfo.processInfo.arguments.contains("--preview-saved-multiviews") ? (1...8).map { index in
             LiveTVMultiviewFavorite(
                 id: "fixture-\(index)",
                 name: index == 2 ? "Weekend sports and international highlights" : "Saved Multiview \(index)",
                 channelIDs: ["channels-1", "channels-2"], layout: .sideBySide
             )
-        })
+        } : [])
     }
-    func save(_ preferences: LiveTVPreferences) throws {}
+    func load() throws -> LiveTVPreferences { lock.withLock { preferences } }
+    func save(_ preferences: LiveTVPreferences) throws { lock.withLock { self.preferences = preferences } }
 }
 
 private struct PreviewIntroductionSources: LiveTVSourcesStoring {

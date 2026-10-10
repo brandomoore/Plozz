@@ -25,7 +25,7 @@ public struct LiveTVLoadingSkeleton: View {
                         PrototypeLoadingToolbar().frame(height: 44)
                         #endif
                         PrototypePreviewHeroSkeleton(layout: layout)
-                            .frame(height: layout.heroHeight, alignment: .bottomLeading)
+                            .frame(height: layout.heroHeight, alignment: layout.heroAlignment)
                             #if DEBUG
                             .modifier(PrototypeHeroLayoutObservation(phase: "storage"))
                             #endif

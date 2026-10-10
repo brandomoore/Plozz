@@ -17,6 +17,7 @@ struct PrototypeBrowseSidebar: View {
     @State private var completedCategoryFocusRequest = 0
     @ScaledMetric(relativeTo: .subheadline) private var fontSize = PrototypeLayout.guideFontSize
     @Environment(\.layoutDirection) private var layoutDirection
+    @Environment(LiveTVPresentationLifecycle.self) private var presentationLifecycle: LiveTVPresentationLifecycle?
 
     private enum Control: Hashable {
         case search
@@ -42,6 +43,9 @@ struct PrototypeBrowseSidebar: View {
             .accessibilityIdentifier("live-tv-search")
             .padding(PrototypeLayout.controlInset)
             .background { PrototypeControlSurface() }
+            #if DEBUG
+            .modifier(PrototypeBrowseLayoutObservation(element: "sidebar-search"))
+            #endif
             if let multiviews {
                 Button("Multiviews", systemImage: "rectangle.split.2x2", action: multiviews)
                     .frame(maxWidth: .infinity, minHeight: PrototypeLayout.controlHeight, alignment: .leading)
@@ -120,7 +124,7 @@ struct PrototypeBrowseSidebar: View {
         .focusSection()
         .defaultFocus(
             $focused, restoresCategoryFocus ? .category(model.category) : .search,
-            priority: .userInitiated
+            priority: .automatic
         )
         .onMoveCommand { direction in
             guard focused != nil else { return }
@@ -135,7 +139,9 @@ struct PrototypeBrowseSidebar: View {
                 completedCategoryFocusRequest = categoryFocusRequest
             }
         }
-        .onChange(of: focusRequest) { _, _ in
+        .onChange(of: focusRequest, initial: true) { _, request in
+            guard request > 0, active, !restoresCategoryFocus,
+                  presentationLifecycle?.isRelocating != true else { return }
             completedCategoryFocusRequest = categoryFocusRequest
             focused = .search
         }

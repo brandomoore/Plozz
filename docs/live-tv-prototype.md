@@ -61,6 +61,23 @@ remain Debug-only; neither is a production default or a source offered to users.
 
 ## Try
 
+### Native navigation and full-height browsing
+
+On Apple TV, Live TV opens above the selected native tab/sidebar in a retained
+fullscreen host. This hides the native collapsed title as well as the expanded
+menu, without changing the profile's navigation style. Back first dismisses
+Live TV's child controls; Back from the browsing controls reveals the original
+native app menu. Moving back into Live TV restores fullscreen browsing with the
+same guide and playback session. A genuine destination/profile change still
+deactivates playback.
+
+Search and the active-channel artwork share a 32-point top inset. The full-height
+Search/categories pane slides and fades over 0.28 seconds while the guide resizes;
+Reduce Motion suppresses this animation. iPhone/iPad retain their existing layout.
+Native-menu round trips, selected-category restoration, and preview-session
+identity have remote regressions; hosted presentation-frame tests cover panel
+travel and rapid reversal.
+
 ### IPTV accounts and large catalogues
 
 **Sources > IPTV provider** and **Add Server > IPTV** use the same account
