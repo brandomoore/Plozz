@@ -81,4 +81,55 @@ final class UnwatchedEpisodeCountTests: XCTestCase {
             XCTAssertEqual(mutation.applied(to: series(8)).unwatchedEpisodeCount, 8)
         }
     }
+
+    func testMovieAndUnknownIDOnlyActionsPreserveUnrelatedCounts() throws {
+        let movie = MediaItem(id: "movie", title: "Movie", kind: .movie, sourceAccountID: "a")
+        let replay = try XCTUnwrap(MediaItemMutation(watchMutation: WatchMutation(
+            capturedAt: Date(), canonicalMediaID: "movie", played: true,
+            targets: [.init(accountID: "a", itemID: "movie")], kind: .movie)))
+        for mutation in [
+            MediaItemMutation(itemIDs: ["movie"], scopedItemIDs: ["a:movie"], played: true, item: movie),
+            MediaItemMutation(itemIDs: ["movie"], scopedItemIDs: ["a:movie"], played: true),
+            MediaItemMutation(itemIDs: ["movie"], played: true),
+            replay
+        ] {
+            XCTAssertEqual(mutation.applied(to: series(8)).unwatchedEpisodeCount, 8)
+            XCTAssertFalse(mutation.affectsEpisodeCount(in: series(8)))
+        }
+    }
+
+    func testKnownChildWithoutParentInvalidatesOnlyItsAccountAndContainerKind() {
+        let episode = MediaItemMutation(
+            itemIDs: ["episode"], scopedItemIDs: ["a:episode"], played: true, kind: .episode)
+        XCTAssertNil(episode.applied(to: series(8)).unwatchedEpisodeCount)
+        XCTAssertEqual(episode.applied(to: series(8, account: "b")).unwatchedEpisodeCount, 8)
+        let season = MediaItemMutation(
+            itemIDs: ["season"], scopedItemIDs: ["a:season"], played: true, kind: .season)
+        XCTAssertNil(season.applied(to: series(8)).unwatchedEpisodeCount)
+        let sibling = MediaItem(
+            id: "other-season", title: "Other season", kind: .season,
+            unwatchedEpisodeCount: 4, sourceAccountID: "a")
+        XCTAssertEqual(season.applied(to: sibling).unwatchedEpisodeCount, 4)
+    }
+
+    func testConfirmedContainerWritesRequestCountsWithoutReplayingOldState() throws {
+        for kind in [MediaItemKind.series, .season] {
+            for played in [false, true] {
+                let confirmed = try XCTUnwrap(MediaItemMutation(confirmedWatchMutation: WatchMutation(
+                    capturedAt: Date(), canonicalMediaID: "show", played: played,
+                    targets: [.init(accountID: "a", itemID: "show")], kind: kind)))
+                XCTAssertTrue(confirmed.refreshEpisodeCounts)
+                XCTAssertFalse(confirmed.refreshContinueWatching)
+                XCTAssertNil(confirmed.played)
+                XCTAssertTrue(confirmed.affectsEpisodeCount(in: series(8)))
+                XCTAssertFalse(confirmed.affectsEpisodeCount(in: series(8, account: "b")))
+                XCTAssertEqual(confirmed.applied(to: series(8)), series(8))
+                let note = Notification(name: .mediaItemDidMutate, userInfo: [
+                    "itemIDs": ["show"], "scopedItemIDs": ["a:show"],
+                    "kind": kind.rawValue, "refreshEpisodeCounts": true
+                ])
+                XCTAssertEqual(MediaItemMutation.from(note), confirmed)
+            }
+        }
+    }
 }

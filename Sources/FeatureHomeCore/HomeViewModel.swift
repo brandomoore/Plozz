@@ -1085,7 +1085,7 @@ public final class HomeViewModel {
     /// flip its badge without a refetch. A watchlist add/remove also inserts/removes
     /// the title from the Watchlist row.
     public func applyWatchedState(_ mutation: MediaItemMutation) {
-        if mutation.refreshContinueWatching {
+        if mutation.refreshContinueWatching || mutation.refreshEpisodeCounts {
             if accounts.contains(where: { account in
                 mutation.itemIDs.contains {
                     mutation.matches(accountID: account.account.id, itemID: $0)
@@ -1834,8 +1834,8 @@ public final class HomeViewModel {
         for item in fetched { serverConfirmedTargets.formUnion(Self.scopeKeys(of: item)) }
     }
 
-    /// Fetches the server's Next Up after an episode finishes, or reconciles a
-    /// newly placed resume card. Existing rows remain visible throughout.
+    /// Fetches Next Up and confirmed episode counts, or reconciles a newly placed
+    /// resume card. Existing rows remain visible throughout.
     private func schedulePlaybackReload() {
         guard !playbackReloadInFlight else {
             if isLoading { wantsReloadAfterCurrent = true }

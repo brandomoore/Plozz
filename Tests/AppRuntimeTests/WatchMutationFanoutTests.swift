@@ -36,6 +36,8 @@ final class WatchMutationFanoutTests: XCTestCase {
                 XCTAssertEqual(mutation?.scopedItemIDs, ["a:s2"])
                 XCTAssertEqual(mutation?.cascadesToSeasonEpisodes, true)
                 XCTAssertEqual(mutation?.played, played)
+                XCTAssertEqual(mutation?.item, season)
+                XCTAssertEqual(mutation?.kind, .season)
                 return true
             }
             coordinator.perform(
@@ -49,6 +51,32 @@ final class WatchMutationFanoutTests: XCTestCase {
             XCTAssertEqual(intent.targets.map(\.id), ["a:s2"])
             XCTAssertEqual(intent.kind, .season)
             XCTAssertEqual(intent.played, played)
+        }
+    }
+
+    @MainActor
+    func testMenuWatchActionsCarryKindAndParentForCountInvalidation() {
+        let coordinator = MediaItemActionCoordinator(
+            providerResolver: { _ in nil }, primaryAccountID: { "a" },
+            crossServerWatchSyncEnabled: { true }, enqueueWatchMutation: { _ in })
+        let show = MediaItem(
+            id: "show", title: "Show", kind: .series, unwatchedEpisodeCount: 8, sourceAccountID: "a")
+        let unrelated = MediaItem(
+            id: "unrelated", title: "Unrelated", kind: .series, unwatchedEpisodeCount: 12, sourceAccountID: "a")
+        for kind in [MediaItemKind.movie, .episode] {
+            let item = MediaItem(
+                id: "item", title: "Item", kind: kind,
+                seriesID: kind == .episode ? "show" : nil, sourceAccountID: "a")
+            let received = expectation(forNotification: .mediaItemDidMutate, object: nil) { note in
+                guard let mutation = MediaItemMutation.from(note) else { return false }
+                XCTAssertEqual(mutation.item, item)
+                XCTAssertEqual(mutation.kind, kind)
+                XCTAssertEqual(mutation.applied(to: show).unwatchedEpisodeCount, kind == .episode ? nil : 8)
+                XCTAssertEqual(mutation.applied(to: unrelated).unwatchedEpisodeCount, 12)
+                return true
+            }
+            coordinator.perform(.markWatched, on: item, context: MediaItemActionContext())
+            wait(for: [received], timeout: 1)
         }
     }
 

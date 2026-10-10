@@ -27,7 +27,9 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   and existing local Share episode rollups. They never query episodes per card,
   use online episode totals, or sum duplicate servers. Cross-server counts
   follow the same source as watch state. Child mutations invalidate snapshots
-  until the next batched refresh instead of guessing a decrement.
+  until the next batched refresh instead of guessing a decrement. Movie actions
+  never invalidate unrelated episode counts. Count-only refreshes wait for
+  confirmed server delivery so they cannot undo an optimistic watched action.
 - **Discovery marks** — the requestable plus, requested clock, and unowned
   binoculars fit the same density-scaled square and corner clearance as the
   watched badge: 21pt on standard touch cards, 42pt on standard TV cards.

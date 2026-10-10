@@ -614,11 +614,12 @@ public final class LibraryBrowseViewModel {
     /// slots. Plex, Jellyfin, SMB, and future share transports all use this path, so
     /// badges and progress bars update immediately without a provider refetch.
     public func applyWatchedState(_ mutation: MediaItemMutation) {
-        var episodeCountsChanged = false
+        var refreshEpisodeCounts = false
         for slot in loaded {
             guard let item = slot.item else { continue }
+            refreshEpisodeCounts = refreshEpisodeCounts
+                || (mutation.refreshEpisodeCounts && mutation.affectsEpisodeCount(in: item))
             let updated = mutation.applied(to: item)
-            episodeCountsChanged = episodeCountsChanged || updated.unwatchedEpisodeCount != item.unwatchedEpisodeCount
             if updated != item {
                 slot.item = updated
             }
@@ -641,7 +642,7 @@ public final class LibraryBrowseViewModel {
         }
         let dependsOnWatchState = [.unwatched, .inProgress].contains(filters.filter)
             || [.progress, .plays, .lastPlayed].contains(sort.field)
-            || episodeCountsChanged
+            || refreshEpisodeCounts
         if browseVisible, contentMode == .titles, dependsOnWatchState {
             watchRefreshTask?.cancel()
             watchRefreshTask = Task { [weak self] in

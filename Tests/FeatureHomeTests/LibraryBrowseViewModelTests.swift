@@ -170,6 +170,66 @@ final class LibraryBrowseViewModelTests: XCTestCase {
         XCTAssertFalse(vm.item(at: 0)?.isPlayed ?? false)
     }
 
+    func testCountRefreshWaitsForConfirmedContainerWrite() async throws {
+        for kind in [MediaItemKind.series, .season] {
+            for played in [false, true] {
+                let item = MediaItem(
+                    id: "show", title: "Show", kind: kind,
+                    unwatchedEpisodeCount: played ? 8 : 0, isPlayed: !played,
+                    sourceAccountID: "a")
+                let provider = FakeMediaProvider(allItems: [item])
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+                let vm = LibraryBrowseViewModel(
+                    provider: provider, containerID: "library", containerKind: kind,
+                    defaults: defaults, sourceAccountID: "a", initialContentMode: .titles)
+                await vm.loadFirstPageIfNeeded()
+                let slot = try XCTUnwrap(vm.slot(at: 0))
+                let requests = provider.requestedPages.count
+                let optimistic = MediaItemMutation(
+                    itemIDs: ["show"], scopedItemIDs: ["a:show"], played: played, item: item)
+                vm.applyWatchedState(optimistic)
+                // Negative observation window: the server deliberately still has
+                // pre-write state, so no count-only refresh may run yet.
+                try await Task.sleep(for: .milliseconds(100))
+                XCTAssertEqual(provider.requestedPages.count, requests)
+                XCTAssertEqual(slot.item?.isPlayed, played)
+                XCTAssertEqual(slot.item?.unwatchedEpisodeCount, played ? 0 : nil)
+
+                var authoritative = optimistic.applied(to: item)
+                authoritative.unwatchedEpisodeCount = played ? 0 : 8
+                provider.allItems = [authoritative]
+                let confirmed = try XCTUnwrap(MediaItemMutation(confirmedWatchMutation: WatchMutation(
+                    capturedAt: Date(), canonicalMediaID: "show", played: played,
+                    targets: [.init(accountID: "a", itemID: "show")], kind: kind)))
+                vm.applyWatchedState(confirmed)
+                await waitUntil {
+                    provider.requestedPages.count > requests
+                        && slot.item?.unwatchedEpisodeCount == authoritative.unwatchedEpisodeCount
+                }
+                XCTAssertEqual(slot.item?.isPlayed, played)
+                XCTAssertTrue(vm.slot(at: 0) === slot)
+                vm.cancelPendingQuery()
+            }
+        }
+    }
+
+    func testOtherAccountConfirmationDoesNotRefreshContainerCounts() async throws {
+        let item = MediaItem(id: "show", title: "Show", kind: .series, unwatchedEpisodeCount: 8)
+        let provider = FakeMediaProvider(allItems: [item])
+        let vm = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .series,
+            sourceAccountID: "a", initialContentMode: .titles)
+        await vm.loadFirstPageIfNeeded()
+        let requests = provider.requestedPages.count
+        vm.applyWatchedState(try XCTUnwrap(MediaItemMutation(confirmedWatchMutation: WatchMutation(
+            capturedAt: Date(), canonicalMediaID: "show", played: true,
+            targets: [.init(accountID: "b", itemID: "show")], kind: .series))))
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(provider.requestedPages.count, requests)
+        XCTAssertEqual(vm.item(at: 0)?.unwatchedEpisodeCount, 8)
+        vm.cancelPendingQuery()
+    }
+
     func testItemAppearedLoadsOwningPage() async {
         let (vm, provider) = makeVM(itemCount: 100, pageSize: 10)
         await vm.loadFirstPage()
