@@ -79,6 +79,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var sources: LiveTVSourceManagementModel?
     @State private var sourceApplicationFailed = false
     @State private var reloadRequest = 0
+    @State private var pendingServerRefresh = false
     @State private var sheet: PrototypeSheet?
     @State private var needsPreviewChoice = false
     @State private var selectedChannelID: String?
@@ -641,7 +642,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         }) { destination in
             PrototypeSheetContent(
                 model: model, imports: imports, destination: destination,
-                reload: { reloadRequest += 1 },
+                reload: requestCatalogRefresh,
                 showGuide: {
                     model.guideOnly = true
                     topRequest += 1
@@ -976,7 +977,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     LiveTVSourceLoadState(
                         issue: sources.loadIssue,
                         applicationFailed: sourceApplicationFailed,
-                        retry: { loadedRequest = nil; reloadRequest &+= 1 }
+                        retry: requestCatalogRefresh
                     )
                 }
             } else if isInitialCatalogLoading || sources?.hasLoaded == false {
@@ -1109,7 +1110,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 }
             default:
                 LiveTVSourcesView(
-                    model: sources, imports: imports, refresh: { reloadRequest &+= 1 },
+                    model: sources, imports: imports, refresh: requestCatalogRefresh,
                     serverChoices: serverChoices, serverProviderResolver: serverProviderResolver,
                     connectServer: connectServer == nil ? nil : requestServerConnection,
                     connectIPTV: providerSetupRouter == nil ? nil : requestIPTVConnection,
@@ -1225,6 +1226,11 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         updatePlaybackAvailability()
     }
 
+    private func requestCatalogRefresh() {
+        pendingServerRefresh = true
+        reloadRequest &+= 1
+    }
+
     private func reloadCatalog() async {
         guard isActive, loadedRequest != reloadRequest else { return }
         installCatalogHooks()
@@ -1237,7 +1243,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             }
         }
         async let enrolled = enrollAuthorizedServers()
-        await imports.reload(into: model, forceServerRefresh: false)
+        await imports.reload(into: model, forceServerRefresh: pendingServerRefresh)
         let added = await enrolled
         guard !Task.isCancelled, request == reloadRequest, isProfileAuthorized() else { return }
         if !added.isEmpty, let sources {
@@ -1245,7 +1251,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             guard sources.hasLoaded, applySourceConfiguration() else { return }
             await imports.reloadServers(into: model, forceRefresh: false)
         }
-        if !Task.isCancelled, request == reloadRequest { loadedRequest = request }
+        if !Task.isCancelled, request == reloadRequest {
+            loadedRequest = request
+            pendingServerRefresh = false
+        }
     }
 
     private func enrollAuthorizedServers() async -> [String] {
@@ -1485,7 +1494,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             },
             isLoading: isInitialCatalogLoading,
             loadFailed: imports.catalogPhase == .failed || libraryIssue != nil || libraryGuideIssue != nil,
-            reload: { reloadLibrary?(); reloadRequest += 1 },
+            reload: { reloadLibrary?(); requestCatalogRefresh() },
             hideChannel: hideChannel,
             selectionAction: multiviewSelection?.title,
             selectedChannelIDs: multiviewSelection == nil ? [] : Set(multiview.panes.compactMap { $0.channel?.id }),

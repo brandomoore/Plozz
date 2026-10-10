@@ -76,6 +76,10 @@ Profiles without a saved navigation choice default to **Pinned Sidebar**.
 The first-run, new-profile, and Settings pickers list Pinned Sidebar, Sidebar,
 then Top Bar. Saved profile choices are not overwritten.
 
+Automatic entry reuses the account's saved channel catalog. Explicit Refresh
+channels, Refresh sources, and retry actions bypass that cache and await the
+replacement, including when the saved playlist has no channels.
+
 Search and the active-channel artwork stay aligned, with an additional 16-point
 clearance below native navigation. Pinned navigation keeps its existing inset.
 The full-height Search/categories pane slides and fades over 0.28 seconds while the guide resizes;

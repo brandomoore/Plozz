@@ -3,6 +3,49 @@ import Vision
 
 @MainActor
 final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
+    func testRefreshChannelsReplacesAnEmptyCachedServerCatalog() {
+        exerciseExplicitCatalogRefresh(fromSources: false)
+    }
+
+    func testRefreshSourcesReplacesAnEmptyCachedServerCatalog() {
+        exerciseExplicitCatalogRefresh(fromSources: true)
+    }
+
+    private func exerciseExplicitCatalogRefresh(fromSources: Bool) {
+        let app = launch(
+            suite: "PreviewRefresh.\(UUID().uuidString)", reset: true, refreshCatalog: true
+        )
+        defer { app.terminate() }
+        assertFocused(app.buttons["live-tv-search"])
+        XCUIRemote.shared.press(.down)
+        XCUIRemote.shared.press(.down)
+        XCUIRemote.shared.press(.right)
+        let refresh = app.buttons["Refresh channels"]
+        assertFocused(refresh)
+        XCTAssertFalse(app.staticTexts["Refreshed fixture channel"].exists,
+                       "Automatic entry must retain the saved empty catalog")
+        if fromSources {
+            XCUIRemote.shared.press(.down)
+            assertFocused(app.buttons["Sources"])
+            XCUIRemote.shared.press(.select)
+            let sourceRefresh = app.buttons["Refresh sources"]
+            for _ in 0..<20 where !containsFocus(sourceRefresh) {
+                XCUIRemote.shared.press(.down)
+            }
+            assertFocused(sourceRefresh)
+            XCUIRemote.shared.press(.select)
+            XCUIRemote.shared.press(.menu)
+        } else {
+            XCUIRemote.shared.press(.select)
+        }
+        let channel = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                        "live-tv-channel-content-", "Refreshed fixture channel")
+        ).firstMatch
+        XCTAssertTrue(channel.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertFalse(refresh.exists)
+    }
+
     func testFavoriteMultiviewsEmptySheetHasCompactHeaderAndDismisses() {
         let app = openMultiviews(saved: false)
         defer { app.terminate() }
@@ -428,7 +471,8 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
 
     private func launch(
         suite: String, reset: Bool = false, secondProfile: Bool = false, rtl: Bool = false,
-        nativeSidebar: Bool = false, savedMultiviews: Bool = false, nativeTopBar: Bool = false
+        nativeSidebar: Bool = false, savedMultiviews: Bool = false, nativeTopBar: Bool = false,
+        refreshCatalog: Bool = false
     ) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
@@ -441,6 +485,7 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
           + (nativeSidebar ? ["--preview-native-sidebar"] : [])
           + (savedMultiviews ? ["--preview-saved-multiviews"] : [])
           + (nativeTopBar ? ["--preview-native-top-bar"] : [])
+          + (refreshCatalog ? ["--preview-refresh-catalog"] : [])
         app.launch()
         return app
     }

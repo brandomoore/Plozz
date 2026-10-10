@@ -13,6 +13,8 @@ struct LiveTVPreviewIntroductionFixture: View {
     @State private var nativeSelection = NavigationRailDestination.liveTV
     @State private var nativeHandoff = NavigationDestinationFocusHandoff()
     @State private var settings: LiveTVViewSettings
+    @State private var refreshProvider = PreviewRefreshProvider()
+    @State private var profiles: ProfilesModel
     private let store: LiveTVViewSettingsStore
     private let profileID: String
     private let namespace: String
@@ -24,14 +26,21 @@ struct LiveTVPreviewIntroductionFixture: View {
             .dropFirst("--preview-suite=".count))
         let defaults = UserDefaults(suiteName: suite)!
         if arguments.contains("--reset-preview-choice") { defaults.removePersistentDomain(forName: suite) }
+        _profiles = State(initialValue: ProfilesModel(store: ProfileStore(defaults: defaults)))
         let profile = arguments.contains("--second-preview-profile") ? "second" : ProfileStore.defaultProfileID
         let store = LiveTVViewSettingsStore(
             defaults: defaults, namespace: profile == ProfileStore.defaultProfileID ? nil : profile
         )
+        if arguments.contains("--preview-refresh-catalog") {
+            var selected = store.load()
+            selected.chooseAutoPreview(false)
+            store.save(selected)
+        }
         self.store = store
         profileID = profile
         approval = LiveTVSourceApprovalContext(
-            profile: Profile(id: profile, name: "Fixture"), parentalPIN: nil, activeAccountIDs: []
+            profile: Profile(id: profile, name: "Fixture"), parentalPIN: nil,
+            activeAccountIDs: arguments.contains("--preview-refresh-catalog") ? ["refresh-account"] : []
         )
         namespace = suite + "." + profile
         _settings = State(initialValue: store.load())
@@ -105,13 +114,24 @@ struct LiveTVPreviewIntroductionFixture: View {
         }
     }
 
+    private var refreshCatalog: Bool {
+        ProcessInfo.processInfo.arguments.contains("--preview-refresh-catalog")
+    }
+
     private var liveTV: some View {
         LiveTVPrototypeView(
             isActive: !usesNativeNavigation || nativeSelection == .liveTV,
             usesNativeFullscreen: usesNativeNavigation,
             preferencesStore: preferences,
             viewSettingsStore: store,
-            sourceStore: PreviewIntroductionSources(),
+            sourceStore: PreviewIntroductionSources(refreshCatalog: refreshCatalog),
+            serverProviderResolver: { account in
+                guard refreshCatalog, account == "refresh-account" else { return nil }
+                return LiveTVAuthorizedServerProvider(
+                    accountID: account, authorizationID: "refresh-authorization",
+                    kind: .iptv, provider: refreshProvider
+                )
+            },
             sourceLoader: PreviewIntroductionLoader(),
             profileID: profileID,
             preferencesNamespace: namespace,
@@ -149,6 +169,7 @@ struct LiveTVPreviewIntroductionFixture: View {
         }
         .environment(\.themePalette, .dark)
         .environment(\.colorScheme, .dark)
+        .environment(profiles)
         .environment(\.layoutDirection, ProcessInfo.processInfo.arguments.contains("--preview-rtl")
             ? .rightToLeft : .leftToRight)
     }
@@ -188,15 +209,51 @@ private final class PreviewIntroductionPreferences: LiveTVPreferencesStoring, @u
 }
 
 private struct PreviewIntroductionSources: LiveTVSourcesStoring {
+    var refreshCatalog = false
+
     func load() throws -> LiveTVSourcesConfiguration {
-        LiveTVSourcesConfiguration(playlists: [
+        if refreshCatalog {
+            return LiveTVSourcesConfiguration(servers: [
+                LiveTVServerSource(id: "refresh-server", name: "Refresh fixture", accountID: "refresh-account")
+            ])
+        }
+        return LiveTVSourcesConfiguration(playlists: [
             LiveTVPlaylistSource(
                 id: "preview-fixture", name: "Fixture",
                 playlistURL: URL(string: "https://fixture.invalid/list.m3u")!
             )
         ])
     }
+
     func save(_ configuration: LiveTVSourcesConfiguration) throws {}
+}
+
+private actor PreviewRefreshProvider: ServerLiveTVProviding {
+    private var refreshed = false
+
+    func liveTVAvailability() async throws -> ServerLiveTVAvailability {
+        ServerLiveTVAvailability(
+            status: refreshed ? .available : .noChannels,
+            channelCount: refreshed ? 1 : 0, supportsGuide: false
+        )
+    }
+
+    func refreshLiveTVAvailability() async throws -> ServerLiveTVAvailability {
+        refreshed = true
+        return try await liveTVAvailability()
+    }
+
+    func liveTVChannels() async throws -> [ServerLiveTVChannel] {
+        refreshed ? [ServerLiveTVChannel(id: "refreshed", name: "Refreshed fixture channel")] : []
+    }
+
+    func liveTVGuide(channelIDs: [String], from: Date, to: Date) async throws -> [ServerLiveTVProgramme] {
+        throw LiveTVSourceImportError.invalidGuide
+    }
+
+    func openLiveTVChannel(id: String) async throws -> any LiveTVStreamLease {
+        throw LiveTVSourceImportError.invalidPlaylist
+    }
 }
 
 private struct PreviewIntroductionLoader: LiveTVSourceLoading {

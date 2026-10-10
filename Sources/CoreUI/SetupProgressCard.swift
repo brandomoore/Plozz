@@ -51,7 +51,7 @@ public struct SetupProgressCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     SetupProgressNumber(count: count)
                         .animation(reduceMotion ? nil : .linear(duration: 0.8), value: count)
-                        .id(String(localized: countLabel))
+                        .id(countLabel.key)
                         .accessibilityLabel(Text(count, format: .number))
                         .font(.title2.weight(.semibold))
                         .monospacedDigit()
