@@ -268,7 +268,10 @@ public struct LibraryChannelSnapshot: Codable, Equatable, Identifiable, Sendable
     public func validate() throws {
         guard version == 1 else { throw LibraryChannelError.unsupportedVersion }
         guard !items.isEmpty else { throw LibraryChannelError.emptyCatalog }
-        guard items.count <= Self.maximumItems else { throw LibraryChannelError.catalogTooLarge }
+        guard items.count <= Self.maximumItems else {
+            LiveTVSyncLimitDiagnostic.record(.snapshotItems, observed: items.count, maximum: Self.maximumItems)
+            throw LibraryChannelError.catalogTooLarge
+        }
         guard createdAt.timeIntervalSince1970.isFinite, ineligibleDurationCount >= 0,
               Set(items.map(\.id)).count == items.count else { throw LibraryChannelError.invalidSnapshot }
         for item in items { try item.validate() }

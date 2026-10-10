@@ -22,6 +22,7 @@ public final class SentryCrashReporter: CrashReporter {
     private let dsn: String
     private var diagnosticObservers: [NSObjectProtocol] = []
     private let playlistDiagnosticGate = PlaylistDiagnosticGate()
+    private let syncLimitDiagnosticGate = SyncLimitDiagnosticGate()
     private var setupDiagnosticsActive = false
     public private(set) var isActive = false
 
@@ -74,6 +75,15 @@ public final class SentryCrashReporter: CrashReporter {
             guard let diagnostic = notification.object as? LiveTVSyncDiagnostic else { return }
             Self.record(diagnostic)
         })
+        let syncLimitGate = syncLimitDiagnosticGate
+        diagnosticObservers.append(NotificationCenter.default.addObserver(
+            forName: LiveTVSyncLimitDiagnostic.notification, object: nil, queue: nil
+        ) { notification in
+            guard SentrySDK.isEnabled,
+                  let diagnostic = notification.object as? LiveTVSyncLimitDiagnostic,
+                  syncLimitGate.accept(diagnostic.limit) else { return }
+            SentrySDK.addBreadcrumb(Self.syncLimitBreadcrumb(diagnostic))
+        })
         let gate = playlistDiagnosticGate
         diagnosticObservers.append(NotificationCenter.default.addObserver(
             forName: LiveTVPlaylistLimitDiagnostic.notification, object: nil, queue: nil
@@ -111,6 +121,7 @@ public final class SentryCrashReporter: CrashReporter {
         for observer in diagnosticObservers { NotificationCenter.default.removeObserver(observer) }
         diagnosticObservers.removeAll()
         playlistDiagnosticGate.reset()
+        syncLimitDiagnosticGate.reset()
         if setupDiagnosticsActive {
             IPTVSetupDiagnostics.shared.stop()
             PlaybackFailureDiagnostics.shared.stop()
@@ -164,6 +175,14 @@ public final class SentryCrashReporter: CrashReporter {
             "playlist_import": ["observed": diagnostic.observed, "maximum": diagnostic.maximum]
         ]
         return event
+    }
+
+    nonisolated static func syncLimitBreadcrumb(_ diagnostic: LiveTVSyncLimitDiagnostic) -> Breadcrumb {
+        let breadcrumb = Breadcrumb(level: .error, category: "plozz.live_tv_sync_limit")
+        breadcrumb.data = [
+            "limit": diagnostic.limit.rawValue, "observed": diagnostic.observed, "maximum": diagnostic.maximum
+        ]
+        return breadcrumb
     }
 
     private func configureSetupDiagnostics(_ context: CrashReportContext) {
@@ -291,6 +310,23 @@ final class PlaybackFailureReportGate: @unchecked Sendable {
             guard reported.count < IPTVSetupReportGate.maximumReports else { return false }
             return reported.insert(key).inserted
         }
+    }
+}
+
+final class SyncLimitDiagnosticGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lastRecorded: [LiveTVSyncLimitDiagnostic.Limit: TimeInterval] = [:]
+
+    func accept(_ limit: LiveTVSyncLimitDiagnostic.Limit, uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        lock.withLock {
+            if let previous = lastRecorded[limit], uptime - previous < 60 { return false }
+            lastRecorded[limit] = uptime
+            return true
+        }
+    }
+
+    func reset() {
+        lock.withLock { lastRecorded.removeAll() }
     }
 }
 
