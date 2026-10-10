@@ -137,6 +137,15 @@ Sign-out and purge use the same queue, invalidate older publications, and hide
 pending removals from auto-connect. Turning sync off cancels queued publication;
 an already executing Security call cannot be interrupted.
 
+IPTV catalogue teardown can reach SQLite WAL checkpoint writes even without an
+explicit save. If the final provider reference is released on the main thread,
+the catalogue transfers its connection and cached statements to a serial utility
+queue for finalization and close. Non-main-thread teardown remains synchronous.
+Opening a connection installs the existing busy timeout before WAL/schema
+pragmas, so an immediate reopen tolerates a previous connection's checkpoint.
+Committed imports are unchanged, and closing still rolls back unfinished work;
+do not disable journaling or skip closing to avoid a teardown hang.
+
 Live TV portable journal commits keep consent checks and authoritative local-store
 changes on the main actor, then await atomic file writes on a worker. The journal
 revision is fenced until completion, and observation receipts are written after
