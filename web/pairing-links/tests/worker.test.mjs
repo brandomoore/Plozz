@@ -5,6 +5,30 @@ import test from "node:test";
 const source = await readFile(new URL("../src/worker.js", import.meta.url), "utf8");
 const { default: worker } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 
+test("Discord shortlinks redirect to the fixed invite without forwarding query parameters", async () => {
+  for (const path of ["/discord", "/discord/", "/discord?utm_source=website", "/discord/?next=https://example.com"]) {
+    for (const method of ["GET", "HEAD"]) {
+      const response = await worker.fetch(new Request(`https://plozz.app${path}`, { method }));
+      assert.equal(response.status, 302);
+      assert.equal(response.headers.get("location"), "https://discord.gg/YkXnmB8rcF");
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+      assert.equal(await response.text(), "");
+    }
+  }
+});
+
+test("Discord route wildcard leaves similarly prefixed pages with the origin", async (t) => {
+  const originResponse = new Response("Origin content");
+  const origin = t.mock.method(globalThis, "fetch", async () => originResponse);
+  for (const path of ["/discord-help", "/discord/guide?source=website"]) {
+    const request = new Request(`https://plozz.app${path}`);
+    assert.equal(await worker.fetch(request), originResponse);
+    assert.equal(origin.mock.calls.at(-1).arguments[0], request);
+  }
+  assert.equal(origin.mock.callCount(), 2);
+});
+
 test("AASA retains pairing and verifies native HTTPS authentication", async () => {
   const response = await worker.fetch(new Request("https://plozz.app/.well-known/apple-app-site-association"));
   const aasa = await response.json();
