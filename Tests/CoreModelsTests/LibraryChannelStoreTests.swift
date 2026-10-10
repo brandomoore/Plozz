@@ -40,6 +40,21 @@ final class LibraryChannelStoreTests: XCTestCase {
         XCTAssertTrue(try store.load().isEmpty)
     }
 
+    func testMutationRevisionIsSharedAcrossInstancesButScopedToNamespace() throws {
+        let secure = LibraryChannelSecureFixture()
+        let reader = LibraryChannelDefinitionStore(secureStore: secure, namespace: "profile")
+        let writer = LibraryChannelDefinitionStore(secureStore: secure, namespace: "profile")
+        let other = LibraryChannelDefinitionStore(secureStore: secure, namespace: "other")
+        let previous = try XCTUnwrap(reader.changeRevision)
+        let otherRevision = other.changeRevision
+        secure.failReads()
+        XCTAssertEqual(reader.changeRevision, previous, "The revision fence itself must never read Keychain.")
+        XCTAssertThrowsError(try writer.save([definition()]))
+        XCTAssertNotEqual(reader.changeRevision, previous, "Failed/in-flight writes invalidate suspended reads too.")
+        XCTAssertEqual(reader.changeRevision, writer.changeRevision)
+        XCTAssertEqual(other.changeRevision, otherRevision)
+    }
+
     func testCachedDefinitionReadStillChecksDurableChangesCorruptionAndRemoval() throws {
         let secure = LibraryChannelSecureFixture()
         let reader = LibraryChannelDefinitionStore(secureStore: secure, namespace: "profile")

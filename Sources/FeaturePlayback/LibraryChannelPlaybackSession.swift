@@ -25,6 +25,7 @@ public enum LibraryChannelHistoryReporting: Sendable {
 
 /// VOD decoder with broadcast scheduling, deliberately not PlayerViewModel:
 /// no ordinary resume/progress reporting, automatic next episode or teardown scrobble.
+/// Synchronous callbacks must be I/O-free when an asynchronous durable validator is supplied.
 @MainActor
 @Observable
 public final class LibraryChannelPlaybackSession {
@@ -42,6 +43,7 @@ public final class LibraryChannelPlaybackSession {
     @ObservationIgnored private let schedule: @MainActor @Sendable () -> LibraryChannelSchedule?
     @ObservationIgnored private let provider: @MainActor @Sendable (LibraryChannelItem) -> (any LibraryChannelPlaybackProviding)?
     @ObservationIgnored private let authorization: @MainActor @Sendable () -> String?
+    @ObservationIgnored private let validateAuthorization: (@MainActor @Sendable () async -> String?)?
     @ObservationIgnored private let historyAuthorization: @MainActor @Sendable () -> UUID?
     @ObservationIgnored private let historyReporting: LibraryChannelHistoryReporting
     @ObservationIgnored private let clock: @MainActor @Sendable () -> Date
@@ -49,6 +51,8 @@ public final class LibraryChannelPlaybackSession {
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private var timerID: UUID?
+    @ObservationIgnored private var authorizationTask: Task<Void, Never>?
+    @ObservationIgnored private var authorizationTaskID: UUID?
     @ObservationIgnored private var historyTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var request: PlaybackRequest?
     @ObservationIgnored private var generation = UUID()
@@ -73,6 +77,7 @@ public final class LibraryChannelPlaybackSession {
         schedule: @escaping @MainActor @Sendable () -> LibraryChannelSchedule?,
         provider: @escaping @MainActor @Sendable (LibraryChannelItem) -> (any LibraryChannelPlaybackProviding)?,
         authorization: @escaping @MainActor @Sendable () -> String?,
+        validateAuthorization: (@MainActor @Sendable () async -> String?)? = nil,
         historyAuthorization: @escaping @MainActor @Sendable () -> UUID?,
         scrobbler: any TraktScrobbling,
         onCompleted: @escaping @MainActor @Sendable (LibraryChannelItem, MediaItem, UUID) async -> Void,
@@ -81,7 +86,8 @@ public final class LibraryChannelPlaybackSession {
     ) {
         self.init(
             channelID: channelID, engine: engine, schedule: schedule, provider: provider,
-            authorization: authorization, historyAuthorization: historyAuthorization,
+            authorization: authorization, validateAuthorization: validateAuthorization,
+            historyAuthorization: historyAuthorization,
             historyReporting: .sourceAndTrakt(scrobbler: scrobbler, onCompleted: onCompleted),
             clock: clock, uptime: uptime
         )
@@ -92,6 +98,7 @@ public final class LibraryChannelPlaybackSession {
         schedule: @escaping @MainActor @Sendable () -> LibraryChannelSchedule?,
         provider: @escaping @MainActor @Sendable (LibraryChannelItem) -> (any LibraryChannelPlaybackProviding)?,
         authorization: @escaping @MainActor @Sendable () -> String?,
+        validateAuthorization: (@MainActor @Sendable () async -> String?)? = nil,
         historyAuthorization: @escaping @MainActor @Sendable () -> UUID?,
         historyReporting: LibraryChannelHistoryReporting,
         clock: @escaping @MainActor @Sendable () -> Date = { Date() },
@@ -102,6 +109,7 @@ public final class LibraryChannelPlaybackSession {
         self.schedule = schedule
         self.provider = provider
         self.authorization = authorization
+        self.validateAuthorization = validateAuthorization
         self.historyAuthorization = historyAuthorization
         self.historyReporting = historyReporting
         self.clock = clock
@@ -111,6 +119,7 @@ public final class LibraryChannelPlaybackSession {
     deinit {
         task?.cancel()
         timer?.cancel()
+        authorizationTask?.cancel()
         for task in historyTasks.values { task.cancel() }
     }
 
@@ -141,9 +150,9 @@ public final class LibraryChannelPlaybackSession {
     /// The source remains valid and its timer will advance at the next immutable
     /// boundary. A live-pane owner must not turn this into whole-source teardown.
     public var recoverableProgrammeIssue: LibraryChannelError? {
-        guard activeAuthorization != nil, authorization() == activeAuthorization,
-              schedule() != nil, let slot = currentSlot, provider(slot.item) != nil,
-              case .unavailable(let error) = state else { return nil }
+        guard case .unavailable(let error) = state,
+              activeAuthorization != nil, authorization() == activeAuthorization,
+              schedule() != nil, let slot = currentSlot, provider(slot.item) != nil else { return nil }
         switch error {
         case .mediaChanged, .incompatiblePlaybackMode, .unableToJoinLive, .playbackFailed, .sourceUnavailable:
             return error
@@ -170,11 +179,23 @@ public final class LibraryChannelPlaybackSession {
                 fail(.sourceUnavailable)
                 throw LibraryChannelError.sourceUnavailable
             }
+            if (state == .playing || (state == .paused && loadingStarted == nil)), engine.status == .ready {
+                let stamp = generation
+                do { try await validate(stamp) }
+                catch is CancellationError { throw CancellationError() }
+                catch {
+                    if stamp != generation { continue }
+                    cancelHistoryTasks()
+                    stop()
+                    fail(.authorizationChanged)
+                    throw error
+                }
+                // Validation suspends; a pause, boundary or source replacement may have intervened.
+                guard (state == .playing || (state == .paused && loadingStarted == nil)),
+                      engine.status == .ready else { continue }
+                return
+            }
             switch state {
-            case .playing where engine.status == .ready:
-                return
-            case .paused where loadingStarted == nil && engine.status == .ready:
-                return
             case .unavailable(let error):
                 throw error
             case .idle:
@@ -237,8 +258,18 @@ public final class LibraryChannelPlaybackSession {
         intendedPause = false
         coverage.discontinuity()
         if case .paused = state, (currentSlot?.end ?? .distantPast) > cursor, engine.status == .ready {
-            engine.play()
-            state = .playing
+            if validateAuthorization != nil {
+                let stamp = generation
+                task = Task { @MainActor [weak self] in
+                    guard let self, await self.validateOrStop(stamp), !self.intendedPause,
+                          self.state == .paused, self.engine.status == .ready else { return }
+                    self.engine.play()
+                    self.state = .playing
+                }
+            } else {
+                engine.play()
+                state = .playing
+            }
         } else {
             prepare(at: cursor)
         }
@@ -276,6 +307,9 @@ public final class LibraryChannelPlaybackSession {
         timer?.cancel()
         timer = nil
         timerID = nil
+        authorizationTask?.cancel()
+        authorizationTask = nil
+        authorizationTaskID = nil
         loadingStarted = nil
         pendingReconciliation = false
         intendedPause = false
@@ -319,6 +353,26 @@ public final class LibraryChannelPlaybackSession {
 
     /// Internal for deterministic clock/engine fixtures.
     func tick() {
+        guard state != .idle else { return }
+        guard validateAuthorization != nil else { tickValidated(); return }
+        guard authorizationTask == nil else { return }
+        let stamp = generation
+        let id = UUID()
+        authorizationTaskID = id
+        authorizationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.authorizationTaskID == id {
+                    self.authorizationTask = nil
+                    self.authorizationTaskID = nil
+                }
+            }
+            guard await self.validateOrStop(stamp) else { return }
+            self.tickValidated()
+        }
+    }
+
+    private func tickValidated() {
         guard state != .idle else { return }
         guard activeAuthorization != nil, authorization() == activeAuthorization else {
             cancelHistoryTasks()
@@ -410,7 +464,7 @@ public final class LibraryChannelPlaybackSession {
 
     private func load(at requestedDate: Date, stamp: UUID) async {
         do {
-            try check(stamp)
+            try await validate(stamp)
             guard requestedDate >= clock().addingTimeInterval(-86_400) else { throw LibraryChannelError.historyExpired }
             guard let schedule = schedule() else { throw LibraryChannelError.snapshotUnavailable }
             try check(stamp)
@@ -422,9 +476,9 @@ public final class LibraryChannelPlaybackSession {
             engine.onFailure = nil
             engine.stop(preserveDisplayMode: true)
             await engine.drainTransport()
-            try check(stamp)
+            try await validate(stamp)
             var resolved = try await provider.libraryChannelPlayback(for: slot.item)
-            try check(stamp)
+            try await validate(stamp)
             guard self.provider(slot.item) != nil else { throw LibraryChannelError.sourceUnavailable }
             guard !resolved.isTranscoding, resolved.deliveryMode == .directPlay else {
                 throw LibraryChannelError.incompatiblePlaybackMode
@@ -455,7 +509,7 @@ public final class LibraryChannelPlaybackSession {
                 self.fail(Self.playbackIssue(error))
             }
             await engine.load(request: resolved, startPosition: resolved.startPosition)
-            try check(stamp)
+            try await validate(stamp)
             HandoffDiagnostics.emit(
                 "LIBRARY_CHANNEL event=loaded engineReady=\(engine.status == .ready)"
                     + " positionReady=\(engine.isPlaybackPositionReady)"
@@ -495,11 +549,7 @@ public final class LibraryChannelPlaybackSession {
                     self.coverage.discontinuity()
                     await self.engine.seek(to: target, kind: .exact)
                     guard !Task.isCancelled, self.generation == stamp else { return }
-                    guard self.authorization() == self.activeAuthorization else {
-                        self.stop()
-                        self.fail(.authorizationChanged)
-                        return
-                    }
+                    guard await self.validateOrStop(stamp) else { return }
                     if case .unavailable = self.state { return }
                     guard self.engine.isPlaybackPositionReady else {
                         self.waitForPlaybackPosition()
@@ -529,11 +579,7 @@ public final class LibraryChannelPlaybackSession {
                     )
                     await self.engine.seek(to: desired, kind: .exact)
                     guard !Task.isCancelled, self.generation == stamp else { return }
-                    guard self.authorization() == self.activeAuthorization else {
-                        self.stop()
-                        self.fail(.authorizationChanged)
-                        return
-                    }
+                    guard await self.validateOrStop(stamp) else { return }
                     if !self.isDelayed, self.clock() >= slot.end { self.prepare(at: self.clock()); return }
                     guard self.engine.isPlaybackPositionReady else {
                         self.waitForPlaybackPosition()
@@ -599,6 +645,37 @@ public final class LibraryChannelPlaybackSession {
               authorization() == activeAuthorization else { throw LibraryChannelError.authorizationChanged }
     }
 
+    private func validate(_ stamp: UUID) async throws {
+        try check(stamp)
+        try await validateAuthority(activeAuthorization)
+        try check(stamp)
+    }
+
+    private func validateAuthority(_ expected: String?) async throws {
+        try Task.checkCancellation()
+        guard expected != nil, authorization() == expected else { throw LibraryChannelError.authorizationChanged }
+        if let validateAuthorization {
+            let validated = await validateAuthorization()
+            try Task.checkCancellation()
+            guard validated != nil, validated == expected, authorization() == expected else {
+                throw LibraryChannelError.authorizationChanged
+            }
+        }
+    }
+
+    private func validateOrStop(_ stamp: UUID) async -> Bool {
+        do {
+            try await validate(stamp)
+            return true
+        } catch {
+            guard !Task.isCancelled, generation == stamp else { return false }
+            cancelHistoryTasks()
+            stop()
+            fail(.authorizationChanged)
+            return false
+        }
+    }
+
     private func sampleHistory() {
         let currentToken = historyAuthorization()
         if currentToken != historyToken {
@@ -628,14 +705,18 @@ public final class LibraryChannelPlaybackSession {
             guard !Task.isCancelled, self.historyAuthorization() == token,
                   expectedAuthorization != nil, self.authorization() == expectedAuthorization else { return }
             do {
+                try await self.validateAuthority(expectedAuthorization)
+                guard self.historyAuthorization() == token else { return }
                 switch self.historyReporting {
                 case .externalCompletion(let sink):
                     try await sink(scheduledItem, request.item, token)
                 case .sourceAndTrakt(let scrobbler, let onCompleted):
                     try await provider.recordLibraryChannelCompletion(itemID: request.item.id)
+                    try await self.validateAuthority(expectedAuthorization)
                     guard !Task.isCancelled, self.historyAuthorization() == token,
                           self.authorization() == expectedAuthorization else { return }
                     await scrobbler.scrobble(item: request.item, progress: percent, event: .stop)
+                    try await self.validateAuthority(expectedAuthorization)
                     guard !Task.isCancelled, self.historyAuthorization() == token,
                           self.authorization() == expectedAuthorization else { return }
                     await onCompleted(scheduledItem, request.item, token)

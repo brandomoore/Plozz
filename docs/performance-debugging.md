@@ -137,6 +137,17 @@ Sign-out and purge use the same queue, invalidate older publications, and hide
 pending removals from auto-connect. Turning sync off cancels queued publication;
 an already executing Security call cannot be interrupted.
 
+Library-channel playback keeps display eligibility separate from durable
+authorization. Focus, title and status getters use only the current in-memory
+profile/account/source state. The runtime supplies a separate asynchronous
+validator for initial load, provider/decoder/seek completion, resume, periodic
+reconciliation and history commits; its definition-store read runs off the main
+thread. A slow periodic check is coalesced, not queued again on every UI tick.
+Storage errors deny access rather than reuse a cached grant. Generation checks
+discard superseded results, and an I/O-free, namespace-scoped store revision
+fences cross-instance writes while a read is suspended. Candidate IDs and
+rendered titles must never be treated as permission to execute playback.
+
 IPTV catalogue teardown can reach SQLite WAL checkpoint writes even without an
 explicit save. If the final provider reference is released on the main thread,
 the catalogue transfers its connection and cached statements to a serial utility

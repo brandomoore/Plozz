@@ -201,6 +201,25 @@ final class LibraryLiveChannelEngineTests: XCTestCase {
         await fixture.adapter.drainTransport()
     }
 
+    func testSupersededAsyncLibraryFactoryCannotInstallOrTuneItsSession() async throws {
+        let fixture = try UniversalLiveFixture()
+        let gate = UniversalLiveGate()
+        defer { gate.open() }
+        fixture.factoryHook = { await gate.wait() }
+        let old = Task { try await fixture.adapter.loadChannel(fixture.inputA) }
+        await settle { gate.isWaiting }
+        let next = Task { try await fixture.adapter.loadChannel(streamB) }
+        await settle { fixture.adapter.currentInput == streamB }
+        gate.open()
+        await assertCancelled(old)
+        try await next.value
+        XCTAssertNil(fixture.adapter.librarySession)
+        XCTAssertTrue(fixture.resolvedItems.isEmpty)
+        XCTAssertEqual(fixture.decoder.loadedSources, ["stream:b.m3u8"])
+        fixture.adapter.stop()
+        await fixture.adapter.drainTransport()
+    }
+
     func testLateStreamLoadAndCallbacksCannotReplaceLibraryInput() async throws {
         let fixture = try UniversalLiveFixture()
         let load = UniversalLiveGate()
@@ -792,6 +811,7 @@ private final class UniversalLiveFixture {
     var unavailableItems: Set<String> = []
     var factoryEngines: [ObjectIdentifier] = []
     var factoryAuthorizations: [String] = []
+    var factoryHook: (@MainActor () async -> Void)?
     var resolvedItems: [String] = []
     var ordinaryReports = 0
     var completions = 0
@@ -801,6 +821,7 @@ private final class UniversalLiveFixture {
         factoryAuthorizations.append(expectedAuthorization)
         guard expectedAuthorization == authorization else { throw LibraryChannelError.authorizationChanged }
         guard let schedule = schedules[id] else { throw LibraryChannelError.snapshotUnavailable }
+        await factoryHook?()
         factoryEngines.append(ObjectIdentifier(engine))
         let provider = UniversalLiveProvider(state: self)
         return LibraryChannelPlaybackSession(

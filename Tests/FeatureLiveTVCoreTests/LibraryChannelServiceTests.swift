@@ -323,6 +323,8 @@ final class LibraryChannelServiceTests: XCTestCase {
             XCTAssertNil(context.authorizationID, "\(change)")
             XCTAssertNil(context.schedule(), "\(change)")
             XCTAssertThrowsError(try service.playbackContext(catalogID: created.catalogID))
+            let validated = await context.validateAuthorization()
+            XCTAssertNil(validated, "\(change)")
         }
     }
 
@@ -340,6 +342,74 @@ final class LibraryChannelServiceTests: XCTestCase {
         XCTAssertNil(context.authorizationID)
         XCTAssertNil(context.schedule())
         XCTAssertEqual(service.definitions, [created])
+        let validated = await context.validateAuthorization()
+        XCTAssertNil(validated)
+    }
+
+    func testPlaybackPresentationEligibilityNeverReadsDurableStorage() async throws {
+        let store = LibraryDefinitionMemory()
+        let (service, _, _) = try await makeService(items: [episode("e")], store: store)
+        let preview = try await service.preview(
+            recipe: LibraryChannelRecipe(name: "Show", libraries: [library], includesMovies: false), at: now
+        )
+        let created = try await service.publish(preview, at: now)
+        store.setReadProbe { XCTFail("Presentation must not read durable authority.") }
+        defer { store.setReadProbe(nil) }
+        let context = try service.playbackCandidate(catalogID: created.catalogID)
+        for _ in 0..<100 {
+            XCTAssertNotNil(context.eligibilityID)
+            let schedule = try XCTUnwrap(context.eligibleSchedule())
+            let item = try schedule.slot(at: now).item
+            XCTAssertTrue(service.isAuthorized(item))
+            XCTAssertNil(context.eligibleProvider(for: item), "This catalogue-only fixture has no playback provider.")
+        }
+        service.setContexts([])
+        XCTAssertNil(context.eligibilityID)
+        XCTAssertNil(context.eligibleSchedule())
+    }
+
+    func testPlaybackAuthorityReadDoesNotBlockTheMainThread() async throws {
+        let store = LibraryDefinitionMemory()
+        let (service, _, _) = try await makeService(items: [episode("e")], store: store)
+        let preview = try await service.preview(
+            recipe: LibraryChannelRecipe(name: "Show", libraries: [library], includesMovies: false), at: now
+        )
+        let created = try await service.publish(preview, at: now)
+        let expected = try XCTUnwrap(service.playbackAuthorizationID(channelID: created.id))
+        store.setReadProbe {
+            XCTAssertFalse(Thread.isMainThread, "Durable playback authority must not reach Keychain on the UI thread.")
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        let result = await service.validatePlaybackAuthorization(channelID: created.id)
+        XCTAssertEqual(result, expected)
+        store.setReadProbe(nil)
+    }
+
+    func testSuspendedAuthorityReadCannotOutliveRevocationOrCancellation() async throws {
+        for mutation in 0..<3 {
+            let store = LibraryDefinitionMemory()
+            let (service, _, _) = try await makeService(items: [episode("e")], store: store)
+            let preview = try await service.preview(
+                recipe: LibraryChannelRecipe(name: "Show", libraries: [library], includesMovies: false), at: now
+            )
+            let created = try await service.publish(preview, at: now)
+            let read = expectation(description: "Authority captured")
+            let gate = DispatchSemaphore(value: 0)
+            store.afterNextRead {
+                read.fulfill()
+                XCTAssertEqual(gate.wait(timeout: .now() + 5), .success)
+            }
+            let validation = Task { await service.validatePlaybackAuthorization(channelID: created.id) }
+            await fulfillment(of: [read], timeout: 2)
+            switch mutation {
+            case 0: service.setContexts([])
+            case 1: try store.save([])
+            default: validation.cancel()
+            }
+            gate.signal()
+            let result = await validation.value
+            XCTAssertNil(result)
+        }
     }
 
     func testNewDurableRecipeAndRevisionDoNotRevokeTheHeldAuthorizedSchedule() async throws {
@@ -364,6 +434,8 @@ final class LibraryChannelServiceTests: XCTestCase {
         XCTAssertEqual(context.schedule()?.definition, created)
         XCTAssertEqual(service.definitions, [created])
         XCTAssertEqual(try store.load(), [remote])
+        let validated = await context.validateAuthorization()
+        XCTAssertEqual(validated, expected)
     }
 
     func testTwoEditorsCannotOverwriteNewRevision() async throws {
@@ -526,20 +598,35 @@ final class LibraryDefinitionMemory: LibraryChannelDefinitionStoring, @unchecked
     private var values: [LibraryChannelDefinition] = []
     private var readFailure: LibraryChannelError?
     private var writeFailure: LibraryChannelError?
+    private var readProbe: (@Sendable () -> Void)?
+    private var afterRead: (@Sendable () -> Void)?
+    private var revision = UUID()
+    var changeRevision: UUID? { lock.withLock { revision } }
     func load() throws -> [LibraryChannelDefinition] {
-        try lock.withLock {
+        lock.withLock { readProbe }?()
+        let result = try lock.withLock {
             if let readFailure { throw readFailure }
             return values
         }
+        let hook = lock.withLock {
+            let hook = afterRead
+            afterRead = nil
+            return hook
+        }
+        hook?()
+        return result
     }
     func save(_ definitions: [LibraryChannelDefinition]) throws {
         try lock.withLock {
             if let writeFailure { throw writeFailure }
             values = definitions
+            revision = UUID()
         }
     }
     func setReadFailure(_ error: LibraryChannelError?) { lock.withLock { readFailure = error } }
     func setWriteFailure(_ error: LibraryChannelError?) { lock.withLock { writeFailure = error } }
+    func setReadProbe(_ probe: (@Sendable () -> Void)?) { lock.withLock { readProbe = probe } }
+    func afterNextRead(_ hook: @escaping @Sendable () -> Void) { lock.withLock { afterRead = hook } }
 }
 
 private enum LibraryStoredAuthorityChange: CaseIterable {
