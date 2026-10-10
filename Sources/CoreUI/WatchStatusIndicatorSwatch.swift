@@ -106,7 +106,7 @@ private struct WatchIndicatorMini: View {
                 )
             )
             // Neutral grey stand-in art (see `tileArt`); no saturation trim needed
-            // since it's already grey, so the white marks and progress stay the focus.
+            // since it's already grey, so the watch marks and progress stay the focus.
             .overlay(alignment: .topTrailing) { cornerMark(for: state, tileWidth: width) }
             .overlay(alignment: .bottom) { progressBar(for: state, tileWidth: width, tileHeight: height) }
             .overlay(

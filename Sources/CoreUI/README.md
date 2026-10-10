@@ -8,16 +8,16 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 - **Unwatched episode counts** — a default-on profile preference replaces the
   top-right watch-status mark with a number on series/season cards.
-  Watched mode uses an inset pearl count tile and a matching white completed
-  circle with a dark check. Unwatched mode uses a white triangle for unnumbered
-  titles and a flush white count tile with matching outer and bottom-left
-  curves. Fine edges and soft shadows keep both legible on pale artwork; only
+  Watched mode uses an inset charcoal count tile and a matching charcoal completed
+  circle with a white check. Unwatched mode uses a charcoal triangle for unnumbered
+  titles and a flush charcoal count tile with matching outer and bottom-left
+  curves. Subtle light edges and soft shadows separate the marks from artwork; only
   the artwork clips the curved tile's shadow, never the tile's own bounds.
   Both count styles use bold system digits. At standard TV size the curved
-  tile has 12pt side padding and is 52pt tall; Pearl spacing is unchanged.
+  tile has 12pt side padding and is 52pt tall; floating-tile spacing is unchanged.
   Floating marks have density-scaled clearance (16pt at standard TV size).
   Touch sizes and artwork radii remain proportionate. Episode cards and the
-  watch-indicator Settings swatches reuse the same white check and flag.
+  watch-indicator Settings swatches reuse the same charcoal shapes and white glyphs.
   Positive exact library counts take priority; unknown counts retain the
   existing watched/unwatched style. Completed containers retain its completion
   behavior. Movies, episodes, ownership/request marks and spoiler protection

@@ -97,7 +97,7 @@ public struct MediaCardPlaybackIndicators: View {
     }
 
     /// Only the library mark needs the TOP of the artwork darkened. The watched
-    /// badge and the unwatched flag are pearl-white shapes that carry their
+    /// badge and the unwatched flag are charcoal shapes that carry their
     /// own contrast; the library mark is a bare glyph and the scrim is the entire
     /// reason it stays legible over pale artwork.
     private var hasTopChrome: Bool {
@@ -245,8 +245,9 @@ public struct MediaCardPlaybackIndicators: View {
 }
 
 enum MediaWatchIndicatorStyle {
-    static let fill = Color.white.opacity(0.88)
-    static let foreground = Color(white: 0.13)
+    static let fill = Color(white: 0.08).opacity(0.88)
+    static let foreground = Color.white
+    static let edge = Color.white.opacity(0.18)
 
     static func floatingInset(for size: CGFloat) -> CGFloat {
         16 * size / PlozzTheme.Metrics.watchedBadgeSize
@@ -263,7 +264,7 @@ struct MediaWatchedBadge: View {
             .foregroundStyle(MediaWatchIndicatorStyle.foreground)
             .frame(width: size, height: size)
             .background(Circle().fill(MediaWatchIndicatorStyle.fill))
-            .overlay(Circle().stroke(.white.opacity(0.32), lineWidth: scale))
+            .overlay(Circle().stroke(MediaWatchIndicatorStyle.edge, lineWidth: scale))
             .shadow(color: .black.opacity(0.2), radius: 3 * scale, y: scale)
     }
 }
@@ -277,7 +278,7 @@ struct MediaUnwatchedCorner: View {
             .fill(MediaWatchIndicatorStyle.fill)
             .shadow(color: .black.opacity(0.28), radius: 8 * scale)
             .overlay {
-                TopTrailingCornerFlagEdge().stroke(.black.opacity(0.3), lineWidth: scale)
+                TopTrailingCornerFlagEdge().stroke(MediaWatchIndicatorStyle.edge, lineWidth: scale)
             }
             .frame(width: size, height: size)
     }
@@ -308,7 +309,7 @@ struct MediaEpisodeCountBadge: View {
                 .background(RoundedRectangle(cornerRadius: 11 * scale).fill(MediaWatchIndicatorStyle.fill))
                 .overlay {
                     RoundedRectangle(cornerRadius: 11 * scale)
-                        .stroke(.white.opacity(0.32), lineWidth: scale)
+                        .stroke(MediaWatchIndicatorStyle.edge, lineWidth: scale)
                 }
                 .shadow(color: .black.opacity(0.2), radius: 3 * scale, y: scale)
         case .unwatched:
@@ -328,7 +329,7 @@ struct MediaEpisodeCountBadge: View {
                     .shadow(color: .black.opacity(0.28), radius: 8 * scale)
                     .overlay {
                         TopTrailingCurvedCornerEdge(radius: radius)
-                            .stroke(.black.opacity(0.3), lineWidth: scale)
+                            .stroke(MediaWatchIndicatorStyle.edge, lineWidth: scale)
                     }
                 }
         }

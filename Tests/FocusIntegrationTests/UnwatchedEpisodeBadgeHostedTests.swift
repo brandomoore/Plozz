@@ -46,7 +46,7 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
             "Unknown counts preserve the existing indicator")
     }
 
-    func testWhiteDesignsPreserveMovieFallbacksAndUnclippedCurvedShadow() throws {
+    func testDarkDesignsPreserveMovieFallbacksAndUnclippedCurvedShadow() throws {
         let show = MediaItem(id: "show", title: "Show", kind: .series, unwatchedEpisodeCount: 21)
         let unwatched = MediaItem(id: "movie", title: "Movie", kind: .movie, unwatchedEpisodeCount: 21)
         let watched = MediaItem(id: "movie", title: "Movie", kind: .movie, isPlayed: true)
@@ -59,7 +59,7 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
             let image = try render(marked, enabled: true, scheme: .dark, indicator: indicator)
             let sample = try pixel(image, at: indicator == .watched
                                    ? CGPoint(x: 203, y: 22) : CGPoint(x: 230, y: 5))
-            XCTAssertGreaterThan(sample[0], 210)
+            XCTAssertLessThan(sample[0], 80)
             XCTAssertEqual(Int(sample[0]), Int(sample[1]), accuracy: 1)
             XCTAssertEqual(Int(sample[1]), Int(sample[2]), accuracy: 1, "Marks must be neutral, not blue")
         }
@@ -70,23 +70,23 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
         XCTAssertLessThan(try pixel(curved, at: CGPoint(x: 226, y: 55))[0], 250,
                           "The shadow must extend below the tile's 52pt boundary")
         XCTAssertEqual(try pixel(curved, at: CGPoint(x: 145, y: 75))[0], 255)
-        let pearl = try render(show, enabled: true, scheme: .dark, indicator: .watched, background: .white)
-        XCTAssertEqual(try pixel(pearl, at: CGPoint(x: 230, y: 8))[0], 255,
-                       "The floating Pearl tile must retain its top/right clearance")
-        XCTAssertNotEqual(curved.pngData(), pearl.pngData())
+        let floating = try render(show, enabled: true, scheme: .dark, indicator: .watched, background: .white)
+        XCTAssertEqual(try pixel(floating, at: CGPoint(x: 230, y: 8))[0], 255,
+                       "The floating tile must retain its top/right clearance")
+        XCTAssertNotEqual(curved.pngData(), floating.pngData())
     }
 
     func testCurvedCountPaddingNarrowsAndShortensTheTile() throws {
         let cases: [(Int, CGFloat)] = [(1, 48), (21, 56), (12345, 104)]
         for (count, width) in cases {
             let item = MediaItem(id: "show", title: "Show", kind: .series, unwatchedEpisodeCount: count)
-            let image = try render(item, enabled: true, scheme: .dark, indicator: .unwatched)
+            let image = try render(item, enabled: true, scheme: .dark, indicator: .unwatched, background: .white)
             let left = 240 - width
-            XCTAssertLessThan(try pixel(image, at: CGPoint(x: left - 4, y: 8))[0], 180,
+            XCTAssertGreaterThan(try pixel(image, at: CGPoint(x: left - 4, y: 8))[0], 180,
                               "Reducing padding must narrow the actual tile for \(count), not just its text container")
-            XCTAssertGreaterThan(try pixel(image, at: CGPoint(x: left + 3, y: 8))[0], 210)
-            XCTAssertGreaterThan(try pixel(image, at: CGPoint(x: 226, y: 51))[0], 210)
-            XCTAssertLessThan(try pixel(image, at: CGPoint(x: 226, y: 53))[0], 180,
+            XCTAssertLessThan(try pixel(image, at: CGPoint(x: left + 3, y: 8))[0], 110)
+            XCTAssertLessThan(try pixel(image, at: CGPoint(x: 226, y: 51))[0], 110)
+            XCTAssertGreaterThan(try pixel(image, at: CGPoint(x: 226, y: 53))[0], 180,
                               "Removing 2pt above and below the number must reduce the tile height to 52pt")
         }
     }
@@ -215,7 +215,7 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
                 XCTAssertTrue(poster.isFocused)
                 try await Task.sleep(for: .milliseconds(500))
                 let image = snapshot(window)
-                attach(image, name: "native-white-indicators-\(indicator)-\(poster === posters[0])")
+                attach(image, name: "native-dark-indicators-\(indicator)-\(poster === posters[0])")
                 let artworkFrame = try XCTUnwrap(
                     NativeFocusProjection.artworkFrame(of: posters[0].imageView, in: window))
                 let region = CGRect(x: artworkFrame.minX - 8, y: artworkFrame.minY - 8,
