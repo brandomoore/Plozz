@@ -222,6 +222,25 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   clearance in its 18pt gutters. Focused read-only cards and card buttons draw
   above their peers. This policy does not change ordinary media-card growth,
   custom focus styles, or touch layouts.
+- **Native artwork focus comparison** — launch the separate tvOS focus host
+  with `--native-artwork-focus-comparison`. It compares the current poster,
+  a single-image poster, a content-masked poster with separate overlays, and a
+  plain native card. The goal is to preserve outer enlargement and the native
+  highlight without extra zoom/cropping inside the artwork, not disable growth.
+  The single-image case prepares rounded transparent artwork and overlays once,
+  then enables `masksFocusEffectToContents`; no custom focus transform is used.
+  On tvOS 26.5 it preserves the composition and overlay insets while enlarging
+  400×225 artwork to 440×247.5. Content masking alone preserves the image but
+  separate native overlays still float at a different depth.
+  `NativeArtworkFocusComparisonHostedTests` checks real focus, enlargement,
+  baked-in image landmarks, overlay-marker pixels, visible highlight, and action
+  delivery. Run it with
+  `tools/run-focus-tests.sh -only-testing:PlozzFocusTests/NativeArtworkFocusComparisonHostedTests`.
+  This fixture does not change production style. Its composited chrome is
+  deliberately static: live content updates and image replacement during focus
+  need separate coverage before adoption. Alpha masking also has a documented
+  rendering cost; these geometry checks do not establish physical frame pacing
+  or full Siri Remote motion behavior.
 - **Continue Watching logo contrast** — logo-overlay cards use a 40% base
   artwork dim, reduced for dark artwork and increased by up to 25 percentage
   points when the logo blends into its background (65% maximum). The dim sits

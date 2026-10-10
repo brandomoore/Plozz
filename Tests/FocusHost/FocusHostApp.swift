@@ -52,6 +52,8 @@ struct FocusHostApp: App {
                 NavigationRailFixture { Color.clear }
             } else if ProcessInfo.processInfo.arguments.contains("--production-home-fixture") {
                 ProductionHomeFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--native-artwork-focus-comparison") {
+                NativeArtworkFocusComparisonScreen()
             } else if ProcessInfo.processInfo.arguments.contains("--native-media-cell-comparison") {
                 NativeMediaCellComparisonScreen()
             } else if ProcessInfo.processInfo.arguments.contains("--native-poster-comparison") {
