@@ -15,13 +15,13 @@ import Foundation
 /// collapsed icon rail that expands over stationary content, lists the viewer's
 /// libraries as first-class destinations, and disappears entirely on a detail page.
 public enum NavigationStyle: String, CaseIterable, Identifiable, Codable, Sendable {
-    /// The native collapsible left sidebar (`.sidebarAdaptable`): tabs collapse
-    /// to a rail and expand on left-focus, matching the system TV app.
-    case sidebar
     /// Plozz's custom collapsible left rail. Collapsed to icons until focus enters
     /// it, then expands over stationary content; libraries are top-level
     /// destinations and Settings is pinned to the bottom.
     case rail
+    /// The native collapsible left sidebar (`.sidebarAdaptable`): tabs collapse
+    /// to a rail and expand on left-focus, matching the system TV app.
+    case sidebar
     /// The classic top tab bar (`.tabBarOnly`): tabs sit in a pill across the
     /// top of every page. This is the app's historical look.
     case tabBar
@@ -96,9 +96,8 @@ public enum NavigationStyle: String, CaseIterable, Identifiable, Codable, Sendab
         }
     }
 
-    /// Default to the native sidebar while Plozz's pinned rail remains available
-    /// as an opt-in in Settings ▸ Appearance ▸ Navigation.
-    public static let `default`: NavigationStyle = .sidebar
+    /// Profiles without a saved choice start with Plozz's pinned sidebar.
+    public static let `default`: NavigationStyle = .rail
 
     /// Persistence key base shared by `MainTabView` (reads the model to choose the
     /// tab style) and Settings (writes it). Per-profile: the default profile reuses

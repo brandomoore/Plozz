@@ -602,7 +602,6 @@ public struct LiveChannelPlayerView: View {
         let fullscreenOwnsSurface: () -> Bool
         let updateSource: () -> Void
         let stopPlayback: () -> Void
-        @Environment(LiveTVPresentationLifecycle.self) private var presentationLifecycle: LiveTVPresentationLifecycle?
 
         func body(content: Content) -> some View {
             content
@@ -621,7 +620,6 @@ public struct LiveChannelPlayerView: View {
                     if !authorized { stopPlayback() }
                 }
                 .onDisappear {
-                    if isActive, isAuthorized, presentationLifecycle?.isRelocating == true { return }
                     // Fullscreen obscures its inline owner without retiring it.
                     guard !isActive || !fullscreenOwnsSurface() else { return }
                     currentModel()?.setVisible(false)

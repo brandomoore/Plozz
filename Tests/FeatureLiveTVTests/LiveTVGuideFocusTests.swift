@@ -214,8 +214,7 @@ final class LiveTVGuideFocusTests: XCTestCase {
     }
 
     func testNativeSidebarKeepsItsRootLiveTVContentAcrossSearchAndPlaybackVisibility() async throws {
-        // The retained fullscreen host requires an active scene. Remote coverage
-        // also verifies Search and destination re-entry through native navigation.
+        // Remote coverage also verifies Search and destination re-entry.
         try await requireNativeFocus()
         let probe = try GuideFocusProbe(section: .channels)
         probe.restoring = false

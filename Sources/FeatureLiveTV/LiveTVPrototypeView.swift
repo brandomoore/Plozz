@@ -131,9 +131,6 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.locale) private var locale
-    #if os(tvOS)
-    @Environment(LiveTVPresentationLifecycle.self) private var presentationLifecycle: LiveTVPresentationLifecycle?
-    #endif
     private let isActive: Bool
     private let profileID: String
     private let allowsPlayback: Bool
@@ -954,9 +951,6 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     }
 
     private func handleDisappearance() {
-        #if os(tvOS)
-        if isActive, isProfileAuthorized(), presentationLifecycle?.isRelocating == true { return }
-        #endif
         let preservesFullscreen = isActive && isProfileAuthorized() && usesNativeFullscreen && preview.isExpanded
         guard !preservesFullscreen, !hasAuthorizedExternalPlayback else { return }
         enrollment.invalidate()
@@ -1365,6 +1359,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         leadingExit: layout.availableSidebarWidth > 0 && categorySidebarCollapsed
                             ? revealCategories : nil
                     )
+                    .disabled(usesNativeFullscreen && controlsActive && !categorySidebarCollapsed)
                 }
             }
         }
@@ -1472,7 +1467,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             tune: { tune($0.channelID, origin: $0) },
             details: { sheet = .program($0) }, openControls: openSearch,
             openSources: { sheet = .sources }, openGuideTime: { sheet = .guideTime },
-            openToolbar: {
+            openToolbar: usesNativeFullscreen && !isSearching && playback.pendingWatchChannelID == nil ? nil : {
                 if playback.pendingWatchChannelID != nil {
                     playback.cancelWatch()
                     return

@@ -82,8 +82,67 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         exerciseNativeSidebar(rtl: false, preview: true)
     }
 
-    func testNativeTopBarReturnsAfterImmersiveGuide() {
+    func testNativeTopBarReturnsAfterGuideBrowsing() {
         exerciseNativeSidebar(rtl: false, topBar: true)
+    }
+
+    func testOneBackFromGuideRevealsNativeMenu() {
+        exerciseDirectNativeMenu(fromCategories: false)
+    }
+
+    func testLeftFromCategoriesRevealsNativeMenu() {
+        exerciseDirectNativeMenu(fromCategories: true)
+    }
+
+    func testOneBackFromGuideRevealsNativeTopBar() {
+        exerciseDirectNativeMenu(fromCategories: false, topBar: true)
+    }
+
+    func testBackFromCategoriesRevealsNativeTopBar() {
+        exerciseDirectNativeMenu(fromCategories: true, topBar: true)
+    }
+
+    func testOneBackFromRTLGuideRevealsNativeMenu() {
+        exerciseDirectNativeMenu(fromCategories: false, rtl: true)
+    }
+
+    func testRightFromRTLCategoriesRevealsNativeMenu() {
+        exerciseDirectNativeMenu(fromCategories: true, rtl: true)
+    }
+
+    private func exerciseDirectNativeMenu(fromCategories: Bool, rtl: Bool = false, topBar: Bool = false) {
+        let app = launch(
+            suite: "PreviewIntroduction.\(UUID().uuidString)", reset: true, rtl: rtl,
+            nativeSidebar: !topBar, nativeTopBar: topBar
+        )
+        defer { app.terminate() }
+        assertFocused(app.buttons["live-tv-preview-enable"])
+        XCUIRemote.shared.press(.select)
+        _ = focusFirstGuideContent(in: app, rtl: rtl)
+        let playbackID = app.staticTexts["preview-playback-session"].label
+        let leading: XCUIRemote.Button = rtl ? .right : .left
+        if fromCategories {
+            XCUIRemote.shared.press(leading)
+            XCUIRemote.shared.press(leading)
+            assertFocused(app.buttons["All categories"])
+        }
+        let menu = topBar ? app.tabBars.firstMatch : app.collectionViews["Sidebar"]
+        for iteration in 0..<3 {
+            XCUIRemote.shared.press(fromCategories && !topBar ? leading : .menu)
+            let visible = NSPredicate { _, _ in
+                self.containsFocus(menu) && !menu.frame.isEmpty
+            }
+            let result = XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: visible, object: nil)], timeout: 5
+            )
+            capture("\(fromCategories && !topBar ? "one-leading" : "one-back")-native-menu-\(iteration)", in: app)
+            XCTAssertEqual(result, .completed, "One press must reveal native navigation, not an embedded Live TV page\n\(app.debugDescription)")
+            XCUIRemote.shared.press(topBar ? .down : (rtl ? .left : .right))
+            if fromCategories { assertFocused(app.buttons["All categories"]) }
+            else { _ = focusFirstGuideContent(in: app, rtl: rtl) }
+            assertNativeNavigationCollapsed(in: app)
+            XCTAssertEqual(app.staticTexts["preview-playback-session"].label, playbackID)
+        }
     }
 
     func testNativeSearchAndDestinationReentry() {
@@ -97,17 +156,20 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         assertFocused(app.buttons["live-tv-preview-enable"])
         XCUIRemote.shared.press(.menu)
         _ = focusFirstGuideContent(in: app)
-        XCUIRemote.shared.press(.menu)
+        XCUIRemote.shared.press(.left)
+        XCUIRemote.shared.press(.left)
+        assertFocused(app.buttons["All categories"])
+        XCUIRemote.shared.press(.up)
+        assertFocused(app.buttons["live-tv-multiview-favorites"])
+        XCUIRemote.shared.press(.up)
         assertFocused(app.buttons["live-tv-search"])
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(app.searchFields.firstMatch.waitForNonExistence(timeout: 5))
         _ = focusFirstGuideContent(in: app)
-        assertNativeNavigationHidden(in: app)
+        assertNativeNavigationCollapsed(in: app)
 
-        XCUIRemote.shared.press(.menu)
-        assertFocused(app.buttons["live-tv-search"])
         XCUIRemote.shared.press(.menu)
         let menu = app.collectionViews["Sidebar"]
         let menuFocused = NSPredicate { _, _ in self.containsFocus(menu) }
@@ -132,7 +194,7 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         if containsFocus(menu) { XCUIRemote.shared.press(.right) }
         _ = focusFirstGuideContent(in: app)
         assertStatus("chosen-off; playback=false", in: app)
-        assertNativeNavigationHidden(in: app)
+        assertNativeNavigationCollapsed(in: app)
         capture("native-search-and-destination-return", in: app)
     }
 
@@ -160,7 +222,7 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         let station = app.buttons["live-tv-channel-channels-1"]
         let appMenu = topBar ? app.tabBars.firstMatch : app.collectionViews["Sidebar"]
         assertCategoriesHidden(in: app)
-        assertNativeNavigationHidden(in: app)
+        assertNativeNavigationCollapsed(in: app)
         var selectedCategory = "All categories"
         for iteration in 0..<3 {
             if iteration > 0 {
@@ -176,8 +238,8 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
             if iteration == 2 { XCUIRemote.shared.press(leading, forDuration: 0.6) }
             else { XCUIRemote.shared.press(leading) }
             assertFocused(app.buttons[selectedCategory])
-            assertBrowseAlignment(in: app, fullHeight: true)
-            assertNativeNavigationHidden(in: app)
+            assertBrowseAlignment(in: app, fullHeight: false)
+            assertNativeNavigationCollapsed(in: app)
             XCTAssertTrue(app.buttons[selectedCategory].isEnabled)
             XCTAssertEqual(app.staticTexts["preview-native-focus-visits"].label, nativeFocusVisits,
                            "Native app navigation must not briefly steal focus before categories settle")
@@ -219,7 +281,7 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(
             for: [XCTNSPredicateExpectation(predicate: menuHidden, object: nil)], timeout: 5
         ), .completed, "Returning to Live TV must hide native navigation again")
-        assertNativeNavigationHidden(in: app)
+        assertNativeNavigationCollapsed(in: app)
         if !app.buttons[selectedCategory].exists {
             _ = focusFirstGuideContent(in: app, rtl: rtl)
             XCUIRemote.shared.press(leading)
@@ -227,12 +289,14 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         }
         assertFocused(app.buttons[selectedCategory])
         XCTAssertTrue(app.buttons[selectedCategory].isSelected)
-        assertBrowseAlignment(in: app, fullHeight: true)
+        assertBrowseAlignment(in: app, fullHeight: false)
         XCTAssertEqual(app.staticTexts["preview-playback-session"].label, playbackID,
                        "Opening and closing native navigation must not replace playback")
     }
 
-    private func assertNativeNavigationHidden(in app: XCUIApplication) {
+    private func assertNativeNavigationCollapsed(in app: XCUIApplication) {
+        XCTAssertFalse(containsFocus(app.collectionViews["Sidebar"]))
+        XCTAssertFalse(containsFocus(app.tabBars.firstMatch))
         do {
             let image = try XCTUnwrap(app.screenshot().image.cgImage)
             let request = VNRecognizeTextRequest()
@@ -240,7 +304,8 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
             request.recognitionLanguages = ["en-US"]
             try VNImageRequestHandler(cgImage: image).perform([request])
             let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-            XCTAssertFalse(text.contains("Live TV"), "The native title must not overlap Live TV content: \(text)")
+            XCTAssertTrue(text.contains { $0.contains("Live TV") },
+                          "Browsing must remain inside the native navigation layout: \(text)")
         } catch {
             XCTFail("Unable to verify native chrome visibility: \(error)")
         }

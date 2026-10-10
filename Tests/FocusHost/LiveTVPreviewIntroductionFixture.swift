@@ -99,7 +99,7 @@ struct LiveTVPreviewIntroductionFixture: View {
     @ViewBuilder
     private func nativeContent(for destination: NavigationRailDestination) -> some View {
         if destination == .liveTV {
-            LiveTVNavigationContainer(isActive: nativeSelection == .liveTV) { liveTV }
+            LiveTVNavigationContainer { liveTV }
         } else {
             Button("Fixture destination") {}
         }

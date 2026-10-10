@@ -8,30 +8,28 @@ import XCTest
 
 @MainActor
 final class LiveTVBrowseMotionHostedTests: XCTestCase {
-    func testPresentationRelocationDoesNotStopAuthorizedActivePlayback() async throws {
+    func testDisappearanceStopsPlaybackUnlessActiveFullscreenOwnsIt() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
-        let lifecycle = LiveTVPresentationLifecycle()
         var stops = 0
         let host = UIHostingController(rootView: AnyView(EmptyView()))
         fixture.window.rootViewController = host
 
-        for (active, authorized, relocating) in [
-            (true, true, true), (true, true, false), (false, true, true), (true, false, true)
+        for (active, fullscreen) in [
+            (true, true), (true, false), (false, true), (false, false)
         ] {
-            lifecycle.isRelocating = relocating
             host.rootView = AnyView(Color.black.modifier(LiveChannelPlayerView.LiveChannelActivityObserver(
-                isActive: active, isAuthorized: authorized, scenePhase: .active, networkBlock: nil,
-                currentModel: { nil }, fullscreenOwnsSurface: { false },
+                isActive: active, isAuthorized: true, scenePhase: .active, networkBlock: nil,
+                currentModel: { nil }, fullscreenOwnsSurface: { fullscreen },
                 updateSource: {}, stopPlayback: { stops += 1 }
-            )).environment(lifecycle))
+            )))
             fixture.window.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(40))
             let before = stops
             host.rootView = AnyView(EmptyView())
             fixture.window.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(40))
-            XCTAssertEqual(stops - before, active && authorized && relocating ? 0 : 1)
+            XCTAssertEqual(stops - before, active && fullscreen ? 0 : 1)
         }
     }
 

@@ -29,7 +29,7 @@ struct PrototypeBrowser: View {
     let openControls: () -> Void
     let openSources: () -> Void
     let openGuideTime: () -> Void
-    let openToolbar: () -> Void
+    let openToolbar: (() -> Void)?
     let isLoading: Bool
     let loadFailed: Bool
     let reload: () -> Void
@@ -263,9 +263,9 @@ struct PrototypeBrowser: View {
         .clipShape(PrototypeLayout.guideShape)
         #if os(tvOS)
         .focusSection()
-        .onExitCommand {
-            if !isRestoringFocus { openToolbar() }
-        }
+        .onExitCommand(perform: openToolbar.map { action in
+            { if !isRestoringFocus { action() } }
+        })
         #endif
         .onChange(of: confirmedFocus, initial: true) { _, target in
             hasFocus = target != nil

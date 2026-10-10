@@ -61,17 +61,23 @@ remain Debug-only; neither is a production default or a source offered to users.
 
 ## Try
 
-### Native navigation and full-height browsing
+### Native navigation and animated browsing
 
-On Apple TV, Live TV opens above the selected native tab/sidebar in a retained
-fullscreen host. This hides the native collapsed title as well as the expanded
-menu, without changing the profile's navigation style. Back first dismisses
-Live TV's child controls; Back from the browsing controls reveals the original
-native app menu. Moving back into Live TV restores fullscreen browsing with the
-same guide and playback session. A genuine destination/profile change still
-deactivates playback.
+On Apple TV, Live TV remains inside the selected native tab/sidebar, including
+its normal title/header. Browsing never presents a separate fullscreen host or
+reparents the player to reveal navigation. One Back from the guide or browsing
+controls belongs to native navigation. The native sidebar also owns the leading
+direction from categories (Left in LTR, Right in RTL). Search, dialogs, pending
+channel preparation, and expanded playback retain their own Back handling.
+Menu round trips preserve the guide and playback session; a genuine
+destination/profile change still deactivates playback.
 
-Search and the active-channel artwork share a 32-point top inset. The full-height
+Profiles without a saved navigation choice default to **Pinned Sidebar**.
+The first-run, new-profile, and Settings pickers list Pinned Sidebar, Sidebar,
+then Top Bar. Saved profile choices are not overwritten.
+
+Search and the active-channel artwork share a 32-point content inset below
+the native header. The full-height
 Search/categories pane slides and fades over 0.28 seconds while the guide resizes;
 Reduce Motion suppresses this animation. iPhone/iPad retain their existing layout.
 Native-menu round trips, selected-category restoration, and preview-session

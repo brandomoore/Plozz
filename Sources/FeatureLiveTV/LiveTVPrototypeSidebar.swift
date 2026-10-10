@@ -17,7 +17,6 @@ struct PrototypeBrowseSidebar: View {
     @State private var completedCategoryFocusRequest = 0
     @ScaledMetric(relativeTo: .subheadline) private var fontSize = PrototypeLayout.guideFontSize
     @Environment(\.layoutDirection) private var layoutDirection
-    @Environment(LiveTVPresentationLifecycle.self) private var presentationLifecycle: LiveTVPresentationLifecycle?
 
     private enum Control: Hashable {
         case search
@@ -137,11 +136,12 @@ struct PrototypeBrowseSidebar: View {
             if target != nil { active = true }
             if target == .category(model.category) {
                 completedCategoryFocusRequest = categoryFocusRequest
+            } else if target == nil, restoresCategoryFocus {
+                completedCategoryFocusRequest = 0
             }
         }
         .onChange(of: focusRequest, initial: true) { _, request in
-            guard request > 0, active, !restoresCategoryFocus,
-                  presentationLifecycle?.isRelocating != true else { return }
+            guard request > 0, active, !restoresCategoryFocus else { return }
             completedCategoryFocusRequest = categoryFocusRequest
             focused = .search
         }
