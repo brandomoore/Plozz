@@ -147,6 +147,8 @@ Storage errors deny access rather than reuse a cached grant. Generation checks
 discard superseded results, and an I/O-free, namespace-scoped store revision
 fences cross-instance writes while a read is suspended. Candidate IDs and
 rendered titles must never be treated as permission to execute playback.
+After decoder loading, pause intent is restored before durable validation
+suspends, so a paused start or foreground reload cannot autoplay during the read.
 
 IPTV catalogue teardown can reach SQLite WAL checkpoint writes even without an
 explicit save. If the final provider reference is released on the main thread,

@@ -509,6 +509,9 @@ public final class LibraryChannelPlaybackSession {
                 self.fail(Self.playbackIssue(error))
             }
             await engine.load(request: resolved, startPosition: resolved.startPosition)
+            try check(stamp)
+            // Loading can autoplay; restore pause intent before validation suspends.
+            if intendedPause { engine.pause() }
             try await validate(stamp)
             HandoffDiagnostics.emit(
                 "LIBRARY_CHANNEL event=loaded engineReady=\(engine.status == .ready)"

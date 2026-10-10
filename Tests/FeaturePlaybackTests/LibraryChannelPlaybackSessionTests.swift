@@ -619,6 +619,42 @@ final class LibraryChannelPlaybackSessionTests: XCTestCase {
         XCTAssertEqual(fixture.engine.currentTime, 20)
     }
 
+    func testPausedLoadDoesNotAutoplayDuringPostLoadAuthorityValidation() async throws {
+        for foregroundReload in [false, true] {
+            let fixture = try fixture(offset: 20, durableValidation: true)
+            defer { fixture.player.stop() }
+            if foregroundReload {
+                fixture.player.tune()
+                try await fixture.player.waitUntilSettled()
+            }
+            fixture.player.pause()
+            let gate = LibraryPlaybackGate()
+            defer { gate.open() }
+            fixture.engine.loadHook = { [weak fixture] in
+                fixture?.state.validationHook = { await gate.wait(); return "authorized" }
+            }
+            if foregroundReload {
+                fixture.state.advance(12)
+                fixture.player.foreground()
+            } else {
+                fixture.player.tune()
+            }
+            await settle { gate.isWaiting }
+            XCTAssertTrue(fixture.engine.isPaused, "The decoder must preserve pause while durable validation waits.")
+            XCTAssertEqual(fixture.engine.currentTime, 20)
+            fixture.engine.loadHook = nil
+            fixture.state.validationHook = nil
+            gate.open()
+            try await fixture.player.waitUntilSettled()
+            XCTAssertEqual(fixture.player.state, .paused)
+            XCTAssertTrue(fixture.engine.isPaused)
+            XCTAssertEqual(fixture.engine.currentTime, 20)
+            fixture.player.resume()
+            await settle { fixture.player.state == .playing }
+            XCTAssertFalse(fixture.engine.isPaused)
+        }
+    }
+
     func testRebufferRecoveryRejoinsWithoutCreditingTheMissedInterval() async throws {
         let fixture = try fixture(history: true)
         defer { fixture.player.stop() }
