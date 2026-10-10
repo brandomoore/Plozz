@@ -141,6 +141,12 @@ public actor WatchStateReconciler {
         self.onServerStateApplied = onServerStateApplied
         self.onAuthorizationRejection = onAuthorizationRejection
         self.state = store.load()
+        for mutation in state.pending {
+            for target in mutation.optimisticTargets {
+                guard let key = mutation.sourceClockKey(for: target) else { continue }
+                state.sourceClocks[key] = max(state.sourceClocks[key] ?? .distantPast, mutation.capturedAt)
+            }
+        }
     }
 
     /// Number of mutations still awaiting drain — for diagnostics / tests.
@@ -232,14 +238,14 @@ public actor WatchStateReconciler {
         let previous = state
 
         // Stale-write suppression vs the accepted high-water mark.
-        if let accepted = state.clock[key], mutation.capturedAt < accepted {
+        if mutation.capturedAt < acceptedClock(for: mutation, key: key) {
             retireIfUnreferenced(mutation)
             return false
         }
         // A guarded write must not rewind an ordinary/manual action. Guarded
         // clocks never advance the ordinary title's high-water mark.
         if mutation.authorization != nil,
-           let accepted = state.clock[mutation.serverTitleCoalesceKey], mutation.capturedAt < accepted {
+           mutation.capturedAt < acceptedClock(for: mutation, key: mutation.serverTitleCoalesceKey) {
             retireIfUnreferenced(mutation)
             return false
         }
@@ -250,8 +256,10 @@ public actor WatchStateReconciler {
             return false
         }
 
+        let acceptedMutation: WatchMutation
         if let index = state.pending.firstIndex(where: {
             $0.coalesceKey == key && $0.authorization == mutation.authorization
+                && !Self.conflictingEvidence($0, mutation)
         })
             ?? Self.evidenceMatchIndex(for: mutation, in: state.pending) {
             let existing = state.pending[index]
@@ -260,8 +268,10 @@ public actor WatchStateReconciler {
                 retireIfUnreferenced(mutation)
                 return false
             }
-            state.pending[index] = Self.coalesce(existing: existing, incoming: mutation)
+            acceptedMutation = Self.coalesce(existing: existing, incoming: mutation)
+            state.pending[index] = acceptedMutation
         } else {
+            acceptedMutation = mutation
             state.pending.append(mutation)
         }
 
@@ -271,12 +281,12 @@ public actor WatchStateReconciler {
             // manual intent that has independent authority.
             superseded = state.pending.filter {
                 $0.authorization != nil && $0.capturedAt <= mutation.capturedAt
-                    && Self.sameTitle($0, mutation)
+                    && Self.sameTitle($0, acceptedMutation)
             }
             let ids = Set(superseded.map(\.id))
             state.pending.removeAll { $0.authorization != nil && ids.contains($0.id) }
         }
-        state.clock[key] = max(state.clock[key] ?? .distantPast, mutation.capturedAt)
+        recordClock(for: acceptedMutation, key: key)
         for retired in superseded { retireIfUnreferenced(retired) }
         let saved = persist()
         if !saved, mutation.authorization != nil {
@@ -314,6 +324,7 @@ public actor WatchStateReconciler {
                   candidate.kind == mutation.kind,
                   candidate.seasonNumber == mutation.seasonNumber,
                   candidate.episodeNumber == mutation.episodeNumber,
+                  !Self.conflictingEvidence(candidate, mutation),
                   !candidate.identities.isEmpty,
                   !Set(candidate.identities).isDisjoint(with: incoming)
             else { return false }
@@ -332,7 +343,7 @@ public actor WatchStateReconciler {
     }
 
     private static func sameTitle(_ lhs: WatchMutation, _ rhs: WatchMutation) -> Bool {
-        guard lhs.serverScope == rhs.serverScope else { return false }
+        guard lhs.serverScope == rhs.serverScope, !conflictingEvidence(lhs, rhs) else { return false }
         if lhs.titleCoalesceKey == rhs.titleCoalesceKey { return true }
         guard lhs.kind == rhs.kind, lhs.seasonNumber == rhs.seasonNumber,
               lhs.episodeNumber == rhs.episodeNumber,
@@ -344,10 +355,93 @@ public actor WatchStateReconciler {
         )
     }
 
+    private static func conflictingEvidence(_ lhs: WatchMutation, _ rhs: WatchMutation) -> Bool {
+        MediaItemIdentity.externalIdentitiesConflict(lhs.identities, rhs.identities)
+            || MediaItemIdentity.titlesPlausiblyContradict(
+                titleA: lhs.anchorTitle ?? "", yearA: lhs.anchorYear, kindA: lhs.kind ?? .unknown,
+                titleB: rhs.anchorTitle ?? "", yearB: rhs.anchorYear, kindB: rhs.kind ?? .unknown
+            )
+            || rhs.optimisticTargets.first.map { lhs.rejectedSourceIDs.contains($0.id) } == true
+            || lhs.optimisticTargets.first.map { rhs.rejectedSourceIDs.contains($0.id) } == true
+    }
+
+    private func acceptedClock(for mutation: WatchMutation, key: String) -> Date {
+        let sourceKey = mutation.sourceClockKey(includeAuthorization: key != mutation.serverTitleCoalesceKey)
+        let sourceClock = sourceKey.flatMap { state.sourceClocks[$0] } ?? .distantPast
+        let titleClock = state.ownershipClocks[key].map { clocks in
+            clocks.filter { !$0.conflicts(with: mutation) }.map(\.capturedAt).max() ?? .distantPast
+        } ?? state.clock[key] ?? .distantPast
+        return max(sourceClock, titleClock)
+    }
+
+    private func recordClock(for mutation: WatchMutation, key: String) {
+        var clocks = state.ownershipClocks[key] ?? state.clock[key].map {
+            [WatchOwnershipClock(capturedAt: $0, identities: [], originID: nil, rejectedSourceIDs: [],
+                                 kind: nil, title: nil, year: nil)]
+        } ?? []
+        let clock = WatchOwnershipClock(
+            capturedAt: mutation.capturedAt, identities: mutation.identities,
+            originID: mutation.optimisticTargets.first?.id, rejectedSourceIDs: mutation.rejectedSourceIDs,
+            kind: mutation.kind, title: mutation.anchorTitle, year: mutation.anchorYear
+        )
+        clocks.removeAll {
+            $0.identities == clock.identities && $0.originID == clock.originID
+                && $0.rejectedSourceIDs == clock.rejectedSourceIDs && $0.capturedAt <= clock.capturedAt
+                && $0.kind == clock.kind && $0.title == clock.title && $0.year == clock.year
+        }
+        clocks.append(clock)
+        state.ownershipClocks[key] = clocks
+        state.clock[key] = max(state.clock[key] ?? .distantPast, mutation.capturedAt)
+        recordSourceClocks(for: mutation)
+    }
+
+    private func recordSourceClocks(for mutation: WatchMutation) {
+        for target in mutation.optimisticTargets {
+            if let key = mutation.sourceClockKey(for: target) {
+                state.sourceClocks[key] = max(state.sourceClocks[key] ?? .distantPast, mutation.capturedAt)
+            }
+        }
+    }
+
+    private func sourceIsSuperseded(_ target: WatchMutationTarget, for mutation: WatchMutation) -> Bool {
+        let keys = [mutation.sourceClockKey(for: target),
+                    mutation.sourceClockKey(for: target, includeAuthorization: false)]
+        let latest = keys.compactMap { $0.flatMap { state.sourceClocks[$0] } }.max() ?? .distantPast
+        return mutation.capturedAt < latest
+    }
+
+    private struct SupersededSource: Error {}
+
+    private func withSourceAuthorization(
+        _ mutation: WatchMutation,
+        target: WatchMutationTarget,
+        operation: @Sendable () async throws -> Void
+    ) async throws {
+        let parent = WatchMutationDeliveryAuthorization.current
+        let permission = WatchMutationDeliveryAuthorization(serverScope: mutation.serverScope) { [weak self] in
+            try await WatchMutationDeliveryAuthorization.$current.withValue(parent) {
+                try await WatchMutationDeliveryAuthorization.check()
+            }
+            guard let self, !(await self.sourceIsSuperseded(target, for: mutation)) else {
+                throw SupersededSource()
+            }
+        }
+        try await WatchMutationDeliveryAuthorization.$current.withValue(permission, operation: operation)
+    }
+
     private func retireIfUnreferenced(_ mutation: WatchMutation) {
         guard let authorization = mutation.authorization else { return }
         if !state.pending.contains(where: { $0.coalesceKey == mutation.coalesceKey }) {
             state.clock[mutation.coalesceKey] = nil
+            state.ownershipClocks[mutation.coalesceKey] = nil
+        }
+        for target in mutation.optimisticTargets {
+            if let key = mutation.sourceClockKey(for: target),
+               !state.pending.contains(where: { pending in
+                   pending.optimisticTargets.contains { pending.sourceClockKey(for: $0) == key }
+               }) {
+                state.sourceClocks[key] = nil
+            }
         }
         if !state.pending.contains(where: { $0.authorization == authorization }) {
             authorization.retire()
@@ -370,12 +464,18 @@ public actor WatchStateReconciler {
     static func coalesce(existing: WatchMutation, incoming: WatchMutation) -> WatchMutation {
         var merged = incoming
         merged.id = existing.id
+        merged.rejectedSourceIDs.formUnion(existing.rejectedSourceIDs)
+        if let origin = incoming.optimisticTargets.first {
+            merged.rejectedSourceIDs.remove(origin.id)
+        }
         // Union targets, incoming first (keeps freshest providerKind), de-duped by id.
         var seen = Set<String>()
-        merged.targets = (incoming.targets + existing.targets).filter { seen.insert($0.id).inserted }
+        merged.targets = (incoming.targets + existing.targets).filter {
+            !merged.rejectedSourceIDs.contains($0.id) && seen.insert($0.id).inserted
+        }
         seen.removeAll(keepingCapacity: true)
         merged.optimisticTargets = (incoming.optimisticTargets + existing.optimisticTargets)
-            .filter { seen.insert($0.id).inserted }
+            .filter { !merged.rejectedSourceIDs.contains($0.id) && seen.insert($0.id).inserted }
         if incoming.played == false {
             // An explicit unwatch supersedes any queued finished-watch mirror. The
             // media servers are being set unwatched, so carrying the older tracker
@@ -432,9 +532,9 @@ public actor WatchStateReconciler {
                 var mutation = state.pending[index]
 
                 // Supersession re-check at drain time.
-                let accepted = state.clock[mutation.coalesceKey] ?? .distantPast
+                let accepted = acceptedClock(for: mutation, key: mutation.coalesceKey)
                 let manual = mutation.authorization == nil
-                    ? Date.distantPast : state.clock[mutation.serverTitleCoalesceKey] ?? .distantPast
+                    ? Date.distantPast : acceptedClock(for: mutation, key: mutation.serverTitleCoalesceKey)
                 if mutation.capturedAt < max(accepted, manual) {
                     state.pending.removeAll { $0.id == mutationID }
                     retireIfUnreferenced(mutation)
@@ -543,7 +643,8 @@ public actor WatchStateReconciler {
             let expansion = await applier.expandTargets(for: mutation)
             try await WatchMutationDeliveryAuthorization.check()
             let expandedTargets = expansion.targets.filter { target in
-                mutation.serverScope?.accounts.contains { $0.accountID == target.accountID } ?? true
+                !mutation.rejectedSourceIDs.contains(target.id)
+                    && (mutation.serverScope?.accounts.contains { $0.accountID == target.accountID } ?? true)
             }
             var seen = Set(mutation.targets.map(\.id)).union(mutation.appliedTargetIDs)
             var added = 0
@@ -555,6 +656,8 @@ public actor WatchStateReconciler {
             for target in expandedTargets where optimisticSeen.insert(target.id).inserted {
                 mutation.optimisticTargets.append(target)
             }
+            recordSourceClocks(for: mutation)
+            persist()
             if expansion.isConclusive {
                 mutation.expansionPending = false
             }
@@ -580,6 +683,11 @@ public actor WatchStateReconciler {
         var applied: [WatchMutationTarget] = []
         for target in mutation.targets {
             try await WatchMutationDeliveryAuthorization.check()
+            if sourceIsSuperseded(target, for: mutation) {
+                mutation.appliedTargetIDs.insert(target.id)
+                FanoutDiagnostics.emit(FanoutDiagnostics.drainTargetLine(target, outcome: "skip(superseded)"))
+                continue
+            }
             // Never write to a target that is the live in-app playback session:
             // defer it (keep it queued) so a mid-play drain can't disturb the
             // now-playing session. The live player owns that server; the deferred
@@ -595,17 +703,26 @@ public actor WatchStateReconciler {
             // scrobble/watched-write returning 409 is swallowed as success by the
             // provider, so it shows OK here — that is correct, not a miss.
             var outcome = ""
+            let capturedAt = mutation.capturedAt
             do {
                 if let played = mutation.played {
-                    try await applier.setPlayed(played, on: target, capturedAt: mutation.capturedAt)
+                    try await withSourceAuthorization(mutation, target: target) { [applier] in
+                        try await applier.setPlayed(played, on: target, capturedAt: capturedAt)
+                    }
                     outcome += "setPlayed(\(played))=OK "
                     try await WatchMutationDeliveryAuthorization.check()
+                    if sourceIsSuperseded(target, for: mutation) {
+                        mutation.appliedTargetIDs.insert(target.id)
+                        continue
+                    }
                     if played {
                         state.appliedRecency[target.id] = nil
                     }
                 }
                 if let resume = mutation.resumePosition {
-                    try await applier.setResumePosition(resume, on: target, capturedAt: mutation.capturedAt)
+                    try await withSourceAuthorization(mutation, target: target) { [applier] in
+                        try await applier.setResumePosition(resume, on: target, capturedAt: capturedAt)
+                    }
                     outcome += "setResume(\(Int(resume)))=OK"
                     try await WatchMutationDeliveryAuthorization.check()
                     // Record the play's *real* time for this target so Home's Continue
@@ -629,9 +746,13 @@ public actor WatchStateReconciler {
                     }
                 } else if mutation.clearResume {
                     if mutation.played == nil {
-                        try await applier.removeFromContinueWatching(on: target, capturedAt: mutation.capturedAt)
+                        try await withSourceAuthorization(mutation, target: target) { [applier] in
+                            try await applier.removeFromContinueWatching(on: target, capturedAt: capturedAt)
+                        }
                     } else {
-                        try await applier.setResumePosition(0, on: target, capturedAt: mutation.capturedAt)
+                        try await withSourceAuthorization(mutation, target: target) { [applier] in
+                            try await applier.setResumePosition(0, on: target, capturedAt: capturedAt)
+                        }
                     }
                     outcome += "clearResume=OK"
                     try await WatchMutationDeliveryAuthorization.check()
@@ -646,6 +767,9 @@ public actor WatchStateReconciler {
                 if mutation.played != nil || mutation.resumePosition != nil || mutation.clearResume {
                     applied.append(target)
                 }
+            } catch is SupersededSource {
+                mutation.appliedTargetIDs.insert(target.id)
+                FanoutDiagnostics.emit(FanoutDiagnostics.drainTargetLine(target, outcome: "skip(superseded)"))
             } catch {
                 try await WatchMutationDeliveryAuthorization.check()
                 remaining.append(target)
@@ -661,9 +785,9 @@ public actor WatchStateReconciler {
         // when the feed can actually advance, before any slow tracker mirrors.
         // Superseded writes must not replay older presentation state.
         let manualClock = mutation.authorization == nil
-            ? Date.distantPast : state.clock[mutation.serverTitleCoalesceKey] ?? .distantPast
+            ? Date.distantPast : acceptedClock(for: mutation, key: mutation.serverTitleCoalesceKey)
         if !applied.isEmpty,
-           mutation.capturedAt >= max(state.clock[mutation.coalesceKey] ?? .distantPast, manualClock) {
+           mutation.capturedAt >= max(acceptedClock(for: mutation, key: mutation.coalesceKey), manualClock) {
             var confirmed = mutation
             confirmed.targets = applied
             confirmed.optimisticTargets = applied
@@ -775,6 +899,19 @@ public actor WatchStateReconciler {
         // Keep clock entries that still guard a queued mutation regardless of age.
         let activeKeys = Set(state.pending.map(\.coalesceKey))
         state.clock = state.clock.filter { $0.value >= cutoffClock || activeKeys.contains($0.key) }
+        state.ownershipClocks = state.ownershipClocks.compactMapValues { clocks in
+            let retained = clocks.filter { $0.capturedAt >= cutoffClock }
+            return retained.isEmpty ? nil : retained
+        }.merging(state.ownershipClocks.filter { activeKeys.contains($0.key) }) { _, active in active }
+        let activeSourceKeys = Set(state.pending.flatMap {
+            mutation in mutation.optimisticTargets.flatMap {
+                [mutation.sourceClockKey(for: $0),
+                 mutation.sourceClockKey(for: $0, includeAuthorization: false)].compactMap { $0 }
+            }
+        })
+        state.sourceClocks = state.sourceClocks.filter {
+            $0.value >= cutoffClock || activeSourceKeys.contains($0.key)
+        }
         // Resume-recency records are short-lived by design: prune by `appliedAt`
         // (device clock) so a stale record can never override a genuine later play.
         let cutoffRecency = now().addingTimeInterval(-resumeRecencyTTL)

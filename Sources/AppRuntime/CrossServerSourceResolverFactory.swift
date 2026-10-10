@@ -48,7 +48,7 @@ private func searchWithDeadline(
 public func crossServerSourceResolver(
     in accounts: [ResolvedAccount],
     identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef]
-) -> (@Sendable (MediaItem) async -> [MediaSourceRef])? {
+) -> (@Sendable (MediaItem) async -> CrossServerSourceResolution)? {
     guard !accounts.isEmpty else { return nil }
     let serverInfo = accounts.sourceServerInfo()
     let orderedAccountIDs = accounts.map(\.account.id)
@@ -57,7 +57,7 @@ public func crossServerSourceResolver(
         uniquingKeysWith: { first, _ in first }
     )
     return { primary in
-        await CrossServerSourceResolver.resolve(
+        await CrossServerSourceResolver.resolveWithEvidence(
             primary: primary,
             otherAccountIDs: orderedAccountIDs,
             search: { accountID, query in

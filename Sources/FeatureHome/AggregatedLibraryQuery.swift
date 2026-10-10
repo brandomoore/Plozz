@@ -1,5 +1,6 @@
 import Foundation
 import CoreModels
+import FeatureHomeCore
 
 extension AggregatedLibraryProvider {
     public func prepareLibraryQueryCapabilities() async throws {
@@ -165,6 +166,14 @@ extension AggregatedLibraryProvider {
             }
             items.append(item.taggingSource(ref.accountID))
         }
-        return MediaItemMerger.mergeGroup(items, serverInfo: { inventoryServerInfo[$0] })
+        let allowed = Set(references.map(\.id))
+        let refined = MediaItemMerger.merge(
+            items, serverInfo: { inventoryServerInfo[$0] },
+            identitySources: { item in inventoryIdentitySources(item).filter { allowed.contains($0.id) } }
+        )
+        guard refined.count == 1, let item = refined.first else {
+            throw LibraryQueryFailure.refinedSources(items)
+        }
+        return item
     }
 }

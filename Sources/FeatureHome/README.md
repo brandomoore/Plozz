@@ -340,6 +340,28 @@ sparse seed. The same ordering applies when enriching merged Home/Search cards.
 Freshly inspected sources rejected from that group cannot return through sparse
 cached entries that omit their conflicting IDs.
 Compatible cached sources remain available when search returns no results.
+Compatible sparse search hits recover exact indexed membership before grouping;
+seeing an incomplete hit is not itself a rejection. Batch and incremental
+browsing filter both cached and carried sources against the accepted group.
+Incremental pages invalidate source-dependent cached cards when new loaded
+evidence arrives, even without a shared merge key, without moving already exposed
+card positions. Sparse members stay with their refined group; compatible cards
+kept separate for paging stability are not treated as rejected matches.
+Positive source rejections travel with cached items and detail snapshots.
+Sparse reloads cannot clear them, and detail discovery distinguishes explicit
+rejection from a missing search result. Successfully fetched alternate details
+must pass the same identity checks before contributing versions or watch state.
+Rejecting an indexed bridge also removes membership supported only through that
+bridge, including references already carried by an open detail page.
+Watch actions preserve these exclusions through queued persistence, coalescing,
+and later identity expansion; contradictory titles retain separate intents.
+Durable, viewer-scoped clocks protect each physical target even when its metadata
+or canonical ID changes. Seeded and expanded targets receive the same ordering
+protection, rechecked after provider resolution before dispatching a write.
+Filtered browsing revalidates hydrated groups and corrects source-level inventory
+before publishing its first page, preserving unrelated peers and episode-derived
+query facts. A change to already exposed paging requires an explicit restart
+rather than silently shifting offsets.
 
 Enabled library rows start as soon as their inventory is known. Recently Added
 and recommendation requests complete independently, in stable library/row slots.

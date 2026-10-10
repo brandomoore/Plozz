@@ -20,6 +20,32 @@ final class AggregatedLibraryProviderTests: XCTestCase {
         try await provider.items(in: "lib", kind: .movie, page: PageRequest(startIndex: start, limit: limit))
     }
 
+    func testCombinedBrowseDoesNotAttachConflictingCachedSources() async throws {
+        var first = movie("first", title: "Same Title", year: 2020, tmdb: "123")
+        first.providerIDs["Imdb"] = "tt111"
+        var second = first
+        second.id = "second"
+        second.providerIDs["Imdb"] = "tt222"
+        let backend = FakeMediaProvider(allItems: [first, second])
+        var sparseFirst = first
+        sparseFirst.providerIDs = ["Tmdb": "123"]
+        var sparseSecond = second
+        sparseSecond.providerIDs = ["Tmdb": "123"]
+        let index = IdentityIndex()
+        await index.ingest([sparseFirst, sparseSecond], accountID: "server")
+        let snapshot = await index.snapshot()
+        let provider = AggregatedLibraryProvider(
+            sources: [source("server", backend)],
+            identitySources: { snapshot.sourceRefs(for: $0) }
+        )
+
+        let result = try await page(provider, start: 0, limit: 20)
+        XCTAssertEqual(result.items.count, 2)
+        for card in result.items {
+            XCTAssertEqual(card.sources.map(\.itemID), [card.id])
+        }
+    }
+
     func testMergesServersInSortOrderWithoutFullScan() async throws {
         // The grid claims a sort in its own menu, so the stitched result has to
         // honour it: a k-way merge on the sort key, NOT a round-robin interleave

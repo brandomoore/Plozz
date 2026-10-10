@@ -5,6 +5,41 @@ import XCTest
 
 @MainActor
 final class WatchMutationDeliveryAuthorizationTests: XCTestCase {
+    func testCorrectedWatchIntentSupersedesOnlyItsTargetDuringProviderResolution() async {
+        let provider = DeliveryProvider()
+        let gate = DeliveryResolutionGate()
+        let applier = AppShellWatchMutationApplier(
+            resolveProvider: { account in
+                if account == "b" { await gate.pause() }
+                return provider
+            },
+            applyTrakt: { _ in }, applySimkl: { _ in },
+            applyAniList: { _ in }, applyMAL: { _ in }, allAccountIDs: { ["a", "b"] }
+        )
+        let reconciler = WatchStateReconciler(store: InMemoryWatchMutationStore(), applier: applier)
+        var older = WatchMutation(
+            capturedAt: Date(timeIntervalSince1970: 1_000), canonicalMediaID: "imdb:tt111", played: true,
+            targets: [.init(accountID: "a", itemID: "a"), .init(accountID: "b", itemID: "b")]
+        )
+        older.kind = .movie
+        older.identities = [.external(source: "imdb", value: "tt111"), .external(source: "tmdb", value: "123")]
+        var newer = WatchMutation(
+            capturedAt: Date(timeIntervalSince1970: 2_000), canonicalMediaID: "imdb:tt111", played: false,
+            targets: [.init(accountID: "b", itemID: "b")]
+        )
+        newer.kind = .movie
+        newer.identities = [.external(source: "imdb", value: "tt111"), .external(source: "tmdb", value: "999")]
+        await reconciler.enqueue(older)
+        let drain = Task { await reconciler.drain() }
+        await gate.waitUntilPaused()
+        await reconciler.enqueue(newer)
+        await gate.open()
+        await drain.value
+        await reconciler.drain()
+        let writes = await provider.playedWrites
+        XCTAssertEqual(writes, ["a:true", "b:false"])
+    }
+
     private func mutation(expansion: Bool = false) -> WatchMutation {
         WatchMutation(
             capturedAt: Date(), canonicalMediaID: "imdb:tt1", seasonNumber: expansion ? 1 : nil,
@@ -145,9 +180,11 @@ private enum DeliveryScopeChange: CaseIterable {
 
 private actor DeliveryResolutionGate {
     private var paused = false
+    private var opened = false
     private var waiter: CheckedContinuation<Void, Never>?
     private var arrival: CheckedContinuation<Void, Never>?
     func pause() async {
+        guard !opened else { return }
         paused = true
         arrival?.resume()
         arrival = nil
@@ -157,7 +194,7 @@ private actor DeliveryResolutionGate {
         if paused { return }
         await withCheckedContinuation { arrival = $0 }
     }
-    func open() { waiter?.resume(); waiter = nil }
+    func open() { opened = true; waiter?.resume(); waiter = nil }
 }
 
 private actor DeliveryProvider: MediaProvider, WatchStateProviding, ResumeStateWriting, ContinueWatchingRemovable {
@@ -169,10 +206,14 @@ private actor DeliveryProvider: MediaProvider, WatchStateProviding, ResumeStateW
         userID: "user", userName: "Fixture", deviceID: "device", accessToken: "fixture"
     )
     private(set) var writes: [String] = []
+    private(set) var playedWrites: [String] = []
     private(set) var reads: [String] = []
     private var afterDismissal: (@Sendable () async -> Void)?
     func setAfterDismissal(_ action: @escaping @Sendable () async -> Void) { afterDismissal = action }
-    func setPlayed(_ played: Bool, itemID: String) async throws { writes.append("played") }
+    func setPlayed(_ played: Bool, itemID: String) async throws {
+        writes.append("played")
+        playedWrites.append("\(itemID):\(played)")
+    }
     func setResumePosition(_ seconds: TimeInterval, itemID: String, capturedAt: Date) async throws {
         writes.append("resume")
     }

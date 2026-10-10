@@ -1,5 +1,15 @@
 import Foundation
 
+public struct CrossServerSourceResolution: Sendable {
+    public var sources: [MediaSourceRef]
+    public var rejectedSourceIDs: Set<String>
+
+    public init(sources: [MediaSourceRef] = [], rejectedSourceIDs: Set<String> = []) {
+        self.sources = sources
+        self.rejectedSourceIDs = rejectedSourceIDs
+    }
+}
+
 /// Discovers *other servers* that host the same title as a given primary item and
 /// returns the unified per-server ``MediaSourceRef`` list that drives the
 /// cross-server **server picker** on the detail page.
@@ -94,8 +104,30 @@ public enum CrossServerSourceResolver {
         serverInfo: (String) -> SourceServerInfo? = { _ in nil },
         identitySources: (MediaItem) -> [MediaSourceRef] = { _ in [] }
     ) async -> [MediaSourceRef] {
+        await resolveWithEvidence(
+            primary: primary, otherAccountIDs: otherAccountIDs, search: search,
+            serverInfo: serverInfo, identitySources: identitySources
+        ).sources
+    }
+
+    public static func resolveWithEvidence(
+        primary: MediaItem,
+        otherAccountIDs: [String],
+        search: @Sendable @escaping (_ accountID: String, _ query: String) async -> [MediaItem],
+        serverInfo: (String) -> SourceServerInfo? = { _ in nil },
+        identitySources: (MediaItem) -> [MediaSourceRef] = { _ in [] }
+    ) async -> CrossServerSourceResolution {
+        func resolution(_ sources: [MediaSourceRef], rejecting rejected: Set<String> = []) -> CrossServerSourceResolution {
+            let exclusions = MediaItemMerger.rejectionsIncludingDependentSources(
+                primary.rejectedSourceIDs.union(rejected), for: primary, identitySources: identitySources
+            )
+            return CrossServerSourceResolution(
+                sources: sources.filter { !exclusions.contains($0.id) },
+                rejectedSourceIDs: exclusions
+            )
+        }
         let queries = searchQueries(for: primary)
-        guard !queries.isEmpty, !otherAccountIDs.isEmpty else { return identitySources(primary) }
+        guard !queries.isEmpty, !otherAccountIDs.isEmpty else { return resolution(identitySources(primary)) }
         let primaryAccountID = primary.sourceAccountID
         let primaryItemID = primary.id
         // The primary's strong external identities (imdb/tmdb/tvdb). Once a query
@@ -179,28 +211,37 @@ public enum CrossServerSourceResolver {
             for index in otherAccountIDs.indices { all.append(contentsOf: byIndex[index] ?? []) }
             return (all, searched)
         }
-        guard !Task.isCancelled else { return [] }
+        guard !Task.isCancelled else { return resolution([]) }
         guard !hits.isEmpty else {
-            return identitySources(primary).filter { !searchedSourceIDs.contains($0.id) }
+            var probe = primary
+            probe.rejectedSourceIDs.formUnion(searchedSourceIDs)
+            return resolution(identitySources(probe), rejecting: searchedSourceIDs)
         }
 
-        let merged = MediaItemMerger.merge([primary] + hits, serverInfo: serverInfo)
+        let eligibleSourceIDs = Set(hits.compactMap { hit in
+            hit.sourceAccountID.map { "\($0):\(hit.id)" }
+        })
+        let rejectedSourceIDs = primary.rejectedSourceIDs.union(searchedSourceIDs.subtracting(eligibleSourceIDs))
+        // Compatible sparse hits can recover their exact indexed membership
+        // before grouping. Positively rejected hits must not provide that bridge.
+        let merged = MediaItemMerger.merge(
+            [primary] + hits,
+            serverInfo: serverInfo,
+            identitySources: { item in
+                var probe = item
+                probe.rejectedSourceIDs.formUnion(rejectedSourceIDs)
+                return identitySources(probe).filter { !rejectedSourceIDs.contains($0.id) }
+            }
+        )
         // Merge groups retain input order, including after the split guard, but
         // their display representative may be a richer hit with a different ID.
         let accepted = merged[0]
-        var sources = accepted.sources
-        var seen = Set(sources.map(\.id))
-        // Freshly inspected hits that did not join this group stay rejected even
-        // when their cached metadata is too sparse to express the contradiction.
-        for source in identitySources(accepted)
-        where !searchedSourceIDs.contains(source.id) && seen.insert(source.id).inserted {
-            sources.append(source)
-        }
+        var sources = accepted.sources.filter { !rejectedSourceIDs.contains($0.id) }
         if let opened = sources.firstIndex(where: {
             $0.accountID == primaryAccountID && $0.itemID == primaryItemID
         }) {
             sources.insert(sources.remove(at: opened), at: 0)
         }
-        return sources
+        return resolution(sources, rejecting: rejectedSourceIDs.union(accepted.rejectedSourceIDs))
     }
 }

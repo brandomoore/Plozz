@@ -222,6 +222,7 @@ public struct LibraryQueryRecord: Sendable {
     public var lastPlayed: Date?
     public var seriesID: String?
     public var providerIDs: [String: String]
+    public var rejectedSourceIDs: Set<String>
     public var seasonNumber: Int?
     public var episodeNumber: Int?
     public var completed: Bool
@@ -262,6 +263,7 @@ public struct LibraryQueryRecord: Sendable {
         lastPlayed = item.lastPlayedAt
         seriesID = item.seriesID
         providerIDs = item.providerIDs
+        rejectedSourceIDs = item.rejectedSourceIDs
         seasonNumber = item.seasonNumber
         episodeNumber = item.episodeNumber
         values = item.librarySortValues
@@ -312,6 +314,7 @@ public struct LibraryQueryRecord: Sendable {
             playedPercentage: progress, isPlayed: isPlayed, hasBeenPlayed: completed || inProgress,
             providerIDs: providerIDs,
             sourceAccountID: reference.accountID, sources: reference.sources,
+            rejectedSourceIDs: rejectedSourceIDs,
             lastPlayedAt: lastPlayed, librarySortValues: values
         )
     }
@@ -353,6 +356,7 @@ public struct LibraryQueryRecord: Sendable {
         for (key, value) in providerIDs {
             bytes += key.utf8.count + value.utf8.count + 48
         }
+        for id in rejectedSourceIDs { bytes += id.utf8.count + 24 }
         return bytes
     }
 
@@ -368,8 +372,10 @@ public struct LibraryQueryRecord: Sendable {
     }
 
     public func applyingRollup(to item: MediaItem) -> MediaItem {
-        guard values?.episodeWatchRollup == true else { return item }
         var result = item
+        result.rejectedSourceIDs.formUnion(rejectedSourceIDs)
+        result.sources.removeAll { result.rejectedSourceIDs.contains($0.id) }
+        guard values?.episodeWatchRollup == true else { return result }
         result.isPlayed = isPlayed
         result.hasBeenPlayed = completed || inProgress
         result.playedPercentage = progress

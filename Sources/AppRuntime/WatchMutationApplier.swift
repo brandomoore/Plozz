@@ -53,7 +53,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     /// split the union apart when a server mis-tagged a *different* movie with the
     /// same external id (so a Scream 7 watch never fans out to a mis-tagged
     /// Scream 6); `nil` anchor ⇒ prior unguarded union.
-    private let indexedSources: @Sendable ([MediaIdentity], MediaItemKind?, String?, Int?) -> [IndexedSource]
+    private let indexedSources: @Sendable ([MediaIdentity], MediaItemKind?, String?, Int?, Set<String>) -> [IndexedSource]
     /// Every `Account.id` the identity index has indexed at least once. A movie /
     /// series identity expansion is **conclusive** only once every active account
     /// appears here (the union can still grow until then), so a mutation stopped
@@ -85,7 +85,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         applyMAL: @escaping @Sendable (TraktScrobbleIntent) async throws -> Void,
         allAccountIDs: @escaping @Sendable () async -> [String] = { [] },
         indexedSeriesSources: @escaping @Sendable (MediaItem) -> [IndexedSource] = { _ in [] },
-        indexedSources: @escaping @Sendable ([MediaIdentity], MediaItemKind?, String?, Int?) -> [IndexedSource] = { _, _, _, _ in [] },
+        indexedSources: @escaping @Sendable ([MediaIdentity], MediaItemKind?, String?, Int?, Set<String>) -> [IndexedSource] = { _, _, _, _, _ in [] },
         indexedAccountIDs: @escaping @Sendable () -> Set<String> = { [] },
         maxIdentityExpansionAttempts: Int = 12,
         searchDeadline: TimeInterval = 4
@@ -270,8 +270,10 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         // when a kind is supplied. Legacy mutations (nil kind, enqueued before this
         // field existed) get the prior unscoped single-level union so a queued write
         // is never dropped.
-        let scopedSources = indexedSources(mutation.identities, mutation.kind, mutation.anchorTitle, mutation.anchorYear)
-        let targets = scopedSources.map(\.target)
+        let scopedSources = indexedSources(
+            mutation.identities, mutation.kind, mutation.anchorTitle, mutation.anchorYear, mutation.rejectedSourceIDs
+        )
+        let targets = scopedSources.filter { !mutation.rejectedSourceIDs.contains($0.id) }.map(\.target)
         let everyAccount = Set(await allAccountIDs())
         guard await WatchMutationDeliveryAuthorization.allowsExpansion() else {
             return WatchTargetExpansion(inconclusiveAccountIDs: ["authorization"])

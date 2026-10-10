@@ -198,13 +198,14 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
     /// ``sources(forIdentities:kind:)`` or ``sources(for:)``, which walk the shared
     /// id graph. This kind-less single-level form is kept for the legacy /
     /// kind-unknown path where a transitive walk could bridge across kinds.
-    public func sources(forIdentities identities: [MediaIdentity]) -> [IndexedSource] {
+    public func sources(forIdentities identities: [MediaIdentity], rejectedSourceIDs: Set<String> = []) -> [IndexedSource] {
         guard !identities.isEmpty else { return [] }
         var seen = Set<String>()
         var result: [IndexedSource] = []
         for identity in identities {
             guard let sources = byIdentity[identity] else { continue }
             for source in sources where seen.insert(source.id).inserted {
+                guard !rejectedSourceIDs.contains(source.id) else { continue }
                 guard !MediaItemIdentity.externalIdentitiesConflict(
                     identities, bySource[source.id] ?? []
                 ) else { continue }
@@ -250,13 +251,14 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
         forIdentities identities: [MediaIdentity],
         kind: MediaItemKind?,
         anchorTitle: String?,
-        anchorYear: Int?
+        anchorYear: Int?,
+        rejectedSourceIDs: Set<String> = []
     ) -> [IndexedSource] {
         guard let kind else {
             // Kind-unknown (e.g. a legacy mutation predating the kind field): fall
             // back to a single-level union so a transitive walk can't fold unrelated
             // kinds together on a shared external id.
-            return sources(forIdentities: identities)
+            return sources(forIdentities: identities, rejectedSourceIDs: rejectedSourceIDs)
         }
         guard !identities.isEmpty else { return [] }
         // The split-guard can only positively contradict a same-kind movie (needs a
@@ -279,6 +281,7 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
             guard visitedIdentities.insert(identity).inserted else { continue }
             guard let sources = byIdentity[identity] else { continue }
             for source in sources where source.kind == kind {
+                guard !rejectedSourceIDs.contains(source.id) else { continue }
                 guard !MediaItemIdentity.externalIdentitiesConflict(
                     identities, bySource[source.id] ?? []
                 ) else { continue }
@@ -347,7 +350,8 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
             forIdentities: identities,
             kind: kind,
             anchorTitle: normalized.isEmpty ? nil : normalized,
-            anchorYear: item.productionYear
+            anchorYear: item.productionYear,
+            rejectedSourceIDs: item.rejectedSourceIDs
         )
     }
 

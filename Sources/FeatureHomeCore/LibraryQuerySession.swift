@@ -4,12 +4,14 @@ import Foundation
 public enum LibraryQueryFailure: Error, Sendable {
     case memoryBudget
     case changedInventory
+    case refinedSources([MediaItem])
+    case restartRequired
 
     public var message: LocalizedStringResource {
         switch self {
         case .memoryBudget:
             "This library is too large to index safely on this device. Use a server-supported filter or sort."
-        case .changedInventory:
+        case .changedInventory, .refinedSources, .restartRequired:
             "The library changed while preparing this filter. Try again."
         }
     }
@@ -71,7 +73,56 @@ actor LibraryQuerySession {
         else {
             return try await provider.items(in: containerID, kind: kind, page: page)
         }
-        try await prepare(source, page: page, progress: progress)
+        var correctedSources = Set<String>()
+        var generation = revision
+        while true {
+            try await prepare(source, page: page, progress: progress)
+            do {
+                let result = try await materializedPage(page, source: source)
+                guard generation == revision else { throw CancellationError() }
+                return result
+            } catch LibraryQueryFailure.refinedSources(let items) {
+                try Task.checkCancellation()
+                guard generation == revision else { throw CancellationError() }
+                let corrections = items.map { LibraryQueryRecord($0) }
+                let keys = Set(corrections.map(\.identityKey))
+                guard !keys.isEmpty, correctedSources.isDisjoint(with: keys),
+                      let existing = records else { throw LibraryQueryFailure.changedInventory }
+                correctedSources.formUnion(keys)
+                let byKey = Dictionary(uniqueKeysWithValues: corrections.map { ($0.identityKey, $0) })
+                guard keys.isSubset(of: Set(existing.map(\.identityKey))) else {
+                    throw LibraryQueryFailure.changedInventory
+                }
+                // Keep the original per-source episode/file facts. Only identity
+                // evidence was refined by the parent-item fetch.
+                let rebuilt = existing.map { record in
+                    guard let correction = byKey[record.identityKey] else { return record }
+                    var updated = record
+                    updated.providerIDs = correction.providerIDs
+                    updated.rejectedSourceIDs.formUnion(correction.rejectedSourceIDs)
+                    updated.title = correction.title
+                    updated.originalTitle = correction.originalTitle
+                    updated.year = correction.year
+                    return updated
+                }
+                guard rebuilt.reduce(0, { $0 + $1.estimatedStorageBytes }) <= 24 * 1024 * 1024 else {
+                    throw LibraryQueryFailure.memoryBudget
+                }
+                records = rebuilt
+                if fileFacts != nil { fileFacts = rebuilt }
+                orderedQuery = nil
+                revision += 1
+                generation = revision
+                // Recompute filters, rollups and offsets before publishing page
+                // zero. An exposed later page requires a visible restart.
+                guard page.startIndex == 0 else { throw LibraryQueryFailure.restartRequired }
+            }
+        }
+    }
+
+    private func materializedPage(_ page: PageRequest, source: any MediaLibraryQueryProviding)
+        async throws -> MediaPage
+    {
         try Task.checkCancellation()
         let start = min(page.startIndex, ordered.count)
         let selection = Array(ordered.dropFirst(start).prefix(page.limit))
@@ -222,7 +273,7 @@ actor LibraryQuerySession {
         }
         let query = LibraryBrowsePreferences(sort: page.sort, filters: page.filters)
         if orderedQuery != query {
-            ordered = (records ?? []).filter { $0.matches(page.filters) }
+            ordered = source.libraryQueryMergeInventory(records ?? []).filter { $0.matches(page.filters) }
                 .sorted { $0.isOrdered(before: $1, by: page.sort) }
             orderedQuery = query
         }
@@ -386,7 +437,7 @@ actor LibraryQuerySession {
                 }
             }
         }
-        return source.libraryQueryMergeInventory(records)
+        return records
     }
 
     private static func seriesKey(accountID: String?, id: String) -> String {
