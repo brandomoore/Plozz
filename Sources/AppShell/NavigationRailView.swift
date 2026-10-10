@@ -3,6 +3,7 @@ import SwiftUI
 import CoreModels
 import CoreUI
 import FeatureProfiles
+import FeatureHome
 
 /// Fixed geometry for the custom navigation rail. Collected here so the shell's
 /// content inset and the rail's own layout can never drift apart.
@@ -101,7 +102,6 @@ enum NavigationRailMetrics {
     /// The profile is a navigation row too: avatar + one label, matching every
     /// destination's vertical rhythm.
     static let profileRowHeight: CGFloat = rowContentHeight
-    static let verticalPadding: CGFloat = 14
     /// Non-focusable breathing room at the rail's outer boundaries.
     static let edgeSpacerHeight: CGFloat = 10
     /// How far the destination list dissolves at its top and bottom edges. Roughly
@@ -167,8 +167,7 @@ struct NavigationRailView: View {
     /// follows the scroll instead of flashing on at a threshold.
     @State private var libraryListFade = ListEdgeFade()
     /// Physical offset of the safe-area-constrained rail from the screen edge.
-    /// Expanded geometry subtracts this instead of changing safe-area participation,
-    /// which keeps every movement inside one smooth layout animation.
+    /// Both rail states use the same physical row positions.
     @State private var physicalVerticalInset: CGFloat = 0
     /// One numeric clock drives every animated dimension. A focus change is
     /// discrete; using that Boolean directly let newly revealed labels jump to
@@ -191,15 +190,6 @@ struct NavigationRailView: View {
         NavigationRailMetrics.collapsedWidth
             + (
                 NavigationRailMetrics.expandedWidth - NavigationRailMetrics.collapsedWidth
-            ) * expansionProgress
-    }
-
-    private var animatedVerticalPadding: CGFloat {
-        NavigationRailMetrics.verticalPadding
-            + (
-                NavigationRailMetrics.expandedContentVerticalPadding(
-                    safeAreaInset: physicalVerticalInset
-                ) - NavigationRailMetrics.verticalPadding
             ) * expansionProgress
     }
 
@@ -251,7 +241,9 @@ struct NavigationRailView: View {
 
             edgeSpacing
         }
-        .padding(.vertical, animatedVerticalPadding)
+        .padding(.vertical, NavigationRailMetrics.expandedContentVerticalPadding(
+            safeAreaInset: physicalVerticalInset
+        ))
         .padding(.leading, NavigationRailMetrics.leadingInset)
         .padding(
             .trailing,
@@ -280,11 +272,15 @@ struct NavigationRailView: View {
             }
         }
         .onChange(of: hasFocus) { _, focused in
+            HeroFocusDiagnostics.emit("sidebar.rail focused=\(focused) releasing=\(isReleasingFocus) pending=\(String(describing: pendingFocusRequest))")
             isExpandedOutward = focused
             if !focused {
                 pendingFocusRequest = nil
                 pendingFocusTarget = nil
             }
+        }
+        .onChange(of: focusedTarget) { _, target in
+            HeroFocusDiagnostics.emit("sidebar.rail target=\(String(describing: target))")
         }
         .onDisappear {
             pendingFocusRequest = nil
@@ -336,6 +332,7 @@ struct NavigationRailView: View {
     /// loading and has no focusable content yet: restoring them on a timer lets
     /// tvOS re-home focus back into the rail and reopen it.
     private func releaseFocusToPage() {
+        HeroFocusDiagnostics.emit("sidebar.rail release focused=\(hasFocus) pending=\(String(describing: pendingFocusRequest))")
         pendingFocusRequest = nil
         pendingFocusTarget = nil
         isReleasingFocus = true
@@ -381,14 +378,11 @@ struct NavigationRailView: View {
                 .onChange(of: selection, initial: true) { _, destination in
                     reveal(destination, using: proxy)
                 }
-                .onChange(of: focusRequestToken) { _, _ in
-                    reveal(selection, using: proxy)
-                }
                 .onChange(of: destinations) { _, _ in
                     if !hasFocus { reveal(selection, using: proxy) }
                 }
-                .onChange(of: pendingFocusTarget) { _, target in
-                    if case let .destination(destination) = target {
+                .onChange(of: pendingFocusRequest) { _, request in
+                    if request != nil, case let .destination(destination) = pendingFocusTarget {
                         reveal(destination, using: proxy)
                     }
                 }
@@ -401,7 +395,7 @@ struct NavigationRailView: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            proxy.scrollTo(destination, anchor: .center)
+            proxy.scrollTo(destination)
         }
     }
 
@@ -472,7 +466,7 @@ struct NavigationRailView: View {
     private func libraryItem(_ entry: NavigationRailLibraryEntry) -> some View {
         let symbol = entry.library?.library.navigationSymbolName ?? "square.stack.3d.up.fill"
         let label = entry.library?.library.displayName ?? Text(Self.allLibrariesTitle)
-        return item(entry.destination, symbol: symbol, label: label)
+        return item(entry.destination, symbol: symbol, label: label, isOffline: entry.isOffline)
     }
 
     private var profileButton: some View {
@@ -495,7 +489,14 @@ struct NavigationRailView: View {
                 .opacity(animatedLabelOpacity)
             }
             .contentShape(Rectangle())
-            .background { focusRequester(for: .profile) }
+            .background {
+                focusRequester(for: .profile)
+                if HeroFocusDiagnostics.isEnabled {
+                    NativeFocusRegionObserver {
+                        HeroFocusDiagnostics.emit("sidebar.profile native-focus")
+                    }
+                }
+            }
         }
         .focused($focusedTarget, equals: .profile)
         .prefersDefaultFocus(pendingFocusTarget == .profile, in: railFocusScope)
@@ -517,7 +518,8 @@ struct NavigationRailView: View {
         _ destination: NavigationRailDestination,
         symbol: String,
         label: Text,
-        isExperimental: Bool = false
+        isExperimental: Bool = false,
+        isOffline: Bool = false
     ) -> some View {
         Button {
             onSelectDestination(destination)
@@ -526,6 +528,16 @@ struct NavigationRailView: View {
                 Image(systemName: symbol)
                     .font(.system(size: NavigationRailMetrics.itemIconSize, weight: .semibold))
                     .frame(width: NavigationRailMetrics.iconColumnWidth)
+                    .overlay(alignment: .bottomTrailing) {
+                        if isOffline {
+                            Image(systemName: "wifi.slash")
+                                .font(.system(size: 12, weight: .bold))
+                                // The row inverts on focus; the badge keeps its own contrast.
+                                .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
+                                .padding(3)
+                                .background(colorScheme == .dark ? Color.black : Color.white, in: Circle())
+                        }
+                    }
                     .accessibilityHidden(true)
                 Spacer(minLength: 0)
             }
@@ -545,8 +557,8 @@ struct NavigationRailView: View {
                         font: isExperimental
                             ? .system(size: 22, weight: .semibold) : NavigationRailMetrics.labelFont
                     )
-                    if isExperimental {
-                        Text("Experimental")
+                    if isExperimental || isOffline {
+                        (isOffline ? Text("Offline") : Text("Experimental"))
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(foregroundColor(
                                 for: .destination(destination),
@@ -578,7 +590,7 @@ struct NavigationRailView: View {
         .padding(.vertical, NavigationRailMetrics.itemVerticalPadding)
         .offset(x: animatedContentOffset)
         .accessibilityLabel(label)
-        .accessibilityValue(isExperimental ? Text("Experimental") : Text(verbatim: ""))
+        .accessibilityValue(isOffline ? Text("Offline") : isExperimental ? Text("Experimental") : Text(verbatim: ""))
         .accessibilityAddTraits(selection == destination ? [.isSelected] : [])
     }
 

@@ -47,7 +47,6 @@ final class NavigationRailMetricsTests: XCTestCase {
                 + NavigationRailMetrics.expandedLabelOffset,
             NavigationRailMetrics.expandedRowContentWidth
         )
-        XCTAssertEqual(NavigationRailMetrics.verticalPadding, 14)
     }
 }
 

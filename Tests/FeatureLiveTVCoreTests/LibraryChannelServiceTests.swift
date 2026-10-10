@@ -9,6 +9,36 @@ final class LibraryChannelServiceTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
     private let library = LibraryChannelLibrary(accountID: "account", libraryID: "library")
 
+    func testSnapshotRevisionDetectsOwnAndOtherConnectionsWithoutDecodingSnapshots() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let url = directory.appendingPathComponent("snapshots.sqlite")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = LibraryChannelSnapshotStore(databaseURL: url)
+        let other = LibraryChannelSnapshotStore(databaseURL: url)
+        let initial = try await store.changeRevision()
+        XCTAssertNotNil(initial)
+        let repeated = try await store.changeRevision()
+        XCTAssertEqual(initial, repeated)
+        let item = try LibraryChannelItem(item: episode("one"), library: library, serverID: "server", userID: "user")
+        let snapshot = try LibraryChannelSnapshot(items: [item], createdAt: now)
+        try await store.insert(snapshot, profileID: "profile")
+        let inserted = try await store.changeRevision()
+        XCTAssertNotEqual(initial, inserted)
+        try await store.insert(snapshot, profileID: "profile")
+        let unchanged = try await store.changeRevision()
+        XCTAssertEqual(inserted, unchanged)
+        try await other.retain(ids: [], profileID: "profile")
+        let removed = try await store.changeRevision()
+        XCTAssertNotEqual(unchanged, removed)
+        try FileManager.default.removeItem(at: url)
+        do {
+            _ = try await store.changeRevision()
+            XCTFail("An evicted database must not authorize a stale capture")
+        } catch {
+            XCTAssertEqual(error as? LibraryChannelError, .storageFailed)
+        }
+    }
+
     private func makeService(
         items: [MediaItem], store: LibraryDefinitionMemory = LibraryDefinitionMemory(),
         snapshotStore: (any LibraryChannelSnapshotStoring)? = nil,

@@ -2,6 +2,22 @@ import XCTest
 
 @MainActor
 final class NavigationDestinationHandoffTests: XCTestCase {
+    func testSelectingAScrolledDestinationNeverVisitsProfile() {
+        let app = launchFixture(arguments: ["--navigation-long-rail", "--navigation-immediate-page"])
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["handoff-page-home"].waitForExistence(timeout: 15))
+        XCUIRemote.shared.press(.left)
+        assertFocused(app.buttons["Home"])
+        for _ in 0..<14 { XCUIRemote.shared.press(.down) }
+        assertFocused(app.buttons["Settings"])
+        XCUIRemote.shared.press(.select)
+        let page = app.buttons["handoff-page-settings"]
+        XCTAssertTrue(page.waitForExistence(timeout: 10))
+        assertFocused(page)
+        XCTAssertEqual(app.staticTexts["handoff-profile-focus"].label, "0")
+        XCTAssertEqual(app.staticTexts["handoff-premature-focus"].label, "0")
+    }
+
     func testNewPageStartsAtFirstCardRatherThanTheClosestCardToExpandedNavigation() {
         let app = launchFixture(arguments: ["--navigation-card-row"])
         defer { app.terminate() }
@@ -21,6 +37,7 @@ final class NavigationDestinationHandoffTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["handoff-later-card-focus"].label, "0",
                        "Focus must not visit a later card before settling on the first.")
         XCTAssertEqual(app.staticTexts["handoff-premature-focus"].label, "0")
+        XCTAssertEqual(app.staticTexts["handoff-profile-focus"].label, "0")
     }
 
     func testDestinationSelectionDoesNotFocusTheOutgoingPageWhileLoading() {
@@ -44,6 +61,7 @@ final class NavigationDestinationHandoffTests: XCTestCase {
             app.staticTexts["handoff-premature-focus"].label, "0",
             "Selecting another page must not first move focus into the outgoing page."
         )
+        XCTAssertEqual(app.staticTexts["handoff-profile-focus"].label, "0")
 
         for (title, page) in [("Music", "music"), ("Home", "home")] {
             XCUIRemote.shared.press(.left)
@@ -54,6 +72,7 @@ final class NavigationDestinationHandoffTests: XCTestCase {
             XCTAssertTrue(destination.waitForExistence(timeout: 10))
             assertFocused(destination)
             XCTAssertEqual(app.staticTexts["handoff-premature-focus"].label, "0")
+            XCTAssertEqual(app.staticTexts["handoff-profile-focus"].label, "0")
         }
     }
 
@@ -65,9 +84,20 @@ final class NavigationDestinationHandoffTests: XCTestCase {
         assertFocused(page)
         XCUIRemote.shared.press(.left)
         assertFocused(app.buttons["Home"])
+        XCUIRemote.shared.press(.up)
+        let observedProfile = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in app.staticTexts["handoff-profile-focus"].label == "1" },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [observedProfile], timeout: 5), .completed,
+                       "The observer must see actual Profile focus, including virtual SwiftUI focus items.")
+        XCUIRemote.shared.press(.down)
+        assertFocused(app.buttons["Home"])
         XCUIRemote.shared.press(.select)
         assertFocused(page)
         XCTAssertEqual(app.staticTexts["handoff-premature-focus"].label, "0")
+        // Reselecting the current destination does not invoke the selection binding.
+        XCTAssertEqual(app.staticTexts["handoff-profile-focus"].label, "1")
     }
 
     func testPendingNavigationCanBeReplacedWithoutReleasingFocusEarly() {
@@ -93,6 +123,7 @@ final class NavigationDestinationHandoffTests: XCTestCase {
         assertFocused(page)
         XCTAssertFalse(app.buttons["handoff-page-settings"].exists)
         XCTAssertEqual(app.staticTexts["handoff-premature-focus"].label, "0")
+        XCTAssertEqual(app.staticTexts["handoff-profile-focus"].label, "0")
     }
 
     private func launchFixture(arguments: [String] = []) -> XCUIApplication {

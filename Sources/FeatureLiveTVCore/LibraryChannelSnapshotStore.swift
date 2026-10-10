@@ -6,6 +6,13 @@ public protocol LibraryChannelSnapshotStoring: Sendable {
     func snapshot(id: UUID, profileID: String) async throws -> LibraryChannelSnapshot?
     func insert(_ snapshot: LibraryChannelSnapshot, profileID: String) async throws
     func retain(ids: Set<UUID>, profileID: String) async throws
+    /// Must change for every committed payload/availability change, including other writers.
+    func changeRevision() async throws -> UUID?
+}
+
+public extension LibraryChannelSnapshotStoring {
+    /// Stores without an authoritative revision keep the full validation path.
+    func changeRevision() async throws -> UUID? { nil }
 }
 
 public struct LibraryChannelSnapshotLease: Sendable {
@@ -26,6 +33,8 @@ public protocol LibraryChannelSnapshotStaging: LibraryChannelSnapshotStoring {
 public actor LibraryChannelSnapshotStore: LibraryChannelSnapshotStaging {
     private let connection: LibrarySnapshotConnection
     private let cacheID: String
+    private var revision = UUID()
+    private var observedChanges: [Int64]?
 
     public init(databaseURL: URL? = LibraryChannelSnapshotStore.defaultURL) {
         connection = LibrarySnapshotConnection(url: databaseURL)
@@ -56,6 +65,22 @@ public actor LibraryChannelSnapshotStore: LibraryChannelSnapshotStaging {
             try snapshot.validate()
             return snapshot
         }
+    }
+
+    public func changeRevision() async throws -> UUID? {
+        try connection.open()
+        try connection.checkFileIdentity()
+        let changes = try connection.statement(
+            "SELECT total_changes(),data_version FROM pragma_data_version", values: []
+        ) {
+            guard sqlite3_step($0) == SQLITE_ROW else { throw LibraryChannelError.storageFailed }
+            return [sqlite3_column_int64($0, 0), sqlite3_column_int64($0, 1)]
+        }
+        if observedChanges != changes {
+            observedChanges = changes
+            revision = UUID()
+        }
+        return revision
     }
 
     public func insert(_ snapshot: LibraryChannelSnapshot, profileID: String) throws {
@@ -163,6 +188,7 @@ private final class LibrarySnapshotConnection {
     static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
     private let url: URL?
     private var handle: OpaquePointer?
+    private var openedFile: LiveTVSyncFileRevision?
 
     init(url: URL?) { self.url = url }
     deinit { if let handle { sqlite3_close(handle) } }
@@ -195,6 +221,13 @@ private final class LibrarySnapshotConnection {
             throw LibraryChannelError.storageFailed
         }
         handle = opened
+        if let url { openedFile = try LiveTVSyncFileRevision.read(url) }
+    }
+
+    func checkFileIdentity() throws {
+        guard let url else { return }
+        guard let openedFile, let current = try LiveTVSyncFileRevision.read(url),
+              current.isSameFile(as: openedFile) else { throw LibraryChannelError.storageFailed }
     }
 
     func statement<T>(_ sql: String, values: [String], body: (OpaquePointer) throws -> T) throws -> T {

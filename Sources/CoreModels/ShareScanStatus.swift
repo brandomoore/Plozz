@@ -202,6 +202,8 @@ public final class ShareScanStatusModel {
 
     /// Keyed by the media-share account id used by the catalog coordinator.
     public private(set) var byShare: [String: ShareScanState] = [:]
+    /// Separate from progress so navigation never observes scan-counter updates.
+    public private(set) var offlineShareIDs: Set<String> = []
     /// Test/diagnostic counter for actual observable state publications.
     @ObservationIgnored public private(set) var statePublicationCount = 0
 
@@ -247,6 +249,7 @@ public final class ShareScanStatusModel {
         case enrichProgress(id: String, done: Int)
         case enrichFinished(id: String)
         case shareRemoved(id: String)
+        case reachability(id: String, offline: Bool)
     }
 
     private final class EventInbox: @unchecked Sendable {
@@ -375,6 +378,7 @@ public final class ShareScanStatusModel {
         case let .enrichProgress(id, done): enrichProgress(shareID: id, done: done)
         case let .enrichFinished(id): enrichFinished(shareID: id)
         case let .shareRemoved(id): removeShare(shareID: id)
+        case let .reachability(id, offline): reportReachability(shareID: id, offline: offline)
         }
     }
 
@@ -417,6 +421,16 @@ public final class ShareScanStatusModel {
     /// invalidation has fully drained the removed instance.
     public func registerShare(shareID: String) {
         removedShareIDs.remove(shareID)
+    }
+
+    public func reportReachability(shareID: String, offline: Bool) {
+        guard !removedShareIDs.contains(shareID),
+              offlineShareIDs.contains(shareID) != offline else { return }
+        if offline {
+            offlineShareIDs.insert(shareID)
+        } else {
+            offlineShareIDs.remove(shareID)
+        }
     }
 
     public func scanStarted(shareID: String, name: String) {
@@ -527,6 +541,7 @@ public final class ShareScanStatusModel {
     /// progress already queued by its cancelling scanner.
     public func removeShare(shareID: String) {
         removedShareIDs.insert(shareID)
+        offlineShareIDs.remove(shareID)
         publish(nil, for: shareID)
     }
 
@@ -599,6 +614,9 @@ public final class ShareScanStatusModel {
             shareRemoved: { id in
                 inbox.submitLifecycle(.shareRemoved(id: id))
             },
+            reachability: { id, offline in
+                inbox.submitLifecycle(.reachability(id: id, offline: offline))
+            }
         )
     }
 }
@@ -630,6 +648,7 @@ public struct ShareScanReporter: Sendable {
     public var enrichProgress: @Sendable (_ shareID: String, _ done: Int) -> Void
     public var enrichFinished: @Sendable (_ shareID: String) -> Void
     public var shareRemoved: @Sendable (_ shareID: String) -> Void
+    public var reachability: @Sendable (_ shareID: String, _ offline: Bool) -> Void
 
     public init(
         shareRegistered: @escaping @Sendable (String) -> Void = { _ in },
@@ -645,7 +664,8 @@ public struct ShareScanReporter: Sendable {
         enrichStarted: @escaping @Sendable (String, Int) -> Void,
         enrichProgress: @escaping @Sendable (String, Int) -> Void,
         enrichFinished: @escaping @Sendable (String) -> Void,
-        shareRemoved: @escaping @Sendable (String) -> Void = { _ in }
+        shareRemoved: @escaping @Sendable (String) -> Void = { _ in },
+        reachability: @escaping @Sendable (String, Bool) -> Void = { _, _ in }
     ) {
         self.shareRegistered = shareRegistered
         self.scanStarted = scanStarted
@@ -664,6 +684,7 @@ public struct ShareScanReporter: Sendable {
         self.enrichProgress = enrichProgress
         self.enrichFinished = enrichFinished
         self.shareRemoved = shareRemoved
+        self.reachability = reachability
     }
 
     /// No-op sink (default when no status model is wired).

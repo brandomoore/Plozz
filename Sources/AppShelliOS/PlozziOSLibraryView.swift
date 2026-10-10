@@ -57,6 +57,9 @@ struct PlozziOSLibrariesView: View {
                 ContentUnavailableView {
                     Label("Unable to load libraries", systemImage: "exclamationmark.triangle")
                 } description: {
+                    if let server = appModel.accountsProviders.primaryProvider?.session.server {
+                        ServerIdentityChip(server: server)
+                    }
                     Text(error.userMessage)
                 } actions: {
                     Button("Try Again") {
@@ -337,6 +340,9 @@ struct PlozziOSLibraryGridView: View {
             ContentUnavailableView {
                 Label("Unable to load recommendations", systemImage: "exclamationmark.triangle")
             } description: {
+                ForEach(viewModel.errorServers, id: \.self) { server in
+                    ServerIdentityChip(server: server)
+                }
                 Text(error.userMessage)
             } actions: {
                 Button("Try Again") { Task { await viewModel.loadRecommendations() } }
@@ -398,6 +404,9 @@ struct PlozziOSLibraryGridView: View {
             ContentUnavailableView {
                 Label("Unable to load \(title)", systemImage: "exclamationmark.triangle")
             } description: {
+                ForEach(viewModel.errorServers, id: \.self) { server in
+                    ServerIdentityChip(server: server)
+                }
                 Text(viewModel.queryMessage ?? error.userMessage)
             } actions: {
                 Button("Try Again") {

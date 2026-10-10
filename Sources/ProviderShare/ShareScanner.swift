@@ -624,6 +624,13 @@ actor ShareScanner {
                         group.cancelAll()
                         continue
                     }
+                    if result.dir.isEmpty {
+                        if result.ok {
+                            reporter.reachability(shareID, false)
+                        } else if result.failureCategory == .timedOut || result.failureCategory == .connectionLost {
+                            reporter.reachability(shareID, true)
+                        }
+                    }
                     if result.ok {
                         free.append(result.lister)     // healthy — return it to the pool
                     } else {
@@ -1600,6 +1607,19 @@ enum ShareScanListFailureCategory: String, Sendable, CaseIterable {
     case other
 
     init(_ error: Error) {
+        if let transport = error as? MediaTransportError {
+            switch transport {
+            case .timeout: self = .timedOut
+            case .cancelled: self = .cancelled
+            case .authentication: self = .authFailed
+            case .permissionDenied: self = .permissionDenied
+            case .transport(let code):
+                self.init(NSError(
+                    domain: code < 0 ? NSURLErrorDomain : NSPOSIXErrorDomain, code: code))
+            default: self = .other
+            }
+            return
+        }
         if error is CancellationError {
             self = .cancelled
             return

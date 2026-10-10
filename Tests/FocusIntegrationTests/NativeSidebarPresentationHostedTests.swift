@@ -1,12 +1,46 @@
 import CoreModels
+import CoreUI
 import Observation
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 @testable import AppShell
 
 @MainActor
 final class NativeSidebarPresentationHostedTests: XCTestCase {
+    func testNativeSidebarDisplaysOfflineStatusAndRemovesItAfterRecovery() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let model = LibraryStatusModel()
+        fixture.window.rootViewController = UIHostingController(rootView: LibraryStatusSidebar(model: model)
+            .environment(\.locale, Locale(identifier: "en_US")))
+        for appearance in [UIUserInterfaceStyle.dark, .light] {
+            fixture.window.overrideUserInterfaceStyle = appearance
+            for offline in [false, true, false] {
+                model.isOffline = offline
+                try await Task.sleep(for: .milliseconds(500))
+                fixture.window.layoutIfNeeded()
+                let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+                    XCTAssertTrue(fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true))
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "Native sidebar \(appearance == .dark ? "dark" : "light") offline=\(offline)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                request.customWords = ["Offline"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                let labels = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                XCTAssertTrue(labels.contains { $0.contains("Movies") }, "\(labels)")
+                XCTAssertEqual(labels.filter { $0.contains("Offline") }.count, offline ? 2 : 0, "\(labels)")
+                XCTAssertEqual(model.selection, "home", "Reachability updates must not select another tab.")
+            }
+        }
+    }
+
     func testLiveTVWaitsForFirstVisitThenRetainsStateWithinItsProfile() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -58,7 +92,15 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
     }
 
     func testInactiveAndUnpresentedPagesCannotAcceptFocus() async throws {
-        let fixture = try await makeFixture()
+        try await exercisePresentation(sharedPinnedHost: false)
+    }
+
+    func testDestinationPresentationCompletesInsidePinnedFocusHost() async throws {
+        try await exercisePresentation(sharedPinnedHost: true)
+    }
+
+    private func exercisePresentation(sharedPinnedHost: Bool) async throws {
+        let fixture = try await makeFixture(sharedPinnedHost: sharedPinnedHost)
         defer { fixture.close() }
         try await waitUntil { fixture.model.buttons[.home]?.isFocused == true }
         let inactive = try XCTUnwrap(fixture.model.buttons[.settings])
@@ -79,13 +121,13 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
         XCTAssertEqual(fixture.model.prematureFocusCount, 0)
     }
 
-    private func makeFixture() async throws -> Fixture {
+    private func makeFixture(sharedPinnedHost: Bool = false) async throws -> Fixture {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
         }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
-        return Fixture(scene: scene)
+        return Fixture(scene: scene, sharedPinnedHost: sharedPinnedHost)
     }
 
     private func waitUntil(_ predicate: @MainActor () -> Bool) async throws {
@@ -102,11 +144,18 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
         let window: UIWindow
         let previous: UIWindow?
 
-        init(scene: UIWindowScene) {
+        init(scene: UIWindowScene, sharedPinnedHost: Bool) {
             previous = scene.windows.first(where: \.isKeyWindow)
             window = UIWindow(windowScene: scene)
             window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
-            window.rootViewController = UIHostingController(rootView: Pages(model: model))
+            window.rootViewController = UIHostingController(rootView: Group {
+                if sharedPinnedHost {
+                    NavigationRailFocusHost { [model] _ in Pages(model: model) }
+                        .ignoresSafeArea()
+                } else {
+                    Pages(model: model)
+                }
+            })
             window.makeKeyAndVisible()
             window.layoutIfNeeded()
         }
@@ -116,6 +165,44 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
             window.rootViewController = nil
             model.buttons.removeAll()
             previous?.makeKeyAndVisible()
+        }
+    }
+
+    @MainActor @Observable
+    fileprivate final class LibraryStatusModel {
+        var isOffline = false
+        var selection = "home"
+        let library = AggregatedLibrary(
+            accountID: "fixture", accountName: "Fixture", serverName: "Fixture", providerKind: .plex,
+            library: MediaLibrary(id: "movies", title: "Movies", kind: .movie)
+        )
+    }
+
+    private struct LibraryStatusSidebar: View {
+        @Bindable var model: LibraryStatusModel
+
+        var body: some View {
+            let entries = [
+                NavigationRailLibraryEntry(
+                    key: model.library.key, library: model.library, isOffline: model.isOffline),
+                NavigationRailLibraryEntry(
+                    key: NavigationLibraryLayout.allLibrariesKey, library: nil, isOffline: model.isOffline)
+            ]
+            TabView(selection: $model.selection) {
+                Tab(value: "home") {
+                    AnyView(Color.clear)
+                } label: {
+                    AnyView(Label("Home", systemImage: "house"))
+                }
+                ForEach(entries, id: \.key) { entry in
+                    Tab(value: entry.key) {
+                        AnyView(Color.clear)
+                    } label: {
+                        AnyView(MainTabView.navigationLibraryLabel(entry))
+                    }
+                }
+            }
+            .tabViewStyle(.sidebarAdaptable)
         }
     }
 

@@ -31,6 +31,7 @@ struct MusicLandingView: View {
             // Never clip a focused card's lift, shadow or border.
             .scrollClipDisabled()
         }
+        .navigationEntryFocus(viewModel.state == .idle || viewModel.state.isLoading ? .pending : nil)
         .task { if case .idle = viewModel.state { await viewModel.load() } }
         // Refresh the rails once a play has actually been recorded on the server,
         // so "Recently Played" reflects what was just listened to without needing
@@ -75,14 +76,17 @@ struct MusicLandingView: View {
             if !content.recentlyPlayed.isEmpty {
                 MusicRow(title: "Recently Played", trailing: trailing) {
                     ForEach(content.recentlyPlayed) { item in
-                        switch item {
-                        case let .album(album):
-                            AlbumCard(album: album) { onSelectRoute(.album(album)) }
-                        case let .track(track):
-                            RecentTrackCard(track: track) { onPlayTrack(track) }
-                        case let .playlist(playlist):
-                            PlaylistCard(playlist: playlist) { onSelectRoute(.playlist(playlist)) }
+                        Group {
+                            switch item {
+                            case let .album(album):
+                                AlbumCard(album: album) { onSelectRoute(.album(album)) }
+                            case let .track(track):
+                                RecentTrackCard(track: track) { onPlayTrack(track) }
+                            case let .playlist(playlist):
+                                PlaylistCard(playlist: playlist) { onSelectRoute(.playlist(playlist)) }
+                            }
                         }
+                        .navigationEntryFocus(.content)
                     }
                 }
             }
@@ -122,6 +126,7 @@ struct MusicLandingView: View {
     private func entryTiles(trailing: AnyView?) -> some View {
         HStack(alignment: .center, spacing: metrics.cardSpacing) {
             BrowseButton(title: "Playlists") { onSelectRoute(.grid(.playlist)) }
+                .navigationEntryFocus(.fallback)
             BrowseButton(title: "Albums") { onSelectRoute(.grid(.album)) }
             BrowseButton(title: "Artists") { onSelectRoute(.grid(.artist)) }
             BrowseButton(title: "Genres") { onSelectRoute(.grid(.genre)) }

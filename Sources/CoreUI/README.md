@@ -78,6 +78,9 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   episode captions and skeletons share it; TV caption layout is unchanged.
   Home library names
   and server names share one leading-aligned text column beside the provider mark.
+- **Provider marks** — IPTV uses coral-red while Media Share keeps teal.
+  `ProviderBrandMark` owns their shared icon and badge tints, including deeper
+  colors on white focus cards and brighter colors on black focus cards.
 - **Media-row focus** — a dedicated modifier owns the row's `FocusState`
   and supplies its binding to tracked cards. Focus callbacks and prefetch
   bookkeeping must not invalidate the row that constructs all card inputs.

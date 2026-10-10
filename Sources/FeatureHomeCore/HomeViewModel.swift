@@ -686,6 +686,11 @@ public final class HomeViewModel {
         loadFailures = [:]
         detailResumeByAccount = [:]
         defer {
+            // The view may be covered when settings change, so a discarded load
+            // must arrange its own replacement instead of leaving loading rows.
+            if let loadingVisibility, loadingVisibility != currentVisibility() {
+                wantsReloadAfterCurrent = true
+            }
             isLoading = false
             loadingVisibility = nil
             if wantsReloadAfterCurrent {
@@ -770,6 +775,7 @@ public final class HomeViewModel {
             guard !aggregationTask.isCancelled, currentVisibility() == visibility else { return }
             let pending = await pendingWatchMutations()
             let appliedRecency = await recentlyAppliedRecency()
+            guard !aggregationTask.isCancelled, currentVisibility() == visibility else { return }
             noteServerConfirmed(merged.continueWatching)
             let reconciledCW = Self.reconcileContinueWatching(
                 merged.continueWatching,
@@ -819,6 +825,7 @@ public final class HomeViewModel {
             guard !unmergedTask.isCancelled, currentVisibility() == visibility else { return }
             let pending = await pendingWatchMutations()
             let appliedRecency = await recentlyAppliedRecency()
+            guard !unmergedTask.isCancelled, currentVisibility() == visibility else { return }
             noteServerConfirmed(unmerged.continueWatching)
             let reconciledCW = Self.reconcileContinueWatching(
                 unmerged.continueWatching,

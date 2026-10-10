@@ -1,11 +1,29 @@
 import Foundation
 import CoreModels
+import CoreNetworking
 
 extension AggregatedLibraryProvider {
     public func prepareLibraryQueryCapabilities() async throws {
+        var succeeded = false
+        var failure: Error?
         for source in sources {
             try Task.checkCancellation()
-            try await (source.provider as? any MediaLibraryQueryProviding)?.prepareLibraryQueryCapabilities()
+            do {
+                try await (source.provider as? any MediaLibraryQueryProviding)?.prepareLibraryQueryCapabilities()
+                succeeded = true
+            } catch {
+                try Self.checkQueryCancellation(error)
+                PlozzLog.app.error("Aggregation: capability setup failed for account \(source.accountID)")
+                failure = error
+            }
+        }
+        if !succeeded, let failure { throw attributedFailure(failure, sources: sources) }
+    }
+
+    static func checkQueryCancellation(_ error: Error) throws {
+        try Task.checkCancellation()
+        if error is CancellationError || (error as? AppError) == .cancelled {
+            throw CancellationError()
         }
     }
     public func libraryQueryInventorySortKey(_ field: SortField) -> SortField {
@@ -15,9 +33,12 @@ extension AggregatedLibraryProvider {
     }
     actor InventoryCounts {
         var totals: [String: [Int]] = [:]
+        var unavailableSources: Set<String> = []
         func values(for key: String) -> [Int]? { totals[key] }
         func save(_ values: [Int], for key: String) { totals[key] = values }
-        func reset() { totals = [:] }
+        func exclude(_ key: String) { unavailableSources.insert(key) }
+        func excluded() -> Set<String> { unavailableSources }
+        func reset() { totals = [:]; unavailableSources = [] }
     }
 
     public func supportedSortFields(in containerID: String, kind: MediaItemKind) -> [SortField] {
@@ -46,13 +67,23 @@ extension AggregatedLibraryProvider {
     public func libraryQueryFacets(in containerID: String, kind: MediaItemKind) async throws -> LibraryQueryFacets {
         var genres: [String] = []
         var years: [Int] = []
+        var succeeded = false
+        var failure: Error?
         for source in sources {
             try Task.checkCancellation()
-            guard let provider = source.provider as? any MediaLibraryQueryProviding else { throw AppError.notFound }
-            let facets = try await provider.libraryQueryFacets(in: source.containerID, kind: source.kind ?? kind)
-            genres += facets.genres
-            years += facets.years
+            do {
+                guard let provider = source.provider as? any MediaLibraryQueryProviding else { throw AppError.notFound }
+                let facets = try await provider.libraryQueryFacets(in: source.containerID, kind: source.kind ?? kind)
+                genres += facets.genres
+                years += facets.years
+                succeeded = true
+            } catch {
+                try Self.checkQueryCancellation(error)
+                PlozzLog.app.error("Aggregation: facets failed for account \(source.accountID)")
+                failure = error
+            }
         }
+        if !succeeded, let failure { throw attributedFailure(failure, sources: sources) }
         return LibraryQueryFacets(genres: genres, years: years)
     }
 
@@ -72,22 +103,38 @@ extension AggregatedLibraryProvider {
     }
 
     private func inventoryPage(kind: MediaItemKind, page: PageRequest, episodes: Bool) async throws -> MediaPage {
-        let targets = episodes ? sources.filter { ($0.kind ?? kind) == .series } : sources
+        var excluded = await queryRecovery.sources()
+        if episodes { excluded.formUnion(await inventoryCounts.excluded()) }
+        let targets = sources.filter {
+            !excluded.contains($0.sourceKey) && (!episodes || ($0.kind ?? kind) == .series)
+        }
         let key = "\(kind.rawValue):\(episodes):\(page.sort.field.rawValue)"
         let totals: [Int]
         if let saved = await inventoryCounts.values(for: key) { totals = saved }
         else {
             var values: [Int] = []
+            var succeeded = false
+            var failure: Error?
             for source in targets {
                 try Task.checkCancellation()
-                guard let provider = source.provider as? any MediaLibraryQueryProviding else { throw AppError.notFound }
-                let request = PageRequest(limit: 1, sort: page.sort, filters: page.filters)
-                let first = episodes
-                    ? try await provider.libraryQueryEpisodeInventory(in: source.containerID, page: request)
-                    : try await provider.libraryQueryInventory(in: source.containerID, kind: source.kind ?? kind, page: request)
-                guard first.totalCount >= 0 else { throw AppError.invalidResponse }
-                values.append(first.totalCount)
+                do {
+                    guard let provider = source.provider as? any MediaLibraryQueryProviding else { throw AppError.notFound }
+                    let request = PageRequest(limit: 1, sort: page.sort, filters: page.filters)
+                    let first = episodes
+                        ? try await provider.libraryQueryEpisodeInventory(in: source.containerID, page: request)
+                        : try await provider.libraryQueryInventory(in: source.containerID, kind: source.kind ?? kind, page: request)
+                    guard first.totalCount >= 0 else { throw AppError.invalidResponse }
+                    values.append(first.totalCount)
+                    succeeded = true
+                } catch {
+                    try Self.checkQueryCancellation(error)
+                    PlozzLog.app.error("Aggregation: inventory unavailable for account \(source.accountID)")
+                    if !episodes { await inventoryCounts.exclude(source.sourceKey) }
+                    values.append(0)
+                    failure = error
+                }
             }
+            if !succeeded, let failure { throw attributedFailure(failure, sources: targets) }
             await inventoryCounts.save(values, for: key)
             totals = values
         }
@@ -103,12 +150,20 @@ extension AggregatedLibraryProvider {
                 startIndex: localStart, limit: min(page.limit - result.count, total - localStart),
                 sort: page.sort, filters: page.filters
             )
-            let batch = episodes
-                ? try await provider.libraryQueryEpisodeInventory(in: source.containerID, page: request)
-                : try await provider.libraryQueryInventory(in: source.containerID, kind: source.kind ?? kind, page: request)
+            let batch: MediaPage
+            do {
+                batch = episodes
+                    ? try await provider.libraryQueryEpisodeInventory(in: source.containerID, page: request)
+                    : try await provider.libraryQueryInventory(in: source.containerID, kind: source.kind ?? kind, page: request)
+            } catch {
+                try Self.checkQueryCancellation(error)
+                throw attributedFailure(error, sources: [source])
+            }
             guard batch.startIndex == localStart, batch.totalCount == total,
-                  !batch.items.isEmpty, batch.items.count <= request.limit else { throw AppError.invalidResponse }
-            result += batch.items.map { $0.taggingSource(source.accountID) }
+                  !batch.items.isEmpty, batch.items.count <= request.limit else {
+                throw attributedFailure(AppError.invalidResponse, sources: [source])
+            }
+            result += batch.items.map { $0.taggingSource(source.accountID).taggingLibrary(source.containerID) }
             if result.count >= page.limit { break }
             // A server's shorter page must be continued before crossing a source.
             if localStart + batch.items.count < total { break }
@@ -150,20 +205,37 @@ extension AggregatedLibraryProvider {
 
     public func libraryQueryItem(_ reference: LibraryQueryReference) async throws -> MediaItem {
         let references = reference.sources.isEmpty
-            ? reference.accountID.map { [MediaSourceRef(accountID: $0, itemID: reference.id)] } ?? []
+            ? reference.accountID.map {
+                [MediaSourceRef(accountID: $0, itemID: reference.id, libraryID: reference.libraryID)]
+            } ?? []
             : reference.sources
         guard !references.isEmpty else { throw AppError.invalidResponse }
         var items: [MediaItem] = []
+        var failure: Error?
+        var failedSources: [AggregatedLibrarySource] = []
         for ref in references {
             try Task.checkCancellation()
-            guard let source = sources.first(where: { $0.accountID == ref.accountID }) else { throw AppError.notFound }
-            let item: MediaItem
-            if let query = source.provider as? any MediaLibraryQueryProviding {
-                item = try await query.libraryQueryItem(.init(id: ref.itemID, accountID: ref.accountID))
-            } else {
-                item = try await source.provider.item(id: ref.itemID)
+            let source = sources.first {
+                $0.accountID == ref.accountID && (ref.libraryID == nil || $0.containerID == ref.libraryID)
             }
-            items.append(item.taggingSource(ref.accountID))
+            do {
+                guard let source else { throw AppError.notFound }
+                let item: MediaItem
+                if let query = source.provider as? any MediaLibraryQueryProviding {
+                    item = try await query.libraryQueryItem(.init(id: ref.itemID, accountID: ref.accountID))
+                } else {
+                    item = try await source.provider.item(id: ref.itemID)
+                }
+                items.append(item.taggingSource(ref.accountID).taggingLibrary(source.containerID))
+            } catch {
+                try Self.checkQueryCancellation(error)
+                PlozzLog.app.error("Aggregation: item unavailable for account \(ref.accountID)")
+                if let source { failedSources.append(source) }
+                failure = error
+            }
+        }
+        if items.isEmpty {
+            throw attributedFailure(failure ?? AppError.notFound, sources: failedSources)
         }
         return MediaItemMerger.mergeGroup(items, serverInfo: { inventoryServerInfo[$0] })
     }

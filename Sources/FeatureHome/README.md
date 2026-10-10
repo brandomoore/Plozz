@@ -18,6 +18,23 @@ fallback when the user's server has no attached trailer.
   active account set (`[ResolvedAccount]`) so Home is a merged view
   across multiple servers / profiles. Uses the `MediaProvider`
   abstraction; never imports a specific provider module.
+  All Libraries keeps reachable sources when capability preparation, query facets,
+  inventory discovery, or duplicate-card hydration encounters an unavailable source.
+  Inventory membership stays fixed per attempt. Before publishing a first page,
+  a source lost during inventory or card hydration causes one bounded rebuild
+  without that source; concurrent callers share recovery. Published pages keep
+  their offsets and retry feedback rather than silently shifting existing cards.
+  Refresh rediscovers sources. All-source failures
+  remain retryable errors, and cancellation never becomes partial success.
+  Navigation retains offline library destinations: the native sidebar includes
+  Offline in its single tab title (native tabs discard separate sibling labels),
+  while the pinned rail also adds a contrasting wifi-slash badge
+  that stays legible when the row is focused. Compact top navigation has no
+  individual library destinations.
+  Failed library pages identify the affected server with its provider logo and
+  saved name in a non-focusable identity chip on both platforms, alongside Retry.
+  It reuses library-discovery failures and actual share-root scan results, never
+  a new polling loop or cached-catalog reads as proof that a share is online.
 - **Mobile Home posters** — portrait rails fit two full posters below 375pt,
   three on larger phones, and a 28% preview at standard density. Wider windows add columns;
   per-profile display-size choices scale the result. Loaded cards and placeholders
@@ -153,7 +170,12 @@ fallback when the user's server has no attached trailer.
   A persistent tvOS focus owner encloses the header and grid, preserving
   the selected tab's focus identity as content changes. The content slot stays full-height
   during loading, keeping the header in place and query progress vertically
-  centered below it. Scan progress remains in the grid.
+  centered below it. Scan progress remains in the grid. Its hosting view is
+  constrained to the collection's supplementary header, which alone owns the
+  placed size. Do not pre-size that view and then autoresize it when the header
+  grows: a live scan update would apply the size delta twice, overlapping posters
+  until another focus/layout pass. Banner height and artwork alignment must be
+  correct while unfocused, through focus changes, and when progress reappears.
   Showcase preserves the Home-sized details footprint under that header,
   keeping the same metadata-to-heading clearance as Home. A cold logo is adopted
   when it finishes for the still-current title, without requiring a focus round trip.
@@ -302,6 +324,9 @@ together after pending watch-state reads finish. A partial server failure must
 not replace Continue Watching's focusable loading slot with an error while
 healthy cards are still reconciling. Usable cards retain focus; a settled empty
 failed row still presents its error.
+If library visibility changes while a load is in flight, the model replaces the
+obsolete load even when Home's view-owned task is absent. Discarding stale
+results must never strand a row on loading placeholders.
 
 Adding an owned library title to Watchlist retains its verified source and full
 presentation in memory, even when Search is the only place that loaded it.

@@ -22,6 +22,7 @@ extension LiveTVPortableSyncBridge {
     }
 
     public static func makeRuntime(profiles: ProfilesModel, directory: URL) -> LiveTVPortableSyncBridge {
+        let absentCatalogRevision = UUID()
         let sources: @MainActor (String) -> any LiveTVSourcesStoring = { profileID in
             let namespace = profileID == profiles.rootNamespaceOwnerID ? nil : profileID
             return LiveTVSourceStorage.approvalAwareStore(
@@ -58,6 +59,15 @@ extension LiveTVPortableSyncBridge {
                       let cache = LiveTVCatalogStorage.existingCache(profileID: profileID) else { return false }
                 try await cache.applyPortableIdentityHints(hints)
                 return true
+            },
+            captureIdentityRevision: { profileID in
+                guard let cache = LiveTVCatalogStorage.existingCache(profileID: profileID) else {
+                    return absentCatalogRevision
+                }
+                let store = sources(profileID)
+                let configuration = try (store as? any LiveTVPortableSourcesStoring)?.loadSyncConfiguration()
+                    ?? store.load()
+                return try await cache.portableSyncRevision(configuration: configuration)
             }
         )
         bridge.refreshParticipation()

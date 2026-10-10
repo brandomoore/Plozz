@@ -29,7 +29,7 @@ if [[ ! "$REPEATS" =~ ^[1-3]$ ]]; then
   echo "PLOZZ_HOME_REPEATS must be 1, 2, or 3." >&2
   exit 2
 fi
-if [[ $# -ne 1 || ( "$MODE" != "--build-runner" && "$MODE" != "--run" && "$MODE" != "--run-hero-off" && "$MODE" != "--run-vertical-only" && "$MODE" != "--run-horizontal-only" && "$MODE" != "--sweep-down" && "$MODE" != "--sweep-up" && "$MODE" != "--measure-right" && "$MODE" != "--measure-left" && "$MODE" != "--measure-down" && "$MODE" != "--measure-up" && "$MODE" != "--measure-hero-down" && "$MODE" != "--measure-hero-up" && "$MODE" != "--run-vertical-roundtrip" && "$MODE" != "--observe-home" && "$MODE" != "--measure-vertical-burst" && "$MODE" != "--run-showcase-mixed" && "$MODE" != "--measure-multirow-up" ) ]]; then
+if [[ $# -ne 1 || ( "$MODE" != "--build-runner" && "$MODE" != "--run" && "$MODE" != "--run-hero-off" && "$MODE" != "--run-vertical-only" && "$MODE" != "--run-horizontal-only" && "$MODE" != "--sweep-down" && "$MODE" != "--sweep-up" && "$MODE" != "--measure-right" && "$MODE" != "--measure-left" && "$MODE" != "--measure-down" && "$MODE" != "--measure-up" && "$MODE" != "--measure-hero-down" && "$MODE" != "--measure-hero-up" && "$MODE" != "--run-vertical-roundtrip" && "$MODE" != "--observe-home" && "$MODE" != "--measure-vertical-burst" && "$MODE" != "--run-showcase-mixed" && "$MODE" != "--measure-multirow-up" && "$MODE" != "--run-pinned-navigation" ) ]]; then
   echo "Usage: bash tools/run-physical-home-rows-first.sh --build-runner"
   echo "Then: PLOZZ_HOME_ROWS_FIRST=$DEVICE PLOZZ_HOME_RELEASE_APP_INSTALLED=1 bash tools/run-physical-home-rows-first.sh --run-hero-off"
   echo "--run is also a hero-off alias."
@@ -43,6 +43,8 @@ if [[ $# -ne 1 || ( "$MODE" != "--build-runner" && "$MODE" != "--run" && "$MODE"
   echo "Use --measure-multirow-up for four rapid Up presses returning to Continue Watching."
   echo "Use --run-vertical-roundtrip for observed Hero/CW paging and available lower rows, then return."
   echo "Use --observe-home for AX evidence only, without directional input."
+  echo "Use --run-pinned-navigation for verified sidebar roundtrips from Movies' Recommended control."
+  echo "Set PLOZZ_PINNED_MEASURE_OPEN=1 to measure Left opening with native hitch and CPU metrics."
   echo "Use --run-showcase-mixed for deep mixed-speed Continue Watching and multi-row traversal."
   exit 2
 fi
@@ -252,6 +254,25 @@ elif [[ "$MODE" == "--measure-right" || "$MODE" == "--measure-left" || "$MODE" =
   RUNNER_LIMIT=150
   INPUT_BUDGET=130
 fi
+export TEST_RUNNER_PLOZZ_PINNED_NAVIGATION=0
+if [[ "$MODE" == "--run-pinned-navigation" ]]; then
+  [[ "$APP_ID" == "com.thatcube.Plozz" ]] || { echo "Pinned capture requires the existing production app." >&2; exit 2; }
+  export TEST_RUNNER_PLOZZ_HOME_HERO_OFF=0
+  export TEST_RUNNER_PLOZZ_PINNED_NAVIGATION=1
+  export TEST_RUNNER_PLOZZ_PINNED_ENTER_LIBRARY="${PLOZZ_PINNED_ENTER_LIBRARY:-0}"
+  export TEST_RUNNER_PLOZZ_PINNED_MEASURE_OPEN="${PLOZZ_PINNED_MEASURE_OPEN:-0}"
+  [[ "$TEST_RUNNER_PLOZZ_PINNED_MEASURE_OPEN" =~ ^[01]$ ]] || { echo "PLOZZ_PINNED_MEASURE_OPEN must be 0 or 1." >&2; exit 2; }
+  [[ "$TEST_RUNNER_PLOZZ_PINNED_ENTER_LIBRARY" =~ ^[01]$ ]] || { echo "PLOZZ_PINNED_ENTER_LIBRARY must be 0 or 1." >&2; exit 2; }
+  export TEST_RUNNER_PLOZZ_PINNED_LIBRARY_LABEL="${PLOZZ_PINNED_LIBRARY_LABEL:-Movies}"
+  export TEST_RUNNER_PLOZZ_PINNED_ENTRY_SOURCE_LABEL="${PLOZZ_PINNED_ENTRY_SOURCE_LABEL:-Home}"
+  export TEST_RUNNER_PLOZZ_PINNED_LIBRARY_INDEX="${PLOZZ_PINNED_LIBRARY_INDEX:-0}"
+  export TEST_RUNNER_PLOZZ_PINNED_CONTENT_CONTROL="${PLOZZ_PINNED_CONTENT_CONTROL:-library-content-mode-recommended}"
+  [[ "$TEST_RUNNER_PLOZZ_PINNED_LIBRARY_INDEX" =~ ^[0-9]+$ ]] || { echo "PLOZZ_PINNED_LIBRARY_INDEX must be nonnegative." >&2; exit 2; }
+  TEST_METHOD=testPinnedLibraryNavigationRoundtripsWarm
+  SCENARIO=pinned-library
+  RUNNER_LIMIT=150
+  INPUT_BUDGET=120
+fi
 export TEST_RUNNER_PLOZZ_HOME_CONTINUE_WATCHING_LABEL="${PLOZZ_HOME_CONTINUE_WATCHING_LABEL:-Continue Watching}"
 export TEST_RUNNER_PLOZZ_HOME_NAVIGATION_LABEL="${PLOZZ_HOME_NAVIGATION_LABEL:-Home}"
 export TEST_RUNNER_PLOZZ_HOME_START_ROW="${PLOZZ_HOME_START_ROW:-}"
@@ -266,11 +287,31 @@ fi
 echo "Warm app only: do not launch, terminate, replace, or change its environment."
 echo "Scenario: $SCENARIO. Never change the user's hero setting to fit a test."
 echo "Native hitch metrics do not require app diagnostic flags; callback samples are supplemental."
-echo "Wait for PLZROWS warm-ready; confirm current Home with an actual populated row/card focused, then:"
+if [[ "$MODE" == "--run-pinned-navigation" ]]; then
+  if [[ "$TEST_RUNNER_PLOZZ_PINNED_ENTER_LIBRARY" == 1 ]]; then
+    echo "Wait for PLZROWS warm-ready; confirm foreground $TEST_RUNNER_PLOZZ_PINNED_ENTRY_SOURCE_LABEL with navigation closed, then:"
+  else
+    echo "Wait for PLZROWS warm-ready; confirm the selected library is foreground with pinned navigation closed, then:"
+  fi
+else
+  echo "Wait for PLZROWS warm-ready; confirm current Home with an actual populated row/card focused, then:"
+fi
 echo "xcrun devicectl device notification post --device $DEVICE --name <confirmedNotification> --timeout 15"
 echo "${TEST_RUNNER_PLOZZ_HOME_CONFIRMATION_TIMEOUT}s confirmation, 15s real-card readiness, ${INPUT_BUDGET}s input budget, ${RUNNER_LIMIT}s hard runner limit."
 if [[ "$MODE" == "--observe-home" ]]; then
   echo "Read current foreground Home AX only; no sidebar recovery or directional input."
+elif [[ "$MODE" == "--run-pinned-navigation" ]]; then
+  if [[ "$TEST_RUNNER_PLOZZ_PINNED_ENTER_LIBRARY" == 1 ]]; then
+    echo "Explicit entry: open $TEST_RUNNER_PLOZZ_PINNED_ENTRY_SOURCE_LABEL navigation and select $TEST_RUNNER_PLOZZ_PINNED_LIBRARY_LABEL occurrence $TEST_RUNNER_PLOZZ_PINNED_LIBRARY_INDEX."
+  fi
+  echo "Observe the focused header; up to three preparatory Left presses reach $TEST_RUNNER_PLOZZ_PINNED_CONTENT_CONTROL."
+  if [[ "$TEST_RUNNER_PLOZZ_PINNED_MEASURE_OPEN" == 1 ]]; then
+    echo "Measure Left opening only; accessibility checks and Right resets stay outside each interval."
+  else
+    echo "Six Left/Right pairs, verifying library focus on every open and the expected header on every close."
+    echo "Functional roundtrips are not rapid-reversal or performance evidence."
+  fi
+  echo "Without explicit entry, no Select or destination change."
 elif [[ "$MODE" == "--run-vertical-roundtrip" ]]; then
   echo "Observe actual hero/rows. If starting on Hero, verify Down to Continue Watching."
   echo "Visit at most sixteen media rows, identifying each destination before another input, then return."
@@ -334,7 +375,7 @@ if [[ "$STATUS" -ne 0 ]]; then
   echo "Driver failed ($STATUS). Distinguish NOT_READY from INPUT_FAILED in test.log." >&2
   exit "$STATUS"
 fi
-if [[ -n "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION" ]]; then
+if [[ -n "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION" || "${TEST_RUNNER_PLOZZ_PINNED_MEASURE_OPEN:-0}" == 1 ]]; then
   xcrun xcresulttool get test-results metrics --path "$OUT/RowsFirst.xcresult" > "$OUT/native-metrics.json"
   python3 - "$OUT/native-metrics.json" "$EXPECT_HITCHES" "${APP_ID##*.}" <<'PY'
 import json
@@ -398,6 +439,23 @@ if [[ "$MODE" == "--run-showcase-mixed" ]]; then
   xcrun xcresulttool get test-results summary --path "$OUT/RowsFirst.xcresult" > "$OUT/summary.json"
   python3 tools/xcresult-summary.py verdict "$OUT/summary.json"
   printf '{"nativeMetricsCollected":false,"performanceMeasured":false,"coverage":"mixed-speed Showcase navigation and anchors; inspect timeline"}\n' > "$OUT/validation.json"
+  exit 0
+elif [[ "$MODE" == "--run-pinned-navigation" ]]; then
+  if [[ "$TEST_RUNNER_PLOZZ_PINNED_ENTER_LIBRARY" == 1 ]]; then
+    grep -q 'PLZROWS .* pinned.entry.verified ' "$OUT/test.log" || { echo "Missing automatic library-entry handoff." >&2; exit 1; }
+  fi
+  if [[ "$TEST_RUNNER_PLOZZ_PINNED_MEASURE_OPEN" == 1 ]]; then
+    grep -q 'PLZROWS .* pinned.measurement.complete ' "$OUT/test.log" || { echo "Missing measured navigation opening." >&2; exit 1; }
+  else
+    grep -q 'PLZROWS .* pinned.roundtrips.verified ' "$OUT/test.log" || { echo "Missing pinned-navigation coverage." >&2; exit 1; }
+  fi
+  xcrun xcresulttool get test-results summary --path "$OUT/RowsFirst.xcresult" > "$OUT/summary.json"
+  python3 tools/xcresult-summary.py verdict "$OUT/summary.json"
+  if [[ "$TEST_RUNNER_PLOZZ_PINNED_MEASURE_OPEN" == 1 ]]; then
+    printf '{"nativeMetricsCollected":true,"performanceMeasured":true,"smoothnessVerdict":null,"coverage":"pinned library Left opening; accessibility checks and return outside measurement"}\n' > "$OUT/validation.json"
+  else
+    printf '{"nativeMetricsCollected":false,"performanceMeasured":false,"coverage":"pinned library Left/Right roundtrips; inspect input timeline"}\n' > "$OUT/validation.json"
+  fi
   exit 0
 elif [[ "$MODE" == "--observe-home" || "$MODE" == "--run-vertical-roundtrip" ]]; then
   REQUIRED_EVENT=observation.verified

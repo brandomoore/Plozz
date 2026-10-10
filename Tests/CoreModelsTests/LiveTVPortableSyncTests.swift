@@ -6,6 +6,37 @@ final class LiveTVPortableSyncTests: XCTestCase {
     private let profileID = "profile"
 
     @MainActor
+    func testCaptureInputsIgnoreRecentsButDetectPreferencesJournalEditsAndEviction() async throws {
+        let fixture = try makeFixture()
+        try fixture.preferences.save(.init(favoriteIDs: ["channel"]))
+        let records = try fixture.adapter.capture(sourceStore: fixture.sources, fallback: [:])
+        let initial = try await fixture.adapter.captureInputs(sourceStore: fixture.sources)
+        let repeated = try await fixture.adapter.captureInputs(sourceStore: fixture.sources)
+        XCTAssertEqual(initial, repeated)
+        try fixture.preferences.save(.init(favoriteIDs: ["channel"], recentChannelIDs: ["recent"]))
+        let recent = try await fixture.adapter.captureInputs(sourceStore: fixture.sources)
+        XCTAssertEqual(initial, recent)
+        try fixture.preferences.save(.init(favoriteIDs: ["channel", "another"]))
+        let changed = try await fixture.adapter.captureInputs(sourceStore: fixture.sources)
+        XCTAssertNotEqual(initial, changed)
+        _ = try fixture.adapter.capture(sourceStore: fixture.sources, fallback: records)
+        let committed = try await fixture.adapter.captureInputs(sourceStore: fixture.sources)
+        XCTAssertNotEqual(changed, committed)
+        let enumerator = try XCTUnwrap(FileManager.default.enumerator(
+            at: fixture.root, includingPropertiesForKeys: nil
+        ))
+        let file = try XCTUnwrap((enumerator.allObjects as? [URL])?.first { $0.pathExtension == "record" })
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.write(contentsOf: Data("corrupt".utf8))
+        try handle.close()
+        let corrupted = try await fixture.adapter.captureInputs(sourceStore: fixture.sources)
+        XCTAssertNotEqual(committed, corrupted, "In-place edits must invalidate without decoding payloads")
+        try FileManager.default.removeItem(at: file)
+        let evicted = try await fixture.adapter.captureInputs(sourceStore: fixture.sources)
+        XCTAssertNotEqual(corrupted, evicted)
+    }
+
+    @MainActor
     func testJournalCommitKeepsMainActorResponsiveAndDoesNotExposeUncommittedRecords() async throws {
         let entered = expectation(description: "Background journal write")
         let release = DispatchSemaphore(value: 0)
@@ -31,6 +62,12 @@ final class LiveTVPortableSyncTests: XCTestCase {
         }
         await fulfillment(of: [entered], timeout: 3)
         XCTAssertFalse(returned, "Cloud capture must await the durable journal")
+        do {
+            _ = try await fixture.adapter.captureInputs(sourceStore: fixture.sources)
+            XCTFail("An in-flight commit must not authorize a no-op receipt")
+        } catch {
+            XCTAssertEqual(error as? LiveTVPortableSyncAdapter.PreparationError, .journalChanged)
+        }
         XCTAssertThrowsError(try fixture.adapter.preparedJournalRevision()) {
             XCTAssertEqual($0 as? LiveTVPortableSyncAdapter.PreparationError, .journalChanged)
         }

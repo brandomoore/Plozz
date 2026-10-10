@@ -1247,7 +1247,8 @@ struct PlozziOSTabShell: View {
         navigation.updateContentLibraries(
             discovered.libraries,
             accountIDs: accountIDs,
-            unreachableAccountIDs: discovered.unreachableAccountIDs
+            unreachableAccountIDs: discovered.unreachableAccountIDs,
+            failures: discovered.failures
         )
         if resolvesInitialCatalogue, !hasChosenNavigationDestination,
            navigation.discoveredAccountIDs.isSuperset(of: accountIDs) {

@@ -143,10 +143,12 @@ public struct ProviderBrandMark: View {
             return Color(red: 0xE5 / 255, green: 0xA0 / 255, blue: 0x0D / 255)
         case .silo:
             return Color(red: 0, green: 0x34 / 255, blue: 0xFB / 255)
-        case .mediaShare, .iptv:
+        case .mediaShare:
             // Neutral teal — reads as "storage/network", clearly not a Plex/
             // Jellyfin brand color, matching its second-class standing.
             return Color(red: 0x2A / 255, green: 0xA8 / 255, blue: 0x9E / 255)
+        case .iptv:
+            return Color(red: 0xF0 / 255, green: 0x63 / 255, blue: 0x74 / 255)
         }
     }
 
@@ -163,8 +165,10 @@ public struct ProviderBrandMark: View {
                 return Color(red: 0.60, green: 0.39, blue: 0.00)
             case .silo:
                 return brandTint(.silo)
-            case .mediaShare, .iptv:
+            case .mediaShare:
                 return Color(red: 0.08, green: 0.46, blue: 0.43)
+            case .iptv:
+                return Color(red: 0xB8 / 255, green: 0x31 / 255, blue: 0x47 / 255)
             }
         }
 
@@ -179,8 +183,10 @@ public struct ProviderBrandMark: View {
             return Color(red: 0.96, green: 0.73, blue: 0.18)
         case .silo:
             return Color(red: 0.4, green: 0.6, blue: 1)
-        case .mediaShare, .iptv:
+        case .mediaShare:
             return Color(red: 0.36, green: 0.82, blue: 0.77)
+        case .iptv:
+            return Color(red: 0xFF / 255, green: 0x8F / 255, blue: 0x9F / 255)
         }
     }
 }

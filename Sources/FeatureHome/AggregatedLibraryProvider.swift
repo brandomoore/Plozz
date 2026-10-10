@@ -60,12 +60,13 @@ public struct AggregatedLibrarySource: Sendable {
 /// fetches further batches when the caller scrolls past what's already merged.
 /// Each merged card keeps every server's source ref (via the merger) so tapping
 /// it opens a detail view with a working server picker and unified watch-state.
-public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, CapabilityReporting, @unchecked Sendable {
+public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, LibraryQueryFailureRecovering, CapabilityReporting, @unchecked Sendable {
     public let kind: ProviderKind
     public let session: UserSession
 
     let sources: [AggregatedLibrarySource]
     let inventoryCounts = InventoryCounts()
+    let queryRecovery = QueryRecovery()
     let inventoryServerInfo: [String: SourceServerInfo]
     let inventoryIdentitySources: @Sendable (MediaItem) -> [MediaSourceRef]
     private let cache: Cache
@@ -86,6 +87,42 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Capabi
     private enum BrowseContent: Equatable, Sendable {
         case titles
         case collections
+    }
+
+    actor QueryRecovery {
+        private var excluded: Set<String> = []
+        func sources() -> Set<String> { excluded }
+        func reset() { excluded = [] }
+        func exclude(_ failed: Set<String>, from all: Set<String>) -> Bool {
+            let next = excluded.union(failed.intersection(all))
+            guard next != excluded, next != all else { return false }
+            excluded = next
+            return true
+        }
+    }
+
+    public func resetLibraryQueryRecovery() async {
+        await queryRecovery.reset()
+    }
+
+    public func recoverLibraryQuery(after failure: LibrarySourceFailure) async -> Bool {
+        guard (failure.underlyingError as? AppError) == .serverUnreachable else { return false }
+        let recovered = await queryRecovery.exclude(failure.sourceKeys, from: Set(sources.map(\.sourceKey)))
+        if recovered {
+            PlozzLog.app.error("Aggregation: rebuilding unpublished query without unavailable sources")
+        }
+        return recovered
+    }
+
+    func attributedFailure(_ error: Error, sources failed: [AggregatedLibrarySource]) -> Error {
+        guard !(error is CancellationError), (error as? AppError) != .cancelled else { return error }
+        var seen: Set<String> = []
+        let servers = failed.map(\.provider.session.server).filter {
+            seen.insert("\($0.provider.rawValue):\($0.identityKey)").inserted
+        }
+        return LibrarySourceFailure(
+            underlyingError: LibrarySourceFailure.underlying(error),
+            servers: servers, sourceKeys: Set(failed.map(\.sourceKey)))
     }
 
     /// How many times one fill retries a silent source before emitting past it.
@@ -168,6 +205,8 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Capabi
             guard offsets.isEmpty else { return }
             for id in sourceIDs { offsets[id] = 0 }
         }
+
+        func hasSuccessfulSource() -> Bool { !totals.isEmpty }
 
         /// Resets everything when the caller asks for a different ordering.
         ///
@@ -468,7 +507,9 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Capabi
             }
             return (bySource, firstError)
         }
-        if results.0.isEmpty, let error = results.1 { throw error }
+        if results.0.isEmpty, let error = results.1 {
+            throw attributedFailure(error, sources: sources)
+        }
         let merged = MediaItemMerger.merge(
             sources.indices.flatMap { results.0[$0] ?? [] },
             serverInfo: { inventoryServerInfo[$0] }
@@ -514,7 +555,9 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Capabi
             }
             return (result, firstError)
         }
-        if results.0.isEmpty, let error = results.1 { throw error }
+        if results.0.isEmpty, let error = results.1 {
+            throw attributedFailure(error, sources: sources)
+        }
         return sources.indices.flatMap { results.0[$0] ?? [] }
     }
 
@@ -605,23 +648,28 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Capabi
             let grouped = try await withThrowingTaskGroup(of: (Int, [MediaItem]).self) { group in
                 for (index, source) in eligible.enumerated() {
                     group.addTask {
-                        var start = 0
-                        var items: [MediaItem] = []
-                        while true {
-                            try Task.checkCancellation()
-                            let page = try await source.provider.videoPlaylists(
-                                in: source.containerID,
-                                page: PageRequest(startIndex: start, limit: 100, sort: page.sort)
-                            )
-                            guard page.startIndex == start,
-                                  !page.items.isEmpty || start >= page.totalCount else {
-                                throw AppError.invalidResponse
+                        do {
+                            var start = 0
+                            var items: [MediaItem] = []
+                            while true {
+                                try Task.checkCancellation()
+                                let page = try await source.provider.videoPlaylists(
+                                    in: source.containerID,
+                                    page: PageRequest(startIndex: start, limit: 100, sort: page.sort)
+                                )
+                                guard page.startIndex == start,
+                                      !page.items.isEmpty || start >= page.totalCount else {
+                                    throw AppError.invalidResponse
+                                }
+                                items += page.items.map { $0.taggingSource(source.accountID) }
+                                start += page.items.count
+                                if start >= page.totalCount { break }
                             }
-                            items += page.items.map { $0.taggingSource(source.accountID) }
-                            start += page.items.count
-                            if start >= page.totalCount { break }
+                            return (index, items)
+                        } catch {
+                            try Self.checkQueryCancellation(error)
+                            throw self.attributedFailure(error, sources: [source])
                         }
-                        return (index, items)
                     }
                 }
                 var results: [(Int, [MediaItem])] = []
@@ -846,14 +894,24 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Capabi
         }
 
         try Task.checkCancellation()
+        if results.contains(where: { $0.error == .cancelled }) { throw CancellationError() }
         // A missing source must not turn a collection list into an empty or
         // complete-looking success. Keep title browsing's existing resilience.
         if content == .collections || requiresAllSources, let error = results.compactMap(\.error).first {
-            throw error
+            let failed = Set(results.filter { $0.error != nil }.map(\.sourceKey))
+            throw attributedFailure(error, sources: targets.filter { failed.contains($0.sourceKey) })
+        }
+        if results.allSatisfy({ $0.page == nil }),
+           !(await cache.hasSuccessfulSource()),
+           let error = results.compactMap(\.error).first {
+            throw attributedFailure(error, sources: targets)
         }
         var produced: Set<String> = []
         for result in results {
             guard let page = result.page else {
+                if result.error != nil {
+                    PlozzLog.app.error("Aggregation: page unavailable for account \(result.accountID)")
+                }
                 // No page this round: the source was either already exhausted
                 // (short-circuited above without a fetch) or hit a transient
                 // error / offline blip on this page. Either way, contribute nothing
