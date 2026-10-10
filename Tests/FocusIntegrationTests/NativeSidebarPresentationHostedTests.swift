@@ -21,30 +21,34 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
             fixture.window.overrideUserInterfaceStyle = appearance
             for offline in [false, true, false] {
                 model.isOffline = offline
-                try await waitUntil {
+                let deadline = ContinuousClock.now + .seconds(5)
+                var presentation: (image: UIImage, labels: [String])?
+                repeat {
                     fixture.window.layoutIfNeeded()
                     focusSystem.requestFocusUpdate(to: host)
                     focusSystem.updateFocusIfNeeded()
-                    guard let item = focusSystem.focusedItem,
-                          let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: fixture.window)
-                    else { return false }
-                    return frame.width > 150
-                }
-                try await Task.sleep(for: .milliseconds(500))
-                fixture.window.layoutIfNeeded()
-                let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
-                    XCTAssertTrue(fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true))
-                }
+                    try await Task.sleep(for: .milliseconds(100))
+                    let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+                        XCTAssertTrue(fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true))
+                    }
+                    let request = VNRecognizeTextRequest()
+                    request.recognitionLevel = .accurate
+                    request.recognitionLanguages = ["en-US"]
+                    request.customWords = ["Offline"]
+                    try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                    let labels = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                    presentation = (image, labels)
+                    // Theme changes can rebuild and collapse the native sidebar after focus was acquired.
+                    if labels.contains(where: { $0.contains("Movies") }),
+                       labels.filter({ $0.contains("Offline") }).count == (offline ? 2 : 0) {
+                        break
+                    }
+                } while ContinuousClock.now < deadline
+                let (image, labels) = try XCTUnwrap(presentation)
                 let attachment = XCTAttachment(image: image)
                 attachment.name = "Native sidebar \(appearance == .dark ? "dark" : "light") offline=\(offline)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
-                let request = VNRecognizeTextRequest()
-                request.recognitionLevel = .accurate
-                request.recognitionLanguages = ["en-US"]
-                request.customWords = ["Offline"]
-                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
-                let labels = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
                 XCTAssertTrue(labels.contains { $0.contains("Movies") }, "\(labels)")
                 XCTAssertEqual(labels.filter { $0.contains("Offline") }.count, offline ? 2 : 0, "\(labels)")
                 XCTAssertEqual(model.selection, "home", "Reachability updates must not select another tab.")
