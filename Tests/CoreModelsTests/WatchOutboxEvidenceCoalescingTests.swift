@@ -12,6 +12,38 @@ import XCTest
 /// clock and the tracker idempotency keys — so the fix is additive, matching on the
 /// identity evidence mutations already persist.
 final class WatchOutboxEvidenceCoalescingTests: XCTestCase {
+    private struct NoopWatchMutationApplier: WatchMutationApplying {
+        func setPlayed(_ played: Bool, on target: WatchMutationTarget) async throws {}
+        func setResumePosition(_ seconds: TimeInterval, on target: WatchMutationTarget, capturedAt: Date) async throws {}
+        func scrobbleTrakt(_ intent: TraktScrobbleIntent) async throws {}
+    }
+
+    func testConflictingIDsAndRejectedOriginsKeepSeparateQueuedActions() async {
+        for sparse in [false, true] {
+            var a = mutation(
+                canonicalMediaID: "imdb:tt111",
+                identities: [.external(source: "imdb", value: "tt111"), .external(source: "tmdb", value: "123")],
+                capturedAt: Date(timeIntervalSince1970: 1_000), accountID: "a"
+            )
+            a.rejectedSourceIDs = ["b:1"]
+            var b = mutation(
+                canonicalMediaID: sparse ? "tmdb:123" : "imdb:tt222",
+                identities: [.external(source: "tmdb", value: "123")]
+                    + (sparse ? [] : [.external(source: "imdb", value: "tt222")]),
+                capturedAt: Date(timeIntervalSince1970: 2_000), played: false, accountID: "b"
+            )
+            b.rejectedSourceIDs = ["a:1"]
+            XCTAssertNil(WatchStateReconciler.evidenceMatchIndex(for: b, in: [a]))
+            let reconciler = WatchStateReconciler(store: InMemoryWatchMutationStore(), applier: NoopWatchMutationApplier())
+            await reconciler.enqueue(a)
+            await reconciler.enqueue(b)
+            let queued = await reconciler.snapshot().pending
+            XCTAssertEqual(queued.count, 2)
+            XCTAssertEqual(queued.first?.played, true)
+            XCTAssertEqual(queued.last?.played, false)
+        }
+    }
+
     private func mutation(
         canonicalMediaID: String,
         identities: [MediaIdentity],

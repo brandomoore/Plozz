@@ -9,7 +9,10 @@ actor IPTVClient {
     private let http: IPTVHTTP
     private let artworkSecrets: [String]
     let catalog: IPTVCatalog
-    private var refresh: Task<Void, Error>?
+    private var refresh: Task<Void, Never>?
+    private var refreshScope: String?
+    private var refreshHasBackgroundOwner = false
+    private var refreshRetryAfter: [String: Date] = [:]
     private var refreshWaiters: [UUID: CheckedContinuation<Void, Error>] = [:]
     private var authenticatedAt: Date?
     private var liveExtension = "ts"
@@ -85,25 +88,61 @@ actor IPTVClient {
             try await authenticate()
             return
         }
-        while refresh != nil {
-            try await waitForRefresh()
-            try Task.checkCancellation()
-        }
-        try Task.checkCancellation()
         let scope = credential.mode == .playlist ? Self.playlistCatalogScope : library
-        if !force, let raw = try catalog.state(scope),
-           let time = TimeInterval(raw), Date().timeIntervalSince1970 - time < 1_800 { return }
+        while true {
+            try Task.checkCancellation()
+            // Freshness controls revalidation, not availability of committed data.
+            // Missing or old-schema catalogues must still finish their first import.
+            if !force, let committedAt = try catalogCommittedAt(scope) {
+                if Date().timeIntervalSince(committedAt) >= 1_800, refresh == nil,
+                   refreshRetryAfter[scope].map({ $0 <= Date() }) != false {
+                    startRefresh(library, scope: scope, background: true)
+                }
+                return
+            }
+            if refresh != nil {
+                let sameScope = refreshScope == scope
+                try await waitForRefresh()
+                if sameScope { return }
+            } else {
+                startRefresh(library, scope: scope, background: false)
+                try await waitForRefresh()
+                return
+            }
+        }
+    }
+
+    private func startRefresh(_ library: String, scope: String, background: Bool) {
+        refreshScope = scope
+        refreshHasBackgroundOwner = background
         refresh = Task {
+            let started = ContinuousClock.now
+            HandoffDiagnostics.emit("IPTV catalogRefresh begin background=\(background)")
             let result: Result<Void, Error>
-            do { try await self.importCatalog(library); result = .success(()) }
-            catch { result = .failure(error) }
+            do {
+                try await self.importCatalog(library)
+                self.refreshRetryAfter[scope] = nil
+                result = .success(())
+                HandoffDiagnostics.emit("IPTV catalogRefresh complete elapsed=\(started.duration(to: .now))")
+            } catch {
+                self.refreshRetryAfter[scope] = Date().addingTimeInterval(60)
+                let reason = IPTVSetupDiagnostic.Failure.sanitized(error).reason.rawValue
+                PlozzLog.networking.error("IPTV catalogue refresh failed reason=\(reason)")
+                HandoffDiagnostics.emit("IPTV catalogRefresh failed reason=\(reason) elapsed=\(started.duration(to: .now))")
+                result = .failure(error)
+            }
             self.refresh = nil
+            self.refreshScope = nil
+            self.refreshHasBackgroundOwner = false
             let waiters = self.refreshWaiters.values
             self.refreshWaiters.removeAll()
             for waiter in waiters { waiter.resume(with: result) }
-            try result.get()
         }
-        try await waitForRefresh()
+    }
+
+    private func catalogCommittedAt(_ scope: String) throws -> Date? {
+        guard let raw = try catalog.state(scope), let time = TimeInterval(raw), time.isFinite else { return nil }
+        return Date(timeIntervalSince1970: time)
     }
 
     private func waitForRefresh() async throws {
@@ -121,7 +160,7 @@ actor IPTVClient {
 
     private func cancelRefreshWaiter(_ id: UUID) {
         refreshWaiters.removeValue(forKey: id)?.resume(throwing: CancellationError())
-        if refreshWaiters.isEmpty { refresh?.cancel() }
+        if refreshWaiters.isEmpty, !refreshHasBackgroundOwner { refresh?.cancel() }
     }
 
     private func importCatalog(_ library: String) async throws {
@@ -253,6 +292,7 @@ actor IPTVClient {
                     try parser.append(chunk)
                     try persist(parser.takeCatalogEntries())
                     chunk.removeAll(keepingCapacity: true)
+                    await Task.yield()
                 }
             }
         }
@@ -425,7 +465,7 @@ actor IPTVClient {
         }
     }
 
-    func delivery(_ id: String) async throws -> (URL, [String: String]) {
+    func delivery(_ id: String) async throws -> (url: URL, headers: [String: String], formatHint: MediaFormatHint) {
         let record = try await record(id)
         let url: URL
         if let address = record.streamURL { url = address }
@@ -452,7 +492,16 @@ actor IPTVClient {
             headers[key] = value
         }
         try IPTVCredential.validate(headers: headers)
-        return (url, headers)
+        var container: String?
+        if record.isLive, credential.mode == .playlist, url.pathExtension.isEmpty {
+            let outputs = URLComponents(url: credential.address, resolvingAgainstBaseURL: false)?
+                .queryItems?.filter { $0.name.lowercased() == "output" } ?? []
+            if outputs.count == 1, let output = outputs.first?.value?.lowercased(),
+               ["ts", "m3u8"].contains(output) {
+                container = output
+            }
+        }
+        return (url, headers, MediaFormatHint(container: container))
     }
 
     func guideURLs() async throws -> [URL] {
@@ -465,6 +514,12 @@ actor IPTVClient {
             throw LiveTVSourceImportError.unsafeGuideOrigin
         }
         return guides
+    }
+
+    func hasGuideSource() async throws -> Bool {
+        if credential.mode == .xtream || !credential.explicitGuideURLs.isEmpty { return true }
+        try await ensureCatalog("live")
+        return try catalog.count(where: "kind = ?", values: [MediaItemKind.unknown.rawValue]) > 0
     }
 
     func guide(channelID: String, from: Date, to: Date) async throws -> [ServerLiveTVProgramme] {
@@ -578,6 +633,7 @@ actor IPTVClient {
                 try Task.checkCancellation()
                 try consume(chunk)
                 chunk.removeAll(keepingCapacity: true)
+                await Task.yield()
             }
         }
         try Task.checkCancellation()

@@ -38,7 +38,7 @@ public struct ServerLiveTVAvailability: Equatable, Sendable {
 
     public let status: Status
     public let channelCount: Int
-    /// Describes adapter support, not whether this server has populated its EPG.
+    /// Whether this source configuration exposes a guide lookup, not whether its EPG has listings.
     public let supportsGuide: Bool
 
     public var hasChannels: Bool { channelCount > 0 }

@@ -66,6 +66,41 @@ session persistence.
   Disclosure, menu, and add/remove actions use `SettingsFormButtonStyle`, which
   places the shared TV row height and padding **inside** the focus fill. The
   section's outer spacing cannot substitute for clearance around text and icons.
+- **IPTV import shows measured stages, not estimated completion.** Connecting,
+  reading, and saving use one gradient-aware status card on both platforms.
+  Parsed entries and committed records are distinct counts; cancellation remains
+  available, stale callbacks cannot update a later attempt, and failed setup
+  preserves the form and its disclosure state. Library discovery uses the same
+  outlined surface and explicitly offers Choose later while it is working.
+  Visible foreground imports temporarily suppress idle sleep on Apple TV and
+  iPhone/iPad. Completion, failure, cancellation, backgrounding, and dismissal
+  release only the import's wake lease; overlapping playback keeps its own lease.
+  On iOS the loading card lives in a settings scroll surface, not a Form row
+  whose native corner mask would clip its outline. The outline and fill use
+  the same continuous corner shape.
+  Count text interpolates toward confirmed totals without running ahead; a stage
+  change resets it immediately. Reduce Motion shows exact counts without animation,
+  and accessibility always exposes the latest confirmed total.
+  Playlist sign-in validates and imports a single response. Automatic Live TV
+  entry/enrollment reuses the current provider catalogue; only explicit source
+  refresh bypasses its freshness policy. A current committed catalogue remains
+  readable during replacement staging so library selection does not wait for
+  another full download.
+  Catalogue writes reuse a bounded set of prepared statements during staging.
+  Repeated series/season parents are recognized before encoding and encrypting
+  them again; their first record still wins. Statements and bound data are
+  released with the temporary import, including failed replacements.
+  Saving reports completed 500-record batches. Full-playlist replacement builds
+  secondary indexes once inside the transaction instead of maintaining them for
+  every inserted row; partial library refreshes retain their indexes. Cancellation
+  or a write failure rolls back both rows and indexes. Storage diagnostics retain
+  only numeric SQLite codes, never SQL, provider values, or database paths; only
+  an actual disk-full result suggests checking available storage.
+  Unexpected HTTP failures use plain-language provider errors rather than field
+  validation advice; exact status codes stay in diagnostics. A 451 response
+  explains blocked access without asserting that a trial has expired.
+  Duplicate, incomplete, and conflicting custom headers have
+  separate validation messages and cannot be inferred from a server response.
 - **Channels-only IPTV needs no library selection.** Successful discovery with
   no on-demand libraries continues onboarding on both platforms; failed
   discovery still offers recovery. Adding an IPTV account includes it in the

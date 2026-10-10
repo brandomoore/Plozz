@@ -182,7 +182,9 @@ final class IPTVLibrarySelectionHostedTests: XCTestCase {
         let suite = "IPTVLibrarySelectionHostedTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let provider = LiveOnlySelectionProvider()
+        let gate = LibrarySelectionGate()
+        addTeardownBlock { await gate.release() }
+        let provider = LiveOnlySelectionProvider(gate: gate)
         let account = Account(id: Account.stableID(for: provider.session), from: provider.session)
         let controller: UIViewController
         let completed: () -> Bool
@@ -200,7 +202,10 @@ final class IPTVLibrarySelectionHostedTests: XCTestCase {
         XCTAssertTrue(state.didAuthenticate(provider.session))
         XCTAssertEqual(state.pendingLibrarySelectionAccountIDs, [account.id])
         controller = UIHostingController(rootView:
-            SelectLibrariesView(appState: state).environment(\.themePalette, ThemePalette.dark)
+            SelectLibrariesView(appState: state)
+                .background { SettingsPageBackground() }
+                .environment(\.themePalette, ThemePalette.dark)
+                .environment(\.gradientBackgroundsEnabled, true)
         )
         completed = { state.state == .ready && state.pendingLibrarySelectionAccountIDs.isEmpty }
         #else
@@ -211,9 +216,11 @@ final class IPTVLibrarySelectionHostedTests: XCTestCase {
                 visibility: .init(store: HomeLibraryVisibilityStore(defaults: defaults)),
                 onContinue: { continueCount += 1 }
             ).environment(\.themePalette, ThemePalette.dark)
+                .environment(\.gradientBackgroundsEnabled, true)
         )
         completed = { continueCount == 1 }
         #endif
+        controller.overrideUserInterfaceStyle = .dark
         let sceneDeadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
               ContinuousClock.now < sceneDeadline {
@@ -231,11 +238,40 @@ final class IPTVLibrarySelectionHostedTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
+        let requestDeadline = ContinuousClock.now + .seconds(5)
+        while !(await gate.requested), ContinuousClock.now < requestDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        window.layoutIfNeeded()
+        #if os(iOS)
+        func containsClippingList(_ view: UIView) -> Bool {
+            view is UICollectionView || view is UITableView || view.subviews.contains(where: containsClippingList)
+        }
+        XCTAssertFalse(containsClippingList(controller.view),
+                       "The discovery card must not inherit a Form row's different corner mask.")
+        #endif
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "library-selection-gradient"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+        XCTAssertTrue(text.contains("Finding your libraries"), text)
+        XCTAssertTrue(text.contains("Choose later"), text)
+        await gate.release()
         let deadline = ContinuousClock.now + .seconds(5)
         while !completed(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertTrue(completed(), "A successful channels-only playlist must not require an empty library selection.")
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(completed(), "Replacing the loading surface must not restart library discovery.")
     }
 }
 
@@ -297,6 +333,10 @@ private struct HostedIPTVSourceLoader: LiveTVSourceLoading {
 }
 
 private struct LiveOnlySelectionProvider: MediaProvider {
+    let gate: LibrarySelectionGate?
+
+    init(gate: LibrarySelectionGate? = nil) { self.gate = gate }
+
     let kind: ProviderKind = .iptv
     let session = UserSession(
         server: MediaServer(id: "playlist", name: "Live channels",
@@ -304,7 +344,10 @@ private struct LiveOnlySelectionProvider: MediaProvider {
         userID: "viewer", userName: "IPTV", deviceID: "fixture", accessToken: "fixture"
     )
 
-    func libraries() async throws -> [MediaLibrary] { [] }
+    func libraries() async throws -> [MediaLibrary] {
+        await gate?.wait()
+        return []
+    }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func item(id: String) async throws -> MediaItem { throw AppError.notFound }
@@ -316,4 +359,22 @@ private struct LiveOnlySelectionProvider: MediaProvider {
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+private actor LibrarySelectionGate {
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+    private var released = false
+    private(set) var requested = false
+
+    func wait() async {
+        requested = true
+        guard !released else { return }
+        await withCheckedContinuation { continuations.append($0) }
+    }
+
+    func release() {
+        released = true
+        continuations.forEach { $0.resume() }
+        continuations.removeAll()
+    }
 }

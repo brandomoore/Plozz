@@ -593,7 +593,7 @@ public struct LiveChannelPlayerView: View {
         }
     }
 
-    private struct LiveChannelActivityObserver: ViewModifier {
+    struct LiveChannelActivityObserver: ViewModifier {
         let isActive: Bool
         let isAuthorized: Bool
         let scenePhase: ScenePhase
@@ -1436,7 +1436,7 @@ final class LiveChannelPlayerModel {
 
     private var source: Source
     private let uptime: @MainActor () -> TimeInterval
-    private let idleSleepGuard = LiveChannelWakeLease()
+    private let idleSleepGuard = DisplayWakeLease()
     @ObservationIgnored private var monitorTask: Task<Void, Never>?
     private var attemptStartedAt: TimeInterval = 0
     private var firstFrameTimingStartedAt: TimeInterval = 0

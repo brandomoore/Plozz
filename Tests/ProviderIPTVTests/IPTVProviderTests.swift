@@ -1,10 +1,62 @@
 import CoreModels
 import CoreNetworking
+import CryptoKit
 import Foundation
 @testable import ProviderIPTV
 import XCTest
 
 final class IPTVProviderTests: XCTestCase {
+    func testPlaylistDigestsPreserveLegacyIdentity() throws {
+        for text in ["", "Leading zeros", "雪\u{1F}https://example.test/video", String(repeating: "x", count: 1_024)] {
+            XCTAssertEqual(
+                IPTVMapping.digest(text),
+                SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+            )
+        }
+        let result = try M3UPlaylistParser().parse("""
+        #EXTM3U
+        #EXTINF:-1 tvg-id="station",Café
+        https://example.test/video
+        """)
+        let digestInput = "station\u{1F}Café\u{1F}https://example.test/video"
+        let digest = SHA256.hash(data: Data(digestInput.utf8)).map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(result.channels.first?.id, "iptv-" + digest)
+    }
+
+    func testReusableEpisodePatternPreservesNamesAndAttributePrecedence() throws {
+        for (name, title, season, episode) in [
+            ("Example S02E03", "Example", 2, 3),
+            ("Example.s001_e0023.Title", "Example", 1, 23),
+            ("雪の物語 S123 E1234", "雪の物語", 123, 1_234),
+            ("Example-s03-e04", "Example", 3, 4)
+        ] {
+            var parser = M3UPlaylistParser().makeCatalogStream()
+            try parser.append(Data("#EXTINF:-1,\(name)\nhttps://example.test/video\n".utf8))
+            _ = try parser.finish()
+            let records = parser.takeCatalogEntries().flatMap(IPTVMapping.playlistEntry)
+            XCTAssertEqual(records.map(\.item.kind), [.series, .season, .episode], name)
+            XCTAssertEqual(records.first?.item.title, title, name)
+            XCTAssertEqual(records.last?.item.seasonNumber, season, name)
+            XCTAssertEqual(records.last?.item.episodeNumber, episode, name)
+        }
+        var parser = M3UPlaylistParser().makeCatalogStream()
+        try parser.append(Data("""
+        #EXTINF:-1 series-name="Metadata title" season-number="7" episode-number="9",Display S01E02
+        https://example.test/one
+        #EXTINF:-1,Ordinary live channel
+        https://example.test/two
+        #EXTINF:-1,Not an episode S01E02extra
+        https://example.test/three
+
+        """.utf8))
+        _ = try parser.finish()
+        let records = parser.takeCatalogEntries().flatMap(IPTVMapping.playlistEntry)
+        XCTAssertEqual(records.map(\.item.kind), [.series, .season, .episode, .video, .video])
+        XCTAssertEqual(records.first?.item.title, "Metadata title")
+        XCTAssertEqual(records[2].item.seasonNumber, 7)
+        XCTAssertEqual(records[2].item.episodeNumber, 9)
+    }
+
     func testArrayStreamingAcrossEveryByteBoundary() throws {
         let input = Data(#"[{"name":"quote \" and } [","id":1},{"name":"雪","id":"2"}]"#.utf8)
         for size in 1...input.count {
@@ -218,7 +270,7 @@ final class IPTVProviderTests: XCTestCase {
             checkpoints.append(count)
             if count > 0 { throw CancellationError() }
         }) { XCTAssertTrue($0 is CancellationError) }
-        XCTAssertEqual(checkpoints, [0, 10_000])
+        XCTAssertEqual(checkpoints, [0, 500])
         XCTAssertEqual(try reader.count(where: "1 = 1"), 2)
         XCTAssertEqual(try reader.state("movies"), "old")
         XCTAssertEqual(try reader.record("old").item.title, "Original")
@@ -230,7 +282,7 @@ final class IPTVProviderTests: XCTestCase {
             XCTAssertEqual(try reader.state("movies"), "old")
             XCTAssertEqual(try reader.record("old").item.title, "Original")
         }
-        XCTAssertEqual(checkpoints, [0, 10_000, 10_005])
+        XCTAssertEqual(checkpoints, Array(stride(from: 0, through: 10_000, by: 500)) + [10_005])
         XCTAssertEqual(try reader.count(where: "library = ?", values: ["movies"]), 10_005)
         XCTAssertEqual(try reader.record("movie:0").item.title, "Replacement 0")
         XCTAssertEqual(try reader.record("movie:10004").item.title, "Movie 10004")
@@ -238,7 +290,11 @@ final class IPTVProviderTests: XCTestCase {
         XCTAssertThrowsError(try reader.record("old"))
         XCTAssertNotEqual(try reader.state("movies"), "old")
 
-        try writer.commitImport(library: nil, scope: "playlist")
+        try writer.commitImport(library: nil, scope: "playlist") { _ in
+            XCTAssertEqual(try reader.count(where: "1 = 1"), 10_006)
+            XCTAssertEqual(try reader.record("live").item.title, "Retained")
+            try reader.execute("SELECT id FROM entries INDEXED BY catalogue_name")
+        }
         XCTAssertEqual(try reader.count(where: "1 = 1"), 10_005)
         XCTAssertThrowsError(try reader.record("live"))
         writer.discardImport()
@@ -270,7 +326,7 @@ final class IPTVProviderTests: XCTestCase {
                 }
                 XCTFail("Cancellation must roll back the replacement before publication")
             } catch is CancellationError {
-                XCTAssertEqual(checkpoints, [0, 10_000])
+                XCTAssertEqual(checkpoints, [0, 500])
             }
             return (try catalog.count(where: "1 = 1"), try catalog.state("playlist"))
         }.value

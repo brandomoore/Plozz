@@ -11,6 +11,7 @@ public final class IPTVAuthViewModel {
         IPTVCredential, String, String, @escaping @Sendable (IPTVImportProgress) -> Void
     ) async throws -> UserSession
     public enum CompletionError: Error { case persistence }
+    private enum HeaderError: Error { case incomplete, duplicate, authorizationConflict }
     public enum Authentication: String, CaseIterable, Identifiable {
         case none, basic, bearer
         public var id: String { rawValue }
@@ -46,7 +47,8 @@ public final class IPTVAuthViewModel {
     public var authentication: Authentication = .none
     public var headers: [Header] = []
     public private(set) var isConnecting = false
-    public private(set) var progressMessage: LocalizedStringResource = "Checking your connection"
+    public private(set) var progress = IPTVImportProgress(stage: .connecting)
+    public var progressMessage: LocalizedStringResource { progress.message }
     public private(set) var issue: LocalizedStringResource?
     private let deviceID: String
     private let onAuthenticated: (UserSession) throws -> Void
@@ -145,15 +147,15 @@ public final class IPTVAuthViewModel {
                 ? playlistFileURL?.deletingPathExtension().lastPathComponent ?? "IPTV" : enteredName
             let fileURL = mode == .file ? playlistFileURL : nil
             isConnecting = true
-            progressMessage = "Checking your connection"
+            progress = IPTVImportProgress(stage: mode == .file ? .playlist : .connecting)
             flow = Task { [weak self, deviceID, signIn] in
                 await IPTVSetupDiagnostics.$current.withValue(attempt) {
                     defer { attempt?.finish(.init(.cancelled)) }
                     do {
                         let progress: @Sendable (IPTVImportProgress) -> Void = { [weak self] progress in
                             Task { @MainActor [weak self] in
-                                guard let self, self.generation == current else { return }
-                                self.progressMessage = progress.message
+                                guard let self, self.generation == current, self.isConnecting else { return }
+                                self.progress = progress
                             }
                         }
                         var session: UserSession
@@ -191,7 +193,7 @@ public final class IPTVAuthViewModel {
             }
         } catch {
             attempt?.finish(.init(.invalidInput))
-            show(error)
+            show(error, duringValidation: true)
         }
     }
 
@@ -233,7 +235,9 @@ public final class IPTVAuthViewModel {
         }
         var values = try headerValues(headers)
         if mode == .playlist, authentication != .none {
-            guard !values.keys.contains(where: { $0.lowercased() == "authorization" }) else { throw AppError.invalidResponse }
+            guard !values.keys.contains(where: { $0.lowercased() == "authorization" }) else {
+                throw HeaderError.authorizationConflict
+            }
             values["Authorization"] = authentication == .basic
                 ? "Basic " + Data((username + ":" + password).utf8).base64EncodedString()
                 : "Bearer " + token
@@ -249,21 +253,30 @@ public final class IPTVAuthViewModel {
         var values: [String: String] = [:]
         for header in headers {
             let key = header.name.trimmingCharacters(in: .whitespaces)
-            guard !key.isEmpty, !header.value.isEmpty,
-                  !values.keys.contains(where: { $0.lowercased() == key.lowercased() }) else {
-                throw AppError.invalidResponse
+            guard !key.isEmpty, !header.value.isEmpty else { throw HeaderError.incomplete }
+            guard !values.keys.contains(where: { $0.lowercased() == key.lowercased() }) else {
+                throw HeaderError.duplicate
             }
             values[key] = header.value
         }
         return values
     }
 
-    private func show(_ error: any Error) {
+    private func show(_ error: any Error, duringValidation: Bool = false) {
         if error is CompletionError { issue = "Your IPTV account couldn't be saved. Please try again." }
+        else if let error = error as? HeaderError {
+            issue = switch error {
+            case .incomplete: "Enter a name and value for each custom header, or remove the empty row."
+            case .duplicate: "Header names must be unique. Remove or rename the duplicate header."
+            case .authorizationConflict: "Use either an authentication option or an Authorization header, not both."
+            }
+        }
         else if let error = error as? IPTVError { issue = error.userDescription }
         else if let error = error as? LiveTVSourceImportError { issue = error.userDescription }
         else if error as? AppError == .invalidResponse {
-            issue = "Check the address, guide URL, and authentication fields. Header names must be unique."
+            issue = duringValidation
+                ? "Check the playlist address, guide URLs, and authentication details."
+                : "Your IPTV provider couldn't send the playlist. Try again later or contact your provider."
         } else {
             issue = "Couldn't connect to this IPTV provider. Check the address and your connection, then try again."
         }

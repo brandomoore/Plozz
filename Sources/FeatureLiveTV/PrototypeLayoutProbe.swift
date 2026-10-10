@@ -2,6 +2,21 @@
 import SwiftUI
 import UIKit
 
+struct PrototypeBrowseBoundsKey: PreferenceKey {
+    static var defaultValue: [String: Anchor<CGRect>] { [:] }
+    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
+struct PrototypeBrowseLayoutObservation: ViewModifier {
+    let element: String
+
+    func body(content: Content) -> some View {
+        content.anchorPreference(key: PrototypeBrowseBoundsKey.self, value: .bounds) { [element: $0] }
+    }
+}
+
 /// Actual mounted bounds used by layout-transition regressions.
 struct PrototypeHeroBoundsKey: PreferenceKey {
     static var defaultValue: [String: Anchor<CGRect>] { [:] }

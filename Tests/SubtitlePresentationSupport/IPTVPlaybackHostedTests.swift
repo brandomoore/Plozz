@@ -16,11 +16,37 @@ final class IPTVPlaybackHostedTests: XCTestCase {
         try await play(hls: true)
     }
 
+    func testDeclaredTransportStreamPlaysWithAnExtensionlessUpstream() async throws {
+        try await play(hls: false, extensionless: true)
+    }
+
+    func testDeclaredFragmentedHLSPlaysWithAnExtensionlessUpstream() async throws {
+        try await play(hls: true, fragmented: true, extensionless: true)
+    }
+
     func testFragmentedMP4HLSKeepsNativePlaybackThroughAuthenticatedProxy() async throws {
         try await play(hls: true, fragmented: true)
     }
 
-    private func play(hls: Bool, fragmented: Bool = false) async throws {
+    func testOptInTrialChannelSustainsPlaybackThroughTheProductionEngine() async throws {
+        let control = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent(".build/iptv-performance-source.json")
+        guard FileManager.default.fileExists(atPath: control.path) else {
+            throw XCTSkip("An explicitly enabled, owned local relay is required.")
+        }
+        struct Source: Decodable { let liveURL: String?; let allowPlayback: Bool? }
+        let source = try JSONDecoder().decode(Source.self, from: Data(contentsOf: control))
+        guard source.allowPlayback == true else { throw XCTSkip("Trial playback was not explicitly enabled.") }
+        let origin = try XCTUnwrap(source.liveURL.flatMap(URL.init(string:)))
+        XCTAssertEqual(origin.host, "127.0.0.1")
+        guard origin.host == "127.0.0.1" else { return }
+        let proxy = try IPTVPlaybackProxy(origin: origin, headers: [:], formatHint: .init(container: "ts"))
+        addTeardownBlock { await proxy.stop() }
+        try await render(url: proxy.start(), sustainedSeconds: 20)
+    }
+
+    private func play(hls: Bool, fragmented: Bool = false, extensionless: Bool = false) async throws {
         let file = try XCTUnwrap(Bundle(for: Self.self).url(
             forResource: "iptv", withExtension: "ts", subdirectory: "Fixtures"
         ))
@@ -32,7 +58,7 @@ final class IPTVPlaybackHostedTests: XCTestCase {
         ))
         let server = try IPTVTestHTTPServer { request in
             guard request.contains("Authorization: Bearer fixture") else { return .init(status: 403) }
-            if request.contains("/master.m3u8") {
+            if request.contains("/master.m3u8") || (hls && extensionless && request.contains("/channel HTTP")) {
                 return .init(data: Data("""
                 #EXTM3U
                 #EXT-X-VERSION:\(fragmented ? 7 : 3)
@@ -56,11 +82,16 @@ final class IPTVPlaybackHostedTests: XCTestCase {
         addTeardownBlock { await server.stop() }
         let base = try await server.start()
         let proxy = try IPTVPlaybackProxy(
-            origin: base.appendingPathComponent(hls ? "master.m3u8" : "channel.ts"),
-            headers: ["Authorization": "Bearer fixture"]
+            origin: base.appendingPathComponent(extensionless ? "channel" : hls ? "master.m3u8" : "channel.ts"),
+            headers: ["Authorization": "Bearer fixture"],
+            formatHint: extensionless ? .init(container: hls ? "m3u8" : "ts") : .init()
         )
         addTeardownBlock { await proxy.stop() }
         let url = try await proxy.start()
+        try await render(url: url)
+    }
+
+    private func render(url: URL, sustainedSeconds: TimeInterval = 0) async throws {
         let engine = try PlozzigenVideoEngine()
         defer { engine.stop() }
         let sceneDeadline = ContinuousClock.now + .seconds(5)
@@ -83,8 +114,9 @@ final class IPTVPlaybackHostedTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
+        let started = Date()
         await engine.loadLive(url: url, httpHeaders: [:])
-        let deadline = ContinuousClock.now + .seconds(25)
+        let deadline = ContinuousClock.now + .seconds(sustainedSeconds > 0 ? 60 : 25)
         while ContinuousClock.now < deadline, engine.liveSnapshot.phase != .failed {
             if engine.liveSnapshot.firstFrameReady, engine.liveSnapshot.position > 0.2 { break }
             try await Task.sleep(for: .milliseconds(50))
@@ -92,5 +124,17 @@ final class IPTVPlaybackHostedTests: XCTestCase {
         XCTAssertNotEqual(engine.liveSnapshot.phase, .failed, "The actual production live engine must open this stream")
         XCTAssertTrue(engine.liveSnapshot.firstFrameReady, "Require a rendered frame, not just a successful URL request")
         XCTAssertGreaterThan(engine.liveSnapshot.position, 0.2)
+        if sustainedSeconds > 0, engine.liveSnapshot.firstFrameReady {
+            let firstFrameSeconds = Date().timeIntervalSince(started)
+            let initialPosition = engine.liveSnapshot.position
+            let until = Date().addingTimeInterval(sustainedSeconds)
+            while Date() < until, engine.liveSnapshot.phase != .failed {
+                try await Task.sleep(for: .milliseconds(200))
+            }
+            let advanced = engine.liveSnapshot.position - initialPosition
+            XCTAssertNotEqual(engine.liveSnapshot.phase, .failed)
+            XCTAssertGreaterThan(advanced, sustainedSeconds * 0.75, "Playback must keep advancing after startup.")
+            print("IPTV_LIVE_PROBE first_frame_seconds=\(firstFrameSeconds) observed_seconds=\(sustainedSeconds) advanced_seconds=\(advanced)")
+        }
     }
 }

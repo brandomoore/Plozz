@@ -234,6 +234,7 @@ public final class SentryCrashReporter: CrashReporter {
         data["response"] = diagnostic.response?.rawValue
         data["reason"] = diagnostic.failure?.reason.rawValue
         data["network_code"] = diagnostic.failure?.networkCode
+        data["sqlite_code"] = diagnostic.failure?.sqliteCode
         return data
     }
 
@@ -269,7 +270,8 @@ final class IPTVSetupReportGate: @unchecked Sendable {
         let key = [
             diagnostic.source.rawValue, diagnostic.authentication.rawValue, diagnostic.entry.rawValue, diagnostic.stage.rawValue,
             failure.reason.rawValue, diagnostic.httpStatus.map(String.init) ?? "none",
-            failure.networkCode.map(String.init) ?? "none"
+            failure.networkCode.map(String.init) ?? "none",
+            failure.sqliteCode.map(String.init) ?? "none"
         ].joined(separator: ".")
         return lock.withLock {
             guard reported.count < Self.maximumReports else { return false }

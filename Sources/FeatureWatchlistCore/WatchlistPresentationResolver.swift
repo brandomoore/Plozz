@@ -196,14 +196,12 @@ public enum WatchlistPresentationResolver {
     ) -> [MediaAliasID: MediaItem] {
         var result: [MediaAliasID: MediaItem] = [:]
         for item in items {
-            guard let evidence = MediaAliasEvidence(item: item) else { continue }
-            let aliases = evidence.strong.reduce(into: Set<MediaAliasID>()) {
-                $0.formUnion(aliasSnapshot.aliases(for: $1))
-            }
-            let candidates = aliases.isEmpty
-                ? evidence.weak.map { aliasSnapshot.aliases(for: $0) } ?? []
-                : aliases
-            guard candidates.count == 1, let aliasID = candidates.first else { continue }
+            guard let evidence = MediaAliasEvidence(item: item),
+                  let aliasID = MediaAliasResolver.lookup(
+                    evidence: evidence,
+                    preferredAliasID: item.watchlistAliasID,
+                    in: aliasSnapshot
+                  ) else { continue }
             if result[aliasID]?.locallyValidatedPlayableSource == true,
                !item.locallyValidatedPlayableSource {
                 continue

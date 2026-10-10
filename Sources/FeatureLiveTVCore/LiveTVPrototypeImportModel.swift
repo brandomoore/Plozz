@@ -449,7 +449,7 @@ public final class LiveTVPrototypeImportModel {
         return .unmatched
     }
 
-    public func reload(into model: LiveTVPrototypeModel) async {
+    public func reload(into model: LiveTVPrototypeModel, forceServerRefresh: Bool = true) async {
         publishedModel = model
         guard ensureCatalogAuthorization(into: model) else { return }
         beforeSourceRefresh?(Set(
@@ -462,7 +462,7 @@ public final class LiveTVPrototypeImportModel {
         guard request == reloadGeneration, !Task.isCancelled, ensureCatalogAuthorization(into: model) else { return }
         await reloadPlaylists(into: model)
         guard request == reloadGeneration, !Task.isCancelled, ensureCatalogAuthorization(into: model) else { return }
-        await reloadServers(into: model)
+        await reloadServers(into: model, forceRefresh: forceServerRefresh)
     }
 
     private func reloadPlaylists(into model: LiveTVPrototypeModel) async {

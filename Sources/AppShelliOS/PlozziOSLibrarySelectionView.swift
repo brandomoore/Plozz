@@ -17,34 +17,53 @@ struct PlozziOSLibrarySelectionView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                content
-
-                Section {
-                    Button("Continue", action: onContinue)
-                        .frame(maxWidth: .infinity)
-                } footer: {
-                    Text("You can change these choices later in Settings.")
+            Group {
+                if isLoading {
+                    SettingsPageScroll {
+                        SetupProgressCard(
+                            title: "Finding your libraries",
+                            detail: "Checking your connected sources for available libraries.",
+                            symbol: "rectangle.stack"
+                        )
+                        VStack(spacing: 12) {
+                            Button(action: onContinue) {
+                                Text("Choose later").frame(maxWidth: .infinity)
+                            }
+                            .plozzActionButton(role: .primary)
+                            Text("You can change these choices later in Settings.")
+                                .font(.footnote)
+                                .plozzForeground(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                } else {
+                    Form {
+                        content
+                        Section {
+                            Button(action: onContinue) {
+                                Text("Continue").frame(maxWidth: .infinity)
+                            }
+                            .plozzActionButton(role: .primary)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                        } footer: {
+                            Text("You can change these choices later in Settings.")
+                        }
+                    }
+                    .settingsPageSurface()
                 }
             }
-            .settingsPageSurface()
             .navigationTitle("Choose Your Libraries")
             .navigationBarTitleDisplayMode(.inline)
-            .task { await loadLibraries() }
         }
+        .task { await loadLibraries() }
         .interactiveDismissDisabled()
     }
 
     @ViewBuilder
     private var content: some View {
-        if isLoading {
-            Section {
-                HStack {
-                    ProgressView()
-                    Text("Finding your libraries…")
-                }
-            }
-        } else if libraries.isEmpty {
+        if libraries.isEmpty {
             Section {
                 ContentUnavailableView(
                     loadFailed ? "Couldn’t Load Libraries" : "No Video Libraries",

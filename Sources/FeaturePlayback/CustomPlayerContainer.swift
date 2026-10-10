@@ -4,6 +4,7 @@ import SwiftUI
 import QuartzCore
 import CoreModels
 import CoreNetworking
+import CoreUI
 
 /// Callbacks the input controller invokes on the owning view model. Kept as a
 /// plain value of closures so the UIKit layer never imports the view model.
@@ -213,7 +214,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// goes away. Driven every refresh tick off `engine.preventsDisplaySleep`, so
     /// it behaves identically for every engine/decoder (AVPlayer *and* Plozzigen).
     /// iOS owns its lease at the presentation level, including startup/buffering.
-    private let idleSleepGuard = IdleSleepGuard()
+    private let idleSleepGuard = DisplayWakeLease()
     #endif
 
     /// Whether the Siri Remote currently drives the scrub surface or the bottom

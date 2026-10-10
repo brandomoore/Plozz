@@ -7,6 +7,94 @@ import XCTest
 
 @MainActor
 final class IPTVAuthViewModelTests: XCTestCase {
+    func testProviderResponsesDoNotBlameCustomHeaders() async throws {
+        let cases: [(any Error, LocalizedStringResource)] = [
+            (IPTVError.httpStatus(451), "Your IPTV provider has blocked access to this playlist. Check that your trial or subscription is still active, or contact your provider."),
+            (AppError.invalidResponse, "Your IPTV provider couldn't send the playlist. Try again later or contact your provider.")
+        ]
+        for (error, message) in cases {
+            let model = IPTVAuthViewModel(
+                deviceID: "fixture",
+                address: "http://provider.test/get.php?username=fixture&password=fixture&type=m3u_plus&output=ts",
+                signIn: { credential, _, _, _ in
+                    XCTAssertTrue(credential.headers.isEmpty)
+                    throw error
+                }, onAuthenticated: { _ in XCTFail("A provider error cannot authenticate.") }
+            )
+            defer { model.cancel() }
+            XCTAssertTrue(try model.makeCredential().headers.isEmpty)
+            model.connect()
+            let deadline = ContinuousClock.now + .seconds(3)
+            while model.issue == nil, ContinuousClock.now < deadline { await Task.yield() }
+            XCTAssertEqual(model.issue, message)
+            XCTAssertFalse(model.isConnecting)
+            XCTAssertTrue(model.canConnect)
+        }
+    }
+
+    func testHeaderValidationDistinguishesEmptyDuplicateAndConflictingRows() {
+        let expected: [LocalizedStringResource] = [
+            "Enter a name and value for each custom header, or remove the empty row.",
+            "Header names must be unique. Remove or rename the duplicate header.",
+            "Use either an authentication option or an Authorization header, not both."
+        ]
+        for index in expected.indices {
+            let model = IPTVAuthViewModel(
+                deviceID: "fixture", address: "https://provider.test/list",
+                signIn: { _, _, _, _ in XCTFail("Invalid fields must not reach the provider."); throw CancellationError() },
+                onAuthenticated: { _ in XCTFail("Invalid fields cannot authenticate.") }
+            )
+            model.addHeader()
+            if index == 1 {
+                model.headers[0].name = "Cookie"
+                model.headers[0].value = "fixture"
+                model.addHeader()
+                model.headers[1].name = " cookie "
+                model.headers[1].value = "fixture"
+            } else if index == 2 {
+                model.authentication = .bearer
+                model.token = "fixture"
+                model.headers[0].name = "Authorization"
+                model.headers[0].value = "Bearer fixture"
+            }
+            model.connect()
+            XCTAssertEqual(model.issue, expected[index])
+            XCTAssertFalse(model.isConnecting)
+        }
+    }
+
+    func testImportProgressIsTypedAndLateCallbacksCannotReplaceANewAttempt() async throws {
+        let callbacks = AuthProgressCallbacks()
+        let gate = IPTVSignInGate()
+        let model = IPTVAuthViewModel(
+            deviceID: "fixture", address: "https://provider.test/list",
+            signIn: { credential, _, _, progress in
+                callbacks.append(progress)
+                return await gate.complete(credential)
+            }, onAuthenticated: { _ in XCTFail("A cancelled attempt must not authenticate.") }
+        )
+        defer { model.cancel() }
+        model.connect()
+        XCTAssertEqual(model.progress.stage, .connecting)
+        await gate.waitUntilRequested()
+        callbacks.send(.init(stage: .playlist, entries: 382_324), at: 0)
+        let deadline = ContinuousClock.now + .seconds(3)
+        while model.progress.entries != 382_324, ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertEqual(model.progress.stage, .playlist)
+        XCTAssertEqual(model.progress.entries, 382_324)
+        model.cancel()
+        await gate.release()
+        model.connect()
+        XCTAssertEqual(model.progress.stage, .connecting)
+        XCTAssertEqual(model.progress.entries, 0)
+        await gate.waitUntilRequested()
+        callbacks.send(.init(stage: .catalogCommit, entries: 382_324), at: 0)
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertEqual(model.progress.stage, .connecting)
+        model.cancel()
+        await gate.release()
+    }
+
     func testPlaylistFailureCopyAndDiagnosticsRemainSpecificAndAllowRetry() async throws {
         for (error, reason) in [
             (LiveTVSourceImportError.emptyPlaylist, IPTVSetupDiagnostic.Failure.Reason.empty),
@@ -28,6 +116,18 @@ final class IPTVAuthViewModelTests: XCTestCase {
             XCTAssertEqual(buffer.values.last?.failure?.reason, reason)
             XCTAssertFalse(model.isConnecting)
             XCTAssertTrue(model.canConnect)
+        }
+    }
+
+    private final class AuthProgressCallbacks: @unchecked Sendable {
+        private let lock = NSLock()
+        private var callbacks: [@Sendable (IPTVImportProgress) -> Void] = []
+        func append(_ callback: @escaping @Sendable (IPTVImportProgress) -> Void) {
+            lock.withLock { callbacks.append(callback) }
+        }
+        func send(_ progress: IPTVImportProgress, at index: Int) {
+            let callback = lock.withLock { callbacks[index] }
+            callback(progress)
         }
     }
 
@@ -296,7 +396,7 @@ private actor IPTVSignInGate {
         while !requested, ContinuousClock.now < deadline { await Task.yield() }
         XCTAssertTrue(requested)
     }
-    func release() { continuation?.resume(); continuation = nil }
+    func release() { continuation?.resume(); continuation = nil; requested = false }
     nonisolated static func session(_ credential: IPTVCredential) -> UserSession {
         UserSession(
             server: MediaServer(id: "fixture", name: "Fixture", baseURL: credential.address, provider: .iptv),

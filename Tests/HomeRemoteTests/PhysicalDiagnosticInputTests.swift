@@ -3,6 +3,151 @@ import notify
 
 @MainActor
 final class PhysicalDiagnosticInputTests: XCTestCase {
+    func testExistingLiveTVRevealsOnlyCategories() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["PLOZZ_CAPTURE_LIVE_TV_CATEGORIES"] == "1",
+              environment["PLOZZ_CAPTURE_BUNDLE_ID"] == "com.thatcube.Plozz" else {
+            throw XCTSkip("Explicit category-navigation check in the foreground physical app only.")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz")
+        XCTAssertEqual(app.state, .runningForeground, "Do not launch or replace the user's app.")
+        let guideButtons = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ OR identifier BEGINSWITH %@",
+            "live-tv-channel-", "live-tv-program-"
+        ))
+        let categories = app.scrollViews["live-tv-category-list"]
+        let navigation = app.collectionViews["Sidebar"]
+        guard guideButtons.firstMatch.exists else {
+            XCTFail("No recognized Live TV guide; no input sent.")
+            return
+        }
+        captureCategoryNavigation("before", in: app)
+        defer { captureCategoryNavigation("after", in: app) }
+
+        func focusedGuideButton() -> XCUIElement? {
+            guideButtons.allElementsBoundByIndex.first(where: containsNavigationFocus)
+        }
+        guard focusedGuideButton() != nil || containsNavigationFocus(categories) ||
+                containsNavigationFocus(navigation) else {
+            XCTFail("Focus is outside the guide, categories, and native sidebar; no input sent.")
+            return
+        }
+        for iteration in 0..<3 {
+            for _ in 0..<3 where focusedGuideButton() == nil {
+                guard containsNavigationFocus(categories) || containsNavigationFocus(navigation) ||
+                        containsNavigationFocus(app.buttons["live-tv-search"]) else {
+                    XCTFail("Unexpected focus while returning to the guide; stopping input.")
+                    return
+                }
+                XCUIRemote.shared.press(.right)
+            }
+            XCTAssertNotNil(focusedGuideButton(), "Could not enter the existing guide.")
+            for _ in 0..<2 {
+                guard let focused = focusedGuideButton() else {
+                    XCTFail("Guide focus changed before Left; stopping input.")
+                    return
+                }
+                let isStation = focused.identifier.hasPrefix("live-tv-channel-") &&
+                    !focused.identifier.hasPrefix("live-tv-channel-content-")
+                if iteration == 2 && isStation {
+                    XCUIRemote.shared.press(.left, forDuration: 0.6)
+                } else {
+                    XCUIRemote.shared.press(.left)
+                }
+                if categories.exists { break }
+            }
+            let revealed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                categories.exists && categories.isEnabled && self.containsNavigationFocus(categories)
+                    && !self.containsNavigationFocus(navigation)
+            }, object: nil)
+            let result = XCTWaiter.wait(for: [revealed], timeout: 5)
+            captureCategoryNavigation("categories-\(iteration + 1)", in: app)
+            XCTAssertEqual(result, .completed,
+                           "Left must reveal only categories, not the native app menu.")
+            XCTAssertTrue(!navigation.exists || navigation.frame.isEmpty,
+                          "The app menu must stay collapsed even if a category still owns focus.")
+        }
+        XCUIRemote.shared.press(.right)
+        XCTAssertNotNil(focusedGuideButton(), "Leave the user's app on the guide.")
+    }
+
+    private func containsNavigationFocus(_ element: XCUIElement) -> Bool {
+        element.exists && (element.hasFocus || element.descendants(matching: .any)
+            .matching(NSPredicate(format: "hasFocus == true")).firstMatch.exists)
+    }
+
+    private func captureCategoryNavigation(_ name: String, in app: XCUIApplication) {
+        let tree = XCTAttachment(string: app.debugDescription)
+        tree.name = "Live TV category navigation \(name)"
+        tree.lifetime = .keepAlways
+        add(tree)
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = "Live TV category screen \(name)"
+        image.lifetime = .keepAlways
+        add(image)
+    }
+
+    func testExistingLiveTVPublishesSavedChannels() throws {
+        guard ProcessInfo.processInfo.environment["PLOZZ_CAPTURE_LIVE_TV_LOADING"] == "1",
+              ProcessInfo.processInfo.environment["PLOZZ_CAPTURE_BUNDLE_ID"] == "com.thatcube.Plozz" else {
+            throw XCTSkip("Explicit saved-playlist loading check in the foreground physical app only.")
+        }
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz")
+        XCTAssertEqual(app.state, .runningForeground)
+        guard app.state == .runningForeground else { return }
+        defer {
+            let tree = XCTAttachment(string: app.debugDescription)
+            tree.name = "Existing Live TV loading result"
+            tree.lifetime = .keepAlways
+            add(tree)
+            let image = XCTAttachment(screenshot: app.screenshot())
+            image.name = "Existing Live TV loaded screen"
+            image.lifetime = .keepAlways
+            add(image)
+        }
+        let rows = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "live-tv-channel-content-channels-")
+        )
+        let introduction = app.buttons["live-tv-preview-enable"]
+        let skeleton = app.descendants(matching: .any)["live-tv-guide-skeleton"]
+        var navigated = false
+        var started = ProcessInfo.processInfo.systemUptime
+        if !rows.firstMatch.exists && !introduction.exists && !skeleton.exists {
+            let destination = app.buttons.matching(
+                NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Live TV", "Live TV,")
+            ).firstMatch
+            XCTAssertTrue(destination.exists, "No known Live TV navigation control; no input sent.")
+            guard destination.exists else { return }
+            for _ in 0..<12 where !destination.hasFocus {
+                let focused = app.descendants(matching: .any).matching(
+                    NSPredicate(format: "hasFocus == true")
+                ).firstMatch
+                guard focused.exists else {
+                    XCTFail("No current focus; no selection sent.")
+                    return
+                }
+                if focused.frame.midX > destination.frame.maxX {
+                    XCUIRemote.shared.press(.left)
+                } else {
+                    XCUIRemote.shared.press(focused.frame.midY < destination.frame.midY ? .down : .up)
+                }
+            }
+            XCTAssertTrue(destination.hasFocus, "Could not reach Live TV; no selection sent.")
+            guard destination.hasFocus else { return }
+            started = ProcessInfo.processInfo.systemUptime
+            XCUIRemote.shared.press(.select)
+            navigated = true
+        }
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            rows.firstMatch.exists || introduction.exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed,
+                       "Saved channels must replace loading placeholders without a full playlist download.")
+        XCTAssertFalse(skeleton.exists)
+        print("PLZLIVETV saved-loading navigated=\(navigated) observed_seconds=\(ProcessInfo.processInfo.systemUptime - started)")
+    }
+
     func testRepeatedDownThroughExistingSubfolders() throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["PLOZZ_CAPTURE_FOLDER_DOWN"] == "1",

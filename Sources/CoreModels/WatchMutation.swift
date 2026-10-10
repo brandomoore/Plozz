@@ -192,6 +192,7 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
     /// rather than dropping a queued write.
     public var anchorTitle: String?
     public var anchorYear: Int?
+    public var rejectedSourceIDs: Set<String>
 
     public init(
         id: UUID = UUID(),
@@ -213,7 +214,8 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         anchorYear: Int? = nil,
         simklPending: Bool? = nil,
         anilistPending: Bool? = nil,
-        malPending: Bool? = nil
+        malPending: Bool? = nil,
+        rejectedSourceIDs: Set<String> = []
     ) {
         self.id = id
         self.authorization = nil
@@ -240,6 +242,7 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         self.kind = kind
         self.anchorTitle = anchorTitle
         self.anchorYear = anchorYear
+        self.rejectedSourceIDs = rejectedSourceIDs
     }
 
     // MARK: - Codable (back-compatible)
@@ -249,7 +252,7 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         case resumePosition, played, clearResume, targets, optimisticTargets, trakt, traktPending
         case simklPending, anilistPending, malPending
         case attempts, episodeOrigin, expansionPending, appliedTargetIDs, expansionStartedAt, identities, kind
-        case anchorTitle, anchorYear, authorization, serverScope
+        case anchorTitle, anchorYear, authorization, serverScope, rejectedSourceIDs
     }
 
     private struct AuthorizedIdentity: Codable {
@@ -265,6 +268,14 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         let requirement: UUID?
     }
 
+    private struct SourceGuardedIdentity: Codable {
+        let version: Int
+        let value: UUID
+        let serverScope: String?
+        let requirement: UUID?
+        let rejectedSourceIDs: Set<String>
+    }
+
     /// Decodes tolerating outbox files written before `episodeOrigin` /
     /// `expansionPending` / `identities` / `kind` / `anchorTitle` / `anchorYear` /
     /// tracker pending flags existed (they decode to `nil` / `false` / `[]`), so an
@@ -277,7 +288,19 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
             ? try container.decode(WatchMutationAuthorization.self, forKey: .authorization) : nil
         serverScope = container.contains(.serverScope)
             ? try container.decode(WatchMutationServerScope.self, forKey: .serverScope) : nil
-        if let serverScope {
+        rejectedSourceIDs = try container.decodeIfPresent(Set<String>.self, forKey: .rejectedSourceIDs) ?? []
+        if !rejectedSourceIDs.isEmpty {
+            let identity = try container.decode(SourceGuardedIdentity.self, forKey: .id)
+            guard identity.version == 3,
+                  identity.serverScope == serverScope?.persistenceKey,
+                  identity.requirement == authorization?.id,
+                  identity.rejectedSourceIDs == rejectedSourceIDs else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .id, in: container, debugDescription: "Mismatched source rejection requirement"
+                )
+            }
+            id = identity.value
+        } else if let serverScope {
             let identity = try container.decode(ServerScopedIdentity.self, forKey: .id)
             guard identity.version == 2,
                   identity.serverScope == serverScope.persistenceKey,
@@ -332,7 +355,17 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        if let serverScope {
+        if !rejectedSourceIDs.isEmpty {
+            // Older readers must not replay this intent without its exclusions.
+            try container.encode(
+                SourceGuardedIdentity(
+                    version: 3, value: id, serverScope: serverScope?.persistenceKey,
+                    requirement: authorization?.id, rejectedSourceIDs: rejectedSourceIDs
+                ), forKey: .id
+            )
+            try container.encodeIfPresent(serverScope, forKey: .serverScope)
+            try container.encodeIfPresent(authorization, forKey: .authorization)
+        } else if let serverScope {
             // Both legacy scalar IDs and the v1 authorization reader reject this
             // envelope rather than silently dropping its server-user requirement.
             try container.encode(
@@ -376,6 +409,9 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         try container.encodeIfPresent(kind, forKey: .kind)
         try container.encodeIfPresent(anchorTitle, forKey: .anchorTitle)
         try container.encodeIfPresent(anchorYear, forKey: .anchorYear)
+        if !rejectedSourceIDs.isEmpty {
+            try container.encode(rejectedSourceIDs, forKey: .rejectedSourceIDs)
+        }
     }
 
     /// Title-level key used to COALESCE queued mutations (latest wins, targets
@@ -401,6 +437,17 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
 
     var titleCoalesceKey: String {
         "\(kind?.rawValue ?? "?")|\(canonicalMediaID)|s\(seasonNumber.map(String.init) ?? "-")|e\(episodeNumber.map(String.init) ?? "-")"
+    }
+
+    func sourceClockKey(for target: WatchMutationTarget? = nil, includeAuthorization: Bool = true) -> String? {
+        guard let origin = target ?? optimisticTargets.first else { return nil }
+        let fields = [
+            serverScope?.persistenceKey ?? "",
+            includeAuthorization ? authorization?.id.uuidString ?? "" : "",
+            origin.accountID, origin.itemID, kind?.rawValue ?? "?",
+            seasonNumber.map(String.init) ?? "-", episodeNumber.map(String.init) ?? "-"
+        ]
+        return fields.map { "\($0.utf8.count):\($0)" }.joined()
     }
 
     /// Capture at intent/session creation. Later enqueue paths cannot replace an

@@ -9,6 +9,39 @@ import XCTest
 
 @MainActor
 final class LiveTVPlaybackEntryHostedTests: XCTestCase {
+    func testUnansweredPreviewChoiceSurvivesLeavingAndBackgroundingWithoutPlayback() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let probe = PlaybackEntryProbe()
+        let suite = "PreviewChoiceLifecycle.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let store = LiveTVViewSettingsStore(defaults: defaults)
+        probe.settingsStore = store
+        probe.active = true
+        probe.phase = .active
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = UIHostingController(rootView: PlaybackEntryFixture(probe: probe))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        for stage in 0..<3 {
+            try await Task.sleep(for: .seconds(1))
+            XCTAssertNil(probe.input, "No automatic player before the choice, stage \(stage)")
+            XCTAssertFalse(store.load().hasChosenAutoPreview)
+            if stage == 0 { probe.phase = .background }
+            if stage == 1 { probe.phase = .active; probe.active = false }
+        }
+        probe.active = true
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertNil(probe.input)
+        XCTAssertFalse(store.load().hasChosenAutoPreview)
+    }
+
     func testPreviewStartsAfterDestinationAndSceneBecomeActive() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -84,6 +117,7 @@ private final class PlaybackEntryProbe {
     var phase = ScenePhase.inactive
     var authorized = true
     var input: LiveTVPrototypePlayback?
+    var settingsStore: LiveTVViewSettingsStore?
     let namespace = "LiveTVPlaybackEntry.\(UUID().uuidString)"
     let sources = PlaybackEntrySources()
     let approval = LiveTVSourceApprovalContext(
@@ -98,6 +132,7 @@ private struct PlaybackEntryFixture: View {
     var body: some View {
         LiveTVPrototypeView(
             isActive: probe.active,
+            viewSettingsStore: probe.settingsStore,
             sourceStore: probe.sources,
             isProfileAuthorized: { probe.authorized },
             sourceLoader: PlaybackEntryLoader(),

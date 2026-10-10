@@ -15,6 +15,8 @@ final class LiveTVViewSettingsStoreTests: XCTestCase {
 
         XCTAssertFalse(settings.sortByName)
         XCTAssertTrue(settings.autoPreview)
+        XCTAssertFalse(settings.hasChosenAutoPreview)
+        XCTAssertFalse(settings.allowsAutomaticPreview)
         XCTAssertFalse(settings.keepWatchingWhileBrowsing)
         XCTAssertFalse(settings.favoritesOnly)
         XCTAssertFalse(settings.guideOnly)
@@ -33,13 +35,63 @@ final class LiveTVViewSettingsStoreTests: XCTestCase {
             guideOnly: true,
             wifiOnly: true,
             previewAfterWatching: false,
-            showsRecentChannels: false
+            showsRecentChannels: false,
+            hasChosenAutoPreview: true
         )
 
         LiveTVViewSettingsStore(defaults: defaults).save(settings)
         let reopened = LiveTVViewSettingsStore(defaults: defaults)
 
         XCTAssertEqual(reopened.load(), settings)
+    }
+
+    func testPreviewChoicePersistsIndependentlyForEachProfile() {
+        let defaults = makeDefaults()
+        for enabled in [false, true] {
+            let namespace = "profile-\(enabled)"
+            let store = LiveTVViewSettingsStore(defaults: defaults, namespace: namespace)
+            var settings = store.load()
+            settings.chooseAutoPreview(enabled)
+            store.save(settings)
+            let reopened = LiveTVViewSettingsStore(defaults: defaults, namespace: namespace).load()
+            XCTAssertTrue(reopened.hasChosenAutoPreview)
+            XCTAssertEqual(reopened.autoPreview, enabled)
+            XCTAssertEqual(reopened.allowsAutomaticPreview, enabled)
+        }
+        XCTAssertFalse(LiveTVViewSettingsStore(defaults: defaults).load().hasChosenAutoPreview)
+        XCTAssertFalse(LiveTVViewSettingsStore(defaults: defaults).load().allowsAutomaticPreview)
+    }
+
+    func testLegacyPreviewValuesArePreservedButDoNotImplyAChoice() {
+        let defaults = makeDefaults()
+        for enabled in [false, true] {
+            defaults.set(enabled, forKey: LiveTVViewSettingsStore.autoPreviewKey)
+            let store = LiveTVViewSettingsStore(defaults: defaults)
+            var settings = store.load()
+            XCTAssertEqual(settings.autoPreview, enabled)
+            XCTAssertFalse(settings.hasChosenAutoPreview)
+            XCTAssertFalse(settings.allowsAutomaticPreview)
+            settings.sortByName.toggle()
+            store.save(settings)
+            XCTAssertFalse(store.load().hasChosenAutoPreview, "A filter save is not preview consent")
+            XCTAssertFalse(store.load().allowsAutomaticPreview)
+        }
+    }
+
+    func testUnrelatedSettingsSavePreservesAnExplicitChoice() {
+        let store = LiveTVViewSettingsStore(defaults: makeDefaults())
+        var settings = store.load()
+        settings.chooseAutoPreview(true)
+        store.save(settings)
+        settings = store.load()
+        settings.favoritesOnly = true
+        store.save(settings)
+        XCTAssertTrue(store.load().hasChosenAutoPreview)
+        XCTAssertTrue(store.load().allowsAutomaticPreview)
+        settings.chooseAutoPreview(false)
+        store.save(settings)
+        XCTAssertTrue(store.load().hasChosenAutoPreview)
+        XCTAssertFalse(store.load().allowsAutomaticPreview)
     }
 
     func testNamespacesIsolateProfilesAndKeepDefaultProfileUnscoped() {

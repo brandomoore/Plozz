@@ -20,31 +20,26 @@ public struct LiveTVLoadingSkeleton: View {
             ZStack {
                 AppBackground(palette: palette)
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: geometry.size.width) {
-                    VStack(spacing: layout.sectionGap) {
+                    PrototypeBrowseLayout(layout: layout) {
                         #if os(iOS)
                         PrototypeLoadingToolbar().frame(height: 44)
                         #endif
                         PrototypePreviewHeroSkeleton(layout: layout)
-                            .frame(height: layout.heroHeight, alignment: .bottomLeading)
+                            .frame(height: layout.heroHeight, alignment: layout.heroAlignment)
                             #if DEBUG
                             .modifier(PrototypeHeroLayoutObservation(phase: "storage"))
                             #endif
-                        HStack(alignment: .top, spacing: PrototypeLayout.sectionGap) {
-                            if layout.sidebarWidth > 0 {
-                                PrototypeLoadingSidebar().frame(width: layout.sidebarWidth)
-                            }
-                            VStack(spacing: PrototypeLayout.toolbarGuideGap) {
-                                #if os(tvOS)
+                    } sidebar: {
+                        PrototypeLoadingSidebar()
+                    } guide: {
+                        VStack(spacing: PrototypeLayout.toolbarGuideGap) {
+                            #if os(tvOS)
                                 if layout.sidebarWidth == 0 {
-                                    PrototypeLoadingToolbar().frame(height: PrototypeLayout.controlHeight + 2 * PrototypeLayout.controlInset)
+                                    PrototypeLoadingToolbar().frame(
+                                        height: PrototypeLayout.controlHeight + 2 * PrototypeLayout.controlInset)
                                 }
-                                #endif
-                                PrototypeGuideSkeleton()
-                            }
-                            .frame(width: layout.guideWidth + layout.guideLeadingExtension + layout.guideTrailingExtension)
-                            .padding(.leading, -layout.guideLeadingExtension)
-                            .padding(.trailing, -layout.guideTrailingExtension)
-                            .padding(.bottom, -layout.guideBottomExtension)
+                            #endif
+                            PrototypeGuideSkeleton()
                         }
                     }
                 }

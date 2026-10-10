@@ -41,7 +41,7 @@ extension LiveTVPrototypeImportModel {
         try publishPlaylists(into: model)
     }
 
-    public func reloadServers(into model: LiveTVPrototypeModel) async {
+    public func reloadServers(into model: LiveTVPrototypeModel, forceRefresh: Bool = true) async {
         serverRevision &+= 1
         cancelServerGuideRequests()
         let request = serverRevision
@@ -82,7 +82,8 @@ extension LiveTVPrototypeImportModel {
                 $0.guidePhase = .idle
             }
             do {
-                let availability = try await context.provider.refreshLiveTVAvailability()
+                let availability = try await forceRefresh
+                    ? context.provider.refreshLiveTVAvailability() : context.provider.liveTVAvailability()
                 try Task.checkCancellation()
                 guard acceptServerResult(
                     source, context: context, request: request, sourceRevision: sourceRevision, into: model

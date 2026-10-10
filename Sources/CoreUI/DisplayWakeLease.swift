@@ -1,8 +1,8 @@
 #if canImport(UIKit)
-import Foundation
+import UIKit
 
 @MainActor
-final class LiveChannelWakeGroup {
+final class DisplayWakeGroup {
     private var holders: Set<UUID> = []
     private let updateIdleTimer: @MainActor (Bool) -> Void
 
@@ -17,26 +17,30 @@ final class LiveChannelWakeGroup {
     }
 }
 
-/// Shared by Live TV panes and the iOS full-screen player: an outgoing surface
-/// must release only its own assertion, never the incoming player's wake lock.
+/// Each surface releases only its own assertion, never another activity's wake lock.
 @MainActor
-final class LiveChannelWakeLease {
-    private static let guardOwner = IdleSleepGuard()
-    private static let sharedGroup = LiveChannelWakeGroup {
-        LiveChannelWakeLease.guardOwner.keepAwake($0)
+public final class DisplayWakeLease {
+    private static let sharedGroup = DisplayWakeGroup { awake in
+        if UIApplication.shared.isIdleTimerDisabled != awake {
+            UIApplication.shared.isIdleTimerDisabled = awake
+        }
     }
-    let group: LiveChannelWakeGroup
+    let group: DisplayWakeGroup
     private let id = UUID()
 
-    init(group: LiveChannelWakeGroup? = nil) {
-        self.group = group ?? Self.sharedGroup
+    public init() {
+        group = Self.sharedGroup
     }
 
-    func keepAwake(_ awake: Bool) {
+    init(group: DisplayWakeGroup) {
+        self.group = group
+    }
+
+    public func keepAwake(_ awake: Bool) {
         group.setAwake(awake, holder: id)
     }
 
-    func allowSleep() { keepAwake(false) }
+    public func allowSleep() { keepAwake(false) }
 
     deinit {
         let id = id

@@ -38,7 +38,7 @@ public struct DetailOpenEnvironment {
     public let continueWatchingSnapshot: @MainActor () -> [MediaItem]
     /// Discovers *other servers* hosting the same title off the critical path, to
     /// fill the cross-server picker. `nil` disables cross-server discovery.
-    public let crossServerSourceResolver: (@Sendable (MediaItem) async -> [MediaSourceRef])?
+    public let crossServerSourceResolver: (@Sendable (MediaItem) async -> CrossServerSourceResolution)?
     /// External ratings (IMDb/RT/Metacritic) provider for live enrichment.
     public let ratingsProvider: any ExternalRatingsProviding
     public let detailMetadataResolver: @Sendable (MediaItem) async -> MetadataEnrichment
@@ -61,7 +61,7 @@ public struct DetailOpenEnvironment {
         resolveProvider: @escaping (_ accountID: String?) -> any MediaProvider,
         resolveOptionalProvider: @escaping @Sendable (_ accountID: String) -> (any MediaProvider)?,
         identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef],
-        crossServerSourceResolver: (@Sendable (MediaItem) async -> [MediaSourceRef])?,
+        crossServerSourceResolver: (@Sendable (MediaItem) async -> CrossServerSourceResolution)?,
         continueWatchingSnapshot: @escaping @MainActor () -> [MediaItem] = { [] },
         ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
         detailMetadataResolver: @escaping @Sendable (MediaItem) async -> MetadataEnrichment = { _ in MetadataEnrichment() },
@@ -134,7 +134,10 @@ public struct DetailOpenEnvironment {
             own = [source]
         }
         var seen = Set<String>()
-        return (own + item.sources + indexed).filter { seen.insert($0.id).inserted }
+        return (own + item.sources + indexed).filter { source in
+            (!item.rejectedSourceIDs.contains(source.id) || own.contains { $0.id == source.id })
+                && seen.insert(source.id).inserted
+        }
     }
 
     /// Library grids preserve physical provider items; Home/Search aggregation
@@ -280,6 +283,7 @@ public struct DetailOpenEnvironment {
             initialSources: sources,
             alternateProviderResolver: resolveOptionalProvider,
             crossServerSourceResolver: crossServerSourceResolver,
+            identitySources: identitySources,
             relatedTitlesLoader: makeRelatedTitlesLoader?(
                 Self.relatedTitlesDisplayMode(isDiscoveryItem: isDiscovery)
             ),
@@ -351,6 +355,7 @@ public struct DetailOpenEnvironment {
             originSourceAccountID: originAccountID,
             alternateProviderResolver: resolveOptionalProvider,
             crossServerSourceResolver: crossServerSourceResolver,
+            identitySources: identitySources,
             relatedTitlesLoader: makeRelatedTitlesLoader?(.libraryOnly),
             snapshotCache: snapshotCache
         )

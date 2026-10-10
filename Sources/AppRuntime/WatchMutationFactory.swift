@@ -67,8 +67,9 @@ public enum WatchMutationFactory {
         // below is the authoritative cross-server path: series identity followed by
         // exact season+episode lookup. The origin above is always retained.
         if item.kind != .episode {
-            item.sources.forEach { append(accountID: $0.accountID, itemID: $0.itemID, providerKind: $0.providerKind) }
-            additionalSources.forEach { append(accountID: $0.accountID, itemID: $0.itemID, providerKind: $0.providerKind) }
+            for source in item.sources + additionalSources where !item.rejectedSourceIDs.contains(source.id) {
+                append(accountID: source.accountID, itemID: source.itemID, providerKind: source.providerKind)
+            }
         }
         return result
     }
@@ -167,7 +168,8 @@ public enum WatchMutationFactory {
             identities: identity.identities,
             kind: item.kind,
             anchorTitle: identity.anchorTitle,
-            anchorYear: identity.anchorYear
+            anchorYear: identity.anchorYear,
+            rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id))
         )
     }
 
@@ -245,7 +247,8 @@ public enum WatchMutationFactory {
             identities: identity.identities,
             kind: item.kind,
             anchorTitle: identity.anchorTitle,
-            anchorYear: identity.anchorYear
+            anchorYear: identity.anchorYear,
+            rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id))
         )
     }
 
@@ -271,7 +274,8 @@ public enum WatchMutationFactory {
                 identities: identity.identities,
                 kind: item.kind,
                 anchorTitle: identity.anchorTitle,
-                anchorYear: identity.anchorYear
+                anchorYear: identity.anchorYear,
+                rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id))
             )
         }
 
@@ -289,7 +293,8 @@ public enum WatchMutationFactory {
             identities: identity.identities,
             kind: item.kind,
             anchorTitle: identity.anchorTitle,
-            anchorYear: identity.anchorYear
+            anchorYear: identity.anchorYear,
+            rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id))
         )
     }
 }

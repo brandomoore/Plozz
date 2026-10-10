@@ -29,7 +29,7 @@ struct PrototypeBrowser: View {
     let openControls: () -> Void
     let openSources: () -> Void
     let openGuideTime: () -> Void
-    let openToolbar: () -> Void
+    let openToolbar: (() -> Void)?
     let isLoading: Bool
     let loadFailed: Bool
     let reload: () -> Void
@@ -39,6 +39,7 @@ struct PrototypeBrowser: View {
     var libraryCatalog: PrototypeLibraryCatalogRevision?
     var loadLibraryGuide: ((Set<String>, DateInterval) -> Void)?
     var openLibraryItem: ((LibraryChannelItem) -> Void)?
+    var leadingExit: (() -> Void)?
     @State private var scrollID: LiveTVGuideRowID?
     @State private var pendingFocus: PrototypeBrowseFocus?
     @State private var restorationFallback: PrototypeBrowseFocus?
@@ -57,9 +58,11 @@ struct PrototypeBrowser: View {
     @ScaledMetric(relativeTo: .caption) private var nativeSectionFontSize = PrototypeLayout.sectionFontSize
     #endif
     @FocusState private var focused: PrototypeBrowseFocus?
+    @FocusState private var recoveryFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
         let guideRequest = serverGuideRequest
@@ -92,6 +95,7 @@ struct PrototypeBrowser: View {
                         Text("Check your connection or open Sources to review what needs attention.")
                     } actions: {
                         Button("Retry", action: reload).buttonStyle(PrototypeButtonStyle())
+                            .focused($recoveryFocused)
                         Button("Sources", action: openSources).buttonStyle(PrototypeButtonStyle())
                     }
                 } else if model.channels.isEmpty {
@@ -101,6 +105,7 @@ struct PrototypeBrowser: View {
                         Text("Your enabled sources haven't provided any channels. Open Sources to check their status or add another source.")
                     } actions: {
                         Button("Refresh channels", action: reload).buttonStyle(PrototypeButtonStyle())
+                            .focused($recoveryFocused)
                         Button("Sources", action: openSources).buttonStyle(PrototypeButtonStyle())
                     }
                 } else if allChannelsHidden {
@@ -162,7 +167,8 @@ struct PrototypeBrowser: View {
                                     focusPolicy: rowFocusPolicy(for: row))
                             }
                         },
-                        horizontalNavigation: useNativeNavigation
+                        horizontalNavigation: useNativeNavigation,
+                        leadingExit: leadingExit
                     ) { row in
                         if let entry = model.guideEntry(for: row) {
                             guideRow(
@@ -260,9 +266,9 @@ struct PrototypeBrowser: View {
         .clipShape(PrototypeLayout.guideShape)
         #if os(tvOS)
         .focusSection()
-        .onExitCommand {
-            if !isRestoringFocus { openToolbar() }
-        }
+        .onExitCommand(perform: openToolbar.map { action in
+            { if !isRestoringFocus { action() } }
+        })
         #endif
         .onChange(of: confirmedFocus, initial: true) { _, target in
             hasFocus = target != nil
@@ -299,6 +305,12 @@ struct PrototypeBrowser: View {
             if restoring, restorationTarget == nil {
                 focusRestored(restoreFocusRequest)
             }
+        }
+        .onChange(of: restoreFocusRequest) { _, request in
+            guard isPresented, !isLoading, model.channels.isEmpty else { return }
+            recoveryFocused = true
+            railActive = false
+            focusRestored(request)
         }
         .onChange(of: model.guideChannels) { _, rows in
             if rows.isEmpty, isRestoringFocus {

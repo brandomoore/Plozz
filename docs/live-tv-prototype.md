@@ -61,6 +61,37 @@ remain Debug-only; neither is a production default or a source offered to users.
 
 ## Try
 
+### Native navigation and animated browsing
+
+On Apple TV, Live TV remains inside the selected native tab/sidebar, including
+its normal title/header. Browsing never presents a separate fullscreen host or
+reparents the player to reveal navigation. One Back from the guide or browsing
+controls belongs to native navigation. The native sidebar also owns the leading
+direction from categories (Left in LTR, Right in RTL). Search, dialogs, pending
+channel preparation, and expanded playback retain their own Back handling.
+Menu round trips preserve the guide and playback session; a genuine
+destination/profile change still deactivates playback.
+
+Profiles without a saved navigation choice default to **Pinned Sidebar**.
+The first-run, new-profile, and Settings pickers list Pinned Sidebar, Sidebar,
+then Top Bar. Saved profile choices are not overwritten.
+
+Automatic entry reuses the account's saved channel catalog. Explicit Refresh
+channels, Refresh sources, and retry actions bypass that cache and await the
+replacement, including when the saved playlist has no channels.
+
+Search and the active-channel artwork stay aligned, with an additional 16-point
+clearance below native navigation. Pinned navigation keeps its existing inset.
+The full-height Search/categories pane slides and fades over 0.28 seconds while the guide resizes;
+Reduce Motion suppresses this animation. iPhone/iPad retain their existing layout.
+The pane has one geometry group, so button-local focus styling
+cannot cancel Search or Multiviews movement independently of the categories.
+The category list remains lazy; no per-row animation timers or rasterized
+snapshots are used.
+Native-menu round trips, selected-category restoration, and preview-session
+identity have remote regressions; hosted rendered-pixel tests cover synchronized
+Search/Multiviews/category movement, guide travel, and rapid reversal.
+
 ### IPTV accounts and large catalogues
 
 **Sources > IPTV provider** and **Add Server > IPTV** use the same account
@@ -78,6 +109,24 @@ catalog's normal 30-minute cache. Newly published channels appear on refresh;
 a successful empty response clears ended events without deleting the source.
 Failed downloads preserve the previous catalog. Blank responses, web pages,
 and lists containing only unusable entries still fail validation.
+
+The 30-minute age is a refresh interval, not an expiry of saved channels.
+Ordinary browsing, guide availability, library discovery and playback read the
+last committed current-format catalogue immediately, while one background
+refresh stages its replacement. A failed automatic refresh retains that data,
+logs a sanitized reason and waits at least one minute before another automatic
+attempt. Explicit refresh joins an in-flight refresh of the same catalogue or
+starts a new one, waits for completion and reports failures without that backoff.
+Cold accounts and old-format catalogues still await their required import.
+Provider teardown cancels background work; cancelling one explicit waiter does
+not cancel a refresh still owned by saved-catalogue readers.
+`IPTVIntegrationTests` gates a slow refresh and requires saved reads within one
+second; `IPTVLiveTVImportTests` checks that the actual import model publishes
+channels and leaves loading before that gate opens. The opt-in physical
+`PhysicalDiagnosticInputTests.testExistingLiveTVPublishesSavedChannels` observes
+the foreground app, enters Live TV only through its existing navigation button
+when needed, and retains its screenshot/tree without relaunching or changing
+the user's preview choice, account or catalogue age.
 
 The first-run chooser selects a provider, not a playback destination. Its
 **IPTV** entry opens the playlist/provider connection form directly, just as
@@ -127,6 +176,12 @@ Authentication failures, rate limits, transport failures and ordinary server
 errors remain visible rather than triggering another request path; a failed
 XMLTV fallback also remains an error. Auto-discovered guide URLs on
 another origin require explicit configuration for URL-based playlists.
+Playlist and imported-file accounts without an explicit or enabled playlist-declared
+guide immediately report no guide capability. Both platforms show "No program
+guide available" and skip guide warmup and browsing requests instead of showing
+"Loading guide...". Channels remain playable. Configured feeds and Xtream retain
+real loading, empty-listing and failure states; an empty response does not disable
+their guide capability.
 
 Catalogue imports stream into encrypted SQLite staging, not a retained
 document or a giant array of media items. They have no legacy 128 MiB document
@@ -136,6 +191,26 @@ storage and provider errors remain explicit failures. Movies and series are
 decoded by page; the guide still holds lightweight channel values for its full
 lineup. This is not a claim of unlimited device memory or measured performance
 on every older device.
+
+First-import identity generation reuses the same lowercase digest encoder as
+durable Live TV identities and compiles the episode-name expression once.
+Digest inputs, IDs, classification, encrypted records and atomic catalogue
+replacement are unchanged. The opt-in `IPTVPerformanceProbeTests` accepts only
+an owned loopback replay through `.build/iptv-performance-source.json` (`url`
+and `entries`). It reports reading/staging and final commit time separately.
+Optional `verifyRecords: true` computes a sorted-key fingerprint of every
+decrypted record, without printing its contents; `expectedRecordDigest` checks
+that fingerprint against a baseline. Fingerprinting happens after timing.
+
+An optimized tvOS simulator comparison used two separately captured 102.6 MB
+responses with 382,408 entries each (382,407 accepted and one skipped). Fresh
+local replay imports took 91–95 seconds before these changes and 63–66 seconds
+afterward, with identical per-source fingerprints across all 413,265 resulting
+records, including series and seasons. Faster digest formatting supplied most
+of the gain; expression reuse reduced the reading stage further. The one-time
+upstream downloads separately took 24–30 seconds, including 18–24 seconds before
+headers. These small-sample replay measurements isolate app-side work; they
+are not end-to-end provider timings or physical-device guarantees.
 
 `IPTVScaleAndRecoveryTests` exercises an 800,005-entry, 50 MB HTTP playlist
 through sign-in, encrypted catalogue commit, session restoration and final-page
@@ -360,6 +435,33 @@ is no prior in-memory history to migrate on the first updated launch.
   to the left of the guide. Search never scrolls away
   with either list. Select a category directly; Right returns to the remembered
   guide channel/program. Compact or short windows keep pinned horizontal controls.
+  Apple TV reserves 384 points for categories on wide layouts and 320 on narrower
+  sidebar layouts, without shrinking category text. Mobile layout widths are unchanged.
+  Its sidebar runs the full content height, beside both the channel details and
+  guide. Loading and loaded layouts use the same two-column container.
+  The category panel collapses completely when native focus enters the TV guide;
+  the channel details and same mounted guide expand into its space without resetting the channel,
+  vertical position, or time. A leading-edge move out of the guide reveals the
+  panel and focuses the selected category. Back still opens Search. Internal
+  programme-to-programme moves keep their normal timeline behavior.
+  Left/Right continues across the guide normally. Exactly one leading press
+  from the far-left channel column (far-right in RTL) must reveal categories
+  and Search, without revealing them early or also opening app navigation.
+  A separate leading press from the panel should reach the app menu.
+  The guide's boundary recognizer gives ancestor horizontal navigation
+  recognizers a failure dependency: they wait until the guide decides whether
+  it owns the press. Otherwise window-level navigation can begin before the
+  guide receives the press and expand over the focused category. Non-boundary
+  input fails immediately, preserving normal guide navigation; boundary input
+  remains owned through release.
+  Remote regressions use the production destination handoff and full native
+  tab layout, checking ordinary, rapid, and held input in both directions and
+  with preview enabled and a non-default category selected. A native-focus counter
+  detects transient focus theft;
+  screenshots must also be checked for expansion without a focus change.
+  The opt-in `PhysicalDiagnosticInputTests/testExistingLiveTVRevealsOnlyCategories`
+  checks the existing foreground app without installing, relaunching, selecting
+  channels, or changing settings; enable it only in an agreed physical testing window.
   With pinned navigation visible, the Live TV controls also clear its title-safe
   margin; native top-bar/sidebar styles keep their tighter leading spacing.
   The selected category uses a checkmark rather than a second focused-looking
@@ -368,6 +470,14 @@ is no prior in-memory history to migrate on the first updated launch.
   preferences are in Settings > Live TV. Sources and Guide time remain
   directly available through channel/programme context menus; failed or empty
   imports also expose Sources beside Retry.
+  On Apple TV, each profile is asked about live previews on its first Live TV visit
+  with available channels. "Turn on previews" initially has native focus, but no
+  automatic playback starts until it is selected. "Keep previews off" and Back
+  both keep previews off and complete the choice. Settings > Live TV > Auto preview
+  can change the choice later. The completion flag is profile-scoped and independent
+  of filter saves; legacy saved values alone do not count as a choice. Inactive,
+  backgrounded, or unauthorized profiles cannot answer the prompt. iPhone and iPad
+  retain tap-to-play and do not show this prompt.
   On Apple TV, Back from a guide row focuses Search without scrolling the list.
   Back from the controls goes to the
   surrounding app navigation. Holding Select on a channel/program also opens
@@ -1009,6 +1119,13 @@ error without replacing current playback. Channel identity migrations update
 the saved composition, and ordinary channel preferences or portable preference
 imports preserve it. Required lifecycle or authorization cleanup never waits
 for exit confirmation.
+
+On tvOS, Favorite Multiviews uses a compact native sheet rather than a full
+Settings page. Its title and Done control stay above the scrolling saved list;
+the empty state fits its content, and long lists cannot expand the sheet beyond
+600 points. Typography follows the smaller sheet scale with Dynamic Type, and
+focused rows retain the shared contained highlight without growing. iPhone and
+iPad retain their native navigation-sheet presentation.
 
 Its hardware decoder capacity, mixed HDR/SDR behavior and long-running resource
 use still need real-device acceptance; controlled fixtures are not proof of

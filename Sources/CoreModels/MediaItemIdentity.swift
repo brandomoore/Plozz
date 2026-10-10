@@ -60,6 +60,32 @@ public enum MediaItemIdentity {
     /// The canonical strong-external tokens (back-compat / diagnostics).
     public static let strongExternalSources = strongExternalNamespaces.map(\.canonical)
 
+    /// A shared ID cannot override a contradictory ID in another namespace.
+    /// Inputs are normalized identities; missing namespaces are not conflicts.
+    public static func externalIdentitiesConflict(
+        _ lhs: [MediaIdentity],
+        _ rhs: [MediaIdentity]
+    ) -> Bool {
+        func valuesByNamespace(_ identities: [MediaIdentity]) -> [String: Set<String>] {
+            var result: [String: Set<String>] = [:]
+            for case let .external(source, value) in identities {
+                result[source, default: []].insert(value)
+            }
+            return result
+        }
+        let left = valuesByNamespace(lhs)
+        let right = valuesByNamespace(rhs)
+        return left.contains { namespace, values in
+            guard let other = right[namespace] else { return false }
+            // Episode payloads can repeat the show's ID in the ordinary field.
+            // That is not comparable to another server's episode-level ID.
+            let comparableLeft = values.subtracting(left["series-\(namespace)"] ?? [])
+            let comparableRight = other.subtracting(right["series-\(namespace)"] ?? [])
+            return !comparableLeft.isEmpty && !comparableRight.isEmpty
+                && comparableLeft.isDisjoint(with: comparableRight)
+        }
+    }
+
     /// Whether `item` carries an id strong enough to **retarget** it onto a library
     /// copy the identity index vouched for — i.e. an id this type actually keys the
     /// index by, as opposed to a title/year guess.
@@ -88,8 +114,8 @@ public enum MediaItemIdentity {
         return !plexGuid.isEmpty
     }
 
-    /// The candidate identities for an item, strongest first. Two items are the
-    /// same title when *any* of their identities match.
+    /// The candidate identities for an item, strongest first. A shared identity
+    /// is a match candidate, not permission to ignore contradictory identities.
     ///
     /// ## Safety rules (do not relax without new tests)
     /// 1. **External ids win and suppress the title key.** An item with a strong

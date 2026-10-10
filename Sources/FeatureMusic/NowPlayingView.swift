@@ -41,6 +41,9 @@ public struct NowPlayingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.layoutDirection) private var layoutDirection
     @State private var scrubModel = MusicScrubModel()
+    #if canImport(UIKit)
+    @State private var wakeLease = DisplayWakeLease()
+    #endif
 
     /// Prominent colors of the current track's artwork, driving the morphing
     /// liquid background. Recomputed whenever the track changes.
@@ -539,7 +542,7 @@ public struct NowPlayingView: View {
     /// lyrics keep scrolling and artwork stays up during long, hands-off listens.
     private func setIdleTimerDisabled(_ disabled: Bool) {
         #if canImport(UIKit)
-        UIApplication.shared.isIdleTimerDisabled = disabled
+        wakeLease.keepAwake(disabled)
         #endif
     }
 

@@ -23,18 +23,23 @@ final class NavigationStyleSettingsStoreTests: XCTestCase {
         return defaults
     }
 
-    func testUnsetProfileUsesNativeSidebar() {
+    func testUnsetProfileUsesPinnedSidebar() {
         let store = NavigationStyleSettingsStore(defaults: makeDefaults())
 
-        XCTAssertEqual(store.load(), .sidebar)
+        XCTAssertEqual(store.load(), .rail)
+    }
+
+    func testPinnedSidebarIsFirstInEveryNavigationPicker() {
+        XCTAssertEqual(NavigationStyle.allCases, [.rail, .sidebar, .tabBar])
     }
 
     func testExplicitSelectionSurvivesDefaultChange() {
         let defaults = makeDefaults()
         let store = NavigationStyleSettingsStore(defaults: defaults)
-        store.save(.rail)
-
-        XCTAssertEqual(NavigationStyleSettingsStore(defaults: defaults).load(), .rail)
+        for style in NavigationStyle.allCases {
+            store.save(style)
+            XCTAssertEqual(NavigationStyleSettingsStore(defaults: defaults).load(), style)
+        }
     }
 
     func testProfileNamespacesRemainIndependent() {
@@ -45,7 +50,10 @@ final class NavigationStyleSettingsStoreTests: XCTestCase {
         primary.save(.tabBar)
 
         XCTAssertEqual(primary.load(), .tabBar)
-        XCTAssertEqual(child.load(), .sidebar)
+        XCTAssertEqual(child.load(), .rail)
+        child.save(.sidebar)
+        XCTAssertEqual(NavigationStyleSettingsStore(defaults: defaults, namespace: "child").load(), .sidebar)
+        XCTAssertEqual(primary.load(), .tabBar)
     }
 
     func testAccidentalExitDefaultsOffAndPersistsFalseAcrossRestarts() {

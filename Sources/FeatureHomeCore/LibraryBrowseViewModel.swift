@@ -1310,6 +1310,11 @@ public final class LibraryBrowseViewModel {
             cancelOutOfRangeInFlightPages()
         } catch is CancellationError {
             return
+        } catch LibraryQueryFailure.restartRequired {
+            guard !Task.isCancelled, generation == contentGeneration else { return }
+            PlozzLog.app.info("LibraryBrowse: restarting after refined source identities")
+            finishPageLoad(page)
+            await loadFirstPage()
         } catch let error as AppError {
             guard !Task.isCancelled, generation == contentGeneration else { return }
             PlozzLog.app.error("LibraryBrowse: page \(page) failed for \(containerID): \(String(describing: error))")

@@ -77,6 +77,197 @@ final class CrossServerSourceResolverTests: XCTestCase {
 
     // MARK: resolve — differing titles, matched by provider IDs
 
+    func testSparseDiscoveryResolvesRicherCopyOnItsOnlyServer() async {
+        for kind in [MediaItemKind.movie, .series] {
+            for accountID in [plexAccount, jellyAccount] {
+                let seed = MediaItem(
+                    id: "discover-id", title: "Fixture", kind: kind,
+                    providerIDs: ["Imdb": "tt1234567"],
+                    availability: .unknown, locallyValidatedPlayableSource: false,
+                    sourceAccountID: accountID
+                )
+                let owned = MediaItem(
+                    id: "library-id", title: seed.title, kind: kind,
+                    people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+                    providerIDs: seed.providerIDs
+                )
+                let sources = await CrossServerSourceResolver.resolve(
+                    primary: seed,
+                    otherAccountIDs: [accountID],
+                    search: { _, _ in [owned] },
+                    serverInfo: serverInfo
+                )
+
+                XCTAssertEqual(sources.map(\.itemID), [owned.id], "\(accountID) \(kind)")
+                XCTAssertEqual(sources.map(\.accountID), [accountID])
+                XCTAssertEqual(sources.first?.kind, kind)
+            }
+        }
+    }
+
+    func testRicherRepresentativeKeepsOpenedLibrarySourceFirst() async {
+        let primary = MediaItem(
+            id: "opened", title: "Fixture", kind: .movie,
+            providerIDs: ["Tmdb": "123"], sourceAccountID: jellyAccount
+        )
+        let richer = MediaItem(
+            id: "richer", title: primary.title, kind: .movie,
+            people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+            providerIDs: primary.providerIDs
+        )
+        let sources = await CrossServerSourceResolver.resolve(
+            primary: primary,
+            otherAccountIDs: [plexAccount],
+            search: { _, _ in [richer] },
+            serverInfo: serverInfo
+        )
+
+        XCTAssertEqual(sources.map(\.itemID), [primary.id, richer.id])
+        XCTAssertEqual(sources.map(\.accountID), [jellyAccount, plexAccount])
+    }
+
+    func testSharedIDDoesNotOverrideAnotherConflictingID() async {
+        for kind in [MediaItemKind.movie, .series] {
+            for conflict in ["Imdb", "Tmdb", "Tvdb", "PlexGuid"] {
+                let ids = [
+                    "Imdb": "tt111", "Tmdb": "123", "Tvdb": "456",
+                    "PlexGuid": "plex://\(kind == .movie ? "movie" : "show")/original"
+                ]
+                let seed = MediaItem(
+                    id: "discovery", title: "Same Title", kind: kind,
+                    productionYear: 2020, providerIDs: ids,
+                    availability: .unknown, locallyValidatedPlayableSource: false,
+                    sourceAccountID: plexAccount
+                )
+                var hit = MediaItem(
+                    id: "wrong-library-item", title: seed.title, kind: kind,
+                    productionYear: 2020,
+                    people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+                    providerIDs: ids
+                )
+                hit.providerIDs[conflict] = "different"
+                let sources = await CrossServerSourceResolver.resolve(
+                    primary: seed, otherAccountIDs: [plexAccount],
+                    search: { _, _ in [hit] }, serverInfo: serverInfo
+                )
+                XCTAssertTrue(sources.isEmpty, "\(kind) conflicting \(conflict)")
+            }
+        }
+    }
+
+    func testRejectedConflictDoesNotShortCircuitLaterTitleQuery() async {
+        let seed = MediaItem(
+            id: "discovery", title: "Localized Title", originalTitle: "Original Title",
+            kind: .movie, providerIDs: ["Imdb": "tt111", "Tmdb": "123"],
+            availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        let wrong = MediaItem(
+            id: "wrong", title: seed.title, kind: .movie,
+            providerIDs: ["Imdb": "tt222", "Tmdb": "123"]
+        )
+        let right = MediaItem(
+            id: "right", title: seed.title, kind: .movie,
+            people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+            providerIDs: seed.providerIDs
+        )
+        let sources = await CrossServerSourceResolver.resolve(
+            primary: seed, otherAccountIDs: [plexAccount],
+            search: { _, query in query == seed.title ? [wrong] : [right] },
+            serverInfo: serverInfo
+        )
+
+        XCTAssertEqual(sources.map(\.itemID), [right.id])
+    }
+
+    func testMissingIDsAndProviderSpellingsDoNotRejectValidRicherCopy() async {
+        let seed = MediaItem(
+            id: "discovery", title: "Same Title", kind: .movie,
+            providerIDs: ["IMDb": " TT111 ", "TMDb ID": "123"],
+            availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        for ids in [["imdbid": "tt111"], ["imdb": "tt111", "themoviedb": "123", "tvdbid": "456"]] {
+            let hit = MediaItem(
+                id: "owned", title: seed.title, kind: .movie,
+                people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+                providerIDs: ids
+            )
+            let sources = await CrossServerSourceResolver.resolve(
+                primary: seed, otherAccountIDs: [plexAccount],
+                search: { _, _ in [hit] }, serverInfo: serverInfo
+            )
+            XCTAssertEqual(sources.map(\.itemID), [hit.id])
+        }
+    }
+
+    func testConflictCannotBeHiddenBehindSparseMatchingBridge() async {
+        let seed = MediaItem(
+            id: "discovery", title: "Same Title", kind: .movie,
+            providerIDs: ["Imdb": "tt111", "Tmdb": "123"],
+            availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        let bridge = MediaItem(
+            id: "bridge", title: seed.title, kind: .movie,
+            providerIDs: ["Tmdb": "123", "Tvdb": "456"]
+        )
+        let wrong = MediaItem(
+            id: "wrong", title: seed.title, kind: .movie,
+            providerIDs: ["Imdb": "tt222", "Tvdb": "456"]
+        )
+        let sources = await CrossServerSourceResolver.resolve(
+            primary: seed, otherAccountIDs: [plexAccount],
+            search: { _, _ in [bridge, wrong] }, serverInfo: serverInfo
+        )
+
+        XCTAssertEqual(sources.map(\.itemID), [bridge.id])
+    }
+
+    func testUnscopedDiscoveryUsesItsGroupNotAnUnrelatedSearchHit() async {
+        let seed = MediaItem(
+            id: "alias", title: "Fixture", kind: .movie,
+            providerIDs: ["Tmdb": "123"],
+            availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        let unrelated = MediaItem(
+            id: seed.id, title: "Another Film", kind: .movie,
+            providerIDs: ["Tmdb": "456"]
+        )
+        let owned = MediaItem(
+            id: "owned", title: seed.title, kind: .movie,
+            people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+            providerIDs: seed.providerIDs
+        )
+        let sources = await CrossServerSourceResolver.resolve(
+            primary: seed,
+            otherAccountIDs: [plexAccount],
+            search: { _, _ in [unrelated, owned] },
+            serverInfo: serverInfo
+        )
+
+        XCTAssertEqual(sources.map(\.itemID), [owned.id])
+    }
+
+    func testRicherContradictoryHitCannotEscapeTheMergeSplitGuard() async {
+        let seed = MediaItem(
+            id: "alias", title: "Original Film", kind: .movie,
+            productionYear: 1980, providerIDs: ["Tmdb": "123"],
+            availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        let unrelated = MediaItem(
+            id: "impostor", title: "Unrelated Sequel", kind: .movie,
+            productionYear: 2025,
+            people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
+            providerIDs: seed.providerIDs
+        )
+        let sources = await CrossServerSourceResolver.resolve(
+            primary: seed,
+            otherAccountIDs: [plexAccount],
+            search: { _, _ in [unrelated] },
+            serverInfo: serverInfo
+        )
+
+        XCTAssertTrue(sources.isEmpty)
+    }
+
     func testResolvesDifferentlyTitledMovieAcrossServersByProviderID() async {
         // User opened the Jellyfin movie "Amélie"; Plex stores the same film under
         // its French release title. They share a TMDb id, so the picker must list

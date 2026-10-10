@@ -37,12 +37,36 @@ public struct AppliedResumeRecord: Codable, Sendable, Equatable {
 /// point leaves a recoverable file.
 /// Guarded mutations persist their requirement, never their runtime validator.
 /// Such intents fail closed after restoration rather than becoming ordinary writes.
+struct WatchOwnershipClock: Codable, Sendable, Equatable {
+    var capturedAt: Date
+    var identities: [MediaIdentity]
+    var originID: String?
+    var rejectedSourceIDs: Set<String>
+    var kind: MediaItemKind?
+    var title: String?
+    var year: Int?
+
+    func conflicts(with mutation: WatchMutation) -> Bool {
+        // Metadata corrections never reset ordering for the same physical source.
+        if let originID, originID == mutation.optimisticTargets.first?.id { return false }
+        return MediaItemIdentity.externalIdentitiesConflict(identities, mutation.identities)
+            || MediaItemIdentity.titlesPlausiblyContradict(
+                titleA: title ?? "", yearA: year, kindA: kind ?? .unknown,
+                titleB: mutation.anchorTitle ?? "", yearB: mutation.anchorYear, kindB: mutation.kind ?? .unknown
+            )
+            || originID.map { mutation.rejectedSourceIDs.contains($0) } == true
+            || mutation.optimisticTargets.first.map { rejectedSourceIDs.contains($0.id) } == true
+    }
+}
+
 public struct WatchOutboxState: Codable, Sendable, Equatable {
     /// Pending mutations, in enqueue order (coalesced by ``WatchMutation/coalesceKey``).
     public var pending: [WatchMutation]
     /// Stale-write clock: highest `capturedAt` accepted per title (`coalesceKey`).
     /// A new mutation older than this is a late/stale write and is dropped.
     public var clock: [String: Date]
+    var ownershipClocks: [String: [WatchOwnershipClock]]
+    var sourceClocks: [String: Date]
     /// Trakt idempotency ledger: key → when we wrote it, pruned by TTL so our own
     /// replays across relaunch don't re-post history.
     public var appliedTrakt: [String: Date]
@@ -70,6 +94,8 @@ public struct WatchOutboxState: Codable, Sendable, Equatable {
     ) {
         self.pending = pending
         self.clock = clock
+        self.ownershipClocks = [:]
+        self.sourceClocks = [:]
         self.appliedTrakt = appliedTrakt
         self.appliedSimkl = appliedSimkl
         self.appliedAniList = appliedAniList
@@ -82,7 +108,7 @@ public struct WatchOutboxState: Codable, Sendable, Equatable {
     // MARK: - Codable (back-compatible)
 
     private enum CodingKeys: String, CodingKey {
-        case pending, clock, appliedTrakt, appliedSimkl, appliedAniList, appliedMAL, appliedRecency
+        case pending, clock, ownershipClocks, sourceClocks, appliedTrakt, appliedSimkl, appliedAniList, appliedMAL, appliedRecency
     }
 
     public init(from decoder: Decoder) throws {
@@ -95,6 +121,10 @@ public struct WatchOutboxState: Codable, Sendable, Equatable {
             [String: Date].self,
             forKey: .clock
         ) ?? [:]
+        ownershipClocks = try container.decodeIfPresent(
+            [String: [WatchOwnershipClock]].self, forKey: .ownershipClocks
+        ) ?? [:]
+        sourceClocks = try container.decodeIfPresent([String: Date].self, forKey: .sourceClocks) ?? [:]
         appliedTrakt = try container.decodeIfPresent(
             [String: Date].self,
             forKey: .appliedTrakt

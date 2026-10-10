@@ -109,6 +109,7 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
     let scrolled: (LiveTVGuideRowID?, CGFloat) -> Void
     let revision: (LiveTVGuideRowID) -> Revision
     var horizontalNavigation: () -> Void = {}
+    var leadingExit: (() -> Void)?
     @ViewBuilder let content: (LiveTVGuideRowID) -> Content
 
     struct RowEnvironment: Equatable {
@@ -202,6 +203,7 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
         private var rowIDs: [LiveTVGuideRowID] = []
         private var sectionStarts: [Int] = []
         private var scrollReportScheduled = false
+        private var isRequestingLeadingExit = false
         private let guideLayout: PrototypeGuideCollectionLayout
 
         init() {
@@ -223,14 +225,33 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
             collectionView.remembersLastFocusedIndexPath = false
             collectionView.contentInsetAdjustmentBehavior = .never
             collectionView.register(Cell.self, forCellWithReuseIdentifier: "guide-row")
-            collectionView.addGestureRecognizer(HorizontalPressObserver { [weak self] in
-                self?.parentView?.horizontalNavigation()
-            })
+            collectionView.addGestureRecognizer(GuideHorizontalPressRecognizer(
+                onHorizontal: { [weak self] in self?.parentView?.horizontalNavigation() },
+                leadingExit: { [weak self] type in
+                    guard let self, let parentView, isLeadingColumnFocused,
+                          type == (swiftUIEnvironment?.layoutDirection == .rightToLeft ? .rightArrow : .leftArrow)
+                    else { return nil }
+                    return parentView.leadingExit
+                }
+            ))
             if let parentView, let swiftUIEnvironment { update(parentView, environment: swiftUIEnvironment) }
+        }
+
+        private var isLeadingColumnFocused: Bool {
+            guard let focused = UIFocusSystem.focusSystem(for: collectionView)?.focusedItem as? UIView,
+                  focused.isDescendant(of: collectionView) else { return false }
+            // Rapid remote presses can arrive before SwiftUI's FocusState catches up.
+            let center = focused.convert(
+                CGPoint(x: focused.bounds.midX, y: focused.bounds.midY), to: collectionView
+            )
+            let distance = swiftUIEnvironment?.layoutDirection == .rightToLeft
+                ? collectionView.bounds.maxX - center.x : center.x - collectionView.bounds.minX
+            return distance >= 0 && distance < PrototypeLayout.stationWidth(for: collectionView.bounds.width)
         }
 
         func update(_ parent: PrototypeNativeGuideList, environment: EnvironmentValues) {
             parentView = parent
+            if parent.leadingExit == nil { isRequestingLeadingExit = false }
             swiftUIEnvironment = environment
             parent.scrollController.collection = collectionView
             if rowIDs != parent.rows {
@@ -280,6 +301,21 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
         }
 
         override func scrollViewDidScroll(_ scrollView: UIScrollView) { reportScroll() }
+
+        override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
+            let leading: UIFocusHeading = swiftUIEnvironment?.layoutDirection == .rightToLeft ? .right : .left
+            if context.focusHeading == leading,
+               context.previouslyFocusedView?.isDescendant(of: collectionView) == true,
+               context.nextFocusedView?.isDescendant(of: collectionView) != true,
+               parentView?.leadingExit != nil {
+                if !isRequestingLeadingExit {
+                    isRequestingLeadingExit = true
+                    DispatchQueue.main.async { [weak self] in self?.parentView?.leadingExit?() }
+                }
+                return false
+            }
+            return super.shouldUpdateFocus(in: context)
+        }
 
         override func collectionView(
             _ collectionView: UICollectionView, didUpdateFocusIn context: UICollectionViewFocusUpdateContext,
@@ -365,31 +401,75 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
     }
 }
 
-private final class HorizontalPressObserver: UIGestureRecognizer {
+private final class GuideHorizontalPressRecognizer: UIGestureRecognizer {
     private let onHorizontal: () -> Void
+    private let leadingExit: (UIPress.PressType) -> (() -> Void)?
+    private var consumedPress: UIPress?
+    private var exitAction: (() -> Void)?
 
-    init(onHorizontal: @escaping () -> Void) {
+    init(
+        onHorizontal: @escaping () -> Void,
+        leadingExit: @escaping (UIPress.PressType) -> (() -> Void)?
+    ) {
         self.onHorizontal = onHorizontal
+        self.leadingExit = leadingExit
         super.init(target: nil, action: nil)
         allowedPressTypes = [
             NSNumber(value: UIPress.PressType.leftArrow.rawValue),
             NSNumber(value: UIPress.PressType.rightArrow.rawValue)
         ]
         allowedTouchTypes = []
-        cancelsTouchesInView = false
+        cancelsTouchesInView = true
         delaysTouchesBegan = false
         delaysTouchesEnded = false
     }
 
-    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { consumedPress != nil }
     override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
 
-    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent) {
-        if presses.contains(where: { $0.type == .leftArrow || $0.type == .rightArrow }),
-           DetailTransitionNavigation.navigationInputEpoch(in: view) != nil {
-            onHorizontal()
+    override func shouldBeRequiredToFail(by otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        // Ancestor navigation can begin before descendant press delivery.
+        // It must wait for our boundary decision, not just canPrevent.
+        guard let view, let ancestor = otherGestureRecognizer.view,
+              view !== ancestor, view.isDescendant(of: ancestor) else { return false }
+        return otherGestureRecognizer.allowedPressTypes.contains {
+            $0.intValue == UIPress.PressType.leftArrow.rawValue
+                || $0.intValue == UIPress.PressType.rightArrow.rawValue
         }
-        state = .failed
+    }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+        guard let press = presses.first(where: { $0.type == .leftArrow || $0.type == .rightArrow }),
+              DetailTransitionNavigation.navigationInputEpoch(in: view) != nil else {
+            state = .failed
+            return
+        }
+        onHorizontal()
+        guard let action = leadingExit(press.type) else {
+            state = .failed
+            return
+        }
+        // Own this press through release so the native tab sidebar cannot also open.
+        consumedPress = press
+        exitAction = action
+        state = .began
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+        guard let consumedPress, presses.contains(where: { $0 === consumedPress }) else { return }
+        let action = exitAction
+        state = .ended
+        action?()
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+        state = .cancelled
+    }
+
+    override func reset() {
+        consumedPress = nil
+        exitAction = nil
+        super.reset()
     }
 }
 #endif

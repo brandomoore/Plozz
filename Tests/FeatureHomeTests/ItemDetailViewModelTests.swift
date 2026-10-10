@@ -281,6 +281,7 @@ final class ItemDetailViewModelTests: XCTestCase {
                     kind: kind,
                     overview: "Library overview",
                     productionYear: 2021,
+                    people: [MediaPerson(id: "actor", name: "Actor", kind: "Actor")],
                     providerIDs: ids
                 )
                 let provider = FakeMediaProvider(
@@ -309,7 +310,7 @@ final class ItemDetailViewModelTests: XCTestCase {
                     trailerCache: TrailerResolutionCache(),
                     alternateProviderResolver: { $0 == "account" ? provider : nil },
                     crossServerSourceResolver: { external in
-                        await CrossServerSourceResolver.resolve(
+                        await CrossServerSourceResolver.resolveWithEvidence(
                             primary: external,
                             otherAccountIDs: ["account"],
                             search: { _, _ in [owned] }
@@ -338,6 +339,213 @@ final class ItemDetailViewModelTests: XCTestCase {
         }
     }
 
+    func testDiscoveryRemovesRejectedRetainedSourcesWithoutDroppingInconclusiveOnes() async {
+        for includeValid in [false, true] {
+            for searchFindsWrong in [false, true] {
+                let owned = MediaItem(
+                    id: "owned", title: "Same Title", kind: .movie,
+                    providerIDs: ["Imdb": "tt111", "Tmdb": "123"], sourceAccountID: "account"
+                )
+                var wrong = owned
+                wrong.id = "wrong"
+                wrong.providerIDs["Imdb"] = "tt222"
+                var valid = owned
+                valid.id = "valid"
+                let refs = [
+                    MediaSourceRef(accountID: "account", itemID: owned.id, kind: .movie),
+                    MediaSourceRef(accountID: "account", itemID: wrong.id, kind: .movie)
+                ]
+                let provider = FakeMediaProvider(
+                    allItems: [owned, valid] + (searchFindsWrong ? [wrong] : []),
+                    kind: .plex, accountID: "account"
+                )
+                let hits = (searchFindsWrong ? [wrong] : []) + (includeValid ? [valid] : [])
+                let searched = expectation(description: "Completed ownership search")
+                let vm = ItemDetailViewModel(
+                    provider: provider, itemID: owned.id, initialItem: owned,
+                    sourceAccountID: "account",
+                    onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+                    trailerCache: TrailerResolutionCache(), initialSources: refs,
+                    alternateProviderResolver: { $0 == "account" ? provider : nil },
+                    crossServerSourceResolver: { primary in
+                        let result = await CrossServerSourceResolver.resolveWithEvidence(
+                            primary: primary, otherAccountIDs: ["account"],
+                            search: { _, _ in hits }
+                        )
+                        searched.fulfill()
+                        return result
+                    }
+                )
+                await vm.load()
+                await fulfillment(of: [searched], timeout: 3)
+                await waitUntil {
+                    (!includeValid || vm.sources.contains { $0.itemID == "valid" })
+                        && (!searchFindsWrong || !vm.sources.contains { $0.itemID == "wrong" })
+                }
+                let expected = Set(["owned"] + (includeValid ? ["valid"] : [])
+                    + (searchFindsWrong ? [] : ["wrong"]))
+                XCTAssertEqual(Set(vm.sources.map(\.itemID)), expected)
+                XCTAssertEqual(Set(vm.state.value?.item.sources.map(\.itemID) ?? []), expected)
+                vm.suspendEnrichment()
+            }
+        }
+    }
+
+    func testFullAlternateDetailRejectsWrongCopyEvenWhenSearchIsInconclusive() async {
+        let owned = MediaItem(id: "owned", title: "Same Title", kind: .movie,
+                              providerIDs: ["Imdb": "tt111", "Tmdb": "123"], sourceAccountID: "account")
+        var wrong = owned
+        wrong.id = "wrong"
+        wrong.providerIDs["Imdb"] = "tt222"
+        wrong.isPlayed = true
+        let provider = FakeMediaProvider(allItems: [owned, wrong], kind: .plex, accountID: "account")
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: owned.id, initialItem: owned, sourceAccountID: "account",
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache(),
+            initialSources: [MediaSourceRef(accountID: "account", itemID: "owned", kind: .movie),
+                             MediaSourceRef(accountID: "account", itemID: "wrong", kind: .movie)],
+            alternateProviderResolver: { $0 == "account" ? provider : nil },
+            crossServerSourceResolver: { _ in .init() }
+        )
+        await vm.load()
+        await waitUntil { vm.state.value?.item.rejectedSourceIDs.contains("account:wrong") == true }
+        XCTAssertEqual(vm.sources.map(\.itemID), ["owned"])
+        XCTAssertEqual(vm.state.value?.item.isPlayed, false)
+        vm.suspendEnrichment()
+    }
+
+    func testFullAlternateRejectionRemovesDependentIndexBridge() async {
+        let a = MediaItem(id: "a", title: "Movie", kind: .movie,
+                          providerIDs: ["Imdb": "tt111", "Tmdb": "123"], sourceAccountID: "account")
+        let b = MediaItem(id: "b", title: "Movie", kind: .movie,
+                          providerIDs: ["Tmdb": "123", "Tvdb": "456"], sourceAccountID: "account")
+        let c = MediaItem(id: "c", title: "Movie", kind: .movie,
+                          providerIDs: ["Tvdb": "456"], sourceAccountID: "account")
+        let index = IdentityIndex()
+        await index.ingest([a, b, c], accountID: "account")
+        let snapshot = await index.snapshot()
+        var freshB = b
+        freshB.providerIDs["Imdb"] = "tt222"
+        let provider = FakeMediaProvider(allItems: [a, freshB, c], kind: .plex, accountID: "account")
+        let environment = DetailOpenEnvironment(
+            resolveProvider: { _ in provider }, resolveOptionalProvider: { _ in provider },
+            identitySources: { snapshot.sourceRefs(for: $0) },
+            crossServerSourceResolver: { _ in .init() }
+        )
+        let vm = environment.makeViewModel(for: a, libraryOrigin: "account")
+        await vm.load()
+        await waitUntil { vm.state.value?.item.rejectedSourceIDs.contains("account:b") == true }
+        XCTAssertEqual(vm.sources.map(\.itemID), ["a"])
+        XCTAssertEqual(vm.state.value?.item.sources.map(\.itemID), ["a"])
+        XCTAssertTrue(vm.state.value?.item.rejectedSourceIDs.contains("account:c") == true)
+        vm.suspendEnrichment()
+    }
+
+    func testLateChildrenKeepDiscoveredSourceRejections() async {
+        let owned = MediaItem(id: "show", title: "Show", kind: .series,
+                              providerIDs: ["Tmdb": "123"], sourceAccountID: "account")
+        let provider = FakeMediaProvider(allItems: [owned], accountID: "account")
+        let gate = AsyncGate()
+        provider.childrenGate = ["show": { _ in await gate.wait() }]
+        provider.childrenByParent = ["show": []]
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: owned.id, initialItem: owned, sourceAccountID: "account",
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache(),
+            initialSources: [MediaSourceRef(accountID: "account", itemID: "show", kind: .series),
+                             MediaSourceRef(accountID: "account", itemID: "wrong", kind: .series)],
+            alternateProviderResolver: { _ in provider },
+            crossServerSourceResolver: { _ in .init(rejectedSourceIDs: ["account:wrong"]) }
+        )
+        let load = Task { await vm.load() }
+        await waitUntil { vm.state.value?.item.rejectedSourceIDs.contains("account:wrong") == true }
+        gate.open()
+        await load.value
+        XCTAssertEqual(vm.state.value?.item.rejectedSourceIDs, ["account:wrong"])
+        XCTAssertEqual(vm.state.value?.item.sources.map(\.itemID), ["show"])
+        vm.suspendEnrichment()
+    }
+
+    func testSnapshotRejectionsSurviveFreshProviderDetailAndSparseRediscovery() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = DetailSnapshotCache(directory: directory)
+        let owned = MediaItem(id: "owned", title: "Same Title", kind: .movie,
+                              providerIDs: ["Tmdb": "123"], sourceAccountID: "account")
+        var cached = owned
+        cached.rejectedSourceIDs = ["account:wrong"]
+        let ownRef = MediaSourceRef(accountID: "account", itemID: "owned", kind: .movie)
+        await cache.store(.init(item: cached, children: [], seasonEpisodes: [:], sources: [ownRef]),
+                          for: "account|owned")
+        let provider = FakeMediaProvider(allItems: [owned], kind: .plex, accountID: "account")
+        let gate = AsyncGate()
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: owned.id, initialItem: owned, sourceAccountID: "account",
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache(),
+            alternateProviderResolver: { $0 == "account" ? provider : nil },
+            crossServerSourceResolver: { _ in
+                await gate.wait()
+                return .init(sources: [ownRef, MediaSourceRef(accountID: "account", itemID: "wrong", kind: .movie)])
+            }, snapshotCache: cache
+        )
+        await vm.load()
+        await waitUntil { vm.state.value?.item.rejectedSourceIDs.contains("account:wrong") == true }
+        gate.open()
+        await waitUntil { vm.sources.count == 1 }
+        XCTAssertEqual(vm.sources.map(\.itemID), ["owned"])
+        XCTAssertEqual(vm.state.value?.item.rejectedSourceIDs, ["account:wrong"])
+        vm.suspendEnrichment()
+    }
+
+    func testSparseIndexedSearchLoadsRealOwnedDetail() async {
+        let seed = MediaItem(
+            id: "discovery", title: "Same Title", kind: .movie,
+            providerIDs: ["Tmdb": "123"], availability: .unknown,
+            locallyValidatedPlayableSource: false
+        )
+        let owned = MediaItem(
+            id: "owned", title: seed.title, kind: .movie, overview: "Library overview",
+            providerIDs: ["Imdb": "tt111", "Tmdb": "123"]
+        )
+        var sparse = owned
+        sparse.providerIDs = ["Imdb": "tt111"]
+        let searchHit = sparse
+        let provider = FakeMediaProvider(allItems: [owned], kind: .plex, accountID: "account")
+        let index = IdentityIndex()
+        await index.ingest([owned], accountID: "account")
+        let snapshot = await index.snapshot()
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: seed.id, initialItem: seed, isDiscoveryItem: true,
+            externalMetadataResolver: { _, region in
+                XCTFail("Compatible indexed ownership must reach the library detail")
+                return ExternalTitleMetadata(
+                    enrichment: MetadataEnrichment(),
+                    availability: ExternalTitleAvailability(regionCode: region)
+                )
+            },
+            sourceAccountID: "account",
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache(),
+            alternateProviderResolver: { $0 == "account" ? provider : nil },
+            crossServerSourceResolver: { external in
+                await CrossServerSourceResolver.resolveWithEvidence(
+                    primary: external, otherAccountIDs: ["account"],
+                    search: { _, _ in [searchHit] },
+                    identitySources: { snapshot.sourceRefs(for: $0) }
+                )
+            }
+        )
+        await vm.load()
+        XCTAssertFalse(vm.isDiscoveryItem)
+        XCTAssertEqual(vm.state.value?.item.id, owned.id)
+        XCTAssertEqual(vm.state.value?.item.overview, "Library overview")
+        XCTAssertEqual(vm.state.value?.item.ownershipPresentation().canPlay, true)
+        XCTAssertEqual(provider.itemCallCount(for: seed.id), 0)
+        vm.suspendEnrichment()
+    }
+
     func testDiscoveryRechecksLibraryAfterExternalMetadataSuppliesMissingIDs() async {
         let seed = MediaItem(
             id: "orphan-alias", title: "Star Wars: Skeleton Crew", kind: .series,
@@ -363,8 +571,8 @@ final class ItemDetailViewModelTests: XCTestCase {
             trailerCache: TrailerResolutionCache(),
             alternateProviderResolver: { $0 == "silo" ? provider : nil },
             crossServerSourceResolver: { item in
-                guard item.providerID(.tmdb) == "202879" else { return [] }
-                return [MediaSourceRef(accountID: "silo", itemID: owned.id, kind: .series, providerKind: .silo)]
+                guard item.providerID(.tmdb) == "202879" else { return .init() }
+                return .init(sources: [MediaSourceRef(accountID: "silo", itemID: owned.id, kind: .series, providerKind: .silo)])
             }
         )
         await vm.load()
@@ -409,7 +617,7 @@ final class ItemDetailViewModelTests: XCTestCase {
             trailerCache: TrailerResolutionCache(),
             alternateProviderResolver: { _ in provider },
             crossServerSourceResolver: { external in
-                await CrossServerSourceResolver.resolve(
+                await CrossServerSourceResolver.resolveWithEvidence(
                     primary: external,
                     otherAccountIDs: ["account"],
                     search: { _, _ in [wrongMovie] }
@@ -449,10 +657,10 @@ final class ItemDetailViewModelTests: XCTestCase {
             playableVideoIDResolver: { _ in nil },
             trailerCache: TrailerResolutionCache(),
             alternateProviderResolver: { $0 == "active" ? provider : nil },
-            crossServerSourceResolver: { _ in [
+            crossServerSourceResolver: { _ in .init(sources: [
                 MediaSourceRef(accountID: "removed", itemID: "show", kind: .series),
                 MediaSourceRef(accountID: "active", itemID: "movie", kind: .movie)
-            ] }
+            ]) }
         )
 
         await vm.load()
@@ -481,7 +689,7 @@ final class ItemDetailViewModelTests: XCTestCase {
             crossServerSourceResolver: { _ in
                 entered.open()
                 await release.wait()
-                return [MediaSourceRef(accountID: "account", itemID: "show", kind: .series)]
+                return .init(sources: [MediaSourceRef(accountID: "account", itemID: "show", kind: .series)])
             }
         )
         let load = Task { await vm.load() }
@@ -506,7 +714,7 @@ final class ItemDetailViewModelTests: XCTestCase {
             crossServerSourceResolver: { _ in
                 entered.open()
                 await release.wait()
-                return []
+                return .init()
             }
         )
         let vm = environment.makeViewModel(
@@ -957,9 +1165,9 @@ final class ItemDetailViewModelTests: XCTestCase {
     }
 
     func testLateShareProbeCannotEnrichAnotherAccountWithTheSameItemID() async {
-        let oldItem = MediaItem(id: "movie", title: "Old", kind: .movie, sourceAccountID: "old")
+        let oldItem = MediaItem(id: "movie", title: "Movie", kind: .movie, sourceAccountID: "old")
         let newItem = MediaItem(
-            id: "movie", title: "New", kind: .movie,
+            id: "movie", title: "Movie", kind: .movie,
             mediaInfo: .init(
                 video: .init(codec: "h264", width: 1920, height: 1080, videoRangeType: "SDR"),
                 audio: .init(codec: "eac3", profile: "Dolby Atmos", channels: 6)),
@@ -1784,7 +1992,7 @@ final class ItemDetailViewModelTests: XCTestCase {
             alternateProviderResolver: { accountID in
                 accountID == "local" ? local : (accountID == "remote" ? remote : nil)
             },
-            crossServerSourceResolver: { _ in discovered }
+            crossServerSourceResolver: { _ in .init(sources: discovered) }
         )
 
         await vm.load()
@@ -2476,7 +2684,7 @@ final class ItemDetailViewModelTests: XCTestCase {
             },
             crossServerSourceResolver: { _ in
                 await discoveryGate.wait()
-                return restoredSources
+                return .init(sources: restoredSources)
             },
             snapshotCache: cache
         )

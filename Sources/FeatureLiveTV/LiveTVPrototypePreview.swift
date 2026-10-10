@@ -15,6 +15,7 @@ struct PrototypePreviewLayout {
     /// but with so little height that the bar has to be one short strip and
     /// the gaps tighten, or the guide below it shows barely a row.
     let short: Bool
+    let hidesSidebar: Bool
     /// How far the phone's guide reaches past the content margins on each
     /// side, halving the dead space beside the logos and the trailing fade.
     /// Nothing where the edge is a notch or rounded-corner inset.
@@ -28,14 +29,38 @@ struct PrototypePreviewLayout {
         return CGSize(width: (height * 16 / 9).rounded(), height: height.rounded())
     }
 
-    var sidebarWidth: CGFloat {
+    var heroAlignment: Alignment {
+        #if os(tvOS)
+        .topLeading
+        #else
+        .bottomLeading
+        #endif
+    }
+
+    var availableSidebarWidth: CGFloat {
         guard contentFrame.width >= 960,
               contentFrame.height - heroHeight - PrototypeLayout.sectionGap >= 420 else { return 0 }
+        #if os(tvOS)
+        let preferred: CGFloat = contentFrame.width >= 1_400 ? 384 : 320
+        return min(preferred, contentFrame.width - PrototypeLayout.sectionGap
+            - PrototypeLayout.guideInset * 2 - PrototypeLayout.compactWidth)
+        #else
         return contentFrame.width >= 1_400 ? 272 : 224
+        #endif
     }
+
+    var sidebarWidth: CGFloat { hidesSidebar ? 0 : availableSidebarWidth }
 
     var guideWidth: CGFloat {
         contentFrame.width - (sidebarWidth > 0 ? sidebarWidth + PrototypeLayout.sectionGap : 0)
+    }
+
+    var heroWidth: CGFloat {
+        #if os(tvOS)
+        guideWidth
+        #else
+        contentFrame.width
+        #endif
     }
 
     var guideBottomExtension: CGFloat {
@@ -64,8 +89,15 @@ struct PrototypePreviewLayout {
 
     init(
         size: CGSize, safeAreaInsets: EdgeInsets = EdgeInsets(),
-        navigationInset: CGFloat = 0, largeText: Bool = false, isSearching: Bool = false
+        navigationInset: CGFloat = 0, nativeNavigation: Bool = false,
+        largeText: Bool = false, isSearching: Bool = false,
+        hidesSidebar: Bool = false
     ) {
+        #if os(tvOS)
+        self.hidesSidebar = hidesSidebar
+        #else
+        self.hidesSidebar = false
+        #endif
         bounds = CGRect(
             x: -safeAreaInsets.leading, y: -safeAreaInsets.top,
             width: size.width + safeAreaInsets.leading + safeAreaInsets.trailing,
@@ -77,7 +109,7 @@ struct PrototypePreviewLayout {
         // The rail and guide share physical-screen coordinates. Title-safe insets
         // can change during mounting and must not move or resize the pinned guide.
         let leading = side + (navigationInset > 0 ? PrototypeLayout.inset : 0)
-        let top = max(32, safeAreaInsets.top)
+        let top = max(32, safeAreaInsets.top) + (nativeNavigation ? 16 : 0)
         let bottom: CGFloat = 20
         guideSideBleed = 0
         #else
@@ -117,6 +149,62 @@ struct PrototypePreviewLayout {
             width: videoWidth, height: videoHeight
         )
         fadeEnd = min(bounds.height * 0.82, videoHeight * 0.88)
+    }
+}
+
+struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
+    let layout: PrototypePreviewLayout
+    @ViewBuilder let header: () -> Header
+    @ViewBuilder let sidebar: () -> Sidebar
+    @ViewBuilder let guide: () -> Guide
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        #if os(tvOS)
+        HStack(alignment: .top, spacing: layout.sidebarWidth > 0 ? PrototypeLayout.sectionGap : 0) {
+            sidebarSlot
+            VStack(spacing: layout.sectionGap) {
+                header()
+                guideSlot
+            }
+            .frame(width: layout.guideWidth)
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: layout.hidesSidebar)
+        #else
+        VStack(spacing: layout.sectionGap) {
+            header()
+            HStack(alignment: .top, spacing: layout.sidebarWidth > 0 ? PrototypeLayout.sectionGap : 0) {
+                sidebarSlot
+                guideSlot
+            }
+        }
+        #endif
+    }
+
+    @ViewBuilder private var sidebarSlot: some View {
+        if layout.availableSidebarWidth > 0 {
+            ZStack(alignment: .topLeading) {
+                if layout.sidebarWidth > 0 {
+                    sidebar()
+                        .frame(width: layout.availableSidebarWidth)
+                        #if os(tvOS)
+                        // Button focus styling cancels leaf animations; move and fade the pane as one unit.
+                        .geometryGroup()
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                        #endif
+                }
+            }
+            .frame(width: layout.sidebarWidth, alignment: .leading)
+            .clipped()
+        }
+    }
+
+    private var guideSlot: some View {
+        guide()
+            .frame(width: layout.guideWidth + layout.guideLeadingExtension + layout.guideTrailingExtension)
+            .padding(.leading, -layout.guideLeadingExtension)
+            .padding(.trailing, -layout.guideTrailingExtension)
+            .padding(.bottom, -layout.guideBottomExtension)
     }
 }
 
@@ -233,7 +321,7 @@ struct PrototypePreviewHero: View {
                 .frame(width: layout.metadataWidth, alignment: .leading)
             }
         }
-        .frame(width: layout.contentFrame.width, height: layout.heroHeight, alignment: .bottomLeading)
+        .frame(width: layout.heroWidth, height: layout.heroHeight, alignment: layout.heroAlignment)
         .clipped()
         #if DEBUG
         .modifier(PrototypeHeroLayoutObservation(phase: isLoading ? "loading" : "content"))
@@ -330,6 +418,9 @@ struct PrototypePreviewHero: View {
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.logoRadius, style: .continuous))
+        #if DEBUG
+        .modifier(PrototypeBrowseLayoutObservation(element: "artwork"))
+        #endif
         .accessibilityHidden(true)
     }
 

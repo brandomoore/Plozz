@@ -136,6 +136,34 @@ final class CrashRedactionTests: XCTestCase {
         XCTAssertFalse(gate.accept(try setupFailure(status: 500)))
     }
 
+    func testStorageReportsKeepNumericSQLiteCodesWithoutMessagesAndSeparateFailures() throws {
+        let diagnostics = IPTVSetupDiagnostics()
+        let buffer = CrashSetupBuffer()
+        diagnostics.start { buffer.append($0) }
+        let gate = IPTVSetupReportGate()
+        for code in [13, 1811] {
+            let attempt = try XCTUnwrap(diagnostics.begin(source: .playlistURL, authentication: .url, entry: .addAccount))
+            attempt.advance(to: .catalogCommit)
+            attempt.finish(.init(.storage, sqliteCode: code))
+            let diagnostic = try XCTUnwrap(buffer.last)
+            XCTAssertTrue(gate.accept(diagnostic))
+            XCTAssertFalse(gate.accept(diagnostic))
+            let event = try XCTUnwrap(SentryCrashReporter.setupEvent(diagnostic))
+            event.context?["iptv_setup"]?["sqlite_message"] = "Private provider value"
+            let cleaned = try XCTUnwrap(CrashRedaction.scrub(event))
+            XCTAssertEqual(cleaned.context?["iptv_setup"]?["sqlite_code"] as? Int, code)
+            XCTAssertNil(cleaned.context?["iptv_setup"]?["sqlite_message"])
+            XCTAssertEqual(cleaned.fingerprint?.last, String(code))
+            for invalid in [true as Any, 0, -1, 65_536, 13.5, "Private"] {
+                event.context?["iptv_setup"]?["sqlite_code"] = invalid
+                XCTAssertNil(CrashRedaction.scrub(event)?.context?["iptv_setup"]?["sqlite_code"])
+            }
+            event.context?["iptv_setup"]?["sqlite_code"] = code
+            event.context?["iptv_setup"]?["reason"] = "network"
+            XCTAssertNil(CrashRedaction.scrub(event)?.context?["iptv_setup"]?["sqlite_code"])
+        }
+    }
+
     private func setupFailure(status: Int) throws -> IPTVSetupDiagnostic {
         let diagnostics = IPTVSetupDiagnostics()
         let buffer = CrashSetupBuffer()

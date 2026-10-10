@@ -482,6 +482,10 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// back-compatible default so older cached JSON still decodes.
     public var sources: [MediaSourceRef]
 
+    /// Exact source identities rejected by loaded evidence. Sparse cached
+    /// membership must not restore these peers in detail or watch actions.
+    public var rejectedSourceIDs: Set<String>
+
     /// When the title was last played on the source server, used as the
     /// most-recent-wins tiebreaker when folding watch-state across servers (and
     /// to order Continue Watching). `nil` when the provider doesn't report it.
@@ -566,6 +570,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         isFavorite: Bool = false,
         selectedVersionID: String? = nil,
         sources: [MediaSourceRef] = [],
+        rejectedSourceIDs: Set<String> = [],
         lastPlayedAt: Date? = nil,
         selectedSourceAccountID: String? = nil,
         explicitSourceSelection: Bool = false,
@@ -635,6 +640,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         self.isFavorite = isFavorite
         self.selectedVersionID = selectedVersionID
         self.sources = sources
+        self.rejectedSourceIDs = rejectedSourceIDs
         self.lastPlayedAt = lastPlayedAt
         self.selectedSourceAccountID = selectedSourceAccountID
         self.explicitSourceSelection = explicitSourceSelection
@@ -674,7 +680,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         case downloadProgress
         case sourceAccountID, artworkSourceAccountIDsByURL, artworkMetadataSourcesByURL
         case additionalSourceAccountIDs, versions, edition, isMergedTitle, isFavorite
-        case sources, lastPlayedAt, libraryID
+        case sources, rejectedSourceIDs, lastPlayedAt, libraryID
         case scheduledAirDate, scheduledAirDateHasTime, showsScheduledReleaseTime
     }
 
@@ -807,6 +813,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         versions = try container.decodeIfPresent([MediaVersion].self, forKey: .versions) ?? []
         isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
         sources = try container.decodeIfPresent([MediaSourceRef].self, forKey: .sources) ?? []
+        rejectedSourceIDs = try container.decodeIfPresent(Set<String>.self, forKey: .rejectedSourceIDs) ?? []
         edition = try container.decodeIfPresent(String.self, forKey: .edition)
         isMergedTitle = try container.decodeIfPresent(Bool.self, forKey: .isMergedTitle)
             ?? (sources.count > 1)

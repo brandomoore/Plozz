@@ -198,17 +198,21 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
     /// ``sources(forIdentities:kind:)`` or ``sources(for:)``, which walk the shared
     /// id graph. This kind-less single-level form is kept for the legacy /
     /// kind-unknown path where a transitive walk could bridge across kinds.
-    public func sources(forIdentities identities: [MediaIdentity]) -> [IndexedSource] {
+    public func sources(forIdentities identities: [MediaIdentity], rejectedSourceIDs: Set<String> = []) -> [IndexedSource] {
         guard !identities.isEmpty else { return [] }
         var seen = Set<String>()
         var result: [IndexedSource] = []
         for identity in identities {
             guard let sources = byIdentity[identity] else { continue }
             for source in sources where seen.insert(source.id).inserted {
+                guard !rejectedSourceIDs.contains(source.id) else { continue }
+                guard !MediaItemIdentity.externalIdentitiesConflict(
+                    identities, bySource[source.id] ?? []
+                ) else { continue }
                 result.append(source)
             }
         }
-        return result
+        return unambiguousSources(result)
     }
 
     /// The transitive, **kind-scoped** connected-component union for a set of seed
@@ -241,19 +245,20 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
     /// split on title/year) and a mis-tagged **series** pair (a server emitting one
     /// TVDb id for both the 1999 anime and 2023 live-action "One Piece", split on the
     /// large production-year gap). `nil`/kind-unknown anchor = the prior unguarded
-    /// union, so legacy callers behave exactly as before. Absent title/year signals
-    /// on a source never contradict, so a sparse twin is never split.
+    /// title/year union. Conflicting external IDs are always excluded before
+    /// traversal; missing IDs or title/year signals alone never reject a source.
     public func sources(
         forIdentities identities: [MediaIdentity],
         kind: MediaItemKind?,
         anchorTitle: String?,
-        anchorYear: Int?
+        anchorYear: Int?,
+        rejectedSourceIDs: Set<String> = []
     ) -> [IndexedSource] {
         guard let kind else {
             // Kind-unknown (e.g. a legacy mutation predating the kind field): fall
             // back to a single-level union so a transitive walk can't fold unrelated
             // kinds together on a shared external id.
-            return sources(forIdentities: identities)
+            return sources(forIdentities: identities, rejectedSourceIDs: rejectedSourceIDs)
         }
         guard !identities.isEmpty else { return [] }
         // The split-guard can only positively contradict a same-kind movie (needs a
@@ -276,6 +281,10 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
             guard visitedIdentities.insert(identity).inserted else { continue }
             guard let sources = byIdentity[identity] else { continue }
             for source in sources where source.kind == kind {
+                guard !rejectedSourceIDs.contains(source.id) else { continue }
+                guard !MediaItemIdentity.externalIdentitiesConflict(
+                    identities, bySource[source.id] ?? []
+                ) else { continue }
                 // A source that plausibly contradicts the anchor is a different work
                 // riding a bad shared id: exclude it from the result AND from the
                 // frontier, so nothing reachable only *through* it leaks in either.
@@ -303,7 +312,22 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
                 }
             }
         }
-        return result.sorted { $0.id < $1.id }
+        return unambiguousSources(result.sorted { $0.id < $1.id })
+    }
+
+    /// A sparse seed can match two mutually contradictory groups. Without enough
+    /// evidence to choose between them, neither group is safe for playback or writes.
+    private func unambiguousSources(_ sources: [IndexedSource]) -> [IndexedSource] {
+        for (index, source) in sources.enumerated() {
+            for other in sources[..<index] where other.kind == source.kind {
+                if MediaItemIdentity.externalIdentitiesConflict(
+                    bySource[source.id] ?? [], bySource[other.id] ?? []
+                ) {
+                    return []
+                }
+            }
+        }
+        return sources
     }
 
     /// Every indexed source for `item`, by its ``MediaItemIdentity`` identities,
@@ -320,17 +344,26 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
     /// watch-fan-out set (see ``sources(forIdentities:kind:anchorTitle:anchorYear:)``).
     public func sources(for item: MediaItem) -> [IndexedSource] {
         let kind = item.kind
+        let identities = lookupIdentities(for: item)
+        let normalized = MediaItemIdentity.normalizedTitle(item.title)
+        return sources(
+            forIdentities: identities,
+            kind: kind,
+            anchorTitle: normalized.isEmpty ? nil : normalized,
+            anchorYear: item.productionYear,
+            rejectedSourceIDs: item.rejectedSourceIDs
+        )
+    }
+
+    private func lookupIdentities(for item: MediaItem) -> [MediaIdentity] {
         var identities = MediaItemIdentity.identities(for: item)
         // Recover the index's enriched identities for this *exact* physical item
-        // when its loaded payload carried no strong external id (or fewer ids than
-        // the index found by per-item fetch during warm). Without this an id-less
-        // Plex row can't share an identity key with a Jellyfin twin that carries an
-        // IMDb/TMDb id — rule #1 suppresses the twin's title key — so they'd stay
-        // two cards even though the index knows they're one title. Keyed by the
-        // row's own (account,item), so it's the index's confident per-item truth,
-        // never a guess: no false-merge risk.
+        // only while compatible with the loaded payload. Re-scraping can change
+        // an item's IDs before the index refreshes; unioning contradictory old
+        // IDs into the anchor would disable the conflict guard.
         if let accountID = item.sourceAccountID,
-           let recovered = bySource["\(accountID):\(item.id)"] {
+           let recovered = bySource["\(accountID):\(item.id)"],
+           !MediaItemIdentity.externalIdentitiesConflict(identities, recovered) {
             identities.append(contentsOf: recovered)
         }
         // Re-apply rule #1 (see `MediaItemIdentity.identities(for:)`): a strong
@@ -346,13 +379,7 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
         if identities.contains(where: { if case .external = $0 { return true } else { return false } }) {
             identities.removeAll { if case .title = $0 { return true } else { return false } }
         }
-        let normalized = MediaItemIdentity.normalizedTitle(item.title)
-        return sources(
-            forIdentities: identities,
-            kind: kind,
-            anchorTitle: normalized.isEmpty ? nil : normalized,
-            anchorYear: item.productionYear
-        )
+        return identities
     }
 
     /// The **canonical evidence** for `item` — the single identity that represents
@@ -373,16 +400,7 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
     /// or when it matches **two** different refined components — an ambiguity that must
     /// never be resolved by bridging them.
     public func canonicalEvidence(for item: MediaItem) -> MediaIdentity? {
-        var identities = MediaItemIdentity.identities(for: item)
-        if let accountID = item.sourceAccountID,
-           let recovered = bySource["\(accountID):\(item.id)"] {
-            identities.append(contentsOf: recovered)
-        }
-        // Same rule #1 re-application as `sources(for:)`: a recovered strong external
-        // id suppresses the weak title fallback so it can never bridge two works.
-        if identities.contains(where: { if case .external = $0 { return true } else { return false } }) {
-            identities.removeAll { if case .title = $0 { return true } else { return false } }
-        }
+        let identities = lookupIdentities(for: item)
         guard !identities.isEmpty else { return nil }
         let normalized = MediaItemIdentity.normalizedTitle(item.title)
         var labels: Set<MediaIdentity> = []
@@ -390,6 +408,9 @@ public struct IdentityIndexSnapshot: Sendable, Equatable {
         for identity in identities where visited.insert(identity).inserted {
             guard let sources = byIdentity[identity] else { continue }
             for source in sources where source.kind == item.kind {
+                guard !MediaItemIdentity.externalIdentitiesConflict(
+                    identities, bySource[source.id] ?? []
+                ) else { continue }
                 // A source that positively contradicts the asking item is a different
                 // work riding a bad shared id — its label must not be adopted.
                 if MediaItemIdentity.titlesPlausiblyContradict(

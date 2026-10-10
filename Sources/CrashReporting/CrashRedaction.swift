@@ -64,6 +64,7 @@ enum CrashRedaction {
                 (data["http_status"] as? Int).map(String.init) ?? "none",
                 (data["network_code"] as? Int).map(String.init) ?? "none"
             ]
+            if let code = data["sqlite_code"] as? Int { event.fingerprint?.append(String(code)) }
             var tags = coarseSetupTags(event.tags ?? [:])
             tags.merge([
                 "report.kind": "iptv-setup", "setup.source": source, "setup.stage": stage,
@@ -169,6 +170,7 @@ enum CrashRedaction {
                   reason != .cancelled else { return nil }
             safe["reason"] = reason.rawValue
             copyInteger("network_code", range: -4_000 ... -1)
+            if reason == .storage { copyInteger("sqlite_code", range: 1...65_535) }
         }
         return safe
     }

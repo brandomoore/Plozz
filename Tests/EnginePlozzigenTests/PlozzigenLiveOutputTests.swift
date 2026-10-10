@@ -9,9 +9,14 @@ final class PlozzigenLiveOutputTests: XCTestCase {
             let options = PlozzigenVideoEngine.liveLoadOptions(httpHeaders: [:], url: url)
             XCTAssertTrue(options.isLive)
             XCTAssertFalse(options.nativeRemoteHLS, suffix)
+            XCTAssertEqual(options.liveJoinProfile, .fastZap, suffix)
         }
-        let hls = try XCTUnwrap(URL(string: "http://127.0.0.1/opaque.m3u8"))
-        XCTAssertTrue(PlozzigenVideoEngine.liveLoadOptions(httpHeaders: [:], url: hls).nativeRemoteHLS)
+        for path in ["opaque.m3u8", "extensionless"] {
+            let url = try XCTUnwrap(URL(string: "http://127.0.0.1/\(path)"))
+            let options = PlozzigenVideoEngine.liveLoadOptions(httpHeaders: [:], url: url)
+            XCTAssertTrue(options.nativeRemoteHLS)
+            XCTAssertEqual(options.liveJoinProfile, .standard)
+        }
     }
 
     func testOutputPoliciesLeavePanelModeInferenceToAether() {

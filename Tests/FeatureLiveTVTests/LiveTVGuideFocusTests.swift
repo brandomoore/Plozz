@@ -214,8 +214,8 @@ final class LiveTVGuideFocusTests: XCTestCase {
     }
 
     func testNativeSidebarKeepsItsRootLiveTVContentAcrossSearchAndPlaybackVisibility() async throws {
-        // This verifies the Live TV root and Search host stay alive.
-        // Actual system-sidebar suppression still requires an app-hosted device trial.
+        // Remote coverage also verifies Search and destination re-entry.
+        try await requireNativeFocus()
         let probe = try GuideFocusProbe(section: .channels)
         probe.restoring = false
         probe.model.query = "Channel 2"
@@ -252,6 +252,7 @@ final class LiveTVGuideFocusTests: XCTestCase {
     }
 
     func testBackFromTheGuideCannotExposeAnEmptyNavigationRoot() async throws {
+        try await requireNativeFocus()
         let probe = try GuideFocusProbe(section: .channels)
         probe.restoring = false
         probe.searchClosed = true
@@ -533,7 +534,7 @@ private struct NativeSidebarSearchHarness: View {
     var body: some View {
         TabView {
             Tab("Live TV", systemImage: "tv") {
-                LiveTVNavigationContainer(hidesNavigation: probe.navigationExcluded) {
+                LiveTVNavigationContainer {
                     ZStack {
                         Color.black
                         NativeGuideFocusHarness(probe: probe)

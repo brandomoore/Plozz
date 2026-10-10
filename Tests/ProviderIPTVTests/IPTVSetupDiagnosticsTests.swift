@@ -36,7 +36,7 @@ final class IPTVSetupDiagnosticsTests: XCTestCase {
                 }
             }
             let failure = try XCTUnwrap(buffer.values.last)
-            XCTAssertEqual(failure.stage, .authentication)
+            XCTAssertEqual(failure.stage, .playlist)
             XCTAssertEqual(failure.outcome, .failed)
             XCTAssertEqual(failure.httpStatus, status)
             XCTAssertEqual(failure.response, .html)

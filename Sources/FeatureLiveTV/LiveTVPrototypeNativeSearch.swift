@@ -1,22 +1,23 @@
 #if os(tvOS)
+import CoreModels
+import CoreNetworking
+import CoreUI
 import SwiftUI
 import UIKit
 
-/// Live TV is the navigation root, not a dismissible page above an empty root.
-/// The owning stack receives chrome visibility without moving the live player.
+/// Keep browsing in the native tab's focus and presentation hierarchy.
 public struct LiveTVNavigationContainer<Content: View>: View {
-    private let hidesNavigation: Bool
     private let content: Content
 
-    public init(hidesNavigation: Bool, @ViewBuilder content: () -> Content) {
-        self.hidesNavigation = hidesNavigation
+    public init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
 
     public var body: some View {
-        NavigationStack { content }
-            .toolbar(hidesNavigation ? .hidden : .visible, for: .tabBar)
-            .toolbar(.hidden, for: .navigationBar)
+        NavigationStack {
+            content
+                .toolbar(.hidden, for: .navigationBar)
+        }
     }
 }
 

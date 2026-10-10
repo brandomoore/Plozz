@@ -307,6 +307,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     in: accounts,
                     identitySources: identitySources
                 ),
+                identitySources: identitySources,
                 relatedTitlesLoader:
                     relatedTitleLibrarySearch(in: accounts).map { search in
                         RelatedTitlesLoader(

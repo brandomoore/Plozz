@@ -103,7 +103,7 @@ final class IPTVHTTP: Sendable {
             if response.statusCode == 429 {
                 throw AppError.rateLimited(retryAfter: response.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init))
             }
-            throw AppError.invalidResponse
+            throw IPTVError.httpStatus(response.statusCode)
         }
         return (bytes, response)
     }

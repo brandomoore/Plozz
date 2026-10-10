@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import CryptoKit
 import Foundation
 
@@ -239,14 +240,7 @@ struct LiveTVChannelIdentity {
 
 enum LiveTVIdentityDigest {
     static func hex<S: Sequence>(_ digest: S) -> String where S.Element == UInt8 {
-        let alphabet = Array("0123456789abcdef".utf8)
-        var bytes: [UInt8] = []
-        bytes.reserveCapacity(64)
-        for byte in digest {
-            bytes.append(alphabet[Int(byte >> 4)])
-            bytes.append(alphabet[Int(byte & 15)])
-        }
-        return String(decoding: bytes, as: UTF8.self)
+        DigestHex.encode(digest)
     }
 }
 
