@@ -1,4 +1,5 @@
 import CoreModels
+import CryptoKit
 import Darwin
 import FeatureLiveTVCore
 import Foundation
@@ -80,9 +81,14 @@ final class IPTVPerformanceProbeTests: XCTestCase {
         }
         attempt.finish()
         let imported = Date()
+        counts.finished()
         let downloaded = try JSONDecoder().decode(Source.self, from: Data(contentsOf: control))
         XCTAssertEqual(counts.entries + counts.skipped, downloaded.entries)
         XCTAssertEqual(counts.requests, 1, "The full import must use one playlist response.")
+        let readingSeconds = try XCTUnwrap(counts.readingSeconds)
+        let commitSeconds = try XCTUnwrap(counts.commitSeconds)
+        XCTAssertGreaterThan(readingSeconds, 0)
+        XCTAssertGreaterThan(commitSeconds, 0)
         let provider = try IPTVProvider(
             context: .init(session: session, accountID: "probe", credentialRevision: .init(),
                            localMediaContext: .init(accountID: "probe", profileID: "probe", profileNamespace: nil)),
@@ -108,30 +114,77 @@ final class IPTVPerformanceProbeTests: XCTestCase {
             XCTAssertNil(imports.serverSources.first?.failure)
             var usage = rusage()
             XCTAssertEqual(getrusage(RUSAGE_SELF, &usage), 0)
-            print("IPTV_PROBE entries=\(counts.entries) import_seconds=\(imported.timeIntervalSince(started)) library_seconds=\(discovered.timeIntervalSince(imported)) libraries=\(libraries.count) titles=\(totalTitles) live=\(channels.count) peak_bytes=\(usage.ru_maxrss)")
+            print("IPTV_PROBE entries=\(counts.entries) import_seconds=\(imported.timeIntervalSince(started)) reading_seconds=\(readingSeconds) commit_seconds=\(commitSeconds) library_seconds=\(discovered.timeIntervalSince(imported)) libraries=\(libraries.count) titles=\(totalTitles) live=\(channels.count) peak_bytes=\(usage.ru_maxrss)")
         } catch {
             await provider.teardown()
             throw error
         }
         await provider.teardown()
+        if source.verifyRecords == true || source.expectedRecordDigest != nil {
+            let catalog = try IPTVCatalog(
+                url: root.appendingPathComponent(credential.identity.uuidString + ".sqlite"),
+                key: credential.catalogKey
+            )
+            var hash = SHA256()
+            var lastID = ""
+            var records = 0
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            while true {
+                let page = try catalog.records(where: "id > ?", values: [lastID], order: "id", limit: 2_000)
+                guard let last = page.last else { break }
+                for record in page { hash.update(data: try encoder.encode(record)) }
+                records += page.count
+                lastID = last.item.id
+            }
+            XCTAssertEqual(records, try catalog.count(where: "1 = 1"))
+            let digest = hash.finalize().map { String(format: "%02x", $0) }.joined()
+            if let expected = source.expectedRecordDigest { XCTAssertEqual(digest, expected) }
+            print("IPTV_PROBE_RECORDS count=\(records) sha256=\(digest)")
+        }
     }
 
     private struct Source: Decodable {
         let url: String
         let entries: Int
+        let verifyRecords: Bool?
+        let expectedRecordDigest: String?
     }
 
     private final class ProbeCounts: @unchecked Sendable {
         private let lock = NSLock()
         private var count = 0
         private var lastDiagnostic: IPTVSetupDiagnostic?
+        private var readingStarted: TimeInterval?
+        private var commitStarted: TimeInterval?
+        private var completedAt: TimeInterval?
         var entries: Int { lock.withLock { count } }
         var skipped: Int { lock.withLock { lastDiagnostic?.skippedEntries ?? 0 } }
         var requests: Int { lock.withLock { lastDiagnostic?.requestCount ?? 0 } }
+        var readingSeconds: TimeInterval? {
+            lock.withLock {
+                guard let commitStarted, let readingStarted else { return nil }
+                return commitStarted - readingStarted
+            }
+        }
+        var commitSeconds: TimeInterval? {
+            lock.withLock {
+                guard let completedAt, let commitStarted else { return nil }
+                return completedAt - commitStarted
+            }
+        }
         func diagnostic(_ value: IPTVSetupDiagnostic) { lock.withLock { lastDiagnostic = value } }
+        func finished() { lock.withLock { completedAt = ProcessInfo.processInfo.systemUptime } }
         func record(_ progress: IPTVImportProgress) {
-            guard progress.stage == .playlist else { return }
-            lock.withLock { count = progress.entries }
+            lock.withLock {
+                let now = ProcessInfo.processInfo.systemUptime
+                if progress.stage == .playlist {
+                    if readingStarted == nil { readingStarted = now }
+                    count = progress.entries
+                } else if progress.stage == .catalogCommit {
+                    if commitStarted == nil { commitStarted = now }
+                }
+            }
         }
     }
 }

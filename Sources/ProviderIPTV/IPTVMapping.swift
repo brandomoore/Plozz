@@ -4,6 +4,10 @@ import CoreNetworking
 import Foundation
 
 enum IPTVMapping {
+    private static let episodeExpression = try! NSRegularExpression(
+        pattern: #"(?i)^(.+?)[ ._-]+S(\d{1,3})[ ._-]*E(\d{1,4})(?:\b|[ ._-])"#
+    )
+
     static func listEntry(_ value: IPTVObject, library: String, categories: [String: String] = [:]) throws -> IPTVRecord {
         let kind: MediaItemKind = library == "series" ? .series : library == "movies" ? .movie : .video
         guard let nativeID = value.text(kind == .series ? "series_id" : "stream_id"),
@@ -140,8 +144,7 @@ enum IPTVMapping {
         -> (title: String, season: Int, number: Int)? {
         if let title = attributes["series-name"], let season = attributes["season-number"].flatMap(Int.init),
            let number = attributes["episode-number"].flatMap(Int.init) { return (title, season, number) }
-        let expression = try? NSRegularExpression(pattern: #"(?i)^(.+?)[ ._-]+S(\d{1,3})[ ._-]*E(\d{1,4})(?:\b|[ ._-])"#)
-        guard let match = expression?.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
+        guard let match = episodeExpression.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
               let titleRange = Range(match.range(at: 1), in: name),
               let seasonRange = Range(match.range(at: 2), in: name),
               let episodeRange = Range(match.range(at: 3), in: name),
@@ -177,6 +180,6 @@ enum IPTVMapping {
     }
 
     static func digest(_ text: String) -> String {
-        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+        DigestHex.encode(SHA256.hash(data: Data(text.utf8)))
     }
 }

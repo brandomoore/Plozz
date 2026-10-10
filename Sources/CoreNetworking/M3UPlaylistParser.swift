@@ -351,7 +351,7 @@ public struct M3UPlaylistParser: Sendable {
             let groups = parser.categoryNames(from: entry.attributes["group-title"] ?? defaultGroups)
             let groupDescription = groups.isEmpty ? "Other" : groups.joined(separator: " • ")
             let digestInput = [tvgID ?? "", entry.name, streamURL.absoluteString].joined(separator: "\u{1F}")
-            let digest = SHA256.hash(data: Data(digestInput.utf8)).map { String(format: "%02x", $0) }.joined()
+            let digest = DigestHex.encode(SHA256.hash(data: Data(digestInput.utf8)))
             let channelID = "iptv-\(digest)"
             guard indexesCatalog || importedIDs.insert(channelID).inserted else { skippedEntryCount += 1; return }
             let channel = M3UPlaylistChannel(

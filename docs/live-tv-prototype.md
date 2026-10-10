@@ -161,6 +161,26 @@ decoded by page; the guide still holds lightweight channel values for its full
 lineup. This is not a claim of unlimited device memory or measured performance
 on every older device.
 
+First-import identity generation reuses the same lowercase digest encoder as
+durable Live TV identities and compiles the episode-name expression once.
+Digest inputs, IDs, classification, encrypted records and atomic catalogue
+replacement are unchanged. The opt-in `IPTVPerformanceProbeTests` accepts only
+an owned loopback replay through `.build/iptv-performance-source.json` (`url`
+and `entries`). It reports reading/staging and final commit time separately.
+Optional `verifyRecords: true` computes a sorted-key fingerprint of every
+decrypted record, without printing its contents; `expectedRecordDigest` checks
+that fingerprint against a baseline. Fingerprinting happens after timing.
+
+An optimized tvOS simulator comparison used two separately captured 102.6 MB
+responses with 382,408 entries each (382,407 accepted and one skipped). Fresh
+local replay imports took 91–95 seconds before these changes and 63–66 seconds
+afterward, with identical per-source fingerprints across all 413,265 resulting
+records, including series and seasons. Faster digest formatting supplied most
+of the gain; expression reuse reduced the reading stage further. The one-time
+upstream downloads separately took 24–30 seconds, including 18–24 seconds before
+headers. These small-sample replay measurements isolate app-side work; they
+are not end-to-end provider timings or physical-device guarantees.
+
 `IPTVScaleAndRecoveryTests` exercises an 800,005-entry, 50 MB HTTP playlist
 through sign-in, encrypted catalogue commit, session restoration and final-page
 queries. The fixture includes 2,000 live channels and 798,005 movies. It also
