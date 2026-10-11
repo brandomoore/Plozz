@@ -467,6 +467,9 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
     private func overlayConfiguration(in context: Context) -> any UIContentConfiguration {
         UIHostingConfiguration {
             overlay
+                // TVUIKit rounds its image, but leaves the overlay container square.
+                .clipShape(RoundedRectangle(
+                    cornerRadius: PlozzTheme.Metrics.nativePosterArtworkCornerRadius, style: .continuous))
                 .environment(\.plozzNativeArtworkSurface, true)
                 .environment(\.plozzNativeFocusSurface, true)
                 .environment(\.self, context.environment)

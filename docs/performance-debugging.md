@@ -480,6 +480,86 @@ performance improvement does not excuse a failed lifecycle gate. An additional
 observable-hosting-state experiment also failed to improve the measurements and
 was removed.
 
+#### Actual library poster comparisons
+
+`NativeLibraryPosterRemoteTests` targets the already-running, optimized Plozz
+application through the unbound `PlozzPhysicalHomeRowsTests` runner. The external
+driver must verify the installed build and unchanged PID before and after XCTest;
+the runner must not install or launch the app. Its physical target, matching
+target confirmation, optimized-app confirmation and renderer arm are explicit
+`TEST_RUNNER_PLOZZ_LIBRARY_*` environment values, not inferred defaults.
+
+Use an actual populated TV Shows Browse grid with **All** watch states and
+**Name** sorting, including visible episode counts and progress. Unwatched-only
+Movies and a synthetic poster grid do not exercise the same overlay workload.
+Record the seven focused titles during calibration, then require that same path
+for every arm. Keep the existing profile and all its servers enabled.
+
+Run `testControlledAIdle` and `testControlledBTraversal` together, in that order,
+in one runner and app process. Each phase has one XCTest warm-up and three
+recorded observations around a 24-second input loop. Scrolling sends six Down followed by six Up, one
+press every two seconds. Accessibility assertions, screenshots and JSON timing
+attachments stay outside the metric windows. Retained timing attachments include
+epoch, elapsed duration, each input's lateness and remote-call duration; do not
+depend on live stdout surviving a long asynchronous wait.
+
+Collect `XCTClockMetric` alongside the application metrics, and retain runner-only
+timestamps bracketing both `startMeasuring()` and `stopMeasuring()`. The 24-second
+input timer excludes those calls. Native hitch-duration/ratio pairs have implied
+longer effective denominators; Apple's current `XCTHitchMetric` documentation
+does not specify whether its boundaries match the clock metric exactly. Compare
+the exported per-iteration clock, boundary calls and input duration rather than
+assuming every collector covers exactly 24 seconds or renormalizing its counts.
+For nonzero ratios, `1000 * hitchDurationSeconds / hitchRatio` is an effective
+denominator, not independently verified wall or animation time. Keep attachments
+and assertions outside measurement, including the boundary-timing export.
+
+Start no earlier than eight minutes after an externally recorded fresh launch,
+and sixty seconds after calibration. Automated navigation also waits until
+launch + sixty seconds before using Home's library shortcuts, allowing initial
+rows to populate. The startup wait emits runner-only activity events, not app
+input or accessibility queries. Startup age alone does not establish quiescence:
+correlate the actual windows with background diagnostics. Scan/lister counters
+do not represent every Plex, Jellyfin, CloudKit or metadata request. Keep idle
+and scrolling CPU separate; do not subtract a busy idle scan from a quiet scroll.
+
+An A-B-B-A comparison on Apple TV 4K (2nd generation), tvOS 27.2, recorded
+original-renderer hitch counts `[43, 35, 30]` and `[33, 35, 36]`, versus
+`[54, 45, 44]` and `[53, 51, 52]` for the single-image candidate. These are counts
+around each 24-second input traversal, not per input. The candidate was kept off
+during this investigation: preserving geometry did not establish better frame pacing. All four drivers reported a
+transport error at teardown despite both metric tests completing; preserve that
+limitation rather than reporting whole-suite success. The measured scrolling
+windows had no active scan/listers, while some idle windows remained busy.
+
+After removing the scroll-index hierarchy polling, a same-build comparison
+still recorded `[46, 44, 57]` hitches with the original renderer and
+`[50, 50, 58]` with the candidate. Neither established acceptable frame pacing.
+A header-translation wrapper also showed no clear benefit and was removed.
+
+Separating artwork from the managed cell content view removed proven layout
+oscillation, but subsequent original-renderer runs still recorded `[42, 52, 42]`
+and `[42, 58, 40]` hitches; the same-build composite recorded `[59, 50, 59]`.
+All measured scrolling windows had zero scan/lister counters. Neither lower
+scrolling CPU nor better pacing was consistently established. Long-run transport
+teardown failures remained, so these are completed metric observations, not
+whole-suite passes.
+
+The single-image renderer is now enabled for the requested removal of internal
+poster zoom while retaining native focus enlargement and motion. This is a
+visual-behavior correction, not a measured scrolling-speed improvement. Normal
+launches include it; Debug comparisons of the old renderer must explicitly use
+`--original-library-posters`. A later offscreen-header clamp experiment was
+withdrawn without adoption; do not confuse it with the retained index-search
+and artwork-ownership fixes.
+
+`testProfileRealLibraryTraversal` drives the same 24-second path for a separately
+attached CPU trace. Retain its timestamps and the exact process image map.
+Profiling and uninstrumented hitch acceptance are separate runs; a scan can
+restart between them. A successful CPU-only capture does not mean the Animation
+Hitches template works on the same device: a disconnected or unready recording
+must not authorize input or count as frame-pipeline evidence.
+
 ### Opt-in Home cache and native artwork timings
 
 For the Home stall investigation, launch the actual **Release** app with both
@@ -935,6 +1015,22 @@ preserves the original. A failed symbolicated export can be bypassed with the
 `time-sample` raw CPU table; do not silently label raw addresses as resolved
 symbols. Missing device support symbols also limit attribution in Debug builds.
 
+Before accepting that a finalized, verified trace is mostly unresolved, try
+symbolicating a new copy using the exact executable's matching dSYM:
+
+```bash
+xcrun xctrace symbolicate --input Recording-1.trace \
+  --output Symbolicated.trace --dsym Exact-Plozz.dSYM
+xcrun xctrace export --input Symbolicated.trace \
+  --xpath '/trace-toc/run[@number="1"]/data/table[@schema="time-profile"]' \
+  --output resolved-cpu.xml
+```
+
+This recovered app and most UIKit/SwiftUI/QuartzCore names in the verified
+library-scroll capture. Resolve XML `id`/`ref` indirection before aggregating,
+and keep unresolved leaf counts explicit. A failed export from another recovered
+trace does not establish that symbolication is unavailable for this recording.
+
 Other useful templates: `Allocations` (attributes a memory total to a call stack —
 the natural follow-up when memory is the problem), `Leaks`, `Swift Concurrency`.
 
@@ -1155,6 +1251,41 @@ and a passing functional test are not substitutes for presented-frame timing.
 
 ### Performance traps
 
+- **Do not resize a collection cell's managed `contentView` to the artwork.**
+  UIKit restores that view to the full cell bounds during layout. The native
+  library then shrank it to exclude captions, producing two size changes per
+  otherwise unchanged pass and notifying hosted SwiftUI geometry observers.
+  A bounds observer with a positive control captured five successive
+  `273 x 506.9 -> 253 x 379.5` cycles in the actual hosted collection.
+  Keep the managed content view full-sized and lay out a separate artwork
+  child. For `TVMediaItemContentView`, preserve the focused cell as its direct
+  parent; captions and detail-transition geometry must still use the artwork
+  rectangle. A stable-layout regression proves the size churn is removed,
+  not that physical scrolling is hitch-free. The first physical original-renderer
+  run after this fix still recorded `[42, 52, 42]` hitches around 24-second input traversals, with
+  no active scan/listers. A separate idle window recorded a 984 ms hitch and
+  a 921 ms main-actor hop; zero scan counters do not prove the whole app is idle.
+- **Moving an offscreen SwiftUI host can still render synchronously.** A fresh
+  post-layout-fix trace attributed 208 of 4,309 running main-thread samples to
+  the library header's `setCenter` path; 82 executed nested display-list
+  rendering through geometry invalidation and `run_moved_callback`. These were
+  not passive graph-lock waits. Avoid assigning unidentified hosting-root work
+  to the same owner: the directly attributed header share was about 4.8%, not
+  all SwiftUI rendering. A clamp experiment must preserve visible movement,
+  return, accessibility and native focus, and improve physical pacing before
+  being adopted. The same trace included periodic cloud publication despite
+  zero scan/lister counters.
+- **Do not poll the whole window for a private scroll-index class.** The library's
+  alphabet-rail hider previously retried a recursive hierarchy/class-name search
+  every fifteen display-link ticks when no index bar matched. An exact-process
+  CPU trace attributed 1,872 of 4,886 running main-thread scrolling samples to
+  that path, with an even larger idle share. A native collection directly owns
+  `showsVerticalScrollIndicator` and tvOS's public `indexDisplayMode`; it needs no
+  polling controller. The SwiftUI fallback enforces those public properties only
+  on cached ancestor scroll views. Preserve alphabet navigation and indicator
+  restoration. Removing the search reduced idle work, but the first subsequent
+  physical run still recorded `[51, 50, 51]` hitches: a CPU improvement is not
+  proof that scrolling improved.
 - **Receipt lookup must also be cheap.** Partition portable Live TV record IDs
   once on the preparation actor and reuse their parsed profile ownership while
   those IDs remain in the input. Do not repeatedly decode and re-encode every ID

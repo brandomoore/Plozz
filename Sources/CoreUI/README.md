@@ -8,16 +8,18 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 - **Unwatched episode counts** — a default-on profile preference replaces the
   top-right watch-status mark with a number on series/season cards.
-  Watched mode uses an inset pearl count tile and a matching white completed
-  circle with a dark check. Unwatched mode uses a white triangle for unnumbered
-  titles and a flush white count tile with matching outer and bottom-left
-  curves. Fine edges and soft shadows keep both legible on pale artwork; only
-  the artwork clips the curved tile's shadow, never the tile's own bounds.
+  Episode counts use charcoal tiles with white digits so they stay quieter than
+  the light watch-status marks. Watched mode uses an inset count tile and a white
+  completed circle with a dark check. Unwatched mode uses a white triangle for
+  unnumbered titles and a flush count tile with a curved bottom-left corner.
+  The count tile's top-right corner stays square; only the artwork clips its
+  outer corner and shadow. Native poster and library-card overlay hosts apply
+  that clipping at the full artwork bounds, not at the badge's own bounds.
   Both count styles use bold system digits. At standard TV size the curved
-  tile has 12pt side padding and is 52pt tall; Pearl spacing is unchanged.
+  tile has 12pt side padding and is 52pt tall; floating-tile spacing is unchanged.
   Floating marks have density-scaled clearance (16pt at standard TV size).
   Touch sizes and artwork radii remain proportionate. Episode cards and the
-  watch-indicator Settings swatches reuse the same white check and flag.
+  watch-indicator Settings swatches reuse the same light check badge and flag.
   Positive exact library counts take priority; unknown counts retain the
   existing watched/unwatched style. Completed containers retain its completion
   behavior. Movies, episodes, ownership/request marks and spoiler protection
@@ -229,9 +231,12 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   highlight without extra zoom/cropping inside the artwork, not disable growth.
   The single-image case prepares rounded transparent artwork and overlays once,
   then enables `masksFocusEffectToContents`; no custom focus transform is used.
-  On tvOS 26.5 it preserves the composition and overlay insets while enlarging
-  400×225 artwork to 440×247.5. Content masking alone preserves the image but
-  separate native overlays still float at a different depth.
+  Geometry checks on tvOS 26.5 found preserved composition and overlay insets
+  while enlarging 400×225 artwork to 440×247.5. Those checks did not validate
+  the highlight bounds: subsequent physical testing exposed an offset highlight
+  mask on the single-image `TVPosterView`. Content masking alone also leaves
+  separate native overlays floating at a different depth. Neither is an
+  accepted production replacement.
   `NativeArtworkFocusComparisonHostedTests` checks real focus, enlargement,
   baked-in image landmarks, overlay-marker pixels, visible highlight, and action
   delivery. Run it with
@@ -241,6 +246,38 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   need separate coverage before adoption. Alpha masking also has a documented
   rendering cost; these geometry checks do not establish physical frame pacing
   or full Siri Remote motion behavior.
+- **Native library artwork layout** — `NativeTVLibraryCell` leaves UIKit's
+  `contentView` at the full cell size and owns the artwork as a separate direct
+  child. Resizing `contentView` to exclude captions caused every repeated
+  layout pass to grow then shrink its hosted artwork, invalidating SwiftUI
+  geometry even when the final size was unchanged. The artwork remains directly
+  under the focused cell for TVUIKit projection, with captions outside it and
+  detail transitions referencing the artwork rather than the full cell.
+- **Native library zoom correction** — normal launches use the corrected
+  renderer for borderless, system-focus native Movies/TV Browse cells.
+  Debug's `--original-library-posters` is an explicit comparison-only opt-out.
+  The collection cell remains the focus and selection owner,
+  with one rounded-alpha `UIImageView` using native ancestor-focus adjustment
+  and content masking. Artwork and the existing watch/count/progress overlay
+  share the image, so enlargement does not change their relative insets.
+  Captions and detail transitions retain their existing owners. Home,
+  Continue Watching, custom focus styles, framed cards, and mobile are unchanged.
+  The shared cache is bounded to 24 MiB and 64 entries, keyed by source identity,
+  size, scale, and visible presentation settings. These limits exclude images
+  retained by visible cells and are not a process-memory budget. Content changes
+  invalidate composition; focus movement alone does not. Full SwiftUI
+  environments and providers are not retained in the shared cache.
+  `NativeLibraryCardHostedTests` covers live episode-count/artwork replacement,
+  focus retention, unchanged-configuration reuse, and cache accounting.
+  Earlier real TV Shows comparisons recorded more native hitch counts with this
+  renderer; a performance improvement has not been established. It is enabled
+  for the requested zoom correction, not to claim better scrolling. See the
+  [actual-library measurement protocol](../../docs/performance-debugging.md#actual-library-poster-comparisons)
+  for the workload, numbers and transport limitations.
+  Physical comparisons must use the actual populated library, repeated fresh
+  launches, matched startup/settling times and input cadence, and separate idle
+  measurements. Preserve the profile's servers, filters and sorting; retain
+  background-activity evidence rather than assuming a quiet app from its age.
 - **Continue Watching logo contrast** — logo-overlay cards use a 40% base
   artwork dim, reduced for dark artwork and increased by up to 25 percentage
   points when the logo blends into its background (65% maximum). The dim sits

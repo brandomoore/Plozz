@@ -1175,23 +1175,9 @@ private struct LetterJumpBubble: View {
 }
 
 #if canImport(UIKit)
-/// Probe that reaches its enclosing `UIScrollView`(s) and keeps the vertical
-/// scroll indicator hidden. `.scrollIndicators(.never)` and a one-shot
-/// `showsVerticalScrollIndicator = false` both proved unreliable on tvOS for this
-/// grid: SwiftUI re-asserts the indicator after every layout pass, and — crucially
-/// — tvOS's focus scroll bar (`_TVScrollBarView`) is a *dynamically re-created*
-/// subview that reappears on focus-driven scrolls, so hiding it once (or only on a
-/// `contentOffset` tick) misses the freshly-spawned instance. (Confirmed via
-/// research: tvOS `ScrollView` is a real `UIScrollView`; SwiftUI overrides
-/// introspected indicator properties; the tvOS bar is recreated on demand.)
-///
-/// Reliable fix: while hidden, drive a `CADisplayLink` that every frame walks the
-/// enclosing scroll view(s) and re-hides both the property and any indicator
-/// subview (`_UIScrollViewScrollIndicator` / `_TVScrollBarView`), catching the
-/// re-created bar the instant it appears. The link runs only while the rail is up;
-/// when the rail hides (non-name sort / scrolled to top) it stops and restores the
-/// default indicator. Applies to every scroll view in the ancestor chain in case
-/// the indicator lives on an outer `_UIHostingScrollView` rather than an inner one.
+/// SwiftUI can reassert indicator settings during layout. Enforce only the
+/// enclosing scroll views' public properties; never search their descendants
+/// or the window for UIKit's dynamically created index-bar views.
 private struct ScrollIndicatorHider: UIViewControllerRepresentable {
     var hidden: Bool
 
@@ -1219,23 +1205,6 @@ final class ScrollIndicatorHiderController: UIViewController {
     }
     private var scrollViews: [UIScrollView] = []
     private var displayLink: CADisplayLink?
-    /// Once we've located the tvOS index bar we cache its (private) class and the
-    /// view that hosts it. tvOS *re-creates* the bar on focus-driven scrolls, so we
-    /// can't just blank one instance — but every re-created bar is the same class
-    /// re-added to the same host, so each frame we only re-blank that host's
-    /// matching children (a fast `isKind(of:)` check), never re-walking the tree.
-    private var indexBarClass: AnyClass?
-    private weak var indexBarHost: UIView?
-    /// Throttles the (rare) full view-tree walk used to first discover the bar, so
-    /// that before it ever appears we aren't recursing the whole window every frame.
-    private var framesUntilDiscover = 0
-    private static let discoverInterval = 15
-    /// Once the bar's class + host are cached, we re-run discovery only very
-    /// occasionally — and only while idle (see `enforce()`) — purely to self-heal if
-    /// tvOS ever re-creates the bar under a *different* host. This is the rare case;
-    /// the common re-creation (same host) is caught for free by the per-frame
-    /// re-blank, so this walk never needs to run during an active scroll.
-    private static let revalidateInterval = 240
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -1301,95 +1270,18 @@ final class ScrollIndicatorHiderController: UIViewController {
         enforce()
     }
 
-    /// Show or hide the tvOS fast-scrolling index bar. This is the private
-    /// `_UIFocusFastScrollingIndexBarView` — a trailing-edge bar tvOS auto-adds to
-    /// long focusable scroll views, rendered as a column of collapsed section-index
-    /// marks (the "dots") plus a `_UIFocusFastScrollingIndexBarIndicatorView`
-    /// circular thumb. It is NOT the ordinary scroll indicator, so
-    /// `showsVerticalScrollIndicator` / indicator-inset tricks never touched it.
-    ///
-    /// Crucially we must NOT hide the bar container itself: on tvOS the bar
-    /// participates in the fast-scroll interaction, so hiding the container
-    /// mid-scroll cancels the gesture and stalls scrolling. Instead we blank only
-    /// its visible leaf subviews (the dot labels + the thumb) via alpha, leaving the
-    /// container fully present and interactive. tvOS re-creates the bar on
-    /// focus-driven scrolls, so once we've learned its class + host view we simply
-    /// re-blank the host's matching children every frame — an `isKind(of:)` check
-    /// over a handful of siblings, not a walk of the whole view tree.
     private func enforce() {
-        // Nothing to do while we're off-screen (e.g. covered by a pushed
-        // destination): skip the scroll-view scan and any discovery walk so the
-        // display link, if it's still ticking, costs effectively nothing until we
-        // return to the window.
         guard isViewLoaded, view.window != nil else { return }
         if scrollViews.isEmpty { locateScrollViewsIfNeeded() }
-        let shouldHide = hidden
-        for scrollView in scrollViews where scrollView.showsVerticalScrollIndicator == shouldHide {
-            scrollView.showsVerticalScrollIndicator = !shouldHide
-        }
-        // A cached host that has left the window is stale — drop it so discovery
-        // re-runs against the live hierarchy on the next tick.
-        if let host = indexBarHost, host.window == nil {
-            indexBarClass = nil
-            indexBarHost = nil
-        }
-        // Learn the bar's class + host, then re-blank that host's matching children
-        // each frame. Discovery is throttled quickly while the bar hasn't been found
-        // yet; once cached, the only remaining re-discovery is a rare cross-host
-        // self-heal, which we defer until the scroll settles — a full-window walk
-        // mid-scroll drops frames and is the main source of scroll choppiness. The
-        // common re-creation (same host) is caught for free by the per-frame
-        // re-blank below, and a host leaving the window is dropped above.
-        if framesUntilDiscover > 0 { framesUntilDiscover -= 1 }
-        if framesUntilDiscover == 0 {
-            let cached = indexBarClass != nil && indexBarHost != nil
-            if cached {
-                framesUntilDiscover = Self.revalidateInterval
-                if !isScrolling { discoverIndexBar() }
-            } else {
-                framesUntilDiscover = Self.discoverInterval
-                discoverIndexBar()
+        for scrollView in scrollViews {
+            if scrollView.showsVerticalScrollIndicator == hidden {
+                scrollView.showsVerticalScrollIndicator = !hidden
             }
+            #if os(tvOS)
+            let mode: UIScrollView.IndexDisplayMode = hidden ? .alwaysHidden : .automatic
+            if scrollView.indexDisplayMode != mode { scrollView.indexDisplayMode = mode }
+            #endif
         }
-        guard let host = indexBarHost, let barClass = indexBarClass else { return }
-        let targetAlpha: CGFloat = shouldHide ? 0 : 1
-        for subview in host.subviews where subview.isKind(of: barClass) {
-            for element in subview.subviews where element.alpha != targetAlpha {
-                element.alpha = targetAlpha
-            }
-        }
-    }
-
-    /// True while any tracked scroll view is being dragged or is coasting, used to
-    /// keep the (rare, expensive) full-window re-discovery walk off the main thread
-    /// during an active scroll so it can't drop frames.
-    private var isScrolling: Bool {
-        scrollViews.contains { $0.isDragging || $0.isTracking || $0.isDecelerating }
-    }
-
-    /// One-off recursive walk (from the window, falling back to the scroll views) to
-    /// find the index bar and cache its class + host. Matched by class-name
-    /// substring so there are no private symbols at compile time; degrades
-    /// gracefully (bar simply stays visible) if tvOS ever renames the view.
-    private func discoverIndexBar() {
-        let roots: [UIView] = ([view.window].compactMap { $0 }) + scrollViews
-        for root in roots {
-            if let bar = firstIndexBarView(in: root) {
-                indexBarClass = type(of: bar)
-                indexBarHost = bar.superview
-                return
-            }
-        }
-    }
-
-    private func firstIndexBarView(in view: UIView) -> UIView? {
-        for subview in view.subviews {
-            if String(describing: type(of: subview)).contains("FastScrollingIndexBarView") {
-                return subview
-            }
-            if let found = firstIndexBarView(in: subview) { return found }
-        }
-        return nil
     }
 
     deinit { stopDisplayLink() }

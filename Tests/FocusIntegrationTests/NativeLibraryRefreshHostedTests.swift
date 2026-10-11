@@ -39,8 +39,10 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                     .sorted { $0.frame.minX < $1.frame.minX }
                 let first = try XCTUnwrap(cells.first)
                 let last = try XCTUnwrap(cells.last)
-                let firstArtwork = first.contentView.convert(first.contentView.bounds, to: window)
-                let lastArtwork = last.contentView.convert(last.contentView.bounds, to: window)
+                let firstView = try self.libraryArtwork(in: first)
+                let lastView = try self.libraryArtwork(in: last)
+                let firstArtwork = firstView.convert(firstView.bounds, to: window)
+                let lastArtwork = lastView.convert(lastView.bounds, to: window)
                 XCTAssertFalse(banner.isFocused)
                 XCTAssertEqual(try XCTUnwrap(header.subviews.first).frame, header.bounds)
                 XCTAssertLessThan(bannerFrame.maxY, firstArtwork.minY,
@@ -414,7 +416,8 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                     accuracy: 1
                 )
                 if visible {
-                    XCTAssertEqual(caption.frame.minY - cell.contentView.frame.maxY, 8, accuracy: 1)
+                    let artwork = try self.libraryArtwork(in: cell)
+                    XCTAssertEqual(caption.frame.minY - artwork.frame.maxY, 8, accuracy: 1)
                 }
                 let frame = caption.frame
                 XCTAssertTrue(cell.onRequestFocus?() == true)
@@ -488,7 +491,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 let path = IndexPath(item: 2, section: 0)
                 let cell = try XCTUnwrap(collection.cellForItem(at: path) as? NativeTVLibraryCell)
                 let itemID = try XCTUnwrap(cell.item?.id)
-                let artworkFrame = cell.contentView.frame
+                let artworkFrame = try self.libraryArtwork(in: cell).frame
                 let initialFrame = cell.convert(artworkFrame, to: window)
                 let sample = CGPoint(x: initialFrame.midX, y: initialFrame.maxY - 20)
                 let beforePixel = try self.pixel(
@@ -550,7 +553,8 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 collection.setContentOffset(CGPoint(x: 0, y: origin), animated: true)
                 try await Task.sleep(for: .milliseconds(500))
                 let restored = try await self.waitForGridItem(itemID, at: path, in: collection)
-                XCTAssertEqual(restored.convert(restored.contentView.frame, to: window).minY,
+                let restoredArtwork = try self.libraryArtwork(in: restored)
+                XCTAssertEqual(restoredArtwork.convert(restoredArtwork.bounds, to: window).minY,
                                initialFrame.minY, accuracy: 1)
                 XCTAssertTrue(restored.onRequestFocus?() == true, "A returning card must retain native focus behavior.")
             }
@@ -1315,6 +1319,86 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             collection.delegate?.collectionView?(collection, didSelectItemAt: path)
             XCTAssertEqual(selected?.id, "Before-140")
         }
+    }
+
+    func testNativeScrollIndexFollowsAlphabetRailWithoutAFramePollingController() async throws {
+        let model = LibraryBrowseViewModel(
+            provider: RefreshLibraryProvider(), containerID: "library", containerKind: .movie
+        )
+        await model.loadFirstPage()
+        let controller = NativeLibraryGridController()
+        defer { controller.stopObserving() }
+        for hidden in [false, true, false, true] {
+            controller.update(
+                model: model, total: model.totalCount, generation: model.contentGeneration,
+                spoilerSettings: .default, environment: EnvironmentValues(),
+                leadingInset: 40, trailingInset: 40, header: AnyView(Text("Library")),
+                hidesScrollIndicator: hidden, onSelect: { _, _ in }, onLoaded: { _ in }
+            )
+            let collection = try XCTUnwrap(find(UICollectionView.self, in: controller.view))
+            XCTAssertEqual(collection.showsVerticalScrollIndicator, !hidden)
+            XCTAssertEqual(collection.indexDisplayMode, hidden ? .alwaysHidden : .automatic)
+            XCTAssertFalse(controller.children.contains { $0 is ScrollIndicatorHiderController })
+        }
+    }
+
+    func testNativeCellRepeatedLayoutDoesNotResizeItsHostedArtwork() async throws {
+        let model = LibraryBrowseViewModel(
+            provider: RefreshLibraryProvider(), containerID: "library", containerKind: .movie
+        )
+        await model.loadFirstPage()
+        try await withLibrary(model: model) { root, window in
+            let collection = try XCTUnwrap(self.find(UICollectionView.self, in: root))
+            let cell = try XCTUnwrap(collection.visibleCells.compactMap { $0 as? NativeTVLibraryCell }.first)
+            let artwork = try self.libraryArtwork(in: cell)
+            XCTAssertTrue(artwork.superview === cell, "Native projection must keep the focused cell as its direct owner.")
+            XCTAssertEqual(cell.contentView.frame, cell.bounds, "UIKit must retain full-cell content geometry.")
+            let layer = artwork.layer
+            let bounds = layer.bounds
+            let probe = ArtworkBoundsProbe()
+            let observation = layer.observe(\.bounds, options: [.old, .new]) { _, change in
+                MainActor.assumeIsolated {
+                    if let old = change.oldValue, let new = change.newValue, old.size != new.size {
+                        probe.sizes.append(new.size)
+                    }
+                }
+            }
+            defer { observation.invalidate() }
+            layer.bounds = bounds.insetBy(dx: -1, dy: -1)
+            layer.bounds = bounds
+            XCTAssertEqual(probe.sizes.count, 2, "The bounds observer must detect real size changes.")
+            window.layoutIfNeeded()
+            probe.sizes.removeAll()
+            for _ in 0..<5 {
+                cell.setNeedsLayout()
+                cell.layoutIfNeeded()
+                window.layoutIfNeeded()
+            }
+            let attachment = XCTAttachment(string: probe.sizes.map(String.init(describing:)).joined(separator: "\n"))
+            attachment.name = "native-library-repeated-layout-bounds"
+            attachment.lifetime = .keepAlways
+            self.add(attachment)
+            XCTAssertTrue(probe.sizes.isEmpty, "Stable layout must not briefly resize artwork to the full captioned cell: \(probe.sizes)")
+            XCTAssertTrue(cell.onRequestFocus?() == true)
+            try await Task.sleep(for: .milliseconds(400))
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === cell)
+            XCTAssertEqual(artwork.bounds, bounds, "Native focus must enlarge the projection, not the layout bounds.")
+            let projected = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: artwork, in: window))
+            XCTAssertGreaterThan(projected.width, bounds.width)
+            XCTAssertGreaterThan(projected.height, bounds.height)
+            let marker = try XCTUnwrap(self.find(DetailTransitionSourceView.self, in: cell))
+            XCTAssertEqual(marker.frame, artwork.frame)
+            XCTAssertTrue(marker.reference?.nativeArtworkView === artwork)
+            XCTAssertEqual(marker.reference?.geometry(in: window)?.frame, projected)
+        }
+    }
+
+    private final class ArtworkBoundsProbe {
+        var sizes: [CGSize] = []
+    }
+
+    private func libraryArtwork(in cell: NativeTVLibraryCell) throws -> UIView {
+        try XCTUnwrap(find(DetailTransitionSourceView.self, in: cell)?.reference?.nativeArtworkView)
     }
 
     func testCorrectedPageTotalsPreserveScrollAndExistingCells() async throws {

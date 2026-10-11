@@ -195,7 +195,6 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     private let layout = UICollectionViewFlowLayout()
     private lazy var collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
     private let headerHost = UIHostingController(rootView: AnyView(EmptyView()))
-    private let indicatorHider = ScrollIndicatorHiderController()
     private var model: LibraryBrowseViewModel?
     private var generation = -1
     private var total = 0
@@ -243,9 +242,6 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
         headerHost.safeAreaRegions = []
         headerHost.view.backgroundColor = .clear
         headerHost.didMove(toParent: self)
-        addChild(indicatorHider)
-        collection.addSubview(indicatorHider.view)
-        indicatorHider.didMove(toParent: self)
     }
 
     func update(
@@ -282,7 +278,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
                 }
         )
         loadViewIfNeeded()
-        indicatorHider.hidden = hidesScrollIndicator
+        updateScrollIndicators()
         collection.semanticContentAttribute =
             environment.layoutDirection == .rightToLeft
             ? .forceRightToLeft : .forceLeftToRight
@@ -364,6 +360,11 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
         collection.frame = frame
         collection.contentInset = insets
         collection.contentOffset = CGPoint(x: collection.contentOffset.x, y: offset - insets.top)
+    }
+
+    private func updateScrollIndicators() {
+        collection.showsVerticalScrollIndicator = !hidesScrollIndicator
+        collection.indexDisplayMode = hidesScrollIndicator ? .alwaysHidden : .automatic
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -496,7 +497,6 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
         if isViewLoaded {
             for cell in collection.visibleCells { (cell as? NativeTVLibraryCell)?.cancelArtwork() }
         }
-        indicatorHider.teardown()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -506,7 +506,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        indicatorHider.hidden = hidesScrollIndicator
+        updateScrollIndicators()
         for cell in collection.visibleCells {
             guard let indexPath = collection.indexPath(for: cell) else { continue }
             collectionView(collection, willDisplay: cell, forItemAt: indexPath)

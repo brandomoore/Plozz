@@ -18,6 +18,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     private var imageTask: Task<Void, Never>?
     private var imageRevision = UUID()
     private let caption = SystemPosterCaption.CaptionView()
+    private let nativeArtwork = TVMediaItemContentView(configuration: TVMediaItemContentConfiguration.wideCell())
     private let plate = UIView()
     private let marker = DetailTransitionSourceView()
     private let entryFocusRegion = NavigationEntryFocusRegionView()
@@ -25,6 +26,16 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     private var overlay: (UIView & UIContentView)?
     private var overlayFocused = false
     private var isConfiguredForDisplay = false
+    private var compositedArtwork: UIImageView?
+    private var compositeKey: NativeLibraryPosterBitmap.Key?
+    private weak var compositeSource: UIImage?
+    private var needsCompositeUpdate = true
+
+    private var usesCompositedArtwork: Bool {
+        environment.compositedLibraryPosters
+            && environment.plozzCardStyle == .borderless
+            && environment.plozzCardFocusStyle.usesSystemEffect
+    }
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -33,6 +44,8 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         backgroundConfiguration = .clear()
         addSubview(plate)
         sendSubviewToBack(plate)
+        // UIKit owns contentView's full-cell size; artwork excludes the caption.
+        addSubview(nativeArtwork)
         addSubview(caption)
         addSubview(marker)
         addSubview(entryFocusRegion)
@@ -71,6 +84,10 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         self.item = item
         self.spoilerSettings = spoilerSettings
         self.environment = environment
+        #if DEBUG
+        accessibilityIdentifier = usesCompositedArtwork
+            ? "native-library-poster-composited" : "native-library-poster-baseline"
+        #endif
         source.itemKey = item?.stablePresentationID ?? ""
         source.artworkPolicy = environment.plozzArtworkPolicy.forArea(.details)
         source.cornerRadius =
@@ -156,11 +173,34 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
 
     public override func updateConfiguration(using state: UICellConfigurationState) {
         super.updateConfiguration(using: state)
+        if usesCompositedArtwork {
+            if !nativeArtwork.isHidden {
+                nativeArtwork.isHidden = true
+                nativeArtwork.configuration = TVMediaItemContentConfiguration.wideCell()
+            }
+            if compositedArtwork == nil {
+                let image = UIImageView()
+                image.adjustsImageWhenAncestorFocused = true
+                image.masksFocusEffectToContents = true
+                image.isUserInteractionEnabled = false
+                compositedArtwork = image
+            }
+            if let compositedArtwork, compositedArtwork.superview !== self {
+                insertSubview(compositedArtwork, belowSubview: caption)
+            }
+            source.nativeArtworkView = compositedArtwork
+            setNeedsLayout()
+            return
+        }
+        compositedArtwork?.removeFromSuperview()
+        compositedArtwork?.image = nil
+        compositeKey = nil
+        nativeArtwork.isHidden = false
         var configuration = TVMediaItemContentConfiguration.wideCell()
         configuration.image = artwork ?? Self.placeholder
         configuration.overlayView = overlay
-        contentConfiguration = configuration.updated(for: state)
-        source.nativeArtworkView = contentView as? TVMediaItemContentView
+        nativeArtwork.configuration = configuration.updated(for: state)
+        source.nativeArtworkView = nativeArtwork
     }
 
     public override func layoutSubviews() {
@@ -170,13 +210,34 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         let inset = framed ? metrics.cardInset : metrics.borderlessCardSideMargin
         let width = max(1, bounds.width - inset * 2)
         let size = CGSize(width: width, height: width * 1.5)
-        contentView.frame = CGRect(x: inset, y: Self.focusClearance, width: width, height: size.height)
-        contentView.layoutIfNeeded()
+        let artworkFrame = CGRect(x: inset, y: Self.focusClearance, width: width, height: size.height)
+        if usesCompositedArtwork, let compositedArtwork {
+            if compositedArtwork.frame != artworkFrame { compositedArtwork.frame = artworkFrame }
+            let scale = traitCollection.displayScale
+            if needsCompositeUpdate || compositeKey?.size != size || compositeKey?.scale != scale {
+                needsCompositeUpdate = false
+                let key = NativeLibraryPosterBitmap.Key(
+                    image: artwork,
+                    presentation: .init(item: item, spoilerSettings: spoilerSettings, environment: environment),
+                    size: size, scale: scale
+                )
+                if key != compositeKey || compositeSource !== artwork {
+                    compositedArtwork.image = NativeLibraryPosterBitmap.image(
+                        source: artwork, key: key, environment: environment
+                    )
+                    compositeKey = key
+                    compositeSource = artwork
+                }
+            }
+        } else {
+            if nativeArtwork.frame != artworkFrame { nativeArtwork.frame = artworkFrame }
+            nativeArtwork.layoutIfNeeded()
+        }
         caption.frame = CGRect(
-            x: inset, y: contentView.frame.maxY + metrics.nativePosterCaptionSpacing,
+            x: inset, y: artworkFrame.maxY + metrics.nativePosterCaptionSpacing,
             width: width, height: caption.intrinsicContentSize.height
         )
-        marker.frame = contentView.frame
+        marker.frame = artworkFrame
         entryFocusRegion.frame = bounds
         let plateTop = max(0, Self.focusClearance - metrics.cardInset)
         plate.frame = CGRect(x: 0, y: plateTop, width: bounds.width, height: bounds.height - plateTop)
@@ -192,7 +253,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         updateCaption(animated: true)
         if overlayFocused != isFocused {
             overlayFocused = isFocused
-            updateOverlay()
+            if !usesCompositedArtwork { updateOverlay() }
         }
         if isFocused, let item { DetailTransitionNavigation.preloadBackdrop(for: item) }
     }
@@ -219,6 +280,10 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         artworkPolicyIdentity = nil
         artworkItemIdentity = nil
         artwork = nil
+        compositedArtwork?.image = nil
+        compositeKey = nil
+        compositeSource = nil
+        needsCompositeUpdate = true
         item = nil
         isConfiguredForDisplay = false
         accessibilityElementsHidden = true
@@ -276,6 +341,12 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     }
 
     private func updateOverlay() {
+        if usesCompositedArtwork {
+            overlay = nil
+            needsCompositeUpdate = true
+            setNeedsLayout()
+            return
+        }
         guard item != nil else {
             overlay = nil
             return
@@ -299,6 +370,8 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
                     Text(verbatim: $0.posterCaptionTitle(spoilerSettings: spoilerSettings).resolve(locale: environment.locale))
                 } : nil
             )
+            .clipShape(RoundedRectangle(
+                cornerRadius: PlozzTheme.Metrics.nativePosterArtworkCornerRadius, style: .continuous))
             .environment(\.self, environment)
             .plozzChromeFocused(isFocused)
         }.margins(.all, 0)
@@ -326,7 +399,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     private static let focusClearance = PlozzTheme.Spacing.large
 }
 
-private struct NativeLibraryArtworkOverlay: View {
+struct NativeLibraryArtworkOverlay: View {
     let symbol: MediaArtworkPlaceholder.Symbol
     let hasArtwork: Bool
     let isFolder: Bool
