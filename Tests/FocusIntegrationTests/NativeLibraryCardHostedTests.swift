@@ -30,6 +30,78 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         try await checkNativeBrowseArtwork(onlineDelay: 0)
     }
 
+    func testSharedPosterKeepsArtworkCompositionWithNativeFocusAtEveryAspect() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for aspect: CGFloat in [2 / 3, 16 / 9, 1, 388 / 264] {
+            let size = CGSize(width: 100, height: 100 / aspect)
+            let image = UIGraphicsImageRenderer(size: size).image { context in
+                UIColor.gray.setFill()
+                context.fill(CGRect(origin: .zero, size: size))
+                UIColor.red.setFill()
+                for x: CGFloat in [12, 82] {
+                    context.fill(CGRect(x: x, y: size.height * 0.25, width: 6, height: size.height * 0.4))
+                }
+            }
+            let controller = LibraryFocusController()
+            controller.view.backgroundColor = .black
+            let host = UIHostingController(rootView: SharedZoomFixture(image: image, aspect: aspect))
+            controller.addChild(host)
+            controller.view.addSubview(host.view)
+            host.didMove(toParent: controller)
+            host.view.backgroundColor = .clear
+            host.view.frame = CGRect(x: 400, y: 200, width: 280, height: 280 / aspect)
+            window.rootViewController = controller
+            window.makeKeyAndVisible()
+            window.layoutIfNeeded()
+            let poster = try XCTUnwrap(descendant(NativePosterButton.self, in: host.view))
+            let before = try XCTUnwrap(poster.image)
+            let overlay = try XCTUnwrap(poster.hostedOverlay)
+            controller.target = poster
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            system.requestFocusUpdate(to: controller)
+            system.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(500))
+            XCTAssertTrue(system.focusedItem === poster)
+            try assertCompositedArtworkGeometry(poster.artworkView, in: window, expectedScale: nil)
+            XCTAssertTrue(poster.image === before, "Native focus must not regenerate the artwork.")
+            XCTAssertTrue(poster.hostedOverlay === overlay, "Counts and progress must retain their live overlay.")
+            let surface = poster.artworkView.overlayContentView
+            XCTAssertEqual(overlay.convert(overlay.bounds, to: surface), surface.bounds)
+            let attachment = XCTAttachment(image: snapshot(window))
+            attachment.name = "shared-poster-no-internal-zoom-\(aspect)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    private struct SharedZoomFixture: View {
+        let image: UIImage
+        let aspect: CGFloat
+        @PlozzCardFocus private var focus: Bool
+
+        var body: some View {
+            NativeTVPoster(
+                image: image, treatment: .original, aspectRatio: aspect, fallbackWidth: 280,
+                title: .content("Shared poster"), subtitle: nil,
+                overlay: MediaCardPlaybackIndicators(
+                    item: MediaItem(id: "shared", title: "Shared poster", kind: .series,
+                                    playedPercentage: 0.3, unwatchedEpisodeCount: 12),
+                    badgeInset: 8, progressHeight: 6, progressHorizontalInset: 16, progressBottomInset: 16),
+                focus: $focus, action: {}
+            )
+            .focused($focus.focusState)
+        }
+    }
+
     func testCompositedLibraryBitmapUsesLivePresentationAndBoundsStorage() throws {
         var environment = EnvironmentValues()
         environment.themePalette = .dark
@@ -71,6 +143,14 @@ final class NativeLibraryCardHostedTests: XCTestCase {
     }
 
     func testCompositedRealLibraryCellKeepsFocusDuringContentChanges() async throws {
+        try await checkCompositedLibraryCell(cardStyle: .borderless)
+    }
+
+    func testFramedLibraryCellKeepsCorrectedArtworkAndNativeFocus() async throws {
+        try await checkCompositedLibraryCell(cardStyle: .framed)
+    }
+
+    private func checkCompositedLibraryCell(cardStyle: CardStyle) async throws {
         let markedArtwork = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 150)).image { context in
             UIColor.darkGray.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 100, height: 150))
@@ -91,7 +171,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         var environment = EnvironmentValues()
         environment.themePalette = .dark
         environment.colorScheme = .dark
-        environment.plozzCardStyle = .borderless
+        environment.plozzCardStyle = cardStyle
         environment.plozzCardFocusStyle = .system
         XCTAssertTrue(environment.compositedLibraryPosters, "Normal app launches must use the zoom correction.")
         environment.plozzShowsUnwatchedEpisodeCount = true
@@ -128,7 +208,10 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         system.updateFocusIfNeeded()
         try await Task.sleep(for: .milliseconds(500))
         XCTAssertTrue(system.focusedItem === cell)
-        try assertCompositedArtworkGeometry(imageView, in: window)
+        try assertCompositedArtworkGeometry(
+            imageView, in: window,
+            cornerBackground: cardStyle == .framed ? UIColor(environment.themePalette.raised.fill) : .black
+        )
         let renderCount = NativeLibraryPosterBitmap.renderCount
         for _ in 0..<3 {
             cell.updateConfiguration(using: cell.configurationState)
@@ -172,12 +255,23 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         XCTAssertNil(imageView.image, "Reusable cells must release their composed pixels.")
     }
 
-    private func assertCompositedArtworkGeometry(_ imageView: UIImageView, in window: UIWindow) throws {
+    private func assertCompositedArtworkGeometry(
+        _ imageView: UIImageView, in window: UIWindow, expectedScale: CGFloat? = 1.1,
+        cornerBackground: UIColor = .black
+    ) throws {
         let source = try XCTUnwrap(imageView.image)
         let frame = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: imageView, in: window))
         let rendered = snapshot(window)
-        XCTAssertEqual(frame.width, imageView.bounds.width * 1.1, accuracy: 3)
-        XCTAssertEqual(frame.height, imageView.bounds.height * 1.1, accuracy: 3)
+        if let expectedScale {
+            XCTAssertEqual(frame.width, imageView.bounds.width * expectedScale, accuracy: 3)
+            XCTAssertEqual(frame.height, imageView.bounds.height * expectedScale, accuracy: 3)
+        } else {
+            // UIImageView's native enlargement varies with artwork dimensions.
+            XCTAssertGreaterThan(frame.width, imageView.bounds.width)
+            XCTAssertGreaterThan(frame.height, imageView.bounds.height)
+            XCTAssertEqual(frame.width / frame.height,
+                           imageView.bounds.width / imageView.bounds.height, accuracy: 0.01)
+        }
         func markerSpan(_ image: UIImage, frame: CGRect) throws -> CGFloat {
             let bitmap = try XCTUnwrap(image.cgImage)
             let bytes = try rgba(bitmap)
@@ -199,11 +293,14 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             try markerSpan(rendered, frame: frame), sourceSpan * frame.width / source.size.width, accuracy: 3,
             "Painted landmarks must enlarge with the card, without additional internal zoom."
         )
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        XCTAssertTrue(cornerBackground.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
+        let cornerLimit = max(red, green, blue) * 255 + 12
         for point in [
             CGPoint(x: frame.minX + 2, y: frame.minY + 2), CGPoint(x: frame.maxX - 2, y: frame.minY + 2),
             CGPoint(x: frame.minX + 2, y: frame.maxY - 2), CGPoint(x: frame.maxX - 2, y: frame.maxY - 2)
         ] {
-            XCTAssertLessThan(try XCTUnwrap(pixel(rendered, at: point).prefix(3).max()), 12,
+            XCTAssertLessThan(CGFloat(try XCTUnwrap(pixel(rendered, at: point).prefix(3).max())), cornerLimit,
                               "The native highlight must respect every rounded corner.")
         }
         for point in [
@@ -636,21 +733,26 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         }
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(100))
-        let poster = try XCTUnwrap(descendant(TVPosterView.self, in: window))
+        let poster = try XCTUnwrap(descendant(NativePosterButton.self, in: window))
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
         controller.target = poster
         system.requestFocusUpdate(to: controller)
         system.updateFocusIfNeeded()
         let deadline = ContinuousClock.now + .seconds(8)
-        while poster.image?.cgImage?.width != 720, ContinuousClock.now < deadline {
+        func hasCollage(_ poster: NativePosterButton) throws -> Bool {
+            guard let image = poster.image, let pixels = image.cgImage else { return false }
+            return try isRed(image, at: CGPoint(x: CGFloat(pixels.width) * 0.5, y: CGFloat(pixels.height) * 0.25))
+        }
+        while !(try hasCollage(poster)), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(50))
         }
-        XCTAssertEqual(poster.image?.cgImage?.width, 720)
-        XCTAssertEqual(poster.image?.cgImage?.height, 405)
+        XCTAssertTrue(try hasCollage(poster), "The normalized native image must contain the generated collage.")
+        XCTAssertEqual(try XCTUnwrap(poster.image).size.width, poster.contentSize.width, accuracy: 1)
+        XCTAssertEqual(try XCTUnwrap(poster.image).size.height, poster.contentSize.height, accuracy: 1)
         XCTAssertTrue(poster.isFocused, "An asynchronously generated bitmap must not replace the native focus target.")
         poster.sendActions(for: .primaryActionTriggered)
         XCTAssertEqual(activations, 1)
-        let artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: window))
+        let artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.artworkView, in: window))
         let image = snapshot(window)
         let badgePixel = try pixel(image, at: CGPoint(
             x: artwork.maxX - artwork.width * 0.08,
@@ -697,9 +799,9 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         returningHost.view.frame = host.view.frame
         window.layoutIfNeeded()
         _ = snapshot(window)
-        let returningPoster = try XCTUnwrap(descendant(TVPosterView.self, in: returningHost.view))
-        XCTAssertEqual(returningPoster.image?.cgImage?.width, 720,
-                       "The native focus surface must receive the cached bitmap on its first paint.")
+        let returningPoster = try XCTUnwrap(descendant(NativePosterButton.self, in: returningHost.view))
+        XCTAssertTrue(try hasCollage(returningPoster),
+                      "The native focus surface must show the cached collage on its first paint.")
     }
 
     func testLibraryTransportMarksRemainDistinct() throws {
@@ -962,19 +1064,19 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             }
             try await Task.sleep(for: .milliseconds(200))
             let scroll = try XCTUnwrap(descendant(UIScrollView.self, in: host.view))
-            let poster = try XCTUnwrap(descendant(TVPosterView.self, in: host.view))
+            let poster = try XCTUnwrap(descendant(NativePosterButton.self, in: host.view))
             let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
             controller.target = poster
             focus.requestFocusUpdate(to: controller)
             focus.updateFocusIfNeeded()
             try await Task.sleep(for: .milliseconds(700))
             XCTAssertTrue(poster.isFocused)
-            var artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: window))
+            var artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.artworkView, in: window))
             let loaded = ContinuousClock.now + .seconds(5)
             while try !isRed(snapshot(window), at: CGPoint(x: artwork.midX, y: artwork.midY)),
                   ContinuousClock.now < loaded {
                 try await Task.sleep(for: .milliseconds(100))
-                artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: window))
+                artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.artworkView, in: window))
             }
             XCTAssertTrue(try isRed(snapshot(window), at: CGPoint(x: artwork.minX + 4, y: artwork.midY)),
                           "The focused first library must be whole: \(navigation)")
@@ -989,7 +1091,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                 y: scroll.contentOffset.y
             ), animated: false)
             try await Task.sleep(for: .milliseconds(100))
-            artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: window))
+            artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.artworkView, in: window))
             let point = CGPoint(x: viewport.minX - 12, y: artwork.midY)
             XCTAssertGreaterThan(point.x, 0)
             XCTAssertTrue(artwork.contains(point), "The sampled pixel must lie inside real artwork.")
@@ -1126,7 +1228,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                 XCTAssertEqual(slot.bounds.width, metrics.landscapeCardSlotWidth, accuracy: 1)
                 XCTAssertNil(descendant(TVCardView.self, in: host.view),
                              "System Library focus must not encompass the caption in a generic TVCardView.")
-                let poster = descendant(TVPosterView.self, in: host.view)
+                let poster = descendant(NativePosterButton.self, in: host.view)
                 let restingImage = poster?.image
                 let caption = descendant(SystemPosterCaption.CaptionView.self, in: host.view)
                 let captionFrame = try caption.map { try XCTUnwrap(NativeFocusProjection.artworkFrame(of: $0, in: window)) }
@@ -1146,11 +1248,11 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                     image = snapshot(window)
                     if let poster {
                         XCTAssertTrue(poster.image === restingImage, "Focus must reuse the prepared bitmap.")
-                        XCTAssertFalse(poster.imageView.masksFocusEffectToContents)
+                        XCTAssertTrue(poster.artworkView.masksFocusEffectToContents)
                         let width = metrics.landscapeCardSlotWidth - metrics.borderlessCardSideMargin * 2
                         XCTAssertEqual(poster.contentSize.width, width, accuracy: 1)
                         XCTAssertEqual(poster.contentSize.height, width * 9 / 16, accuracy: 1)
-                        XCTAssertNil(poster.title, "The native image must not own a visible caption footer.")
+                        XCTAssertNil(poster.currentTitle, "The native image must not own a visible caption footer.")
                         XCTAssertEqual(poster.accessibilityLabel, "Movies")
                         XCTAssertEqual(poster.accessibilityValue, "Fixture server")
                         let caption = try XCTUnwrap(caption)
@@ -1160,7 +1262,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                         XCTAssertEqual(frame, try XCTUnwrap(captionFrame), "Native focus must not project the caption slot.")
                         let title = try XCTUnwrap(descendant(UILabel.self, in: caption.title))
                         XCTAssertEqual(title.font.pointSize, metrics.cardTitleFontSize)
-                        let artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: window))
+                        let artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.artworkView, in: window))
                         let textFrame = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: title, in: window))
                         if !focused {
                             XCTAssertEqual(frame.minY - artwork.maxY, metrics.landscapeCaptionTopSpacing, accuracy: 1,
@@ -1256,7 +1358,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         }
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(200))
-        let poster = try XCTUnwrap(descendant(TVPosterView.self, in: window))
+        let poster = try XCTUnwrap(descendant(NativePosterButton.self, in: window))
         XCTAssertEqual(poster.contentSize, CGSize(width: 320, height: 320),
                        "Existing music callers keep square artwork unless an aspect is supplied.")
         XCTAssertNotNil(poster.image, "A real placeholder must initialize native focus before artwork arrives.")

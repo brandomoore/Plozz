@@ -316,7 +316,7 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// focus margins are drawing overflow, not space in the artwork layout slot.
     public var nativePosterCaptionSpacing: CGFloat { landscapeCaptionTopSpacing }
 
-    /// TVPosterView overflow needs more clearance than other native media controls.
+    /// Native poster artwork overflow needs clearance above the focused caption.
     public var nativePosterCaptionFocusTravel: CGFloat {
         max(focusCaptionPush, PlozzTheme.Metrics.nativeFocusCaptionMinimumPush)
     }

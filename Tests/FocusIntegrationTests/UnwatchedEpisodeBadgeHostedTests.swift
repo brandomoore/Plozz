@@ -232,7 +232,7 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
                 let image = snapshot(window)
                 attach(image, name: "native-mixed-indicators-\(indicator)-\(poster === posters[0])")
                 let artworkFrame = try XCTUnwrap(
-                    NativeFocusProjection.artworkFrame(of: posters[0].imageView, in: window))
+                    NativeFocusProjection.artworkFrame(of: posters[0].artworkView, in: window))
                 let region = CGRect(x: artworkFrame.minX - 8, y: artworkFrame.minY - 8,
                                     width: artworkFrame.width + 16, height: 100)
                     .applying(CGAffineTransform(scaleX: image.scale, y: image.scale))
@@ -372,8 +372,8 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
         return pixel
     }
 
-    private func nativePosters(in view: UIView) -> [TVPosterView] {
-        if let poster = view as? TVPosterView { return [poster] }
+    private func nativePosters(in view: UIView) -> [NativePosterButton] {
+        if let poster = view as? NativePosterButton { return [poster] }
         return view.subviews.flatMap { nativePosters(in: $0) }
     }
 

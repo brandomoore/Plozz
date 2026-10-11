@@ -548,8 +548,13 @@ whole-suite passes.
 The single-image renderer is now enabled for the requested removal of internal
 poster zoom while retaining native focus enlargement and motion. This is a
 visual-behavior correction, not a measured scrolling-speed improvement. Normal
-launches include it; Debug comparisons of the old renderer must explicitly use
-`--original-library-posters`. A later offscreen-header clamp experiment was
+launches include it; Debug comparisons of the old Browse renderer must explicitly
+use `--original-library-posters`. The shared Home/Showcase, Recommended,
+Continue Watching and episode poster renderer also uses a normalized
+ancestor-adjusted `UIImageView`, with live chrome in its `overlayContentView`.
+That shared correction has no old-renderer launch switch and is not covered by
+the historical Browse performance comparisons above.
+A later offscreen-header clamp experiment was
 withdrawn without adoption; do not confuse it with the retained index-search
 and artwork-ownership fixes.
 
@@ -625,7 +630,8 @@ can reuse completed pixels instead of rendering the reflection again.
 Focus-only caption movement changes transforms and colors, not intrinsic row
 geometry. Native focus presentation and artwork clipping are separate:
 `TVCardView` still needs clips around artwork nested above captions, while
-`TVPosterView` owns its image clipping. The hosted framed/landscape return
+shared native posters bake rounded alpha into their normalized artwork and
+clip live overlays to the same shape. The hosted framed/landscape return
 regression checks the actual painted artwork bounds.
 
 Native poster controls receive their initial cached `UIImage` directly from

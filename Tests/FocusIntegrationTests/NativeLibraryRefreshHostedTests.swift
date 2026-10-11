@@ -150,7 +150,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                     < (NavigationRowFocusRequester.frame(of: $1, relativeTo: window)?.minX ?? .infinity)
             }
             XCTAssertGreaterThanOrEqual(controls.count, 2)
-            let card = try XCTUnwrap(self.find(TVPosterView.self, in: root))
+            let card = try XCTUnwrap(self.find(NativePosterButton.self, in: root))
             let sources: [any UIFocusItem] = Array(controls.prefix(2)) + [card]
             for source in sources {
                 owner.requestFocus(to: source, using: system)
@@ -185,7 +185,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
     func testPinnedNavigationPresentsAReplacementLibraryStack() async throws {
         try await withNavigatedLibrary(style: .rail, pinnedHandoff: true, stagedLibraryEntry: true) {
             root, window, _ in
-            XCTAssertNotNil(self.find(TVPosterView.self, in: root))
+            XCTAssertNotNil(self.find(NativePosterButton.self, in: root))
             XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
         }
     }
@@ -331,7 +331,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 let collection = try XCTUnwrap(find(UICollectionView.self, in: host.view))
                 first = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: 0, section: 0)))
             } else {
-                first = try XCTUnwrap(find(TVPosterView.self, in: host.view))
+                first = try XCTUnwrap(find(NativePosterButton.self, in: host.view))
             }
             XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === first,
                           "Entry must focus the first media item without help from the fixture.")
@@ -377,7 +377,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         await model.loadRecommendationsIfNeeded()
         XCTAssertEqual(model.contentMode, .recommended)
         try await withLibrary(model: model) { root, _ in
-            XCTAssertNotNil(find(TVPosterView.self, in: root))
+            XCTAssertNotNil(find(NativePosterButton.self, in: root))
             XCTAssertNil(find(SystemPosterCaption.CaptionView.self, in: root),
                          "Recommended must hide labels in the actual Showcase, not ordinary library browsing.")
         }
@@ -386,7 +386,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 showsLabels: !visible, overrides: [.home: !visible, .recommended: visible]
             )
             try await withLibrary(model: model, captions: settings) { root, window in
-                XCTAssertNotNil(find(TVPosterView.self, in: root), "The real recommended media row must be mounted.")
+                XCTAssertNotNil(find(NativePosterButton.self, in: root), "The real recommended media row must be mounted.")
                 XCTAssertEqual(find(SystemPosterCaption.CaptionView.self, in: root) != nil, visible)
                 capture(window, name: "recommended-labels-\(visible)")
             }

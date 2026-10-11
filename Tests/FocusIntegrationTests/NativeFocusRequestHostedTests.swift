@@ -284,8 +284,8 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         let host = UIHostingController(rootView: RasterOverlayFixture(model: model))
         fixture.window.rootViewController = host
         fixture.window.layoutIfNeeded()
-        let poster = try XCTUnwrap(lockups(in: host.view).compactMap { $0 as? TVPosterView }.first)
-        let overlay = try XCTUnwrap(poster.imageView.overlayContentView.subviews.first)
+        let poster = try XCTUnwrap(lockups(in: host.view).compactMap { $0 as? NativePosterButton }.first)
+        let overlay = try XCTUnwrap(poster.artworkView.overlayContentView.subviews.first)
         try await waitUntil { !overlay.bounds.isEmpty }
         XCTAssertTrue(overlay.layer.shouldRasterize)
         XCTAssertEqual(overlay.layer.rasterizationScale, 1)
@@ -300,7 +300,7 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         model.scale = 2
         try await waitUntil { overlay.layer.rasterizationScale == 2 }
         fixture.window.layoutIfNeeded()
-        XCTAssertTrue(poster.imageView.overlayContentView.subviews.first === overlay)
+        XCTAssertTrue(poster.artworkView.overlayContentView.subviews.first === overlay)
         XCTAssertNotEqual(try pixels(), before, "Cached overlays must repaint updated watch/progress content.")
     }
 
@@ -377,17 +377,17 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                         XCTAssertTrue(control.isFocused, label)
                         XCTAssertEqual(controls.filter(\.isEnabled).count, 1, label)
                         if cardStyle == .borderless {
-                            let poster = try XCTUnwrap(control as? TVPosterView, label)
+                            let poster = try XCTUnwrap(control as? NativePosterButton, label)
                             let aspect: CGFloat = style == .poster ? 2 / 3
                                 : seriesArtwork ? ContinueWatchingCardShape.aspectRatio : 16 / 9
-                            XCTAssertEqual(poster.imageView.bounds.width / poster.imageView.bounds.height,
+                            XCTAssertEqual(poster.artworkView.bounds.width / poster.artworkView.bounds.height,
                                            aspect, accuracy: 0.01, label)
-                            let surface = poster.imageView.overlayContentView
+                            let surface = poster.artworkView.overlayContentView
                             let hosted = try XCTUnwrap(surface.subviews.first, label)
-                            let projected = hosted.convert(hosted.bounds, to: poster.imageView)
-                            XCTAssertEqual(projected, surface.convert(surface.bounds, to: poster.imageView), label)
-                            XCTAssertEqual(projected.midX, poster.imageView.bounds.midX, accuracy: 0.5, label)
-                            XCTAssertEqual(projected.midY, poster.imageView.bounds.midY, accuracy: 0.5, label)
+                            let projected = hosted.convert(hosted.bounds, to: poster.artworkView)
+                            XCTAssertEqual(projected, surface.convert(surface.bounds, to: poster.artworkView), label)
+                            XCTAssertEqual(projected.midX, poster.artworkView.bounds.midX, accuracy: 0.5, label)
+                            XCTAssertEqual(projected.midY, poster.artworkView.bounds.midY, accuracy: 0.5, label)
                         } else {
                             XCTAssertTrue(control is TVCardView, label)
                         }
@@ -414,12 +414,15 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         XCTAssertEqual(count, CardFocusStyle.allCases.count * CardStyle.allCases.count * 6)
     }
 
-    private func lockups(in view: UIView) -> [TVLockupView] {
-        (view as? TVLockupView).map { [$0] } ?? view.subviews.flatMap(lockups(in:))
+    private func lockups(in view: UIView) -> [UIControl] {
+        if let control = view as? UIControl, control is TVLockupView || control is NativePosterButton {
+            return [control]
+        }
+        return view.subviews.flatMap(lockups(in:))
     }
 
     func testFractionalPosterHeightCannotRoundDownIntoItsCaption() {
-        let poster = NativeTVPoster<EmptyView>.Poster(image: nil)
+        let poster = NativePosterButton(image: NativePosterArtworkBitmap.placeholder)
         let size = CGSize(width: 388, height: 218.25)
         poster.contentSize = size
         let container = NativeTVPoster<EmptyView>.Container(poster: poster)
@@ -435,9 +438,9 @@ final class NativeFocusRequestHostedTests: XCTestCase {
             UIColor.blue.setFill()
             $0.fill(CGRect(origin: .zero, size: size))
         }
-        let poster = NativeTVPoster<EmptyView>.Poster(image: image)
+        let poster = NativePosterButton(image: image)
         poster.contentSize = size
-        _ = poster.imageView.overlayContentView
+        _ = poster.artworkView.overlayContentView
         let container = NativeTVPoster<EmptyView>.Container(poster: poster)
         let initial = container.intrinsicContentSize
         container.frame = CGRect(origin: CGPoint(x: 200, y: 200), size: initial)
@@ -451,10 +454,10 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                        "Native focus clearance must not change the lazy row's height after realization.")
         XCTAssertEqual(container.intrinsicContentSize, size,
                        "Both axes of the layout slot describe artwork, not native focus margins.")
-        let artwork = poster.imageView.convert(poster.imageView.bounds, to: container)
+        let artwork = poster.artworkView.convert(poster.artworkView.bounds, to: container)
         XCTAssertEqual(artwork.midX, container.bounds.midX, accuracy: 0.5)
         XCTAssertEqual(artwork.midY, container.bounds.midY, accuracy: 0.5)
-        XCTAssertEqual(poster.imageView.bounds.height, size.height, accuracy: 0.5)
+        XCTAssertEqual(poster.artworkView.bounds.height, size.height, accuracy: 0.5)
     }
 
     private final class BitmapProbe {
@@ -647,8 +650,8 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         try await waitUntil { original.isFocused }
         XCTAssertNil(cache.cachedImage(for: reference, variant: .posterCard))
         try await waitUntil(timeout: .seconds(45)) {
-            guard let resolved = cache.cachedImage(for: reference, variant: .posterCard) else { return false }
-            return original.image?.cgImage === resolved.cgImage
+            cache.cachedImage(for: reference, variant: .posterCard) != nil
+                && self.hasBlueArtwork(original.image)
         }
         XCTAssertTrue(nativePoster(in: host.view) === original)
         XCTAssertTrue(original.isFocused)
@@ -710,11 +713,26 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         )
         ArtworkSeedMemo.store(image, reference: reference, for: key)
         model.references = [reference]
-        try await waitUntil { original.image?.cgImage === image.cgImage }
+        try await waitUntil { self.hasBlueArtwork(original.image) }
         XCTAssertTrue(nativePoster(in: host.view) === original)
         XCTAssertTrue(original.isFocused)
         XCTAssertNil(outerResolution.image, "Native cards must not publish into an ancestor artwork bridge.")
         XCTAssertFalse(outerResolution.isResolved)
+    }
+
+    private func hasBlueArtwork(_ image: UIImage?) -> Bool {
+        guard let image = image?.cgImage else { return false }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let rendered = pixel.withUnsafeMutableBytes { bytes -> Bool in
+            guard let context = CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        return rendered && pixel[2] > 180 && pixel[0] < 50 && pixel[1] < 50
     }
 
     private struct SurfaceProbe: View {
@@ -837,7 +855,7 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                 fixture.window.rootViewController = host
                 fixture.window.layoutIfNeeded()
                 try await Task.sleep(for: .milliseconds(100))
-                let posters = descendants(TVPosterView.self, in: host.view)
+                let posters = descendants(NativePosterButton.self, in: host.view)
                 let captions = descendants(SystemPosterCaption.CaptionView.self, in: host.view)
                 XCTAssertEqual(posters.count, 2)
                 XCTAssertEqual(captions.count, 2)
@@ -861,7 +879,7 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                     try await waitUntil { poster.isFocused == focused }
                     try await Task.sleep(for: .milliseconds(250))
                     let artwork = try XCTUnwrap(
-                        NativeFocusProjection.artworkFrame(of: poster.imageView, in: fixture.window)
+                        NativeFocusProjection.artworkFrame(of: poster.artworkView, in: fixture.window)
                     )
                     let text = try XCTUnwrap(
                         NativeFocusProjection.artworkFrame(of: title, in: fixture.window)
@@ -909,27 +927,25 @@ final class NativeFocusRequestHostedTests: XCTestCase {
             fixture.window.rootViewController = host
             fixture.window.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(200))
-            func posters(in view: UIView) -> [TVPosterView] {
-                if let poster = view as? TVPosterView { return [poster] }
-                return view.subviews.flatMap { posters(in: $0) }
-            }
-            let views = posters(in: host.view)
-            XCTAssertEqual(views.count, 6)
-            guard views.count == 6 else { continue }
-            let old = views[1], current = views[4]
-            let description = "\(style), series \(series): slot=\(width), old bounds=\(old.bounds) content=\(old.contentSize) image=\(old.imageView.frame) intrinsic=\(old.intrinsicContentSize); current bounds=\(current.bounds) content=\(current.contentSize) image=\(current.imageView.frame) intrinsic=\(current.intrinsicContentSize)"
+            let oldViews = descendants(TVPosterView.self, in: host.view)
+            let currentViews = descendants(NativePosterButton.self, in: host.view)
+            XCTAssertEqual(oldViews.count, 3)
+            XCTAssertEqual(currentViews.count, 3)
+            guard oldViews.count == 3, currentViews.count == 3 else { continue }
+            let old = oldViews[1], current = currentViews[1]
+            let description = "\(style), series \(series): slot=\(width), old bounds=\(old.bounds) content=\(old.contentSize) image=\(old.imageView.frame) intrinsic=\(old.intrinsicContentSize); current bounds=\(current.bounds) content=\(current.contentSize) image=\(current.artworkView.frame) intrinsic=\(current.intrinsicContentSize)"
             let evidence = XCTAttachment(string: description)
             evidence.name = "poster-layout-\(style)-series-\(series)"
             evidence.lifetime = .keepAlways
             add(evidence)
-            XCTAssertEqual(current.imageView.bounds.width, old.imageView.bounds.width, accuracy: 0.5, description)
+            XCTAssertEqual(current.artworkView.bounds.width, old.imageView.bounds.width, accuracy: 0.5, description)
             XCTAssertEqual(current.contentSize.height, old.contentSize.height, accuracy: 0.5, description)
-            XCTAssertEqual(current.imageView.bounds.height, old.imageView.bounds.height, accuracy: 1, description)
-            func artworkFrame(_ index: Int) -> CGRect {
-                views[index].imageView.convert(views[index].imageView.bounds, to: fixture.window)
+            XCTAssertEqual(current.artworkView.bounds.height, old.imageView.bounds.height, accuracy: 1, description)
+            func artworkFrame(_ view: UIImageView) -> CGRect {
+                view.convert(view.bounds, to: fixture.window)
             }
-            let oldGap = artworkFrame(2).minX - artworkFrame(1).maxX
-            let currentGap = artworkFrame(5).minX - artworkFrame(4).maxX
+            let oldGap = artworkFrame(oldViews[2].imageView).minX - artworkFrame(oldViews[1].imageView).maxX
+            let currentGap = artworkFrame(currentViews[2].artworkView).minX - artworkFrame(currentViews[1].artworkView).maxX
             XCTAssertEqual(currentGap, oldGap, accuracy: 0.5, "Production row gap must match the original layout.")
             XCTAssertGreaterThanOrEqual(currentGap, metrics.cardSpacing, "Native margins must not consume the row gap.")
         }
@@ -1025,13 +1041,13 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         defer { fixture.close() }
         let poster = try XCTUnwrap(nativePoster(in: fixture.window))
         let restingSize = poster.intrinsicContentSize
-        XCTAssertNil(poster.footerView)
+        XCTAssertNil(poster.currentTitle)
         XCTAssertEqual(poster.accessibilityLabel, "Target poster")
         XCTAssertTrue(poster.isAccessibilityElement)
         fixture.model.cardFocus?.requestFocus(animated: false)
         try await waitUntil { fixture.model.cardFocused }
         try await Task.sleep(for: .milliseconds(200))
-        XCTAssertNil(poster.footerView)
+        XCTAssertNil(poster.currentTitle)
         XCTAssertEqual(poster.intrinsicContentSize, restingSize)
     }
 
@@ -1064,7 +1080,7 @@ final class NativeFocusRequestHostedTests: XCTestCase {
             XCTAssertTrue(poster.isAccessibilityElement)
             XCTAssertEqual(poster.accessibilityLabel, title)
             XCTAssertTrue(poster.accessibilityTraits.contains(.button))
-            XCTAssertNil(poster.footerView)
+            XCTAssertNil(poster.currentTitle)
         }
     }
 
@@ -1110,8 +1126,12 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         caption.removeFromSuperview()
     }
 
-    private func nativePoster(in view: UIView) -> TVPosterView? {
-        if let poster = view as? TVPosterView { return poster }
+    private func descendants<T: UIView>(_ type: T.Type, in view: UIView) -> [T] {
+        (view as? T).map { [$0] } ?? view.subviews.flatMap { descendants(type, in: $0) }
+    }
+
+    private func nativePoster(in view: UIView) -> NativePosterButton? {
+        if let poster = view as? NativePosterButton { return poster }
         return view.subviews.lazy.compactMap { self.nativePoster(in: $0) }.first
     }
 
@@ -1210,7 +1230,7 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                 lines.append("focused frame=\(String(describing: NavigationRowFocusRequester.frame(of: focused, relativeTo: window)))")
             }
             while let view = views.popLast() {
-                if let card = view as? TVLockupView {
+                if let card = view as? UIControl, card is TVLockupView || card is NativePosterButton {
                     lines.append("native frame=\(card.convert(card.bounds, to: window)) enabled=\(card.isEnabled) eligible=\(card.canBecomeFocused) focused=\(card.isFocused) window=\(card.window != nil)")
                 }
                 views.append(contentsOf: view.subviews)

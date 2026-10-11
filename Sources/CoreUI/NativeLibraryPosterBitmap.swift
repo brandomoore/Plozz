@@ -21,6 +21,49 @@ extension EnvironmentValues {
     }
 }
 
+@MainActor
+enum NativePosterArtworkBitmap {
+    static let placeholder = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 3)).image {
+        UIColor.darkGray.setFill()
+        $0.fill(CGRect(x: 0, y: 0, width: 2, height: 3))
+    }
+
+    static func image(
+        source: UIImage?, overlay: UIImage? = nil, size: CGSize, scale: CGFloat,
+        backgroundColor: UIColor? = nil
+    ) -> UIImage? {
+        guard size.width.isFinite, size.height.isFinite, scale.isFinite,
+              size.width > 0, size.height > 0, scale > 0,
+              source.map({ $0.size.width > 0 && $0.size.height > 0 }) ?? true else {
+            PlozzLog.app.error("Unable to prepare native poster artwork with invalid dimensions")
+            return nil
+        }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        format.preferredRange = .standard
+        let bounds = CGRect(origin: .zero, size: size)
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIBezierPath(
+                roundedRect: bounds,
+                cornerRadius: PlozzTheme.Metrics.nativePosterArtworkCornerRadius
+            ).addClip()
+            if let background = backgroundColor ?? (source == nil ? .darkGray : nil) {
+                background.setFill()
+                context.fill(bounds)
+            }
+            if let source {
+                let ratio = max(size.width / source.size.width, size.height / source.size.height)
+                let target = CGSize(width: source.size.width * ratio, height: source.size.height * ratio)
+                source.draw(in: CGRect(
+                    x: (size.width - target.width) / 2, y: (size.height - target.height) / 2,
+                    width: target.width, height: target.height
+                ))
+            }
+            overlay?.draw(in: bounds)
+        }
+    }
+}
+
 /// Artwork and its indicators share one native floating image without internal zoom.
 @MainActor
 enum NativeLibraryPosterBitmap {
@@ -163,27 +206,9 @@ enum NativeLibraryPosterBitmap {
             PlozzLog.app.error("Unable to render composited library indicators")
             return nil
         }
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = key.scale
-        format.preferredRange = .standard
-        let bounds = CGRect(origin: .zero, size: size)
-        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
-            UIBezierPath(
-                roundedRect: bounds,
-                cornerRadius: PlozzTheme.Metrics.nativePosterArtworkCornerRadius
-            ).addClip()
-            UIColor.darkGray.setFill()
-            context.fill(bounds)
-            if let source {
-                let ratio = max(size.width / source.size.width, size.height / source.size.height)
-                let target = CGSize(width: source.size.width * ratio, height: source.size.height * ratio)
-                source.draw(in: CGRect(
-                    x: (size.width - target.width) / 2, y: (size.height - target.height) / 2,
-                    width: target.width, height: target.height
-                ))
-            }
-            overlay.draw(in: bounds)
-        }
+        guard let image = NativePosterArtworkBitmap.image(
+            source: source, overlay: overlay, size: size, scale: key.scale, backgroundColor: .darkGray
+        ) else { return nil }
         renderCount += 1
         if let replaced = cache.removeValue(forKey: key) { retainedBytes -= replaced.cost }
         if let pixels = image.cgImage {

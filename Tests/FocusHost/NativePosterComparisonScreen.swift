@@ -116,7 +116,7 @@ final class NativePosterComparisonController: UIViewController {
     }
 
     private func updateMetadata() {
-        let posters = [rawPoster, normalizedPoster] + (adapter.flatMap { findPoster(in: $0.view) }.map { [$0] } ?? [])
+        let posters = [rawPoster, normalizedPoster]
         metadata.text = posters.enumerated().map { index, poster in
             "\(index): focused=\(poster.isFocused) image=\(String(describing: poster.image?.size))"
                 + " scale=\(String(describing: poster.image?.scale)) content=\(poster.contentSize)"
@@ -130,11 +130,20 @@ final class NativePosterComparisonController: UIViewController {
             }.joined(separator: "\n")
             + "\nUIKit poster + UIHostingConfiguration overlay: \(configurationPoster.focusSizeIncrease)"
             + "\nUIKit poster + UIHostingController overlay: \(controllerPoster.focusSizeIncrease)"
+            + (adapter.flatMap { findCurrentPoster(in: $0.view) }.map {
+                "\nCurrent poster: focused=\($0.isFocused) content=\($0.contentSize)"
+                    + " artwork=\($0.artworkView.bounds) focusedFrame=\($0.artworkView.focusedFrameGuide.layoutFrame)"
+            } ?? "\nCurrent poster not mounted")
     }
 
     private func findPoster(in view: UIView) -> TVPosterView? {
         if let poster = view as? TVPosterView { return poster }
         return view.subviews.lazy.compactMap { self.findPoster(in: $0) }.first
+    }
+
+    private func findCurrentPoster(in view: UIView) -> NativePosterButton? {
+        if let poster = view as? NativePosterButton { return poster }
+        return view.subviews.lazy.compactMap { self.findCurrentPoster(in: $0) }.first
     }
 
     private func initializationDefaults(image: UIImage) -> String {
@@ -145,11 +154,11 @@ final class NativePosterComparisonController: UIViewController {
         late.image = image
         let subclass = EmptyPosterSubclass(image: image)
         subclass.contentSize = size
-        let productionSubclass = NativeTVPoster<ComparisonSwiftUIOverlay>.Poster(image: image)
+        let productionSubclass = NativePosterButton(image: image)
         productionSubclass.contentSize = size
-        let lateProduction = NativeTVPoster<ComparisonSwiftUIOverlay>.Poster(image: nil)
+        let lateProduction = NativePosterButton(image: NativePosterArtworkBitmap.placeholder)
         lateProduction.contentSize = size
-        lateProduction.image = image
+        lateProduction.updateImage(image)
         let accessedEarly = TVPosterView(image: nil)
         _ = accessedEarly.imageView.overlayContentView
         accessedEarly.contentSize = size
@@ -160,13 +169,18 @@ final class NativePosterComparisonController: UIViewController {
         sizedEarly.image = image
         return [
             ("base image-first", early), ("base size-first", late),
-            ("empty subclass", subclass), ("production subclass image-first", productionSubclass),
-            ("production subclass size-first", lateProduction), ("image view accessed before image", accessedEarly),
+            ("empty subclass", subclass), ("image view accessed before image", accessedEarly),
             ("intrinsic size read before image", sizedEarly)
         ].map { label, poster in
             poster.frame = CGRect(origin: .zero, size: size)
             poster.layoutIfNeeded()
             return "\(label): increase=\(poster.focusSizeIncrease)"
+        }.joined(separator: "\n") + "\n" + [
+            ("current image-first", productionSubclass), ("current size-first", lateProduction)
+        ].map { label, poster in
+            poster.frame = CGRect(origin: .zero, size: size)
+            poster.layoutIfNeeded()
+            return "\(label): artwork=\(poster.artworkView.bounds)"
         }.joined(separator: "\n")
     }
 

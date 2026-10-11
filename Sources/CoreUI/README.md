@@ -253,22 +253,35 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   geometry even when the final size was unchanged. The artwork remains directly
   under the focused cell for TVUIKit projection, with captions outside it and
   detail transitions referencing the artwork rather than the full cell.
-- **Native library zoom correction** — normal launches use the corrected
-  renderer for borderless, system-focus native Movies/TV Browse cells.
-  Debug's `--original-library-posters` is an explicit comparison-only opt-out.
+- **Native poster zoom correction** — normal launches correct internal artwork
+  zoom across Home (including Showcase), Recommended, Continue Watching,
+  library tiles, episode rows, and native Movies/TV Browse cells. The shared
+  `NativeTVPoster` uses a `NativePosterButton` with a direct-child `UIImageView`,
+  not `TVPosterView`. Artwork is aspect-filled and rounded once at its resting
+  size; native ancestor-focus adjustment supplies enlargement, sheen and motion.
+  Live logos and watch/count/progress views remain in `overlayContentView`, so
+  they follow that same image surface. Captions stay outside it. Transparent
+  artwork retains its alpha, and protected/extended artwork is prepared before
+  normalization. Focus changes do not regenerate the bitmap.
+  Native Browse uses the correction for both borderless and framed system-focus
+  cells. Debug's `--original-library-posters` opts out of Browse only.
   The collection cell remains the focus and selection owner,
   with one rounded-alpha `UIImageView` using native ancestor-focus adjustment
   and content masking. Artwork and the existing watch/count/progress overlay
   share the image, so enlargement does not change their relative insets.
-  Captions and detail transitions retain their existing owners. Home,
-  Continue Watching, custom focus styles, framed cards, and mobile are unchanged.
+  Captions and detail transitions retain their existing owners. Custom focus,
+  SwiftUI content inside native framed cards, and mobile retain their existing
+  rendering paths; none uses the replaced poster control.
   The shared cache is bounded to 24 MiB and 64 entries, keyed by source identity,
   size, scale, and visible presentation settings. These limits exclude images
   retained by visible cells and are not a process-memory budget. Content changes
   invalidate composition; focus movement alone does not. Full SwiftUI
   environments and providers are not retained in the shared cache.
   `NativeLibraryCardHostedTests` covers live episode-count/artwork replacement,
-  focus retention, unchanged-configuration reuse, and cache accounting.
+  focus retention, unchanged-configuration reuse, and cache accounting. Shared
+  poster regressions compare painted landmarks with native enlargement for
+  portrait, landscape, square and Continue Watching artwork, alongside live
+  overlays, focus requests, captions and transparent library covers.
   Earlier real TV Shows comparisons recorded more native hitch counts with this
   renderer; a performance improvement has not been established. It is enabled
   for the requested zoom correction, not to claim better scrolling. See the

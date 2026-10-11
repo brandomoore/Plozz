@@ -33,7 +33,6 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
 
     private var usesCompositedArtwork: Bool {
         environment.compositedLibraryPosters
-            && environment.plozzCardStyle == .borderless
             && environment.plozzCardFocusStyle.usesSystemEffect
     }
 
