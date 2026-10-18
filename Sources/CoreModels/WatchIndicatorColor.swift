@@ -19,7 +19,10 @@ public enum WatchIndicatorColor: String, CaseIterable, Identifiable, Codable, Se
         case .green: "Green"
         case .yellow: "Yellow"
         case .orange: "Orange"
-        case .red: "Red"
+        case .red: LocalizedStringResource(
+            "Red",
+            comment: "Color name for the watched-indicator color option in Settings > Appearance > Cards. Refers to the plain red color."
+        )
         case .pink: "Pink"
         case .purple: "Purple"
         }
