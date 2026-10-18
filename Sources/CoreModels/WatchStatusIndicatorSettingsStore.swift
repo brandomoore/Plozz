@@ -12,13 +12,17 @@ public protocol WatchStatusIndicatorSettingsStoring: Sendable {
     func save(_ indicator: WatchStatusIndicator)
     func loadShowsUnwatchedEpisodeCount() -> Bool
     func saveShowsUnwatchedEpisodeCount(_ enabled: Bool)
+    func loadColor() -> WatchIndicatorColor
+    func saveColor(_ color: WatchIndicatorColor)
 }
 
 public final class WatchStatusIndicatorSettingsStore: WatchStatusIndicatorSettingsStoring, @unchecked Sendable {
     private let defaults: UserDefaults
     private let key: String
     private let episodeCountKey: String
+    private let colorKey: String
     public static let episodeCountStorageKey = "com.plozz.showsUnwatchedEpisodeCount"
+    public static let colorStorageKey = "com.plozz.watchIndicatorColor"
     public static let defaultShowsUnwatchedEpisodeCount = true
 
     /// - Parameter namespace: per-profile scope. `nil` (the default/primary
@@ -28,6 +32,7 @@ public final class WatchStatusIndicatorSettingsStore: WatchStatusIndicatorSettin
         self.defaults = defaults
         self.key = SettingsKey.scoped("com.plozz.watchStatusIndicator", namespace: namespace)
         self.episodeCountKey = SettingsKey.scoped(Self.episodeCountStorageKey, namespace: namespace)
+        self.colorKey = SettingsKey.scoped(Self.colorStorageKey, namespace: namespace)
     }
 
     public func load() -> WatchStatusIndicator {
@@ -49,6 +54,14 @@ public final class WatchStatusIndicatorSettingsStore: WatchStatusIndicatorSettin
     public func saveShowsUnwatchedEpisodeCount(_ enabled: Bool) {
         defaults.set(enabled, forKey: episodeCountKey)
     }
+
+    public func loadColor() -> WatchIndicatorColor {
+        defaults.string(forKey: colorKey).flatMap(WatchIndicatorColor.init(rawValue:)) ?? .default
+    }
+
+    public func saveColor(_ color: WatchIndicatorColor) {
+        defaults.set(color.rawValue, forKey: colorKey)
+    }
 }
 
 /// Observable wrapper so SwiftUI settings screens can two-way bind and have the
@@ -63,6 +76,9 @@ public final class WatchStatusIndicatorSettingsModel {
     public var showsUnwatchedEpisodeCount: Bool {
         didSet { store.saveShowsUnwatchedEpisodeCount(showsUnwatchedEpisodeCount) }
     }
+    public var color: WatchIndicatorColor {
+        didSet { store.saveColor(color) }
+    }
 
     private let store: WatchStatusIndicatorSettingsStoring
 
@@ -70,5 +86,6 @@ public final class WatchStatusIndicatorSettingsModel {
         self.store = store
         self.indicator = store.load()
         self.showsUnwatchedEpisodeCount = store.loadShowsUnwatchedEpisodeCount()
+        self.color = store.loadColor()
     }
 }

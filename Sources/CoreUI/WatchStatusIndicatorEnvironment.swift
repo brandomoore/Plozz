@@ -15,7 +15,17 @@ private struct PlozzUnwatchedEpisodeCountKey: EnvironmentKey {
     static let defaultValue = WatchStatusIndicatorSettingsStore.defaultShowsUnwatchedEpisodeCount
 }
 
+private struct PlozzWatchIndicatorColorKey: EnvironmentKey {
+    static let defaultValue: WatchIndicatorColor = .default
+}
+
 public extension EnvironmentValues {
+    /// The live, per-profile colour of the watched badge and unwatched flag.
+    var plozzWatchIndicatorColor: WatchIndicatorColor {
+        get { self[PlozzWatchIndicatorColorKey.self] }
+        set { self[PlozzWatchIndicatorColorKey.self] = newValue }
+    }
+
     var plozzShowsUnwatchedEpisodeCount: Bool {
         get { self[PlozzUnwatchedEpisodeCountKey.self] }
         set { self[PlozzUnwatchedEpisodeCountKey.self] = newValue }

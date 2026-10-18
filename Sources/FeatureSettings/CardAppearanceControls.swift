@@ -25,6 +25,7 @@ public struct CardAppearanceControls: View {
             }
             SettingsDetailGroup(title: "Watched Indicator", illustrated: true) {
                 CompactWatchIndicatorPicker(selection: $watchIndicator.indicator, swatchHeight: 150)
+                colorMenu
                 episodeCountToggle
             }
             SettingsDetailGroup(
@@ -54,6 +55,7 @@ public struct CardAppearanceControls: View {
             }
             SettingsSectionGroup("Watched Indicator") {
                 CompactWatchIndicatorPicker(selection: $watchIndicator.indicator, swatchHeight: 112)
+                colorMenu
                 episodeCountToggle
             }
             SettingsSectionGroup("Style") {
@@ -78,6 +80,17 @@ public struct CardAppearanceControls: View {
         .settingsPageSurface()
         .navigationTitle("Cards")
         #endif
+    }
+
+    private var colorMenu: some View {
+        SettingsMenuRow(title: "Color", value: Text(watchIndicator.color.displayName)) {
+            Picker("Color", selection: $watchIndicator.color) {
+                ForEach(WatchIndicatorColor.allCases) { color in
+                    Text(color.displayName).tag(color)
+                }
+            }
+        }
+        .accessibilityIdentifier("watch-indicator-color")
     }
 
     private var episodeCountToggle: some View {

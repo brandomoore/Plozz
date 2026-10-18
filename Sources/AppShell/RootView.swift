@@ -772,6 +772,7 @@ public struct RootView: View {
         .environment(\.plozzArtworkProviders, appState.metadataProviderSettingsModel.settings)
         .environment(\.plozzCardFocusStyle, appState.profileSettings.cardStyleModel.focusStyle)
         .environment(\.plozzWatchStatusIndicator, appState.profileSettings.watchStatusIndicatorModel.indicator)
+        .environment(\.plozzWatchIndicatorColor, appState.profileSettings.watchStatusIndicatorModel.color)
         .environment(\.plozzShowsUnwatchedEpisodeCount, appState.profileSettings.watchStatusIndicatorModel.showsUnwatchedEpisodeCount)
         // Read by the corner mark on a card whose title isn't in the library:
         // connected turns "not yours" into "you can ask for this". Injected here

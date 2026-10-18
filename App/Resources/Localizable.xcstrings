@@ -586095,6 +586095,9 @@
         }
       }
     },
+    "Red" : {
+
+    },
     "Redeem Code" : {
       "comment" : "Button label in tracker integration settings for submitting an authorization code from services like AniList.",
       "localizations" : {

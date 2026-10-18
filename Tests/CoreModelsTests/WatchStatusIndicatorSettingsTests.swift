@@ -84,4 +84,18 @@ final class WatchStatusIndicatorSettingsStoreTests: XCTestCase {
         XCTAssertFalse(WatchStatusIndicatorSettingsStore(defaults: destination, namespace: "alice").loadShowsUnwatchedEpisodeCount())
         XCTAssertTrue(WatchStatusIndicatorSettingsStore(defaults: destination).loadShowsUnwatchedEpisodeCount())
     }
+
+    @MainActor
+    func testColorIsProfileScopedAndTransferable() {
+        let defaults = makeDefaults()
+        let alice = WatchStatusIndicatorSettingsStore(defaults: defaults, namespace: "alice")
+        XCTAssertEqual(alice.loadColor(), .white)
+        alice.saveColor(.blue)
+        XCTAssertEqual(WatchStatusIndicatorSettingsModel(store: alice).color, .blue)
+        XCTAssertEqual(WatchStatusIndicatorSettingsStore(defaults: defaults).loadColor(), .white)
+        let snapshot = ProfileSettingsTransfer.capture(namespace: "alice", defaults: defaults)
+        let destination = makeDefaults()
+        ProfileSettingsTransfer.apply(snapshot, namespace: "alice", defaults: destination)
+        XCTAssertEqual(WatchStatusIndicatorSettingsStore(defaults: destination, namespace: "alice").loadColor(), .blue)
+    }
 }
