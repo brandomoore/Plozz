@@ -5,11 +5,11 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class AetherReleaseIntegrationTests: XCTestCase {
-    func testResolvedEngineAndSourceCreditIdentifyPinnedDTSXIntegration() throws {
-        XCTAssertEqual(AetherEngine.version, "7.36.0")
+    func testResolvedEngineAndSourceCreditIdentifyPinnedReleaseIntegration() throws {
+        XCTAssertEqual(AetherEngine.version, "7.40.0")
         let credit = try XCTUnwrap(PlozzAttributions.entries.first { $0.title == "AetherEngine" })
         XCTAssertTrue(credit.detail.contains(
-            "https://github.com/brandomoore/AetherEngine/tree/299a3d9ea767e2382158c2a3d137c4b1d302ab4a"
+            "https://github.com/brandomoore/AetherEngine/tree/2975f3ee9c455ac6ed267a072fe191685f9a8c60"
         ))
     }
 
@@ -23,6 +23,13 @@ final class AetherReleaseIntegrationTests: XCTestCase {
         let options = LoadOptions()
         XCTAssertEqual(options.objectAudioRendering, .off)
         XCTAssertFalse(options.progressiveSegmentDelivery)
+    }
+
+    func testPackageTraitsRetainExistingPlaybackCapabilities() {
+        XCTAssertTrue(AetherEngine.OptionalComponent.trueHDObjectAudio.isBuiltIn)
+        XCTAssertTrue(AetherEngine.OptionalComponent.dtsxObjectAudio.isBuiltIn)
+        XCTAssertTrue(AetherEngine.OptionalComponent.dolbyVisionStillReshaping.isBuiltIn)
+        XCTAssertFalse(AetherEngine.OptionalComponent.dualLayerDolbyVision.isBuiltIn)
     }
 
     func testPlozzAutomaticallyRequestsSpatialAudioOnSupportedTVOS() {
@@ -73,7 +80,7 @@ final class AetherReleaseIntegrationTests: XCTestCase {
     func testTrueHDLegalCreditIncludesSourceAndBothLicenses() throws {
         let credit = try XCTUnwrap(PlozzAttributions.entries.first { $0.title == "LibTrueHD" })
         XCTAssertTrue(credit.detail.contains(
-            "https://github.com/superuser404notfound/LibTrueHD/tree/2.3.0"
+            "https://github.com/superuser404notfound/LibTrueHD/tree/3.0.0"
         ))
         XCTAssertTrue(credit.detail.contains("Quick104"))
         XCTAssertTrue(credit.detail.contains("Rainbaby"))
@@ -81,16 +88,19 @@ final class AetherReleaseIntegrationTests: XCTestCase {
         XCTAssertEqual(Set(credit.licenses.map(\.label)), ["MIT", "Apache-2.0"])
     }
 
-    func testDTSXLegalCreditIncludesSourceAndLicense() throws {
+    func testDTSXLegalCreditIncludesSourceAndDynamicDecoderLicenses() throws {
         let credit = try XCTUnwrap(PlozzAttributions.entries.first { $0.title == "LibDTSX" })
         XCTAssertTrue(credit.detail.contains(
-            "https://github.com/superuser404notfound/LibDTSX/tree/1.0.1"
+            "https://github.com/superuser404notfound/LibDTSX/tree/3.0.0"
         ))
         XCTAssertTrue(credit.detail.contains("kristofferR"))
         XCTAssertTrue(credit.detail.contains("harletty"))
         XCTAssertTrue(credit.detail.contains("LibDTSXNotices.txt"))
         XCTAssertTrue(credit.detail.contains("LibDTSXLicense.txt"))
-        XCTAssertEqual(credit.licenses.map(\.label), ["Apache-2.0"])
+        XCTAssertTrue(credit.detail.contains("LibDTSXLGPL21License.txt"))
+        XCTAssertTrue(credit.detail.contains("LibDTSXLGPL3License.txt"))
+        XCTAssertTrue(credit.detail.contains("LibDTSXGPL3License.txt"))
+        XCTAssertEqual(Set(credit.licenses.map(\.label)), ["Apache-2.0", "LGPL-3.0+"])
     }
 
     func testReleasedProbeCancellationAPIIsAvailable() {

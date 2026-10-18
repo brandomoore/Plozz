@@ -196,12 +196,12 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/299a3d9ea767e2382158c2a3d137c4b1d302ab4a)
-at commit `299a3d9ea767e2382158c2a3d137c4b1d302ab4a`, integrating upstream
-release **7.36.0** (`c6365cc3c8850bdb670654ca26dcd21f73670875`).
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/2975f3ee9c455ac6ed267a072fe191685f9a8c60)
+at commit `2975f3ee9c455ac6ed267a072fe191685f9a8c60`, integrating upstream
+release **7.40.0** (`c1885331de8339eabe08659af35972411a42c94c`).
 ASS/SSA packets with neither a decoded end nor a packet duration are now discarded
 instead of lingering for a fabricated five seconds. This also applies to sidecars;
-other subtitle codecs retain their established fallback. Upstream 7.36.0 does not
+other subtitle codecs retain their established fallback. Upstream 7.40.0 does not
 include this correction; the fork retains it and its regression tests.
 
 The fork also corrects accumulating AAC-LC audio drift in indexed MP4 VOD
@@ -229,12 +229,29 @@ during rebuilds, and blocking engine work moved off Swift's cooperative pool.
 Changing speed while paused now leaves the session paused until `play()`.
 E-AC-3 JOC stream copies advertise object audio in the HLS master, including
 untagged tracks. FFmpegBuild **3.7.x** fixes dependent-substream Atmos signaling;
-LibDovi remains **2.1.x**. The current fork uses LibTrueHD **2.3.x** and
-LibDTSX **1.0.1**. Upstream 7.36.0 adds DTS:X object rendering, corrected spatial
+LibDovi remains **2.1.x**. Upstream 7.36.0 adds DTS:X object rendering, corrected spatial
 speaker positions and a tvOS Atmos output activator for receivers that need it.
 It also includes live-replay recovery, software-video recovery after a screen lock,
 and the intervening 7.35.x playback fixes; these are upstream changes, not new
 Plozz-specific implementations.
+
+The current integration explicitly enables `TrueHDObjectAudio`, `DTSXObjectAudio`
+and `DolbyVisionStillReshaping`: upstream now defaults all optional components
+off. This preserves the existing object-audio path and Dolby Vision scrub stills.
+The new `DualLayerDolbyVision` trait remains off; Profile 7 continues through
+the native single-layer route. The root manifest requires Swift tools 6.1 for
+package-trait selection. LibTrueHD and LibDTSX advance to **3.0.0**;
+the latter now ships a separate, dynamically embedded `DTSX.framework` under
+LGPL-3.0-or-later. Intervening releases also correct small-block FLAC bridging,
+live joins and recovery, and video timing; the fork retains its AAC and ASS fixes.
+Release 7.40.0 also streams persistent HTTP/1.1 segment bodies with bounded
+backpressure and updates the spatial rendering paths described below.
+The fork fixes a Swift 6.4 compile failure in persistent body reads by retaining
+the caller's isolation through both the cancellation-handler read and its socket
+progress callback. The repair is proposed in
+[superuser404notfound/AetherEngine#837](https://github.com/superuser404notfound/AetherEngine/pull/837);
+it does not mark the mutable chunked decoder unchecked Sendable or disable
+concurrency checking.
 
 On **tvOS 26 and later**, ordinary on-demand playback automatically requests
 TrueHD Atmos and DTS:X object rendering with `LoadOptions.objectAudioRendering = .apac(.l714)`.
@@ -258,10 +275,15 @@ mode are not used as Atmos capability gates: neither reliably describes the room
 Aether converts **48 kHz TrueHD Atmos and supported lossless DTS:X** on its
 native/HLS VOD path. For DTS-HD Master Audio, LibDTSX checks the actual packets:
 some DTS:X tracks are labelled only DTS-HD MA by FFmpeg, so metadata alone does
-not decide eligibility. Confirmed DTS:X has its height/object contributions
-removed from the compatible floor-channel downmix before the bed, heights and
-objects are rendered together. Ordinary DTS-HD MA retains the channel bridge.
-The engine renders into the spatial bed and encodes Apple Positional Audio (APAC), which
+not decide eligibility. Confirmed standard DTS:X has its height contributions
+removed from the compatible floor-channel downmix using the standard's constant
+fold. The standard presentation's bed and heights map one-to-one into 7.1.4;
+alternate presentations carrying objects fall back to the channel bridge.
+Ordinary DTS-HD MA retains the channel bridge. TrueHD Atmos uses the source's
+channel presentation, split between floor and heights by object-energy positions,
+rather than mixing object signals into the output. The measurement-only
+`TrueHDReferenceRender` trait stays off.
+The engine encodes that spatial bed as Apple Positional Audio (APAC), which
 tvOS can deliver as Dolby MAT to compatible equipment. This is **lossy conversion**,
 not TrueHD/DTS:X bitstream passthrough or preservation of the original dynamic object
 stream. It adds decoding/encoding work during eligible playback, not library
@@ -275,7 +297,6 @@ otherwise the E-AC-3 compatibility bridge. Software-video playback does not use
 this conversion. E-AC-3/JOC Atmos remains stream-copied. Explicit track selections
 and language preferences are still passed to Aether; its automatic selection can
 prefer TrueHD Atmos or DTS:X within the same language/dub when rendering is enabled.
-DTS:X alternate presentations remain experimental upstream.
 
 Progressive segment delivery remains disabled. The upstream Apple TV reports in
 [AetherEngine #731](https://github.com/superuser404notfound/AetherEngine/issues/731)
@@ -285,11 +306,13 @@ mapping, particularly with tvOS Continuous Audio.
 
 Both apps bundle the unmodified
 MIT license, Apache-2.0 license and NOTICE from
-[LibTrueHD 2.3.0](https://github.com/superuser404notfound/LibTrueHD/tree/2.3.0)
+[LibTrueHD 3.0.0](https://github.com/superuser404notfound/LibTrueHD/tree/3.0.0)
 as `LibTrueHDLicense.txt`, `LibTrueHDApacheLicense.txt` and `LibTrueHDNotices.txt`,
-with a shared in-app credit. They also bundle the unmodified Apache-2.0 license
-and NOTICE from [LibDTSX 1.0.1](https://github.com/superuser404notfound/LibDTSX/tree/1.0.1)
-as `LibDTSXLicense.txt` and `LibDTSXNotices.txt`, with its own in-app credit.
+with a shared in-app credit. They also bundle the unmodified Apache-2.0 license,
+NOTICE, LGPL-2.1, LGPL-3.0 and GPL-3.0 texts from
+[LibDTSX 3.0.0](https://github.com/superuser404notfound/LibDTSX/tree/3.0.0)
+as `LibDTSXLicense.txt`, `LibDTSXNotices.txt`, `LibDTSXLGPL21License.txt`,
+`LibDTSXLGPL3License.txt` and `LibDTSXGPL3License.txt`, with its own in-app credit.
 
 The retained 7.23.0 audio-output
 flush epoch prevents a buffer decoded before a software seek from entering

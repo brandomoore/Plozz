@@ -1,4 +1,4 @@
-// swift-tools-version:6.0
+// swift-tools-version:6.1
 import PackageDescription
 import Foundation
 
@@ -91,8 +91,8 @@ let package = Package(
         // See AGENTS.local.md › "Playback engine (AetherEngine / Plozzigen)".
         //
         // Pinned to the playback-corrected fork at
-        // af350b9bf35be106e3f97ecd521e1ab32be0bdd3, based on upstream
-        // release 7.34.1 (cc070bf8d7bd7004547283cf1dc0c70ccd00d616).
+        // 2975f3ee9c455ac6ed267a072fe191685f9a8c60, based on upstream
+        // release 7.40.0 (c1885331de8339eabe08659af35972411a42c94c).
         //
         // Everything the old `plozz-pin-*` stack existed for is upstream
         // as of 5.23.2:
@@ -247,7 +247,15 @@ let package = Package(
         //
         // SMB enters AetherEngine only through Plozz's protocol-neutral custom-source
         // bridge; the engine's legacy SMB URL product is not linked.
-        .package(url: "https://github.com/brandomoore/AetherEngine", revision: "299a3d9ea767e2382158c2a3d137c4b1d302ab4a"),
+        // 7.39.0 makes these existing capabilities opt-in package traits.
+        // Dual-layer FEL composition remains off; Plozz uses the native DV route.
+        // The fork also preserves caller isolation for persistent body reads,
+        // fixing Swift 6.4's cancellation-handler framing diagnostic.
+        .package(
+            url: "https://github.com/brandomoore/AetherEngine",
+            revision: "2975f3ee9c455ac6ed267a072fe191685f9a8c60",
+            traits: ["TrueHDObjectAudio", "DTSXObjectAudio", "DolbyVisionStillReshaping"]
+        ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x decode-only), LibDovi (Dolby Vision
         // RPU parser), LibTrueHD and LibDTSX are transitive dependencies — AetherEngine
         // declares and consumes them. The retired hybrid-engine target needed

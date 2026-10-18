@@ -73,7 +73,7 @@ public enum PlozzAttributions {
             title: "AetherEngine",
             detail:
                 "Plozzigen playback is powered by AetherEngine by Vincent Herbst. "
-                + "Source: https://github.com/brandomoore/AetherEngine/tree/299a3d9ea767e2382158c2a3d137c4b1d302ab4a",
+                + "Source: https://github.com/brandomoore/AetherEngine/tree/2975f3ee9c455ac6ed267a072fe191685f9a8c60",
             licenses: [.init("LGPL-3.0", family: .lgpl)]
         ),
         PlozzAttribution(
@@ -94,7 +94,7 @@ public enum PlozzAttributions {
             detail:
                 "AetherEngine includes the TrueHD/Atmos decoder by Quick104 and "
                 + "Vincent Herbst, using truehdd and oamd by Rainbaby and contributors. "
-                + "Source: https://github.com/superuser404notfound/LibTrueHD/tree/2.3.0. "
+                + "Source: https://github.com/superuser404notfound/LibTrueHD/tree/3.0.0. "
                 + "Complete notices and license texts are bundled in LibTrueHDNotices.txt, "
                 + "LibTrueHDLicense.txt and LibTrueHDApacheLicense.txt.",
             licenses: [
@@ -106,11 +106,16 @@ public enum PlozzAttributions {
             title: "LibDTSX",
             detail:
                 "AetherEngine includes LibDTSX by kristofferR and Vincent Herbst, "
-                + "using the dca decoder from harletty-bridge to render DTS:X heights and objects. "
-                + "Source: https://github.com/superuser404notfound/LibDTSX/tree/1.0.1. "
-                + "Complete notices and license text are bundled in LibDTSXNotices.txt "
-                + "and LibDTSXLicense.txt.",
-            licenses: [.init("Apache-2.0", family: .apache)]
+                + "using the dca decoder from harletty-bridge to render standard DTS:X heights. "
+                + "Source: https://github.com/superuser404notfound/LibDTSX/tree/3.0.0. "
+                + "The decoder framework is dynamically linked under LGPL-3.0-or-later. "
+                + "Complete notices and license texts are bundled in LibDTSXNotices.txt, "
+                + "LibDTSXLicense.txt, LibDTSXLGPL21License.txt, LibDTSXLGPL3License.txt "
+                + "and LibDTSXGPL3License.txt.",
+            licenses: [
+                .init("Apache-2.0", family: .apache),
+                .init("LGPL-3.0+", family: .lgpl),
+            ]
         ),
         PlozzAttribution(
             title: "libass & Text Rendering",
