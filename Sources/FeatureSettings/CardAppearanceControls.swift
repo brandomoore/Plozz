@@ -89,6 +89,7 @@ public struct CardAppearanceControls: View {
                     Text(color.displayName).tag(color)
                 }
             }
+            .pickerStyle(.inline)
         }
         .accessibilityIdentifier("watch-indicator-color")
     }
