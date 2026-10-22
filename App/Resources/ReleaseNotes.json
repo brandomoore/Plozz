@@ -2,6 +2,62 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/061",
+      "version": "2026.10.21",
+      "marketingVersion": "2026.9.25",
+      "build": 61,
+      "releasedAt": "2026-10-21",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Browse Live TV categories with channel counts, and choose whether Live TV opens to Categories or Guide.",
+            "Search Live TV categories alongside channels.",
+            "Import IPTV playlists using public Google Drive file links.",
+            "Choose watch-indicator colors and attached or floating unwatched episode-count badges."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Live TV category browsing adapts to the available screen space.",
+            "More responsive profile switching and PIN verification.",
+            "Native profile-name and color controls.",
+            "Clearer spacing and grouping for ratings, picture formats, audio, and language details.",
+            "Better cleanup of unused IPTV cache files.",
+            "More useful troubleshooting details when a title's versions cannot load.",
+            {
+              "text": "Profile editor actions grouped alongside Back.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Clearer explanations for spatial audio and experimental Dolby Vision playback.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Simpler Live TV controls, a standard-size search field, and more consistent spacing.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Smoother transitions between profile selection, PIN entry, and Home.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Clearer Plex user selection, with PIN entry and retry kept in the same screen.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Locked profiles opening without a new PIN after switching away and back.",
+            "Missing lock icons for profiles using a Plex PIN."
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/060",
       "version": "2026.10.21",
       "marketingVersion": "2026.9.25",
