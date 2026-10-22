@@ -10,6 +10,12 @@ import XCTest
 @MainActor
 final class LiveTVGuideRowLayoutTests: XCTestCase {
     private let start = Date(timeIntervalSince1970: 1_800_000_000)
+    private var regularRowHeight: CGFloat {
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone { return PrototypeLayout.compactRowHeight }
+        #endif
+        return PrototypeLayout.rowHeight
+    }
 
     func testRestoredTimelineOffsetRetainsEnoughGuideHours() {
         for width: CGFloat in [320, 1_000] {
@@ -36,14 +42,14 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             program("long", from: 2_400, to: 21_590),
             program("trailing", from: 21_590, to: 22_200)
         ]
-        XCTAssertEqual(height(programs: programs), PrototypeLayout.rowHeight, accuracy: 0.5)
+        XCTAssertEqual(height(programs: programs), regularRowHeight, accuracy: 0.5)
     }
 
     func testGuideAndChannelOnlyRowsHaveTheSameHeight() {
         let regular = height(programs: [program("regular", from: 0, to: 21_600)])
         let narrow = height(programs: [program("brief", from: 0, to: 30)])
         let withoutGuide = height(programs: [])
-        XCTAssertEqual(regular, PrototypeLayout.rowHeight, accuracy: 0.5)
+        XCTAssertEqual(regular, regularRowHeight, accuracy: 0.5)
         XCTAssertEqual(narrow, regular, accuracy: 0.5)
         XCTAssertEqual(withoutGuide, regular, accuracy: 0.5)
     }
@@ -54,7 +60,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         for locale in ["en_US", "fr_FR", "ar"] {
             XCTAssertEqual(
                 height(programs: programs, locale: locale),
-                PrototypeLayout.rowHeight,
+                regularRowHeight,
                 accuracy: 0.5
             )
         }
@@ -70,7 +76,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             typeSize: .accessibility3
         )
         let withoutGuide = height(programs: [], typeSize: .accessibility3)
-        XCTAssertGreaterThanOrEqual(regular, PrototypeLayout.rowHeight)
+        XCTAssertGreaterThanOrEqual(regular, regularRowHeight)
         XCTAssertEqual(narrow, regular, accuracy: 0.5)
         XCTAssertEqual(withoutGuide, regular, accuracy: 0.5)
     }
@@ -391,7 +397,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         XCTAssertLessThan(PrototypeNowMarker.size.height, PrototypeLayout.gap)
     }
 
-    func testBrowserNowMarkerSitsBelowTheRulerWithOrWithoutListings() throws {
+    func testBrowserNowMarkerMatchesPlatformRulerPlacementWithOrWithoutListings() throws {
         let channel = LiveTVPrototypeChannel(
             id: "station", number: 1, name: "Test station", category: "News",
             symbol: "tv", accent: 0, source: .iptv, tagline: ""
@@ -416,10 +422,17 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             let x = Int(PrototypeLayout.guideInset + PrototypeLayout.stationWidth(for: innerWidth)
                 + PrototypeLayout.columnGap + PrototypeLayout.timelineWidth(for: innerWidth) / 4)
             let top = Int(PrototypeLayout.guideInset)
+            #if os(iOS)
+            let markerTop = top + Int(PrototypeLayout.rulerHeight - PrototypeNowMarker.size.height)
+            #else
+            let markerTop = top + Int(
+                PrototypeLayout.rulerHeight + PrototypeLayout.gap - PrototypeNowMarker.size.height
+            )
+            #endif
             let samples = try alphaSamples(
                 browser, size: CGSize(width: 1_000, height: 400),
-                points: [(x, top + 2), (x, top + 40),
-                         (x, top + 44 + Int(PrototypeLayout.gap - PrototypeNowMarker.size.height) + 4)]
+                points: [(x, top + 2), (x, markerTop - 2),
+                         (x, markerTop + Int(PrototypeNowMarker.size.height / 3))]
             )
             XCTAssertTrue(samples.prefix(2).allSatisfy { $0 < 80 }, "\(samples)")
             XCTAssertGreaterThan(try XCTUnwrap(samples.last), 190, "\(samples), listings: \(programs.count)")
@@ -465,12 +478,12 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
                         )
                         .environment(\.layoutDirection, direction)
                         .environment(\.themePalette, ThemePalette.dark),
-                        size: CGSize(width: width, height: PrototypeLayout.rowHeight),
+                        size: CGSize(width: width, height: regularRowHeight),
                         points: positions.map { x in
                             let logicalX = timelineOrigin + x
                             return (
                                 Int(direction == .leftToRight ? logicalX : width - logicalX - 1),
-                                Int(PrototypeLayout.rowHeight - 20)
+                                Int(regularRowHeight - 20)
                             )
                         }
                     )
@@ -492,9 +505,9 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             let samples = try await hostedAlphaSamples(
                 GuideRowFixture(programs: programs, start: start, nowOffset: 1_800, width: width)
                     .environment(\.themePalette, ThemePalette.dark),
-                size: CGSize(width: width, height: PrototypeLayout.rowHeight),
-                points: [(Int(lineX - 4), Int(PrototypeLayout.rowHeight - 20)),
-                         (Int(lineX + 4), Int(PrototypeLayout.rowHeight - 20))]
+                size: CGSize(width: width, height: regularRowHeight),
+                points: [(Int(lineX - 4), Int(regularRowHeight - 20)),
+                         (Int(lineX + 4), Int(regularRowHeight - 20))]
             )
             XCTAssertEqual(samples.map { $0 > 0 }, [true, false], "\(samples), listings: \(programs.count)")
         }
@@ -644,7 +657,11 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         }
         XCTAssertEqual(PrototypeLayout.programInset, 0)
         XCTAssertEqual(PrototypeLayout.programRadius, PrototypeLayout.rowRadius)
+        #if os(iOS)
+        XCTAssertEqual(PrototypeLayout.rowGap, 8)
+        #else
         XCTAssertGreaterThanOrEqual(PrototypeLayout.rowGap, 16)
+        #endif
     }
 
     func testNavigationRailInsetsContentWithoutShrinkingVideo() {

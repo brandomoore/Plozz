@@ -6,7 +6,7 @@ import Testing
 @MainActor
 struct ProfileNameLabelTests {
     @Test
-    func onlyPlozzProfileLocksRenderAnIndicator() throws {
+    func profileAndPlexLocksRenderAnIndicator() throws {
         let profile = Profile(name: "Viewer", avatarSymbol: "person.fill", colorIndex: 0)
         let unlocked = try render(profile)
         var locked = profile
@@ -23,15 +23,24 @@ struct ProfileNameLabelTests {
             .init(homeUserID: "protected", name: "Viewer", requiresPIN: true),
             forPlexAccount: "plex"
         )
-        #expect(try render(plex).data == unlocked.data)
+        #expect(try render(plex).data == protected.data)
+        #expect(try render(plex, showsLock: false).data == unlocked.data)
+
+        let unprotectedPlex = profile.settingHomeUserBinding(
+            .init(homeUserID: "unprotected", name: "Viewer", requiresPIN: false),
+            forPlexAccount: "plex"
+        )
+        #expect(try render(unprotectedPlex).data == unlocked.data)
 
         locked.lock = nil
         #expect(try render(locked).data == unlocked.data)
     }
 
-    private func render(_ profile: Profile) throws -> (width: CGFloat, height: CGFloat, data: Data) {
+    private func render(
+        _ profile: Profile, showsLock: Bool? = nil
+    ) throws -> (width: CGFloat, height: CGFloat, data: Data) {
         let renderer = ImageRenderer(content:
-            ProfileNameLabel(profile: profile)
+            ProfileNameLabel(profile: profile, showsLock: showsLock)
                 .font(.title3)
                 .foregroundStyle(.white)
                 .fixedSize()
