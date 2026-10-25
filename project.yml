@@ -469,6 +469,7 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/FocusHost
+      - path: Tests/TrackingPresentationSupport/TrackerHistoryImportFixture.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureFixture.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationFixture.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchFixture.swift
@@ -497,6 +498,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSPresentationHost
+      - path: Tests/TrackingPresentationSupport/TrackerHistoryImportFixture.swift
       - path: Tests/FeatureLiveTVRemoteTests/SourceOnboardingFixture.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureFixture.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationFixture.swift
@@ -584,6 +586,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSInteractionTests
+      - path: Tests/TrackingPresentationSupport/TrackerHistoryImportInteractionTests.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureInteractionTests.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationInteractionTests.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchInteractionTests.swift
@@ -602,6 +605,7 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/HomeRemoteTests
+      - path: Tests/TrackingPresentationSupport/TrackerHistoryImportInteractionTests.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureInteractionTests.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationInteractionTests.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchInteractionTests.swift

@@ -44,7 +44,10 @@ description discloses title lookups and preserves existing ratings/server metada
 Its server-history comparison is a separate, explicit action: show the server
 user and current state, select differences, then confirm. It does not enable
 ongoing sync. The page owns its ephemeral approval and revokes undelivered work
-on exit. See [PublicMetaDBService](../PublicMetaDBService/README.md) for current
+on exit. On mobile, comparison entries and actions occupy separate native List
+rows; putting them together in one cell lets switch taps activate neighboring
+buttons. TV retains its native vertical focus layout. See
+[PublicMetaDBService](../PublicMetaDBService/README.md) for current
 coverage, history fidelity, and remaining integration work.
 Trakt and Simkl use this same comparison and approval page. Their percentage-only resume
 records are displayed without conversion to server seconds, and episode imports

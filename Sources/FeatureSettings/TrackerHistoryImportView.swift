@@ -40,45 +40,7 @@ private struct TrackerHistoryComparisonContent: View {
     @State private var operation: Task<Void, Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            if session.isBusy { ProgressView("Comparing or verifying history…") }
-            if let error = session.error { TrackerHistoryImportFailure(error: error) }
-            if let plan = session.plan {
-                if plan.rows.isEmpty { Text("No tracker records to compare.") }
-                ForEach(Array(plan.rows.dropFirst(page * 50).prefix(50))) { row in
-                    TrackerHistoryComparisonRow(
-                        row: row, destination: session.destinations.first { $0.id == row.target?.accountID },
-                        outcome: session.outcomes[row.id],
-                        selected: Binding(
-                            get: { selected.contains(row.id) },
-                            set: { if $0 { selected.insert(row.id) } else { selected.remove(row.id) } }
-                        )
-                    )
-                }
-                .disabled(session.isBusy || !session.outcomes.isEmpty)
-                if plan.rows.count > 50 {
-                    Text("Page \(page + 1) of \((plan.rows.count + 49) / 50)")
-                        .foregroundStyle(.secondary)
-                    if page > 0 {
-                        Button("Previous page") { page -= 1 }
-                            .accessibilityIdentifier("tracker-history.previous-page")
-                    }
-                    if (page + 1) * 50 < plan.rows.count {
-                        Button("Next page") { page += 1 }
-                            .accessibilityIdentifier("tracker-history.next-page")
-                    }
-                }
-                Button("Apply \(selected.count) selected changes") { confirming = true }
-                    .disabled(selected.isEmpty || session.isBusy || !session.outcomes.isEmpty)
-                    .accessibilityIdentifier("tracker-history.apply")
-            }
-            Button("Compare again") {
-                selected = []
-                operation?.cancel()
-                operation = Task { await session.compare() }
-            }
-            .disabled(session.isBusy)
-        }
+        comparisonContent
         .confirmationDialog("Change server history?", isPresented: $confirming, titleVisibility: .visible) {
             Button("Apply selected changes", role: .destructive) {
                 guard let plan = session.plan else { return }
@@ -95,6 +57,54 @@ private struct TrackerHistoryComparisonContent: View {
         }
         .onChange(of: session.plan?.id) { _, _ in selected = []; page = 0; confirming = false }
         .onDisappear { operation?.cancel() }
+    }
+
+    @ViewBuilder private var comparisonContent: some View {
+        #if os(tvOS)
+        VStack(alignment: .leading, spacing: 20) { rows }
+        #else
+        Section { rows }
+        #endif
+    }
+
+    @ViewBuilder private var rows: some View {
+        if session.isBusy { ProgressView("Comparing or verifying history…") }
+        if let error = session.error { TrackerHistoryImportFailure(error: error) }
+        if let plan = session.plan {
+            if plan.rows.isEmpty { Text("No tracker records to compare.") }
+            ForEach(Array(plan.rows.dropFirst(page * 50).prefix(50))) { row in
+                TrackerHistoryComparisonRow(
+                    row: row, destination: session.destinations.first { $0.id == row.target?.accountID },
+                    outcome: session.outcomes[row.id],
+                    selected: Binding(
+                        get: { selected.contains(row.id) },
+                        set: { if $0 { selected.insert(row.id) } else { selected.remove(row.id) } }
+                    )
+                )
+            }
+            .disabled(session.isBusy || !session.outcomes.isEmpty)
+            if plan.rows.count > 50 {
+                Text("Page \(page + 1) of \((plan.rows.count + 49) / 50)")
+                    .foregroundStyle(.secondary)
+                if page > 0 {
+                    Button("Previous page") { page -= 1 }
+                        .accessibilityIdentifier("tracker-history.previous-page")
+                }
+                if (page + 1) * 50 < plan.rows.count {
+                    Button("Next page") { page += 1 }
+                        .accessibilityIdentifier("tracker-history.next-page")
+                }
+            }
+            Button("Apply \(selected.count) selected changes") { confirming = true }
+                .disabled(selected.isEmpty || session.isBusy || !session.outcomes.isEmpty)
+                .accessibilityIdentifier("tracker-history.apply")
+        }
+        Button("Compare again") {
+            selected = []
+            operation?.cancel()
+            operation = Task { await session.compare() }
+        }
+        .disabled(session.isBusy)
     }
 }
 

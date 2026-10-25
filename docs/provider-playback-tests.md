@@ -255,3 +255,26 @@ to overwrite concurrent activity. They contain private viewing state and are
 not public reports. This command performs no mutations; later live scenarios
 still require explicit account/title mutation approval and exact run-owned
 cleanup evidence.
+
+### Isolated tracker import interactions
+
+`TrackerHistoryImportInteractionTests` runs in `PlozzHomeFixtureTests` on tvOS
+and `PlozziOSInteractionTests` on iOS/iPadOS. Both hosts select
+`--tracker-history-import-fixture`, which presents the real
+`TrackerHistoryImportView`, comparison session, outbox and
+`AppShellWatchMutationApplier`. Only the tracker snapshot and `MediaProvider`
+endpoints are synthetic; no credentials, network requests or personal history
+are involved. Test counters observe provider state and every injected tracker
+delivery path rather than treating a confirmation label as proof of a write.
+
+The shared interaction suite covers cancellation and cleared selection on page
+reentry, independent Jellyfin/Plex target selection, zero tracker mirrors,
+connection revocation and changed tracker evidence during approval, concurrent
+server progress, and lost write replies verified by readback without repetition.
+TV actions use the native remote focus system; mobile actions use taps and
+scrolling. Select the class within its corresponding UI-test target when running
+the existing build-for-testing/test-without-building workflow.
+
+These are fixture-backed UI integration checks, not authenticated API, real
+server-plugin coexistence, playback, or process-relaunch acceptance. The live
+account and exact-title authorization requirements above remain unchanged.

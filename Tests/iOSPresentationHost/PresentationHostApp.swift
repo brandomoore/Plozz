@@ -134,7 +134,9 @@ struct PresentationHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--source-settings") {
+            if ProcessInfo.processInfo.arguments.contains("--tracker-history-import-fixture") {
+                TrackerHistoryImportFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--source-settings") {
                 SourceOnboardingFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--featured-card-fixture") {
                 FeaturedCardInteractionFixture()
