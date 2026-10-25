@@ -4,6 +4,25 @@ import CoreModels
 import FeatureAuth
 @testable import AppShell
 
+@MainActor
+private final class AccountsHistoryReader: TrackerHistoryReading {
+    var connection: String? = "original"
+    var reads = 0
+    var historyConnectionID: String? { connection }
+    var historySyncIdentity: TrackerHistorySyncIdentity? {
+        connection.map { .init(trackerID: "fixture", connectionID: $0) }
+    }
+    func snapshot() throws -> TrackerHistorySnapshot {
+        guard let connection else { throw TrackerHistoryError.scopeChanged }
+        return try .init(trackerID: "fixture", connectionID: connection, observations: [], expectedCount: 0)
+    }
+    func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
+        guard connection == expectedConnectionID else { throw TrackerHistoryError.scopeChanged }
+        reads += 1
+        return try snapshot()
+    }
+}
+
 /// Unit tests for ``AccountsProvidersModel`` — the accounts + providers hub split
 /// out of ``AppState``. Cover the hub's own behavior over in-memory stores:
 /// `reloadAccounts` loads accounts and recomputes the active set, the
@@ -75,6 +94,69 @@ final class AccountsProvidersModelTests: XCTestCase {
         XCTAssertEqual(hookAccountsCount, 2)
         // The resolved active set is a subset of the known accounts.
         XCTAssertTrue(model.activeAccountIDs.isSubset(of: ["a", "b"]))
+    }
+
+    func testOngoingHistoryFactoryFencesForegroundConnectionAndProfile() async throws {
+        let (model, _, profiles) = try makeModel(accountIDs: [("a", "a.test")])
+        model.reloadAccounts()
+        let tracker = AccountsHistoryReader()
+        let store = try DurableLocalStateStore(secureStore: InMemorySecureStore())
+        let reconciler = WatchStateReconciler(
+            store: InMemoryWatchMutationStore(),
+            applier: AppShellWatchMutationApplier(
+                resolveProvider: { _ in XCTFail("Empty history must not resolve a writer"); return nil },
+                applyTrakt: { _ in XCTFail("Unexpected tracker write") },
+                applySimkl: { _ in XCTFail("Unexpected tracker write") },
+                applyAniList: { _ in XCTFail("Unexpected tracker write") },
+                applyMAL: { _ in XCTFail("Unexpected tracker write") }
+            )
+        )
+        let index = IdentityIndexSnapshot(byIdentity: [
+            .external(source: "tmdb", value: "550"): [.init(accountID: "a", itemID: "movie", kind: .movie)]
+        ])
+        func makeSession() -> TrackerHistoryImportSession {
+            model.makeTrackerHistoryImportSession(
+                tracker: tracker, reconciler: reconciler, syncStore: store,
+                index: { index }, isPlexIdentityResolved: { _ in true }, isAuthorized: { true }
+            )
+        }
+        let first = makeSession()
+        let sync = try XCTUnwrap(first.ongoingSync)
+        XCTAssertTrue(sync === makeSession().ongoingSync)
+        let reviewed = TrackerHistoryImportPlan(
+            snapshot: try tracker.snapshot(), serverScope: first.scope, candidates: []
+        )
+        await sync.enable(afterReview: reviewed, accountIDs: ["a"], categories: [.watched])
+        XCTAssertFalse(sync.isEnabled)
+        XCTAssertEqual(tracker.reads, 0, "An inactive app cannot start tracker reads")
+        model.setTrackerHistorySyncForeground(true)
+        await sync.enable(afterReview: reviewed, accountIDs: ["a"], categories: [.watched])
+        XCTAssertTrue(sync.isEnabled)
+        first.cancel()
+        await sync.synchronize(manual: false)
+        XCTAssertNil(sync.error, "Durable consent does not depend on the original comparison remaining open")
+        let reads = tracker.reads
+        await sync.synchronize(manual: false)
+        XCTAssertEqual(tracker.reads, reads, "Repeated foreground/index callbacks obey the interval")
+        model.setTrackerHistorySyncForeground(false)
+        await sync.synchronize()
+        XCTAssertEqual(tracker.reads, reads)
+        model.setTrackerHistorySyncForeground(true)
+        tracker.connection = nil
+        XCTAssertNil(makeSession().ongoingSync)
+        await sync.synchronize()
+        XCTAssertEqual(tracker.reads, reads)
+        tracker.connection = "replacement"
+        let replacement = try XCTUnwrap(makeSession().ongoingSync)
+        XCTAssertFalse(replacement === sync)
+        XCTAssertFalse(replacement.isEnabled)
+        let another = profiles.add(name: "Another", activeAccountIDs: ["a"])
+        profiles.select(another.id)
+        model.reloadAccounts()
+        let otherProfile = try XCTUnwrap(makeSession().ongoingSync)
+        XCTAssertFalse(otherProfile.isEnabled)
+        await sync.synchronize()
+        XCTAssertEqual(tracker.reads, reads)
     }
 
     func testAddressOnlyReloadUpdatesRetainedProviderWithoutEvictingOtherSignIns() throws {

@@ -1,8 +1,8 @@
 import Foundation
 
 /// A title-level list entry, not a log of individual episode plays.
-public struct TrackerAnimeListProgress: Hashable, Sendable {
-    public enum Status: Hashable, Sendable {
+public struct TrackerAnimeListProgress: Encodable, Hashable, Sendable {
+    public enum Status: Encodable, Hashable, Sendable {
         case planning, watching, completed, paused, dropped, rewatching
     }
 

@@ -30,6 +30,18 @@ public struct WatchMutationServerScope: Codable, Hashable, Sendable {
             .sorted { $0.accountID < $1.accountID }
     }
 
+    public func selectingAccounts(_ accountIDs: Set<String>) throws -> Self {
+        guard !accountIDs.isEmpty, accountIDs.isSubset(of: Set(accounts.map(\.accountID))) else {
+            throw TrackerHistoryError.invalidSelection
+        }
+        return Self(profileID: profileID, accounts: accounts.filter { accountIDs.contains($0.accountID) })
+    }
+
+    private init(profileID: String, accounts: [AccountIdentity]) {
+        self.profileID = profileID
+        self.accounts = accounts
+    }
+
     /// Length-delimited fields distinguish missing Home identity (owner) from a
     /// named user without storing tokens or process-local credential revisions.
     var persistenceKey: String {

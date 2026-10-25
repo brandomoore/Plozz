@@ -15,14 +15,28 @@ struct TrackerHistoryImportFixture: View {
                 .accessibilityIdentifier("fixture.history.open")
         }
         .sheet(isPresented: $comparing) {
-            NavigationStack {
-                VStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
+                NavigationStack {
                     TrackerHistoryImportView(makeSession: model.makeSession)
+                }
+                VStack(alignment: .leading, spacing: 8) {
                     report
+                    if ProcessInfo.processInfo.arguments.contains("--history-ongoing-sync") {
+                        Button("New tracker play") { model.newPlay += 1 }
+                            .accessibilityIdentifier("fixture.history.new-play")
+                    }
                     Button("Close comparison") { comparing = false }
                         .accessibilityIdentifier("fixture.history.close")
                 }
+                .frame(maxWidth: 1200, alignment: .leading)
+                .frame(maxWidth: .infinity)
+                #if os(tvOS)
+                .focusSection()
+                #endif
             }
+            #if os(tvOS)
+            .frame(minWidth: 1600, minHeight: 900)
+            #endif
         }
         .environment(\.themePalette, .dark)
         .preferredColorScheme(.dark)
@@ -43,9 +57,23 @@ private final class HistoryImportFixtureModel {
     var authorized = true
     var trackerReads = 0
     var trackerWrites = 0
+    var newPlay = 0
+    var storageFailed = false
     private let arguments = ProcessInfo.processInfo.arguments
 
     @ObservationIgnored private let outbox = InMemoryWatchMutationStore()
+    @ObservationIgnored private var syncStore: DurableLocalStateStore?
+    @ObservationIgnored private lazy var sync: TrackerHistorySyncController? = {
+        guard let syncStore else { return nil }
+        return TrackerHistorySyncController(
+            identity: .init(trackerID: "publicmetadb", connectionID: "fixture-connection"),
+            scope: scope, store: syncStore, isAuthorized: { [weak self] in self?.authorized ?? false },
+            makeSession: { [weak self] scope, allowed in
+                guard let self else { throw TrackerHistoryError.scopeChanged }
+                return self.makeSession(scope: scope, allowed: allowed)
+            }
+        )
+    }()
 
     private func makeReconciler() -> WatchStateReconciler {
         let index = self.index
@@ -82,15 +110,29 @@ private final class HistoryImportFixtureModel {
                 .init(accountID: $0.account.id, itemID: "movie", providerKind: $0.kind, kind: .movie)
             }
         ])
+        do { syncStore = try DurableLocalStateStore(secureStore: HistoryImportFixtureStorage()) }
+        catch { storageFailed = true }
     }
 
     var report: String {
         providers.map {
             "\($0.kind.rawValue)=\($0.writes),played=\($0.current.isPlayed),playback=\($0.playbackWrites),resume=\(Int($0.current.resumePosition ?? 0))"
-        }.joined(separator: ";") + ";trackers=\(trackerWrites);reads=\(trackerReads)"
+        }.joined(separator: ";") + ";trackers=\(trackerWrites)"
+            + (arguments.contains("--history-ongoing-sync")
+                ? ";sync=\(sync?.isEnabled ?? false);destinations=\(sync?.grant?.scope.accounts.map(\.accountID).sorted().joined(separator: ",") ?? "");storageFailed=\(storageFailed)"
+                : "")
+            + ";reads=\(trackerReads)"
     }
 
     func makeSession() -> TrackerHistoryImportSession {
+        let session = makeSession(scope: scope, allowed: { true })
+        if arguments.contains("--history-ongoing-sync") { session.ongoingSync = sync }
+        return session
+    }
+
+    private func makeSession(
+        scope: WatchMutationServerScope, allowed: @escaping @MainActor @Sendable () -> Bool
+    ) -> TrackerHistoryImportSession {
         return TrackerHistoryImportSession(
             scope: scope,
             destinations: providers.map {
@@ -103,7 +145,7 @@ private final class HistoryImportFixtureModel {
                 guard let provider = self.provider($0) else { throw AppError.serverUnreachable }
                 return provider
             },
-            isAuthorized: { self.authorized }
+            isAuthorized: { self.authorized && allowed() }
         )
     }
 
@@ -117,7 +159,7 @@ private final class HistoryImportFixtureModel {
             trackerID: "publicmetadb", connectionID: "fixture-connection",
             observations: [
                 .init(
-                    recordID: "watch", kind: .movie,
+                    recordID: "watch-\(newPlay)", kind: .movie,
                     identities: [.external(source: "tmdb", value: "550")],
                     fact: .watched(at: Date(timeIntervalSince1970: changed ? 1_700_000_001 : 1_700_000_000))
                 )
@@ -127,7 +169,21 @@ private final class HistoryImportFixtureModel {
     }
 
     private func requireScope(_ requested: WatchMutationServerScope) throws {
-        guard authorized, requested == scope else { throw WatchMutationServerScopeError.unavailable }
+        guard authorized, requested.profileID == scope.profileID,
+              Set(requested.accounts).isSubset(of: Set(scope.accounts)) else {
+            throw WatchMutationServerScopeError.unavailable
+        }
+    }
+
+    private final class HistoryImportFixtureStorage: SecureStoring, @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [String: String] = [:]
+        func setString(_ value: String, for key: String) throws {
+            lock.lock(); defer { lock.unlock() }; values[key] = value
+        }
+        func string(for key: String) -> String? { lock.lock(); defer { lock.unlock() }; return values[key] }
+        func readString(for key: String) throws -> String? { string(for: key) }
+        func removeValue(for key: String) throws { lock.lock(); defer { lock.unlock() }; values[key] = nil }
     }
 
     private func provider(_ accountID: String) -> (any MediaProvider)? {

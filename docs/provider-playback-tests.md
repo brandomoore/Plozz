@@ -271,6 +271,12 @@ The shared interaction suite covers cancellation and cleared selection on page
 reentry, independent Jellyfin/Plex target selection, zero tracker mirrors,
 connection revocation and changed tracker evidence during approval, concurrent
 server progress, and lost write replies verified by readback without repetition.
+The `--history-ongoing-sync` fixture additionally exercises separate server-user
+and watched-state consent, cancellation without a grant, enrollment without
+backfill, a newly observed play delivered only to the selected server, and
+revocation. Its device-local ledger uses isolated in-memory secure storage;
+restart, uncertain-target holds, storage failures and exact batch/snapshot limits
+are covered separately in `TrackerHistoryImportTests`.
 TV actions use the native remote focus system; mobile actions use taps and
 scrolling. Select the class within its corresponding UI-test target when running
 the existing build-for-testing/test-without-building workflow.

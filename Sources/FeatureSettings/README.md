@@ -49,6 +49,14 @@ rows; putting them together in one cell lets switch taps activate neighboring
 buttons. TV retains its native vertical focus layout. See
 [PublicMetaDBService](../PublicMetaDBService/README.md) for current
 coverage, history fidelity, and remaining integration work.
+
+PublicMetaDB's separate **Ongoing sync** page requires explicit server-user and
+category selections after that review. Cancelling grants nothing; enabling
+captures existing evidence without backfilling it. **Sync now** and revocation
+use the same controller on TV and mobile. Pushing the page retains the reviewed
+snapshot as evidence, not the previous page's ephemeral write authorization;
+returning to comparison creates a fresh session.
+
 Trakt and Simkl use this same comparison and approval page. Their percentage-only resume
 records are displayed without conversion to server seconds, and episode imports
 require corroborated episode and parent IDs rather than inferred numbering.

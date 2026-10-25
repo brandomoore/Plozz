@@ -4,6 +4,10 @@ import Foundation
 public extension PublicMetaDBService {
     var historyConnectionID: String? { phase == .connected ? connectionID?.uuidString : nil }
 
+    var historySyncIdentity: TrackerHistorySyncIdentity? {
+        historyConnectionID.map { .init(trackerID: "publicmetadb", connectionID: $0) }
+    }
+
     func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
         guard historyConnectionID == expectedConnectionID else { throw TrackerHistoryError.scopeChanged }
         let snapshot = try await historySnapshot()

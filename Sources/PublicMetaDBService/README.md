@@ -119,6 +119,42 @@ fabricated into individual plays. Server plugins can forward server changes;
 the confirmation discloses that consequence. Read-before-write checks cannot
 provide a server-side transaction against a concurrent third-party writer.
 
+### Ongoing imports
+
+After reviewing a comparison, users can separately enable **Ongoing sync** for
+selected server users and watched state and/or resume points. Consent is local
+to this device, profile, and saved-key connection. Connecting, one-time imports,
+playback reporting, and cross-server watch sync do not grant it. Replacing the
+key requires new consent; changing the profile or server user fences delivery.
+
+Enrollment rechecks the reviewed complete snapshot and stores its one-way
+evidence fingerprints without importing that existing history. Foreground and
+completed-index events may check new evidence, with a fifteen-minute minimum
+between automatic attempts; **Sync now** is explicit. Each attempt is bounded
+to sixty seconds and twenty-five new records per selected server user. There
+is no polling timer or work after leaving the foreground. This currently applies
+to PublicMetaDB, whose saved credential has a durable connection UUID; existing
+trackers keep their explicit comparison/import behavior.
+
+Only non-destructive, conflict-free changes use the existing guarded outbox.
+Current playback is deferred. Changed server state, incompatible or ambiguous
+matches, unsupported facts, removals, and unconfirmed deliveries require review.
+In particular, a later resume change that conflicts with an existing server
+resume is not silently advanced. Imported flags do not recreate play dates or
+counts, and imports never dispatch another tracker scrobble.
+
+The durable ledger retains the initial source fingerprints and per-server-user
+receipts, not a replacement watch-history database. Attempts and target holds
+are saved before writes. Missing/corrupt records or failed persistence block
+delivery; pending receipts survive restart without automatic replay. Fresh
+server readback can confirm a lost reply during that attempt. Even a new source
+record cannot bypass an uncertain target hold; reviewing and re-enabling consent
+establishes a new baseline. Baseline/receipt buckets stay under the durable
+store's per-record limit, and snapshots over 100,000 observations are rejected
+for ongoing imports rather than truncated. One-time comparison remains separate.
+Local receipts cannot provide exactly-once delivery across other devices or
+third-party server writers.
+
 ## Explicit server-history export
 
 The TV and mobile account pages offer a separate **Export server history** flow.
@@ -360,8 +396,9 @@ server-to-PublicMetaDB history export are also implemented. Trakt, Simkl, WeTrak
 and AniList/MyAnimeList feed the shared history comparison, with provider-specific evidence
 and limitations rather than invented progress.
 The existing TV Last.fm integration offers separate read-only listening history.
-Ongoing history sync, broader historical backfill and authentic end-to-end
-acceptance remain unfinished.
+PublicMetaDB also supports separately approved, device-local ongoing imports
+with the limits described above. Ongoing imports for the other trackers,
+broader historical backfill and authentic end-to-end acceptance remain unfinished.
 Do not describe this foundation as full end-user support.
 
 Contract/lifecycle/transport fixtures and guarded-import tests are automated.

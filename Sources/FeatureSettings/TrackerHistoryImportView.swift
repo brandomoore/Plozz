@@ -23,7 +23,7 @@ public struct TrackerHistoryImportView: View {
             }
         }
         .task {
-            guard session == nil else { return }
+            guard session == nil || session?.plan == nil else { return }
             let created = makeSession()
             session = created
             await created.compare()
@@ -105,6 +105,13 @@ private struct TrackerHistoryComparisonContent: View {
             operation = Task { await session.compare() }
         }
         .disabled(session.isBusy)
+        if let sync = session.ongoingSync {
+            NavigationLink("Ongoing sync") {
+                TrackerHistorySyncSettingsView(session: session, sync: sync)
+            }
+            .disabled(session.isBusy)
+            .accessibilityIdentifier("tracker-history.ongoing-sync")
+        }
     }
 }
 
@@ -220,7 +227,17 @@ private struct TrackerHistoryComparisonStatus: View {
 struct TrackerHistoryImportFailure: View {
     let error: any Error
     var body: some View {
-        if let failure = error as? TrackerHistoryError {
+        if let failure = error as? TrackerHistorySyncError {
+            switch failure {
+            case .unavailable: Text("Ongoing sync is unavailable.")
+            case .permissionChanged: Text("Sync permission changed. Review it again.")
+            case .historyTooLarge: Text("History is too large for ongoing sync. Use a one-time import.")
+            case .timedOut: Text("Sync timed out. Unconfirmed changes need review.")
+            case .revocationFailed: Text("Sync is paused. Turn it off again before closing the app.")
+            }
+        } else if error is DurableLocalStateError {
+            Text("Sync records could not be saved or read. Review sync before retrying.")
+        } else if let failure = error as? TrackerHistoryError {
             switch failure {
             case .scopeChanged: Text("The profile, server user, or tracker connection changed. Close this page and compare again.")
             case .stalePreview: Text("Tracker or server history changed after the comparison. Compare again before applying changes.")

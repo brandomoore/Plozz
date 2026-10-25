@@ -727,9 +727,11 @@ private struct PlozziOSScenePhaseEffects: View {
     var body: some View {
         Color.clear
             .onChange(of: scenePhase, initial: true) { _, newPhase in
+                appModel.accountsProviders.setTrackerHistorySyncForeground(newPhase == .active)
                 if newPhase == .active {
                     appModel.accountsProviders.retryUnconfirmedCredentials()
                     appModel.syncCloudOnForeground()
+                    Task { await appModel.synchronizeTrackerHistoryOnForeground() }
                 }
             }
     }

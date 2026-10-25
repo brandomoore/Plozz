@@ -606,7 +606,7 @@ public final class AppState {
 
     private func makeTrackerHistoryImport(_ tracker: any TrackerHistoryReading) -> TrackerHistoryImportSession {
         return accountsProviders.makeTrackerHistoryImportSession(
-            tracker: tracker, reconciler: watchReconciler,
+            tracker: tracker, reconciler: watchReconciler, syncStore: durableLocalStateStore,
             index: { [identityIndex] in identityIndex.identitySnapshotStore.current },
             isPlexIdentityResolved: { [weak self] in self?.plexHomeUsers.hasResolvedWatchMutationIdentity(forAccountID: $0) ?? false },
             isAuthorized: { [weak self] in
@@ -614,6 +614,18 @@ public final class AppState {
                 return self.isActiveProfileAuthorized
             }
         )
+    }
+
+    func synchronizeTrackerHistoryOnForeground() async {
+        guard accountsProviders.trackerHistorySyncIsForeground,
+              trackersAreScopedToActiveProfile, isActiveProfileAuthorized else { return }
+        let session = makePublicMetaDBHistoryImport()
+        defer { session.cancel() }
+        guard let grant = session.ongoingSync?.grant,
+              Set(grant.scope.accounts.map(\.accountID)).isSubset(
+                of: identityIndex.identitySnapshotStore.current.indexedAccountIDs
+              ) else { return }
+        await session.ongoingSync?.synchronize(manual: false)
     }
 
     /// The outbox's not-yet-confirmed mutations, so the Home Continue Watching row
@@ -787,6 +799,7 @@ public final class AppState {
         onPublish: { [weak self] in
             self?.drainWatchOutbox()
             self?.universalWatchlistIdentityDidUpdate()
+            Task { await self?.synchronizeTrackerHistoryOnForeground() }
         }
     )
 
@@ -2819,6 +2832,7 @@ public final class AppState {
         guard generation == trackerProfileGeneration else { return }
         trackerScopedNamespace = .some(ns)
         trackerScopedIdentityGeneration = identityGeneration
+        Task { await self.synchronizeTrackerHistoryOnForeground() }
         // Refill what the reset emptied, now that the trackers are actually
         // scoped to this viewer. Last, not inline with the reset: an index warmed
         // before the re-scope finished would be built for whoever was watching a

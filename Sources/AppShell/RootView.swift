@@ -993,6 +993,8 @@ public struct RootView: View {
             ScenePhaseEffects(
                 onBackgroundWorkAllowed: { allowed in
                     appState.mediaShare.setBackgroundWorkAllowed(allowed)
+                    appState.accountsProviders.setTrackerHistorySyncForeground(allowed)
+                    if allowed { Task { await appState.synchronizeTrackerHistoryOnForeground() } }
                 },
                 onBecameActive: {
                     appState.retryUnconfirmedCredentials()

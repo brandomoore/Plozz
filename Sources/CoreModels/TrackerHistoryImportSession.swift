@@ -4,7 +4,12 @@ import Observation
 @MainActor
 public protocol TrackerHistoryReading: AnyObject, Sendable {
     var historyConnectionID: String? { get }
+    var historySyncIdentity: TrackerHistorySyncIdentity? { get }
     func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot
+}
+
+public extension TrackerHistoryReading {
+    var historySyncIdentity: TrackerHistorySyncIdentity? { nil }
 }
 
 /// One visible comparison/approval session. Closing it revokes undelivered work.
@@ -28,6 +33,7 @@ public final class TrackerHistoryImportSession {
     public private(set) var outcomes: [UUID: Outcome] = [:]
     public let destinations: [Destination]
     public let scope: WatchMutationServerScope
+    public var ongoingSync: TrackerHistorySyncController?
     private let reconciler: WatchStateReconciler
     private let readSnapshot: @MainActor @Sendable () async throws -> TrackerHistorySnapshot
     private let index: @MainActor @Sendable () -> IdentityIndexSnapshot
@@ -71,7 +77,9 @@ public final class TrackerHistoryImportSession {
         guard isOpen, self.generation == generation, isAuthorized() else { throw TrackerHistoryError.scopeChanged }
     }
 
-    public func compare() async {
+    public func compare(
+        selectingRecords: (@MainActor (TrackerHistorySnapshot) throws -> Set<String>)? = nil
+    ) async {
         guard !isBusy else { return }
         generation = UUID()
         let current = generation
@@ -85,7 +93,8 @@ public final class TrackerHistoryImportSession {
             try requireCurrent(current)
             let snapshot = try await readSnapshot()
             try requireCurrent(current)
-            let candidates = try await candidates(for: snapshot, generation: current)
+            let selectedRecords = try selectingRecords?(snapshot)
+            let candidates = try await candidates(for: snapshot, recordIDs: selectedRecords, generation: current)
             try requireCurrent(current)
             plan = TrackerHistoryImportPlan(snapshot: snapshot, serverScope: scope, candidates: candidates)
         } catch {
@@ -93,6 +102,21 @@ public final class TrackerHistoryImportSession {
                 self.error = error
             }
         }
+    }
+
+    public func snapshotAfterReview(_ reviewed: TrackerHistorySnapshot) async throws -> TrackerHistorySnapshot {
+        let current = generation
+        try requireCurrent(current)
+        guard !isBusy else { throw TrackerHistoryError.stalePreview }
+        let snapshot = try await readSnapshot()
+        try requireCurrent(current)
+        guard snapshot.trackerID == reviewed.trackerID,
+              snapshot.connectionID == reviewed.connectionID,
+              Dictionary(uniqueKeysWithValues: snapshot.observations.map { ($0.recordID, $0) })
+                == Dictionary(uniqueKeysWithValues: reviewed.observations.map { ($0.recordID, $0) }) else {
+            throw TrackerHistoryError.stalePreview
+        }
+        return snapshot
     }
 
     public func apply(
@@ -199,14 +223,14 @@ public final class TrackerHistoryImportSession {
     }
 
     private func candidates(
-        for snapshot: TrackerHistorySnapshot, generation: UUID
+        for snapshot: TrackerHistorySnapshot, recordIDs: Set<String>?, generation: UUID
     ) async throws -> [TrackerServerHistoryCandidate] {
         let snapshotIndex = index()
         let permitted = Set(scope.accounts.map(\.accountID))
         guard permitted.isSubset(of: snapshotIndex.indexedAccountIDs) else { throw TrackerHistoryError.incompleteSnapshot }
         var targets: Set<WatchMutationTarget> = []
         var walkedSeries: Set<WatchMutationTarget> = []
-        for observation in snapshot.observations {
+        for observation in snapshot.observations where recordIDs.map({ $0.contains(observation.recordID) }) ?? true {
             try requireCurrent(generation)
             for source in snapshotIndex.sources(forIdentities: observation.identities, kind: observation.kind)
             where permitted.contains(source.accountID) {

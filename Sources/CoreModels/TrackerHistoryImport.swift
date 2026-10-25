@@ -6,7 +6,7 @@ public enum TrackerHistoryError: Error, Equatable, Sendable {
 
 /// Read evidence, not an authoritative history store or a request to change a server.
 public struct TrackerHistoryObservation: Equatable, Sendable {
-    public enum Fact: Equatable, Hashable, Sendable {
+    public enum Fact: Encodable, Equatable, Hashable, Sendable {
         case watched(at: Date?)
         case explicitlyUnwatched
         case resume(seconds: TimeInterval, runtime: TimeInterval, updatedAt: Date?)

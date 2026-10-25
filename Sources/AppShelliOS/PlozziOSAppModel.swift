@@ -549,6 +549,7 @@ final class PlozziOSAppModel {
         onPublish: { [weak self] in
             self?.drainWatchOutbox()
             self?.universalWatchlistIdentityDidUpdate()
+            Task { await self?.synchronizeTrackerHistoryOnForeground() }
         }
     )
 
@@ -1801,6 +1802,7 @@ final class PlozziOSAppModel {
         await malService.setActiveProfile(namespace: namespace)
         guard generation == trackerProfileGeneration else { return }
         trackerScopedNamespace = .some(namespace)
+        Task { await self.synchronizeTrackerHistoryOnForeground() }
     }
 
     private func makeLibraryActionFeedback(
@@ -1853,7 +1855,7 @@ final class PlozziOSAppModel {
 
     private func makeTrackerHistoryImport(_ tracker: any TrackerHistoryReading) -> TrackerHistoryImportSession {
         return accountsProviders.makeTrackerHistoryImportSession(
-            tracker: tracker, reconciler: watchReconciler,
+            tracker: tracker, reconciler: watchReconciler, syncStore: durableLocalStateStore,
             index: { [identityIndex] in identityIndex.identitySnapshotStore.current },
             isPlexIdentityResolved: { [weak self] in self?.plexHomeUsers.hasResolvedWatchMutationIdentity(forAccountID: $0) ?? false },
             isAuthorized: { [weak self] in
@@ -1861,6 +1863,18 @@ final class PlozziOSAppModel {
                 return self.isActiveProfileAuthorized
             }
         )
+    }
+
+    func synchronizeTrackerHistoryOnForeground() async {
+        guard accountsProviders.trackerHistorySyncIsForeground,
+              trackersAreScopedToActiveProfile, isActiveProfileAuthorized else { return }
+        let session = makePublicMetaDBHistoryImport()
+        defer { session.cancel() }
+        guard let grant = session.ongoingSync?.grant,
+              Set(grant.scope.accounts.map(\.accountID)).isSubset(
+                of: identityIndex.identitySnapshotStore.current.indexedAccountIDs
+              ) else { return }
+        await session.ongoingSync?.synchronize(manual: false)
     }
 
     /// Kept by the presentation across teardown/episode handoff, never rebuilt
