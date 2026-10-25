@@ -21,7 +21,7 @@ public enum AniListConnectionPhase: Equatable, Sendable {
 /// App-level façade for the AniList integration.
 @MainActor
 @Observable
-public final class AniListService {
+public final class AniListService: TrackerHistoryReading {
     public private(set) var phase: AniListConnectionPhase
 
     @ObservationIgnored public let scrobbler: any AniListScrobbling
@@ -57,6 +57,23 @@ public final class AniListService {
     }
 
     public var isConfigured: Bool { config.isConfigured }
+
+    public var historyConnectionID: String? {
+        guard case .connected = phase, let token = tokenStore.load()?.accessToken else { return nil }
+        return "\(profileGeneration)#\(WatchlistReconciliationIdentity.credential(token))"
+    }
+
+    public func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try Task.checkCancellation()
+            guard self?.historyConnectionID == expectedConnectionID else { throw TrackerHistoryError.scopeChanged }
+        }
+        try current()
+        guard let access = tokenStore.load()?.accessToken else { throw AppError.unauthorized }
+        return try await AniListClient(config: config, http: http).historySnapshot(
+            accessToken: access, connectionID: expectedConnectionID, validateScope: { try await current() }
+        )
+    }
 
     public func setActiveProfile(namespace: String?) async {
         profileGeneration &+= 1

@@ -24,6 +24,24 @@ public struct TMDbDiscoveryProvider: HeroDiscoveryProviding {
 
     public var isEnabled: Bool { access.isEnabled }
 
+    public func title(tmdbID: Int, kind: MediaItemKind, language: String) async throws -> MediaItem {
+        try Task.checkCancellation()
+        guard tmdbID > 0, kind == .movie || kind == .series else { throw AppError.invalidResponse }
+        guard isEnabled else { throw AppError.notFound }
+        let language = language.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "_", with: "-")
+        let record = try await http.decode(
+            Record.self,
+            from: makeRequest(
+                path: "3/\(kind == .movie ? "movie" : "tv")/\(tmdbID)",
+                query: [.init(name: "language", value: language.isEmpty ? "en" : language)]
+            )
+        )
+        guard record.id == tmdbID, let item = record.mediaItem(kind: kind) else {
+            throw MetadataDiscoveryHTTPError.invalidResponse
+        }
+        return item
+    }
+
     public var cacheIdentifier: String {
         let configuration: String
         switch access {
@@ -180,9 +198,10 @@ public struct TMDbDiscoveryProvider: HeroDiscoveryProviding {
         let backdrop_path: String?
         let release_date: String?
         let first_air_date: String?
+        let success: Bool?
 
         func mediaItem(kind: MediaItemKind) -> MediaItem? {
-            guard let id, id > 0, adult != true,
+            guard success != false, let id, id > 0, adult != true,
                   media_type == nil || media_type == (kind == .movie ? "movie" : "tv"),
                   let title = Self.text(kind == .movie ? title : name) else { return nil }
             let date = kind == .movie ? release_date : first_air_date

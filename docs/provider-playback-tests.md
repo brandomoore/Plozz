@@ -167,3 +167,91 @@ Encrypted or byte-range playlists are not silently accepted by the audio-byte
 probe. If a server returns one, the audio evidence fails explicitly until that
 format is supported. Never replace that failure with a successful HTTP status or
 a source metadata assertion.
+
+## PublicMetaDB tracking acceptance: independent preflight
+
+`tools/tracker-acceptance-preflight.py` is the read-only baseline component of
+tracking acceptance, **not an app-driven round-trip test**. It does not launch
+Plozz, play media, approve an import, change watch history, or clean up records.
+Its output always contains `acceptanceVerified: false`. The app-driven playback,
+confirmation/cancellation, coexistence and relaunch scenarios must still run
+before tracking acceptance can be claimed.
+
+Unlike the generated playback fixture above, tracking requires genuine
+catalog-identified titles lawfully available on dedicated test server users.
+Never associate generated media with a public TMDB title just to pass tracking.
+Use a private mode-600 configuration outside the repository, with each token
+already stored in the explicitly named Keychain item:
+
+```json
+{
+  "schemaVersion": 1,
+  "publicMetaDB": {
+    "tokenKeychainService": "PlozzTrackingTests",
+    "tokenKeychainAccount": "publicmetadb",
+    "ownedTestListID": "REPLACE_WITH_DEDICATED_OWNED_LIST_ID"
+  },
+  "servers": {
+    "jellyfin": {
+      "baseURL": "https://YOUR_TEST_SERVER",
+      "serverID": "REPLACE_WITH_SERVER_ID",
+      "userID": "REPLACE_WITH_DEDICATED_USER_ID",
+      "tokenKeychainService": "PlozzTrackingTests",
+      "tokenKeychainAccount": "jellyfin"
+    }
+  },
+  "titles": [
+    {
+      "caseID": "movie",
+      "provider": "jellyfin",
+      "itemID": "REPLACE_WITH_REAL_ITEM_ID",
+      "content": { "tmdb_id": 550, "media_type": "movie" }
+    }
+  ]
+}
+```
+
+The catalog ID above is only a format example: replace it with the actual
+allowlisted title's ID. One to ten exact movie/episode cases are supported.
+For an episode, use the **series** TMDB ID, `media_type: "tv"`, integer `season`
+and `episode`, plus the case's `seriesItemID` and `episodeOrder: "tmdb"`.
+Only set that ordering declaration after confirming the server's coordinates
+match TMDB; the reader cannot establish edition/order equivalence from a title.
+Combined Jellyfin/Emby episode ranges are refused.
+
+Readers currently cover Jellyfin, Emby and Plex; selecting another backend fails
+explicitly rather than silently narrowing coverage. Each configured provider
+must have at least one case. Plex `userID` is the numeric ID returned by the
+dedicated user's `https://plex.tv/api/v2/user`, encoded as a string. The same
+dedicated user token must authorize that identity read and the server read;
+the preflight never switches Plex Home identities, refreshes tokens or uses an
+administrator token as a substitute. Missing API access is a failed preflight.
+
+PublicMetaDB does not document an account-profile endpoint. The reader verifies
+the key by finding the exact dedicated test list in the complete owned-list
+response, then records only a SHA-256 credential fingerprint for later scope
+comparison. It does not infer ownership from a display name or contributor.
+Provisioning that list and credential remains a separate authorized action.
+
+```sh
+python3 tools/tracker-acceptance-preflight.py \
+  --config /absolute/private/tracking-tests.json \
+  --output /absolute/private/run/baseline.json
+python3 -m unittest tools.tests.test_tracker_acceptance_preflight
+```
+
+The output directory must already exist, be owned by the current user and mode
+700. Output is a new mode-600 file and is never overwritten. The reader uses
+GET only, refuses redirects, does not retry failures or 429s, disables response
+caching, and bounds page counts, bytes, request count and the entire invocation
+to 120 seconds. No key is written to disk or passed on argv.
+
+Independent reads verify exact server/user/catalog identities before recording
+only allowlisted watched/resume state. Missing, changing, duplicate, unfiltered
+or truncated tracker pages fail. Explicitly unknown watch dates remain unknown;
+absent Plex state fields remain absent rather than becoming an invented reset.
+Baselines are observations over an interval, not atomic snapshots or permission
+to overwrite concurrent activity. They contain private viewing state and are
+not public reports. This command performs no mutations; later live scenarios
+still require explicit account/title mutation approval and exact run-owned
+cleanup evidence.

@@ -548,6 +548,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSPresentationTests
+      - path: Tests/FocusIntegrationTests/PublicMetaDBCatalogHostedTests.swift
       - path: Tests/FeatureLiveTVTests/LiveTVGuideRowLayoutTests.swift
       - path: Tests/CoreModelsTests/SettingsHydrationTests.swift
       - path: Tests/CoreModelsTests/ProfileLockPresentationTests.swift

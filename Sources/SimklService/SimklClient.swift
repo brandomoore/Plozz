@@ -71,6 +71,37 @@ struct SimklClient: Sendable {
 
     // MARK: - History (scrobble)
 
+    func historyResponse(path: String, query: [URLQueryItem] = [], accessToken: String) async throws -> Data {
+        guard let clientID = config.clientID, !clientID.isEmpty else { throw AppError.unauthorized }
+        var requestHeaders = headers(accessToken: accessToken)
+        requestHeaders["User-Agent"] = "Plozz/1.0"
+        let endpoint = Endpoint(
+            method: .get, path: path,
+            queryItems: query + [
+                .init(name: "client_id", value: clientID),
+                .init(name: "app-name", value: "Plozz"),
+                .init(name: "app-version", value: "1.0")
+            ],
+            headers: requestHeaders
+        )
+        let (data, response) = try await http.sendRaw(endpoint, baseURL: baseURL)
+        switch response.statusCode {
+        case 200:
+            guard data.count <= 64 * 1_024 * 1_024 else { throw TrackerHistoryError.incompleteSnapshot }
+            return data
+        case 401, 403: throw AppError.unauthorized
+        case 429:
+            throw AppError.rateLimited(retryAfter: response.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init))
+        case 400:
+            struct Failure: Decodable { let error: String }
+            if let failure = try? JSONDecoder().decode(Failure.self, from: data), failure.error == "max_items" {
+                throw SimklHistoryReadError.maxItems
+            }
+            throw AppError.invalidResponse
+        default: throw AppError.invalidResponse
+        }
+    }
+
     /// `POST /sync/history` — adds items to the user's watch history.
     /// Simkl deduplicates server-side; posting the same episode twice is harmless.
     func addToHistory(body: SimklHistoryBody, accessToken: String) async throws {

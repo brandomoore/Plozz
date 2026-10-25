@@ -5,7 +5,7 @@ import Foundation
 enum WetrakrRequestOperation: String, Sendable, CaseIterable {
     case deviceCode, devicePoll, exchange, refreshToken, logout, status
     case start, pause, stop, activities, planningBaseline, planningJournal
-    case planningWrite, historyWrite, other
+    case planningWrite, historyWrite, historyRead, other
 
     init(path: String) {
         switch path {
@@ -160,7 +160,8 @@ struct WetrakrClient: Sendable {
 
     func send(
         _ endpoint: Endpoint, accessToken: String? = nil,
-        operation: WetrakrRequestOperation? = nil
+        operation: WetrakrRequestOperation? = nil,
+        validateScope: @escaping @Sendable () async throws -> Void = {}
     ) async throws -> (Data, HTTPURLResponse) {
         guard let clientID = config.clientID else { throw WetrakrError.clientRejected }
         var endpoint = endpoint
@@ -172,6 +173,7 @@ struct WetrakrClient: Sendable {
         let request = endpoint
         let operation = operation ?? WetrakrRequestOperation(path: request.path)
         return try await gate.run(clientID: clientID, accessToken: accessToken, request: operation) {
+            try await validateScope()
             let (data, response) = try await http.sendRaw(request, baseURL: config.apiBaseURL)
             let error = response.statusCode >= 400
                 ? try? JSONDecoder().decode(ErrorResponse.self, from: data) : nil
@@ -179,6 +181,7 @@ struct WetrakrClient: Sendable {
                 response, code: error?.error, clientID: clientID,
                 accessToken: accessToken, request: operation
             )
+            try await validateScope()
             if (200...299).contains(response.statusCode) { return (data, response) }
             if request.path == "/oauth/token" {
                 PlozzLog.networking.error("WeTrakr authorization-code exchange rejected: HTTP \(response.statusCode)")

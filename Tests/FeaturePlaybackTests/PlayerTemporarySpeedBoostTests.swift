@@ -9,6 +9,33 @@ import UIKit
 
 @MainActor
 final class PlayerTemporarySpeedBoostTests: XCTestCase {
+    func testCommunityJumpUsesNormalSeekAndExpiresWhenPlaybackStopsForBothProviders() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            let (model, engine, _) = makeModel(kind: kind)
+            let source = TimestampTestSource()
+            XCTAssertFalse(model.canBrowseCommunityTimestamps)
+            await model.load()
+            let browser = model.makeCommunityTimestampBrowser(source: source)
+            let initialTime = engine.currentTime
+            let serverMarkers = model.controls.skipSegments.segments
+            let chapters = model.controls.infoCard.chapters
+            await browser.load(includeHighlights: false)
+            XCTAssertEqual(engine.currentTime, initialTime)
+            XCTAssertEqual(model.controls.skipSegments.segments, serverMarkers)
+            XCTAssertEqual(model.controls.infoCard.chapters, chapters)
+            XCTAssertTrue(browser.seek(source.entry, toEnd: true))
+            for _ in 0..<100 {
+                if engine.currentTime == source.entry.end { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertEqual(engine.currentTime, source.entry.end)
+            await model.stop()
+            XCTAssertFalse(browser.isCurrent)
+            XCTAssertFalse(browser.seek(source.entry, toEnd: false))
+            XCTAssertEqual(engine.currentTime, source.entry.end)
+        }
+    }
+
     func testHoldRestoresSelectedSpeedWithoutPersistingForBothProviders() async {
         for kind in [ProviderKind.jellyfin, .plex] {
             for selected in [1.0, 1.5] {

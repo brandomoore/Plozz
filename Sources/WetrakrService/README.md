@@ -84,6 +84,36 @@ accepted without relaxing callback-address, state, or authorization-code checks.
 
 API contract: <https://api.wetrakr.com/>.
 
+## Reviewed server-history comparison
+
+The connected account page on both platforms offers **Compare with server
+history**. Connecting or opening Settings does not import anything. The shared
+review session owns exact server-user selection, explicit per-title approval,
+fresh-state checks and the existing watch-mutation outbox.
+
+The read-only adapter walks compact movie and episode play-history and playing
+lists with opaque `X-Pagination-Next` cursors, never page numbers. Each list must
+exhaust its cursor and match a stable `X-Pagination-Item-Count`; missing totals,
+repeated records/cursors, changed activity or incomplete pages reject the whole
+comparison. Reads are bounded to 5,000 rows and 8 MiB per response, 100 requests
+and 100,000 records per list. All requests use the existing quota gate and check
+the captured profile/grant before dispatch and after response. Token refresh
+uses the shared coordinator, not a separate credential path.
+
+An in-memory watched baseline is reused only for the same connection and an
+unchanged activity stamp. Current playing lists are always refreshed. Changed
+activity requires another complete compact walk; this is an explicit comparison,
+not a polling task or permission for ongoing sync.
+
+Individual play IDs preserve rewatches; `watched_at_unknown` remains an unknown
+date rather than importing its placeholder. Episodes require their own and their
+parent's matching catalog IDs plus exact coordinates; missing parent IDs never
+become an inferred episode match. Paused progress with a supplied runtime uses
+the documented percentage/runtime conversion, and the shared importer requires
+the server runtime to match within one second. Active playback, missing runtimes
+and zero/100-percent boundaries remain informational percentages, never clears
+or completion events. A deleted or missing play does not unwatch server media.
+
 ## Request budget and diagnostics
 
 Account-status reads are single-flight and cache a successful result for five

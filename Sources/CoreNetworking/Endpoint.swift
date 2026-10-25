@@ -27,6 +27,10 @@ public struct Endpoint: Sendable {
     public var redirectPolicy: RedirectPolicy
     /// Preserve proof that a one-time mutation never reached HTTP transmission.
     public var reportsUndeliveredRequests: Bool = false
+    /// Personal tracker routes can contain viewing identities even after token redaction.
+    public var redactsURLForLogging: Bool = false
+    /// Stop receiving before an untrusted response exceeds this byte budget.
+    public var maximumResponseBytes: Int?
 
     public init(
         method: HTTPMethod = .get,

@@ -4,6 +4,12 @@ Aether-primary playback coordination, engine-agnostic playback surface, resume
 reporting back to the server, caption style rules, trickplay scrubbing,
 and the diagnostics overlay.
 
+The optional tracker-playback callback carries actual engine-clock evidence at
+bounded checkpoints and final stop, independently of server progress reports.
+It retains one viewing identity across engine/request recovery, ignores metadata
+runtime as evidence, and honors ordinary-watch suppression. App composition
+captures profile, server viewer and opt-in tracker consent before playback.
+
 ## Responsibility
 
 Automatic on-demand subtitle selection applies the profile's **SDH subtitles**
@@ -272,6 +278,26 @@ Double-tap skip, speed, and unavailable-level feedback are Plozz components
 using native media glass and SF Symbols, not stock AVKit HUDs. They share the
 transport's foreground pairing: light ink on native media glass in either theme,
 theme-aware ink on the reduced-glass fallback.
+
+## Manual community timestamps
+
+Connected PublicMetaDB accounts can browse community timestamps from the existing
+TV Playback menu and mobile options menu. Browsing is on demand, read-only, and
+does not enable playback reporting or automatic skipping. Highlights are fetched
+only after a separate spoiler toggle.
+
+The shared browser preserves individual contributions, source-release labels and
+attribution. A timestamp must fit the current finite runtime, but that alone does
+not verify release compatibility. Each start/end jump therefore needs explicit
+confirmation and uses the normal seek coordinator; server markers and chapters
+are never replaced. Jumping directly to the runtime's end is unavailable. The
+confirmation explains that normal progress reporting can follow a seek.
+
+Reads and selections are fenced by the active key/profile connection and player
+load generation. Stop, reload, background recovery, cancellation and changed
+runtime prevent stale selections. A failed lookup remains an error rather than
+a successful empty list. No automatic PublicMetaDB fallback is enabled without
+the missing upstream file/release compatibility evidence.
 
 ## Skip-marker timeline
 

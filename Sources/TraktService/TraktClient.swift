@@ -280,9 +280,56 @@ struct TraktClient: Sendable {
         try validateWatchlistStatus(response, idempotentMutation: true)
     }
 
-    private func watchlistGET<T: Decodable & TraktWatchlistIdentifiable>(
+    func historySnapshot(
+        accessToken: String, connectionID: String,
+        validateScope: @escaping @Sendable () async throws -> Void
+    ) async throws -> TrackerHistorySnapshot {
+        let before = try await historyActivity(accessToken: accessToken, validateScope: validateScope)
+        let watches: [TraktHistoryRecord] = try await paginatedGET(
+            path: "/users/me/history", accessToken: accessToken,
+            requiresCompleteEvidence: true, validateScope: validateScope
+        )
+        let resumes: [TraktHistoryRecord] = try await paginatedGET(
+            path: "/sync/playback", accessToken: accessToken,
+            requiresCompleteEvidence: true, validateScope: validateScope
+        )
+        let after = try await historyActivity(accessToken: accessToken, validateScope: validateScope)
+        guard before == after else { throw TrackerHistoryError.incompleteSnapshot }
+        return try TrackerHistorySnapshot(
+            trackerID: "trakt", connectionID: connectionID,
+            observations: watches.map { try $0.observation(playback: false) }
+                + resumes.map { try $0.observation(playback: true) },
+            expectedCount: watches.count + resumes.count
+        )
+    }
+
+    private func historyActivity(
+        accessToken: String, validateScope: @Sendable () async throws -> Void
+    ) async throws -> TraktHistoryActivity {
+        try Task.checkCancellation()
+        try await validateScope()
+        let endpoint = Endpoint(method: .get, path: "/sync/last_activities", headers: headers(accessToken: accessToken))
+        let (data, response) = try await http.sendRaw(endpoint, baseURL: baseURL)
+        try Task.checkCancellation()
+        try await validateScope()
+        guard response.statusCode == 200 else { throw oauthError(data: data, response: response) }
+        let activity: TraktHistoryActivity
+        do { activity = try JSONDecoder().decode(TraktHistoryActivity.self, from: data) }
+        catch { throw AppError.decoding }
+        try activity.validate()
+        return activity
+    }
+
+    private func watchlistGET<T: Decodable & TraktPageIdentifiable>(
         path: String,
         accessToken: String
+    ) async throws -> [T] {
+        try await paginatedGET(path: path, accessToken: accessToken, requiresCompleteEvidence: false, validateScope: {})
+    }
+
+    private func paginatedGET<T: Decodable & TraktPageIdentifiable>(
+        path: String, accessToken: String, requiresCompleteEvidence: Bool,
+        validateScope: @Sendable () async throws -> Void
     ) async throws -> [T] {
         let limit = 100
         let maximumPages = 1_000
@@ -292,6 +339,8 @@ struct TraktClient: Sendable {
         var expectedItemCount: Int?
         var expectedPageCount: Int?
         while page <= maximumPages {
+            try Task.checkCancellation()
+            try await validateScope()
             let endpoint = Endpoint(
                 method: .get,
                 path: path,
@@ -305,12 +354,34 @@ struct TraktClient: Sendable {
                 endpoint,
                 baseURL: baseURL
             )
-            try validateWatchlistStatus(response, idempotentMutation: false)
+            try Task.checkCancellation()
+            try await validateScope()
+            if requiresCompleteEvidence {
+                guard response.statusCode == 200 else { throw oauthError(data: data, response: response) }
+            } else {
+                try validateWatchlistStatus(response, idempotentMutation: false)
+            }
             let entries: [T]
             do {
                 entries = try JSONDecoder.plozz.decode([T].self, from: data)
             } catch {
                 throw AppError.decoding
+            }
+            if requiresCompleteEvidence {
+                guard response.value(forHTTPHeaderField: "X-Pagination-Page").flatMap(Int.init) == page,
+                      response.value(forHTTPHeaderField: "X-Pagination-Limit").flatMap(Int.init) == limit,
+                      let count = response.value(forHTTPHeaderField: "X-Pagination-Item-Count").flatMap(Int.init),
+                      let pages = response.value(forHTTPHeaderField: "X-Pagination-Page-Count").flatMap(Int.init),
+                      (0...(limit * maximumPages)).contains(count),
+                      expectedItemCount == nil || expectedItemCount == count,
+                      expectedPageCount == nil || expectedPageCount == pages,
+                      (count == 0 && page == 1 && (pages == 0 || pages == 1))
+                        || (count > 0 && pages == (count + limit - 1) / limit && page <= pages),
+                      entries.count == min(limit, max(0, count - (page - 1) * limit)),
+                      Set(entries.map(\.id)).count == entries.count,
+                      entries.allSatisfy({ !seenIDs.contains($0.id) }) else {
+                    throw TrackerHistoryError.incompleteSnapshot
+                }
             }
             for entry in entries {
                 guard seenIDs.insert(entry.id).inserted else {
@@ -364,10 +435,11 @@ struct TraktClient: Sendable {
             }
             page += 1
         }
+        if requiresCompleteEvidence { throw TrackerHistoryError.incompleteSnapshot }
         throw WatchlistDestinationError.transient
     }
 
-    private static func parseTimestamp(_ value: String) -> Date? {
+    static func parseTimestamp(_ value: String) -> Date? {
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let date = fractional.date(from: value) { return date }
@@ -404,9 +476,10 @@ struct TraktClient: Sendable {
 
 }
 
-private protocol TraktWatchlistIdentifiable {
+private protocol TraktPageIdentifiable {
     var id: Int { get }
 }
 
-extension TraktWatchlistMovieEntry: TraktWatchlistIdentifiable {}
-extension TraktWatchlistShowEntry: TraktWatchlistIdentifiable {}
+extension TraktWatchlistMovieEntry: TraktPageIdentifiable {}
+extension TraktWatchlistShowEntry: TraktPageIdentifiable {}
+extension TraktHistoryRecord: TraktPageIdentifiable {}

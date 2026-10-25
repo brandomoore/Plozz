@@ -2,6 +2,23 @@ import XCTest
 @testable import CoreModels
 
 final class MediaItemActionCatalogTests: XCTestCase {
+    func testPublicMetaDBMenuActionRequiresConnectionAndSupportedMediaKind() {
+        for kind in [MediaItemKind.movie, .series, .season, .episode] {
+            let title = MediaItem(id: "title", title: "Title", kind: kind)
+            XCTAssertFalse(MediaItemActionCatalog.actions(for: title, supportsWatchState: false).contains(.managePublicMetaDB))
+            XCTAssertTrue(MediaItemActionCatalog.actions(
+                for: title, supportsWatchState: false, supportsPublicMetaDB: true
+            ).contains(.managePublicMetaDB))
+        }
+        let folder = MediaItem(id: "folder", title: "Folder", kind: .folder)
+        XCTAssertFalse(MediaItemActionCatalog.actions(
+            for: folder, supportsWatchState: false, supportsPublicMetaDB: true
+        ).contains(.managePublicMetaDB))
+        XCTAssertTrue(MediaItemAction.managePublicMetaDB.isPrimaryDetailAction)
+        XCTAssertFalse(MediaItemAction.managePublicMetaDB.isDestructive)
+        XCTAssertFalse(MediaItemAction.managePublicMetaDB.isNavigation)
+    }
+
     func testBrowseFilesRequiresAnExplicitRouteAndSurvivesPersistence() throws {
         for kind in [MediaItemKind.movie, .series, .season, .episode] {
             var title = MediaItem(id: "catalog:item", title: "Title", kind: kind)

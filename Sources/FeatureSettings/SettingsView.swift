@@ -7,6 +7,7 @@ import TraktService
 import SeerService
 import SimklService
 import WetrakrService
+import PublicMetaDBService
 import AniListService
 import MALService
 import LastFmService
@@ -73,6 +74,13 @@ public struct SettingsView: View {
     private let trakt: TraktService
     private let simkl: SimklService
     private let wetrakr: WetrakrService
+    private let publicMetaDB: PublicMetaDBService?
+    private let makePublicMetaDBHistoryImport: (@MainActor () -> TrackerHistoryImportSession)?
+    private let makeTraktHistoryImport: (@MainActor () -> TrackerHistoryImportSession)?
+    private let makeSimklHistoryImport: (@MainActor () -> TrackerHistoryImportSession)?
+    private let makeWetrakrHistoryImport: (@MainActor () -> TrackerHistoryImportSession)?
+    private let makeAniListHistoryImport: (@MainActor () -> TrackerHistoryImportSession)?
+    private let makeMALHistoryImport: (@MainActor () -> TrackerHistoryImportSession)?
     private let seer: SeerService
     private let anilist: AniListService
     private let mal: MALService
@@ -183,6 +191,13 @@ public struct SettingsView: View {
         trakt: TraktService,
         simkl: SimklService,
         wetrakr: WetrakrService,
+        publicMetaDB: PublicMetaDBService? = nil,
+        makePublicMetaDBHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil,
+        makeTraktHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil,
+        makeSimklHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil,
+        makeWetrakrHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil,
+        makeAniListHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil,
+        makeMALHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil,
         seer: SeerService,
         anilist: AniListService,
         mal: MALService,
@@ -253,6 +268,13 @@ public struct SettingsView: View {
         self.trakt = trakt
         self.simkl = simkl
         self.wetrakr = wetrakr
+        self.publicMetaDB = publicMetaDB
+        self.makePublicMetaDBHistoryImport = makePublicMetaDBHistoryImport
+        self.makeTraktHistoryImport = makeTraktHistoryImport
+        self.makeSimklHistoryImport = makeSimklHistoryImport
+        self.makeWetrakrHistoryImport = makeWetrakrHistoryImport
+        self.makeAniListHistoryImport = makeAniListHistoryImport
+        self.makeMALHistoryImport = makeMALHistoryImport
         self.seer = seer
         self.anilist = anilist
         self.mal = mal
@@ -1021,7 +1043,15 @@ public struct SettingsView: View {
         case .spoilers:
             SpoilersDetailView(spoilers: spoilers)
         case .integrations:
-            IntegrationsDetailView(trakt: trakt, simkl: simkl, wetrakr: wetrakr, anilist: anilist, mal: mal, lastfm: lastfm, playback: playback, serverCount: activeProfileServerCount)
+            IntegrationsDetailView(
+                trakt: trakt, simkl: simkl, wetrakr: wetrakr, publicMetaDB: publicMetaDB,
+                makePublicMetaDBHistoryImport: makePublicMetaDBHistoryImport,
+                makeTraktHistoryImport: makeTraktHistoryImport, makeSimklHistoryImport: makeSimklHistoryImport,
+                makeWetrakrHistoryImport: makeWetrakrHistoryImport,
+                makeAniListHistoryImport: makeAniListHistoryImport,
+                makeMALHistoryImport: makeMALHistoryImport,
+                anilist: anilist, mal: mal, lastfm: lastfm, playback: playback, serverCount: activeProfileServerCount
+            )
         case .metadata:
             if let metadataSettings {
                 MetadataSettingsDetailView(deps: metadataSettings, onOpenArtwork: navigation.openArtwork)

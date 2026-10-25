@@ -2125,10 +2125,15 @@ struct PlozziOSPlaybackSettingsView: View {
                         }
                     }
                 }
-                Toggle(
-                    "Sync watch state across servers",
-                    isOn: $model.settings.syncWatchAcrossServers
-                )
+                Toggle(isOn: $model.settings.syncWatchAcrossServers) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Sync across servers")
+                        Text("Keep watched status and playback progress in sync.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
 
             SettingsSectionGroup(LocalizedStringResource(

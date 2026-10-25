@@ -45,8 +45,11 @@ struct PlayerOptionsPanel: View {
     /// Space for the entire panel, after the host removes its top/bottom insets.
     /// Measured from that player's viewport, never the device's screen bounds.
     let maximumHeight: CGFloat
+    let player: PlayerViewModel?
 
     @Environment(\.locale) private var locale
+    @Environment(\.communityPlaybackTimestampSource) private var timestampSource
+    @State private var timestampBrowser: PlayerCommunityTimestampsModel?
 
     /// The panel body's measured natural height, driving the glass box's height.
     @State private var bodyHeight: CGFloat
@@ -64,7 +67,8 @@ struct PlayerOptionsPanel: View {
         playbackScreen: Binding<PlaybackScreen> = .constant(.options),
         videoZoom: PlayerVideoZoomModel? = nil,
         offersPlaybackSpeed: Bool = true,
-        audioScreen: Binding<AudioScreen> = .constant(.options)
+        audioScreen: Binding<AudioScreen> = .constant(.options),
+        player: PlayerViewModel? = nil
     ) {
         self.category = category
         self.model = model
@@ -81,6 +85,7 @@ struct PlayerOptionsPanel: View {
         self.backRequest = backRequest
         self.offersDualSubtitles = offersDualSubtitles
         self.maximumHeight = maximumHeight
+        self.player = player
         // Seed the box height from the last time this menu was open so it renders
         // in the measured (ScrollView) branch immediately — no pre-measure→measured
         // structural swap that would rebuild the rows and knock initial focus to
@@ -93,6 +98,7 @@ struct PlayerOptionsPanel: View {
 
     var body: some View {
         morphingPanel(for: category)
+            .plozzSheet(item: $timestampBrowser) { PlayerCommunityTimestampsView(model: $0) }
             .onAppear { reconcileSubtitleScreen() }
             #if os(tvOS)
             .onAppear {
@@ -457,7 +463,11 @@ struct PlayerOptionsPanel: View {
                 model: model, zoom: videoZoom, palette: palette, actions: actions,
                 screen: playbackScreen, focus: $focus,
                 offersPlaybackSpeed: offersPlaybackSpeed,
-                openScreen: openPlaybackScreen
+                openScreen: openPlaybackScreen,
+                onCommunityTimestamps: timestampSource != nil && player?.canBrowseCommunityTimestamps == true ? {
+                    guard let timestampSource, let player else { return }
+                    timestampBrowser = player.makeCommunityTimestampBrowser(source: timestampSource)
+                } : nil
             )
         case .sync: SyncPaneView(model: model, actions: actions, focus: $focus)
         // Card tabs render in the bottom card, never in the floating menu.

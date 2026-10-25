@@ -63,6 +63,9 @@ load-bearing.
   library ownership are applied afterward, never stored in the public-feed cache.
 - `MetadataDiscoveryHTTPClient` — identifying User-Agent, explicit HTTP/decode
   failures, bounded request admission, and response-size checks for discovery.
+- `TMDbDiscoveryProvider.title` — exact movie/show hydration using the same
+  authenticated transport and mapping as discovery, without recency filtering.
+  It verifies the returned identity and does not assert library availability.
 
 ## Community skip markers
 

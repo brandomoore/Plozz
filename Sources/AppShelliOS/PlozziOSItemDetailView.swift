@@ -1,6 +1,7 @@
 #if os(iOS)
 import AppRuntime
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureHomeCore
 import FeaturePlayback
@@ -14,7 +15,7 @@ import SwiftUI
 struct PlozziOSItemDetailView: View {
     @Environment(HomeViewModel.self) private var homeViewModel: HomeViewModel?
     let appModel: PlozziOSAppModel
-    let provider: any MediaProvider
+    let provider: (any MediaProvider)?
     let item: MediaItem
     let seerService: SeerService?
     let originSourceAccountID: String?
@@ -38,7 +39,7 @@ struct PlozziOSItemDetailView: View {
 
     init(
         appModel: PlozziOSAppModel,
-        provider: any MediaProvider,
+        provider: (any MediaProvider)?,
         item: MediaItem,
         seerService: SeerService? = nil,
         originSourceAccountID: String? = nil,
@@ -71,13 +72,13 @@ struct PlozziOSItemDetailView: View {
     private var detailBody: some View {
         if let collection = CollectionBrowseRoute(
             item: item,
-            fallbackAccountID: originSourceAccountID ?? provider.session.server.id
+            fallbackAccountID: originSourceAccountID ?? provider?.session.server.id
         ) {
             PlozziOSLibraryDestinationView(
                 appModel: appModel,
                 route: PlozziOSLibraryRoute(collection: collection)
             )
-        } else if let library = MediaFolderNavigation.library(
+        } else if let provider, let library = MediaFolderNavigation.library(
             for: item,
             providerKind: provider.kind,
             sourceAccountID: originSourceAccountID ?? item.sourceAccountID ?? provider.session.server.id
@@ -150,6 +151,7 @@ struct PlozziOSItemDetailView: View {
 
     private func resolveSeries() async {
         do {
+            guard let provider else { throw AppError.notFound }
             var contextItem = (try? await provider.item(id: item.id)) ?? item
             if contextItem.sourceAccountID == nil,
                let sourceAccountID = item.sourceAccountID {
@@ -223,7 +225,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     private let initialSeasonID: String?
     private let initialEpisode: MediaItem?
     private let playlistOrigin: VideoPlaylistPlaybackOrigin?
-    private let originProvider: any MediaProvider
+    private let originProvider: (any MediaProvider)?
     /// Whether the episode is this page's own subject rather than a season/series
     /// page's fronted child — see `showsEpisodeSubjectHero`.
     private let presentsEpisodeAsSubject: Bool
@@ -231,7 +233,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
 
     init(
         appModel: PlozziOSAppModel,
-        provider: any MediaProvider,
+        provider: (any MediaProvider)?,
         item: MediaItem,
         continueWatching: [MediaItem] = [],
         seerService: SeerService? = nil,
@@ -296,7 +298,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 loadSeasonEpisodeRoster: { [seer = appModel.seerService] item, number in
                     await seer.seasonEpisodeRoster(for: item, seasonNumber: number)
                 },
-                ratingsProvider: RatingsServiceFactory.make(),
+                ratingsProvider: appModel.ratingsProvider,
                 detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
                 sourceAccountID: selectedSource?.accountID ?? item.sourceAccountID,
                 originSourceAccountID: originSourceAccountID,
@@ -963,10 +965,15 @@ private struct PlozziOSCanonicalItemDetailView: View {
 
     private func play(_ item: MediaItem, fromBeginning: Bool = false) {
         let origin = playlistOrigin?.containsSelection(item) == true ? playlistOrigin : nil
-        let playlist = origin.map {
-            VideoPlaylistPlaybackContext(
-                origin: $0, provider: originProvider
-            )
+        let playlist: VideoPlaylistPlaybackContext?
+        if let origin {
+            guard let originProvider else {
+                PlozzLog.app.error("Playlist playback has no authorized source provider")
+                return
+            }
+            playlist = VideoPlaylistPlaybackContext(origin: origin, provider: originProvider)
+        } else {
+            playlist = nil
         }
         // A series can't be played directly (see `playbackTarget`), so resolve
         // its next-up episode first. Every other kind plays as-is.

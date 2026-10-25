@@ -16,13 +16,14 @@ public enum MALConnectionPhase: Equatable, Sendable {
 /// App-level façade for the MyAnimeList integration.
 @MainActor
 @Observable
-public final class MALService {
+public final class MALService: TrackerHistoryReading {
     public private(set) var phase: MALConnectionPhase
 
     @ObservationIgnored public let scrobbler: any MALScrobbling
 
     @ObservationIgnored private let config: MALConfig
     @ObservationIgnored private let auth: MALAuthService
+    @ObservationIgnored private let http: HTTPClient
     @ObservationIgnored private let tokenStore: MALTokenStoring
     @ObservationIgnored private var connectTask: Task<Void, Never>?
     @ObservationIgnored private var pendingSession: String?
@@ -36,6 +37,7 @@ public final class MALService {
     public init(config: MALConfig, http: HTTPClient = URLSessionHTTPClient(), tokenStore: MALTokenStoring) {
         self.config = config
         self.auth = MALAuthService(config: config, http: http)
+        self.http = http
         self.tokenStore = tokenStore
         let profileGeneration = MALProfileGeneration()
         self.profileGeneration = profileGeneration
@@ -61,6 +63,26 @@ public final class MALService {
     }
 
     public var isConfigured: Bool { config.isConfigured }
+
+    public var historyConnectionID: String? {
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return "\(profileGeneration.current)#\(tokens.stableAccountIdentity)"
+    }
+
+    public func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try Task.checkCancellation()
+            guard self?.historyConnectionID == expectedConnectionID else { throw TrackerHistoryError.scopeChanged }
+        }
+        try current()
+        let generation = profileGeneration.current
+        guard let tokens = tokenStore.load() else { throw AppError.unauthorized }
+        let access = try await validAccessToken(tokens, generation: generation)
+        try current()
+        return try await MALClient(config: config, http: http).historySnapshot(
+            accessToken: access, connectionID: expectedConnectionID, validateScope: { try await current() }
+        )
+    }
 
     public func setActiveProfile(namespace: String?) async {
         let generation = profileGeneration.advance {
@@ -182,12 +204,20 @@ public final class MALService {
         _ tokens: MALTokens,
         generation: UInt64
     ) async throws -> String {
+        try Task.checkCancellation()
+        guard generation == profileGeneration.current, tokenStore.load() == tokens else {
+            throw TrackerHistoryError.scopeChanged
+        }
         guard tokens.isExpired else { return tokens.accessToken }
         let refreshed = try await auth.refresh(tokens.refreshToken)
             .inheritingAccountIdentity(from: tokens)
-        guard profileGeneration.performIfCurrent(
+        try Task.checkCancellation()
+        guard try profileGeneration.performIfCurrent(
             generation,
-            operation: { try? tokenStore.save(refreshed) }
+            operation: {
+                guard tokenStore.load() == tokens else { throw TrackerHistoryError.scopeChanged }
+                try tokenStore.save(refreshed)
+            }
         ) else {
             throw CancellationError()
         }

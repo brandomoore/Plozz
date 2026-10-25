@@ -185,6 +185,86 @@ public final class AccountsProvidersModel {
         }
     }
 
+    public func makeTrackerHistoryImportSession(
+        tracker: any TrackerHistoryReading, reconciler: WatchStateReconciler,
+        index: @escaping @MainActor @Sendable () -> IdentityIndexSnapshot,
+        isPlexIdentityResolved: @escaping @MainActor @Sendable (String) -> Bool,
+        isAuthorized: @escaping @MainActor @Sendable () -> Bool
+    ) -> TrackerHistoryImportSession {
+        let connection = tracker.historyConnectionID
+        return makeTrackerHistoryImportSession(
+            reconciler: reconciler,
+            readSnapshot: {
+                guard let connection else { throw TrackerHistoryError.scopeChanged }
+                return try await tracker.historySnapshot(expectedConnectionID: connection)
+            },
+            index: index, isPlexIdentityResolved: isPlexIdentityResolved,
+            isAuthorized: {
+                isAuthorized() && connection != nil && tracker.historyConnectionID == connection
+            }
+        )
+    }
+
+    public func makeTrackerHistoryImportSession(
+        reconciler: WatchStateReconciler,
+        readSnapshot: @escaping @MainActor @Sendable () async throws -> TrackerHistorySnapshot,
+        index: @escaping @MainActor @Sendable () -> IdentityIndexSnapshot,
+        isPlexIdentityResolved: @escaping @MainActor @Sendable (String) -> Bool,
+        isAuthorized: @escaping @MainActor @Sendable () -> Bool
+    ) -> TrackerHistoryImportSession {
+        let scope = watchMutationServerScope
+        let destinations = scope.accounts.compactMap { identity -> TrackerHistoryImportSession.Destination? in
+            guard let account = accounts.first(where: { $0.id == identity.accountID }) else { return nil }
+            let homeName = profilesModel.activeProfile.homeUserBinding(forPlexAccount: account.id)?.name
+            return .init(id: account.id, serverName: account.server.name, userName: homeName ?? account.userName)
+        }
+        let current: @MainActor @Sendable () -> Bool = { [weak self] in
+            guard let self, isAuthorized(), self.watchMutationServerScope == scope else { return false }
+            return self.isCurrentWatchMutationServerScope(scope, isPlexIdentityResolved: isPlexIdentityResolved)
+        }
+        return TrackerHistoryImportSession(
+            scope: scope, destinations: destinations, reconciler: reconciler, readSnapshot: readSnapshot,
+            index: index,
+            resolveProvider: { [weak self] accountID in
+                guard let self, current(), scope.accounts.contains(where: { $0.accountID == accountID }),
+                      let provider = self.provider(forAccountID: accountID) else { throw TrackerHistoryError.scopeChanged }
+                return provider
+            },
+            isAuthorized: current
+        )
+    }
+
+    public func makeTrackerServerHistorySource(
+        reconciler: WatchStateReconciler,
+        isPlexIdentityResolved: @escaping @MainActor @Sendable (String) -> Bool,
+        isAuthorized: @escaping @MainActor @Sendable () -> Bool
+    ) -> TrackerServerHistorySource {
+        let scope = watchMutationServerScope
+        let authorizationID = liveTVAuthorizationID
+        let identities = scope.accounts.compactMap { identity -> TrackerHistoryImportSession.Destination? in
+            guard let account = accounts.first(where: { $0.id == identity.accountID }) else { return nil }
+            let homeName = profilesModel.activeProfile.homeUserBinding(forPlexAccount: account.id)?.name
+            return .init(id: account.id, serverName: account.server.name, userName: homeName ?? account.userName)
+        }
+        let current: @MainActor @Sendable () -> Bool = { [weak self] in
+            guard let self, isAuthorized(), self.watchMutationServerScope == scope,
+                  self.liveTVAuthorizationID == authorizationID else { return false }
+            return self.isCurrentWatchMutationServerScope(scope, isPlexIdentityResolved: isPlexIdentityResolved)
+        }
+        return TrackerServerHistorySource(
+            scope: scope, accounts: identities,
+            resolveProvider: { [weak self] accountID in
+                guard let self, current(), scope.accounts.contains(where: { $0.accountID == accountID }),
+                      let provider = self.provider(forAccountID: accountID) else { throw TrackerHistoryError.scopeChanged }
+                return provider
+            },
+            isAuthorized: current,
+            isPlaying: { accountID, itemID in
+                await reconciler.isLiveSession(accountID: accountID, itemID: itemID, serverScope: scope)
+            }
+        )
+    }
+
     public func isCurrentWatchMutationServerScope(
         _ scope: WatchMutationServerScope?,
         isPlexIdentityResolved: (String) -> Bool

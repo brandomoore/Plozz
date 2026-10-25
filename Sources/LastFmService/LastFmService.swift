@@ -28,12 +28,15 @@ public final class LastFmService {
 
     @ObservationIgnored private let config: LastFmConfig
     @ObservationIgnored private let auth: LastFmAuthService
+    @ObservationIgnored private let http: HTTPClient
     @ObservationIgnored private let tokenStore: LastFmTokenStoring
     @ObservationIgnored private var connectTask: Task<Void, Never>?
+    @ObservationIgnored private var historyGeneration: UInt64 = 0
 
     public init(config: LastFmConfig, http: HTTPClient = URLSessionHTTPClient(), tokenStore: LastFmTokenStoring) {
         self.config = config
         self.auth = LastFmAuthService(config: config, http: http)
+        self.http = http
         self.tokenStore = tokenStore
         if config.isConfigured {
             self.scrobbler = LastFmScrobbler(config: config, http: http, tokenStore: tokenStore)
@@ -46,7 +49,27 @@ public final class LastFmService {
 
     public var isConfigured: Bool { config.isConfigured }
 
+    public var historyConnectionID: String? {
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return "\(historyGeneration)#\(tokens.username)#\(WatchlistReconciliationIdentity.credential(tokens.sessionKey))"
+    }
+
+    public func listeningHistory(
+        page: Int, before: Int, expectedConnectionID: String
+    ) async throws -> LastFmListeningHistoryPage {
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try Task.checkCancellation()
+            guard self?.historyConnectionID == expectedConnectionID else { throw TrackerHistoryError.scopeChanged }
+        }
+        try current()
+        guard let tokens = tokenStore.load() else { throw TrackerHistoryError.scopeChanged }
+        return try await LastFmClient(config: config, http: http).listeningHistory(
+            username: tokens.username, page: page, before: before, validateScope: { try await current() }
+        )
+    }
+
     public func setActiveProfile(namespace: String?) async {
+        historyGeneration &+= 1
         connectTask?.cancel()
         connectTask = nil
         tokenStore.setNamespace(namespace)
@@ -65,6 +88,7 @@ public final class LastFmService {
 
     public func connect() {
         guard config.isConfigured, let apiKey = config.apiKey else { phase = .unavailable; return }
+        historyGeneration &+= 1
         connectTask?.cancel()
         connectTask = Task { [weak self] in
             guard let self else { return }
@@ -101,12 +125,14 @@ public final class LastFmService {
     }
 
     public func cancelConnect() {
+        historyGeneration &+= 1
         connectTask?.cancel()
         connectTask = nil
         phase = config.isConfigured ? .disconnected : .unavailable
     }
 
     public func disconnect() async {
+        historyGeneration &+= 1
         connectTask?.cancel()
         connectTask = nil
         try? tokenStore.clear()

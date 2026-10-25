@@ -35,6 +35,7 @@ public struct PlayerView: View {
     @State private var hdrTransition = HDRTransitionModel()
     @Environment(\.locale) private var locale
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
+    @Environment(\.communityPlaybackTimestampSource) private var timestampSource
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     /// The app-root window veil (injected by `RootView`). On HDR/DV exit the player
@@ -357,7 +358,7 @@ public struct PlayerView: View {
                         palette: themePalette,
                         actions: actions,
                         onExitToSurface: onExitToSurface
-                    ))
+                    ).environment(\.communityPlaybackTimestampSource, timestampSource))
                 },
                 makeSkipButton: { model, onSkip, onDismiss, onPlayPause in
                     AnyView(SkipSegmentButton(

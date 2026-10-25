@@ -1,6 +1,7 @@
 import Foundation
 import CoreModels
 import CoreNetworking
+import PublicMetaDBService
 
 /// App-level handler behind every card's press-and-hold menu.
 ///
@@ -15,6 +16,7 @@ import CoreNetworking
 @MainActor
 public final class MediaItemActionCoordinator: MediaItemActionHandling {
     private let providerResolver: (String?) -> (any MediaProvider)?
+    private let publicMetaDB: PublicMetaDBService?
     private let providerCapabilityResolver:
         (String?) -> (
             supportsWatchState: Bool,
@@ -135,6 +137,7 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
     private let makeWatchlistFailureFeedback: @MainActor () -> (@MainActor () -> Void)
 
     public init(
+        publicMetaDB: PublicMetaDBService? = nil,
         providerResolver: @escaping (String?) -> (any MediaProvider)?,
         providerCapabilityResolver: @escaping (String?) -> (
             supportsWatchState: Bool,
@@ -172,6 +175,7 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
         makeActionConfirmation: @escaping @MainActor () -> (@MainActor () -> Void) = { {} },
         makeWatchlistFailureFeedback: @escaping @MainActor () -> (@MainActor () -> Void) = { {} }
     ) {
+        self.publicMetaDB = publicMetaDB
         self.providerResolver = providerResolver
         self.makeActionConfirmation = makeActionConfirmation
         self.makeWatchlistFailureFeedback = makeWatchlistFailureFeedback
@@ -282,6 +286,7 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
                 ? cachedWatchlistMembership(item)
                 : nil,
             supportsMetadataRefresh: capabilities.supportsMetadataRefresh,
+            supportsPublicMetaDB: publicMetaDB?.phase == .connected,
             downloadState: isExternalDiscovery ? nil : downloadState(item),
             context: context
         )
@@ -308,6 +313,13 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
             performWatchlist(adding: action == .addToWatchlist, on: item)
         case .refreshMetadata:
             performRefresh(on: item)
+        case .managePublicMetaDB:
+            do {
+                guard let publicMetaDB else { throw PublicMetaDB.Failure.disconnected }
+                try publicMetaDB.presentContent(for: item)
+            } catch {
+                PlozzLog.app.error("PublicMetaDB title controls could not be opened")
+            }
         case .removeFromContinueWatching:
             performRemoveFromContinueWatching(on: item)
         case .startDownload, .pauseDownload, .resumeDownload, .removeDownload:

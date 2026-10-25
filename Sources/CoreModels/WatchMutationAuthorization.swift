@@ -55,9 +55,12 @@ public struct WatchMutationAuthorization: Codable, Hashable, Sendable {
     public let id: UUID
     private let capability: Capability?
 
-    init(validator: @escaping @Sendable () async -> Bool) {
+    init(
+        validator: @escaping @Sendable () async -> Bool,
+        sourcePrecondition: (@Sendable (any MediaProvider, WatchMutationTarget) async throws -> Void)? = nil
+    ) {
         id = UUID()
-        capability = Capability(validator: validator)
+        capability = Capability(validator: validator, sourcePrecondition: sourcePrecondition)
     }
 
     private enum CodingKeys: String, CodingKey { case version, id }
@@ -97,11 +100,29 @@ public struct WatchMutationAuthorization: Codable, Hashable, Sendable {
 
     func retire() { capability?.retire() }
 
+    func requireSourcePrecondition(provider: any MediaProvider, target: WatchMutationTarget) async throws {
+        guard let capability else { throw WatchMutationAuthorizationError.capabilityUnavailable }
+        try await capability.requireSourcePrecondition(provider: provider, target: target)
+    }
+
     private final class Capability: @unchecked Sendable {
         private let lock = NSLock()
         private var validator: (@Sendable () async -> Bool)?
+        private let sourcePrecondition: (@Sendable (any MediaProvider, WatchMutationTarget) async throws -> Void)?
 
-        init(validator: @escaping @Sendable () async -> Bool) { self.validator = validator }
+        init(
+            validator: @escaping @Sendable () async -> Bool,
+            sourcePrecondition: (@Sendable (any MediaProvider, WatchMutationTarget) async throws -> Void)?
+        ) {
+            self.validator = validator
+            self.sourcePrecondition = sourcePrecondition
+        }
+
+        func requireSourcePrecondition(provider: any MediaProvider, target: WatchMutationTarget) async throws {
+            guard lock.withLock({ validator != nil }) else { throw WatchMutationAuthorizationError.denied }
+            try await sourcePrecondition?(provider, target)
+            guard lock.withLock({ validator != nil }) else { throw WatchMutationAuthorizationError.denied }
+        }
 
         func allows() async -> Bool {
             guard let check = lock.withLock({ validator }) else { return false }
@@ -122,18 +143,29 @@ public struct WatchMutationAuthorization: Codable, Hashable, Sendable {
 public struct WatchMutationDeliveryAuthorization: Sendable {
     @TaskLocal public static var current: WatchMutationDeliveryAuthorization?
     public let serverScope: WatchMutationServerScope?
+    private let sourceRequirement: WatchMutationAuthorization?
     private let validator: @Sendable () async throws -> Void
 
     init(
         serverScope: WatchMutationServerScope? = nil,
+        sourceRequirement: WatchMutationAuthorization? = nil,
         validator: @escaping @Sendable () async throws -> Void
     ) {
         self.serverScope = serverScope
+        self.sourceRequirement = sourceRequirement
         self.validator = validator
     }
 
     public static func check() async throws {
         if let current { try await current.validator() }
+    }
+
+    /// Check read-before-write conditions only at dispatch, not after the write
+    /// changed the very baseline being compared. Ordinary outbox writes are unchanged.
+    public static func checkSourcePrecondition(provider: any MediaProvider, target: WatchMutationTarget) async throws {
+        try await check()
+        try await current?.sourceRequirement?.requireSourcePrecondition(provider: provider, target: target)
+        try await check()
     }
 
     /// Nonthrowing read-only expansion APIs represent denial as inconclusive;

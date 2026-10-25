@@ -64,6 +64,7 @@ public enum MediaItemActionCatalog {
         supportsWatchlist: Bool = false,
         isWatchlisted: Bool? = nil,
         supportsMetadataRefresh: Bool = false,
+        supportsPublicMetaDB: Bool = false,
         downloadState: MediaItemDownloadState?? = nil,
         context: MediaItemActionContext = .none
     ) -> [MediaItemAction] {
@@ -106,6 +107,9 @@ public enum MediaItemActionCatalog {
         if item.kind != .folder, let containerID = item.fileBrowserContainerID,
            !containerID.isEmpty {
             actions.append(.browseFiles)
+        }
+        if supportsPublicMetaDB, [.movie, .series, .season, .episode].contains(item.kind) {
+            actions.append(.managePublicMetaDB)
         }
 
         // Refresh Metadata: a server-side maintenance task, offered last for any

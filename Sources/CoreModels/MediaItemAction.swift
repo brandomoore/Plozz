@@ -55,6 +55,8 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
     case goToEpisode
     /// Inspect the original files without replacing folders with catalog titles.
     case browseFiles
+    /// Opens explicit tracker controls without changing media-server state.
+    case managePublicMetaDB
     /// Add this item to the user's Watchlist (Jellyfin Favorites / Plex
     /// Watchlist). Offered only when the owning provider conforms to
     /// `WatchlistProviding`.
@@ -136,6 +138,8 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
                 "Browse Files",
                 comment: "Action opening the original files belonging to a media title."
             )
+        case .managePublicMetaDB:
+            return LocalizedStringResource("PublicMetaDB", comment: "Open this title's PublicMetaDB history and contributions.")
         case .addToWatchlist:
             return LocalizedStringResource(
                 "mediaAction.addToWatchlist",
@@ -197,6 +201,7 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
         case .goToMovie: return "film"
         case .goToEpisode: return "play.rectangle"
         case .browseFiles: return "folder"
+        case .managePublicMetaDB: return "person.crop.rectangle.stack"
         case .addToWatchlist: return "bookmark"
         case .removeFromWatchlist: return "bookmark.slash"
         case .refreshMetadata: return "arrow.clockwise"
@@ -237,7 +242,7 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
         case .markWatched, .markUnwatched, .markWatchedUpToHere,
              .addToWatchlist, .removeFromWatchlist, .refreshMetadata,
              .startDownload, .pauseDownload, .resumeDownload, .removeDownload,
-             .removeFromContinueWatching:
+             .removeFromContinueWatching, .managePublicMetaDB:
             return false
         }
     }
@@ -251,7 +256,7 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
         case .goToSeason, .browseFiles, .markWatched, .markUnwatched, .markWatchedUpToHere,
              .addToWatchlist, .removeFromWatchlist, .refreshMetadata,
              .startDownload, .pauseDownload, .resumeDownload, .removeDownload,
-             .removeFromContinueWatching:
+             .removeFromContinueWatching, .managePublicMetaDB:
             return false
         }
     }
@@ -289,7 +294,7 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
     public var isPrimaryDetailAction: Bool {
         switch self {
         case .markWatched, .markUnwatched,
-             .addToWatchlist, .removeFromWatchlist:
+             .addToWatchlist, .removeFromWatchlist, .managePublicMetaDB:
             return true
         case .markWatchedUpToHere, .goToSeason, .goToMovie, .goToEpisode, .browseFiles,
              .refreshMetadata, .startDownload, .pauseDownload,

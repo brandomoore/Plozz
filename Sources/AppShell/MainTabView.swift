@@ -1116,6 +1116,13 @@ struct MainTabView: View {
                 trakt: trakt,
                 simkl: simkl,
                 wetrakr: wetrakr,
+                publicMetaDB: syncServices.publicMetaDB,
+                makePublicMetaDBHistoryImport: syncServices.makePublicMetaDBHistoryImport,
+                makeTraktHistoryImport: syncServices.makeTraktHistoryImport,
+                makeSimklHistoryImport: syncServices.makeSimklHistoryImport,
+                makeWetrakrHistoryImport: syncServices.makeWetrakrHistoryImport,
+                makeAniListHistoryImport: syncServices.makeAniListHistoryImport,
+                makeMALHistoryImport: syncServices.makeMALHistoryImport,
                 seer: seer,
                 anilist: anilist,
                 mal: mal,
@@ -2048,6 +2055,11 @@ struct MainTabView: View {
             )
         }
         .mediaItemActionHandler(mediaItemActionHandler)
+        .publicMetaDBContentPresentation(service: syncServices.publicMetaDB)
+        .onChange(of: syncServices.publicMetaDB?.catalogNavigation?.id) { _, _ in
+            guard let item = syncServices.publicMetaDB?.consumeCatalogNavigation() else { return }
+            openTitleFromLiveTV(item)
+        }
     }
 
     @MainActor

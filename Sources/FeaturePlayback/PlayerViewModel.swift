@@ -629,6 +629,7 @@ public final class PlayerViewModel {
         onPlaybackStopped: @escaping @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void = { _, _ in },
         onPlaybackStarted: @escaping @Sendable () -> Void = {},
         onPlaybackCheckpoint: @escaping @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void = { _, _ in },
+        onTrackerPlayback: @escaping @Sendable (TrackerPlaybackSample) -> Void = { _ in },
         checkpointInterval: TimeInterval = 60,
         adoptedResolved: PrefetchedPlayback? = nil,
         nowPlayingPublisher: (any NowPlayingPublishing)? = nil,
@@ -711,7 +712,8 @@ public final class PlayerViewModel {
             itemID: itemID,
             scrobbler: scrobbler,
             checkpointInterval: checkpointInterval,
-            onCheckpoint: onPlaybackCheckpoint
+            onCheckpoint: onPlaybackCheckpoint,
+            onTrackerPlayback: onTrackerPlayback
         )
         self.nextEpisodeCoordinator = NextEpisodeCoordinator(
             host: self,
@@ -2165,6 +2167,26 @@ public final class PlayerViewModel {
     }
 
     // MARK: - Transport
+
+    public var canBrowseCommunityTimestamps: Bool {
+        !didStop && phase == .ready && request.map { $0.item.kind == .movie || $0.item.kind == .episode } == true
+    }
+
+    public func makeCommunityTimestampBrowser(
+        source: any CommunityPlaybackTimestampProviding
+    ) -> PlayerCommunityTimestampsModel {
+        let generation = dynamicRangeLoadGeneration
+        return PlayerCommunityTimestampsModel(
+            item: request?.item, source: source,
+            duration: { [weak self] in self?.controls.duration ?? 0 },
+            isCurrent: { [weak self] in
+                guard let self else { return false }
+                return self.canBrowseCommunityTimestamps && self.dynamicRangeLoadGeneration == generation
+                    && !self.isInBackground && !self.isRecoveringAfterForeground
+            },
+            requestSeek: { [weak self] in self?.requestSeek(to: $0, origin: "community-timestamp") }
+        )
+    }
 
     public func seekToChapter(_ chapter: MediaChapter) {
         guard !didStop, controls.infoCard.chapters.contains(chapter),

@@ -76,6 +76,22 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
         }
     }
 
+    func testPublicMetaDBPairingCodeDecodesAtItsTVSizeInBothThemes() async throws {
+        let publicKey = "BHzrb5wTQBgmoH_IGUWBKCINTu05sE33fikGVZg5pdK-Xd6Lzu_Z1Pbhax7RQRVQeXt8WPbrwy0rt6jX6A4r86U"
+        let payload = "https://plozz.app/publicmetadb#code=ABCDEFGH&key=\(publicKey)"
+        for scheme in [ColorScheme.light, .dark] {
+            for scale in [CGFloat(1), CGFloat(2)] {
+                _ = try await renderCodes(
+                    SettingsQRCode(string: payload, centerMark: nil)
+                        .frame(width: 260, height: 260),
+                    scheme: scheme, name: "publicmetadb-pairing-\(scheme)-\(scale)",
+                    expectedURLs: [payload], minimumCodeWidth: 200 * scale,
+                    renderScale: scale
+                )
+            }
+        }
+    }
+
     func testAboutCodesDecodeSideBySideInBothThemes() async throws {
         for (asset, aspect) in [("DiscordLockup", 635.303 / 96), ("GitHubLockup", 416.0 / 95)] {
             let image = try XCTUnwrap(UIImage(named: asset))
@@ -133,7 +149,8 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
         name: String,
         expectedURLs: Set<String> = [AppLinks.discord.absoluteString, AppLinks.repository.absoluteString],
         minimumCodeWidth: CGFloat = 115,
-        requiresDiscordFocus: Bool = false
+        requiresDiscordFocus: Bool = false,
+        renderScale: CGFloat = 1
     ) async throws -> [CIQRCodeFeature] {
         let deadline = Date().addingTimeInterval(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -186,7 +203,7 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
             window.layoutIfNeeded()
         }
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
+        format.scale = renderScale
         let detector = try XCTUnwrap(CIDetector(
             ofType: CIDetectorTypeQRCode,
             context: CIContext(options: [.useSoftwareRenderer: true]),

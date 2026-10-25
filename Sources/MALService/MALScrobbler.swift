@@ -35,12 +35,12 @@ final class MALProfileGeneration: @unchecked Sendable {
 
     func performIfCurrent(
         _ generation: UInt64,
-        operation: () -> Void
-    ) -> Bool {
+        operation: () throws -> Void
+    ) rethrows -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard generation == storage else { return false }
-        operation()
+        try operation()
         return true
     }
 

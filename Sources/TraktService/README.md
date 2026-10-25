@@ -116,7 +116,34 @@ retain their Retry-After deadline across relaunch.
 Provider-supported idempotency would be needed to eliminate that failure window.
 Older app versions must be upgraded to honor coordination.
 
-History sync is outbound; server resume state remains server-owned.
+Playback reporting remains outbound; server resume state remains server-owned.
+Settings also offers an explicit, one-time history comparison on TV and mobile.
+It reads every page of `/users/me/history` and `/sync/playback`, requiring stable
+pagination totals, exact page sizes and unique record IDs. The relevant
+`/sync/last_activities` timestamps must remain unchanged across the read. Missing,
+capped, malformed or changing results fail the comparison instead of becoming a
+partial import. Reads reuse coordinated OAuth refresh and retain profile/grant
+fences before and after each request.
+
+The shared importer previews exact server users and requires selected-row
+confirmation before writing through the existing watch outbox. It rechecks server
+state and authorization, excludes current playback, and never enables ongoing
+sync or creates a new tracker scrobble. Rewatches collapse to a watched-state
+change; individual play dates/counts are not written to media servers.
+Episode imports require matching episode and parent IDs in the same namespace,
+with the episode ID distinct from the parent's and a single matching episode
+coordinate. Trakt coordinates alone do not establish a server's episode order.
+Unconfirmed identities remain unmatched. Trakt percentages remain visible,
+non-importable observations: catalog runtimes do not establish the played file's
+runtime, and neither 0% nor 100% implies an explicit clear or completed watch.
+
+API shape references: Trakt's
+[history client](https://github.com/trakt/trakt-rippple/blob/282a49fa049bcf325e126b4932e6c8d91d580860/Rippple/Trakt%20API/TraktAPIService.swift)
+and [sync contracts](https://github.com/trakt/trakt-api/blob/dab7797de4e30bdd3fa0f98c0f8b5d8509845991/projects/api/src/contracts/sync/index.ts).
+Playback pagination is explicitly requested; a headerless response is not a
+complete snapshot. These contracts and fixture checks are not authenticated
+round-trip acceptance evidence.
+
 External-player callbacks use the same durable watch outbox as in-app playback.
 Returning before completion sends `/scrobble/pause` with the reported percentage
 for Trakt's paused playback data, as well as saving server resume state. This is

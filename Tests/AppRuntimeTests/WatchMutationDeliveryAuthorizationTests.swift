@@ -158,10 +158,83 @@ final class WatchMutationDeliveryAuthorizationTests: XCTestCase {
         let writes = await provider.writes
         XCTAssertEqual(writes, ["played"])
     }
+
+    func testDispatchPreconditionRunsOnceBeforeWriteNotDuringPostWriteChecks() async {
+        let scope = DeliveryScope()
+        let provider = DeliveryProvider()
+        let reconciler = WatchStateReconciler(
+            store: InMemoryWatchMutationStore(), applier: applier(provider: provider)
+        )
+        let intent = mutation().requiringAuthorization(
+            owner: scope,
+            sourcePrecondition: { owner, _, target in
+                await MainActor.run { owner.preconditions += 1 }
+                let writes = await provider.writes
+                guard writes.isEmpty, target.itemID == "item" else { throw TrackerHistoryError.stalePreview }
+            },
+            validator: { owner in await MainActor.run { owner.consent } }
+        ).requiringAuthorization { true }
+        _ = await reconciler.enqueue(intent)
+        await reconciler.drain()
+        XCTAssertEqual(scope.preconditions, 1)
+        let writes = await provider.writes
+        let pending = await reconciler.pendingCount
+        XCTAssertEqual(writes, ["played"])
+        XCTAssertEqual(pending, 0)
+    }
+
+    func testRejectedBaselineStopsBothPlayedAndResumeWriters() async {
+        for resumeOnly in [false, true] {
+            let scope = DeliveryScope()
+            let provider = DeliveryProvider()
+            let reconciler = WatchStateReconciler(
+                store: InMemoryWatchMutationStore(), applier: applier(provider: provider)
+            )
+            var intent = mutation()
+            if resumeOnly { intent.played = nil; intent.resumePosition = 120 }
+            intent = intent.requiringAuthorization(
+                owner: scope, sourcePrecondition: { _, _, _ in throw TrackerHistoryError.stalePreview },
+                validator: { _ in true }
+            )
+            _ = await reconciler.enqueue(intent)
+            await reconciler.drain()
+            let writes = await provider.writes
+            XCTAssertTrue(writes.isEmpty)
+        }
+    }
+
+    func testVerificationBarrierWaitsForAnAlreadyRunningDrain() async {
+        let provider = DeliveryProvider()
+        let gate = DeliveryResolutionGate()
+        let reconciler = WatchStateReconciler(
+            store: InMemoryWatchMutationStore(), applier: applier(provider: provider, gate: gate)
+        )
+        _ = await reconciler.enqueue(mutation())
+        let drain = Task { await reconciler.drain() }
+        await gate.waitUntilPaused()
+        let started = expectation(description: "Verification waiter started")
+        let prematureReadback = expectation(description: "Readback cannot start before the writer resumes")
+        prematureReadback.isInverted = true
+        let permission = DeliveryScope()
+        let waiter = Task {
+            started.fulfill()
+            await reconciler.drainAndWait()
+            if permission.consent { prematureReadback.fulfill() }
+            return await provider.writes
+        }
+        await fulfillment(of: [started], timeout: 2)
+        await fulfillment(of: [prematureReadback], timeout: 0.1)
+        permission.consent = false
+        await gate.open()
+        await drain.value
+        let writesAtReadback = await waiter.value
+        XCTAssertEqual(writesAtReadback, ["played"])
+    }
 }
 
 @MainActor
 private final class DeliveryScope {
+    var preconditions = 0
     var consent = true
     var profile = "profile"
     var identity = "identity"

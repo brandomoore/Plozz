@@ -45,5 +45,6 @@ struct WatchOutboxBridge: Sendable {
     /// The shell fences this lookup to the launch profile/server identity. The
     /// main-actor read keeps validation and snapshot selection atomic with a switch.
     var identitySources: (@MainActor @Sendable (MediaItem) -> [MediaSourceRef])? = nil
+    var trackerPlayback: @MainActor @Sendable (TrackerPlaybackSample) -> Void = { _ in }
 }
 #endif

@@ -29,6 +29,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     private let applyWetrakr: @Sendable (TraktScrobbleIntent, Date, String, String) async throws -> Void
     private let applyAniList: @Sendable (TraktScrobbleIntent) async throws -> Void
     private let applyMAL: @Sendable (TraktScrobbleIntent) async throws -> Void
+    private let applyTrackerPlayback: @Sendable (TrackerPlaybackDelivery) async throws -> Void
     /// The **active** `Account.id`s (the set the identity index warms and that
     /// Home/Search fan out over), so episode twin expansion knows which *other*
     /// servers to probe and identity expansion can conclude once they're all
@@ -90,6 +91,9 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         applyWetrakr: @escaping @Sendable (TraktScrobbleIntent, Date, String, String) async throws -> Void = { _, _, _, _ in
             throw AppError.invalidResponse
         },
+        applyTrackerPlayback: @escaping @Sendable (TrackerPlaybackDelivery) async throws -> Void = { _ in
+            throw TrackerPlaybackDeliveryError.unsupportedIdentity
+        },
         allAccountIDs: @escaping @Sendable () async -> [String] = { [] },
         indexedSeriesSources: @escaping @Sendable (MediaItem) -> [IndexedSource] = { _ in [] },
         indexedSources: @escaping @Sendable ([MediaIdentity], MediaItemKind?, String?, Int?, Set<String>) -> [IndexedSource] = { _, _, _, _, _ in [] },
@@ -106,6 +110,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         self.applyWetrakr = applyWetrakr
         self.applyAniList = applyAniList
         self.applyMAL = applyMAL
+        self.applyTrackerPlayback = applyTrackerPlayback
         self.allAccountIDs = allAccountIDs
         self.indexedSeriesSources = indexedSeriesSources
         self.indexedSources = indexedSources
@@ -116,6 +121,12 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
 
     public func requireServerScope(_ scope: WatchMutationServerScope) async throws {
         try await validateServerScope(scope)
+    }
+
+    public func reportTrackerPlayback(_ delivery: TrackerPlaybackDelivery) async throws {
+        guard await isActive() else { throw WatchMutationServerScopeError.unavailable }
+        try await validateServerScope(delivery.serverScope)
+        try await applyTrackerPlayback(delivery)
     }
 
     private func scopedProvider(for accountID: String) async -> (any MediaProvider)? {
@@ -139,6 +150,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         }
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
+        try await WatchMutationDeliveryAuthorization.checkSourcePrecondition(provider: provider, target: target)
         // A locally-stored played state (the SMB share) is ordered last-writer-wins
         // by the play's real time, so prefer the timestamped write — otherwise a
         // late-draining stale played write, stamped at drain time, would clobber a
@@ -181,6 +193,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
             FanoutDiagnostics.emit("write.setResume acct=\(target.accountID) item=\(target.itemID) -> provider=\(provider.kind.rawValue) NOT ResumeStateWriting (no write, treated success)")
             return
         }
+        try await WatchMutationDeliveryAuthorization.checkSourcePrecondition(provider: provider, target: target)
         // Clearing a position and dismissing a title are different acts, and the
         // difference is worth having: a server that can dismiss hides the title
         // while REMEMBERING where the viewer got to, so playing it again a year

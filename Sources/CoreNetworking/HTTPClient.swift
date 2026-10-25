@@ -224,9 +224,8 @@ public struct URLSessionHTTPClient: HTTPClient {
         if endpoint.reportsUndeliveredRequests { request.cachePolicy = .reloadIgnoringLocalCacheData }
         let delivery = endpoint.reportsUndeliveredRequests ? HTTPRequestDeliveryEvidence() : nil
 
-        PlozzLog.networking.debug(
-            "→ \(endpoint.method.rawValue) \(PlozzLog.redact(url: request.url ?? baseURL))"
-        )
+        let requestLabel = endpoint.redactsURLForLogging ? "<private>" : PlozzLog.redact(url: request.url ?? baseURL)
+        PlozzLog.networking.debug("→ \(endpoint.method.rawValue) \(requestLabel)")
 
         let data: Data
         let response: URLResponse
@@ -234,15 +233,26 @@ public struct URLSessionHTTPClient: HTTPClient {
             .serverRequest, provider: PerformanceDiagnostics.provider
         )
         do {
+            let delegate: (any URLSessionTaskDelegate)?
             switch endpoint.redirectPolicy {
             case .follow:
-                if let delivery {
-                    (data, response) = try await session.data(for: request, delegate: HTTPDeliveryTaskDelegate(evidence: delivery))
-                } else {
-                    (data, response) = try await session.data(for: request)
-                }
+                delegate = delivery.map { HTTPDeliveryTaskDelegate(evidence: $0) }
             case .sameOrigin:
-                let delegate = SameOriginHTTPRedirectDelegate(url: request.url ?? baseURL, evidence: delivery)
+                delegate = SameOriginHTTPRedirectDelegate(url: request.url ?? baseURL, evidence: delivery)
+            }
+            if let limit = endpoint.maximumResponseBytes {
+                guard limit > 0 else { throw AppError.invalidResponse }
+                let (bytes, received) = try await session.bytes(for: request, delegate: delegate)
+                defer { bytes.task.cancel() }
+                guard received.expectedContentLength <= limit else { throw URLError(.dataLengthExceedsMaximum) }
+                var receivedData = Data()
+                for try await byte in bytes {
+                    guard receivedData.count < limit else { throw URLError(.dataLengthExceedsMaximum) }
+                    receivedData.append(byte)
+                }
+                try Task.checkCancellation()
+                (data, response) = (receivedData, received)
+            } else {
                 (data, response) = try await session.data(for: request, delegate: delegate)
             }
         } catch let urlError as URLError {
@@ -278,7 +288,7 @@ public struct URLSessionHTTPClient: HTTPClient {
 
         PlozzLog.networking.debug(
             "← \(http.statusCode) \(endpoint.method.rawValue) "
-                + "\(PlozzLog.redact(url: request.url ?? baseURL)) bytes=\(data.count)"
+                + "\(requestLabel) bytes=\(data.count)"
         )
         return (data, http)
     }
@@ -308,6 +318,8 @@ public struct URLSessionHTTPClient: HTTPClient {
         switch error.code {
         case .cancelled:
             return .cancelled
+        case .dataLengthExceedsMaximum:
+            return .invalidResponse
         case .notConnectedToInternet, .cannotConnectToHost, .cannotFindHost,
              .timedOut, .networkConnectionLost, .dnsLookupFailed, .secureConnectionFailed:
             return .serverUnreachable

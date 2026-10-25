@@ -1,10 +1,89 @@
 # FeatureSettings
 
+PublicMetaDB catalog labels load verified title names, retaining the exact TMDB
+ID and child coordinates as a fallback when lookup is unavailable. **Open title
+in Plozz** uses the shell's normal detail route rather than a second playback or
+request implementation. Child history uses **Open show in Plozz** because server
+episode numbering must be resolved by the normal show page.
+
 Mobile customization lists apply the shared native switch style to both standard
 sections and grouped cards. Enabled switches keep the system green appearance
 instead of inheriting the page's monochrome navigation tint.
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
+
+PublicMetaDB connection management and browsing are shared across TV and mobile.
+One **Enter API key** action opens a shared form with the manual field and
+browser pairing together, not a separate choice of entry modes. TV shows its
+QR code beside the field; mobile shows a browser link. A short pairing code
+also works from another browser. Direct entry remains usable while the QR is
+loading or unavailable. Replacement
+still requires confirmation; pairing never enables history or playback consent.
+The server watch-status setting explains watched status and playback progress
+without repeating its row label or adding a server-count availability message.
+Native media menus, Picks, list entries and history records share title-level
+controls for explicit tracker history, ratings and community timestamps. Publishing
+and deleting contributions require confirmation and fresh readback; votes use
+the authenticated own-vote field rather than inferring ownership from names.
+Timestamp publishing does not enable community skipping or alter server markers.
+Highlights remain hidden until requested. Unsupported identity is explained
+without guessing a match or sending a tracker request.
+External-ID controls retain conflicting contributions and offer reverse lookup,
+explicit publishing after a two-direction conflict review, exact deletion and
+votes. These actions never replace server IDs or episode ordering.
+Anime mapping pages distinguish logical seasons from TMDB coordinates, preserve
+cross-show/specials chunks, and separately confirm whole replacement,
+current-key season deletion and exact-chunk deletion. Cached or uncertain
+readback blocks replay rather than claiming the operation was confirmed.
+Community-rating lookup is a separate, default-off profile preference. Its
+description discloses title lookups and preserves existing ratings/server metadata.
+Its server-history comparison is a separate, explicit action: show the server
+user and current state, select differences, then confirm. It does not enable
+ongoing sync. The page owns its ephemeral approval and revokes undelivered work
+on exit. See [PublicMetaDBService](../PublicMetaDBService/README.md) for current
+coverage, history fidelity, and remaining integration work.
+Trakt and Simkl use this same comparison and approval page. Their percentage-only resume
+records are displayed without conversion to server seconds, and episode imports
+require corroborated episode and parent IDs rather than inferred numbering.
+Simkl's aggregate episode counts remain informational, never invented individual
+watches. Its read-only comparison checks activity before fetching changes and
+reconciles removals without clearing server state; see
+[SimklService](../SimklService/README.md).
+WeTrakr uses the same page with complete, cursor-paged individual plays and
+playing-list observations. Unknown watched dates remain unknown. Paused progress
+is eligible only with the tracker-supplied runtime and a compatible server
+runtime; active or runtime-free percentages stay informational. See
+[WeTrakrService](../WetrakrService/README.md#reviewed-server-history-comparison).
+AniList's comparison preserves list status, episode counts, repeats and personal
+scores. Only a completed, exactly matched movie can offer a watched-flag import;
+aggregate series progress never becomes individual episodes. The shared page
+also displays Simkl's aggregate counts without making them importable. See
+[AniListService](../AniListService/README.md).
+MyAnimeList uses the same informational anime-progress presentation and
+completed-movie approval rules; see [MALService](../MALService/README.md).
+The existing TV Last.fm account exposes read-only listening history, separate
+from movie/TV comparison and server play-count changes. See
+[LastFmService](../LastFmService/README.md).
+All connections keep their existing independent playback/watchlist behavior.
+Watchlist destination selection is a separate, device-local profile consent.
+It names the selected list, discloses visibility and cross-destination effects,
+and can be stopped without deleting remote records. Connecting a key does not
+enable this choice automatically.
+Playback reporting has its own confirmation and device-local profile consent.
+It explains progress/completion thresholds and duplicate-reporter limitations,
+shows unresolved delivery failures, and does not authorize history imports.
+Owned PublicMetaDB list management confirms visibility and destructive actions;
+public-list browsing is read-only. Account sheets close on key/profile changes
+so old list choices cannot be applied under a newly connected account.
+Individual history records support confirmed date changes, exact-play deletion,
+resume clearing and undropping without importing those changes to media servers.
+Multi-play deletion selects at most 50 observed records per page and confirms
+the selection before any writes. Partial completion stops further records and
+requires a fresh history read/selection, not a blind replay.
+Adding a play is explicit about preserving rewatches and unknown dates. Mobile
+uses a native date picker; TV currently uses native ISO-8601 text entry with
+explicit time-zone validation. Shared mutation state blocks double submission,
+cancels on exit and prevents immediate retries of uncertain writes.
 
 **Appearance** owns global visual styling: theme, cards, artwork, display size,
 and Circadian Mode. **Screens & Navigation → All screens** contains shared

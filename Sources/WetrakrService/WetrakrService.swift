@@ -14,7 +14,7 @@ public enum WetrakrConnectionPhase: Equatable, Sendable {
 
 @MainActor
 @Observable
-public final class WetrakrService {
+public final class WetrakrService: TrackerHistoryReading {
     public private(set) var phase: WetrakrConnectionPhase
     public private(set) var codeLifetime: TimeInterval = 600
     @ObservationIgnored public let watchlistDestination: WetrakrWatchlistDestination?
@@ -25,6 +25,7 @@ public final class WetrakrService {
     @ObservationIgnored private let tokenStore: any TrackerTokenStoring
     @ObservationIgnored private let coordinator: TrackerTokenCoordinator
     @ObservationIgnored private let generation = TrackerProfileGeneration()
+    @ObservationIgnored private let historyReader = WetrakrHistoryReader()
     @ObservationIgnored var connectTask: Task<Void, Never>?
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private var activeNamespace: String??
@@ -74,6 +75,26 @@ public final class WetrakrService {
 
     public var accountIdentity: String? {
         config.isConfigured ? tokenStore.load()?.stableAccountIdentity : nil
+    }
+
+    public var historyConnectionID: String? {
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return "\(tokenStore.coordinationID)#\(generation.current)#\(tokens.stableAccountIdentity)"
+    }
+
+    public func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try Task.checkCancellation()
+            guard self?.historyConnectionID == expectedConnectionID else { throw TrackerHistoryError.scopeChanged }
+        }
+        try current()
+        let store = tokenStore.snapshot()
+        guard let access = try await coordinator.accessToken(store: store, auth: auth) else { throw AppError.unauthorized }
+        try current()
+        return try await historyReader.snapshot(
+            client: client, accessToken: access, connectionID: expectedConnectionID,
+            validateScope: { try await current() }
+        )
     }
 
     public func playbackScrobbler() -> WetrakrScrobbler {

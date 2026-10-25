@@ -11,6 +11,7 @@ private enum PlozziOSPlayerSheet: String, Identifiable {
     case zoom
     case subtitles
     case quality
+    case timestamps
 
     var id: Self { self }
 }
@@ -26,6 +27,8 @@ struct PlozziOSPlayerControlsOverlay: View {
     @State private var controlsVisible = true
     @State private var scrubPreviewCoordinator: ScrubPreviewCoordinator?
     @State private var presentedSheet: PlozziOSPlayerSheet?
+    @State private var timestampBrowser: PlayerCommunityTimestampsModel?
+    @Environment(\.communityPlaybackTimestampSource) private var timestampSource
     @State private var optionsMenuPresented = false
     /// Whether the Info / Cast card is expanded. Owned here rather than inside
     /// the strip because dismissing it is this view's job: the tap that closes
@@ -165,6 +168,12 @@ struct PlozziOSPlayerControlsOverlay: View {
                             presentedSheet = .quality
                             cancelAutoHide()
                         },
+                        onShowTimestamps: timestampSource != nil && viewModel.canBrowseCommunityTimestamps ? {
+                            guard let timestampSource else { return }
+                            timestampBrowser = viewModel.makeCommunityTimestampBrowser(source: timestampSource)
+                            presentedSheet = .timestamps
+                            cancelAutoHide()
+                        } : nil,
                         hasVersions: hasVersions,
                         onShowVersions: {
                             cancelAutoHide()
@@ -290,6 +299,8 @@ struct PlozziOSPlayerControlsOverlay: View {
                 PlozziOSSubtitleOptionsSheet(viewModel: viewModel)
             case .quality:
                 PlozziOSStreamingQualitySheet(viewModel: viewModel)
+            case .timestamps:
+                if let timestampBrowser { PlayerCommunityTimestampsView(model: timestampBrowser) }
             }
         }
         .ignoresSafeArea()
@@ -685,11 +696,13 @@ private struct PlozziOSPlaybackOptionsMenu: View {
     let onShowSpeed: () -> Void
     let onShowCustomZoom: () -> Void
     let onShowQuality: () -> Void
+    let onShowTimestamps: (() -> Void)?
     let onShowVersions: () -> Void
     let onPresentationChange: (Bool) -> Void
 
     var body: some View {
-        if hasAudioControls || supportsPlaybackSpeed || videoZoom != nil || supportsQuality || supportsVersions {
+        if hasAudioControls || supportsPlaybackSpeed || videoZoom != nil || supportsQuality || supportsVersions
+            || onShowTimestamps != nil {
             PlayerOptionsMenuButton(makeMenu: makeMenu, onPresentationChange: onPresentationChange)
                 .frame(width: 44, height: 44)
         }
@@ -724,6 +737,9 @@ private struct PlozziOSPlaybackOptionsMenu: View {
         }
         if supportsPlaybackSpeed {
             items.append(action("Playback Speed", icon: "speedometer", perform: onShowSpeed))
+        }
+        if let onShowTimestamps {
+            items.append(action("Community timestamps", icon: "list.bullet.rectangle", perform: onShowTimestamps))
         }
         return UIMenu(children: items)
     }
@@ -763,6 +779,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     let onShowCustomZoom: () -> Void
     let onShowSubtitles: () -> Void
     let onShowQuality: () -> Void
+    let onShowTimestamps: (() -> Void)?
     let hasVersions: Bool
     let onShowVersions: () -> Void
     let onOptionsMenuPresentationChange: (Bool) -> Void
@@ -940,6 +957,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
             onShowSpeed: onShowSpeed,
             onShowCustomZoom: onShowCustomZoom,
             onShowQuality: onShowQuality,
+            onShowTimestamps: onShowTimestamps,
             onShowVersions: onShowVersions,
             onPresentationChange: onOptionsMenuPresentationChange
         )

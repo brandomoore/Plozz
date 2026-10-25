@@ -5,6 +5,7 @@ import TraktService
 import SeerService
 import SimklService
 import WetrakrService
+import PublicMetaDBService
 import AniListService
 import MALService
 import LastFmService
@@ -19,6 +20,13 @@ struct SyncServices {
     let trakt: TraktService
     let simkl: SimklService
     let wetrakr: WetrakrService
+    var publicMetaDB: PublicMetaDBService? = nil
+    var makePublicMetaDBHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeTraktHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeSimklHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeWetrakrHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeAniListHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeMALHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
     let seer: SeerService
     let anilist: AniListService
     let mal: MALService

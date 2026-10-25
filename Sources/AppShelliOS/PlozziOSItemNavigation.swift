@@ -29,12 +29,17 @@ private struct PlozziOSPersonRoute: Identifiable, Hashable {
 private struct PlozziOSItemNavigationModifier: ViewModifier {
     let appModel: PlozziOSAppModel
     var registersScreenshotRouting = false
+    var acceptsCatalogNavigation = false
     @State private var navigatedItem: MediaItem?
     @State private var navigatedPerson: PlozziOSPersonRoute?
     @State private var navigatedLibrary: PlozziOSLibraryRoute?
 
     func body(content: Content) -> some View {
         content
+            .onChange(of: appModel.publicMetaDBService.catalogNavigation?.id, initial: true) { _, _ in
+                consumeCatalogNavigation()
+            }
+            .onChange(of: acceptsCatalogNavigation) { _, _ in consumeCatalogNavigation() }
             .navigationDestination(item: $navigatedItem) { item in
                 PlozziOSItemPage(appModel: appModel, item: item)
                     .modifier(ScreenshotArrivalBeacon(appModel: appModel, enabled: registersScreenshotRouting))
@@ -75,6 +80,13 @@ private struct PlozziOSItemNavigationModifier: ViewModifier {
                     navigatedLibrary = nil
                 }
             ))
+    }
+
+    private func consumeCatalogNavigation() {
+        guard acceptsCatalogNavigation, appModel.isActiveProfileAuthorized,
+              !appModel.isSettingsPresented,
+              let item = appModel.publicMetaDBService.consumeCatalogNavigation() else { return }
+        navigatedItem = item
     }
 }
 
@@ -139,7 +151,10 @@ private struct PlozziOSItemPage: View {
             accounts: appModel.accountsProviders.resolvedActiveAccounts,
             identitySources: appModel.identityIndex.identitySourcesProvider
         )
-        if let provider = appModel.provider(for: target) {
+        let provider = appModel.provider(for: target)
+        if provider != nil || DetailOpenEnvironment.isDiscovery(
+            target, identitySources: appModel.identityIndex.identitySourcesProvider
+        ) {
             PlozziOSItemDetailView(
                 appModel: appModel,
                 provider: provider,
@@ -232,11 +247,13 @@ extension View {
     /// stack does not overwrite the seams the capture run drives.
     func plozziOSItemNavigation(
         appModel: PlozziOSAppModel,
-        registersScreenshotRouting: Bool = false
+        registersScreenshotRouting: Bool = false,
+        acceptsCatalogNavigation: Bool = false
     ) -> some View {
         modifier(PlozziOSItemNavigationModifier(
             appModel: appModel,
-            registersScreenshotRouting: registersScreenshotRouting
+            registersScreenshotRouting: registersScreenshotRouting,
+            acceptsCatalogNavigation: acceptsCatalogNavigation
         ))
     }
 }

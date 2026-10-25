@@ -5,6 +5,7 @@ import CoreUI
 import TraktService
 import SimklService
 import WetrakrService
+import PublicMetaDBService
 import AniListService
 import MALService
 import LastFmService
@@ -13,12 +14,25 @@ struct IntegrationsDetailView: View {
     let trakt: TraktService
     let simkl: SimklService
     let wetrakr: WetrakrService
+    var publicMetaDB: PublicMetaDBService? = nil
+    var makePublicMetaDBHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeTraktHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeSimklHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeWetrakrHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeAniListHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeMALHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
     let anilist: AniListService
     let mal: MALService
     let lastfm: LastFmService
     @Bindable var playback: PlaybackSettingsModel
     let serverCount: Int
     @State private var confirmingTraktReconnect = false
+    @State private var showingTraktHistory = false
+    @State private var showingSimklHistory = false
+    @State private var showingWetrakrHistory = false
+    @State private var showingAniListHistory = false
+    @State private var showingMALHistory = false
+    @State private var showingLastFmHistory = false
     @State private var confirmingWetrakrReconnect = false
     #if os(tvOS)
     @Environment(\.settingsInWorkspace) private var inWorkspace
@@ -34,6 +48,12 @@ struct IntegrationsDetailView: View {
             }
             .onChange(of: trakt.phase) { _, _ in
                 confirmingTraktReconnect = false
+                if trakt.historyConnectionID == nil { showingTraktHistory = false }
+            }
+            .sheet(isPresented: $showingTraktHistory) {
+                if let makeTraktHistoryImport {
+                    NavigationStack { TrackerHistoryImportView(makeSession: makeTraktHistoryImport) }
+                }
             }
             .confirmationDialog("Reconnect WeTrakr for this profile?", isPresented: $confirmingWetrakrReconnect, titleVisibility: .visible) {
                 Button("Reconnect WeTrakr", role: .destructive) { wetrakr.connect() }
@@ -41,7 +61,43 @@ struct IntegrationsDetailView: View {
             } message: {
                 Text("Try Retry first. Reconnecting replaces this profile's WeTrakr connection on all your Plozz devices. Other profiles are not affected.")
             }
-            .onChange(of: wetrakr.phase) { _, _ in confirmingWetrakrReconnect = false }
+            .onChange(of: wetrakr.phase) { _, _ in
+                confirmingWetrakrReconnect = false
+                if wetrakr.historyConnectionID == nil { showingWetrakrHistory = false }
+            }
+            .sheet(isPresented: $showingWetrakrHistory) {
+                if let makeWetrakrHistoryImport {
+                    NavigationStack { TrackerHistoryImportView(makeSession: makeWetrakrHistoryImport) }
+                }
+            }
+            .onChange(of: simkl.phase) { _, _ in
+                if simkl.historyConnectionID == nil { showingSimklHistory = false }
+            }
+            .onChange(of: anilist.phase) { _, _ in
+                if anilist.historyConnectionID == nil { showingAniListHistory = false }
+            }
+            .sheet(isPresented: $showingAniListHistory) {
+                if let makeAniListHistoryImport {
+                    NavigationStack { TrackerHistoryImportView(makeSession: makeAniListHistoryImport) }
+                }
+            }
+            .onChange(of: mal.phase) { _, _ in
+                if mal.historyConnectionID == nil { showingMALHistory = false }
+            }
+            .sheet(isPresented: $showingMALHistory) {
+                if let makeMALHistoryImport {
+                    NavigationStack { TrackerHistoryImportView(makeSession: makeMALHistoryImport) }
+                }
+            }
+            .sheet(isPresented: $showingSimklHistory) {
+                if let makeSimklHistoryImport {
+                    NavigationStack { TrackerHistoryImportView(makeSession: makeSimklHistoryImport) }
+                }
+            }
+            .sheet(isPresented: $showingLastFmHistory) {
+                NavigationStack { LastFmListeningHistoryView(service: lastfm) }
+            }
+            .onChange(of: lastfm.historyConnectionID) { _, _ in showingLastFmHistory = false }
             .task {
                 // Load all statuses up front so the left list's value
                 // summaries are correct before any row is focused.
@@ -94,6 +150,10 @@ struct IntegrationsDetailView: View {
                         onCancel: { trakt.cancelConnect() },
                         onDisconnect: { Task { await trakt.disconnect() } }
                     )
+                    if case .connected = trakt.phase, makeTraktHistoryImport != nil {
+                        Button("Compare with server history") { showingTraktHistory = true }
+                            .accessibilityIdentifier("trakt.compare-history")
+                    }
                 }
             },
             SettingsSplitRow(
@@ -117,6 +177,10 @@ struct IntegrationsDetailView: View {
                         onCancel: { simkl.cancelConnect() },
                         onDisconnect: { Task { await simkl.disconnect() } }
                     )
+                    if case .connected = simkl.phase, makeSimklHistoryImport != nil {
+                        Button("Compare with server history") { showingSimklHistory = true }
+                            .accessibilityIdentifier("simkl.compare-history")
+                    }
                 }
             },
             SettingsSplitRow(
@@ -142,6 +206,10 @@ struct IntegrationsDetailView: View {
                         onCancel: { wetrakr.cancelConnect() },
                         onDisconnect: { Task { await wetrakr.disconnect() } }
                     )
+                    if case .connected = wetrakr.phase, makeWetrakrHistoryImport != nil {
+                        Button("Compare with server history") { showingWetrakrHistory = true }
+                            .accessibilityIdentifier("wetrakr.compare-history")
+                    }
                 }
             },
             SettingsSplitRow(
@@ -158,6 +226,10 @@ struct IntegrationsDetailView: View {
                         onCancel: { anilist.cancelConnect() },
                         onDisconnect: { Task { await anilist.disconnect() } }
                     )
+                    if case .connected = anilist.phase, makeAniListHistoryImport != nil {
+                        Button("Compare with server history") { showingAniListHistory = true }
+                            .accessibilityIdentifier("anilist.compare-history")
+                    }
                 }
             },
             SettingsSplitRow(
@@ -174,6 +246,10 @@ struct IntegrationsDetailView: View {
                         onCancel: { mal.cancelConnect() },
                         onDisconnect: { Task { await mal.disconnect() } }
                     )
+                    if case .connected = mal.phase, makeMALHistoryImport != nil {
+                        Button("Compare with server history") { showingMALHistory = true }
+                            .accessibilityIdentifier("mal.compare-history")
+                    }
                 }
             },
             SettingsSplitRow(
@@ -193,6 +269,10 @@ struct IntegrationsDetailView: View {
                         onCancel: { lastfm.cancelConnect() },
                         onDisconnect: { Task { await lastfm.disconnect() } }
                     )
+                    if case .connected = lastfm.phase {
+                        Button("Listening history") { showingLastFmHistory = true }
+                            .accessibilityIdentifier("lastfm.history")
+                    }
                 }
             }
         ]
@@ -200,14 +280,10 @@ struct IntegrationsDetailView: View {
         let watchStatus: [SettingsSplitRow] = [
             SettingsSplitRow(
                 id: "sync-across-servers",
-                title: "Sync across all my servers",
-                description: canSyncAcrossServers
-                    ? (playback.settings.syncWatchAcrossServers
-                        ? "Watching, resuming, or marking any media as watched updates every server that has it, keeping the same progress everywhere."
-                        : "Only the server you watched on is updated.")
-                    : "Add another server to sync watch status across servers.",
+                title: "Watch status",
+                description: "Keep watched status and playback progress in sync.",
             ) {
-                Toggle("Sync across all my servers", isOn: $playback.settings.syncWatchAcrossServers)
+                Toggle("Sync across servers", isOn: $playback.settings.syncWatchAcrossServers)
                     .disabled(!canSyncAcrossServers)
             }
         ]
@@ -220,6 +296,20 @@ struct IntegrationsDetailView: View {
             }
         }
         #endif
+        if let publicMetaDB {
+            var row = SettingsSplitRow(
+                id: "publicmetadb",
+                verbatimTitle: "PublicMetaDB"
+            ) {
+                PublicMetaDBSettingsContent(service: publicMetaDB, makeHistoryImport: makePublicMetaDBHistoryImport)
+            }
+            #if os(tvOS)
+            if inWorkspace {
+                row = row.page(summary: PublicMetaDBConnectionStatus(phase: publicMetaDB.phase).text)
+            }
+            #endif
+            trackers.append(row)
+        }
         return trackers.filter { $0.id != "wetrakr" || wetrakr.isConfigured } + watchStatus
     }
 

@@ -19,6 +19,7 @@ public enum DurableLocalStateCollection: String, Codable, CaseIterable, Sendable
     case migrationMarker
     case sourceIdentity
     case sourceReclaim
+    case trackerDeliveryReceipt
     case watchOutbox
 }
 

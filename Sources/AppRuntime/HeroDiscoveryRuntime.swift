@@ -51,10 +51,18 @@ public struct HeroDiscoveryRuntime: Sendable {
         guard !Task.isCancelled, request.limit > 0, !enabled.isEmpty,
               await allowsDiscovery() else { return [] }
         let fetched = await discovery(request, enabled)
+        return await resolveLibraryCopies(
+            of: Array(fetched.lazy.filter { $0.kind == .movie || $0.kind == .series }.prefix(request.limit)),
+            hideWatched: hideWatched, visibility: visibility
+        )
+    }
+
+    public func resolveLibraryCopies(
+        of items: [MediaItem], hideWatched: Bool, visibility: HomeLibraryVisibility = .default
+    ) async -> [MediaItem] {
         guard !Task.isCancelled, await allowsDiscovery() else { return [] }
-        let external = Array(fetched.lazy
+        let external = Array(items.lazy
             .filter { $0.kind == .movie || $0.kind == .series }
-            .prefix(request.limit)
             .map(Self.publicCandidate))
         guard !accountsByID.isEmpty else { return external }
 

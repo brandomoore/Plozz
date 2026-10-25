@@ -538,6 +538,9 @@ struct PlozziOSPlayerView: View {
                     )
                 }
             },
+            onTrackerPlayback: { [weak model] sample in
+                Task { @MainActor in model?.reportTrackerPlayback(sample, session: session) }
+            },
             adoptedResolved: adoptedResolved
         )
         // Capture the settings store itself, NOT `appModel`. Reading `appModel`

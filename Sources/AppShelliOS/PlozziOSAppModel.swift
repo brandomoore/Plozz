@@ -24,6 +24,8 @@ import ProviderShare
 import SeerService
 import SimklService
 import WetrakrService
+import PublicMetaDBService
+import RatingsService
 import TraktService
 import UIKit
 
@@ -359,6 +361,8 @@ final class PlozziOSAppModel {
     let traktService: TraktService
     let simklService: SimklService
     let wetrakrService: WetrakrService
+    let publicMetaDBService: PublicMetaDBService
+    let ratingsProvider: any ExternalRatingsProviding
     let anilistService: AniListService
     let malService: MALService
     let crashReporting: CrashReportingSettingsModel
@@ -407,6 +411,7 @@ final class PlozziOSAppModel {
     @ObservationIgnored
     private(set) lazy var mediaItemActionHandler: any MediaItemActionHandling =
         MediaItemActionCoordinator(
+            publicMetaDB: publicMetaDBService,
             providerResolver: { [unowned self] accountID in
                 accountID.flatMap {
                     self.accountsProviders.provider(forAccountID: $0)
@@ -671,6 +676,10 @@ final class PlozziOSAppModel {
         self.traktService = traktService
         self.simklService = simklService
         self.wetrakrService = wetrakrService
+        self.publicMetaDBService = PublicMetaDBService(namespace: trackerNamespace)
+        self.ratingsProvider = PublicMetaDBRatingsProvider(
+            base: RatingsServiceFactory.make(), service: self.publicMetaDBService
+        )
         self.anilistService = anilistService
         self.malService = malService
         self.crashReporting = CrashReportingSettingsModel()
@@ -871,6 +880,43 @@ final class PlozziOSAppModel {
                 guard let self, let destination = self.wetrakrService.watchlistDestination else { return }
                 await self.trackerWatchlistConnectionChanged(destination: destination)
             }
+        }
+        self.publicMetaDBService.onConnectionChanged = { [weak self] in
+            Task {
+                guard let self else { return }
+                await self.trackerWatchlistConnectionChanged(destination: self.publicMetaDBService.watchlistDestination)
+            }
+        }
+        self.publicMetaDBService.makeHistoryExportSource = { [weak self] in
+            guard let self else { throw CancellationError() }
+            return self.accountsProviders.makeTrackerServerHistorySource(
+                reconciler: self.watchReconciler,
+                isPlexIdentityResolved: { [weak self] in
+                    self?.plexHomeUsers.hasResolvedWatchMutationIdentity(forAccountID: $0) ?? false
+                },
+                isAuthorized: { [weak self] in
+                    guard let self else { return false }
+                    return self.isActiveProfileAuthorized && !self.profiles.activeProfile.isKids
+                }
+            )
+        }
+        self.publicMetaDBService.resolveCatalogItem = { [weak self] content in
+            guard let self else { throw CancellationError() }
+            let scope = self.accountsProviders.liveTVAuthorizationID
+            let visibility = self.settings.homeVisibility.visibility
+            let metadata = self.metadataProviderSettingsModel.settings
+            return try await PublicMetaDBCatalogResolver.resolve(
+                content, accounts: self.accountsProviders.homeAccounts,
+                identitySources: self.identityIndex.identitySourcesProvider,
+                visibility: visibility, metadataSettings: metadata,
+                isCurrent: { [weak self] in
+                    guard let self else { return false }
+                    return self.isActiveProfileAuthorized && !self.profiles.activeProfile.isKids
+                        && self.accountsProviders.liveTVAuthorizationID == scope
+                        && self.settings.homeVisibility.visibility == visibility
+                        && self.metadataProviderSettingsModel.settings == metadata
+                }
+            )
         }
         prepareMediaAliasLedger()
         startCloudSyncIfEnabled()
@@ -1741,11 +1787,14 @@ final class PlozziOSAppModel {
         let generation = trackerProfileGeneration
         trackerScopedNamespace = nil
         guard generation == trackerProfileGeneration else { return }
+        publicMetaDBService.selectProfile(namespace: namespace)
         await traktService.setActiveProfile(namespace: namespace)
         guard generation == trackerProfileGeneration else { return }
         await simklService.setActiveProfile(namespace: namespace)
         guard generation == trackerProfileGeneration else { return }
         await wetrakrService.setActiveProfile(namespace: namespace)
+        guard generation == trackerProfileGeneration else { return }
+        await publicMetaDBService.refreshStatus()
         guard generation == trackerProfileGeneration else { return }
         await anilistService.setActiveProfile(namespace: namespace)
         guard generation == trackerProfileGeneration else { return }
@@ -1778,6 +1827,42 @@ final class PlozziOSAppModel {
         }
     }
 
+    func makeWetrakrHistoryImport() -> TrackerHistoryImportSession {
+        makeTrackerHistoryImport(wetrakrService)
+    }
+
+    func makeSimklHistoryImport() -> TrackerHistoryImportSession {
+        makeTrackerHistoryImport(simklService)
+    }
+
+    func makeTraktHistoryImport() -> TrackerHistoryImportSession {
+        makeTrackerHistoryImport(traktService)
+    }
+
+    func makePublicMetaDBHistoryImport() -> TrackerHistoryImportSession {
+        makeTrackerHistoryImport(publicMetaDBService)
+    }
+
+    func makeAniListHistoryImport() -> TrackerHistoryImportSession {
+        makeTrackerHistoryImport(anilistService)
+    }
+
+    func makeMALHistoryImport() -> TrackerHistoryImportSession {
+        makeTrackerHistoryImport(malService)
+    }
+
+    private func makeTrackerHistoryImport(_ tracker: any TrackerHistoryReading) -> TrackerHistoryImportSession {
+        return accountsProviders.makeTrackerHistoryImportSession(
+            tracker: tracker, reconciler: watchReconciler,
+            index: { [identityIndex] in identityIndex.identitySnapshotStore.current },
+            isPlexIdentityResolved: { [weak self] in self?.plexHomeUsers.hasResolvedWatchMutationIdentity(forAccountID: $0) ?? false },
+            isAuthorized: { [weak self] in
+                guard let self else { return false }
+                return self.isActiveProfileAuthorized
+            }
+        )
+    }
+
     /// Kept by the presentation across teardown/episode handoff, never rebuilt
     /// from whichever profile is visible when a delayed callback arrives.
     struct PlaybackSession: Sendable {
@@ -1789,6 +1874,7 @@ final class PlozziOSAppModel {
         let initialSnapshot: IdentityIndexSnapshot
         let reconciler: WatchStateReconciler
         let scrobbler: PlozziOSTrackerScrobbler
+        let trackerConnectionID: String?
     }
 
     func makePlaybackSession() -> PlaybackSession {
@@ -1807,7 +1893,8 @@ final class PlozziOSAppModel {
                 wetrakr: wetrakrService.playbackScrobbler(),
                 anilist: AniListServiceFactory.make(namespace: namespace).scrobbler,
                 mal: MALServiceFactory.make(namespace: namespace).scrobbler
-            )
+            ),
+            trackerConnectionID: publicMetaDBService.playbackConnectionID
         )
     }
 
@@ -1843,6 +1930,16 @@ final class PlozziOSAppModel {
         profiles.activeProfileID == session.profileID
             && accountsProviders.liveTVAuthorizationID == session.serverAuthorization
             && accountsProviders.watchMutationServerScope == session.serverScope
+    }
+
+    func reportTrackerPlayback(_ sample: TrackerPlaybackSample, session: PlaybackSession) {
+        guard let connectionID = session.trackerConnectionID else { return }
+        Task {
+            if await session.reconciler.enqueueTrackerPlayback(TrackerPlaybackDelivery(
+                sample: sample, trackerID: "publicmetadb",
+                connectionID: connectionID, serverScope: session.serverScope
+            )) { await session.reconciler.drain() }
+        }
     }
 
     private func playbackSources(for item: MediaItem, session: PlaybackSession) -> [MediaSourceRef] {
@@ -2086,6 +2183,9 @@ final class PlozziOSAppModel {
                     item: intent.makeScrobbleItem(), capturedAt: capturedAt,
                     idempotencyKey: key, expectedAccountIdentity: identity
                 )
+            },
+            applyTrackerPlayback: { [publicMetaDBService] delivery in
+                try await publicMetaDBService.reportPlayback(delivery)
             },
             allAccountIDs: { [weak self] in
                 await MainActor.run {

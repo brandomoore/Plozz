@@ -498,7 +498,7 @@ final class PlayerTransportPositionTests: XCTestCase {
                         onScrubChanged: { _ in }, onScrubEditingChanged: { _ in },
                         onSkipBackward: {}, onPlayPause: {}, onSkipForward: {}, onShowSpeed: {},
                         supportsVideoZoom: false, onShowCustomZoom: {}, onShowSubtitles: {},
-                        onShowQuality: {}, hasVersions: false, onShowVersions: {},
+                        onShowQuality: {}, onShowTimestamps: nil, hasVersions: false, onShowVersions: {},
                         onOptionsMenuPresentationChange: { _ in }, isCardOpen: .constant(false),
                         onInteraction: {}, availableSize: geometry.size
                     )

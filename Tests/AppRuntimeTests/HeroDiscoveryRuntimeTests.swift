@@ -1,6 +1,7 @@
 import CoreModels
 import Foundation
 import MetadataKit
+import PublicMetaDBService
 import FeatureHomeCore
 import XCTest
 @testable import AppRuntime
@@ -163,6 +164,105 @@ final class HeroDiscoveryRuntimeTests: XCTestCase {
         XCTAssertFalse(selected.locallyValidatedPlayableSource)
         XCTAssertNil(selected.sourceAccountID)
         XCTAssertTrue(selected.sources.isEmpty)
+    }
+
+    func testPublicMetaDBCatalogPrefersVerifiedServerTitleOnBothBackends() async throws {
+        for kind in [ProviderKind.plex, .jellyfin] {
+            let server = owned()
+            let fixture = fixture(kind: kind, records: [server])
+            let item = try await PublicMetaDBCatalogResolver.resolve(
+                .init(tmdbID: 42, mediaType: .movie), accounts: [fixture.account],
+                identitySources: { _ in [.init(accountID: "active", itemID: server.id, kind: .movie)] },
+                visibility: .default, metadataSettings: .init(orderMode: .custom, disabledOrder: ["tmdb"]),
+                isCurrent: { true }, tmdb: .init(access: .disabled)
+            )
+            XCTAssertEqual(item.id, server.id)
+            XCTAssertEqual(item.title, server.title)
+            XCTAssertEqual(item.backdropURL, server.backdropURL)
+            XCTAssertEqual(item.sourceAccountID, fixture.account.account.id)
+            XCTAssertTrue(item.locallyValidatedPlayableSource)
+            XCTAssertEqual(item.sources.first?.itemID, server.id)
+        }
+    }
+
+    func testPublicMetaDBCatalogIndexMissAndMismatchNeverProveAbsenceOrOwnership() async throws {
+        let fixture = fixture(records: [owned(tmdbID: "99")])
+        for indexed in [false, true] {
+            let item = try await PublicMetaDBCatalogResolver.resolve(
+                .init(tmdbID: 42, mediaType: .movie), accounts: [fixture.account],
+                identitySources: { _ in indexed ? [.init(accountID: "active", itemID: "library-42", kind: .movie)] : [] },
+                visibility: .default, metadataSettings: .default, isCurrent: { true },
+                tmdb: .init(access: .userToken("fixture"), http: .init(send: { request in
+                    XCTAssertEqual(request.url?.path, "/3/movie/42")
+                    return (
+                        Data(#"{"id":42,"title":"Public title"}"#.utf8),
+                        HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                    )
+                }))
+            )
+            XCTAssertEqual(item.title, "Public title")
+            XCTAssertEqual(item.availability, .unknown)
+            XCTAssertFalse(item.locallyValidatedPlayableSource)
+            XCTAssertTrue(item.sources.isEmpty)
+            XCTAssertNil(item.sourceAccountID)
+        }
+    }
+
+    func testPublicMetaDBEpisodeCatalogOpensParentWithoutManufacturingServerEpisodeNumbering() async throws {
+        let item = try await PublicMetaDBCatalogResolver.resolve(
+            .init(tmdbID: 42, mediaType: .tv, season: 0, episode: 1), accounts: [],
+            identitySources: { _ in [] }, visibility: .default, metadataSettings: .default,
+            isCurrent: { true },
+            tmdb: .init(access: .userToken("fixture"), http: .init(send: { request in
+                XCTAssertEqual(request.url?.path, "/3/tv/42")
+                return (
+                    Data(#"{"id":42,"name":"Show"}"#.utf8),
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                )
+            }))
+        )
+        XCTAssertEqual(item.kind, .series)
+        XCTAssertEqual(item.providerID(.tmdb), "42")
+        XCTAssertNil(item.seasonNumber)
+        XCTAssertNil(item.episodeNumber)
+        XCTAssertFalse(item.locallyValidatedPlayableSource)
+    }
+
+    func testPublicMetaDBCatalogPolicyGatePreventsAnyProviderLookup() async throws {
+        let fixture = fixture(records: [owned()])
+        do {
+            _ = try await PublicMetaDBCatalogResolver.resolve(
+                .init(tmdbID: 42, mediaType: .movie), accounts: [fixture.account],
+                identitySources: { _ in [.init(accountID: "active", itemID: "library-42", kind: .movie)] },
+                visibility: .default, metadataSettings: .default, isCurrent: { false },
+                tmdb: .init(access: .disabled)
+            )
+            XCTFail("Unauthorized profile opened a catalog title")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        let lookups = await fixture.provider.lookupIDs
+        XCTAssertTrue(lookups.isEmpty)
+    }
+
+    func testPublicMetaDBCatalogRespectsHiddenLibrariesAndDisabledMetadata() async throws {
+        let fixture = fixture(records: [owned().taggingLibrary("hidden")])
+        do {
+            _ = try await PublicMetaDBCatalogResolver.resolve(
+                .init(tmdbID: 42, mediaType: .movie), accounts: [fixture.account],
+                identitySources: { _ in [
+                    .init(accountID: "active", itemID: "library-42", libraryID: "hidden", kind: .movie)
+                ] },
+                visibility: .init(disabledKeys: ["active:hidden"]),
+                metadataSettings: .init(orderMode: .custom, disabledOrder: ["tmdb"]),
+                isCurrent: { true },
+                tmdb: .init(access: .userToken("fixture"), http: .init(send: { _ in
+                    XCTFail("Disabled metadata source was used")
+                    throw AppError.invalidResponse
+                }))
+            )
+            XCTFail("Hidden library supplied a catalog title")
+        } catch { XCTAssertEqual(error as? AppError, .notFound) }
+        let lookups = await fixture.provider.lookupIDs
+        XCTAssertTrue(lookups.isEmpty)
     }
 
     private func external(_ id: String = "42", kind: MediaItemKind = .movie) -> MediaItem {

@@ -33,7 +33,7 @@ public enum TraktConnectionPhase: Equatable, Sendable {
 /// connection made in Settings is immediately usable by playback and vice-versa.
 @MainActor
 @Observable
-public final class TraktService {
+public final class TraktService: TrackerHistoryReading {
     public private(set) var phase: TraktConnectionPhase
 
     /// Lifetime (seconds) of the most recently issued device code, so the UI can
@@ -91,6 +91,25 @@ public final class TraktService {
 
     /// Whether the feature is offered at all (client credentials present).
     public var isConfigured: Bool { config.isConfigured }
+
+    public var historyConnectionID: String? {
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return "\(tokenStore.coordinationID)#\(profileGeneration.current)#\(tokens.stableAccountIdentity)"
+    }
+
+    public func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try Task.checkCancellation()
+            guard self?.historyConnectionID == expectedConnectionID else { throw TrackerHistoryError.scopeChanged }
+        }
+        try current()
+        let store = tokenStore.snapshot()
+        guard let access = try await coordinator.accessToken(store: store, auth: auth) else { throw AppError.unauthorized }
+        try current()
+        return try await TraktClient(config: config, http: http).historySnapshot(
+            accessToken: access, connectionID: expectedConnectionID, validateScope: { try await current() }
+        )
+    }
 
     public func playbackScrobbler() -> any TraktScrobbling {
         guard config.isConfigured else { return DisabledTraktScrobbler() }

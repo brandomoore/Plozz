@@ -95,7 +95,7 @@ public struct PlozziOSRootView: View {
         appModel.crashReportingController.isConfigured && appModel.crashReporting.needsConsent
     }
 
-    private var appContent: some View {
+    private var profileContent: some View {
         Group {
             if !appModel.canEnterApp {
                 PlozziOSOnboardingView(appModel: appModel)
@@ -264,6 +264,10 @@ public struct PlozziOSRootView: View {
                 onCancel: { showingProfileSwitcher = false }
             )
         }
+    }
+
+    private var appContent: some View {
+        profileContent
         .environment(\.familyGuidanceProvider, appModel.familyGuidance)
         .environment(\.plozzShowsContentRatings, appModel.settings.contentRatings.showsRatings)
         .environment(
@@ -280,6 +284,12 @@ public struct PlozziOSRootView: View {
             )
         )
         .mediaItemActionHandler(appModel.mediaItemActionHandler)
+        .publicMetaDBContentPresentation(service: appModel.publicMetaDBService)
+        .onChange(of: appModel.publicMetaDBService.catalogNavigation?.id) { _, request in
+            guard request != nil else { return }
+            showingSettings = false
+            appModel.noteSettingsPresented(false)
+        }
         .environment(\.plozzCardCaptionSettings, appModel.settings.cardStyle.captions)
         .environment(\.plozzContinueWatchingPlaybackDetails, appModel.settings.homeVisibility.continueWatchingPlaybackDetails)
         .environment(\.plozzArtworkSettings, appModel.settings.cardStyle.artwork)
@@ -1082,7 +1092,11 @@ struct PlozziOSTabShell: View {
                 effectiveSelectedDestination == .home && !isShowingMorePage && !showingSettings
             )
             .plozziOSLibraryDestination(appModel: appModel)
-            .plozziOSItemNavigation(appModel: appModel, registersScreenshotRouting: true)
+            .plozziOSItemNavigation(
+                appModel: appModel, registersScreenshotRouting: true,
+                acceptsCatalogNavigation: effectiveSelectedDestination == .home && !isShowingMorePage
+                    && !showingSettings && !appModel.isSettingsPresented
+            )
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarBackground(.hidden, for: .tabBar)
             .background { AppBackground(palette: palette) }
@@ -1311,6 +1325,13 @@ struct PlozziOSTabShell: View {
             }
         )
         .environment(appModel.profiles)
+        .onChange(of: appModel.publicMetaDBService.catalogNavigation?.id, initial: true) { _, request in
+            guard request != nil, appModel.publicMetaDBService.hasPendingCatalogNavigation,
+                  appModel.isActiveProfileAuthorized else { return }
+            retainsExplicitHomeEntry = true
+            _ = appModel.consumeStandaloneLiveTVEntryIntent()
+            openDestination(.home)
+        }
         .onChange(
             of: PlozziOSDownloadNotificationNavigation.shared.presentation?.id, initial: true
         ) { _, _ in

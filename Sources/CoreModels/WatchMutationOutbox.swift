@@ -62,6 +62,7 @@ struct WatchOwnershipClock: Codable, Sendable, Equatable {
 public struct WatchOutboxState: Codable, Sendable, Equatable {
     /// Pending mutations, in enqueue order (coalesced by ``WatchMutation/coalesceKey``).
     public var pending: [WatchMutation]
+    public var trackerPlayback: [TrackerPlaybackDelivery]
     /// Stale-write clock: highest `capturedAt` accepted per title (`coalesceKey`).
     /// A new mutation older than this is a late/stale write and is dropped.
     public var clock: [String: Date]
@@ -87,6 +88,7 @@ public struct WatchOutboxState: Codable, Sendable, Equatable {
 
     public init(
         pending: [WatchMutation] = [],
+        trackerPlayback: [TrackerPlaybackDelivery] = [],
         clock: [String: Date] = [:],
         appliedTrakt: [String: Date] = [:],
         appliedSimkl: [String: Date] = [:],
@@ -96,6 +98,7 @@ public struct WatchOutboxState: Codable, Sendable, Equatable {
         appliedRecency: [String: AppliedResumeRecord] = [:]
     ) {
         self.pending = pending
+        self.trackerPlayback = trackerPlayback
         self.clock = clock
         self.ownershipClocks = [:]
         self.sourceClocks = [:]
@@ -113,7 +116,7 @@ public struct WatchOutboxState: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case pending, clock, ownershipClocks, sourceClocks, appliedTrakt, appliedSimkl, appliedAniList, appliedMAL, appliedRecency
-        case appliedWetrakr
+        case appliedWetrakr, trackerPlayback
     }
 
     public init(from decoder: Decoder) throws {
@@ -122,6 +125,7 @@ public struct WatchOutboxState: Codable, Sendable, Equatable {
             [WatchMutation].self,
             forKey: .pending
         ) ?? []
+        trackerPlayback = try container.decodeIfPresent([TrackerPlaybackDelivery].self, forKey: .trackerPlayback) ?? []
         clock = try container.decodeIfPresent(
             [String: Date].self,
             forKey: .clock
