@@ -139,6 +139,10 @@ struct PublicMetaDBKeyEntryView: View {
     let onConnect: () -> Void
     let onRetry: () -> Void
     let onCancel: () -> Void
+    #if os(tvOS)
+    @Environment(\.isEnabled) private var isEnabled
+    @FocusState private var keyIsFocused: Bool
+    #endif
 
     var body: some View {
         layout {
@@ -150,6 +154,9 @@ struct PublicMetaDBKeyEntryView: View {
                 SecureField("API key", text: $key)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    #if os(tvOS)
+                    .focused($keyIsFocused)
+                    #endif
                     .accessibilityIdentifier("publicmetadb.key")
                 if case .failed(let error) = service.phase {
                     Text(error.userMessage)
@@ -171,6 +178,14 @@ struct PublicMetaDBKeyEntryView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        #if os(tvOS)
+        .focusSection()
+        .task {
+            await Task.yield()
+            guard !Task.isCancelled, isEnabled else { return }
+            keyIsFocused = true
+        }
+        #endif
     }
 
     private var layout: AnyLayout {
@@ -238,9 +253,15 @@ struct PublicMetaDBConnectionStatus: View {
         }
     }
     var body: some View {
-        HStack {
-            if phase == .connecting { ProgressView() }
-            text
+        Group {
+            if phase == .connected {
+                TrackerConnectedStatus()
+            } else {
+                HStack {
+                    if phase == .connecting { ProgressView() }
+                    text
+                }
+            }
         }
         .accessibilityIdentifier("publicmetadb.status")
     }

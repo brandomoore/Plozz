@@ -9,7 +9,9 @@ import FeatureSettings
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--reorder-input-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--publicmetadb-pairing-fixture") {
+                PublicMetaDBPairingFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--reorder-input-fixture") {
                 ReorderInputFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--home-section-warning-fixture") {
                 HomeSectionWarningFixture()

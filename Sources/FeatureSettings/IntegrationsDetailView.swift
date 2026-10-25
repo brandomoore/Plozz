@@ -357,9 +357,7 @@ struct IntegrationsDetailView: View {
             }
         case let .connected(username):
             VStack(alignment: .leading, spacing: 18) {
-                Label("Connected as \(username)", systemImage: "checkmark.seal.fill")
-                    .font(.headline)
-                    .foregroundStyle(.green)
+                TrackerConnectedStatus(username: username)
                 Button(role: .destructive, action: onDisconnect) {
                     Label("Disconnect", systemImage: "xmark.circle")
                 }

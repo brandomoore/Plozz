@@ -17,7 +17,11 @@ One **Enter API key** action opens a shared form with the manual field and
 browser pairing together, not a separate choice of entry modes. TV shows its
 QR code beside the field; mobile shows a browser link. A short pairing code
 also works from another browser. Direct entry remains usable while the QR is
-loading or unavailable. Replacement
+loading or unavailable. TV initially focuses the API-key field; the whole entry
+form is a native focus section so Up/Down can traverse between the field and
+the shared Back header. QR loading never requests focus again. PublicMetaDB and
+the other trackers share `TrackerConnectedStatus`, including the native-platform
+checkmark and green connected label. Replacement
 still requires confirmation; pairing never enables history or playback consent.
 The server watch-status setting explains watched status and playback progress
 without repeating its row label or adding a server-count availability message.

@@ -443,8 +443,7 @@ private var unavailableStatus: some View {
 }
 
 private func connectedStatus(username: String) -> some View {
-    Label("Connected as \(username)", systemImage: "checkmark.circle.fill")
-        .foregroundStyle(.green)
+    TrackerConnectedStatus(username: username)
 }
 
 private func errorStatus(_ message: LocalizedStringResource) -> some View {
