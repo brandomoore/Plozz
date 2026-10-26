@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import importlib.util
 import io
 import json
@@ -76,6 +77,9 @@ class TrackerAcceptancePreflightTests(unittest.TestCase):
                 self.assertFalse(result["acceptanceVerified"])
                 self.assertEqual(result["kind"], "read-only-tracker-preflight")
                 self.assertEqual(result["writesAttempted"], 0)
+                self.assertEqual(result["serverCredentialSHA256"], {
+                    provider: hashlib.sha256(KEY.encode()).hexdigest()
+                })
                 self.assertEqual(result["cases"][0]["server"]["state"]["positionMilliseconds"], 30000)
                 self.assertEqual(result["cases"][0]["server"]["runtimeMilliseconds"], 100000)
                 self.assertNotIn(KEY, json.dumps(result))

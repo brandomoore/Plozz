@@ -256,6 +256,45 @@ not public reports. This command performs no mutations; later live scenarios
 still require explicit account/title mutation approval and exact run-owned
 cleanup evidence.
 
+### Independent before/after comparison
+
+Capture separate baselines immediately before and after an authorized test
+action, then compare them without making any network request:
+
+```sh
+python3 tools/compare-tracker-baselines.py \
+  --before /absolute/private/run/before.json \
+  --after /absolute/private/run/after.json \
+  --output /absolute/private/run/comparison.json
+python3 -m unittest tools.tests.test_tracker_acceptance_preflight tools.tests.test_compare_tracker_baselines
+```
+
+The comparator requires identical configuration, tracker/server credential
+fingerprints, exact provider/server/user/catalog identities and complete case
+coverage. Older baselines without server credential fingerprints must be
+recaptured. Observation intervals must be ordered, non-overlapping and each
+within the reader's 120-second limit. Missing fields, duplicate cases/records
+and unsupported evidence fail rather than compare as empty state.
+
+By default, both server and tracker state must be unchanged. Use
+`--require-unchanged server` when an authorized tracker-side change is expected
+but the server must remain unchanged before import approval. The report still
+records both outcomes. Exit status is **0** for the requested unchanged state,
+**2** for changed state, or **1** for invalid/unavailable evidence.
+
+Inputs must be private, owned files; output must be a new file in a private,
+owned directory. The output records both input hashes but does not copy tokens
+or viewing-state payloads. Absent Plex fields, unknown watch dates, individual
+record IDs, counts and resume positions retain their actual meanings.
+
+**Equal snapshots prove only equal observed endpoint state**, not absence of
+intervening writes, rollback, concurrent activity or intermediate states. Local
+hashes bind input files; they do not authenticate their origin. This tool neither
+drives Plozz nor verifies playback, consent UI, app/account identity, coexistence
+or process recovery. Its result always retains `acceptanceVerified: false`.
+The actual production-app driver and authenticated acceptance remain separate
+requirements; this comparison does not turn fixture tests into live evidence.
+
 ### Isolated tracker import interactions
 
 `TrackerHistoryImportInteractionTests` runs in `PlozzHomeFixtureTests` on tvOS

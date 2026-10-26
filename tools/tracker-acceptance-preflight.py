@@ -324,7 +324,9 @@ def baseline(config, http, token_reader=read_token):
     return {"schemaVersion": 1, "kind": "read-only-tracker-preflight", "acceptanceVerified": False,
             "writesAttempted": 0, "startedAt": started, "capturedAt": datetime.now(timezone.utc).isoformat(),
             "configurationSHA256": hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest(),
-            "trackerCredentialSHA256": hashlib.sha256(key.encode()).hexdigest(), "cases": cases}
+            "trackerCredentialSHA256": hashlib.sha256(key.encode()).hexdigest(),
+            "serverCredentialSHA256": {provider: hashlib.sha256(token.encode()).hexdigest()
+                                       for provider, token in tokens.items()}, "cases": cases}
 
 
 def main():
