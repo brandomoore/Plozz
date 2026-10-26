@@ -27,6 +27,7 @@ public final class AniListService: TrackerHistorySyncReading {
     public private(set) var historySyncNamespace: String?
     public var historySyncCategories: Set<TrackerHistorySyncCategory> { [.watched] }
     @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
+    @ObservationIgnored public var makeHistoryExport: (@MainActor () throws -> TrackerHistoryExportSession<AniListHistoryExportTarget>)?
 
     @ObservationIgnored public let scrobbler: any AniListScrobbling
 
@@ -85,6 +86,47 @@ public final class AniListService: TrackerHistorySyncReading {
         guard let access = tokenStore.load()?.accessToken else { throw AppError.unauthorized }
         return try await AniListClient(config: config, http: http).historySnapshot(
             accessToken: access, connectionID: expectedConnectionID, validateScope: { try await current() }
+        )
+    }
+
+    public func makeHistoryExportSession(
+        source: TrackerServerHistorySource, store: DurableLocalStateStore
+    ) throws -> TrackerHistoryExportSession<AniListHistoryExportTarget> {
+        guard let connection = historyConnectionID, let identity = historySyncIdentity,
+              source.scope.profileID == (historySyncNamespace ?? ProfileStore.defaultProfileID) else {
+            throw TrackerHistoryError.scopeChanged
+        }
+        let access: @MainActor @Sendable () throws -> String = { [weak self] in
+            try source.requireCurrent()
+            guard let self, self.historyConnectionID == connection,
+                  let token = self.tokenStore.load()?.accessToken else { throw TrackerHistoryError.scopeChanged }
+            return token
+        }
+        let current: @Sendable () async throws -> Void = { _ = try await access() }
+        let client = AniListClient(config: config, http: http)
+        return .init(
+            trackerID: historySyncTrackerID, trackerName: "AniList",
+            connectionID: identity.connectionID, snapshotConnectionID: connection,
+            source: source, store: store, preservesWatchDates: false,
+            isConnected: { [weak self] in self?.historyConnectionID == connection },
+            supports: { AniListClient.supportsHistoryExport($0) },
+            readAll: {
+                try await client.historySnapshot(
+                    accessToken: access(), connectionID: connection, validateScope: current
+                )
+            },
+            resolve: {
+                try await client.resolveHistoryExport($0, accessToken: access(), validateScope: current)
+            },
+            readTarget: {
+                try await client.historyExportState($0, accessToken: access(), validateScope: current)
+            },
+            write: { target, _, _, authorize in
+                try await client.exportMovieCompletion(target, accessToken: access()) {
+                    try await current()
+                    try await authorize()
+                }
+            }
         )
     }
 

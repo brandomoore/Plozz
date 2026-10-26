@@ -893,15 +893,20 @@ final class PlozziOSAppModel {
         }
         self.publicMetaDBService.makeHistoryExportSource = { [weak self] in
             guard let self else { throw CancellationError() }
-            return self.accountsProviders.makeTrackerServerHistorySource(
-                reconciler: self.watchReconciler,
-                isPlexIdentityResolved: { [weak self] in
-                    self?.plexHomeUsers.hasResolvedWatchMutationIdentity(forAccountID: $0) ?? false
-                },
-                isAuthorized: { [weak self] in
-                    guard let self else { return false }
-                    return self.isActiveProfileAuthorized && !self.profiles.activeProfile.isKids
-                }
+            return self.makeTrackerHistoryExportSource()
+        }
+        self.anilistService.makeHistoryExport = { [weak self] in
+            guard let self else { throw CancellationError() }
+            guard let store = self.durableLocalStateStore else { throw DurableLocalStateError.storageUnavailable }
+            return try self.anilistService.makeHistoryExportSession(
+                source: self.makeTrackerHistoryExportSource(), store: store
+            )
+        }
+        self.malService.makeHistoryExport = { [weak self] in
+            guard let self else { throw CancellationError() }
+            guard let store = self.durableLocalStateStore else { throw DurableLocalStateError.storageUnavailable }
+            return try self.malService.makeHistoryExportSession(
+                source: self.makeTrackerHistoryExportSource(), store: store
             )
         }
         self.publicMetaDBService.resolveCatalogItem = { [weak self] content in
@@ -1850,6 +1855,19 @@ final class PlozziOSAppModel {
 
     func makeAniListHistoryImport() -> TrackerHistoryImportSession {
         makeTrackerHistoryImport(anilistService)
+    }
+
+    private func makeTrackerHistoryExportSource() -> TrackerServerHistorySource {
+        accountsProviders.makeTrackerServerHistorySource(
+            reconciler: watchReconciler,
+            isPlexIdentityResolved: { [weak self] in
+                self?.plexHomeUsers.hasResolvedWatchMutationIdentity(forAccountID: $0) ?? false
+            },
+            isAuthorized: { [weak self] in
+                guard let self else { return false }
+                return self.isActiveProfileAuthorized && !self.profiles.activeProfile.isKids
+            }
+        )
     }
 
     func makeMALHistoryImport() -> TrackerHistoryImportSession {

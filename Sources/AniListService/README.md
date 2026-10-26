@@ -46,3 +46,30 @@ remain readable, and every new sign-in saves a new connection identity.
 Contracts: [MediaList](https://docs.anilist.co/reference/object/medialist),
 [PageInfo](https://docs.anilist.co/reference/object/pageinfo),
 [Query](https://docs.anilist.co/reference/query).
+
+## Reviewed movie-completion export
+
+**Export server history** on TV and mobile is separate from imports, ongoing
+sync and playback reporting. It reads the selected server user's movie library,
+then requires title selection and explicit confirmation. Only exact AniList or
+MAL IDs resolving to an `ANIME`/`MOVIE` qualify; two supplied IDs must agree.
+Targets include the authenticated viewer and canonical AniList media ID. Missing
+list-state fields, foreign owners, conflicting IDs and non-movie formats fail
+closed. Existing entries, including planning, paused, dropped and rewatching
+states, remain unchanged.
+
+The [shared exporter](../CoreModels/README.md#reviewed-tracker-export) rechecks
+server state and current tracker evidence before sending
+`SaveMediaListEntry(mediaId: ..., status: COMPLETED)`. It sends no dates,
+episode progress, repeat counts, scores or notes. It does not invent an anime
+series' watched episodes or impersonate a playback session. AniList owns its
+normal completion-status side effects; this is not per-play history.
+
+Receipts survive relaunch and block uncertain retries. The acknowledgement must
+identify the requested media, viewer and completed status; a separate query
+then establishes current state. Transport failures and partial GraphQL errors
+are uncertain, not proof of rejection. There is no automatic retry or token
+refresh path. Profile changes, credential replacement, disconnect and closing
+the page fence further work. Remote edits can still race these non-atomic reads.
+
+Mutation contract: [SaveMediaListEntry](https://docs.anilist.co/reference/mutation#savemedialistentry).

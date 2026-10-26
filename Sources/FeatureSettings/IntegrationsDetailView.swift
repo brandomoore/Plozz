@@ -31,7 +31,9 @@ struct IntegrationsDetailView: View {
     @State private var showingSimklHistory = false
     @State private var showingWetrakrHistory = false
     @State private var showingAniListHistory = false
+    @State private var showingAniListExport = false
     @State private var showingMALHistory = false
+    @State private var showingMALExport = false
     @State private var showingLastFmHistory = false
     @State private var confirmingWetrakrReconnect = false
     #if os(tvOS)
@@ -76,6 +78,10 @@ struct IntegrationsDetailView: View {
             .onChange(of: anilist.phase) { _, _ in
                 if anilist.historyConnectionID == nil { showingAniListHistory = false }
             }
+            .onChange(of: anilist.historyConnectionID) { _, _ in showingAniListExport = false }
+            .sheet(isPresented: $showingAniListExport) {
+                NavigationStack { AniListHistoryExportView(service: anilist) }
+            }
             .sheet(isPresented: $showingAniListHistory) {
                 if let makeAniListHistoryImport {
                     NavigationStack { TrackerHistoryImportView(makeSession: makeAniListHistoryImport) }
@@ -83,6 +89,10 @@ struct IntegrationsDetailView: View {
             }
             .onChange(of: mal.phase) { _, _ in
                 if mal.historyConnectionID == nil { showingMALHistory = false }
+            }
+            .onChange(of: mal.historyConnectionID) { _, _ in showingMALExport = false }
+            .sheet(isPresented: $showingMALExport) {
+                NavigationStack { MALHistoryExportView(service: mal) }
             }
             .sheet(isPresented: $showingMALHistory) {
                 if let makeMALHistoryImport {
@@ -230,6 +240,10 @@ struct IntegrationsDetailView: View {
                         Button("Compare with server history") { showingAniListHistory = true }
                             .accessibilityIdentifier("anilist.compare-history")
                     }
+                    if case .connected = anilist.phase, anilist.makeHistoryExport != nil {
+                        Button("Export server history") { showingAniListExport = true }
+                            .accessibilityIdentifier("anilist.export-history")
+                    }
                 }
             },
             SettingsSplitRow(
@@ -249,6 +263,10 @@ struct IntegrationsDetailView: View {
                     if case .connected = mal.phase, makeMALHistoryImport != nil {
                         Button("Compare with server history") { showingMALHistory = true }
                             .accessibilityIdentifier("mal.compare-history")
+                    }
+                    if case .connected = mal.phase, mal.makeHistoryExport != nil {
+                        Button("Export server history") { showingMALExport = true }
+                            .accessibilityIdentifier("mal.export-history")
                     }
                 }
             },

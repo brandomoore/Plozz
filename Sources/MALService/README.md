@@ -23,7 +23,9 @@ Status, episode count, repeats, personal score out of 10 and update timestamp
 remain typed title-level evidence. Zero score is unrated, absent counts stay
 unknown, and the documented legacy episode-count spelling is accepted only when
 it does not contradict the canonical field. Rewatching never becomes completion.
-Fuzzy start/finish dates are not exact play timestamps and are not imported.
+Completed records without an explicit rewatching flag are rejected rather than
+interpreted as new completion. Fuzzy start/finish dates are not exact play
+timestamps and are not imported.
 Only an explicitly completed movie with an exact server identity can offer a
 watched flag, behind the shared per-server confirmation and source/server
 rechecks. Series aggregates never become individual episode writes.
@@ -40,3 +42,26 @@ and revokes device-local permission before removing credentials. Failed saves
 or removals are explicit connection errors, not success.
 
 Contract: [official API v2 reference](https://myanimelist.net/apiconfig/references/api/v2).
+
+## Reviewed movie-completion export
+
+**Export server history** on TV and mobile uses the
+[shared reviewed exporter](../CoreModels/README.md#reviewed-tracker-export).
+Only exact MAL IDs resolving to movies qualify. The authenticated owner is
+checked around target reads. An omitted `my_list_status` field does not prove
+absence: that path reads the complete authenticated list, subject to the same
+pagination and scope checks above. Explicit `null` represents an absent entry.
+Existing planning, watching, paused, dropped and rewatching entries are protected.
+
+After selection and confirmation, the writer sends only `status=completed` to
+`PATCH /anime/{id}/my_list_status`. It sends no dates, scores, repeat counts,
+notes or episode counts; MAL owns its normal completion-status side effects.
+The reference's OpenAPI operation and existing client use PATCH; its legacy PUT
+sample is not a separate transport contract.
+
+The acknowledgement has no owner or title ID, so successful status alone is not
+enough: an independent authenticated target read must establish completion.
+Uncertain writes keep durable receipts and are never automatically retried.
+Refresh uses the existing guarded token-save path and preserves connection
+lineage; profile changes, replacement, cancellation and disconnect fence export.
+This is movie list status, not per-play history or anime-series backfill.

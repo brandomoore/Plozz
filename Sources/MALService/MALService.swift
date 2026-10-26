@@ -22,6 +22,7 @@ public final class MALService: TrackerHistorySyncReading {
     public private(set) var historySyncNamespace: String?
     public var historySyncCategories: Set<TrackerHistorySyncCategory> { [.watched] }
     @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
+    @ObservationIgnored public var makeHistoryExport: (@MainActor () throws -> TrackerHistoryExportSession<MALHistoryExportTarget>)?
 
     @ObservationIgnored public let scrobbler: any MALScrobbling
 
@@ -94,6 +95,56 @@ public final class MALService: TrackerHistorySyncReading {
         try current()
         return try await MALClient(config: config, http: http).historySnapshot(
             accessToken: access, connectionID: expectedConnectionID, validateScope: { try await current() }
+        )
+    }
+
+    public func makeHistoryExportSession(
+        source: TrackerServerHistorySource, store: DurableLocalStateStore
+    ) throws -> TrackerHistoryExportSession<MALHistoryExportTarget> {
+        guard let connection = historyConnectionID, let identity = historySyncIdentity,
+              source.scope.profileID == (historySyncNamespace ?? ProfileStore.defaultProfileID) else {
+            throw TrackerHistoryError.scopeChanged
+        }
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try source.requireCurrent()
+            guard self?.historyConnectionID == connection else { throw TrackerHistoryError.scopeChanged }
+        }
+        let access: @MainActor @Sendable () async throws -> String = { [weak self] in
+            try current()
+            guard let self, let tokens = self.tokenStore.load() else { throw TrackerHistoryError.scopeChanged }
+            let token = try await self.validAccessToken(tokens, generation: self.profileGeneration.current)
+            try current()
+            return token
+        }
+        let validate: @Sendable () async throws -> Void = { try await current() }
+        let client = MALClient(config: config, http: http)
+        return .init(
+            trackerID: historySyncTrackerID, trackerName: "MyAnimeList",
+            connectionID: identity.connectionID, snapshotConnectionID: connection,
+            source: source, store: store, preservesWatchDates: false,
+            isConnected: { [weak self] in self?.historyConnectionID == connection },
+            supports: { MALClient.supportsHistoryExport($0) },
+            readAll: {
+                let token = try await access()
+                return try await client.historySnapshot(
+                    accessToken: token, connectionID: connection, validateScope: validate
+                )
+            },
+            resolve: {
+                let token = try await access()
+                return try await client.resolveHistoryExport($0, accessToken: token, validateScope: validate)
+            },
+            readTarget: {
+                let token = try await access()
+                return try await client.historyExportState($0, accessToken: token, validateScope: validate)
+            },
+            write: { target, _, _, authorize in
+                let token = try await access()
+                try await client.exportMovieCompletion(target, accessToken: token) {
+                    try await current()
+                    try await authorize()
+                }
+            }
         )
     }
 

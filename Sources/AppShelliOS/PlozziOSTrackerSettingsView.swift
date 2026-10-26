@@ -293,6 +293,7 @@ private struct AniListSettingsContent: View {
     @Environment(\.openURL) private var openURL
     @State private var code = ""
     @State private var showingHistory = false
+    @State private var showingExport = false
 
     var body: some View {
         Group { content }
@@ -301,6 +302,10 @@ private struct AniListSettingsContent: View {
             }
             .sheet(isPresented: $showingHistory) {
                 NavigationStack { TrackerHistoryImportView(makeSession: makeHistoryImport) }
+            }
+            .onChange(of: service.historyConnectionID) { _, _ in showingExport = false }
+            .sheet(isPresented: $showingExport) {
+                NavigationStack { AniListHistoryExportView(service: service) }
             }
     }
 
@@ -324,6 +329,10 @@ private struct AniListSettingsContent: View {
             connectedStatus(username: username)
             Button("Compare with server history") { showingHistory = true }
                 .accessibilityIdentifier("anilist.compare-history")
+            if service.makeHistoryExport != nil {
+                Button("Export server history") { showingExport = true }
+                    .accessibilityIdentifier("anilist.export-history")
+            }
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
@@ -371,6 +380,7 @@ private struct MALSettingsContent: View {
     @Environment(\.openURL) private var openURL
     @State private var code = ""
     @State private var showingHistory = false
+    @State private var showingExport = false
 
     var body: some View {
         Group { content }
@@ -379,6 +389,10 @@ private struct MALSettingsContent: View {
             }
             .sheet(isPresented: $showingHistory) {
                 NavigationStack { TrackerHistoryImportView(makeSession: makeHistoryImport) }
+            }
+            .onChange(of: service.historyConnectionID) { _, _ in showingExport = false }
+            .sheet(isPresented: $showingExport) {
+                NavigationStack { MALHistoryExportView(service: service) }
             }
     }
 
@@ -412,6 +426,10 @@ private struct MALSettingsContent: View {
             connectedStatus(username: username)
             Button("Compare with server history") { showingHistory = true }
                 .accessibilityIdentifier("mal.compare-history")
+            if service.makeHistoryExport != nil {
+                Button("Export server history") { showingExport = true }
+                    .accessibilityIdentifier("mal.export-history")
+            }
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }

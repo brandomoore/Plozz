@@ -52,7 +52,7 @@ extension MALClient {
         throw TrackerHistoryError.incompleteSnapshot
     }
 
-    private func historyRead<Value: Decodable>(
+    func historyRead<Value: Decodable>(
         path: String, query: [URLQueryItem] = [], accessToken: String,
         validateScope: @escaping @Sendable () async throws -> Void
     ) async throws -> Value {
@@ -93,7 +93,7 @@ extension MALClient {
     }
 }
 
-private struct MALHistoryOwner: Decodable { let id: Int }
+struct MALHistoryOwner: Decodable { let id: Int }
 
 private struct MALHistoryPage: Decodable {
     struct Paging: Decodable { let next: String? }
@@ -130,6 +130,9 @@ struct MALHistoryEntry: Decodable {
         case "plan_to_watch": status = .planning
         case nil: status = nil
         default: throw TrackerHistoryError.invalidObservation
+        }
+        guard status != .completed || list_status.is_rewatching != nil else {
+            throw TrackerHistoryError.invalidObservation
         }
         let count = list_status.num_episodes_watched
         let alias = list_status.num_watched_episodes

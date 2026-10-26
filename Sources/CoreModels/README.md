@@ -3,6 +3,30 @@
 The Foundation-only, **zero-dependency** core of Plozz. Defines the domain
 language every other module speaks.
 
+## Reviewed tracker export
+
+`TrackerHistoryExportSession` reads one explicitly selected server-user/library
+through `TrackerServerHistorySource`, then requires selection and confirmation
+for 1–50 watched titles. Adapters own exact canonical targets, complete reads,
+historical/status writes and target-specific readback. Full reads are capped at
+100,000 observations and indexed by identity before conservative matching;
+the existing server inventory retains its 50,000-item bound. No title search,
+server writes, playback reports, play-count reconstruction or ongoing enrollment
+occurs. Existing tracker watches and conflicting progress are not selectable.
+
+All selected rows are preflighted before dispatch. Source scope, playback and
+baseline plus remote evidence are checked again for each write and within the
+adapter's immediate pre-dispatch authorization callback. Durable, profile/
+connection/canonical-target receipts are saved after the final asynchronous
+checks and before dispatch, with another receipt check at that boundary.
+Cancellation or stale evidence before authorization does not create a delivery
+hold; a competing session's receipt is never overwritten or removed. Any prior
+attempt blocks replay, including a confirmed watch subsequently removed remotely. Only a proven
+non-delivery may remove its receipt. An uncertain response requires independent
+readback; presence alone does not establish who wrote it or preserve a date.
+Readback failure retains the receipt and stops the batch. These are optimistic
+checks, not an atomic transaction with either remote service.
+
 ## Responsibility
 
 - Domain value types: `MediaItem`, `MediaLibrary`, `MediaServer`,

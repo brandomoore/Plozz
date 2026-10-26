@@ -60,7 +60,7 @@ extension AniListClient {
         throw TrackerHistoryError.incompleteSnapshot
     }
 
-    private func historyQuery<Value: Decodable>(
+    func historyQuery<Value: Decodable>(
         _ query: String, variables: [String: AniListVariable], accessToken: String,
         validateScope: @escaping @Sendable () async throws -> Void
     ) async throws -> Value {

@@ -29,3 +29,19 @@ would need an explicit supported writer and verified recording identity; neither
 is invented from title/artist strings.
 
 Contract: [user.getRecentTracks](https://www.last.fm/api/show/user.getRecentTracks).
+
+## Historical export boundary
+
+Last.fm's [track.scrobble](https://www.last.fm/api/show/track.scrobble) requires
+the actual UTC time a track started playing. `MusicProvider` currently exposes
+recently played tracks with a latest-play timestamp, not a complete ledger of
+individual listens and their start times. Jellyfin's `LastPlayedDate` and Plex's
+`lastViewedAt` are used for recency; they do not establish the required listening
+event or reconstruct repeated plays. Neither a watched flag nor a play count is
+enough evidence to manufacture historical scrobbles.
+
+The movie/episode history exporter therefore does not target Last.fm. A future
+music backfill needs an explicit source of verified listening events, separate
+consent, and per-scrobble acceptance/readback handling: Last.fm can ignore
+individual scrobbles for old/new timestamps or daily limits despite a successful
+HTTP response. Existing music playback scrobbling remains separate and unchanged.

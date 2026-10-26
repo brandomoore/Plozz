@@ -66,6 +66,16 @@ check after foreground/index readiness. None installs a polling timer.
 Anime rating, count and list-update edits do not turn an existing completed movie
 into a new completion for automatic import.
 
+AniList and MyAnimeList expose **Export server history**, using the shared native export
+page. The user chooses one server user and movie library, previews, selects up
+to 50 titles, then confirms. Completion status is copied without dates or play
+counts; existing tracker entries and conflicting progress are skipped. Back,
+source changes and reopening discard the selection. Mobile pickers, title
+switches and actions occupy separate native List rows; TV uses native directional
+focus. The confirmation discloses tracker-account effects and possible racing
+edits without granting ongoing permission. PublicMetaDB retains its richer
+watched/resume exporter and existing receipt format.
+
 Permissions use the stored connection identity, not a process-local generation.
 Refresh and relaunch preserve it; a fresh sign-in replaces it even if the service
 returns identical token bytes. Disconnect and replacement revoke the device-local

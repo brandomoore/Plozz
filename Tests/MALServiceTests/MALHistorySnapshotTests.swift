@@ -92,6 +92,7 @@ final class MALHistorySnapshotTests: XCTestCase {
     func testInvalidRecordsCannotDisappearFromTheSnapshot() async {
         for invalid in [
             row(0), row(status: "unknown"), row(extra: #","num_watched_episodes":2"#),
+            row().replacingOccurrences(of: #""is_rewatching":false"#, with: #""is_rewatching":null"#),
             row().replacingOccurrences(of: #""score":8"#, with: #""score":11"#),
             row().replacingOccurrences(of: #""num_episodes_watched":1"#, with: #""num_episodes_watched":-1"#),
             row().replacingOccurrences(of: #""num_times_rewatched":2"#, with: #""num_times_rewatched":-1"#),

@@ -17,7 +17,14 @@ struct TrackerHistoryImportFixture: View {
         .sheet(isPresented: $comparing) {
             VStack(alignment: .leading, spacing: 8) {
                 NavigationStack {
-                    TrackerHistoryImportView(makeSession: model.makeSession)
+                    if ProcessInfo.processInfo.arguments.contains("--history-export") {
+                        TrackerHistoryExportView(
+                            summary: "Copies movie completion only.", libraryKinds: [.movie],
+                            makeSession: model.makeExportSession
+                        )
+                    } else {
+                        TrackerHistoryImportView(makeSession: model.makeSession)
+                    }
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     report
@@ -58,6 +65,7 @@ private final class HistoryImportFixtureModel {
     var trackerReads = 0
     var trackerWrites = 0
     var newPlay = 0
+    var exported = false
     var storageFailed = false
     private let arguments = ProcessInfo.processInfo.arguments
 
@@ -133,6 +141,50 @@ private final class HistoryImportFixtureModel {
         let session = makeSession(scope: scope, allowed: { true })
         if arguments.contains("--history-ongoing-sync") { session.ongoingSync = sync }
         return session
+    }
+
+    func makeExportSession() throws -> TrackerHistoryExportSession<String> {
+        guard let syncStore else { throw DurableLocalStateError.storageUnavailable }
+        let source = TrackerServerHistorySource(
+            scope: scope, accounts: providers.map {
+                .init(id: $0.account.id, serverName: $0.account.server.name, userName: $0.account.userName)
+            },
+            resolveProvider: {
+                guard let provider = self.provider($0) else { throw TrackerHistoryError.scopeChanged }
+                return provider
+            },
+            isAuthorized: { self.authorized }, isPlaying: { _, _ in false }
+        )
+        return .init(
+            trackerID: "fixture", trackerName: "Fixture", connectionID: "fixture", snapshotConnectionID: "fixture",
+            source: source, store: syncStore, preservesWatchDates: false,
+            isConnected: { self.authorized }, supports: { $0.kind == .movie },
+            readAll: { try self.exportSnapshot() },
+            resolve: { _ in "550" },
+            readTarget: { _ in try .init(observations: self.exportSnapshot().observations) },
+            write: { _, _, _, validate in
+                try await validate()
+                self.trackerWrites += 1
+                self.exported = true
+                if self.arguments.contains("--history-lost-write-reply") {
+                    throw TrackerHistoryExportError.uncertainWrite
+                }
+            }
+        )
+    }
+
+    private func exportSnapshot() throws -> TrackerHistorySnapshot {
+        trackerReads += 1
+        if trackerReads > 1, arguments.contains("--history-revoke-on-recheck") { authorized = false }
+        let changed = trackerReads > 1 && arguments.contains("--history-change-on-recheck")
+        let observations: [TrackerHistoryObservation]
+        if changed || exported {
+            observations = [try .init(
+                recordID: "watch", kind: .movie, identities: [.external(source: "tmdb", value: "550")],
+                fact: changed ? .resume(seconds: 50, runtime: 1_000, updatedAt: nil) : .watched(at: nil)
+            )]
+        } else { observations = [] }
+        return try .init(trackerID: "fixture", connectionID: "fixture", observations: observations, completeness: .completeResponse)
     }
 
     private func makeSession(
@@ -230,11 +282,14 @@ private final class HistoryImportFixtureProvider: MediaProvider, WatchStateProvi
         )
         current = MediaItem(
             id: "movie", title: "Fixture movie", kind: .movie, runtime: 1_000,
+            isPlayed: arguments.contains("--history-export"),
             providerIDs: ["Tmdb": "550"], sourceAccountID: account.id
         )
     }
 
-    func libraries() async throws -> [MediaLibrary] { [] }
+    func libraries() async throws -> [MediaLibrary] {
+        arguments.contains("--history-export") ? [.init(id: "movies", title: "Movies", kind: .movie)] : []
+    }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func item(id: String) async throws -> MediaItem {
@@ -247,7 +302,10 @@ private final class HistoryImportFixtureProvider: MediaProvider, WatchStateProvi
     }
     func children(of itemID: String) async throws -> [MediaItem] { throw AppError.notFound }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
-        throw AppError.notFound
+        guard arguments.contains("--history-export"), containerID == "movies", kind == .movie else {
+            throw AppError.notFound
+        }
+        return .init(items: page.startIndex == 0 ? [current] : [], startIndex: page.startIndex, totalCount: 1)
     }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }

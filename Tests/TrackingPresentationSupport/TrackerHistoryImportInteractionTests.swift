@@ -46,6 +46,46 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         verifySelectedServer("plex")
     }
 
+    func testExportJellyfinPreviewCancellationAndConfirmationLeaveServersUnchanged() {
+        verifyExport("Jellyfin")
+    }
+
+    func testExportPlexPreviewCancellationAndConfirmationLeaveServersUnchanged() {
+        verifyExport("Plex")
+    }
+
+    func testExportChangedTrackerStateRejectsDelivery() {
+        launchExport("Jellyfin", arguments: ["--history-change-on-recheck"])
+        confirmExport()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "changed after the comparison"))
+            .firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        assertExportReport(writes: 0)
+    }
+
+    func testExportLostReplyUsesReadbackWithoutReplayOnReentry() {
+        launchExport("Plex", arguments: ["--history-lost-write-reply"])
+        confirmExport()
+        XCTAssertTrue(app.staticTexts["Already present; no additional play needed."].waitForExistence(timeout: 5))
+        assertExportReport(writes: 1)
+        activate(app.buttons["fixture.history.close"])
+        openExport("Plex")
+        XCTAssertTrue(app.staticTexts["Already present"].waitForExistence(timeout: 5))
+        XCTAssertFalse(element("tracker-export.select.movie").exists)
+        assertExportReport(writes: 1)
+    }
+
+    func testExportReopeningRequiresNewSourceAndTitleSelection() {
+        launchExport("Jellyfin")
+        activate(element("tracker-export.select.movie"))
+        XCTAssertTrue(app.buttons["tracker-export.apply"].isEnabled)
+        activate(app.buttons["fixture.history.close"])
+        activate(app.buttons["fixture.history.open"])
+        XCTAssertTrue(app.buttons["tracker-export.preview"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["tracker-export.preview"].isEnabled)
+        XCTAssertFalse(element("tracker-export.select.movie").exists)
+        assertExportReport(writes: 0)
+    }
+
     func testOngoingJellyfinConsentCancellationAndNewHistoryStayScoped() {
         verifyOngoingSync("jellyfin")
     }
@@ -55,6 +95,20 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
     }
 
     #if os(iOS)
+    func testExportSelectionDoesNotActivateNeighboringActions() {
+        launchExport("Jellyfin")
+        let before = app.staticTexts["fixture.history.report"].label
+        let selection = element("tracker-export.select.movie")
+        activate(selection)
+        XCTAssertEqual(app.staticTexts["fixture.history.report"].label, before)
+        XCTAssertTrue(app.buttons["tracker-export.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["Export selected titles"].exists)
+        activate(selection)
+        XCTAssertEqual(app.staticTexts["fixture.history.report"].label, before)
+        XCTAssertFalse(app.buttons["tracker-export.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["Export selected titles"].exists)
+    }
+
     func testSelectionRowDoesNotActivateNeighboringActions() {
         launch()
         element("tracker-history.select.jellyfin:movie").tap()
@@ -114,6 +168,72 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         screenshot.name = "confirmed-\(server)-only"
         screenshot.lifetime = .keepAlways
         add(screenshot)
+    }
+
+    private func launchExport(_ server: String, arguments: [String] = []) {
+        app.launchArguments = [
+            "--tracker-history-import-fixture", "--history-export", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
+        ] + arguments
+        app.launch()
+        openExport(server)
+        XCTAssertFalse(app.buttons["tracker-export.apply"].isEnabled)
+        assertExportReport(writes: 0)
+    }
+
+    private func openExport(_ server: String) {
+        activate(app.buttons["fixture.history.open"])
+        chooseExportValue("\(server) fixture · \(server) viewer", picker: "tracker-export.account")
+        chooseExportValue("Movies", picker: "tracker-export.library")
+        activate(app.buttons["tracker-export.preview"])
+        XCTAssertTrue(app.buttons["tracker-export.apply"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    private func chooseExportValue(_ label: String, picker identifier: String) {
+        let picker = element(identifier)
+        XCTAssertTrue(picker.waitForExistence(timeout: 30), app.debugDescription)
+        #if os(tvOS)
+        let option = picker.buttons[label].firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription)
+        activate(picker.buttons.element(boundBy: 0))
+        for _ in 0..<picker.buttons.count {
+            if option.wait(for: \.hasFocus, toEqual: true, timeout: 1) { break }
+            XCUIRemote.shared.press(.right)
+        }
+        XCTAssertTrue(option.hasFocus, app.debugDescription)
+        XCTAssertTrue(option.isSelected, app.debugDescription)
+        #else
+        activate(picker)
+        activate(app.buttons[label].firstMatch)
+        #endif
+    }
+
+    private func confirmExport() {
+        activate(element("tracker-export.select.movie"))
+        activate(app.buttons["tracker-export.apply"])
+        activate(app.buttons["Export selected titles"].firstMatch)
+    }
+
+    private func verifyExport(_ server: String) {
+        launchExport(server)
+        activate(element("tracker-export.select.movie"))
+        activate(app.buttons["tracker-export.apply"])
+        XCTAssertTrue(app.buttons["Export selected titles"].firstMatch.waitForExistence(timeout: 5))
+        cancelConfirmation()
+        assertExportReport(writes: 0)
+        activate(app.buttons["tracker-export.apply"])
+        activate(app.buttons["Export selected titles"].firstMatch)
+        XCTAssertTrue(app.staticTexts["Confirmed on Fixture"].waitForExistence(timeout: 5), app.debugDescription)
+        assertExportReport(writes: 1)
+        XCTAssertFalse(app.buttons["tracker-export.apply"].isEnabled)
+    }
+
+    private func assertExportReport(writes: Int) {
+        let report = app.staticTexts["fixture.history.report"]
+        XCTAssertTrue(report.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(report.label.contains(";trackers=\(writes);"), report.label)
+        for kind in ["jellyfin", "plex"] {
+            XCTAssertTrue(report.label.contains("\(kind)=0,played=true,playback=0"), report.label)
+        }
     }
 
     func testWatchedOnlyManualSyncUsesSupportedControlsAndExplicitAction() {
@@ -233,8 +353,8 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
     }
 
     private func activate(_ target: XCUIElement) {
-        XCTAssertTrue(target.waitForExistence(timeout: 5), app.debugDescription)
         #if os(tvOS)
+        XCTAssertTrue(target.waitForExistence(timeout: 5), app.debugDescription)
         if app.sheets.firstMatch.exists {
             for _ in 0..<2 where !target.hasFocus { XCUIRemote.shared.press(.left) }
             for _ in 0..<2 where !target.hasFocus { XCUIRemote.shared.press(.right) }
@@ -246,10 +366,15 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         XCTAssertTrue(target.hasFocus, "Unreachable \(target.identifier): \(app.debugDescription)")
         XCUIRemote.shared.press(.select)
         #else
-        if !target.isHittable {
-            for _ in 0..<5 where !target.isHittable { app.swipeUp() }
+        if !target.waitForExistence(timeout: 5) || !target.isHittable {
+            let list = app.collectionViews.firstMatch
+            for _ in 0..<5 {
+                if target.exists && target.isHittable { break }
+                guard list.exists else { break }
+                list.swipeUp()
+            }
         }
-        XCTAssertTrue(target.isHittable, app.debugDescription)
+        XCTAssertTrue(target.exists && target.isHittable, app.debugDescription)
         if target.elementType == .switch, target.switches.firstMatch.exists {
             target.switches.firstMatch.tap()
         } else {
