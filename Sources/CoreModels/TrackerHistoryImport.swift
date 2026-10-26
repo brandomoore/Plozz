@@ -37,6 +37,10 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
         season: Int? = nil, episode: Int? = nil, episodeOrdering: EpisodeOrdering? = nil,
         requiresExactEpisodeIdentity: Bool = false, fact: Fact
     ) throws {
+        let scopedSeriesList: Bool
+        if case .listState = fact {
+            scopedSeriesList = kind == .series && season.map { $0 >= 0 } == true
+        } else { scopedSeriesList = false }
         guard !recordID.isEmpty, !identities.isEmpty,
               identities.allSatisfy({
                   if case .external(let source, let value) = $0 { return !source.isEmpty && !value.isEmpty }
@@ -44,7 +48,7 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
               }),
               kind == .movie || kind == .episode || kind == .series,
               kind != .episode || (season.map { $0 >= 0 } == true && episode.map { $0 > 0 } == true),
-              kind == .episode || (season == nil && episode == nil && !requiresExactEpisodeIdentity) else {
+              kind == .episode || ((season == nil || scopedSeriesList) && episode == nil && !requiresExactEpisodeIdentity) else {
             throw TrackerHistoryError.invalidObservation
         }
         switch fact {
@@ -129,7 +133,8 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
     public func matchesHistoryExport(_ item: MediaItem) -> Bool {
         if matches(item) { return true }
         guard kind == .series, item.kind == .episode, case .listState(let state) = fact,
-              [.planning, .paused, .dropped].contains(state) else { return false }
+              [.planning, .paused, .dropped].contains(state),
+              season == nil || season == item.seasonNumber else { return false }
         let parentIDs = MediaItemIdentity.seriesIdentities(for: item)
         return !Set(identities).isDisjoint(with: parentIDs)
             && !MediaItemIdentity.externalIdentitiesConflict(identities, parentIDs)

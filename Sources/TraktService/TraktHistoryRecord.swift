@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 
 struct TraktHistoryRecord: Decodable, Sendable {
@@ -35,6 +36,22 @@ struct TraktHistoryRecord: Decodable, Sendable {
             fact = .watched(at: date)
         }
         let recordID = "\(playback ? "resume" : "watched")/\(id)"
+        return try observation(fact: fact, recordID: recordID)
+    }
+
+    func exportProtection() throws -> TrackerHistoryObservation {
+        guard let action, ["watch", "scrobble", "checkin"].contains(action) else {
+            throw TrackerHistoryError.invalidObservation
+        }
+        let date = watchedAt.flatMap(TraktClient.parseTimestamp)
+        if date == nil {
+            PlozzLog.networking.info("Trakt watch date unavailable; retaining only existing-watch protection")
+        }
+        return try observation(fact: .watched(at: date), recordID: "watched/\(id)")
+    }
+
+    func observation(fact: TrackerHistoryObservation.Fact, recordID: String) throws -> TrackerHistoryObservation {
+        guard id > 0 else { throw TrackerHistoryError.invalidObservation }
         switch type {
         case "movie":
             guard let movie, show == nil, episode == nil else { throw TrackerHistoryError.invalidObservation }
@@ -58,7 +75,7 @@ struct TraktHistoryRecord: Decodable, Sendable {
     }
 }
 
-private extension TraktIDs {
+extension TraktIDs {
     func historyIdentities(prefix: String = "", suffix: String = "") throws -> [MediaIdentity] {
         var result: [MediaIdentity] = []
         for (source, id) in [("tmdb", tmdb), ("tvdb", tvdb), ("trakt", trakt)] {

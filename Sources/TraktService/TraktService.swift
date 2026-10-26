@@ -39,6 +39,7 @@ public final class TraktService: TrackerHistorySyncReading {
     public private(set) var historySyncNamespace: String?
     public var historySyncCategories: Set<TrackerHistorySyncCategory> { [.watched] }
     @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
+    @ObservationIgnored public var makeHistoryExport: (@MainActor () throws -> TrackerHistoryExportSession<TraktHistoryExportTarget>)?
 
     /// Lifetime (seconds) of the most recently issued device code, so the UI can
     /// render a countdown ring against the current `connecting` `expiresAt`.
@@ -124,6 +125,50 @@ public final class TraktService: TrackerHistorySyncReading {
         try current()
         return try await TraktClient(config: config, http: http).historySnapshot(
             accessToken: access, connectionID: expectedConnectionID, validateScope: { try await current() }
+        )
+    }
+
+    public func makeHistoryExportSession(
+        source: TrackerServerHistorySource, store: DurableLocalStateStore
+    ) throws -> TrackerHistoryExportSession<TraktHistoryExportTarget> {
+        guard let connection = historyConnectionID, let identity = historySyncIdentity,
+              source.scope.profileID == (historySyncNamespace ?? ProfileStore.defaultProfileID) else {
+            throw TrackerHistoryError.scopeChanged
+        }
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try Task.checkCancellation()
+            try source.requireCurrent()
+            guard self?.historyConnectionID == connection else { throw TrackerHistoryError.scopeChanged }
+        }
+        let access: @MainActor @Sendable () async throws -> String = { [weak self] in
+            try current()
+            guard let self, let token = try await self.coordinator.accessToken(
+                store: self.tokenStore.snapshot(), auth: self.auth
+            ) else { throw AppError.unauthorized }
+            try current()
+            return token
+        }
+        let client = TraktClient(config: config, http: http)
+        let adapter = TraktHistoryExportAdapter(client: client)
+        let validate: @Sendable () async throws -> Void = { try await current() }
+        return .init(
+            trackerID: historySyncTrackerID, trackerName: "Trakt",
+            connectionID: identity.connectionID, snapshotConnectionID: connection,
+            source: source, store: store, preservesWatchDates: true,
+            isConnected: { [weak self] in self?.historyConnectionID == connection },
+            supports: { TraktHistoryExportAdapter.supports($0) },
+            readAll: { try await adapter.snapshot(token: access(), connectionID: connection, validate: validate) },
+            resolve: { try await adapter.resolve($0, token: access(), validate: validate) },
+            readTarget: { try await adapter.state($0, token: access(), validate: validate) },
+            write: { target, date, _, authorize in
+                try await client.exportHistory(
+                    target, date: date, accessToken: { try await access() },
+                    authorize: {
+                        try await validate()
+                        try await authorize()
+                    }, validate: validate
+                )
+            }
         )
     }
 

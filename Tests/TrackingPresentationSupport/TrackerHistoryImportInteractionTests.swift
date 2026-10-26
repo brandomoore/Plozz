@@ -68,6 +68,13 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         }
     }
 
+    func testTraktExportProductionAdapterAndServerIsolation() {
+        for server in ["Jellyfin", "Plex"] {
+            verifyExport(server, arguments: ["--history-trakt-export"], trackerName: "Trakt")
+            app.terminate()
+        }
+    }
+
     func testExportChangedTrackerStateRejectsDelivery() {
         launchExport("Jellyfin", arguments: ["--history-change-on-recheck"])
         confirmExport()

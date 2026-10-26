@@ -21,7 +21,7 @@ struct TraktClient: Sendable {
 
     /// Headers required on every Trakt request. The bearer token is optional —
     /// OAuth endpoints are unauthenticated.
-    private func headers(accessToken: String? = nil) -> [String: String] {
+    func headers(accessToken: String? = nil) -> [String: String] {
         var headers = [
             "Content-Type": "application/json",
             "trakt-api-version": "2",
@@ -119,7 +119,7 @@ struct TraktClient: Sendable {
         return response
     }
 
-    private func oauthError(data: Data, response: HTTPURLResponse) -> AppError {
+    func oauthError(data: Data, response: HTTPURLResponse) -> AppError {
         struct OAuthError: Decodable { let error: String }
         if response.statusCode == 400,
            (try? JSONDecoder().decode(OAuthError.self, from: data).error) == "invalid_grant" {
@@ -327,8 +327,9 @@ struct TraktClient: Sendable {
         try await paginatedGET(path: path, accessToken: accessToken, requiresCompleteEvidence: false, validateScope: {})
     }
 
-    private func paginatedGET<T: Decodable & TraktPageIdentifiable>(
-        path: String, accessToken: String, requiresCompleteEvidence: Bool,
+    func paginatedGET<T: Decodable & TraktPageIdentifiable>(
+        path: String, accessToken: String?, requiresCompleteEvidence: Bool,
+        query: [URLQueryItem] = [], maximumResponseBytes: Int? = nil,
         validateScope: @Sendable () async throws -> Void
     ) async throws -> [T] {
         let limit = 100
@@ -341,21 +342,29 @@ struct TraktClient: Sendable {
         while page <= maximumPages {
             try Task.checkCancellation()
             try await validateScope()
-            let endpoint = Endpoint(
+            var endpoint = Endpoint(
                 method: .get,
                 path: path,
-                queryItems: [
+                queryItems: query + [
                     URLQueryItem(name: "page", value: String(page)),
                     URLQueryItem(name: "limit", value: String(limit)),
                 ],
                 headers: headers(accessToken: accessToken)
             )
+            if let maximumResponseBytes {
+                endpoint.maximumResponseBytes = maximumResponseBytes
+                endpoint.redirectPolicy = .sameOrigin
+                endpoint.redactsURLForLogging = true
+            }
             let (data, response) = try await http.sendRaw(
                 endpoint,
                 baseURL: baseURL
             )
             try Task.checkCancellation()
             try await validateScope()
+            if let maximumResponseBytes, data.count > maximumResponseBytes {
+                throw TrackerHistoryError.incompleteSnapshot
+            }
             if requiresCompleteEvidence {
                 guard response.statusCode == 200 else { throw oauthError(data: data, response: response) }
             } else {
@@ -476,7 +485,7 @@ struct TraktClient: Sendable {
 
 }
 
-private protocol TraktPageIdentifiable {
+protocol TraktPageIdentifiable: Sendable {
     var id: Int { get }
 }
 

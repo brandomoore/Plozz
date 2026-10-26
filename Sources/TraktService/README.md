@@ -151,6 +151,49 @@ Playback pagination is explicitly requested; a headerless response is not a
 complete snapshot. These contracts and fixture checks are not authenticated
 round-trip acceptance evidence.
 
+## Guarded historical export
+
+**Export server history** uses the shared read-only preview, explicit server-user/
+library selection and separate confirmation on TV, iPhone and iPad. It exports
+only watched movies and individually identified episodes with a known server watch
+date. Unknown dates remain unsupported until their readback semantics are verified;
+an existing watch with an unavailable date still prevents duplicate export, but
+cannot verify a dated write. No current-time substitute, repeat-play count,
+scrobble backfill, show/season expansion, rating change or server write is made.
+
+Public external-ID lookup and fresh canonical detail must agree with the source.
+Episodes also require corroborated parent IDs and exact season/episode coordinates.
+The immutable authenticated `user.ids.uuid`, native media ID and kind form the
+receipt target; titles and mutable source metadata do not. Complete history,
+watchlists, paused playback and current watching protect existing state.
+Movie, show, season and episode watchlist entries are all protected; a planned
+season protects only episodes in that season, not unrelated seasons.
+Activity checks include `watchlist.updated_at` so removals invalidate cached
+protection. Missing pagination, changing owners/activity and malformed evidence
+fail closed.
+
+An export-only serial gate leaves at least 1.01 seconds after each operation
+before admitting the next. Full source/tracker authorization runs after that wait,
+then coordinated access-token retrieval and the profile/grant guard run immediately
+before dispatch. Reads do not enter this writer gate. A 429 stops delivery without
+automatic retry; its bounded cooldown survives relaunch. This does not claim to
+coordinate other applications or every existing realtime request.
+
+Each `/sync/history` request contains exactly one native movie or episode and an
+explicit UTC `watched_at`. The current OpenAPI acknowledgement requires HTTP 200,
+with redirects left unfollowed to prevent automatic resubmission,
+exactly one addition, zero updates and empty not-found buckets. Independent
+item-history readback must confirm the same native identity and date. Known
+non-delivery clears only the current attempt's receipt; ambiguous transport,
+cancellation after dispatch or malformed acknowledgements retain the replay
+fence. Presence after an uncertain reply does not establish authorship. Trakt
+does not deduplicate item/date submissions, and local receipts are not remote
+idempotency or distributed atomicity.
+
+Contract: [Trakt API](https://trakt.docs.apiary.io/), external-ID lookup,
+user settings/watching, activity and history endpoints. Synthetic service and
+native fixtures do not replace authenticated account round-trip acceptance.
+
 External-player callbacks use the same durable watch outbox as in-app playback.
 Returning before completion sends `/scrobble/pause` with the reported percentage
 for Trakt's paused playback data, as well as saving server resume state. This is

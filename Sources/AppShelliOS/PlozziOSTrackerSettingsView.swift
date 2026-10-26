@@ -72,6 +72,7 @@ private struct TraktSettingsContent: View {
     @State private var browser = TrackerBrowserAuthorization()
     @State private var confirmingReconnect = false
     @State private var showingHistory = false
+    @State private var showingExport = false
 
     var body: some View {
         Group {
@@ -89,6 +90,10 @@ private struct TraktSettingsContent: View {
         }
         .sheet(isPresented: $showingHistory) {
             NavigationStack { TrackerHistoryImportView(makeSession: makeHistoryImport) }
+        }
+        .onChange(of: service.historyConnectionID) { _, _ in showingExport = false }
+        .sheet(isPresented: $showingExport) {
+            NavigationStack { TraktHistoryExportView(service: service) }
         }
     }
 
@@ -124,6 +129,10 @@ private struct TraktSettingsContent: View {
             connectedStatus(username: username)
             Button("Compare with server history") { showingHistory = true }
                 .accessibilityIdentifier("trakt.compare-history")
+            if service.makeHistoryExport != nil {
+                Button("Export server history") { showingExport = true }
+                    .accessibilityIdentifier("trakt.export-history")
+            }
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }

@@ -5,7 +5,24 @@ import CoreUI
 import MALService
 import SimklService
 import SwiftUI
+import TraktService
 import WetrakrService
+
+public struct TraktHistoryExportView: View {
+    private let service: TraktService
+
+    public init(service: TraktService) { self.service = service }
+
+    public var body: some View {
+        TrackerHistoryExportView(
+            summary: "Only movies and episodes with watch dates. No repeat plays.",
+            libraryKinds: [.movie, .series]
+        ) {
+            guard let create = service.makeHistoryExport else { throw TrackerHistoryExportError.unsupported }
+            return try create()
+        }
+    }
+}
 
 public struct SimklHistoryExportView: View {
     private let service: SimklService

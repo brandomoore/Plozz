@@ -28,6 +28,7 @@ struct IntegrationsDetailView: View {
     let serverCount: Int
     @State private var confirmingTraktReconnect = false
     @State private var showingTraktHistory = false
+    @State private var showingTraktExport = false
     @State private var showingSimklHistory = false
     @State private var showingSimklExport = false
     @State private var showingWetrakrHistory = false
@@ -58,6 +59,10 @@ struct IntegrationsDetailView: View {
                 if let makeTraktHistoryImport {
                     NavigationStack { TrackerHistoryImportView(makeSession: makeTraktHistoryImport) }
                 }
+            }
+            .onChange(of: trakt.historyConnectionID) { _, _ in showingTraktExport = false }
+            .sheet(isPresented: $showingTraktExport) {
+                NavigationStack { TraktHistoryExportView(service: trakt) }
             }
             .confirmationDialog("Reconnect WeTrakr for this profile?", isPresented: $confirmingWetrakrReconnect, titleVisibility: .visible) {
                 Button("Reconnect WeTrakr", role: .destructive) { wetrakr.connect() }
@@ -173,6 +178,10 @@ struct IntegrationsDetailView: View {
                     if case .connected = trakt.phase, makeTraktHistoryImport != nil {
                         Button("Compare with server history") { showingTraktHistory = true }
                             .accessibilityIdentifier("trakt.compare-history")
+                    }
+                    if case .connected = trakt.phase, trakt.makeHistoryExport != nil {
+                        Button("Export server history") { showingTraktExport = true }
+                            .accessibilityIdentifier("trakt.export-history")
                     }
                 }
             },

@@ -121,6 +121,38 @@ final class TrackerHistoryExportTests: XCTestCase {
         }
     }
 
+    func testSeasonListProtectionRemainsScopedAndCannotRepresentAWatchedSeason() async throws {
+        let identities: [MediaIdentity] = [.external(source: "tvdb", value: "100")]
+        let planned = try TrackerHistoryObservation(
+            recordID: "season/state", kind: .series, identities: identities,
+            season: 1, fact: .listState(.planning)
+        )
+        for season in [0, 1, 2] {
+            let item = MediaItem(
+                id: "episode", title: "Episode", kind: .episode,
+                seasonNumber: season, episodeNumber: 1, isPlayed: true,
+                providerIDs: ["Tvdb": "200", "SeriesTvdb": "100"]
+            )
+            XCTAssertEqual(planned.matchesHistoryExport(item), season == 1)
+            XCTAssertFalse(planned.matches(item), "Season protection is not episode import evidence")
+            let fixture = try ExportFixture(items: [item], libraryKind: .series)
+            fixture.observations = [planned]
+            let session = fixture.session()
+            await session.compare(accountID: "account", library: .init(id: "library", title: "Shows", kind: .series))
+            XCTAssertNil(session.error)
+            XCTAssertEqual(session.rows.first?.status, season == 1 ? .conflict : .ready)
+            XCTAssertEqual(fixture.writes, 0)
+        }
+        for fact in [TrackerHistoryObservation.Fact.watched(at: nil), .episodeCount(watched: 1, repeats: nil)] {
+            XCTAssertThrowsError(try TrackerHistoryObservation(
+                recordID: "season", kind: .series, identities: identities, season: 1, fact: fact
+            ))
+        }
+        XCTAssertThrowsError(try TrackerHistoryObservation(
+            recordID: "season", kind: .series, identities: identities, season: -1, fact: .listState(.planning)
+        ))
+    }
+
     func testParentProtectionDoesNotGuessFromEpisodeIDsTitlesOrContradictoryParents() throws {
         let parent = try TrackerHistoryObservation(
             recordID: "parent/state", kind: .series,

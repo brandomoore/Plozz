@@ -1619,6 +1619,13 @@ public final class AppState {
                 source: self.makeTrackerHistoryExportSource(), store: store
             )
         }
+        self.traktService.makeHistoryExport = { [weak self] in
+            guard let self else { throw CancellationError() }
+            guard let store = self.durableLocalStateStore else { throw DurableLocalStateError.storageUnavailable }
+            return try self.traktService.makeHistoryExportSession(
+                source: self.makeTrackerHistoryExportSource(), store: store
+            )
+        }
         self.simklService.makeHistoryExport = { [weak self] in
             guard let self else { throw CancellationError() }
             guard let store = self.durableLocalStateStore else { throw DurableLocalStateError.storageUnavailable }
