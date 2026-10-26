@@ -134,7 +134,9 @@ class ReadOnlyHTTP:
         if query:
             url += "?" + urllib.parse.urlencode(query)
         request = urllib.request.Request(
-            url, headers={"Accept": "application/json", "Cache-Control": "no-cache", **headers}, method="GET"
+            url, headers={"Accept": "application/json", "Cache-Control": "no-cache",
+                          "User-Agent": "Plozz-Tracker-Acceptance/1.0 (read-only integration verification)",
+                          **headers}, method="GET"
         )
         self.requests += 1
         self.last_request = time.monotonic()

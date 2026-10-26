@@ -244,7 +244,9 @@ The output directory must already exist, be owned by the current user and mode
 700. Output is a new mode-600 file and is never overwritten. The reader uses
 GET only, refuses redirects, does not retry failures or 429s, disables response
 caching, and bounds page counts, bytes, request count and the entire invocation
-to 120 seconds. No key is written to disk or passed on argv.
+to 120 seconds. Requests identify the read-only test client with an explicit
+`Plozz-Tracker-Acceptance` user agent; they do not impersonate a browser.
+No key is written to disk or passed on argv.
 
 Independent reads verify exact server/user/catalog identities before recording
 only allowlisted watched/resume state. Missing, changing, duplicate, unfiltered

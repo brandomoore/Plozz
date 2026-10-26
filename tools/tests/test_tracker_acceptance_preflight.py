@@ -234,6 +234,8 @@ class TrackerAcceptancePreflightTests(unittest.TestCase):
         self.assertEqual(request.get_method(), "GET")
         self.assertIsNone(request.data)
         self.assertEqual(request.get_header("Cache-control"), "no-cache")
+        self.assertEqual(request.get_header("User-agent"),
+                         "Plozz-Tracker-Acceptance/1.0 (read-only integration verification)")
         self.assertNotIn(KEY, request.full_url)
         for code in (302, 401, 403, 429, 500):
             opener.reset_mock()
