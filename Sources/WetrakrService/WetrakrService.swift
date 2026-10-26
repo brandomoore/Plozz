@@ -22,6 +22,7 @@ public final class WetrakrService: TrackerHistorySyncReading {
     public private(set) var codeLifetime: TimeInterval = 600
     @ObservationIgnored public let watchlistDestination: WetrakrWatchlistDestination?
     @ObservationIgnored public var onConnectionChanged: (@MainActor @Sendable () -> Void)?
+    @ObservationIgnored public var makeHistoryExport: (@MainActor () throws -> TrackerHistoryExportSession<WetrakrHistoryExportTarget>)?
     @ObservationIgnored private let config: WetrakrConfig
     @ObservationIgnored private let client: WetrakrClient
     @ObservationIgnored private let auth: WetrakrAuthService
@@ -109,6 +110,55 @@ public final class WetrakrService: TrackerHistorySyncReading {
 
     public func playbackScrobbler() -> WetrakrScrobbler {
         WetrakrScrobbler(client: client, tokenStore: tokenStore.snapshot(), coordinator: coordinator)
+    }
+
+    public func makeHistoryExportSession(
+        source: TrackerServerHistorySource, store: DurableLocalStateStore
+    ) throws -> TrackerHistoryExportSession<WetrakrHistoryExportTarget> {
+        guard let connection = historyConnectionID, let identity = historySyncIdentity,
+              source.scope.profileID == (historySyncNamespace ?? ProfileStore.defaultProfileID) else {
+            throw TrackerHistoryError.scopeChanged
+        }
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try Task.checkCancellation()
+            try source.requireCurrent()
+            guard self?.historyConnectionID == connection else { throw TrackerHistoryError.scopeChanged }
+        }
+        let access: @MainActor @Sendable () async throws -> String = { [weak self] in
+            try current()
+            guard let self, let token = try await self.coordinator.accessToken(
+                store: self.tokenStore.snapshot(), auth: self.auth
+            ) else { throw AppError.unauthorized }
+            try current()
+            return token
+        }
+        let validate: @Sendable () async throws -> Void = { try await current() }
+        let adapter = WetrakrHistoryExportAdapter(client: client)
+        return .init(
+            trackerID: historySyncTrackerID, trackerName: "WeTrakr",
+            connectionID: identity.connectionID, snapshotConnectionID: connection,
+            source: source, store: store, preservesWatchDates: true,
+            isConnected: { [weak self] in self?.historyConnectionID == connection },
+            supports: { WetrakrHistoryExportAdapter.supports($0) },
+            readAll: {
+                try await adapter.snapshot(accessToken: access(), connectionID: connection, validateScope: validate)
+            },
+            resolve: {
+                try await adapter.resolve($0, accessToken: access(), validateScope: validate)
+            },
+            readTarget: {
+                try await adapter.state($0, accessToken: access(), validateScope: validate)
+            },
+            write: { [client] target, date, key, authorize in
+                try await client.exportHistory(
+                    target, date: date, idempotencyKey: key, accessToken: access(),
+                    authorize: {
+                        try await validate()
+                        try await authorize()
+                    }, validateScope: validate
+                )
+            }
+        )
     }
 
     public func setActiveProfile(namespace: String?) async {

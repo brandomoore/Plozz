@@ -9,10 +9,11 @@ struct WetrakrTrackingBody: Encodable, Sendable {
         var number: Int?
         var status: String?
         var trackedAt: String?
+        var trackedAtUnknown: Bool?
         var seasons: [Item]?
         var episodes: [Item]?
         enum CodingKeys: String, CodingKey {
-            case id, ids, number, status, seasons, episodes, trackedAt = "tracked_at"
+            case id, ids, number, status, seasons, episodes, trackedAt = "tracked_at", trackedAtUnknown = "tracked_at_unknown"
         }
     }
     var movies: [Item]?

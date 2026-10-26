@@ -30,6 +30,7 @@ struct IntegrationsDetailView: View {
     @State private var showingTraktHistory = false
     @State private var showingSimklHistory = false
     @State private var showingWetrakrHistory = false
+    @State private var showingWetrakrExport = false
     @State private var showingAniListHistory = false
     @State private var showingAniListExport = false
     @State private var showingMALHistory = false
@@ -71,6 +72,10 @@ struct IntegrationsDetailView: View {
                 if let makeWetrakrHistoryImport {
                     NavigationStack { TrackerHistoryImportView(makeSession: makeWetrakrHistoryImport) }
                 }
+            }
+            .onChange(of: wetrakr.historyConnectionID) { _, _ in showingWetrakrExport = false }
+            .sheet(isPresented: $showingWetrakrExport) {
+                NavigationStack { WetrakrHistoryExportView(service: wetrakr) }
             }
             .onChange(of: simkl.phase) { _, _ in
                 if simkl.historyConnectionID == nil { showingSimklHistory = false }
@@ -219,6 +224,10 @@ struct IntegrationsDetailView: View {
                     if case .connected = wetrakr.phase, makeWetrakrHistoryImport != nil {
                         Button("Compare with server history") { showingWetrakrHistory = true }
                             .accessibilityIdentifier("wetrakr.compare-history")
+                    }
+                    if case .connected = wetrakr.phase, wetrakr.makeHistoryExport != nil {
+                        Button("Export server history") { showingWetrakrExport = true }
+                            .accessibilityIdentifier("wetrakr.export-history")
                     }
                 }
             },

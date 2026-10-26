@@ -54,6 +54,13 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         verifyExport("Plex")
     }
 
+    func testWetrakrExportProductionAdapterAndServerIsolation() {
+        for server in ["Jellyfin", "Plex"] {
+            verifyExport(server, arguments: ["--history-wetrakr-export"], trackerName: "WeTrakr")
+            app.terminate()
+        }
+    }
+
     func testExportChangedTrackerStateRejectsDelivery() {
         launchExport("Jellyfin", arguments: ["--history-change-on-recheck"])
         confirmExport()
@@ -213,8 +220,8 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         activate(app.buttons["Export selected titles"].firstMatch)
     }
 
-    private func verifyExport(_ server: String) {
-        launchExport(server)
+    private func verifyExport(_ server: String, arguments: [String] = [], trackerName: String = "Fixture") {
+        launchExport(server, arguments: arguments)
         activate(element("tracker-export.select.movie"))
         activate(app.buttons["tracker-export.apply"])
         XCTAssertTrue(app.buttons["Export selected titles"].firstMatch.waitForExistence(timeout: 5))
@@ -222,7 +229,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         assertExportReport(writes: 0)
         activate(app.buttons["tracker-export.apply"])
         activate(app.buttons["Export selected titles"].firstMatch)
-        XCTAssertTrue(app.staticTexts["Confirmed on Fixture"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Confirmed on \(trackerName)"].waitForExistence(timeout: 5), app.debugDescription)
         assertExportReport(writes: 1)
         XCTAssertFalse(app.buttons["tracker-export.apply"].isEnabled)
     }

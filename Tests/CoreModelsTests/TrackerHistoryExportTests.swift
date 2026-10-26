@@ -102,6 +102,7 @@ final class TrackerHistoryExportTests: XCTestCase {
             providerIDs: ["Tvdb": "200", "SeriesTvdb": "100", "SeriesImdb": "tt123"]
         )
         for state in TrackerHistoryListState.allCases {
+            let protected = [.planning, .paused, .dropped].contains(state)
             let fixture = try ExportFixture(items: [item], libraryKind: .series)
             let parent = try TrackerHistoryObservation(
                 recordID: "parent/state", kind: .series,
@@ -109,13 +110,13 @@ final class TrackerHistoryExportTests: XCTestCase {
                 fact: .listState(state)
             )
             XCTAssertFalse(parent.matches(item), "Parent state must never become an episode import")
-            XCTAssertTrue(parent.matchesHistoryExport(item))
+            XCTAssertEqual(parent.matchesHistoryExport(item), protected)
             fixture.observations = [parent]
             let session = fixture.session()
             await session.compare(accountID: "account", library: .init(id: "library", title: "Shows", kind: .series))
             XCTAssertNil(session.error, "Multiple parent IDs must not duplicate one observation")
-            XCTAssertEqual(session.rows.first?.status, .conflict)
-            await apply(session)
+            XCTAssertEqual(session.rows.first?.status, protected ? .conflict : .ready)
+            if protected { await apply(session) }
             XCTAssertEqual(fixture.writes, 0)
         }
     }

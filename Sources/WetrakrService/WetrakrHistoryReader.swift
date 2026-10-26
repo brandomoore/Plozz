@@ -3,6 +3,7 @@ import CoreNetworking
 import Foundation
 
 actor WetrakrHistoryReader {
+    private let includesListStates: Bool
     private struct Cache {
         let connectionID: String
         let activity: WetrakrHistoryActivity
@@ -11,6 +12,8 @@ actor WetrakrHistoryReader {
     }
     private var cache: Cache?
     private var reading = false
+
+    init(includesListStates: Bool = false) { self.includesListStates = includesListStates }
 
     func snapshot(
         client: WetrakrClient, accessToken: String, connectionID: String,
@@ -39,6 +42,22 @@ actor WetrakrHistoryReader {
                 )
                 watches += rows.observations
                 watchCount += rows.count
+            }
+            if includesListStates {
+                for (status, state, targets) in [
+                    ("planning", TrackerHistoryListState.planning, ["movies", "shows"]),
+                    ("dropped", .dropped, ["movies", "shows"]),
+                    ("hold", .paused, ["shows"])
+                ] {
+                    for target in targets {
+                        let rows = try await complete(
+                            client, accessToken: accessToken, path: "/sync/tracking/\(status)/\(target)",
+                            target: target, playback: false, listState: state, validateScope: validateScope
+                        )
+                        watches += rows.observations
+                        watchCount += rows.count
+                    }
+                }
             }
         }
         var observations = watches
@@ -69,7 +88,8 @@ actor WetrakrHistoryReader {
 
     private func complete(
         _ client: WetrakrClient, accessToken: String, path: String, target: String,
-        playback: Bool, validateScope: @escaping @Sendable () async throws -> Void
+        playback: Bool, listState: TrackerHistoryListState? = nil,
+        validateScope: @escaping @Sendable () async throws -> Void
     ) async throws -> (observations: [TrackerHistoryObservation], count: Int) {
         var observations: [TrackerHistoryObservation] = []
         var ids = Set<String>()
@@ -88,7 +108,7 @@ actor WetrakrHistoryReader {
                   result.value.count <= 5_000 else { throw TrackerHistoryError.incompleteSnapshot }
             expectedCount = count
             for record in result.value {
-                let observation = try record.observation(target: target, playback: playback)
+                let observation = try record.observation(target: target, playback: playback, listState: listState)
                 guard ids.insert(observation.recordID).inserted else { throw TrackerHistoryError.incompleteSnapshot }
                 observations.append(observation)
             }
@@ -163,19 +183,27 @@ struct WetrakrHistoryRecord: Decodable, Sendable {
     let watchedAt: String?
     let unknownDate: Bool?
     let playback: Playback?
+    let status: String?
     enum CodingKeys: String, CodingKey {
-        case id, type, ids, playback, showID = "show_id", showIDs = "show_ids"
+        case id, type, ids, playback, status, showID = "show_id", showIDs = "show_ids"
         case season = "season_number", episode = "number", playID = "play_id"
         case watchedAt = "watched_at", unknownDate = "watched_at_unknown"
     }
 
-    func observation(target: String, playback isPlayback: Bool) throws -> TrackerHistoryObservation {
-        guard id > 0, type == (target == "movies" ? "movie" : "episode") else {
+    func observation(
+        target: String, playback isPlayback: Bool, listState: TrackerHistoryListState? = nil
+    ) throws -> TrackerHistoryObservation {
+        guard id > 0, ["movies": "movie", "shows": "show", "episodes": "episode"][target] == type else {
             throw TrackerHistoryError.invalidObservation
         }
         let fact: TrackerHistoryObservation.Fact
         let recordID: String
-        if isPlayback {
+        if let listState {
+            guard !isPlayback, let status,
+                  Self.listState(status) == listState else { throw TrackerHistoryError.invalidObservation }
+            fact = .listState(listState)
+            recordID = "state/\(type)/\(id)"
+        } else if isPlayback {
             guard let playback, ["playing", "paused"].contains(playback.status),
                   playback.progress.isFinite, (0...100).contains(playback.progress),
                   playback.runtime.map({ $0.isFinite && $0 > 0 }) ?? true else {
@@ -195,11 +223,15 @@ struct WetrakrHistoryRecord: Decodable, Sendable {
             fact = .watched(at: unknownDate == true ? nil : date)
             recordID = "watched/\(playID)"
         }
-        if type == "movie" {
+        if type == "movie" || type == "show" {
             guard showID == nil, showIDs == nil, season == nil, episode == nil else {
                 throw TrackerHistoryError.invalidObservation
             }
-            return try .init(recordID: recordID, kind: .movie, identities: identities(nativeID: id, ids: ids), fact: fact)
+            guard type == "movie" || listState != nil else { throw TrackerHistoryError.invalidObservation }
+            return try .init(
+                recordID: recordID, kind: type == "movie" ? .movie : .series,
+                identities: Self.identities(nativeID: id, ids: ids), fact: fact
+            )
         }
         guard let showID, showID > 0, let season, season >= 0, let episode, episode > 0 else {
             throw TrackerHistoryError.invalidObservation
@@ -207,13 +239,21 @@ struct WetrakrHistoryRecord: Decodable, Sendable {
         let suffix = ":s\(season)e\(episode)"
         return try .init(
             recordID: recordID, kind: .episode,
-            identities: identities(nativeID: id, ids: ids, suffix: suffix)
-                + identities(nativeID: showID, ids: showIDs, prefix: "series-", suffix: suffix),
+            identities: Self.identities(nativeID: id, ids: ids, suffix: suffix)
+                + Self.identities(nativeID: showID, ids: showIDs, prefix: "series-", suffix: suffix),
             season: season, episode: episode, requiresExactEpisodeIdentity: true, fact: fact
         )
     }
 
-    private func identities(
+    static func listState(_ status: String) -> TrackerHistoryListState? {
+        switch status {
+        case "hold", "paused": .paused
+        case "watched": .completed
+        default: TrackerHistoryListState(rawValue: status)
+        }
+    }
+
+    static func identities(
         nativeID: Int, ids: WetrakrIDs?, prefix: String = "", suffix: String = ""
     ) throws -> [MediaIdentity] {
         var result: [MediaIdentity] = [.external(source: prefix + "wetrakr" + suffix, value: String(nativeID))]

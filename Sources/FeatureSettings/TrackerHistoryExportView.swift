@@ -4,6 +4,23 @@ import CoreModels
 import CoreUI
 import MALService
 import SwiftUI
+import WetrakrService
+
+public struct WetrakrHistoryExportView: View {
+    private let service: WetrakrService
+
+    public init(service: WetrakrService) { self.service = service }
+
+    public var body: some View {
+        TrackerHistoryExportView(
+            summary: "Copies watched movies and episodes, without adding repeat plays.",
+            libraryKinds: [.movie, .series]
+        ) {
+            guard let create = service.makeHistoryExport else { throw TrackerHistoryExportError.unsupported }
+            return try create()
+        }
+    }
+}
 
 public struct AniListHistoryExportView: View {
     private let service: AniListService
@@ -216,7 +233,7 @@ private struct TrackerHistoryExportRow<Target: Codable & Hashable & Sendable>: V
                         .disabled(isDisabled)
                         .accessibilityIdentifier("tracker-export.select.\(row.baseline.itemID)")
                 case .alreadyMatches: Text("Already present")
-                case .conflict: Text("Conflicting tracker progress")
+                case .conflict: Text("Conflicting tracker state")
                 case .unsupported: Text("No supported exact match")
                 case .ambiguous: Text("Multiple matches")
                 case .playing: Text("Currently playing")

@@ -1,9 +1,12 @@
 import AppRuntime
 import CoreModels
+import CoreNetworking
+import CoreTrackerAuth
 import CoreUI
 import FeatureSettings
 import Observation
 import SwiftUI
+import WetrakrService
 
 struct TrackerHistoryImportFixture: View {
     @State private var model = HistoryImportFixtureModel()
@@ -12,12 +15,16 @@ struct TrackerHistoryImportFixture: View {
     var body: some View {
         VStack {
             Button("Compare history") { comparing = true }
+                .disabled(ProcessInfo.processInfo.arguments.contains("--history-wetrakr-export")
+                          && model.wetrakr.historyConnectionID == nil)
                 .accessibilityIdentifier("fixture.history.open")
         }
         .sheet(isPresented: $comparing) {
             VStack(alignment: .leading, spacing: 8) {
                 NavigationStack {
-                    if ProcessInfo.processInfo.arguments.contains("--history-export") {
+                    if ProcessInfo.processInfo.arguments.contains("--history-wetrakr-export") {
+                        WetrakrHistoryExportView(service: model.wetrakr)
+                    } else if ProcessInfo.processInfo.arguments.contains("--history-export") {
                         TrackerHistoryExportView(
                             summary: "Copies movie completion only.", libraryKinds: [.movie],
                             makeSession: model.makeExportSession
@@ -47,6 +54,11 @@ struct TrackerHistoryImportFixture: View {
         }
         .environment(\.themePalette, .dark)
         .preferredColorScheme(.dark)
+        .task {
+            if ProcessInfo.processInfo.arguments.contains("--history-wetrakr-export") {
+                await model.wetrakr.refreshStatus()
+            }
+        }
     }
 
     private var report: some View {
@@ -71,6 +83,32 @@ private final class HistoryImportFixtureModel {
 
     @ObservationIgnored private let outbox = InMemoryWatchMutationStore()
     @ObservationIgnored private var syncStore: DurableLocalStateStore?
+    @ObservationIgnored lazy var wetrakr: WetrakrService = {
+        let http = WetrakrExportFixtureHTTP(
+            read: { [weak self] in
+                guard let self else { throw CancellationError() }
+                self.trackerReads += 1
+                return self.exported
+            },
+            wrote: { [weak self] in
+                guard let self else { throw CancellationError() }
+                self.trackerWrites += 1
+                self.exported = true
+            }
+        )
+        let service = WetrakrService(
+            config: .init(clientID: "native-export-fixture"), http: http,
+            tokenStore: InMemoryTrackerTokenStore(tokens: .init(
+                accessToken: "fixture", refreshToken: "fixture", expiresAt: .distantFuture
+            )), namespace: scope.profileID
+        )
+        service.makeHistoryExport = { [weak self, weak service] in
+            guard let self, let service else { throw CancellationError() }
+            guard let store = self.syncStore else { throw DurableLocalStateError.storageUnavailable }
+            return try service.makeHistoryExportSession(source: self.makeExportSource(), store: store)
+        }
+        return service
+    }()
     @ObservationIgnored private lazy var sync: TrackerHistorySyncController? = {
         guard let syncStore else { return nil }
         return TrackerHistorySyncController(
@@ -143,9 +181,8 @@ private final class HistoryImportFixtureModel {
         return session
     }
 
-    func makeExportSession() throws -> TrackerHistoryExportSession<String> {
-        guard let syncStore else { throw DurableLocalStateError.storageUnavailable }
-        let source = TrackerServerHistorySource(
+    private func makeExportSource() -> TrackerServerHistorySource {
+        TrackerServerHistorySource(
             scope: scope, accounts: providers.map {
                 .init(id: $0.account.id, serverName: $0.account.server.name, userName: $0.account.userName)
             },
@@ -155,6 +192,11 @@ private final class HistoryImportFixtureModel {
             },
             isAuthorized: { self.authorized }, isPlaying: { _, _ in false }
         )
+    }
+
+    func makeExportSession() throws -> TrackerHistoryExportSession<String> {
+        guard let syncStore else { throw DurableLocalStateError.storageUnavailable }
+        let source = makeExportSource()
         return .init(
             trackerID: "fixture", trackerName: "Fixture", connectionID: "fixture", snapshotConnectionID: "fixture",
             source: source, store: syncStore, preservesWatchDates: false,
@@ -171,6 +213,72 @@ private final class HistoryImportFixtureModel {
                 }
             }
         )
+    }
+
+    @MainActor
+    private final class WetrakrExportFixtureHTTP: HTTPClient {
+        let read: @MainActor () throws -> Bool
+        let wrote: @MainActor () throws -> Void
+        init(read: @escaping @MainActor () throws -> Bool, wrote: @escaping @MainActor () throws -> Void) {
+            self.read = read
+            self.wrote = wrote
+        }
+
+        func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+            try await sendRaw(endpoint, baseURL: baseURL)
+        }
+
+        func sendRaw(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+            guard endpoint.headers["Authorization"] == "Bearer fixture" else { throw AppError.unauthorized }
+            let exported = try read()
+            var count = 0
+            let json: String
+            switch (endpoint.method, endpoint.path) {
+            case (.get, "/account/settings"):
+                json = #"{"id":42,"info":{"username":"fixture"}}"#
+            case (.get, "/sync/last_activities"):
+                json = #"{"all":"2020-01-02T03:04:05.000Z"}"#
+            case (.get, "/media/external/tmdb/550"):
+                json = #"{"id":10,"type":"movie"}"#
+            case (.get, "/movies/10"):
+                json = #"{"id":10,"type":"movie","ids":{"tmdb":550},"interactions":{"user":{"tracking":{"last":{"status":"\#(exported ? "watched" : "none")"}}}}}"#
+            case (.get, "/movies/10/tracking/history"):
+                json = exported
+                    ? #"{"data":[{"tracks":[{"_track_log_id":"play","target":"movie","status":"watched","tracked_at":"2020-01-02T03:04:05.000Z","tracked_at_unknown":true}]}],"meta":{"page":1,"limit":20,"total":1,"totalPages":1}}"#
+                    : #"{"data":[],"meta":{"page":1,"limit":20,"total":0,"totalPages":0}}"#
+            case (.get, "/sync/tracking/watched/history/movies"):
+                count = exported ? 1 : 0
+                json = exported
+                    ? #"[{"id":10,"type":"movie","ids":{"tmdb":550},"play_id":"play","watched_at":"2020-01-02T03:04:05.000Z","watched_at_unknown":true}]"#
+                    : "[]"
+            case (.get, let path) where [
+                "/sync/tracking/watched/history/episodes", "/sync/tracking/playing/movies", "/sync/tracking/playing/episodes",
+                "/sync/tracking/planning/movies", "/sync/tracking/planning/shows",
+                "/sync/tracking/dropped/movies", "/sync/tracking/dropped/shows", "/sync/tracking/hold/shows"
+            ].contains(path):
+                json = "[]"
+            case (.post, "/sync/tracking"):
+                guard let data = endpoint.body,
+                      let body = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      body["allow_rewatch"] as? Bool == false,
+                      let movies = body["movies"] as? [[String: Any]], movies.count == 1,
+                      movies[0]["id"] as? Int == 10, movies[0]["status"] as? String == "watched",
+                      movies[0]["tracked_at_unknown"] as? Bool == true,
+                      Set(body.keys) == ["movies", "allow_rewatch"],
+                      Set(movies[0].keys) == ["id", "status", "tracked_at_unknown"],
+                      endpoint.headers["Idempotency-Key"]?.isEmpty == false else {
+                    throw HTTPRequestNotSentError(underlying: .invalidResponse)
+                }
+                try wrote()
+                json = #"{"added":{"plays":[{"id":10,"type":"movie","play_id":"play","watched_at":"2020-01-02T03:04:05.000Z"}]}}"#
+            default:
+                throw AppError.notFound
+            }
+            guard let response = HTTPURLResponse(
+                url: baseURL, statusCode: 200, httpVersion: nil, headerFields: ["X-Pagination-Item-Count": String(count)]
+            ) else { throw AppError.invalidResponse }
+            return (Data(json.utf8), response)
+        }
     }
 
     private func exportSnapshot() throws -> TrackerHistorySnapshot {

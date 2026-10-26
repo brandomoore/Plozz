@@ -82,6 +82,17 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
     }
 
     public func matches(_ item: MediaItem) -> Bool {
+        Self.matches(
+            item, kind: kind, identities: identities, season: season, episode: episode,
+            episodeOrdering: episodeOrdering, requiresExactEpisodeIdentity: requiresExactEpisodeIdentity
+        )
+    }
+
+    public static func matches(
+        _ item: MediaItem, kind: MediaItemKind, identities: [MediaIdentity],
+        season: Int? = nil, episode: Int? = nil, episodeOrdering: EpisodeOrdering? = nil,
+        requiresExactEpisodeIdentity: Bool = false
+    ) -> Bool {
         guard item.kind == kind, kind != .episode || (
             item.seasonNumber == season && item.episodeNumber == episode
             && (item.episodeNumberEnd == nil || item.episodeNumberEnd == episode)
@@ -117,7 +128,8 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
 
     public func matchesHistoryExport(_ item: MediaItem) -> Bool {
         if matches(item) { return true }
-        guard kind == .series, item.kind == .episode, case .listState = fact else { return false }
+        guard kind == .series, item.kind == .episode, case .listState(let state) = fact,
+              [.planning, .paused, .dropped].contains(state) else { return false }
         let parentIDs = MediaItemIdentity.seriesIdentities(for: item)
         return !Set(identities).isDisjoint(with: parentIDs)
             && !MediaItemIdentity.externalIdentitiesConflict(identities, parentIDs)

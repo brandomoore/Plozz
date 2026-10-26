@@ -164,6 +164,7 @@ private struct WetrakrSettingsContent: View {
     @State private var browser = TrackerBrowserAuthorization()
     @State private var confirmingReconnect = false
     @State private var showingHistory = false
+    @State private var showingExport = false
 
     var body: some View {
         Group { content }
@@ -179,6 +180,10 @@ private struct WetrakrSettingsContent: View {
             }
             .sheet(isPresented: $showingHistory) {
                 NavigationStack { TrackerHistoryImportView(makeSession: makeHistoryImport) }
+            }
+            .onChange(of: service.historyConnectionID) { _, _ in showingExport = false }
+            .sheet(isPresented: $showingExport) {
+                NavigationStack { WetrakrHistoryExportView(service: service) }
             }
     }
 
@@ -207,6 +212,10 @@ private struct WetrakrSettingsContent: View {
             connectedStatus(username: username)
             Button("Compare with server history") { showingHistory = true }
                 .accessibilityIdentifier("wetrakr.compare-history")
+            if service.makeHistoryExport != nil {
+                Button("Export server history") { showingExport = true }
+                    .accessibilityIdentifier("wetrakr.export-history")
+            }
             Button("Disconnect", role: .destructive) { Task { await service.disconnect() } }
         case let .error(message):
             errorStatus(message)

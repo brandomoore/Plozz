@@ -163,14 +163,7 @@ struct WetrakrClient: Sendable {
         operation: WetrakrRequestOperation? = nil,
         validateScope: @escaping @Sendable () async throws -> Void = {}
     ) async throws -> (Data, HTTPURLResponse) {
-        guard let clientID = config.clientID else { throw WetrakrError.clientRejected }
-        var endpoint = endpoint
-        endpoint.headers["wetrakr-api-key"] = clientID
-        endpoint.headers["wetrakr-api-version"] = "1"
-        endpoint.headers["Accept"] = "application/json"
-        if let accessToken { endpoint.headers["Authorization"] = "Bearer \(accessToken)" }
-        endpoint.redirectPolicy = .sameOrigin
-        let request = endpoint
+        let (request, clientID) = try prepare(endpoint, accessToken: accessToken)
         let operation = operation ?? WetrakrRequestOperation(path: request.path)
         return try await gate.run(clientID: clientID, accessToken: accessToken, request: operation) {
             try await validateScope()
@@ -203,6 +196,17 @@ struct WetrakrClient: Sendable {
         }
     }
 
+    func prepare(_ endpoint: Endpoint, accessToken: String?) throws -> (Endpoint, String) {
+        guard let clientID = config.clientID else { throw WetrakrError.clientRejected }
+        var endpoint = endpoint
+        endpoint.headers["wetrakr-api-key"] = clientID
+        endpoint.headers["wetrakr-api-version"] = "1"
+        endpoint.headers["Accept"] = "application/json"
+        if let accessToken { endpoint.headers["Authorization"] = "Bearer \(accessToken)" }
+        endpoint.redirectPolicy = .sameOrigin
+        return (endpoint, clientID)
+    }
+
     func decode<T: Decodable & Sendable>(
         _ type: T.Type, endpoint: Endpoint, accessToken: String? = nil,
         operation: WetrakrRequestOperation? = nil
@@ -229,5 +233,5 @@ struct WetrakrClient: Sendable {
         catch { throw AppError.decoding }
     }
 
-    private struct ErrorResponse: Decodable { let error: String? }
+    struct ErrorResponse: Decodable { let error: String? }
 }

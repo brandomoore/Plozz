@@ -17,8 +17,10 @@ occurs. Existing tracker watches and conflicting progress are not selectable.
 `TrackerHistoryListState` retains planning, watching, waiting, paused, dropped
 and completed list membership without fabricating a watch, episode count or
 resume position. Even a completed list state cannot authorize a server change.
-Export comparisons protect matching list entries and the episodes of an exactly
-matched parent series. Parent matching requires explicit `Series*` IDs, rejects
+Export comparisons protect matching list entries and episodes whose exactly
+matched parent series is planned, paused or dropped. Derived parent states
+(watching, waiting and completed) do not prevent copying other missing episodes.
+Parent matching requires explicit `Series*` IDs, rejects
 contradictory namespaces, and never uses titles or ordinary inherited episode IDs.
 Other series observations, including aggregate counts, do not become episode
 history or parent-list protections.

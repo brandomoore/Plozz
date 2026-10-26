@@ -121,6 +121,52 @@ it never backfills the baseline or silently resolves a conflicting server resume
 Disconnect revokes local history permission before coordinated credential removal.
 See the [shared consent lifecycle](../FeatureSettings/README.md).
 
+## Reviewed server-history export
+
+**Export server history** is separate from connecting, comparison and ongoing
+sync. Both platforms use the shared source/library, preview, selection and
+confirmation flow. It copies missing watched movies and episodes from the
+selected authorized server user, not play counts or playback positions.
+
+Movies resolve through `/media/external/{source}/{id}` with an explicit movie
+type, then authenticated details must agree with the source's catalog IDs and
+actual media kind. The `/movies` path alone does not prove the response is a
+movie. Episodes require exact parent and episode catalog IDs as well as aired
+coordinates, checked against both the by-number and native episode routes.
+Provider-local IDs, title search, inherited show IDs and coordinates alone never
+authorize an export.
+
+The export-only reader also exhausts compact planning and dropped movie/show
+lists and held shows, with the same count/cursor checks and activity-scoped
+cache. Normal import/ongoing readers make no additional list requests. Explicit
+planned, held or dropped parent choices protect their episodes; automatically
+derived watching, waiting and watched parent states do not block subsequent
+missing episodes in a batch.
+
+Each selected target is checked again through authenticated interactions and
+its own play-history endpoint. Missing unrequested interactions cannot prove
+absence. One valid play proves presence; only an explicitly empty first page
+with zero total and no remaining pages proves absence. This bounded readback
+does not claim to retrieve every play. Owner checks bracket these reads.
+Ephemeral source metadata stays out of the durable canonical target (owner,
+media kind and native ID), so metadata changes cannot bypass a previous
+delivery receipt.
+
+Writes use `/sync/tracking`, `allow_rewatch: false`, an idempotency key, and either
+the known `tracked_at` or explicit `tracked_at_unknown: true`. Dates never
+default to now, and whole-show/season shapes are never sent. An exact
+`added.plays` acknowledgement and independent readback are required to claim a
+confirmed dated export. Empty, partial, duplicate and lost acknowledgements
+remain uncertain; readback can establish presence, not authorship.
+
+Full network authorization runs before acquiring the concurrency-one write
+gate; an additional lightweight source/profile/grant/cancellation check runs
+inside it immediately before dispatch. Refresh uses the existing coordinator
+outside the gate. Proven refusals release this attempt's receipt; uncertain
+delivery retains it, even if remote history is later removed. Quota accounting,
+cooldowns and the no-automatic-retry policy remain in force. These optimistic
+checks cannot make another app's simultaneous edits atomic with the write.
+
 ## Request budget and diagnostics
 
 Account-status reads are single-flight and cache a successful result for five
