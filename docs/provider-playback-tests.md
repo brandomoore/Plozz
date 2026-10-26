@@ -297,6 +297,56 @@ or process recovery. Its result always retains `acceptanceVerified: false`.
 The actual production-app driver and authenticated acceptance remain separate
 requirements; this comparison does not turn fixture tests into live evidence.
 
+### Production-app live connection check
+
+`PublicMetaDBLiveConnectionTests` is a separate **unbound** XCTest driver for
+the installed production app, not FocusHost or PresentationHost. Build only its
+runner with:
+
+```sh
+bash tools/run-tracker-connection-tests.sh --build-only tvOS
+bash tools/run-tracker-connection-tests.sh --build-only iOS
+```
+
+The first scenario requires an explicitly selected, already-booted owned
+simulator, the approved app already running in English, and its PublicMetaDB
+Settings page open with **no saved key**. On TV, start with focus on Back or
+Enter API key. Setup and authorization remain normal production flows; the
+test does not seed credentials, skip onboarding, unlock profiles or replace an
+existing tracker connection.
+
+```sh
+bash tools/run-tracker-connection-tests.sh --run tvOS \
+  OWNED_SIMULATOR_UUID EXPECTED_APP_EXECUTABLE_SHA256
+python3 -m unittest tools.tests.test_tracker_connection_evidence
+```
+
+Obtain the expected executable hash from the approved build's retained
+evidence, not by accepting whatever happens to be installed. The runner verifies
+the installed canonical app against it, rejects application-bound test manifests,
+and checks that its own source has not changed since compilation. It never
+builds, installs, launches or terminates Plozz, and does not boot/shut down
+simulators. XCTest installs only its isolated runner. Xcode's generated runner
+paths and standard environment metadata are checked exactly; custom application
+launch arguments and environment overrides are rejected.
+
+The test opens the real native key-entry page, independently verifies the
+challenge against the deployed relay, exercises TV entry/Back focus, cancels
+and verifies relay revocation, reenters with a fresh code, and submits a
+deliberately invalid key through the production controls. The expected live
+authentication error must appear without a saved connection. Unexpected UI,
+missing prerequisites, quota/network failures and incomplete cleanup are failures,
+not skips or passes. No whole UI tree or screenshot is intentionally attached;
+automatic screenshots/recording are disabled. Private results are retained under
+`.build/tracker-connection.*/`, including source snapshots (also for untracked
+driver files), the generated runner manifest and installed executable identity.
+
+This is **negative connection coverage**, not authenticated account acceptance.
+It does not prove QR decoding, a successful saved connection, actual media
+playback, import approval, no account-wide writes or durable recovery. Those
+scenarios still require their dedicated setup, precise mutation authorization
+and independent account readback. Compiling this driver is not a live pass.
+
 ### Isolated tracker import interactions
 
 `TrackerHistoryImportInteractionTests` runs in `PlozzHomeFixtureTests` on tvOS

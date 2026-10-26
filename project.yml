@@ -600,6 +600,27 @@ targets:
     dependencies:
       - target: PlozziOSPresentationHost
 
+  PlozzTrackerConnectionTests:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources:
+      - path: Tests/TrackerAcceptanceUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.TrackerConnectionTests
+        GENERATE_INFOPLIST_FILE: YES
+
+  PlozziOSTrackerConnectionTests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/TrackerAcceptanceUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.iOSTrackerConnectionTests
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+
   PlozzHomeRemoteTests:
     type: bundle.ui-testing
     platform: tvOS
@@ -646,6 +667,28 @@ targets:
         product: AppShell
 
 schemes:
+  PlozzTrackerConnectionTests:
+    build:
+      targets:
+        PlozzTrackerConnectionTests: [test]
+    test:
+      config: Debug
+      captureScreenshotsAutomatically: false
+      preferredScreenCaptureFormat: screenshots
+      targets:
+        - PlozzTrackerConnectionTests
+
+  PlozziOSTrackerConnectionTests:
+    build:
+      targets:
+        PlozziOSTrackerConnectionTests: [test]
+    test:
+      config: Debug
+      captureScreenshotsAutomatically: false
+      preferredScreenCaptureFormat: screenshots
+      targets:
+        - PlozziOSTrackerConnectionTests
+
   PlozziOSInteractionTests:
     build:
       targets:
