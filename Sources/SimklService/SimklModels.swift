@@ -97,10 +97,12 @@ struct SimklHistoryMovieEntry: Encodable, Equatable {
     var year: Int?
     var ids: SimklIDs
     var watchedAt: String?
+    var isRewatch: Bool?
 
     enum CodingKeys: String, CodingKey {
         case title, year, ids
         case watchedAt = "watched_at"
+        case isRewatch = "is_rewatch"
     }
 }
 

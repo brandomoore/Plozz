@@ -66,12 +66,14 @@ check after foreground/index readiness. None installs a polling timer.
 Anime rating, count and list-update edits do not turn an existing completed movie
 into a new completion for automatic import.
 
-WeTrakr, AniList and MyAnimeList expose **Export server history**, using the shared
+WeTrakr, Simkl, AniList and MyAnimeList expose **Export server history**, using the shared
 native export page. The user chooses one server user and library, previews,
 selects up to 50 titles, then confirms. AniList and MyAnimeList copy movie
 completion without dates or play counts. WeTrakr copies watched movies and
 exactly identified episodes with known or explicitly unknown dates, never
-repeat plays or whole-show expansion. Existing watches, conflicting progress
+repeat plays or whole-show expansion. Simkl exports
+only exact movie-catalog matches with explicit known or unknown dates; episodes
+and anime-catalog entries remain unsupported. Existing watches, conflicting progress
 and explicit planned/on-hold/dropped list choices are protected. Back,
 source changes and reopening discard the selection. Mobile pickers, title
 switches and actions occupy separate native List rows; TV uses native directional

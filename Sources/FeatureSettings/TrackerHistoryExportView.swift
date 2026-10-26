@@ -3,8 +3,25 @@ import AniListService
 import CoreModels
 import CoreUI
 import MALService
+import SimklService
 import SwiftUI
 import WetrakrService
+
+public struct SimklHistoryExportView: View {
+    private let service: SimklService
+
+    public init(service: SimklService) { self.service = service }
+
+    public var body: some View {
+        TrackerHistoryExportView(
+            summary: "Movies only. Copies watched status and dates, without repeat plays.",
+            libraryKinds: [.movie]
+        ) {
+            guard let create = service.makeHistoryExport else { throw TrackerHistoryExportError.unsupported }
+            return try create()
+        }
+    }
+}
 
 public struct WetrakrHistoryExportView: View {
     private let service: WetrakrService

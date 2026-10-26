@@ -199,7 +199,7 @@ struct SimklHistoryPlayback: Decodable, Sendable {
     }
 }
 
-private extension SimklResponseIDs {
+extension SimklResponseIDs {
     func historyIdentities(prefix: String = "", suffix: String = "") throws -> [MediaIdentity] {
         var result: [MediaIdentity] = []
         if let simkl {

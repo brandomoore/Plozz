@@ -139,14 +139,15 @@ final class SimklWatchlistDestinationTests: XCTestCase {
         }
     }
 
-    func testMovieAndShowKindsFetchConcurrently() async throws {
-        let http = ConcurrentSimklWatchlistHTTPClient()
+    func testMovieAndShowKindsFetchSequentiallyWithoutDroppingEitherKind() async throws {
+        let http = TrackingSimklWatchlistHTTPClient()
         let destination = makeDestination(http: http)
 
-        _ = try await destination.fetchEntries()
+        let entries = try await destination.fetchEntries()
 
         let maximumConcurrentRequests = await http.maximumConcurrentRequests()
-        XCTAssertEqual(maximumConcurrentRequests, 2)
+        XCTAssertEqual(maximumConcurrentRequests, 1)
+        XCTAssertEqual(entries.count, 2)
     }
 
     /// Simkl returns numeric ids as a number in some payloads and a string in
@@ -169,21 +170,17 @@ final class SimklWatchlistDestinationTests: XCTestCase {
         })
     }
 
-    private actor ConcurrentSimklWatchlistHTTPClient: HTTPClient {
+    private actor TrackingSimklWatchlistHTTPClient: HTTPClient {
         private var activeRequests = 0
         private var maximumActiveRequests = 0
-        private var startedRequests = 0
 
         func send(
             _ endpoint: Endpoint,
             baseURL: URL
         ) async throws -> (Data, HTTPURLResponse) {
             activeRequests += 1
-            startedRequests += 1
             maximumActiveRequests = max(maximumActiveRequests, activeRequests)
-            for _ in 0..<10_000 where startedRequests < 2 {
-                await Task.yield()
-            }
+            try await Task.sleep(for: .milliseconds(10))
             activeRequests -= 1
             let json: String
             if endpoint.path.contains("/movies/") {

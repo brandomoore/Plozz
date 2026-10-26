@@ -239,6 +239,8 @@ public struct URLSessionHTTPClient: HTTPClient {
                 delegate = delivery.map { HTTPDeliveryTaskDelegate(evidence: $0) }
             case .sameOrigin:
                 delegate = SameOriginHTTPRedirectDelegate(url: request.url ?? baseURL, evidence: delivery)
+            case .doNotFollow:
+                delegate = NoHTTPRedirectDelegate(evidence: delivery)
             }
             if let limit = endpoint.maximumResponseBytes {
                 guard limit > 0 else { throw AppError.invalidResponse }
@@ -326,6 +328,15 @@ public struct URLSessionHTTPClient: HTTPClient {
         default:
             return .serverUnreachable
         }
+    }
+}
+
+final class NoHTTPRedirectDelegate: HTTPDeliveryTaskDelegate, @unchecked Sendable {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
     }
 }
 

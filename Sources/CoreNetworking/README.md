@@ -11,6 +11,10 @@ and every provider/feature that talks to a remote server.
   - exposes a typed `decode(_:from:baseURL:)` convenience.
 - `Endpoint`: a transport-agnostic request description (method, path, query,
   headers, body) — providers build these, not raw `URLRequest`s.
+  Redirects can follow normally, stay within the original origin, or use
+  `doNotFollow` to return the original redirect response and Location header.
+  The last policy blocks same-origin redirects too; use it for header-only
+  resolvers rather than fetching a human-facing destination.
 - `HTTPResponseDiagnostics`: opt-in task-local decode and paging evidence for library
   failures. It preserves the existing thrown `AppError` and fallback contracts,
   discards evidence when the enclosing operation succeeds, and retains at most

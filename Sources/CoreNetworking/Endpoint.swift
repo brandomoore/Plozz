@@ -16,6 +16,7 @@ public struct Endpoint: Sendable {
     public enum RedirectPolicy: Equatable, Sendable {
         case follow
         case sameOrigin
+        case doNotFollow
     }
 
     public var method: HTTPMethod

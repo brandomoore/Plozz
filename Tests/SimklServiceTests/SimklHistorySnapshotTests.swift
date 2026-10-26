@@ -41,7 +41,7 @@ final class SimklHistorySnapshotTests: XCTestCase {
 
     private func reader(_ http: any HTTPClient, includesListStates: Bool = false) -> SimklHistoryReader {
         SimklHistoryReader(
-            client: .init(config: .init(clientID: "fixture"), http: http), includesListStates: includesListStates
+            client: .init(config: .init(clientID: "fixture"), http: http, gate: .init()), includesListStates: includesListStates
         )
     }
 
@@ -478,6 +478,7 @@ final class SimklHistorySnapshotTests: XCTestCase {
         private let lock = NSLock()
         private var storedFailure: Failure?
         private let storage = InMemorySimklTokenStore()
+        var authorizationGeneration: UUID { storage.authorizationGeneration }
         var failure: Failure? {
             get { lock.lock(); defer { lock.unlock() }; return storedFailure }
             set { lock.lock(); defer { lock.unlock() }; storedFailure = newValue }

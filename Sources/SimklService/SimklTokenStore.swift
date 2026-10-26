@@ -6,6 +6,7 @@ import Security
 
 /// Persists Simkl OAuth tokens. Follows the same pattern as TraktTokenStoring.
 public protocol SimklTokenStoring: Sendable {
+    var authorizationGeneration: UUID { get }
     func load() -> SimklTokens?
     func save(_ tokens: SimklTokens) throws
     func clear() throws
@@ -19,6 +20,13 @@ public protocol SimklTokenStoring: Sendable {
 /// sign-in reaches the account's other devices.
 public final class KeychainSimklTokenStore: SimklTokenStoring, @unchecked Sendable {
     private let box: SyncedTokenBox<SimklTokens>
+    private let lock = NSLock()
+    private var generation = UUID()
+
+    public var authorizationGeneration: UUID {
+        lock.lock(); defer { lock.unlock() }
+        return generation
+    }
 
     public init(
         service: String = "com.plozz.app.tokens",
@@ -32,10 +40,25 @@ public final class KeychainSimklTokenStore: SimklTokenStoring, @unchecked Sendab
         )
     }
 
-    public func setNamespace(_ namespace: String?) { box.setNamespace(namespace) }
+    public func setNamespace(_ namespace: String?) {
+        lock.lock(); defer { lock.unlock() }
+        box.setNamespace(namespace)
+        generation = UUID()
+    }
     public func load() -> SimklTokens? { box.load() }
-    public func save(_ tokens: SimklTokens) throws { try box.save(tokens) }
-    public func clear() throws { try box.clear() }
+    public func save(_ tokens: SimklTokens) throws {
+        invalidateAuthorization()
+        try box.save(tokens)
+    }
+    public func clear() throws {
+        invalidateAuthorization()
+        try box.clear()
+    }
+
+    private func invalidateAuthorization() {
+        lock.lock(); defer { lock.unlock() }
+        generation = UUID()
+    }
 }
 
 public enum SimklTokenStoreError: Error, Equatable {
@@ -48,6 +71,12 @@ public final class InMemorySimklTokenStore: SimklTokenStoring, @unchecked Sendab
     private var storage: [String: SimklTokens] = [:]
     private var namespace: String?
     private let lock = NSLock()
+    private var generation = UUID()
+
+    public var authorizationGeneration: UUID {
+        lock.lock(); defer { lock.unlock() }
+        return generation
+    }
 
     public init(tokens: SimklTokens? = nil) {
         if let tokens { storage[""] = tokens }
@@ -56,6 +85,7 @@ public final class InMemorySimklTokenStore: SimklTokenStoring, @unchecked Sendab
     public func setNamespace(_ namespace: String?) {
         lock.lock(); defer { lock.unlock() }
         self.namespace = namespace
+        generation = UUID()
     }
 
     public func load() -> SimklTokens? {
@@ -66,10 +96,12 @@ public final class InMemorySimklTokenStore: SimklTokenStoring, @unchecked Sendab
     public func save(_ tokens: SimklTokens) throws {
         lock.lock(); defer { lock.unlock() }
         storage[namespace ?? ""] = tokens
+        generation = UUID()
     }
 
     public func clear() throws {
         lock.lock(); defer { lock.unlock() }
         storage[namespace ?? ""] = nil
+        generation = UUID()
     }
 }

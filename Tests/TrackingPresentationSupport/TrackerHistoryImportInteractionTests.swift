@@ -61,6 +61,13 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         }
     }
 
+    func testSimklExportProductionAdapterAndServerIsolation() {
+        for server in ["Jellyfin", "Plex"] {
+            verifyExport(server, arguments: ["--history-simkl-export"], trackerName: "Simkl")
+            app.terminate()
+        }
+    }
+
     func testExportChangedTrackerStateRejectsDelivery() {
         launchExport("Jellyfin", arguments: ["--history-change-on-recheck"])
         confirmExport()

@@ -29,6 +29,7 @@ struct IntegrationsDetailView: View {
     @State private var confirmingTraktReconnect = false
     @State private var showingTraktHistory = false
     @State private var showingSimklHistory = false
+    @State private var showingSimklExport = false
     @State private var showingWetrakrHistory = false
     @State private var showingWetrakrExport = false
     @State private var showingAniListHistory = false
@@ -108,6 +109,10 @@ struct IntegrationsDetailView: View {
                 if let makeSimklHistoryImport {
                     NavigationStack { TrackerHistoryImportView(makeSession: makeSimklHistoryImport) }
                 }
+            }
+            .onChange(of: simkl.historyConnectionID) { _, _ in showingSimklExport = false }
+            .sheet(isPresented: $showingSimklExport) {
+                NavigationStack { SimklHistoryExportView(service: simkl) }
             }
             .sheet(isPresented: $showingLastFmHistory) {
                 NavigationStack { LastFmListeningHistoryView(service: lastfm) }
@@ -195,6 +200,10 @@ struct IntegrationsDetailView: View {
                     if case .connected = simkl.phase, makeSimklHistoryImport != nil {
                         Button("Compare with server history") { showingSimklHistory = true }
                             .accessibilityIdentifier("simkl.compare-history")
+                    }
+                    if case .connected = simkl.phase, simkl.makeHistoryExport != nil {
+                        Button("Export server history") { showingSimklExport = true }
+                            .accessibilityIdentifier("simkl.export-history")
                     }
                 }
             },

@@ -5,6 +5,7 @@ import CoreTrackerAuth
 import CoreUI
 import FeatureSettings
 import Observation
+import SimklService
 import SwiftUI
 import WetrakrService
 
@@ -16,7 +17,9 @@ struct TrackerHistoryImportFixture: View {
         VStack {
             Button("Compare history") { comparing = true }
                 .disabled(ProcessInfo.processInfo.arguments.contains("--history-wetrakr-export")
-                          && model.wetrakr.historyConnectionID == nil)
+                          && model.wetrakr.historyConnectionID == nil
+                          || ProcessInfo.processInfo.arguments.contains("--history-simkl-export")
+                          && model.simkl.historyConnectionID == nil)
                 .accessibilityIdentifier("fixture.history.open")
         }
         .sheet(isPresented: $comparing) {
@@ -24,6 +27,8 @@ struct TrackerHistoryImportFixture: View {
                 NavigationStack {
                     if ProcessInfo.processInfo.arguments.contains("--history-wetrakr-export") {
                         WetrakrHistoryExportView(service: model.wetrakr)
+                    } else if ProcessInfo.processInfo.arguments.contains("--history-simkl-export") {
+                        SimklHistoryExportView(service: model.simkl)
                     } else if ProcessInfo.processInfo.arguments.contains("--history-export") {
                         TrackerHistoryExportView(
                             summary: "Copies movie completion only.", libraryKinds: [.movie],
@@ -57,6 +62,8 @@ struct TrackerHistoryImportFixture: View {
         .task {
             if ProcessInfo.processInfo.arguments.contains("--history-wetrakr-export") {
                 await model.wetrakr.refreshStatus()
+            } else if ProcessInfo.processInfo.arguments.contains("--history-simkl-export") {
+                await model.simkl.refreshStatus()
             }
         }
     }
@@ -101,6 +108,30 @@ private final class HistoryImportFixtureModel {
             tokenStore: InMemoryTrackerTokenStore(tokens: .init(
                 accessToken: "fixture", refreshToken: "fixture", expiresAt: .distantFuture
             )), namespace: scope.profileID
+        )
+        service.makeHistoryExport = { [weak self, weak service] in
+            guard let self, let service else { throw CancellationError() }
+            guard let store = self.syncStore else { throw DurableLocalStateError.storageUnavailable }
+            return try service.makeHistoryExportSession(source: self.makeExportSource(), store: store)
+        }
+        return service
+    }()
+    @ObservationIgnored lazy var simkl: SimklService = {
+        let http = SimklExportFixtureHTTP(
+            read: { [weak self] in
+                guard let self else { throw CancellationError() }
+                self.trackerReads += 1
+                return self.exported
+            },
+            wrote: { [weak self] in
+                guard let self else { throw CancellationError() }
+                self.trackerWrites += 1
+                self.exported = true
+            }
+        )
+        let service = SimklService(
+            config: .init(clientID: "native-export-fixture"), http: http,
+            tokenStore: InMemorySimklTokenStore(tokens: .init(accessToken: "fixture")), namespace: scope.profileID
         )
         service.makeHistoryExport = { [weak self, weak service] in
             guard let self, let service else { throw CancellationError() }
@@ -277,6 +308,74 @@ private final class HistoryImportFixtureModel {
             guard let response = HTTPURLResponse(
                 url: baseURL, statusCode: 200, httpVersion: nil, headerFields: ["X-Pagination-Item-Count": String(count)]
             ) else { throw AppError.invalidResponse }
+            return (Data(json.utf8), response)
+        }
+    }
+
+    @MainActor
+    private final class SimklExportFixtureHTTP: HTTPClient {
+        let read: @MainActor () throws -> Bool
+        let wrote: @MainActor () throws -> Void
+        init(read: @escaping @MainActor () throws -> Bool, wrote: @escaping @MainActor () throws -> Void) {
+            self.read = read
+            self.wrote = wrote
+        }
+
+        func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+            try await sendRaw(endpoint, baseURL: baseURL)
+        }
+
+        func sendRaw(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+            let isPublic = ["/redirect", "/movies/10"].contains(endpoint.path)
+            guard isPublic ? endpoint.headers["Authorization"] == nil
+                : endpoint.headers["Authorization"] == "Bearer fixture" else { throw AppError.unauthorized }
+            let exported = try read()
+            var status = 200
+            var headers: [String: String] = [:]
+            let json: String
+            switch (endpoint.method, endpoint.path) {
+            case (.get, "/users/settings"):
+                json = #"{"account":{"id":42},"user":{"name":"fixture"}}"#
+            case (.get, "/redirect"):
+                guard endpoint.redirectPolicy == .doNotFollow else { throw AppError.invalidResponse }
+                status = 301
+                headers["Location"] = "https://simkl.com/movies/10/fixture"
+                json = ""
+            case (.get, "/movies/10"):
+                json = #"{"type":"movie","ids":{"simkl":10,"tmdb":550}}"#
+            case (.get, "/sync/activities"):
+                let stamp = exported ? "2020-01-03T00:00:00Z" : "2020-01-02T00:00:00Z"
+                let fields = Dictionary(uniqueKeysWithValues: [
+                    "all", "plantowatch", "watching", "completed", "hold", "dropped", "removed_from_list", "playback"
+                ].map { ($0, stamp) })
+                json = String(decoding: try JSONSerialization.data(withJSONObject: [
+                    "all": stamp, "movies": fields, "tv_shows": fields, "anime": fields
+                ]), as: UTF8.self)
+            case (.get, "/sync/all-items/movies"):
+                json = exported
+                    ? #"{"movies":[{"status":"completed","last_watched_at":"1970-01-01T00:00:01Z","movie":{"ids":{"simkl":10,"tmdb":550}}}]}"#
+                    : "{}"
+            case (.get, "/sync/all-items/shows"), (.get, "/sync/all-items/anime"): json = "{}"
+            case (.get, "/sync/playback"): json = "[]"
+            case (.post, "/sync/history"):
+                guard let data = endpoint.body,
+                      let body = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      Set(body.keys) == ["movies"], let movies = body["movies"] as? [[String: Any]], movies.count == 1,
+                      Set(movies[0].keys) == ["ids", "watched_at", "is_rewatch"],
+                      movies[0]["ids"] as? [String: Int] == ["simkl": 10],
+                      movies[0]["watched_at"] as? String == "1970-01-01T00:00:01Z",
+                      movies[0]["is_rewatch"] as? Bool == false,
+                      !endpoint.queryItems.contains(where: { $0.name == "allow_rewatch" }) else {
+                    throw HTTPRequestNotSentError(underlying: .invalidResponse)
+                }
+                try wrote()
+                status = 201
+                json = #"{"added":{"movies":1,"shows":0,"episodes":0,"statuses":[{"request":{"type":"movie","ids":{"simkl":10},"watched_at":"1970-01-01T00:00:01Z"},"response":{"status":"completed","simkl_type":"movie"}}]},"not_found":{"movies":[],"shows":[],"episodes":[]}}"#
+            default: throw AppError.notFound
+            }
+            guard let response = HTTPURLResponse(url: baseURL, statusCode: status, httpVersion: nil, headerFields: headers) else {
+                throw AppError.invalidResponse
+            }
             return (Data(json.utf8), response)
         }
     }

@@ -1008,7 +1008,7 @@ let package = Package(
         ),
         .testTarget(
             name: "CoreNetworkingTests",
-            dependencies: ["CoreNetworking", "CoreModels"]
+            dependencies: ["CoreNetworking", "CoreModels", "TestSupportNetworking"]
         ),
         .testTarget(
             name: "MetadataKitTests",

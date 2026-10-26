@@ -59,7 +59,7 @@ aggregate counts and percentage-only progress are not backfilled by enrollment.
 No PRO/VIP rewatch session is created. See the shared
 [consent and disconnect contract](../FeatureSettings/README.md).
 
-## Export comparison groundwork
+## Reviewed server-history export
 
 The internal reader's opt-in `includesListStates` mode retains non-completed
 movie list states and parent show/anime list states as protection evidence.
@@ -68,10 +68,46 @@ reconciliation, without additional requests or invented play/resume records.
 The mode is fixed for each reader's cache lifetime. Existing import and ongoing
 sync readers leave it off and retain their previous observations.
 
-This is read-only groundwork, not an enabled Simkl export action. The writer
-still needs exact canonical target resolution, authenticated owner checks,
-explicit episodes/dates, no rewatch creation, rate-aware dispatch and verified
-acknowledgements/readback. List completion alone never proves individual plays.
+**Export server history** uses the shared source/library, selection and
+confirmation page on both platforms. It currently supports exactly identified
+movies in Simkl's movie catalog. Series, episodes and anime-catalog entries
+are not exported. The documented episode list exposes native episode IDs but
+not corroborating external episode IDs; coordinates alone are not an exact
+cross-provider match. The UI states the movie-only scope.
+
+Resolution reads an unfollowed `/redirect?to=simkl&type=movie` response without
+a bearer token, then verifies the canonical movie's actual type and external
+IDs. It never follows the Location URL, searches titles or treats a movie path
+alone as proof. Authenticated owner checks bracket reads; source metadata stays
+out of durable canonical receipt identity. Per-title checks reuse the complete,
+activity-gated protected-state reader instead of guessing absence.
+Playback protection covers the paused sessions exposed by Simkl, not an
+undocumented view of active playback in every other app.
+
+The historical `/sync/history` write sends only one exact movie, an explicit
+known date or documented unknown-date sentinel, and `is_rewatch: false`.
+It never enables `allow_rewatch`, changes ratings/memos, or expands shows.
+Exact added counts, echoed identity/date, resolved catalog/status and empty
+not-found buckets are checked before independent history readback. A lost or
+partial acknowledgement remains uncertain; later presence is not authorship.
+Simkl does not document request idempotency keys. The shared durable receipt
+prevents local replay, even after history is removed remotely, but optimistic
+checks cannot make writes atomic with other apps.
+
+All Simkl clients share a serial application-scoped request gate, including
+connection, history, playback and watchlist traffic. It paces reads below ten
+per second and writes below one per second for the current V1 PIN integration.
+Full export authorization runs outside that gate; current-scope validation runs
+after pacing and immediately before dispatch. Watchlist mutations and
+playback/history reporting also recheck the captured credential and the token
+store's in-memory authorization generation. Switching profiles (including away
+and back to identical credentials), reconnecting or replacing a grant
+invalidates queued work without changing durable reconciliation identities.
+Cancellation after transport dispatch retains an uncertain export receipt.
+
+Quota refusals retain a cooldown; a successful response reporting zero remaining
+quota blocks further requests until the next US Eastern midnight. There is no automatic retry or OAuth
+credential/version migration. Server-side V1 limits still span other devices.
 
 ## Contracts and verification
 
@@ -89,3 +125,9 @@ caps, malformed responses, cancellation and profile/grant invalidation.
 Fixture tests are not authenticated playback or tracker/server round-trip
 acceptance. Those require dedicated accounts, exact allowed media and
 separately authorized remote mutations.
+
+`SimklHistoryExportTests` covers exact identity, dates, protected state,
+acknowledgements, uncertain delivery and replay fencing through the production
+factory. `SimklRequestGateTests` covers pacing, persisted quotas and queued
+credential/profile changes. Networking tests exercise actual loopback redirects,
+and the shared native export scenario covers both servers on TV, iPhone and iPad.

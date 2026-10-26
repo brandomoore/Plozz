@@ -97,7 +97,7 @@ final class SimklHistoryReader {
     }
 
     private func activity(
-        accessToken: String, validateScope: @MainActor () throws -> Void
+        accessToken: String, validateScope: @MainActor @escaping () throws -> Void
     ) async throws -> SimklHistoryActivity {
         let data = try await read(path: "/sync/activities", accessToken: accessToken, validateScope: validateScope)
         let result = try JSONDecoder().decode(SimklHistoryActivity.self, from: data)
@@ -107,7 +107,7 @@ final class SimklHistoryReader {
 
     private func readEntries(
         kind: SimklHistoryKind, since: String?, idsOnly: Bool,
-        accessToken: String, validateScope: @MainActor () throws -> Void
+        accessToken: String, validateScope: @MainActor @escaping () throws -> Void
     ) async throws -> Entries {
         var query: [URLQueryItem] = [.init(name: "extended", value: idsOnly ? "simkl_ids_only" : "full")]
         if let since { query.append(.init(name: "date_from", value: since)) }
@@ -147,11 +147,13 @@ final class SimklHistoryReader {
 
     private func read(
         path: String, query: [URLQueryItem] = [], accessToken: String,
-        validateScope: @MainActor () throws -> Void
+        validateScope: @MainActor @escaping () throws -> Void
     ) async throws -> Data {
         try Task.checkCancellation()
         try validateScope()
-        let data = try await client.historyResponse(path: path, query: query, accessToken: accessToken)
+        let data = try await client.historyResponse(path: path, query: query, accessToken: accessToken) {
+            try await validateScope()
+        }
         try Task.checkCancellation()
         try validateScope()
         return data

@@ -243,6 +243,7 @@ private struct SimklSettingsContent: View {
     let makeHistoryImport: @MainActor () -> TrackerHistoryImportSession
     @Environment(\.openURL) private var openURL
     @State private var showingHistory = false
+    @State private var showingExport = false
 
     var body: some View {
         Group { content }
@@ -251,6 +252,10 @@ private struct SimklSettingsContent: View {
             }
             .sheet(isPresented: $showingHistory) {
                 NavigationStack { TrackerHistoryImportView(makeSession: makeHistoryImport) }
+            }
+            .onChange(of: service.historyConnectionID) { _, _ in showingExport = false }
+            .sheet(isPresented: $showingExport) {
+                NavigationStack { SimklHistoryExportView(service: service) }
             }
     }
 
@@ -280,6 +285,10 @@ private struct SimklSettingsContent: View {
             connectedStatus(username: username)
             Button("Compare with server history") { showingHistory = true }
                 .accessibilityIdentifier("simkl.compare-history")
+            if service.makeHistoryExport != nil {
+                Button("Export server history") { showingExport = true }
+                    .accessibilityIdentifier("simkl.export-history")
+            }
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }

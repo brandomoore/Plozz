@@ -22,11 +22,13 @@ public final class SimklService: TrackerHistorySyncReading {
     public private(set) var historySyncNamespace: String?
     public var historySyncCategories: Set<TrackerHistorySyncCategory> { [.watched] }
     @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
+    @ObservationIgnored public var makeHistoryExport: (@MainActor () throws -> TrackerHistoryExportSession<SimklHistoryExportTarget>)?
     public private(set) var codeLifetime: TimeInterval = 900
 
     @ObservationIgnored public let scrobbler: any SimklScrobbling
 
     @ObservationIgnored private let config: SimklConfig
+    @ObservationIgnored private let client: SimklClient
     @ObservationIgnored private let auth: SimklAuthService
     @ObservationIgnored private let tokenStore: SimklTokenStoring
     @ObservationIgnored private(set) var connectTask: Task<Void, Never>?
@@ -44,9 +46,10 @@ public final class SimklService: TrackerHistorySyncReading {
     ) {
         historySyncNamespace = namespace
         self.config = config
+        self.client = SimklClient(config: config, http: http)
         self.auth = SimklAuthService(config: config, http: http)
         self.tokenStore = tokenStore
-        self.historyReader = SimklHistoryReader(client: SimklClient(config: config, http: http))
+        self.historyReader = SimklHistoryReader(client: client)
         if config.isConfigured {
             self.scrobbler = SimklScrobbler(config: config, http: http, tokenStore: tokenStore)
             self.watchlistDestination = SimklWatchlistDestination(
@@ -84,6 +87,43 @@ public final class SimklService: TrackerHistorySyncReading {
         guard let token = tokenStore.load()?.accessToken else { throw TrackerHistoryError.scopeChanged }
         return try await historyReader.snapshot(
             accessToken: token, connectionID: expectedConnectionID, validateScope: validate
+        )
+    }
+
+    public func makeHistoryExportSession(
+        source: TrackerServerHistorySource, store: DurableLocalStateStore
+    ) throws -> TrackerHistoryExportSession<SimklHistoryExportTarget> {
+        guard let connection = historyConnectionID, let identity = historySyncIdentity,
+              source.scope.profileID == (historySyncNamespace ?? ProfileStore.defaultProfileID) else {
+            throw TrackerHistoryError.scopeChanged
+        }
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try Task.checkCancellation()
+            try source.requireCurrent()
+            guard self?.historyConnectionID == connection else { throw TrackerHistoryError.scopeChanged }
+        }
+        let access: @MainActor @Sendable () throws -> String = { [weak self] in
+            try current()
+            guard let token = self?.tokenStore.load()?.accessToken else { throw TrackerHistoryError.scopeChanged }
+            return token
+        }
+        let adapter = SimklHistoryExportAdapter(client: client, connectionID: connection)
+        return .init(
+            trackerID: historySyncTrackerID, trackerName: "Simkl",
+            connectionID: identity.connectionID, snapshotConnectionID: connection,
+            source: source, store: store, preservesWatchDates: true,
+            isConnected: { [weak self] in self?.historyConnectionID == connection },
+            supports: { SimklHistoryExportAdapter.supports($0) },
+            readAll: { try await adapter.snapshot(token: access(), validate: current) },
+            resolve: { try await adapter.resolve($0, token: access(), validate: current) },
+            readTarget: { try await adapter.state($0, token: access(), validate: current) },
+            write: { [client] target, date, _, authorize in
+                try await client.exportHistory(
+                    target, date: date, token: access(),
+                    authorize: { try await current(); try await authorize() },
+                    validate: { try await current() }
+                )
+            }
         )
     }
 

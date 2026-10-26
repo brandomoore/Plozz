@@ -36,18 +36,21 @@ public actor SimklScrobbler: SimklScrobbling {
 
     public func scrobble(item: MediaItem, progress: Double, event: PlaybackEvent) async {
         guard let action = Self.action(for: event) else { return }
+        let generation = tokenStore.authorizationGeneration
+        guard let credentials = tokenStore.load() else {
+            FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl-rt", item: item, outcome: "skip(not connected)"))
+            return
+        }
         let item = await enrichAnime(item)
         guard let body = Self.scrobbleBody(for: item, progress: progress) else {
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl-rt", item: item, outcome: "skip(no body event=\(event) s=\(item.seasonNumber.map(String.init) ?? "nil") e=\(item.episodeNumber.map(String.init) ?? "nil"))"))
             return
         }
-        guard let token = tokenStore.load()?.accessToken else {
-            FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl-rt", item: item, outcome: "skip(not connected)"))
-            return
-        }
-
         do {
-            let resp = try await client.scrobble(action: action, body: body, accessToken: token)
+            let resp = try await client.scrobble(
+                action: action, body: body, accessToken: credentials.accessToken,
+                validate: validation(for: credentials, generation: generation)
+            )
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl-rt", item: item, outcome: "OK(\(action)) resp=\(resp.prefix(200))"))
         } catch {
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl-rt", item: item, outcome: "THROW(\(action) \(error))"))
@@ -59,19 +62,22 @@ public actor SimklScrobbler: SimklScrobbling {
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl", item: item, outcome: "skip(event=\(event) not scrobbled)"))
             return
         }
+        let generation = tokenStore.authorizationGeneration
+        guard let credentials = tokenStore.load() else {
+            FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl", item: item, outcome: "skip(not connected)"))
+            return
+        }
         let item = await enrichAnime(item)
         guard let body = Self.scrobbleBody(for: item, progress: progress) else {
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl", item: item, outcome: "skip(no usable ids)"))
             return
         }
-        guard let token = tokenStore.load()?.accessToken else {
-            FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl", item: item, outcome: "skip(not connected)"))
-            return
-        }
-
         // Fire real-time scrobble for all events.
         do {
-            try await client.scrobble(action: action, body: body, accessToken: token)
+            try await client.scrobble(
+                action: action, body: body, accessToken: credentials.accessToken,
+                validate: validation(for: credentials, generation: generation)
+            )
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl", item: item, outcome: "OK(\(action))"))
         } catch AppError.conflict {
             // 409 = already scrobbled (the real-time path beat the durable drain
@@ -86,12 +92,22 @@ public actor SimklScrobbler: SimklScrobbling {
         // (the outbox retries this path on failure).
         if event == .stop, progress >= 80, let histBody = Self.historyBody(for: item) {
             do {
-                try await client.addToHistory(body: histBody, accessToken: token)
+                try await client.addToHistory(
+                    body: histBody, accessToken: credentials.accessToken,
+                    validate: validation(for: credentials, generation: generation)
+                )
                 FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl", item: item, outcome: "history-backup OK"))
             } catch {
                 // Non-fatal — the scrobble/stop already marked it watched.
                 FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl", item: item, outcome: "history-backup fail (non-fatal)"))
             }
+        }
+    }
+
+    private func validation(for credentials: SimklTokens, generation: UUID) -> @Sendable () async throws -> Void {
+        { [tokenStore] in
+            guard tokenStore.authorizationGeneration == generation, tokenStore.load() == credentials,
+                  tokenStore.authorizationGeneration == generation else { throw AppError.unauthorized }
         }
     }
 
