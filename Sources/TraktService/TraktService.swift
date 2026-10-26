@@ -33,8 +33,12 @@ public enum TraktConnectionPhase: Equatable, Sendable {
 /// connection made in Settings is immediately usable by playback and vice-versa.
 @MainActor
 @Observable
-public final class TraktService: TrackerHistoryReading {
+public final class TraktService: TrackerHistorySyncReading {
     public private(set) var phase: TraktConnectionPhase
+    public let historySyncTrackerID = "trakt"
+    public private(set) var historySyncNamespace: String?
+    public var historySyncCategories: Set<TrackerHistorySyncCategory> { [.watched] }
+    @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
 
     /// Lifetime (seconds) of the most recently issued device code, so the UI can
     /// render a countdown ring against the current `connecting` `expiresAt`.
@@ -56,11 +60,18 @@ public final class TraktService: TrackerHistoryReading {
     @ObservationIgnored private let profileGeneration:
         TraktProfileGeneration
 
-    public convenience init(config: TraktConfig, http: HTTPClient = URLSessionHTTPClient(), tokenStore: TraktTokenStoring) {
-        self.init(config: config, http: http, tokenStore: tokenStore, coordinator: .shared)
+    public convenience init(
+        config: TraktConfig, http: HTTPClient = URLSessionHTTPClient(),
+        tokenStore: TraktTokenStoring, namespace: String? = nil
+    ) {
+        self.init(config: config, http: http, tokenStore: tokenStore, coordinator: .shared, namespace: namespace)
     }
 
-    init(config: TraktConfig, http: HTTPClient, tokenStore: TraktTokenStoring, coordinator: TraktTokenCoordinator) {
+    init(
+        config: TraktConfig, http: HTTPClient, tokenStore: TraktTokenStoring,
+        coordinator: TraktTokenCoordinator, namespace: String? = nil
+    ) {
+        historySyncNamespace = namespace
         self.config = config
         self.auth = TraktAuthService(config: config, http: http)
         self.http = http
@@ -97,6 +108,11 @@ public final class TraktService: TrackerHistoryReading {
         return "\(tokenStore.coordinationID)#\(profileGeneration.current)#\(tokens.stableAccountIdentity)"
     }
 
+    public var historySyncIdentity: TrackerHistorySyncIdentity? {
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return .init(trackerID: historySyncTrackerID, connectionID: tokens.stableAccountIdentity)
+    }
+
     public func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
         let current: @MainActor @Sendable () throws -> Void = { [weak self] in
             try Task.checkCancellation()
@@ -121,6 +137,7 @@ public final class TraktService: TrackerHistoryReading {
     /// the default profile uses `nil` (legacy un-namespaced storage). Cancels any
     /// in-flight connect, repoints the shared token store, then re-resolves status.
     public func setActiveProfile(namespace: String?) async {
+        historySyncNamespace = namespace
         let generation = profileGeneration.advance {
             tokenStore.setNamespace(namespace)
         }
@@ -283,6 +300,7 @@ public final class TraktService: TrackerHistoryReading {
         connectTask = nil
         let store = tokenStore.snapshot()
         do {
+            try onHistorySyncDisconnect?()
             let tokens = try await coordinator.disconnect(store: store)
             guard generation == profileGeneration.current else { return }
             phase = config.isConfigured ? .disconnected : .unavailable
@@ -304,7 +322,10 @@ public final class TraktService: TrackerHistoryReading {
     ) async throws {
         try Task.checkCancellation()
         guard generation == profileGeneration.current else { throw CancellationError() }
+        var tokens = tokens
+        tokens.accountIdentity = UUID().uuidString
         phase = .savingConnection
+        try onHistorySyncDisconnect?()
         try await coordinator.save(tokens, store: store, context: context)
         guard generation == profileGeneration.current else { return }
         phase = .connected(username: "Trakt")
@@ -321,6 +342,11 @@ public final class TraktService: TrackerHistoryReading {
     }
 
     private func show(_ error: Error) {
+        if (error as? TrackerHistorySyncError) == .revocationFailed {
+            PlozzLog.app.error("Trakt history permission revocation failed")
+            phase = .error("Sync is paused. Retry before closing the app.")
+            return
+        }
         if let error = error as? TraktSharedRefreshError {
             PlozzLog.app.error("Trakt shared connection needs recovery")
             phase = .syncError(
@@ -350,7 +376,7 @@ public enum TraktServiceFactory {
     ) -> TraktService {
         let store = tokenStore ?? defaultTokenStore()
         store.setNamespace(namespace)
-        return TraktService(config: config, http: http, tokenStore: store)
+        return TraktService(config: config, http: http, tokenStore: store, namespace: namespace)
     }
 
     public static func defaultTokenStore() -> TraktTokenStoring {

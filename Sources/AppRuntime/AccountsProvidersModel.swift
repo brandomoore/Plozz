@@ -206,19 +206,27 @@ public final class AccountsProvidersModel {
                 isAuthorized() && connection != nil && tracker.historyConnectionID == connection
             }
         )
-        if let syncStore, let identity = tracker.historySyncIdentity {
+        if let syncStore, let tracker = tracker as? any TrackerHistorySyncReading,
+           let identity = tracker.historySyncIdentity, identity.trackerID == tracker.historySyncTrackerID,
+           (tracker.historySyncNamespace ?? ProfileStore.defaultProfileID) == watchMutationServerScope.profileID {
+            bindTrackerHistorySync(tracker, store: syncStore)
             let scope = watchMutationServerScope
             let controller: TrackerHistorySyncController
             if let cached = historySyncControllers[identity.trackerID],
-               cached.identity == identity, cached.contextScope == scope {
+               cached.identity == identity, cached.contextScope == scope,
+               cached.supportedCategories == tracker.historySyncCategories {
                 controller = cached
             } else {
                 historySyncControllers[identity.trackerID]?.stop()
                 controller = TrackerHistorySyncController(
                     identity: identity, scope: scope, store: syncStore,
+                    supportedCategories: tracker.historySyncCategories,
                     isAuthorized: { [weak self, weak tracker] in
                         guard let self else { return false }
                         return self.trackerHistorySyncIsForeground && isAuthorized()
+                            && !self.pendingHistorySyncRevocations.contains(.init(
+                                profileID: scope.profileID, trackerID: identity.trackerID
+                            ))
                             && tracker?.historySyncIdentity == identity
                             && self.watchMutationServerScope == scope
                             && self.isCurrentWatchMutationServerScope(scope, isPlexIdentityResolved: isPlexIdentityResolved)
@@ -243,6 +251,39 @@ public final class AccountsProvidersModel {
             session.ongoingSync = controller
         }
         return session
+    }
+
+    private struct HistorySyncRevocationScope: Hashable {
+        let profileID: String
+        let trackerID: String
+    }
+
+    private var pendingHistorySyncRevocations: Set<HistorySyncRevocationScope> = []
+
+    public func bindTrackerHistorySync(_ tracker: any TrackerHistorySyncReading, store: DurableLocalStateStore?) {
+        tracker.onHistorySyncDisconnect = { [weak self, weak tracker] in
+            guard let self, let tracker else { throw TrackerHistoryError.scopeChanged }
+            let scope = HistorySyncRevocationScope(
+                profileID: tracker.historySyncNamespace ?? ProfileStore.defaultProfileID,
+                trackerID: tracker.historySyncTrackerID
+            )
+            self.pendingHistorySyncRevocations.insert(scope)
+            do {
+                guard let store else { throw TrackerHistorySyncError.revocationFailed }
+                if let controller = self.historySyncControllers[scope.trackerID],
+                   controller.contextScope.profileID == scope.profileID {
+                    controller.disable()
+                    if let error = controller.error { throw error }
+                } else {
+                    try TrackerHistorySyncController.revokePermission(
+                        store: store, profileID: scope.profileID, trackerID: scope.trackerID
+                    )
+                }
+                self.pendingHistorySyncRevocations.remove(scope)
+            } catch {
+                throw TrackerHistorySyncError.revocationFailed
+            }
+        }
     }
 
     public func stopTrackerHistorySync() {

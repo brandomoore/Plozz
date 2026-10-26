@@ -14,7 +14,10 @@ public enum WetrakrConnectionPhase: Equatable, Sendable {
 
 @MainActor
 @Observable
-public final class WetrakrService: TrackerHistoryReading {
+public final class WetrakrService: TrackerHistorySyncReading {
+    public let historySyncTrackerID = "wetrakr"
+    public private(set) var historySyncNamespace: String?
+    @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
     public private(set) var phase: WetrakrConnectionPhase
     public private(set) var codeLifetime: TimeInterval = 600
     @ObservationIgnored public let watchlistDestination: WetrakrWatchlistDestination?
@@ -49,16 +52,18 @@ public final class WetrakrService: TrackerHistoryReading {
 
     public convenience init(
         config: WetrakrConfig, http: any HTTPClient = URLSessionHTTPClient(),
-        tokenStore: any TrackerTokenStoring
+        tokenStore: any TrackerTokenStoring, namespace: String? = nil
     ) {
-        self.init(config: config, http: http, tokenStore: tokenStore, coordinator: .shared)
+        self.init(config: config, http: http, tokenStore: tokenStore, coordinator: .shared, namespace: namespace)
     }
 
     init(
         config: WetrakrConfig, http: any HTTPClient,
         tokenStore: any TrackerTokenStoring, coordinator: TrackerTokenCoordinator,
+        namespace: String? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
+        historySyncNamespace = namespace
         self.config = config
         self.client = WetrakrClient(config: config, http: http)
         self.auth = WetrakrAuthService(client: client)
@@ -82,6 +87,11 @@ public final class WetrakrService: TrackerHistoryReading {
         return "\(tokenStore.coordinationID)#\(generation.current)#\(tokens.stableAccountIdentity)"
     }
 
+    public var historySyncIdentity: TrackerHistorySyncIdentity? {
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return .init(trackerID: historySyncTrackerID, connectionID: tokens.stableAccountIdentity)
+    }
+
     public func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
         let current: @MainActor @Sendable () throws -> Void = { [weak self] in
             try Task.checkCancellation()
@@ -102,6 +112,7 @@ public final class WetrakrService: TrackerHistoryReading {
     }
 
     public func setActiveProfile(namespace: String?) async {
+        historySyncNamespace = namespace
         if let activeNamespace, activeNamespace == namespace {
             await refreshStatus()
             return
@@ -242,6 +253,7 @@ public final class WetrakrService: TrackerHistoryReading {
                 guard version == generation.current else { return }
                 tokens.accountIdentity = UUID().uuidString
                 phase = .savingConnection
+                try onHistorySyncDisconnect?()
                 try await coordinator.save(tokens, store: store, context: context)
                 guard version == generation.current else { return }
                 await watchlistDestination?.clearCache()
@@ -291,6 +303,7 @@ public final class WetrakrService: TrackerHistoryReading {
         connectTask = nil
         let store = tokenStore.snapshot()
         do {
+            try onHistorySyncDisconnect?()
             let tokens = try await coordinator.disconnect(store: store)
             guard version == generation.current else { return }
             await watchlistDestination?.clearCache()
@@ -316,6 +329,11 @@ public final class WetrakrService: TrackerHistoryReading {
 
     private func show(_ error: Error) {
         publishedScope = nil
+        if (error as? TrackerHistorySyncError) == .revocationFailed {
+            PlozzLog.app.error("WeTrakr history permission revocation failed")
+            phase = .error("Sync is paused. Retry before closing the app.")
+            return
+        }
         if error is CancellationError || (error as? AppError) == .cancelled {
             phase = tokenStore.load() == nil ? .disconnected : .unknown
             return
@@ -377,6 +395,6 @@ public enum WetrakrServiceFactory {
     ) -> WetrakrService {
         let store = tokenStore ?? KeychainTrackerTokenStore(account: "wetrakr.oauth")
         store.setNamespace(namespace)
-        return WetrakrService(config: config, http: http, tokenStore: store)
+        return WetrakrService(config: config, http: http, tokenStore: store, namespace: namespace)
     }
 }

@@ -16,8 +16,12 @@ public enum MALConnectionPhase: Equatable, Sendable {
 /// App-level façade for the MyAnimeList integration.
 @MainActor
 @Observable
-public final class MALService: TrackerHistoryReading {
+public final class MALService: TrackerHistorySyncReading {
     public private(set) var phase: MALConnectionPhase
+    public let historySyncTrackerID = "myanimelist"
+    public private(set) var historySyncNamespace: String?
+    public var historySyncCategories: Set<TrackerHistorySyncCategory> { [.watched] }
+    @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
 
     @ObservationIgnored public let scrobbler: any MALScrobbling
 
@@ -25,7 +29,7 @@ public final class MALService: TrackerHistoryReading {
     @ObservationIgnored private let auth: MALAuthService
     @ObservationIgnored private let http: HTTPClient
     @ObservationIgnored private let tokenStore: MALTokenStoring
-    @ObservationIgnored private var connectTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var connectTask: Task<Void, Never>?
     @ObservationIgnored private var pendingSession: String?
     @ObservationIgnored private let profileGeneration: MALProfileGeneration
 
@@ -34,7 +38,11 @@ public final class MALService: TrackerHistoryReading {
     @ObservationIgnored public let watchlistDestination:
         MALWatchlistDestination?
 
-    public init(config: MALConfig, http: HTTPClient = URLSessionHTTPClient(), tokenStore: MALTokenStoring) {
+    public init(
+        config: MALConfig, http: HTTPClient = URLSessionHTTPClient(),
+        tokenStore: MALTokenStoring, namespace: String? = nil
+    ) {
+        historySyncNamespace = namespace
         self.config = config
         self.auth = MALAuthService(config: config, http: http)
         self.http = http
@@ -69,6 +77,11 @@ public final class MALService: TrackerHistoryReading {
         return "\(profileGeneration.current)#\(tokens.stableAccountIdentity)"
     }
 
+    public var historySyncIdentity: TrackerHistorySyncIdentity? {
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return .init(trackerID: historySyncTrackerID, connectionID: tokens.stableAccountIdentity)
+    }
+
     public func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
         let current: @MainActor @Sendable () throws -> Void = { [weak self] in
             try Task.checkCancellation()
@@ -85,6 +98,7 @@ public final class MALService: TrackerHistoryReading {
     }
 
     public func setActiveProfile(namespace: String?) async {
+        historySyncNamespace = namespace
         let generation = profileGeneration.advance {
             tokenStore.setNamespace(namespace)
         }
@@ -101,16 +115,20 @@ public final class MALService: TrackerHistoryReading {
     private func refreshStatus(generation: UInt64) async {
         guard config.isConfigured else { phase = .unavailable; return }
         guard let tokens = tokenStore.load() else { phase = .disconnected; return }
+        var checkedTokens = tokens
         do {
             let access = try await validAccessToken(
                 tokens,
                 generation: generation
             )
+            guard let current = tokenStore.load(), current.accessToken == access,
+                  current.stableAccountIdentity == tokens.stableAccountIdentity else { return }
+            checkedTokens = current
             let user = try await auth.userInfo(accessToken: access)
-            guard generation == profileGeneration.current else { return }
+            guard generation == profileGeneration.current, tokenStore.load() == checkedTokens else { return }
             phase = .connected(username: user.name)
         } catch {
-            guard generation == profileGeneration.current else { return }
+            guard generation == profileGeneration.current, tokenStore.load() == checkedTokens else { return }
             // A network blip is not evidence the token is bad; only the
             // server rejecting it is. Discarding it here made a momentary
             // failure a permanent sign-out.
@@ -118,8 +136,7 @@ public final class MALService: TrackerHistoryReading {
                 phase = .unknown
                 return
             }
-            try? tokenStore.clear()
-            phase = .disconnected
+            clearConnection()
         }
     }
 
@@ -150,27 +167,39 @@ public final class MALService: TrackerHistoryReading {
         connectTask = Task { [weak self] in
             guard let self else { return }
             do {
-                var redeemString = "\(self.config.relayBaseURL)/api/redeem?code=\(trimmed)"
+                guard let relayURL = URL(string: self.config.relayBaseURL) else { throw AppError.invalidResponse }
+                var query = [URLQueryItem(name: "code", value: trimmed)]
                 if let session = self.pendingSession {
-                    redeemString += "&session=\(session)"
+                    query.append(.init(name: "session", value: session))
                 }
-                let redeemURL = URL(string: redeemString)!
-                let (data, _) = try await URLSession.shared.data(from: redeemURL)
+                var endpoint = Endpoint(path: "/api/redeem", queryItems: query, redirectPolicy: .sameOrigin)
+                endpoint.redactsURLForLogging = true
+                let (data, _) = try await self.http.send(endpoint, baseURL: relayURL)
                 guard generation == self.profileGeneration.current else { return }
                 let result = try JSONDecoder().decode(RelayRedeemResponse.self, from: data)
 
                 let tokens = MALTokens(
                     accessToken: result.accessToken,
                     refreshToken: result.refreshToken ?? "",
-                    expiresAt: Date().addingTimeInterval(Double(result.expiresIn ?? 3600))
+                    expiresAt: Date().addingTimeInterval(Double(result.expiresIn ?? 3600)),
+                    accountIdentity: UUID().uuidString
                 )
                 try Task.checkCancellation()
-                guard self.profileGeneration.performIfCurrent(
-                    generation,
-                    operation: { try? self.tokenStore.save(tokens) }
-                ) else { return }
+                do {
+                    try self.onHistorySyncDisconnect?()
+                    guard try self.profileGeneration.performIfCurrent(
+                        generation, operation: { try self.tokenStore.save(tokens) }
+                    ) else { return }
+                } catch {
+                    PlozzLog.app.error("MyAnimeList connection persistence failed")
+                    self.connectTask = nil
+                    self.phase = (error as? TrackerHistorySyncError) == .revocationFailed
+                        ? .error("Sync is paused. Retry before closing the app.")
+                        : .error("Could not save the connection. Try again.")
+                    return
+                }
                 let user = try? await self.auth.userInfo(accessToken: tokens.accessToken)
-                guard generation == self.profileGeneration.current else { return }
+                guard generation == self.profileGeneration.current, self.tokenStore.load() == tokens else { return }
                 self.connectTask = nil
                 self.pendingSession = nil
                 self.phase = .connected(username: user?.name ?? "MyAnimeList")
@@ -196,8 +225,18 @@ public final class MALService: TrackerHistoryReading {
         profileGeneration.advance()
         connectTask?.cancel()
         connectTask = nil
-        try? tokenStore.clear()
-        phase = config.isConfigured ? .disconnected : .unavailable
+        clearConnection()
+    }
+
+    private func clearConnection() {
+        do {
+            try onHistorySyncDisconnect?()
+            try tokenStore.clear()
+            phase = config.isConfigured ? .disconnected : .unavailable
+        } catch {
+            PlozzLog.app.error("MyAnimeList connection removal failed")
+            phase = .error("Could not disconnect. Retry before closing the app.")
+        }
     }
 
     private func validAccessToken(
@@ -257,7 +296,7 @@ public enum MALServiceFactory {
     ) -> MALService {
         let store = tokenStore ?? defaultTokenStore()
         store.setNamespace(namespace)
-        return MALService(config: config, http: http, tokenStore: store)
+        return MALService(config: config, http: http, tokenStore: store, namespace: namespace)
     }
 
     public static func defaultTokenStore() -> MALTokenStoring {

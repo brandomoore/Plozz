@@ -248,6 +248,113 @@ final class AniListHistorySnapshotTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testDurableIdentitySurvivesLegacyReloadAndChangesOnSameTokenReconnect() async throws {
+        let http = RecordingHTTPClient()
+        http.stub(pathSuffix: "/api/redeem", json: #"{"service":"anilist","accessToken":"fixture"}"#)
+        http.stub(pathSuffix: "", json: #"{"data":{"Viewer":{"id":7,"name":"fixture"}}}"#)
+        let config = AniListConfig(clientID: "fixture", clientSecret: "fixture")
+        let legacy = try JSONDecoder().decode(AniListTokens.self, from: Data(#"{"accessToken":"fixture"}"#.utf8))
+        let store = InMemoryAniListTokenStore(tokens: legacy)
+        let service = AniListService(config: config, http: http, tokenStore: store)
+        await service.refreshStatus()
+        let first = try XCTUnwrap(service.historySyncIdentity)
+        XCTAssertEqual(service.historySyncCategories, [.watched])
+        let restored = AniListService(config: config, http: http, tokenStore: store)
+        await restored.refreshStatus()
+        XCTAssertEqual(restored.historySyncIdentity, first)
+        var revocations = 0
+        service.onHistorySyncDisconnect = { revocations += 1 }
+        await service.setActiveProfile(namespace: "other")
+        XCTAssertNil(service.historySyncIdentity)
+        await service.setActiveProfile(namespace: nil)
+        XCTAssertEqual(service.historySyncIdentity, first)
+        await service.submitToken("fixture-code")
+        let next = try XCTUnwrap(service.historySyncIdentity)
+        XCTAssertNotEqual(next, first)
+        let saved = try XCTUnwrap(store.load())
+        XCTAssertEqual(saved.accessToken, legacy.accessToken)
+        XCTAssertEqual(try JSONDecoder().decode(AniListTokens.self, from: JSONEncoder().encode(saved)), saved)
+        await service.submitToken("fixture-code")
+        XCTAssertNotEqual(service.historySyncIdentity, next)
+        XCTAssertEqual(revocations, 2)
+    }
+
+    @MainActor
+    func testPersistenceAndPermissionFailuresCannotReportConnectionSuccess() async throws {
+        let http = RecordingHTTPClient()
+        http.stub(pathSuffix: "/api/redeem", json: #"{"service":"anilist","accessToken":"fixture"}"#)
+        http.stub(pathSuffix: "", json: #"{"data":{"Viewer":{"id":7,"name":"fixture"}}}"#)
+        let store = FailableStore()
+        let service = AniListService(
+            config: .init(clientID: "fixture", clientSecret: "fixture"), http: http, tokenStore: store
+        )
+        store.failure = .save
+        await service.submitToken("fixture-code")
+        XCTAssertEqual(service.phase, .error("Could not save the connection. Try again."))
+        XCTAssertNil(store.load())
+        store.failure = nil
+        await service.submitToken("fixture-code")
+        XCTAssertNotNil(service.historySyncIdentity)
+        service.onHistorySyncDisconnect = { throw TrackerHistorySyncError.revocationFailed }
+        let saved = store.load()
+        await service.submitToken("fixture-code")
+        XCTAssertEqual(service.phase, .error("Sync is paused. Retry before closing the app."))
+        XCTAssertEqual(store.load(), saved)
+        await service.disconnect()
+        XCTAssertNotNil(store.load())
+        XCTAssertEqual(service.phase, .error("Could not disconnect. Retry before closing the app."))
+        service.onHistorySyncDisconnect = nil
+        store.failure = .clear
+        await service.disconnect()
+        XCTAssertNotNil(store.load())
+        XCTAssertEqual(service.phase, .error("Could not disconnect. Retry before closing the app."))
+        store.failure = nil
+        await service.disconnect()
+        XCTAssertEqual(service.phase, .disconnected)
+        XCTAssertNil(store.load())
+    }
+
+    @MainActor
+    func testLateCredentialRejectionCannotDeleteSynchronizedReplacement() async throws {
+        let http = RecordingHTTPClient()
+        http.stub(pathSuffix: "", json: #"{"data":{"Viewer":{"id":7,"name":"fixture"}}}"#)
+        let store = InMemoryAniListTokenStore(tokens: .init(accessToken: "old"))
+        let replacement = AniListTokens(accessToken: "new", accountIdentity: "new-connection")
+        let transport = ServiceHTTP(http: http)
+        transport.afterSend = {
+            try store.save(replacement)
+            throw AppError.unauthorized
+        }
+        let service = AniListService(
+            config: .init(clientID: "fixture", clientSecret: "fixture"), http: transport, tokenStore: store
+        )
+        service.onHistorySyncDisconnect = { XCTFail("A stale rejection must not revoke current permission") }
+        await service.refreshStatus()
+        XCTAssertEqual(store.load(), replacement)
+    }
+
+    private final class FailableStore: AniListTokenStoring, @unchecked Sendable {
+        enum Failure { case save, clear }
+        private let lock = NSLock()
+        private var storedFailure: Failure?
+        private let storage = InMemoryAniListTokenStore()
+        var failure: Failure? {
+            get { lock.lock(); defer { lock.unlock() }; return storedFailure }
+            set { lock.lock(); defer { lock.unlock() }; storedFailure = newValue }
+        }
+        func load() -> AniListTokens? { storage.load() }
+        func save(_ tokens: AniListTokens) throws {
+            if failure == .save { throw AppError.invalidResponse }
+            try storage.save(tokens)
+        }
+        func clear() throws {
+            if failure == .clear { throw AppError.invalidResponse }
+            try storage.clear()
+        }
+        func setNamespace(_ namespace: String?) { storage.setNamespace(namespace) }
+    }
+
     private actor ScopeGate {
         let failureAt: Int
         var count = 0

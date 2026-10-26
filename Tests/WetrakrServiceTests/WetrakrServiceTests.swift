@@ -241,6 +241,55 @@ final class WetrakrAuthorizationTests: XCTestCase {
         return try XCTUnwrap(URL(string: callback.absoluteString + "?code=approved&state=\(state)"))
     }
 
+    @MainActor
+    func testOngoingIdentitySurvivesRefreshAndRelaunchButNotSameTokenReconnect() async throws {
+        let http = RecordingHTTPClient()
+        http.stub(pathSuffix: "/oauth/token", json: tokenJSON)
+        http.stub(pathSuffix: "/oauth/token/refresh", json: tokenJSON)
+        http.stub(pathSuffix: "/account/settings", json: #"{"id":42,"info":{"username":"viewer"}}"#)
+        let tokens = store()
+        var expired = try XCTUnwrap(tokens.load())
+        expired.expiresAt = .distantPast
+        try tokens.save(expired)
+        let service = WetrakrService(config: config, http: http, tokenStore: tokens, coordinator: .init())
+        await service.refreshStatus()
+        let first = try XCTUnwrap(service.historySyncIdentity)
+        XCTAssertEqual(first.connectionID, expired.stableAccountIdentity)
+        XCTAssertEqual(service.historySyncCategories, [.watched, .resume])
+        let restored = WetrakrService(config: config, http: http, tokenStore: tokens, coordinator: .init())
+        await restored.refreshStatus()
+        XCTAssertEqual(restored.historySyncIdentity, first)
+        var previous = first
+        var revocations = 0
+        service.onHistorySyncDisconnect = { revocations += 1 }
+        for _ in 0..<2 {
+            service.connect { url, callback in try Self.approvedCallback(url: url, callback: callback) }
+            await service.connectTask?.value
+            let next = try XCTUnwrap(service.historySyncIdentity)
+            XCTAssertNotEqual(next, previous)
+            XCTAssertEqual(tokens.load()?.accessToken, "access")
+            previous = next
+        }
+        XCTAssertEqual(revocations, 2)
+        await service.setActiveProfile(namespace: "other")
+        XCTAssertNil(service.historySyncIdentity)
+        await service.setActiveProfile(namespace: nil)
+        XCTAssertEqual(service.historySyncIdentity, previous)
+    }
+
+    @MainActor
+    func testDisconnectDoesNotEraseCredentialWhenConsentRevocationFails() async throws {
+        let tokens = store()
+        let saved = tokens.load()
+        let http = RecordingHTTPClient()
+        let service = WetrakrService(config: config, http: http, tokenStore: tokens, coordinator: .init())
+        service.onHistorySyncDisconnect = { throw TrackerHistorySyncError.revocationFailed }
+        await service.disconnect()
+        XCTAssertEqual(service.phase, .error("Sync is paused. Retry before closing the app."))
+        XCTAssertEqual(tokens.load(), saved)
+        XCTAssertTrue(http.sent.isEmpty)
+    }
+
     func testOnlyExplicitAuthorizationPendingKeepsPolling() async throws {
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/oauth/device/token", json: #"{"error":"authorization_pending"}"#, status: 400)

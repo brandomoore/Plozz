@@ -11,8 +11,30 @@ private let verification = #"{"items":[],"total":0,"page":1,"perPage":1,"totalPa
 
 @MainActor
 final class PublicMetaDBLifecycleTests: XCTestCase {
+    func testDisconnectRequiresHistoryRevocationBeforeDeletingSavedKey() async throws {
+        try await withWatchlistService { service, _, _ in
+            let connection = try XCTUnwrap(service.historySyncIdentity)
+            service.onHistorySyncDisconnect = { throw TrackerHistorySyncError.revocationFailed }
+            XCTAssertThrowsError(try service.disconnect())
+            XCTAssertEqual(service.phase, .credentialChangeFailed)
+            await service.refreshStatus()
+            XCTAssertEqual(service.historySyncIdentity, connection, "Failed removal must preserve the credential")
+            await service.connect(key: testKey)
+            XCTAssertEqual(service.phase, .credentialChangeFailed)
+            await service.refreshStatus()
+            XCTAssertEqual(service.historySyncIdentity, connection, "Failed replacement must preserve the credential")
+            service.onHistorySyncDisconnect = nil
+            try service.disconnect()
+            await service.refreshStatus()
+            XCTAssertNil(service.historySyncIdentity)
+            XCTAssertEqual(service.phase, .disconnected)
+        }
+    }
+
     func testPlaybackRequiresSeparateConsentAndDoesNotFollowReplacedKeys() async throws {
         try await withWatchlistService { service, http, _ in
+            var revocations = 0
+            service.onHistorySyncDisconnect = { revocations += 1 }
             XCTAssertNil(service.playbackConnectionID)
             let connection = try XCTUnwrap(service.connectionID)
             try service.enablePlayback(expectedConnectionID: connection)
@@ -30,6 +52,7 @@ final class PublicMetaDBLifecycleTests: XCTestCase {
             try service.enablePlayback(expectedConnectionID: connection)
             XCTAssertNotEqual(service.playbackConnectionID, scope)
             await service.connect(key: testKey)
+            XCTAssertEqual(revocations, 1, "Refreshing and switching profiles must not revoke; replacing a key must")
             XCTAssertNil(service.playbackConnectionID)
             XCTAssertThrowsError(try service.enablePlayback(expectedConnectionID: connection))
             XCTAssertTrue(http.sent.allSatisfy { $0.body == nil })
@@ -264,7 +287,7 @@ final class PublicMetaDBLifecycleTests: XCTestCase {
         http.stub(pathSuffix: "/lists", json: verification)
         let service = PublicMetaDBService(credentials: store, http: http)
         await service.connect(key: testKey)
-        guard case .failed = service.phase else { return XCTFail("Storage failure was hidden") }
+        XCTAssertEqual(service.phase, .credentialChangeFailed)
         XCTAssertNil(service.client)
         XCTAssertNil(service.connectionID)
         XCTAssertNil(store.load(namespace: nil))

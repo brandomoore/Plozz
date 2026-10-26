@@ -37,6 +37,12 @@ for ongoing imports. Source activity may change between requests; duplicate/orde
 checks and the approval-time recheck reject detectable stale evidence. Missing
 entries never cause destructive server operations.
 
+A separate, explicitly approved ongoing permission can import newly completed,
+exactly matched movies using the shared controller. It cannot import series
+episode counts or resume points. Refresh/relaunch and disconnect/reconnect use
+the [shared consent lifecycle](../FeatureSettings/README.md); legacy tokens
+remain readable, and every new sign-in saves a new connection identity.
+
 Contracts: [MediaList](https://docs.anilist.co/reference/object/medialist),
 [PageInfo](https://docs.anilist.co/reference/object/pageinfo),
 [Query](https://docs.anilist.co/reference/query).

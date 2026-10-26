@@ -116,12 +116,19 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         add(screenshot)
     }
 
-    private func verifyOngoingSync(_ server: String) {
-        launch(["--history-ongoing-sync"])
+    func testWatchedOnlyManualSyncUsesSupportedControlsAndExplicitAction() {
+        verifyOngoingSync("jellyfin", additionalArguments: ["--history-watched-only", "--history-manual-sync"])
+    }
+
+    private func verifyOngoingSync(_ server: String, additionalArguments: [String] = []) {
+        launch(["--history-ongoing-sync"] + additionalArguments)
         activate(element("tracker-history.ongoing-sync"))
         let enable = app.buttons["tracker-history.enable-sync"]
         XCTAssertTrue(enable.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(enable.isEnabled)
+        if additionalArguments.contains("--history-watched-only") {
+            XCTAssertFalse(element("tracker-history.sync-resume").exists)
+        }
         activate(element("tracker-history.sync-server.\(server)"))
         activate(element("tracker-history.sync-watched"))
         activate(enable)
@@ -132,6 +139,9 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         activate(enable)
         activate(syncConfirmationButton)
         XCTAssertTrue(app.buttons["tracker-history.sync-now"].waitForExistence(timeout: 5), app.debugDescription)
+        if additionalArguments.contains("--history-manual-sync") {
+            XCTAssertTrue(app.staticTexts["Use Sync now to import new history. Conflicts stay unchanged."].exists)
+        }
         XCTAssertFalse(element("tracker-history.sync-server.\(server)").exists,
                        "Enrollment must replace the editable destination toggle with a read-only summary")
         XCTAssertTrue(app.staticTexts["fixture.history.report"].label.contains(";destinations=\(server);"))

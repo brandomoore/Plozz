@@ -50,12 +50,30 @@ buttons. TV retains its native vertical focus layout. See
 [PublicMetaDBService](../PublicMetaDBService/README.md) for current
 coverage, history fidelity, and remaining integration work.
 
-PublicMetaDB's separate **Ongoing sync** page requires explicit server-user and
+The separate **Ongoing sync** page requires explicit server-user and
 category selections after that review. Cancelling grants nothing; enabling
 captures existing evidence without backfilling it. **Sync now** and revocation
 use the same controller on TV and mobile. Pushing the page retains the reviewed
 snapshot as evidence, not the previous page's ephemeral write authorization;
 returning to comparison creates a fresh session.
+
+PublicMetaDB and WeTrakr offer watched state and compatible resume points;
+Trakt, Simkl, AniList and MyAnimeList offer watched state only. AniList and
+MyAnimeList retain their completed-movie-only import restriction. Unsupported
+categories are neither displayed nor accepted by the controller. Simkl requires
+**Sync now**, which retains its activity-gated read path; the other services can
+check after foreground/index readiness. None installs a polling timer.
+Anime rating, count and list-update edits do not turn an existing completed movie
+into a new completion for automatic import.
+
+Permissions use the stored connection identity, not a process-local generation.
+Refresh and relaunch preserve it; a fresh sign-in replaces it even if the service
+returns identical token bytes. Disconnect and replacement revoke the device-local
+permission before changing the credential, using its profile namespace even
+if another profile is visible. Failed revocation pauses current-process delivery
+and requires retry rather than claiming durable disconnection.
+PublicMetaDB uses a specific credential-change failure state so this required
+retry is visible instead of being swallowed by the generic unknown-error copy.
 
 Trakt and Simkl use this same comparison and approval page. Their percentage-only resume
 records are displayed without conversion to server seconds, and episode imports

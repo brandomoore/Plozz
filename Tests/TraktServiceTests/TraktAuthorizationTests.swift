@@ -142,6 +142,65 @@ private actor DelayRecorder {
 
 final class TraktCredentialLifecycleTests: XCTestCase {
     @MainActor
+    func testOngoingConsentIdentitySurvivesRefreshAndRelaunchButNotReconnect() async throws {
+        let http = RecordingHTTPClient()
+        http.stub(pathSuffix: "/oauth/token", json: rotatedJSON)
+        http.stub(pathSuffix: "/users/settings", json: #"{"user":{"username":"viewer"}}"#)
+        var tokens = expired
+        tokens.expiresAt = .distantFuture
+        let store = InMemoryTrackerTokenStore(tokens: tokens)
+        let service = TraktService(config: config, http: http, tokenStore: store, coordinator: .init())
+        await service.refreshStatus()
+        let first = try XCTUnwrap(service.historySyncIdentity)
+        XCTAssertEqual(service.historySyncCategories, [.watched])
+        XCTAssertTrue(first.allowsForegroundChecks)
+        try store.save(expired)
+        await service.refreshStatus()
+        XCTAssertEqual(service.historySyncIdentity, first)
+        XCTAssertEqual(store.load()?.accessToken, "new-access")
+        let restored = TraktService(config: config, http: http, tokenStore: store, coordinator: .init())
+        await restored.refreshStatus()
+        XCTAssertEqual(restored.historySyncIdentity, first)
+        var previous = first
+        var revocations = 0
+        service.onHistorySyncDisconnect = { revocations += 1 }
+        for _ in 0..<2 {
+            service.connect { url, callback in
+                let state = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first(where: { $0.name == "state" })?.value)
+                return try XCTUnwrap(URL(string: callback.absoluteString + "?code=approved&state=\(state)"))
+            }
+            await service.connectTask?.value
+            let next = try XCTUnwrap(service.historySyncIdentity)
+            XCTAssertNotEqual(next, previous)
+            XCTAssertEqual(store.load()?.accessToken, "new-access")
+            previous = next
+        }
+        XCTAssertEqual(revocations, 2)
+        await service.setActiveProfile(namespace: "other")
+        XCTAssertNil(service.historySyncIdentity)
+        await service.setActiveProfile(namespace: nil)
+        XCTAssertEqual(service.historySyncIdentity, previous)
+    }
+
+    @MainActor
+    func testDisconnectRequiresDurableHistoryPermissionRevocation() async throws {
+        let http = RecordingHTTPClient()
+        http.stubEmpty(pathSuffix: "/oauth/revoke")
+        let store = InMemoryTrackerTokenStore(tokens: expired)
+        let service = TraktService(config: config, http: http, tokenStore: store, coordinator: .init())
+        service.onHistorySyncDisconnect = { throw TrackerHistorySyncError.revocationFailed }
+        await service.disconnect()
+        XCTAssertEqual(service.phase, .error("Sync is paused. Retry before closing the app."))
+        XCTAssertEqual(store.load(), expired)
+        XCTAssertTrue(http.sent.isEmpty)
+        service.onHistorySyncDisconnect = nil
+        await service.disconnect()
+        XCTAssertNil(store.load())
+        XCTAssertEqual(service.phase, .disconnected)
+    }
+
+    @MainActor
     func testCallbackFailurePreservesInvalidResponsePresentation() async {
         let http = RecordingHTTPClient()
         let store = InMemoryTrackerTokenStore()

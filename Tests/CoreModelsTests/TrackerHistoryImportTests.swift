@@ -539,7 +539,9 @@ final class TrackerHistoryImportTests: XCTestCase {
     private func syncController(
         provider: ImportProvider, evidence: ImportEvidence, store: DurableLocalStateStore,
         permission: ImportPermission? = nil, connection: String = "connection",
-        serverScope: WatchMutationServerScope? = nil, reconciler existingReconciler: WatchStateReconciler? = nil
+        serverScope: WatchMutationServerScope? = nil, reconciler existingReconciler: WatchStateReconciler? = nil,
+        supportedCategories: Set<TrackerHistorySyncCategory> = [.watched, .resume],
+        allowsForegroundChecks: Bool = true
     ) -> TrackerHistorySyncController {
         let scope = serverScope ?? self.scope()
         let permission = permission ?? ImportPermission()
@@ -552,7 +554,9 @@ final class TrackerHistoryImportTests: XCTestCase {
             store: InMemoryWatchMutationStore(), applier: ImportApplier(provider: provider)
         )
         return TrackerHistorySyncController(
-            identity: .init(trackerID: "test-tracker", connectionID: connection), scope: scope, store: store,
+            identity: .init(
+                trackerID: "test-tracker", connectionID: connection, allowsForegroundChecks: allowsForegroundChecks
+            ), scope: scope, store: store, supportedCategories: supportedCategories,
             isAuthorized: { permission.allowed },
             makeSession: { scope, allowed in
                 TrackerHistoryImportSession(
@@ -587,6 +591,89 @@ final class TrackerHistoryImportTests: XCTestCase {
         await sync.enable(afterReview: plan, accountIDs: ["account"], categories: categories)
         XCTAssertNil(sync.error)
         XCTAssertTrue(sync.isEnabled)
+    }
+
+    @MainActor
+    func testOngoingSyncRejectsUnsupportedCategoriesAndOldBroaderGrants() async throws {
+        let evidence = ImportEvidence(try snapshot([]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let provider = ImportProvider(item: item())
+        let sync = syncController(
+            provider: provider, evidence: evidence, store: store, supportedCategories: [.watched]
+        )
+        let reviewed = TrackerHistoryImportPlan(snapshot: evidence.snapshot, serverScope: scope(), candidates: [])
+        await sync.enable(afterReview: reviewed, accountIDs: ["account"], categories: [.resume])
+        XCTAssertFalse(sync.isEnabled)
+        XCTAssertEqual(sync.error as? TrackerHistoryError, .scopeChanged)
+        await enable(sync, evidence: evidence)
+        XCTAssertEqual(sync.grant?.categories, [.watched])
+
+        let broader = syncController(provider: provider, evidence: evidence, store: store)
+        await enable(broader, evidence: evidence, categories: [.watched, .resume])
+        sync.reload()
+        XCTAssertFalse(sync.isEnabled)
+        evidence.failRead = true
+        await sync.synchronize()
+        XCTAssertNil(sync.error, "An unsupported grant must not even read the tracker")
+    }
+
+    @MainActor
+    func testManualOnlySyncNeverChecksOnForeground() async throws {
+        let evidence = ImportEvidence(try snapshot([]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let sync = syncController(
+            provider: ImportProvider(item: item()), evidence: evidence, store: store, allowsForegroundChecks: false
+        )
+        await enable(sync, evidence: evidence)
+        evidence.failRead = true
+        await sync.synchronize(manual: false)
+        XCTAssertNil(sync.error)
+        XCTAssertNil(sync.grant?.lastAttemptAt)
+        await sync.synchronize()
+        XCTAssertEqual(sync.error as? TrackerHistoryError, .incompleteSnapshot)
+        XCTAssertNotNil(sync.grant?.lastAttemptAt)
+    }
+
+    @MainActor
+    func testRevokingStoredPermissionPreventsRestoredConnectionFromResuming() async throws {
+        let evidence = ImportEvidence(try snapshot([]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let provider = ImportProvider(item: item())
+        let sync = syncController(provider: provider, evidence: evidence, store: store)
+        await enable(sync, evidence: evidence)
+        try TrackerHistorySyncController.revokePermission(
+            store: store, profileID: scope().profileID, trackerID: "test-tracker"
+        )
+        let restored = syncController(provider: provider, evidence: evidence, store: store)
+        XCTAssertFalse(restored.isEnabled)
+        evidence.failRead = true
+        await restored.synchronize()
+        XCTAssertNil(restored.error)
+    }
+
+    @MainActor
+    func testAnimeRatingAndCountEditsDoNotBecomeNewMovieCompletions() async throws {
+        func movie(_ status: TrackerAnimeListProgress.Status, edited: Bool) throws -> TrackerHistoryObservation {
+            try .init(
+                recordID: "anime/movie", kind: .movie, identities: [.external(source: "tmdb", value: "550")],
+                fact: .animeList(try .init(
+                    status: status, episodesWatched: edited ? 2 : 1, repeats: edited ? 1 : 0,
+                    score: edited ? 9 : 8, updatedAt: Date(timeIntervalSince1970: edited ? 200 : 100)
+                ))
+            )
+        }
+        for initiallyCompleted in [false, true] {
+            let evidence = ImportEvidence(try snapshot([movie(initiallyCompleted ? .completed : .planning, edited: false)]))
+            let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+            let provider = ImportProvider(item: item())
+            let sync = syncController(provider: provider, evidence: evidence, store: store)
+            await enable(sync, evidence: evidence)
+            evidence.snapshot = try snapshot([movie(.completed, edited: true)])
+            await sync.synchronize()
+            XCTAssertNil(sync.error)
+            let writes = await provider.writes
+            XCTAssertEqual(writes, initiallyCompleted ? 0 : 1)
+        }
     }
 
     @MainActor

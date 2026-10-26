@@ -281,12 +281,125 @@ final class SimklHistorySnapshotTests: XCTestCase {
         let service = SimklService(config: .init(clientID: "fixture"), http: http, tokenStore: store)
         await service.refreshStatus()
         let connection = try XCTUnwrap(service.historyConnectionID)
+        let durable = try XCTUnwrap(service.historySyncIdentity)
+        XCTAssertFalse(durable.allowsForegroundChecks)
+        XCTAssertEqual(service.historySyncCategories, [.watched])
         await service.setActiveProfile(namespace: "other")
+        XCTAssertNil(service.historySyncIdentity)
         await service.setActiveProfile(namespace: nil)
         XCTAssertNotEqual(service.historyConnectionID, connection)
+        XCTAssertEqual(service.historySyncIdentity, durable)
         do { _ = try await service.historySnapshot(expectedConnectionID: connection); XCTFail("Stale profile") }
         catch { XCTAssertEqual(error as? TrackerHistoryError, .scopeChanged) }
         XCTAssertFalse(http.sentPaths.contains("/sync/activities"))
+    }
+
+    func testDurableIdentitySurvivesRelaunchButSameTokenReconnectCreatesNewConsentScope() async throws {
+        let http = try http()
+        http.stub(pathSuffix: "/oauth/pin", json: """
+        {"user_code":"FIXTURE","verification_url":"https://example.test","expires_in":600,"interval":5}
+        """)
+        http.stub(pathSuffix: "/oauth/pin/FIXTURE", json: #"{"result":"OK","access_token":"fixture"}"#)
+        let legacy = try JSONDecoder().decode(SimklTokens.self, from: Data(#"{"accessToken":"fixture"}"#.utf8))
+        let store = InMemorySimklTokenStore(tokens: legacy)
+        let service = SimklService(config: .init(clientID: "fixture"), http: http, tokenStore: store)
+        await service.refreshStatus()
+        let first = try XCTUnwrap(service.historySyncIdentity)
+        let restored = SimklService(config: .init(clientID: "fixture"), http: http, tokenStore: store)
+        await restored.refreshStatus()
+        XCTAssertEqual(restored.historySyncIdentity, first)
+        var revocations = 0
+        service.onHistorySyncDisconnect = { revocations += 1 }
+        service.connect()
+        await service.connectTask?.value
+        let next = try XCTUnwrap(service.historySyncIdentity)
+        XCTAssertNotEqual(next, first)
+        let saved = try XCTUnwrap(store.load())
+        XCTAssertEqual(saved.accessToken, legacy.accessToken)
+        XCTAssertEqual(try JSONDecoder().decode(SimklTokens.self, from: JSONEncoder().encode(saved)), saved)
+        service.connect()
+        await service.connectTask?.value
+        XCTAssertNotEqual(service.historySyncIdentity, next)
+        XCTAssertEqual(revocations, 2)
+    }
+
+    func testPersistenceFailuresNeverReportConnectedOrDisconnectedSuccess() async throws {
+        let http = try http()
+        http.stub(pathSuffix: "/oauth/pin", json: """
+        {"user_code":"FIXTURE","verification_url":"https://example.test","expires_in":600,"interval":5}
+        """)
+        http.stub(pathSuffix: "/oauth/pin/FIXTURE", json: #"{"access_token":"fixture"}"#)
+        let store = FailableStore()
+        store.failure = .save
+        let service = SimklService(config: .init(clientID: "fixture"), http: http, tokenStore: store)
+        service.connect()
+        await service.connectTask?.value
+        XCTAssertEqual(service.phase, .error("Could not save the connection. Try again."))
+        XCTAssertNil(store.load())
+        store.failure = nil
+        service.connect()
+        await service.connectTask?.value
+        XCTAssertNotNil(service.historySyncIdentity)
+        service.onHistorySyncDisconnect = { throw TrackerHistorySyncError.revocationFailed }
+        let saved = store.load()
+        service.connect()
+        await service.connectTask?.value
+        XCTAssertEqual(service.phase, .error("Sync is paused. Retry before closing the app."))
+        XCTAssertEqual(store.load(), saved)
+        await service.disconnect()
+        XCTAssertNotNil(store.load())
+        XCTAssertEqual(service.phase, .error("Could not disconnect. Retry before closing the app."))
+        service.onHistorySyncDisconnect = nil
+        store.failure = .clear
+        await service.disconnect()
+        XCTAssertNotNil(store.load())
+        XCTAssertEqual(service.phase, .error("Could not disconnect. Retry before closing the app."))
+        store.failure = nil
+        await service.disconnect()
+        XCTAssertNil(store.load())
+        XCTAssertEqual(service.phase, .disconnected)
+    }
+
+    func testLateCredentialRejectionCannotDeleteSynchronizedReplacement() async throws {
+        let store = InMemorySimklTokenStore(tokens: .init(accessToken: "old"))
+        let replacement = SimklTokens(accessToken: "new", accountIdentity: "new-connection")
+        let service = SimklService(
+            config: .init(clientID: "fixture"),
+            http: ReplacedCredentialHTTP(store: store, replacement: replacement), tokenStore: store
+        )
+        service.onHistorySyncDisconnect = { XCTFail("A stale rejection must not revoke current permission") }
+        await service.refreshStatus()
+        XCTAssertEqual(store.load(), replacement)
+    }
+
+    private struct ReplacedCredentialHTTP: HTTPClient {
+        let store: InMemorySimklTokenStore
+        let replacement: SimklTokens
+        func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+            try store.save(replacement)
+            throw AppError.unauthorized
+        }
+    }
+
+    private final class FailableStore: SimklTokenStoring, @unchecked Sendable {
+        enum Failure { case save, clear }
+        private let lock = NSLock()
+        private var storedFailure: Failure?
+        private let storage = InMemorySimklTokenStore()
+        var failure: Failure? {
+            get { lock.lock(); defer { lock.unlock() }; return storedFailure }
+            set { lock.lock(); defer { lock.unlock() }; storedFailure = newValue }
+        }
+        func load() -> SimklTokens? { storage.load() }
+        func save(_ tokens: SimklTokens) throws {
+            if failure == .save { throw AppError.invalidResponse }
+            try storage.save(tokens)
+        }
+        func clear() throws {
+            if failure == .clear { throw AppError.invalidResponse }
+            try storage.clear()
+        }
+        func setNamespace(_ namespace: String?) { storage.setNamespace(namespace) }
     }
 
     func testGrantReplacementDuringReadRejectsResultsAndStopsRequests() async throws {

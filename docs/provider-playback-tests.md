@@ -277,6 +277,9 @@ backfill, a newly observed play delivered only to the selected server, and
 revocation. Its device-local ledger uses isolated in-memory secure storage;
 restart, uncertain-target holds, storage failures and exact batch/snapshot limits
 are covered separately in `TrackerHistoryImportTests`.
+The watched-only/manual fixture variation verifies that unsupported resume
+controls are absent, the manual-check explanation is present, and a new play
+still requires **Sync now**.
 TV actions use the native remote focus system; mobile actions use taps and
 scrolling. Select the class within its corresponding UI-test target when running
 the existing build-for-testing/test-without-building workflow.

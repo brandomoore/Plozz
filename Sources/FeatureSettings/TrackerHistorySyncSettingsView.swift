@@ -24,8 +24,13 @@ struct TrackerHistorySyncSettingsView: View {
             if sync.isBusy { ProgressView("Syncing…") }
             if let error = sync.error { TrackerHistoryImportFailure(error: error) }
             if sync.isEnabled, let grant = sync.grant {
-                Text("New history syncs to your selected server users. Conflicts stay unchanged.")
-                    .foregroundStyle(.secondary)
+                if sync.identity.allowsForegroundChecks {
+                    Text("New history syncs to your selected server users. Conflicts stay unchanged.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Use Sync now to import new history. Conflicts stay unchanged.")
+                        .foregroundStyle(.secondary)
+                }
                 if grant.categories == [.watched, .resume] {
                     Text("Watched and resume points")
                 } else if grant.categories.contains(.watched) {
@@ -51,8 +56,13 @@ struct TrackerHistorySyncSettingsView: View {
                 Button("Turn off sync", role: .destructive) { sync.disable() }
                     .accessibilityIdentifier("tracker-history.disable-sync")
             } else {
-                Text("Import new watched states or resume points on this device. Existing history stays unchanged.")
-                    .foregroundStyle(.secondary)
+                if sync.supportedCategories.contains(.resume) {
+                    Text("Import new watched states or resume points on this device. Existing history stays unchanged.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Import new watched states on this device. Existing history stays unchanged.")
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(session.destinations) { destination in
                     Toggle(
                         "\(destination.serverName) · \(destination.userName)",
@@ -63,10 +73,14 @@ struct TrackerHistorySyncSettingsView: View {
                     )
                     .accessibilityIdentifier("tracker-history.sync-server.\(destination.id)")
                 }
-                Toggle("Watched", isOn: selection(.watched))
-                    .accessibilityIdentifier("tracker-history.sync-watched")
-                Toggle("Resume points", isOn: selection(.resume))
-                    .accessibilityIdentifier("tracker-history.sync-resume")
+                if sync.supportedCategories.contains(.watched) {
+                    Toggle("Watched", isOn: selection(.watched))
+                        .accessibilityIdentifier("tracker-history.sync-watched")
+                }
+                if sync.supportedCategories.contains(.resume) {
+                    Toggle("Resume points", isOn: selection(.resume))
+                        .accessibilityIdentifier("tracker-history.sync-resume")
+                }
                 Button("Enable sync") { confirming = true }
                     .disabled(accounts.isEmpty || categories.isEmpty || reviewedPlan == nil || sync.isBusy)
                     .accessibilityIdentifier("tracker-history.enable-sync")

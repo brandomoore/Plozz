@@ -873,6 +873,9 @@ final class PlozziOSAppModel {
 
         // Bring up CloudKit config auto-sync (no-op unless the Sync & Setup flag is
         // on) and start observing local config changes to publish them.
+        for tracker in historySyncReaders {
+            accountsProviders.bindTrackerHistorySync(tracker, store: durableLocalStateStore)
+        }
         self.traktService.onConnectionAvailable = { [weak self] in
             Task { await self?.resumeUniversalWatchlistAuthentication() }
         }
@@ -1868,13 +1871,24 @@ final class PlozziOSAppModel {
     func synchronizeTrackerHistoryOnForeground() async {
         guard accountsProviders.trackerHistorySyncIsForeground,
               trackersAreScopedToActiveProfile, isActiveProfileAuthorized else { return }
-        let session = makePublicMetaDBHistoryImport()
-        defer { session.cancel() }
-        guard let grant = session.ongoingSync?.grant,
-              Set(grant.scope.accounts.map(\.accountID)).isSubset(
-                of: identityIndex.identitySnapshotStore.current.indexedAccountIDs
-              ) else { return }
-        await session.ongoingSync?.synchronize(manual: false)
+        let scope = accountsProviders.watchMutationServerScope
+        for tracker in historySyncReaders {
+            guard !Task.isCancelled, accountsProviders.trackerHistorySyncIsForeground,
+                  trackersAreScopedToActiveProfile, isActiveProfileAuthorized,
+                  accountsProviders.watchMutationServerScope == scope else { return }
+            guard tracker.historySyncIdentity?.allowsForegroundChecks == true else { continue }
+            let session = makeTrackerHistoryImport(tracker)
+            defer { session.cancel() }
+            guard let grant = session.ongoingSync?.grant,
+                  Set(grant.scope.accounts.map(\.accountID)).isSubset(
+                    of: identityIndex.identitySnapshotStore.current.indexedAccountIDs
+                  ) else { continue }
+            await session.ongoingSync?.synchronize(manual: false)
+        }
+    }
+
+    private var historySyncReaders: [any TrackerHistorySyncReading] {
+        [publicMetaDBService, traktService, wetrakrService, simklService, anilistService, malService]
     }
 
     /// Kept by the presentation across teardown/episode handoff, never rebuilt

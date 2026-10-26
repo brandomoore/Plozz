@@ -161,6 +161,9 @@ struct PublicMetaDBKeyEntryView: View {
                 if case .failed(let error) = service.phase {
                     Text(error.userMessage)
                 }
+                if service.phase == .credentialChangeFailed {
+                    Text("Connection change failed. Retry before closing the app.")
+                }
                 if case .pairingFailed(let error) = service.phase {
                     Text(error.userMessage)
                         .accessibilityIdentifier("publicmetadb.pair.error")
@@ -250,6 +253,7 @@ struct PublicMetaDBConnectionStatus: View {
         case .connected: Text("Connected")
         case .failed(let error): Text(error.userMessage)
         case .pairingFailed(let error): Text(error.userMessage)
+        case .credentialChangeFailed: Text("Connection change failed. Retry before closing the app.")
         }
     }
     var body: some View {

@@ -229,6 +229,104 @@ final class MALHistorySnapshotTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testDurableIdentitySurvivesRefreshAndRelaunchButNotSameTokenReconnect() async throws {
+        let http = http([])
+        http.stub(pathSuffix: "/api/redeem", json: """
+        {"service":"myanimelist","accessToken":"fixture","refreshToken":"refresh","expiresIn":3600}
+        """)
+        http.stub(pathSuffix: "/v1/oauth2/token", json: """
+        {"access_token":"fixture","refresh_token":"refresh","expires_in":3600}
+        """)
+        let config = MALConfig(clientID: "fixture")
+        let tokens = MALTokens(accessToken: "fixture", refreshToken: "refresh", expiresAt: .distantFuture)
+        let store = InMemoryMALTokenStore(tokens: tokens)
+        let service = MALService(config: config, http: http, tokenStore: store)
+        await service.refreshStatus()
+        let first = try XCTUnwrap(service.historySyncIdentity)
+        XCTAssertEqual(service.historySyncCategories, [.watched])
+        var expired = tokens
+        expired.expiresAt = .distantPast
+        try store.save(expired)
+        await service.refreshStatus()
+        XCTAssertEqual(service.historySyncIdentity, first)
+        let restored = MALService(config: config, http: http, tokenStore: store)
+        await restored.refreshStatus()
+        XCTAssertEqual(restored.historySyncIdentity, first)
+        var revocations = 0
+        service.onHistorySyncDisconnect = { revocations += 1 }
+        await service.setActiveProfile(namespace: "other")
+        XCTAssertNil(service.historySyncIdentity)
+        await service.setActiveProfile(namespace: nil)
+        XCTAssertEqual(service.historySyncIdentity, first)
+        service.submitAuthorizationCode("fixture-code")
+        await service.connectTask?.value
+        let next = try XCTUnwrap(service.historySyncIdentity)
+        XCTAssertNotEqual(next, first)
+        XCTAssertEqual(store.load()?.accessToken, tokens.accessToken)
+        service.submitAuthorizationCode("fixture-code")
+        await service.connectTask?.value
+        XCTAssertNotEqual(service.historySyncIdentity, next)
+        XCTAssertEqual(revocations, 2)
+    }
+
+    @MainActor
+    func testConnectionSaveAndPermissionRevocationFailuresAreExplicit() async throws {
+        let http = http([])
+        http.stub(pathSuffix: "/api/redeem", json: """
+        {"service":"myanimelist","accessToken":"fixture","refreshToken":"refresh","expiresIn":3600}
+        """)
+        let store = FailableStore()
+        store.failSave = true
+        let service = MALService(config: .init(clientID: "fixture"), http: http, tokenStore: store)
+        service.submitAuthorizationCode("fixture-code")
+        await service.connectTask?.value
+        XCTAssertEqual(service.phase, .error("Could not save the connection. Try again."))
+        XCTAssertNil(store.load())
+        store.failSave = false
+        service.submitAuthorizationCode("fixture-code")
+        await service.connectTask?.value
+        XCTAssertNotNil(service.historySyncIdentity)
+        service.onHistorySyncDisconnect = { throw TrackerHistorySyncError.revocationFailed }
+        let saved = store.load()
+        service.submitAuthorizationCode("fixture-code")
+        await service.connectTask?.value
+        XCTAssertEqual(service.phase, .error("Sync is paused. Retry before closing the app."))
+        XCTAssertEqual(store.load(), saved)
+        await service.disconnect()
+        XCTAssertNotNil(store.load())
+        XCTAssertEqual(service.phase, .error("Could not disconnect. Retry before closing the app."))
+        service.onHistorySyncDisconnect = nil
+        store.failClear = true
+        await service.disconnect()
+        XCTAssertNotNil(store.load())
+        XCTAssertEqual(service.phase, .error("Could not disconnect. Retry before closing the app."))
+        store.failClear = false
+        await service.disconnect()
+        XCTAssertEqual(service.phase, .disconnected)
+        XCTAssertNil(store.load())
+    }
+
+    @MainActor
+    func testLateCredentialRejectionCannotDeleteSynchronizedReplacement() async throws {
+        let http = http([])
+        let store = InMemoryMALTokenStore(tokens: .init(
+            accessToken: "old", refreshToken: "old-refresh", expiresAt: .distantFuture
+        ))
+        let replacement = MALTokens(
+            accessToken: "new", refreshToken: "new-refresh", expiresAt: .distantFuture, accountIdentity: "new-connection"
+        )
+        let transport = ServiceHTTP(http: http)
+        transport.afterSend = { _ in
+            try store.save(replacement)
+            throw AppError.unauthorized
+        }
+        let service = MALService(config: .init(clientID: "fixture"), http: transport, tokenStore: store)
+        service.onHistorySyncDisconnect = { XCTFail("A stale rejection must not revoke current permission") }
+        await service.refreshStatus()
+        XCTAssertEqual(store.load(), replacement)
+    }
+
     private actor ScopeGate {
         let failureAt: Int
         var count = 0
@@ -288,6 +386,11 @@ final class MALHistorySnapshotTests: XCTestCase {
         private let storage = InMemoryMALTokenStore()
         private let lock = NSLock()
         private var failure = false
+        private var clearFailure = false
+        var failClear: Bool {
+            get { lock.lock(); defer { lock.unlock() }; return clearFailure }
+            set { lock.lock(); defer { lock.unlock() }; clearFailure = newValue }
+        }
         var failSave: Bool {
             get { lock.lock(); defer { lock.unlock() }; return failure }
             set { lock.lock(); defer { lock.unlock() }; failure = newValue }
@@ -297,7 +400,10 @@ final class MALHistorySnapshotTests: XCTestCase {
             if failSave { throw AppError.invalidResponse }
             try storage.save(tokens)
         }
-        func clear() throws { try storage.clear() }
+        func clear() throws {
+            if failClear { throw AppError.invalidResponse }
+            try storage.clear()
+        }
         func setNamespace(_ namespace: String?) { storage.setNamespace(namespace) }
     }
 }

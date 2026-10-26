@@ -12,6 +12,19 @@ public extension TrackerHistoryReading {
     var historySyncIdentity: TrackerHistorySyncIdentity? { nil }
 }
 
+@MainActor
+public protocol TrackerHistorySyncReading: TrackerHistoryReading {
+    var historySyncTrackerID: String { get }
+    var historySyncNamespace: String? { get }
+    var historySyncCategories: Set<TrackerHistorySyncCategory> { get }
+    /// Revoke the old connection's permission before removing or replacing its credential.
+    var onHistorySyncDisconnect: (@MainActor () throws -> Void)? { get set }
+}
+
+public extension TrackerHistorySyncReading {
+    var historySyncCategories: Set<TrackerHistorySyncCategory> { [.watched, .resume] }
+}
+
 /// One visible comparison/approval session. Closing it revokes undelivered work.
 @MainActor
 @Observable

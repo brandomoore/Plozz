@@ -21,8 +21,12 @@ public enum AniListConnectionPhase: Equatable, Sendable {
 /// App-level façade for the AniList integration.
 @MainActor
 @Observable
-public final class AniListService: TrackerHistoryReading {
+public final class AniListService: TrackerHistorySyncReading {
     public private(set) var phase: AniListConnectionPhase
+    public let historySyncTrackerID = "anilist"
+    public private(set) var historySyncNamespace: String?
+    public var historySyncCategories: Set<TrackerHistorySyncCategory> { [.watched] }
+    @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
 
     @ObservationIgnored public let scrobbler: any AniListScrobbling
 
@@ -37,7 +41,11 @@ public final class AniListService: TrackerHistoryReading {
     @ObservationIgnored public let watchlistDestination:
         AniListWatchlistDestination?
 
-    public init(config: AniListConfig, http: HTTPClient = URLSessionHTTPClient(), tokenStore: AniListTokenStoring) {
+    public init(
+        config: AniListConfig, http: HTTPClient = URLSessionHTTPClient(),
+        tokenStore: AniListTokenStoring, namespace: String? = nil
+    ) {
+        historySyncNamespace = namespace
         self.config = config
         self.http = http
         self.tokenStore = tokenStore
@@ -59,8 +67,13 @@ public final class AniListService: TrackerHistoryReading {
     public var isConfigured: Bool { config.isConfigured }
 
     public var historyConnectionID: String? {
-        guard case .connected = phase, let token = tokenStore.load()?.accessToken else { return nil }
-        return "\(profileGeneration)#\(WatchlistReconciliationIdentity.credential(token))"
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return "\(profileGeneration)#\(tokens.stableAccountIdentity)"
+    }
+
+    public var historySyncIdentity: TrackerHistorySyncIdentity? {
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return .init(trackerID: historySyncTrackerID, connectionID: tokens.stableAccountIdentity)
     }
 
     public func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
@@ -76,6 +89,7 @@ public final class AniListService: TrackerHistoryReading {
     }
 
     public func setActiveProfile(namespace: String?) async {
+        historySyncNamespace = namespace
         profileGeneration &+= 1
         let generation = profileGeneration
         tokenStore.setNamespace(namespace)
@@ -93,10 +107,10 @@ public final class AniListService: TrackerHistoryReading {
         let client = AniListClient(config: config, http: http)
         do {
             let user = try await client.viewer(accessToken: tokens.accessToken)
-            guard generation == profileGeneration else { return }
+            guard generation == profileGeneration, tokenStore.load() == tokens else { return }
             phase = .connected(username: user.name)
         } catch {
-            guard generation == profileGeneration else { return }
+            guard generation == profileGeneration, tokenStore.load() == tokens else { return }
             // A network blip is not evidence the token is bad; only the
             // server rejecting it is. Discarding it here made a momentary
             // failure a permanent sign-out.
@@ -104,8 +118,7 @@ public final class AniListService: TrackerHistoryReading {
                 phase = .unknown
                 return
             }
-            try? tokenStore.clear()
-            phase = .disconnected
+            clearConnection()
         }
     }
 
@@ -131,12 +144,14 @@ public final class AniListService: TrackerHistoryReading {
         }
 
         do {
-            var redeemString = "\(config.relayBaseURL)/api/redeem?code=\(trimmed)"
+            guard let relayURL = URL(string: config.relayBaseURL) else { throw AppError.invalidResponse }
+            var query = [URLQueryItem(name: "code", value: trimmed)]
             if let session = pendingSession {
-                redeemString += "&session=\(session)"
+                query.append(.init(name: "session", value: session))
             }
-            let redeemURL = URL(string: redeemString)!
-            let (data, _) = try await URLSession.shared.data(from: redeemURL)
+            var endpoint = Endpoint(path: "/api/redeem", queryItems: query, redirectPolicy: .sameOrigin)
+            endpoint.redactsURLForLogging = true
+            let (data, _) = try await http.send(endpoint, baseURL: relayURL)
             guard generation == profileGeneration else { return }
             let result = try JSONDecoder().decode(RelayRedeemResponse.self, from: data)
 
@@ -144,8 +159,17 @@ public final class AniListService: TrackerHistoryReading {
             let client = AniListClient(config: config, http: http)
             let user = try await client.viewer(accessToken: accessToken)
             guard generation == profileGeneration else { return }
-            let tokens = AniListTokens(accessToken: accessToken)
-            try? tokenStore.save(tokens)
+            let tokens = AniListTokens(accessToken: accessToken, accountIdentity: UUID().uuidString)
+            do {
+                try onHistorySyncDisconnect?()
+                try tokenStore.save(tokens)
+            } catch {
+                PlozzLog.app.error("AniList connection persistence failed")
+                phase = (error as? TrackerHistorySyncError) == .revocationFailed
+                    ? .error("Sync is paused. Retry before closing the app.")
+                    : .error("Could not save the connection. Try again.")
+                return
+            }
             pendingSession = nil
             phase = .connected(username: user.name)
         } catch {
@@ -171,8 +195,18 @@ public final class AniListService: TrackerHistoryReading {
     public func disconnect() async {
         profileGeneration &+= 1
         pendingSession = nil
-        try? tokenStore.clear()
-        phase = config.isConfigured ? .disconnected : .unavailable
+        clearConnection()
+    }
+
+    private func clearConnection() {
+        do {
+            try onHistorySyncDisconnect?()
+            try tokenStore.clear()
+            phase = config.isConfigured ? .disconnected : .unavailable
+        } catch {
+            PlozzLog.app.error("AniList connection removal failed")
+            phase = .error("Could not disconnect. Retry before closing the app.")
+        }
     }
 }
 
@@ -187,7 +221,7 @@ public enum AniListServiceFactory {
     ) -> AniListService {
         let store = tokenStore ?? defaultTokenStore()
         store.setNamespace(namespace)
-        return AniListService(config: config, http: http, tokenStore: store)
+        return AniListService(config: config, http: http, tokenStore: store, namespace: namespace)
     }
 
     public static func defaultTokenStore() -> AniListTokenStoring {

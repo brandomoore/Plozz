@@ -16,8 +16,12 @@ public enum SimklConnectionPhase: Equatable, Sendable {
 /// App-level façade for the Simkl integration.
 @MainActor
 @Observable
-public final class SimklService: TrackerHistoryReading {
+public final class SimklService: TrackerHistorySyncReading {
     public private(set) var phase: SimklConnectionPhase
+    public let historySyncTrackerID = "simkl"
+    public private(set) var historySyncNamespace: String?
+    public var historySyncCategories: Set<TrackerHistorySyncCategory> { [.watched] }
+    @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
     public private(set) var codeLifetime: TimeInterval = 900
 
     @ObservationIgnored public let scrobbler: any SimklScrobbling
@@ -25,7 +29,7 @@ public final class SimklService: TrackerHistoryReading {
     @ObservationIgnored private let config: SimklConfig
     @ObservationIgnored private let auth: SimklAuthService
     @ObservationIgnored private let tokenStore: SimklTokenStoring
-    @ObservationIgnored private var connectTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var connectTask: Task<Void, Never>?
     @ObservationIgnored private var profileGeneration: UInt64 = 0
     @ObservationIgnored private let historyReader: SimklHistoryReader
 
@@ -34,7 +38,11 @@ public final class SimklService: TrackerHistoryReading {
     @ObservationIgnored public let watchlistDestination:
         SimklWatchlistDestination?
 
-    public init(config: SimklConfig, http: HTTPClient = URLSessionHTTPClient(), tokenStore: SimklTokenStoring) {
+    public init(
+        config: SimklConfig, http: HTTPClient = URLSessionHTTPClient(),
+        tokenStore: SimklTokenStoring, namespace: String? = nil
+    ) {
+        historySyncNamespace = namespace
         self.config = config
         self.auth = SimklAuthService(config: config, http: http)
         self.tokenStore = tokenStore
@@ -57,8 +65,15 @@ public final class SimklService: TrackerHistoryReading {
     public var isConfigured: Bool { config.isConfigured }
 
     public var historyConnectionID: String? {
-        guard case .connected = phase, let token = tokenStore.load()?.accessToken, !token.isEmpty else { return nil }
-        return "\(profileGeneration):\(WatchlistReconciliationIdentity.credential(token))"
+        guard case .connected = phase, let tokens = tokenStore.load(), !tokens.accessToken.isEmpty else { return nil }
+        return "\(profileGeneration):\(tokens.stableAccountIdentity)"
+    }
+
+    public var historySyncIdentity: TrackerHistorySyncIdentity? {
+        guard case .connected = phase, let tokens = tokenStore.load(), !tokens.accessToken.isEmpty else { return nil }
+        return .init(
+            trackerID: historySyncTrackerID, connectionID: tokens.stableAccountIdentity, allowsForegroundChecks: false
+        )
     }
 
     public func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
@@ -73,6 +88,7 @@ public final class SimklService: TrackerHistoryReading {
     }
 
     public func setActiveProfile(namespace: String?) async {
+        historySyncNamespace = namespace
         profileGeneration &+= 1
         let generation = profileGeneration
         connectTask?.cancel()
@@ -91,10 +107,10 @@ public final class SimklService: TrackerHistoryReading {
         guard let tokens = tokenStore.load() else { phase = .disconnected; return }
         do {
             let settings = try await auth.userSettings(accessToken: tokens.accessToken)
-            guard generation == profileGeneration else { return }
+            guard generation == profileGeneration, tokenStore.load() == tokens else { return }
             phase = .connected(username: settings.displayName)
         } catch {
-            guard generation == profileGeneration else { return }
+            guard generation == profileGeneration, tokenStore.load() == tokens else { return }
             // A network blip is not evidence the token is bad; only the
             // server rejecting it is. Discarding it here made a momentary
             // failure a permanent sign-out.
@@ -102,8 +118,7 @@ public final class SimklService: TrackerHistoryReading {
                 phase = .unknown
                 return
             }
-            try? tokenStore.clear()
-            phase = .disconnected
+            clearConnection()
         }
     }
 
@@ -127,12 +142,22 @@ public final class SimklService: TrackerHistoryReading {
                         expiresAt: Date().addingTimeInterval(code.expiresIn)
                     )
                     do {
-                        let tokens = try await self.auth.awaitToken(for: code)
+                        var tokens = try await self.auth.awaitToken(for: code)
                         try Task.checkCancellation()
                         guard generation == self.profileGeneration else { return }
-                        try? self.tokenStore.save(tokens)
+                        tokens.accountIdentity = UUID().uuidString
+                        do {
+                            try self.onHistorySyncDisconnect?()
+                            try self.tokenStore.save(tokens)
+                        } catch {
+                            PlozzLog.app.error("Simkl connection persistence failed")
+                            self.phase = (error as? TrackerHistorySyncError) == .revocationFailed
+                                ? .error("Sync is paused. Retry before closing the app.")
+                                : .error("Could not save the connection. Try again.")
+                            return
+                        }
                         let settings = try? await self.auth.userSettings(accessToken: tokens.accessToken)
-                        guard generation == self.profileGeneration else { return }
+                        guard generation == self.profileGeneration, self.tokenStore.load() == tokens else { return }
                         self.phase = .connected(username: settings?.displayName ?? "Simkl")
                         return
                     } catch let error as AppError where error == .quickConnectExpired {
@@ -163,8 +188,18 @@ public final class SimklService: TrackerHistoryReading {
         profileGeneration &+= 1
         connectTask?.cancel()
         connectTask = nil
-        try? tokenStore.clear()
-        phase = config.isConfigured ? .disconnected : .unavailable
+        clearConnection()
+    }
+
+    private func clearConnection() {
+        do {
+            try onHistorySyncDisconnect?()
+            try tokenStore.clear()
+            phase = config.isConfigured ? .disconnected : .unavailable
+        } catch {
+            PlozzLog.app.error("Simkl connection removal failed")
+            phase = .error("Could not disconnect. Retry before closing the app.")
+        }
     }
 }
 
@@ -179,7 +214,7 @@ public enum SimklServiceFactory {
     ) -> SimklService {
         let store = tokenStore ?? defaultTokenStore()
         store.setNamespace(namespace)
-        return SimklService(config: config, http: http, tokenStore: store)
+        return SimklService(config: config, http: http, tokenStore: store, namespace: namespace)
     }
 
     public static func defaultTokenStore() -> SimklTokenStoring {

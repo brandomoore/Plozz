@@ -137,6 +137,13 @@ Unconfirmed identities remain unmatched. Trakt percentages remain visible,
 non-importable observations: catalog runtimes do not establish the played file's
 runtime, and neither 0% nor 100% implies an explicit clear or completed watch.
 
+The separate **Ongoing sync** enrollment can authorize new watched-state imports
+for selected server users; it does not backfill the reviewed history. Its
+connection identity survives coordinated refresh/relaunch and changes on each
+new sign-in, including identical returned tokens. Disconnect revokes device-local
+permission before coordinated credential removal. Percentage-only resume remains
+unavailable. See the [shared consent lifecycle](../FeatureSettings/README.md).
+
 API shape references: Trakt's
 [history client](https://github.com/trakt/trakt-rippple/blob/282a49fa049bcf325e126b4932e6c8d91d580860/Rippple/Trakt%20API/TraktAPIService.swift)
 and [sync contracts](https://github.com/trakt/trakt-api/blob/dab7797de4e30bdd3fa0f98c0f8b5d8509845991/projects/api/src/contracts/sync/index.ts).

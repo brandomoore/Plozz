@@ -114,6 +114,13 @@ the server runtime to match within one second. Active playback, missing runtimes
 and zero/100-percent boundaries remain informational percentages, never clears
 or completion events. A deleted or missing play does not unwatch server media.
 
+After comparison, a separate **Ongoing sync** enrollment can authorize new watched
+state and compatible paused progress for selected server users. It uses the same
+reader, refresh-stable grant identity, guarded outbox and independent readback;
+it never backfills the baseline or silently resolves a conflicting server resume.
+Disconnect revokes local history permission before coordinated credential removal.
+See the [shared consent lifecycle](../FeatureSettings/README.md).
+
 ## Request budget and diagnostics
 
 Account-status reads are single-flight and cache a successful result for five

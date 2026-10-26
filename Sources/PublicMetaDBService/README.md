@@ -132,9 +132,16 @@ evidence fingerprints without importing that existing history. Foreground and
 completed-index events may check new evidence, with a fifteen-minute minimum
 between automatic attempts; **Sync now** is explicit. Each attempt is bounded
 to sixty seconds and twenty-five new records per selected server user. There
-is no polling timer or work after leaving the foreground. This currently applies
-to PublicMetaDB, whose saved credential has a durable connection UUID; existing
-trackers keep their explicit comparison/import behavior.
+is no polling timer or work after leaving the foreground. The same controller
+supports other history readers with durable connection identities; see the
+[Settings capability rules](../FeatureSettings/README.md). Simkl remains
+manual-only, using its activity-gated reads.
+
+Disconnect or key replacement durably disables the permission before changing the credential, even
+when comparison has not been opened in this process. Restoring that old saved
+key cannot reactivate revoked consent. If permission persistence fails, delivery
+is paused in the current process and the UI asks the user to retry before closing
+the app; it does not claim revocation survived a restart.
 
 Only non-destructive, conflict-free changes use the existing guarded outbox.
 Current playback is deferred. Changed server state, incompatible or ambiguous
@@ -396,9 +403,9 @@ server-to-PublicMetaDB history export are also implemented. Trakt, Simkl, WeTrak
 and AniList/MyAnimeList feed the shared history comparison, with provider-specific evidence
 and limitations rather than invented progress.
 The existing TV Last.fm integration offers separate read-only listening history.
-PublicMetaDB also supports separately approved, device-local ongoing imports
-with the limits described above. Ongoing imports for the other trackers,
-broader historical backfill and authentic end-to-end acceptance remain unfinished.
+PublicMetaDB, Trakt, WeTrakr, Simkl and AniList/MyAnimeList also support separately
+approved, device-local ongoing imports with the capability limits described above.
+Broader historical backfill and authentic end-to-end acceptance remain unfinished.
 Do not describe this foundation as full end-user support.
 
 Contract/lifecycle/transport fixtures and guarded-import tests are automated.

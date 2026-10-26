@@ -36,11 +36,15 @@ public struct PublicMetaDBKeychainStore: PublicMetaDBCredentialStoring {
 
 @MainActor
 @Observable
-public final class PublicMetaDBService: TrackerHistoryReading {
+public final class PublicMetaDBService: TrackerHistorySyncReading {
+    public let historySyncTrackerID = "publicmetadb"
+    public var historySyncNamespace: String? { namespace }
+    @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
     public enum Phase: Equatable, Sendable {
         case disconnected, connecting, connected
         case failed(AppError)
         case pairingFailed(PublicMetaDBPairingFailure)
+        case credentialChangeFailed
     }
 
     public private(set) var phase: Phase = .disconnected
@@ -175,13 +179,14 @@ public final class PublicMetaDBService: TrackerHistoryReading {
     public func disconnect() throws {
         invalidate()
         do {
+            try onHistorySyncDisconnect?()
             try credentials.clear(namespace: namespace)
             watchlistStore.clear()
             playbackStore.clear()
             hasSavedKey = false
             phase = .disconnected
         } catch {
-            phase = .failed(.unknown("Could not remove the saved PublicMetaDB key."))
+            phase = .credentialChangeFailed
             PlozzLog.networking.error("PublicMetaDB credential removal failed")
             throw error
         }
@@ -378,7 +383,15 @@ public final class PublicMetaDBService: TrackerHistoryReading {
             try Task.checkCancellation()
             guard captured.isCurrent else { return }
             if saving {
-                try credentials.save(saved, namespace: namespace)
+                do {
+                    try onHistorySyncDisconnect?()
+                    try credentials.save(saved, namespace: namespace)
+                } catch {
+                    invalidate()
+                    phase = .credentialChangeFailed
+                    PlozzLog.networking.error("PublicMetaDB credential change persistence failed")
+                    return
+                }
                 hasSavedKey = true
             }
             if let selection = try watchlistStore.load(), selection.connectionID == saved.connectionID {

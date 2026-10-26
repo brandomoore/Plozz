@@ -53,6 +53,7 @@ public struct TrackerHistorySyncGrant: DurableLocalStateValue, Equatable {
 public final class TrackerHistorySyncController {
     public let identity: TrackerHistorySyncIdentity
     public let contextScope: WatchMutationServerScope
+    public let supportedCategories: Set<TrackerHistorySyncCategory>
     public private(set) var grant: TrackerHistorySyncGrant?
     public private(set) var error: (any Error)?
     public private(set) var isBusy = false
@@ -81,6 +82,7 @@ public final class TrackerHistorySyncController {
 
     public init(
         identity: TrackerHistorySyncIdentity, scope: WatchMutationServerScope, store: DurableLocalStateStore,
+        supportedCategories: Set<TrackerHistorySyncCategory> = [.watched, .resume],
         isAuthorized: @escaping @MainActor @Sendable () -> Bool,
         makeSession: @escaping @MainActor (
             WatchMutationServerScope, @escaping @MainActor @Sendable () -> Bool
@@ -88,6 +90,7 @@ public final class TrackerHistorySyncController {
     ) {
         self.identity = identity
         contextScope = scope
+        self.supportedCategories = supportedCategories
         self.store = store
         self.isAuthorized = isAuthorized
         self.makeSession = makeSession
@@ -97,6 +100,7 @@ public final class TrackerHistorySyncController {
     public var isEnabled: Bool {
         guard let grant, !revocationPending else { return false }
         return grant.enabled && grant.identity == identity && grant.scope.profileID == contextScope.profileID
+            && grant.categories.isSubset(of: supportedCategories)
             && !grant.scope.accounts.isEmpty && Set(grant.scope.accounts).isSubset(of: Set(contextScope.accounts))
     }
 
@@ -132,13 +136,9 @@ public final class TrackerHistorySyncController {
         stop()
         revocationPending = true
         do {
-            if var current: TrackerHistorySyncGrant = try store.load(for: grantKey()) {
-                current.enabled = false
-                try store.save(current, for: grantKey())
-                grant = current
-            } else {
-                grant = nil
-            }
+            grant = try Self.revokePermission(
+                store: store, profileID: contextScope.profileID, trackerID: identity.trackerID
+            )
             revocationPending = false
             error = nil
         } catch { report(TrackerHistorySyncError.revocationFailed) }
@@ -154,7 +154,8 @@ public final class TrackerHistorySyncController {
         let current = generation
         defer { isBusy = false }
         do {
-            guard isAuthorized(), plan.serverScope == contextScope, !categories.isEmpty else {
+            guard isAuthorized(), plan.serverScope == contextScope, !categories.isEmpty,
+                  categories.isSubset(of: supportedCategories) else {
                 throw TrackerHistoryError.scopeChanged
             }
             let session = try makeSession(contextScope, isAuthorized)
@@ -370,9 +371,27 @@ public final class TrackerHistorySyncController {
     }
 
     private func grantKey() throws -> DurableLocalStateKey {
+        try Self.grantKey(profileID: contextScope.profileID, trackerID: identity.trackerID)
+    }
+
+    @discardableResult
+    public static func revokePermission(
+        store: DurableLocalStateStore, profileID: String, trackerID: String
+    ) throws -> TrackerHistorySyncGrant? {
+        let key = try grantKey(profileID: profileID, trackerID: trackerID)
+        guard var grant: TrackerHistorySyncGrant = try store.load(for: key) else { return nil }
+        guard grant.scope.profileID == profileID, grant.identity.trackerID == trackerID else {
+            throw DurableLocalStateError.addressMismatch
+        }
+        grant.enabled = false
+        try store.save(grant, for: key)
+        return grant
+    }
+
+    private static func grantKey(profileID: String, trackerID: String) throws -> DurableLocalStateKey {
         try .init(
             collection: .trackerDeliveryReceipt,
-            scope: .source(profileID: contextScope.profileID, sourceID: identity.trackerID),
+            scope: .source(profileID: profileID, sourceID: trackerID),
             recordID: "history-sync"
         )
     }
@@ -407,10 +426,19 @@ public final class TrackerHistorySyncController {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         let identities = try observation.identities.map { try encoder.encode($0).base64EncodedString() }.sorted()
+        let fact: TrackerHistoryObservation.Fact
+        if case .animeList(let progress) = observation.fact, observation.kind == .movie {
+            // Rating/count edits are not new movie completions.
+            fact = .animeList(try .init(
+                status: progress.status, episodesWatched: nil, repeats: nil, score: nil, updatedAt: nil
+            ))
+        } else {
+            fact = observation.fact
+        }
         return digest(try encoder.encode(Evidence(
             recordID: observation.recordID, kind: observation.kind, identities: identities,
             season: observation.season, episode: observation.episode, ordering: observation.episodeOrdering,
-            requiresExactEpisodeIdentity: observation.requiresExactEpisodeIdentity, fact: observation.fact
+            requiresExactEpisodeIdentity: observation.requiresExactEpisodeIdentity, fact: fact
         )))
     }
 

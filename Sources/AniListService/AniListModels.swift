@@ -1,3 +1,4 @@
+import CoreModels
 import Foundation
 
 // MARK: - Stored tokens
@@ -5,9 +6,15 @@ import Foundation
 /// AniList access token (no refresh; implicit grant tokens are long-lived ~1 year).
 public struct AniListTokens: Codable, Sendable, Equatable {
     public var accessToken: String
+    public var accountIdentity: String?
 
-    public init(accessToken: String) {
+    public init(accessToken: String, accountIdentity: String? = nil) {
         self.accessToken = accessToken
+        self.accountIdentity = accountIdentity
+    }
+
+    public var stableAccountIdentity: String {
+        accountIdentity ?? WatchlistReconciliationIdentity.credential(accessToken)
     }
 }
 

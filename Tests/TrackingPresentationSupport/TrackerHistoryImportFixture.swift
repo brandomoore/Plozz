@@ -66,8 +66,13 @@ private final class HistoryImportFixtureModel {
     @ObservationIgnored private lazy var sync: TrackerHistorySyncController? = {
         guard let syncStore else { return nil }
         return TrackerHistorySyncController(
-            identity: .init(trackerID: "publicmetadb", connectionID: "fixture-connection"),
-            scope: scope, store: syncStore, isAuthorized: { [weak self] in self?.authorized ?? false },
+            identity: .init(
+                trackerID: "publicmetadb", connectionID: "fixture-connection",
+                allowsForegroundChecks: !arguments.contains("--history-manual-sync")
+            ),
+            scope: scope, store: syncStore,
+            supportedCategories: arguments.contains("--history-watched-only") ? [.watched] : [.watched, .resume],
+            isAuthorized: { [weak self] in self?.authorized ?? false },
             makeSession: { [weak self] scope, allowed in
                 guard let self else { throw TrackerHistoryError.scopeChanged }
                 return self.makeSession(scope: scope, allowed: allowed)

@@ -32,4 +32,11 @@ History uses the facade's existing token-refresh path. Its guarded save now
 propagates storage errors and rejects a replaced grant or profile before storing
 the result; a failed refresh does not proceed to history reads.
 
+A separate, explicitly approved ongoing permission can import newly completed,
+exactly matched movies, never series episode counts or resume points. The
+[shared consent lifecycle](../FeatureSettings/README.md) preserves the stored
+identity across token refresh and relaunch, replaces it on each new sign-in,
+and revokes device-local permission before removing credentials. Failed saves
+or removals are explicit connection errors, not success.
+
 Contract: [official API v2 reference](https://myanimelist.net/apiconfig/references/api/v2).
