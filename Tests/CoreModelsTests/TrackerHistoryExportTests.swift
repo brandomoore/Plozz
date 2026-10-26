@@ -81,6 +81,87 @@ final class TrackerHistoryExportTests: XCTestCase {
         }
     }
 
+    func testExistingListStatesAreConflictsNotMissingOrCompletedWatches() async throws {
+        for state in TrackerHistoryListState.allCases {
+            let fixture = try ExportFixture(items: [movie()])
+            fixture.observations = [try fixture.observation(fact: .listState(state))]
+            let session = fixture.session()
+            await preview(session)
+            XCTAssertNil(session.error)
+            XCTAssertEqual(session.rows.first?.status, .conflict)
+            await apply(session)
+            XCTAssertEqual(session.error as? TrackerHistoryError, .invalidSelection)
+            XCTAssertEqual(fixture.writes, 0)
+        }
+    }
+
+    func testParentListStatesProtectEpisodesWithExactParentIDs() async throws {
+        let item = MediaItem(
+            id: "episode", title: "Episode", kind: .episode,
+            seasonNumber: 1, episodeNumber: 2, isPlayed: true,
+            providerIDs: ["Tvdb": "200", "SeriesTvdb": "100", "SeriesImdb": "tt123"]
+        )
+        for state in TrackerHistoryListState.allCases {
+            let fixture = try ExportFixture(items: [item], libraryKind: .series)
+            let parent = try TrackerHistoryObservation(
+                recordID: "parent/state", kind: .series,
+                identities: [.external(source: "tvdb", value: "100"), .external(source: "imdb", value: "tt123")],
+                fact: .listState(state)
+            )
+            XCTAssertFalse(parent.matches(item), "Parent state must never become an episode import")
+            XCTAssertTrue(parent.matchesHistoryExport(item))
+            fixture.observations = [parent]
+            let session = fixture.session()
+            await session.compare(accountID: "account", library: .init(id: "library", title: "Shows", kind: .series))
+            XCTAssertNil(session.error, "Multiple parent IDs must not duplicate one observation")
+            XCTAssertEqual(session.rows.first?.status, .conflict)
+            await apply(session)
+            XCTAssertEqual(fixture.writes, 0)
+        }
+    }
+
+    func testParentProtectionDoesNotGuessFromEpisodeIDsTitlesOrContradictoryParents() throws {
+        let parent = try TrackerHistoryObservation(
+            recordID: "parent/state", kind: .series,
+            identities: [.external(source: "tvdb", value: "100"), .external(source: "imdb", value: "tt123")],
+            sourceTitle: "Shared title", fact: .listState(.paused)
+        )
+        for ids in [
+            ["Tvdb": "100"],
+            ["SeriesTvdb": "999"],
+            ["SeriesTvdb": "100", "SeriesImdb": "tt456"],
+            [:]
+        ] {
+            let item = MediaItem(
+                id: "episode", title: "Shared title", kind: .episode,
+                seasonNumber: 1, episodeNumber: 2, providerIDs: ids
+            )
+            XCTAssertFalse(parent.matchesHistoryExport(item))
+        }
+    }
+
+    func testOtherSeriesEvidenceNeverBecomesParentListProtection() async throws {
+        let item = MediaItem(
+            id: "episode", title: "Episode", kind: .episode,
+            seasonNumber: 1, episodeNumber: 2, isPlayed: true, providerIDs: ["Tvdb": "200", "SeriesTvdb": "100"]
+        )
+        for fact in [
+            TrackerHistoryObservation.Fact.watched(at: nil),
+            .episodeCount(watched: 12, repeats: nil),
+            .resumePercentage(percent: 50, updatedAt: nil)
+        ] {
+            let fixture = try ExportFixture(items: [item], libraryKind: .series)
+            fixture.observations = [try .init(
+                recordID: "parent", kind: .series, identities: [.external(source: "tvdb", value: "100")], fact: fact
+            )]
+            let session = fixture.session()
+            await session.compare(accountID: "account", library: .init(id: "library", title: "Shows", kind: .series))
+            XCTAssertNil(session.error)
+            XCTAssertEqual(session.rows.first?.status, .ready)
+            XCTAssertEqual(fixture.writes, 0)
+        }
+    }
+
     func testUnsupportedIdentityAndFutureDatesStayUnselectable() async throws {
         for supported in [false, true] {
             var item = movie()
@@ -491,9 +572,9 @@ private final class ExportFixture {
 
     init(
         items: [MediaItem], kind: ProviderKind = .jellyfin, profileID: String = "profile",
-        secureStore: HistoryExportSecureStore = HistoryExportSecureStore()
+        secureStore: HistoryExportSecureStore = HistoryExportSecureStore(), libraryKind: MediaItemKind = .movie
     ) throws {
-        provider = HistoryExportProvider(items: items, kind: kind)
+        provider = HistoryExportProvider(items: items, kind: kind, libraryKind: libraryKind)
         self.secureStore = secureStore
         store = try DurableLocalStateStore(secureStore: secureStore)
         scope = .init(profile: .init(id: profileID, name: "Test"), accounts: [
@@ -576,17 +657,19 @@ private actor HistoryExportProvider: MediaProvider {
     nonisolated let kind: ProviderKind
     nonisolated let session: UserSession
     private var values: [MediaItem]
+    private let libraryKind: MediaItemKind
     private(set) var playbackWrites = 0
-    init(items: [MediaItem], kind: ProviderKind) {
+    init(items: [MediaItem], kind: ProviderKind, libraryKind: MediaItemKind) {
         self.kind = kind
         values = items
+        self.libraryKind = libraryKind
         session = .init(
             server: .init(id: "server", name: "Server", baseURL: URL(string: "https://example.test")!, provider: kind),
             userID: "viewer", userName: "Viewer", deviceID: "device", accessToken: ""
         )
     }
     func replace(_ items: [MediaItem]) { values = items }
-    func libraries() async throws -> [MediaLibrary] { [.init(id: "library", title: "Movies", kind: .movie)] }
+    func libraries() async throws -> [MediaLibrary] { [.init(id: "library", title: "Library", kind: libraryKind)] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func item(id: String) async throws -> MediaItem {

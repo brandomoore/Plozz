@@ -14,6 +14,15 @@ the existing server inventory retains its 50,000-item bound. No title search,
 server writes, playback reports, play-count reconstruction or ongoing enrollment
 occurs. Existing tracker watches and conflicting progress are not selectable.
 
+`TrackerHistoryListState` retains planning, watching, waiting, paused, dropped
+and completed list membership without fabricating a watch, episode count or
+resume position. Even a completed list state cannot authorize a server change.
+Export comparisons protect matching list entries and the episodes of an exactly
+matched parent series. Parent matching requires explicit `Series*` IDs, rejects
+contradictory namespaces, and never uses titles or ordinary inherited episode IDs.
+Other series observations, including aggregate counts, do not become episode
+history or parent-list protections.
+
 All selected rows are preflighted before dispatch. Source scope, playback and
 baseline plus remote evidence are checked again for each write and within the
 adapter's immediate pre-dispatch authorization callback. Durable, profile/

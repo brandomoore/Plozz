@@ -55,6 +55,25 @@ final class TrackerHistoryImportTests: XCTestCase {
         XCTAssertThrowsError(try plan.approve(rowIDs: []))
     }
 
+    func testListStatesNeverAuthorizeWatchResumeOrDestructiveServerChanges() throws {
+        for state in TrackerHistoryListState.allCases {
+            let evidence = try observation(fact: .listState(state))
+            let exportState = try TrackerHistoryExportState(observations: [evidence])
+            XCTAssertFalse(exportState.isWatched)
+            XCTAssertFalse(exportState.containsWatch(at: nil))
+            XCTAssertTrue(TrackerHistorySyncCategory.allCases.allSatisfy { !$0.includes(evidence.fact) })
+            for provider in [ProviderKind.jellyfin, .plex] {
+                let result = try plan(observations: [evidence], items: [item()], provider: provider)
+                XCTAssertEqual(result.rows.first?.comparison, .unsupported)
+                XCTAssertNil(result.rows.first?.change)
+                let ids = Set(result.rows.map(\.id))
+                XCTAssertThrowsError(try result.approve(
+                    rowIDs: ids, overridingConflicts: ids, confirmsDestructiveChanges: true
+                ))
+            }
+        }
+    }
+
     func testCompletedAnimeMovieRequiresExactIdentityAndExplicitServerApproval() throws {
         let progress = try TrackerAnimeListProgress(
             status: .completed, episodesWatched: 1, repeats: 4, score: 8.5, updatedAt: Date()

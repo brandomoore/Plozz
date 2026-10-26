@@ -39,8 +39,10 @@ final class SimklHistorySnapshotTests: XCTestCase {
         return http
     }
 
-    private func reader(_ http: any HTTPClient) -> SimklHistoryReader {
-        SimklHistoryReader(client: .init(config: .init(clientID: "fixture"), http: http))
+    private func reader(_ http: any HTTPClient, includesListStates: Bool = false) -> SimklHistoryReader {
+        SimklHistoryReader(
+            client: .init(config: .init(clientID: "fixture"), http: http), includesListStates: includesListStates
+        )
     }
 
     private func snapshot(_ reader: SimklHistoryReader, connection: String = "connection") async throws -> TrackerHistorySnapshot {
@@ -165,6 +167,96 @@ final class SimklHistorySnapshotTests: XCTestCase {
             let http = try http(movies: [#"{"movies":[\#(movie(status: status))]}"#])
             let result = try await snapshot(reader(http))
             XCTAssertTrue(result.observations.isEmpty)
+        }
+    }
+
+    func testExportReadRetainsMovieListStatesWithoutInventingHistory() async throws {
+        for (status, state) in [
+            ("plantowatch", TrackerHistoryListState.planning), ("dropped", .dropped), ("notinteresting", .dropped)
+        ] {
+            let http = try http(movies: [#"{"movies":[\#(movie(status: status))]}"#])
+            let source = reader(ReadOnlySimklHistoryHTTP(http: http), includesListStates: true)
+            let result = try await snapshot(source)
+            XCTAssertEqual(result.observations.map(\.recordID), ["movies/1/state"])
+            XCTAssertEqual(result.observations.first?.fact, .listState(state))
+            XCTAssertFalse(try TrackerHistoryExportState(observations: result.observations).isWatched)
+            _ = try await snapshot(source)
+            XCTAssertEqual(http.sentPaths.count, 7, "List protection must reuse the activity cache")
+            XCTAssertEqual(http.sentPaths.last, "/sync/activities")
+        }
+    }
+
+    func testExportReadKeepsParentListStateSeparateFromEpisodeEvidence() async throws {
+        for (status, state) in [
+            ("plantowatch", TrackerHistoryListState.planning), ("watching", .watching),
+            ("hold", .paused), ("dropped", .dropped), ("completed", .completed)
+        ] {
+            let record = """
+            {"status":"\(status)","watched_episodes_count":1,"show":{"ids":{"simkl":1,"tvdb":100}},
+             "seasons":[{"number":1,"episodes":[{"number":2,"watched_at":"\(date)","ids":{"tvdb_id":200}}]}]}
+            """
+            for kind in [SimklHistoryKind.shows, .anime] {
+                let http = try http(
+                    shows: kind == .shows ? #"{"shows":[\#(record)]}"# : "{}",
+                    anime: kind == .anime ? #"{"anime":[\#(record)]}"# : "{}"
+                )
+                let result = try await snapshot(reader(http, includesListStates: true))
+                XCTAssertEqual(result.observations.count, 3)
+                XCTAssertEqual(result.observations[0].fact, .listState(state))
+                XCTAssertEqual(result.observations[0].kind, .series)
+                XCTAssertEqual(result.observations[1].fact, .watched(at: try SimklHistoryDate.parse(date)))
+                XCTAssertEqual(result.observations[1].kind, .episode)
+                XCTAssertEqual(result.observations[2].fact, .episodeCount(watched: 1, repeats: nil))
+                XCTAssertEqual(http.sentPaths.count, 6)
+            }
+        }
+    }
+
+    func testExportListStateDeltaReplacesOldWatchWithoutInventingUnwatch() async throws {
+        let changed = try activity(later, movieFields: ["completed": later, "dropped": later])
+        let http = try http(
+            activities: [activity(), activity(), changed, changed],
+            movies: [
+                #"{"movies":[\#(movie()),\#(movie(2, status: "plantowatch"))]}"#,
+                #"{"movies":[\#(movie(status: "dropped"))]}"#
+            ]
+        )
+        let source = reader(http, includesListStates: true)
+        let before = try await snapshot(source)
+        XCTAssertEqual(before.observations.map(\.fact), [.watched(at: nil), .listState(.planning)])
+        let after = try await snapshot(source)
+        XCTAssertEqual(after.observations.map(\.recordID), ["movies/1/state", "movies/2/state"])
+        XCTAssertEqual(after.observations.map(\.fact), [.listState(.dropped), .listState(.planning)])
+        let reads = http.sent.filter { $0.path == "/sync/all-items/movies" }
+        XCTAssertEqual(reads.count, 2)
+        XCTAssertEqual(reads.last?.queryItems.first { $0.name == "date_from" }?.value, date)
+    }
+
+    func testExportListStateRemovalDropsProtectionWithoutServerInstructions() async throws {
+        let changed = try activity(later, movieFields: ["removed_from_list": later])
+        let http = try http(
+            activities: [activity(), activity(), changed, changed],
+            movies: [#"{"movies":[\#(movie(status: "plantowatch"))]}"#, "{}"]
+        )
+        let source = reader(http, includesListStates: true)
+        let before = try await snapshot(source)
+        XCTAssertEqual(before.observations.count, 1)
+        let after = try await snapshot(source)
+        XCTAssertTrue(after.observations.isEmpty)
+        let read = try XCTUnwrap(http.sent.last { $0.path == "/sync/all-items/movies" })
+        XCTAssertEqual(read.queryItems.first { $0.name == "extended" }?.value, "simkl_ids_only")
+        XCTAssertFalse(read.queryItems.contains { $0.name == "date_from" })
+    }
+
+    func testExportListStateRejectsUnknownOrIncompleteStatus() async throws {
+        for record in [
+            movie(status: "unknown-state"), #"{"movie":{"ids":{"simkl":1,"tmdb":501}}}"#
+        ] {
+            let http = try http(movies: [#"{"movies":[\#(record)]}"#])
+            do {
+                _ = try await snapshot(reader(http, includesListStates: true))
+                XCTFail("Incomplete list state cannot prove absence")
+            } catch { XCTAssertEqual(error as? TrackerHistoryError, .invalidObservation) }
         }
     }
 

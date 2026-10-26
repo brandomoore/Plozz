@@ -17,10 +17,14 @@ final class SimklHistoryReader {
     }
 
     private let client: SimklClient
+    private let includesListStates: Bool
     private var cache: Cache?
     private var reading = false
 
-    init(client: SimklClient) { self.client = client }
+    init(client: SimklClient, includesListStates: Bool = false) {
+        self.client = client
+        self.includesListStates = includesListStates
+    }
 
     func snapshot(
         accessToken: String, connectionID: String,
@@ -136,7 +140,7 @@ final class SimklHistoryReader {
             guard let id = try record.ids(for: kind).simkl, result[id] == nil else {
                 throw TrackerHistoryError.incompleteSnapshot
             }
-            result[id] = idsOnly ? [] : try record.observations(kind: kind)
+            result[id] = idsOnly ? [] : try record.observations(kind: kind, includesListStates: includesListStates)
         }
         return result
     }

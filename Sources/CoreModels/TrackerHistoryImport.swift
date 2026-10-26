@@ -4,6 +4,11 @@ public enum TrackerHistoryError: Error, Equatable, Sendable {
     case invalidObservation, incompleteSnapshot, invalidSelection, scopeChanged, stalePreview
 }
 
+/// List membership is protection evidence, not an individual watch or playback position.
+public enum TrackerHistoryListState: String, Codable, CaseIterable, Hashable, Sendable {
+    case planning, watching, waiting, paused, dropped, completed
+}
+
 /// Read evidence, not an authoritative history store or a request to change a server.
 public struct TrackerHistoryObservation: Equatable, Sendable {
     public enum Fact: Encodable, Equatable, Hashable, Sendable {
@@ -14,6 +19,7 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
         case explicitlyClearedResume
         case episodeCount(watched: Int, repeats: Int?)
         case animeList(TrackerAnimeListProgress)
+        case listState(TrackerHistoryListState)
     }
 
     public let recordID: String
@@ -62,7 +68,7 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
             }
         case .animeList:
             guard kind == .series || kind == .movie else { throw TrackerHistoryError.invalidObservation }
-        case .explicitlyUnwatched, .explicitlyClearedResume: break
+        case .explicitlyUnwatched, .explicitlyClearedResume, .listState: break
         }
         self.recordID = recordID
         self.sourceTitle = sourceTitle
@@ -107,6 +113,14 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
                   source.hasPrefix("series-"), source.hasSuffix(suffix) else { return nil }
             return .external(source: String(source.dropFirst(7).dropLast(suffix.count)), value: value)
         }
+    }
+
+    public func matchesHistoryExport(_ item: MediaItem) -> Bool {
+        if matches(item) { return true }
+        guard kind == .series, item.kind == .episode, case .listState = fact else { return false }
+        let parentIDs = MediaItemIdentity.seriesIdentities(for: item)
+        return !Set(identities).isDisjoint(with: parentIDs)
+            && !MediaItemIdentity.externalIdentitiesConflict(identities, parentIDs)
     }
 }
 
@@ -322,7 +336,7 @@ public struct TrackerHistoryImportPlan: Sendable {
         case .explicitlyClearedResume:
             guard candidate.canWriteResume else { return (nil, .unsupported) }
             return (.resume(0), item.resumePosition == 0 ? .alreadyMatches : .serverConflict)
-        case .episodeCount:
+        case .episodeCount, .listState:
             return (nil, .unsupported)
         case .resumePercentage:
             return (nil, .incompatibleRuntime)

@@ -84,7 +84,7 @@ struct SimklHistoryEntry: Decodable, Sendable {
         return ids
     }
 
-    func observations(kind: SimklHistoryKind) throws -> [TrackerHistoryObservation] {
+    func observations(kind: SimklHistoryKind, includesListStates: Bool = false) throws -> [TrackerHistoryObservation] {
         let ids = try ids(for: kind)
         guard let id = ids.simkl, let status,
               (kind.listFields + ["notinteresting"]).contains(status) else {
@@ -93,14 +93,30 @@ struct SimklHistoryEntry: Decodable, Sendable {
         let identities = try ids.historyIdentities()
         let date = try lastWatchedAt.map(SimklHistoryDate.watchDate) ?? nil
         let recordID = "\(kind.rawValue)/\(id)"
+        var listEvidence: [TrackerHistoryObservation] = []
+        if includesListStates {
+            let state: TrackerHistoryListState
+            switch status {
+            case "plantowatch": state = .planning
+            case "watching": state = .watching
+            case "hold": state = .paused
+            case "dropped", "notinteresting": state = .dropped
+            case "completed": state = .completed
+            default: throw TrackerHistoryError.invalidObservation
+            }
+            listEvidence = [try .init(
+                recordID: "\(recordID)/state", kind: kind == .movies ? .movie : .series,
+                identities: identities, fact: .listState(state)
+            )]
+        }
         if kind == .movies {
             guard seasons == nil || seasons?.isEmpty == true else { throw TrackerHistoryError.invalidObservation }
             return status == "completed" ? [
                 try .init(recordID: recordID, kind: .movie, identities: identities, fact: .watched(at: date))
-            ] : []
+            ] : listEvidence
         }
         guard let count = watchedEpisodesCount, count >= 0 else { throw TrackerHistoryError.invalidObservation }
-        var result: [TrackerHistoryObservation] = []
+        var result = listEvidence
         var seenSeasons: Set<Int> = []
         for season in seasons ?? [] {
             guard season.number >= 0, seenSeasons.insert(season.number).inserted else {

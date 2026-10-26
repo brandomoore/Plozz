@@ -183,11 +183,12 @@ public final class TrackerHistoryExportSession<Target: Codable & Hashable & Send
                 try requireCurrent(current)
                 guard item.isPlayed else { throw TrackerHistoryError.stalePreview }
                 let baseline = TrackerServerHistoryBaseline(item: item)
-                let candidates = baseline.identities.reduce(into: Set<Int>()) {
+                let lookupIDs = baseline.identities + MediaItemIdentity.seriesIdentities(for: item)
+                let candidates = lookupIDs.reduce(into: Set<Int>()) {
                     $0.formUnion(observationsByIdentity[$1] ?? [])
                 }
                 let remote = try TrackerHistoryExportState(
-                    observations: candidates.map { snapshot.observations[$0] }.filter { $0.matches(item) }
+                    observations: candidates.map { snapshot.observations[$0] }.filter { $0.matchesHistoryExport(item) }
                 )
                 let validDate = item.lastPlayedAt.map {
                     $0.timeIntervalSince1970.isFinite && $0 <= Date()

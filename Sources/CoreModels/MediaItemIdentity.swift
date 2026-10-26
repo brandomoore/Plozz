@@ -207,6 +207,15 @@ public enum MediaItemIdentity {
         guard item.kind == .episode,
               let season = item.seasonNumber,
               let episode = item.episodeNumber else { return [] }
+        return seriesIdentities(for: item).compactMap {
+            guard case .external(let source, let value) = $0 else { return nil }
+            return .external(source: "series-\(source):s\(season)e\(episode)", value: value)
+        }
+    }
+
+    /// Explicit parent IDs only; inherited ordinary episode IDs are not parent evidence.
+    public static func seriesIdentities(for item: MediaItem) -> [MediaIdentity] {
+        guard item.kind == .episode else { return [] }
         let namespaces: [(ProviderIDNamespace, String)] = [
             (.seriesImdb, "imdb"),
             (.seriesTmdb, "tmdb"),
@@ -221,7 +230,7 @@ public enum MediaItemIdentity {
                 return nil
             }
             return .external(
-                source: "series-\(canonical):s\(season)e\(episode)",
+                source: canonical,
                 value: value.lowercased()
             )
         }

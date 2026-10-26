@@ -59,6 +59,20 @@ aggregate counts and percentage-only progress are not backfilled by enrollment.
 No PRO/VIP rewatch session is created. See the shared
 [consent and disconnect contract](../FeatureSettings/README.md).
 
+## Export comparison groundwork
+
+The internal reader's opt-in `includesListStates` mode retains non-completed
+movie list states and parent show/anime list states as protection evidence.
+It uses the same activity-gated complete reads, delta replacement and removal
+reconciliation, without additional requests or invented play/resume records.
+The mode is fixed for each reader's cache lifetime. Existing import and ongoing
+sync readers leave it off and retain their previous observations.
+
+This is read-only groundwork, not an enabled Simkl export action. The writer
+still needs exact canonical target resolution, authenticated owner checks,
+explicit episodes/dates, no rewatch creation, rate-aware dispatch and verified
+acknowledgements/readback. List completion alone never proves individual plays.
+
 ## Contracts and verification
 
 Current official references:
