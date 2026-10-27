@@ -65,6 +65,13 @@ revocation is best-effort with a bounded timeout; a lost creation response or
 unreachable relay leaves only temporary encrypted state until its expiry.
 Nothing restores a pending pairing after relaunch. The existing read-only key
 verification and synchronized Keychain save run only after a current handoff.
+Cancelling replacement re-verifies the previously saved key in an uncancelled,
+connection-fenced task. Its original identity and consent remain intact; old
+invalidated clients are never revived. A failed re-verification is shown rather
+than claiming the saved key is connected.
+The entry screen also restores the saved connection when cancelling after a
+completed relay/key-verification failure. Credential-persistence failures remain
+explicit and are not cleared by closing the entry.
 Direct entry remains available when the relay is unavailable. Transport-rejected
 error pages, including oversized HTML from an unpublished route, show the same
 actionable manual-API-key fallback rather than a generic response error. Pairing

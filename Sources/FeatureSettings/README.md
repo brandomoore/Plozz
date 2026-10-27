@@ -23,6 +23,11 @@ the shared Back header. QR loading never requests focus again. PublicMetaDB and
 the other trackers share `TrackerConnectedStatus`, including the native-platform
 checkmark and green connected label. Replacement
 still requires confirmation; pairing never enables history or playback consent.
+Cancelling an unfinished or failed replacement restores the saved connection
+through read-only verification. A credential-persistence failure stays visible;
+closing the form cannot imply that the required retry succeeded.
+The replacement and disconnect launchers are ordinary native buttons; only
+their confirmed actions have the destructive role.
 The server watch-status setting explains watched status and playback progress
 without repeating its row label or adding a server-count availability message.
 Native media menus, Picks, list entries and history records share title-level

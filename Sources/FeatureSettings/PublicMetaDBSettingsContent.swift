@@ -51,7 +51,7 @@ public struct PublicMetaDBSettingsContent: View {
                 }
             }
             if service.hasSavedKey {
-                Button("Disconnect", role: .destructive) { confirmingDisconnect = true }
+                Button("Disconnect") { confirmingDisconnect = true }
             }
         }
         .confirmationDialog("Replace this profile's PublicMetaDB API key?", isPresented: $confirmingReplacement) {
@@ -126,10 +126,19 @@ public struct PublicMetaDBSettingsContent: View {
     }
 
     private func cancelEntry() {
+        let restoreSavedKey = showingEntry && service.hasSavedKey
+            && service.phase != .connected && service.phase != .credentialChangeFailed
+        let namespace = service.profileNamespace
         operation?.cancel()
         service.browserPairing.cancel()
         showingEntry = false
         key = ""
+        if restoreSavedKey {
+            operation = Task {
+                guard !Task.isCancelled, service.profileNamespace == namespace else { return }
+                await service.refreshStatus()
+            }
+        }
     }
 }
 

@@ -146,6 +146,18 @@ class TrackerConnectionEvidenceTests(unittest.TestCase):
         summary, tree = results()
         evidence.validate_summary(summary, tree, evidence.TARGETS["tvOS"])
 
+    def test_each_scenario_requires_its_own_exact_native_verdict(self):
+        for actual, method in evidence.METHODS.items():
+            summary, tree = results()
+            tree["testNodes"][0]["children"][0]["children"][0]["nodeIdentifier"] = method
+            evidence.validate_summary(summary, tree, evidence.TARGETS["tvOS"], actual)
+            for requested in evidence.METHODS:
+                if requested != actual:
+                    with self.subTest(actual=actual, requested=requested), self.assertRaises(ValueError):
+                        evidence.validate_summary(summary, tree, evidence.TARGETS["tvOS"], requested)
+        with self.assertRaises(ValueError):
+            evidence.validate_summary(summary, tree, evidence.TARGETS["tvOS"], "unknown")
+
     def test_skips_expected_failures_zero_cases_and_boolean_counts_never_pass(self):
         for field, value in (
             ("result", "Failed"), ("totalTestCount", 0), ("totalTestCount", 2), ("totalTestCount", True),
@@ -179,7 +191,12 @@ class TrackerConnectionEvidenceTests(unittest.TestCase):
 
     def test_runner_rejects_invalid_invocation_before_build_or_device_work(self):
         for args in ([], ["--run", "macOS", "device", "hash"], ["--build-only", "tvOS", "extra"],
-                     ["--run", "iOS"]):
+                     ["--run", "iOS"], ["--run", "iOS", "device", "hash", "setup"],
+                     ["--run", "iOS", "device", "hash", "browser"],
+                     ["--run", "iOS", "device", "hash", "persistence"],
+                     ["--run", "iOS", "device", "hash", "disconnect"],
+                     ["--run", "iOS", "device", "hash", "manual"],
+                     ["--run", "tvOS", "device", "hash", "unknown"]):
             result = subprocess.run(["bash", str(ROOT / "tools/run-tracker-connection-tests.sh"), *args],
                                     cwd=ROOT, capture_output=True, timeout=5)
             self.assertEqual(result.returncode, 2)

@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
-# Simulator-only unbound runner. Never builds, installs, launches or terminates Plozz.
+# Simulator-only unbound runner. Lifecycle scenarios explicitly relaunch Plozz.
+# Never builds/installs the production app or boots/shuts down a simulator.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 umask 077
 
 MODE="${1:-}"
 PLATFORM="${2:-}"
+SCENARIO="${5:-negative}"
 if [[ "$PLATFORM" != tvOS && "$PLATFORM" != iOS ]] ||
    [[ "$MODE" != --build-only && "$MODE" != --run ]] ||
    [[ "$MODE" == --build-only && $# != 2 ]] ||
-   [[ "$MODE" == --run && $# != 4 ]]; then
+   [[ "$MODE" == --run && $# != 4 && $# != 5 ]] ||
+   [[ "$SCENARIO" != negative && "$SCENARIO" != setup && "$SCENARIO" != browser && "$SCENARIO" != persistence && "$SCENARIO" != disconnect && "$SCENARIO" != manual ]] ||
+   [[ "$SCENARIO" != negative && "$PLATFORM" != tvOS ]]; then
     echo "Usage: $0 --build-only tvOS|iOS" >&2
-    echo "       $0 --run tvOS|iOS OWNED_BOOTED_SIMULATOR_UUID EXPECTED_APP_EXECUTABLE_SHA256" >&2
+    echo "       $0 --run tvOS|iOS OWNED_BOOTED_SIMULATOR_UUID EXPECTED_APP_EXECUTABLE_SHA256 [negative|setup|browser|persistence|disconnect|manual]" >&2
     exit 2
 fi
 
@@ -109,12 +113,26 @@ python3 tools/run-bounded.py 20 "installed production application identity" -- \
 
 export TEST_RUNNER_PLOZZ_TRACKER_CONNECTION_LIVE=1
 export TEST_RUNNER_PLOZZ_TRACKER_CONNECTION_SIMULATOR="$SIMULATOR"
+METHOD=PublicMetaDBLiveConnectionTests/testLivePairingCancellationAndInvalidKey
+if [[ "$SCENARIO" == setup ]]; then METHOD=PublicMetaDBLiveSetupTests/testNormalOnboarding; fi
+if [[ "$SCENARIO" == browser ]]; then
+    METHOD=PublicMetaDBLiveConnectionTests/testLiveBrowserConnection
+    export TEST_RUNNER_PLOZZ_TRACKER_CONNECTION_HANDOFF="${PLOZZ_TRACKER_CONNECTION_HANDOFF:?set the private browser-request.json path}"
+fi
+if [[ "$SCENARIO" == persistence ]]; then METHOD=PublicMetaDBLiveConnectionTests/testSavedConnectionAfterRelaunch; fi
+if [[ "$SCENARIO" == disconnect ]]; then METHOD=PublicMetaDBLiveConnectionTests/testReplacementCancellationAndDisconnect; fi
+if [[ "$SCENARIO" == manual ]]; then
+    METHOD=PublicMetaDBLiveConnectionTests/testLiveManualConnection
+    export TEST_RUNNER_PLOZZ_TRACKER_MANUAL_INPUT_URL="${PLOZZ_TRACKER_MANUAL_INPUT_URL:?set the private one-shot loopback input URL}"
+fi
 status=0
-python3 tools/run-bounded.py 300 "live production-app connection check" -- \
+TIMEOUT=300
+if [[ "$SCENARIO" == manual ]]; then TIMEOUT=1200; fi
+python3 tools/run-bounded.py "$TIMEOUT" "live production-app connection check" -- \
     xcodebuild test-without-building -xctestrun "$MANIFEST" \
     -destination "platform=$PLATFORM Simulator,id=$SIMULATOR" -destination-timeout 20 \
     -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
-    -only-testing:"$SCHEME/PublicMetaDBLiveConnectionTests/testLivePairingCancellationAndInvalidKey" \
+    -only-testing:"$SCHEME/$METHOD" \
     -collect-test-diagnostics never -resultBundlePath "$RUN/Test.xcresult" > "$RUN/test.log" 2>&1 || status=$?
 python3 tools/run-bounded.py 30 "connection result summary" -- \
     xcrun xcresulttool get test-results summary --path "$RUN/Test.xcresult" > "$RUN/summary.json"
@@ -124,4 +142,4 @@ if [[ "$status" != 0 ]]; then
     echo "Live runner failed ($status); retained results are not a pass." >&2
     exit "$status"
 fi
-python3 tools/tracker-connection-evidence.py verdict "$RUN/summary.json" "$RUN/tests.json" "$PLATFORM"
+python3 tools/tracker-connection-evidence.py verdict "$RUN/summary.json" "$RUN/tests.json" "$PLATFORM" --scenario "$SCENARIO"

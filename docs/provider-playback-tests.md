@@ -308,44 +308,77 @@ bash tools/run-tracker-connection-tests.sh --build-only tvOS
 bash tools/run-tracker-connection-tests.sh --build-only iOS
 ```
 
-The first scenario requires an explicitly selected, already-booted owned
-simulator, the approved app already running in English, and its PublicMetaDB
-Settings page open with **no saved key**. On TV, start with focus on Back or
-Enter API key. Setup and authorization remain normal production flows; the
-test does not seed credentials, skip onboarding, unlock profiles or replace an
-existing tracker connection.
+Use an explicitly selected, already-booted owned simulator with the approved
+production app running in English and a dedicated test profile/account. Do not
+run connection-changing scenarios against a household profile. Setup,
+authentication and input use production controls, not seeded profiles, injected
+credentials or fixture hosts. TV navigation can open Settings from Live TV.
+The iOS runner currently supports only `negative`; open PublicMetaDB settings
+before running it. The authenticated driver uses the TV QR and navigation, not
+the mobile browser link or mobile relaunch navigation.
 
 ```sh
 bash tools/run-tracker-connection-tests.sh --run tvOS \
-  OWNED_SIMULATOR_UUID EXPECTED_APP_EXECUTABLE_SHA256
+  OWNED_SIMULATOR_UUID EXPECTED_APP_EXECUTABLE_SHA256 negative
 python3 -m unittest tools.tests.test_tracker_connection_evidence
 ```
+
+The optional final argument selects exactly one scenario:
+
+| Scenario | Required state and coverage |
+| --- | --- |
+| `negative` (default) | No saved key. Live relay challenge, automatic TV input focus, repeated Back/input navigation, cancellation/revocation, fresh code, and rejection of a deliberately invalid manually entered key. |
+| `setup` (TV only) | Isolated first-run app. Imports the public `iptv-org` San Marino playlist through normal controls and completes profile, optional Seerr and appearance setup. This is setup evidence, not connection acceptance. |
+| `browser` (TV only) | No saved key. Decodes the actual production QR, writes a unique private handoff file, waits for real browser authentication, verifies Connected and revoked pairing, and reads the dedicated account's empty Lists page. |
+| `persistence` (TV only) | Saved test connection. Terminates/relaunches the installed app normally, verifies the saved connection, reads Lists and dismisses the account sheet through Done. |
+| `disconnect` (TV only) | Saved test connection. Cancels replacement confirmation and entry, rejects an invalid replacement and cancels it, verifies restored account access, cancels then confirms Disconnect, and checks removal after normal relaunch. |
+| `manual` (TV only) | Saved test connection and an authorized one-shot loopback input source. Confirms replacement, enters the real key with ordinary TV remote keyboard events, submits Connect and verifies authenticated Lists. |
+
+`browser` requires `PLOZZ_TRACKER_CONNECTION_HANDOFF` to name a new absolute
+`browser-request.json` path in a private existing directory. The file contains
+only the decoded public QR URL/code. A separately owned browser driver (or the
+tester) must submit the legitimate test key through that deployed page within
+the native wait. Keep browser credentials in a secret-safe source, verify the
+encrypted submission and consumed-code rejection independently, and close the
+owned browser/profile on success, failure or cancellation.
+
+`manual` requires `PLOZZ_TRACKER_MANUAL_INPUT_URL`: an owned, short-lived,
+single-use HTTP endpoint on `127.0.0.1` returning `{"key":"..."}` from a private
+credential store. Use an unpredictable path, private configuration, no request
+or response logging, and a bounded server lifetime. This input goes only to the
+test runner's keyboard navigator, never to an app service or app Keychain API.
+Do **not** use XCTest `typeText` for real credentials: it logs a prefix even for
+secure fields. The navigator uses observed key geometry and remote events with
+no credential text in query/action arguments. Its current native-layout coverage
+is the 1080p tvOS 26.2 keyboard; unexpected geometry fails rather than guessing.
+Manual input has a twenty-minute deadline; other scenarios have five minutes.
 
 Obtain the expected executable hash from the approved build's retained
 evidence, not by accepting whatever happens to be installed. The runner verifies
 the installed canonical app against it, rejects application-bound test manifests,
-and checks that its own source has not changed since compilation. It never
-builds, installs, launches or terminates Plozz, and does not boot/shut down
-simulators. XCTest installs only its isolated runner. Xcode's generated runner
+and checks that its own source has not changed since compilation. It never builds
+or installs Plozz or boots/shuts down simulators. Explicit persistence/disconnect
+scenarios relaunch Plozz with no custom arguments/environment. XCTest installs
+only its isolated runner. Xcode's generated runner
 paths and standard environment metadata are checked exactly; custom application
 launch arguments and environment overrides are rejected.
 
-The test opens the real native key-entry page, independently verifies the
-challenge against the deployed relay, exercises TV entry/Back focus, cancels
-and verifies relay revocation, reenters with a fresh code, and submits a
-deliberately invalid key through the production controls. The expected live
-authentication error must appear without a saved connection. Unexpected UI,
+Unexpected UI,
 missing prerequisites, quota/network failures and incomplete cleanup are failures,
-not skips or passes. No whole UI tree or screenshot is intentionally attached;
-automatic screenshots/recording are disabled. Private results are retained under
+not skips or passes. Automatic screenshots/recording are disabled. Setup may
+attach its credential-free UI tree; the browser scenario intentionally attaches
+the public QR and final Connected screen, never a populated credential field.
+Private results are retained under
 `.build/tracker-connection.*/`, including source snapshots (also for untracked
 driver files), the generated runner manifest and installed executable identity.
 
-This is **negative connection coverage**, not authenticated account acceptance.
-It does not prove QR decoding, a successful saved connection, actual media
-playback, import approval, no account-wide writes or durable recovery. Those
-scenarios still require their dedicated setup, precise mutation authorization
-and independent account readback. Compiling this driver is not a live pass.
+Each verdict requires the exact selected method, one completed case, and zero
+failures/skips. A setup or negative pass cannot stand in for a successful browser
+or manual connection. Compare complete independent account fingerprints around
+connection-only scenarios when checking that lists, watched plays and resume
+records remain unchanged. These scenarios do not establish playback, imports,
+exports, cross-server coexistence, physical-device behavior or other trackers'
+acceptance. Compiling a driver is not a live pass.
 
 ### Isolated tracker import interactions
 

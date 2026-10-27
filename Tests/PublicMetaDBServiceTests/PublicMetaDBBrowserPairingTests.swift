@@ -114,6 +114,75 @@ final class PublicMetaDBBrowserPairingTests: XCTestCase {
         }
     }
 
+    func testCancellingReplacementReverifiesTheOriginalSavedConnection() async throws {
+        let http = PairingHTTP()
+        try await withService(http) { service, store in
+            await service.connect(key: pairingTestKey)
+            let original = try XCTUnwrap(service.connectionID)
+            let oldClient = try XCTUnwrap(service.client)
+            var revokedConsent = false
+            service.onHistorySyncDisconnect = { revokedConsent = true }
+            await http.setBeforeRedeem { withUnsafeCurrentTask { $0?.cancel() } }
+            let replacement = Task { await service.connectUsingBrowser() }
+            await replacement.value
+            XCTAssertEqual(service.phase, .connected)
+            XCTAssertEqual(service.connectionID, original)
+            XCTAssertEqual(store.load(namespace: nil)?.connectionID, original)
+            XCTAssertFalse(revokedConsent)
+            XCTAssertFalse(service.browserPairing.isActive)
+            do {
+                _ = try await oldClient.lists()
+                XCTFail("A cancelled replacement revived an invalidated client")
+            } catch { XCTAssertEqual(error as? PublicMetaDB.Failure, .connectionChanged) }
+            _ = try await XCTUnwrap(service.client).lists()
+            let paths = await http.requests.map(\.path)
+            XCTAssertEqual(paths, [
+                "/api/external/lists", "/api/publicmetadb/pairing",
+                "/api/publicmetadb/pairing/ABCDEFGH/redeem",
+                "/api/publicmetadb/pairing/ABCDEFGH",
+                "/api/external/lists", "/api/external/lists",
+            ])
+        }
+    }
+
+    func testCancelledReplacementDoesNotClaimAnExpiredSavedKeyIsConnected() async throws {
+        let http = PairingHTTP()
+        try await withService(http) { service, store in
+            await service.connect(key: pairingTestKey)
+            let original = try XCTUnwrap(service.connectionID)
+            await http.setBeforeRedeem {
+                await http.setVerificationStatus(401)
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
+            let replacement = Task { await service.connectUsingBrowser() }
+            await replacement.value
+            XCTAssertEqual(service.phase, .failed(.unauthorized))
+            XCTAssertEqual(store.load(namespace: nil)?.connectionID, original)
+            XCTAssertNil(service.client)
+            XCTAssertNil(service.connectionID)
+        }
+    }
+
+    func testCancelledReplacementCannotRestoreThePreviousProfile() async throws {
+        let http = PairingHTTP()
+        try await withService(http) { service, store in
+            await service.connect(key: pairingTestKey)
+            await http.setBeforeRedeem {
+                service.selectProfile(namespace: "other")
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
+            let replacement = Task { await service.connectUsingBrowser() }
+            await replacement.value
+            XCTAssertEqual(service.profileNamespace, "other")
+            XCTAssertEqual(service.phase, .disconnected)
+            XCTAssertNil(service.client)
+            XCTAssertNotNil(store.load(namespace: nil))
+            XCTAssertNil(store.load(namespace: "other"))
+            let reads = await http.requests.filter { $0.path == "/api/external/lists" }
+            XCTAssertEqual(reads.count, 1)
+        }
+    }
+
     func testRejectedBrowserKeyPreservesSavedCredentialAndLeavesConsentDisabled() async throws {
         let http = PairingHTTP(verificationStatus: 401)
         try await withService(http) { service, store in
@@ -175,7 +244,7 @@ private actor PairingHTTP: HTTPClient {
     private var receiver: String?
     private let pending: Bool
     private let startFailure: StartFailure?
-    private let verificationStatus: Int
+    private var verificationStatus: Int
     private var beforeRedeem: (@MainActor @Sendable () async -> Void)?
 
     init(pending: Bool = false, startFailure: StartFailure? = nil, verificationStatus: Int = 200) {
@@ -184,6 +253,7 @@ private actor PairingHTTP: HTTPClient {
         self.verificationStatus = verificationStatus
     }
     func setBeforeRedeem(_ action: @escaping @MainActor @Sendable () async -> Void) { beforeRedeem = action }
+    func setVerificationStatus(_ status: Int) { verificationStatus = status }
 
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
         requests.append(endpoint)

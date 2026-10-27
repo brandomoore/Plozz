@@ -12,6 +12,14 @@ import sys
 
 APP_ID = "com.thatcube.Plozz"
 METHOD = "PublicMetaDBLiveConnectionTests/testLivePairingCancellationAndInvalidKey()"
+METHODS = {
+    "negative": METHOD,
+    "setup": "PublicMetaDBLiveSetupTests/testNormalOnboarding()",
+    "browser": "PublicMetaDBLiveConnectionTests/testLiveBrowserConnection()",
+    "persistence": "PublicMetaDBLiveConnectionTests/testSavedConnectionAfterRelaunch()",
+    "disconnect": "PublicMetaDBLiveConnectionTests/testReplacementCancellationAndDisconnect()",
+    "manual": "PublicMetaDBLiveConnectionTests/testLiveManualConnection()",
+}
 TARGETS = {"tvOS": "PlozzTrackerConnectionTests", "iOS": "PlozziOSTrackerConnectionTests"}
 
 
@@ -88,7 +96,8 @@ def installed_app(app_path, expected_sha256):
             "build": info.get("CFBundleVersion"), "executableSHA256": actual}
 
 
-def validate_summary(summary, tests, target):
+def validate_summary(summary, tests, target, scenario="negative"):
+    require(scenario in METHODS, "Unknown live scenario.")
     require(summary.get("result") == "Passed"
             and type(summary.get("totalTestCount")) is int and summary["totalTestCount"] == 1
             and type(summary.get("passedTests")) is int and summary["passedTests"] == 1
@@ -112,7 +121,7 @@ def validate_summary(summary, tests, target):
     for node in tests["testNodes"]:
         walk(node)
     require(bundles == [target] and len(found) == 1
-            and found[0].get("nodeIdentifier") == METHOD and found[0].get("result") == "Passed",
+            and found[0].get("nodeIdentifier") == METHODS[scenario] and found[0].get("result") == "Passed",
             "The exact live test and bundle must have passed.")
 
 
@@ -128,6 +137,7 @@ def main():
     verdict.add_argument("summary", type=Path)
     verdict.add_argument("tests", type=Path)
     verdict.add_argument("platform", choices=TARGETS)
+    verdict.add_argument("--scenario", choices=METHODS, default="negative")
     args = parser.parse_args()
     try:
         if args.operation == "manifest":
@@ -136,8 +146,9 @@ def main():
         elif args.operation == "app":
             print(json.dumps(installed_app(sys.stdin.read().strip(), args.expected_sha256)))
         else:
-            validate_summary(json.loads(args.summary.read_bytes()), json.loads(args.tests.read_bytes()), TARGETS[args.platform])
-            print("Exact native live connection check passed; authenticated account/playback acceptance remains unverified.")
+            validate_summary(json.loads(args.summary.read_bytes()), json.loads(args.tests.read_bytes()),
+                             TARGETS[args.platform], args.scenario)
+            print(f"Exact native {args.scenario} scenario passed; broader playback/history acceptance is not implied.")
         return 0
     except (OSError, ValueError, TypeError, KeyError, plistlib.InvalidFileException):
         print("Connection evidence validation failed; no live pass recorded. Inspect private evidence and prerequisites.",

@@ -164,7 +164,12 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
         } catch {
             guard captured.isCurrent else { return }
             if error is CancellationError || (error as? AppError) == .cancelled {
-                phase = .disconnected
+                // The cancelled task cannot verify a saved connection itself.
+                let restoration = Task {
+                    guard captured.isCurrent else { return }
+                    await refreshStatus()
+                }
+                await restoration.value
                 return
             }
             if let appError = error as? AppError, case .rateLimited = appError {
