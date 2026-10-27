@@ -127,6 +127,17 @@ final class AudioMenuAvailabilityTests: XCTestCase {
 /// exclusion, engine-dual vs sidecar sourcing) that used to be buried in
 /// `PlayerViewModel.loadTrackOptions`.
 final class TrackMenuBuilderTests: XCTestCase {
+    func testNativeSubtitleLabelsIncludeOffLanguageAndAccessibilityFacts() {
+        let options = TrackMenuBuilder.subtitleOptions(
+            tracks: [.init(id: 9, kind: .subtitle, displayTitle: "English", language: "en",
+                           codec: "subrip", isHearingImpaired: true)],
+            selectedID: 9, preferred: [], detectedLanguages: [:], locale: Locale(identifier: "en")
+        )
+        XCTAssertEqual(options.map(\.nativeTitle), ["Off", "English (SDH)"])
+        XCTAssertEqual(options.map(\.id), [-1, 9])
+        XCTAssertEqual(options.map(\.isSelected), [false, true])
+    }
+
     func testBothPresentationsUseNormalizedSourceTrackAndActualSelection() {
         let options = TrackMenuBuilder.audioOptions(tracks: [
             MediaTrack(id: 1, kind: .audio, displayTitle: "AC3 5.1 (Default)", codec: "ac3", isDefault: true, channels: 6),
@@ -146,6 +157,18 @@ final class TrackMenuBuilderTests: XCTestCase {
         )]
         let options = TrackMenuBuilder.audioOptions(tracks: tracks, selectedID: 1, preferred: [], locale: .init(identifier: "en_US"))
         XCTAssertEqual(options.first?.nativeTitle, "English (Dolby Digital 5.1, Commentary)")
+        XCTAssertEqual(options.first?.isSelected, true)
+    }
+
+    func testBareLanguageProducesSameRichLabelForNativeAndTVMenus() {
+        let options = TrackMenuBuilder.audioOptions(
+            tracks: [.init(id: 4, kind: .audio, displayTitle: "English", language: "en", codec: "opus", channels: 6)],
+            selectedID: 4, preferred: [], locale: .init(identifier: "en")
+        )
+        XCTAssertEqual(options.first?.nativeTitle, "English (Opus 5.1)")
+        XCTAssertEqual(options.first?.title,
+                       Text(verbatim: "English") + Text(verbatim: " (") + Text(verbatim: "Opus 5.1") + Text(verbatim: ")"))
+        XCTAssertEqual(options.first?.id, 4)
         XCTAssertEqual(options.first?.isSelected, true)
     }
 

@@ -184,8 +184,7 @@ public struct HeroMetadataEnricher: Sendable {
                 enriched[index].seriesID = root.id
                 enriched[index].officialRating = root.officialRating
                 enriched[index].genres = root.genres
-                enriched[index].overview = root.overview
-                enriched[index].taglines = root.taglines
+                enriched[index].seriesSynopsis = MediaSeriesSynopsis(series: root)
                 enriched[index].ratings = root.ratings
                 enriched[index].usesProviderRatings = root.usesProviderRatings
                 enriched[index].familyGuidance = root.familyGuidance
@@ -320,6 +319,7 @@ public struct HeroMetadataEnricher: Sendable {
             if root.sourceAccountID == nil {
                 root = root.taggingSource(accountID)
             }
+            root = await provider.applyingCachedServerRatings(to: root)
             var playTarget = await HeroPlayTargetResolver.resolve(
                 item: hydratedTarget,
                 provider: provider
@@ -338,9 +338,11 @@ public struct HeroMetadataEnricher: Sendable {
             if root.sourceAccountID == nil {
                 root = root.taggingSource(accountID)
             }
+            root = await provider.applyingCachedServerRatings(to: root)
             return Enrichment(root: root, playTarget: hydratedTarget)
         }
 
+        hydratedTarget = await provider.applyingCachedServerRatings(to: hydratedTarget)
         if hydratedTarget.kind.needsPlaybackTargetResolution {
             var playTarget = await HeroPlayTargetResolver.resolve(
                 item: hydratedTarget,
@@ -356,11 +358,24 @@ public struct HeroMetadataEnricher: Sendable {
     }
 
     private func applyingCachedRatings(to items: [MediaItem]) async -> [MediaItem] {
+        var enriched = items
+        for index in enriched.indices {
+            guard !enriched[index].usesProviderRatings,
+                  enriched[index].discoverySources.isEmpty || enriched[index].locallyValidatedPlayableSource
+            else { continue }
+            let target = targetSelector(enriched[index])
+            guard let accountID = target.sourceAccountID,
+                  let provider = providersByAccount[accountID] else { continue }
+            let cached = await provider.applyingCachedServerRatings(to: target)
+            if cached.usesProviderRatings {
+                enriched[index].ratings = cached.ratings
+                enriched[index].usesProviderRatings = true
+            }
+        }
         guard let cachedProvider =
             ratingsProvider as? any CachedExternalRatingsProviding else {
-            return items
+            return enriched
         }
-        var enriched = items
         for index in enriched.indices {
             guard !enriched[index].usesProviderRatings else { continue }
             guard let cached = await cachedProvider.cachedRatings(for: enriched[index]),

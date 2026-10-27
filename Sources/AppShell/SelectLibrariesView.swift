@@ -54,6 +54,33 @@ struct SelectLibrariesView: View {
     }
 
     var body: some View {
+        Group {
+            if let request = appState.plexHomeUsers.pendingPlexPINRequest {
+                PlexPINEntryView(
+                    appState: appState,
+                    userName: request.homeUserName,
+                    avatarURLString: request.homeUserAvatarURL,
+                    dismissOnSuccess: false,
+                    onSubmit: { appState.plexHomeUsers.submitPlexPIN($0) },
+                    onCancel: { appState.plexHomeUsers.cancelPlexPIN() }
+                )
+            } else {
+                librarySelection
+            }
+        }
+        .task(id: loadID) {
+            guard appState.plexHomeUsers.pendingPlexPINRequest == nil else { return }
+            await loadLibraries()
+        }
+    }
+
+    private var loadID: [String] {
+        [appState.profilesModel.activeProfileID, String(appState.plexHomeUsers.plexIdentityGeneration)]
+            + appState.pendingLibrarySelectionAccountIDs
+            + appState.accountsProviders.accounts.map { "\($0.id):\($0.credentialRevision.rawValue)" }
+    }
+
+    private var librarySelection: some View {
         VStack(spacing: 0) {
             OnboardingHeader(
                 Text("Choose your libraries"),
@@ -81,16 +108,14 @@ struct SelectLibrariesView: View {
         .frame(maxWidth: 900)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onExitCommand { appState.confirmLibrarySelection() }
-        .task(id: appState.pendingLibrarySelectionAccountIDs) {
-            await loadLibraries()
-        }
     }
 
     private func loadLibraries() async {
+        let scope = loadID
         let ids = appState.pendingLibrarySelectionAccountIDs
         let accounts = appState.accountsProviders.resolvedAccounts(withIDs: ids)
-        await discovery.load(from: accounts)
-        guard !Task.isCancelled, ids == appState.pendingLibrarySelectionAccountIDs,
+        await discovery.load(from: accounts, expectedAccountIDs: Set(ids), isCurrent: { scope == loadID })
+        guard !Task.isCancelled, scope == loadID, ids == appState.pendingLibrarySelectionAccountIDs,
               accounts.count == ids.count, discovery.canSkipSelection else { return }
         appState.confirmLibrarySelection()
     }

@@ -3,6 +3,8 @@ import Foundation
 /// Display-only names from provider labels, file paths, or streaming locators.
 /// Never use the result to construct a playback URL or provider identity.
 public enum MediaSourceDisplayName {
+    private static let fileNameQueryKeys: Set<String> = ["filename", "file_name"]
+
     public static func name(from rawValue: String?) -> String? {
         guard let value = nonempty(rawValue) else { return nil }
         let lines = value.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: .newlines)
@@ -24,7 +26,10 @@ public enum MediaSourceDisplayName {
             // Only join continuation text when it completes a file, not another description field.
             return name(from: hasMediaExtension(wrapped) ? wrapped : release)
         }
-        let isQueryOnly = value.lowercased().hasPrefix("torrent_name=")
+        // A bare key/value query is not a display label, even without a URL prefix.
+        let isQueryOnly = value.range(
+            of: #"^[^/?&#\\:\s=]+\s*="#, options: .regularExpression
+        ) != nil
         guard isQueryOnly || value.contains("?") || value.contains("://")
                 || value.hasPrefix("//") || value.hasPrefix("file:") else { return value }
         // Raw line breaks make Foundation re-escape existing percent sequences.
@@ -33,25 +38,30 @@ public enum MediaSourceDisplayName {
         guard let components = URLComponents(string: isQueryOnly ? "?" + locator : locator) else {
             return nil
         }
-        let queryItems = components.queryItems ?? []
-        if let torrentName = queryItems.first(where: {
-            $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                .caseInsensitiveCompare("torrent_name") == .orderedSame
-        }) {
-            // URLComponents decodes the value once, retaining literal '+' and
-            // encoded '&' characters instead of treating them as separators.
-            guard let name = nonempty(torrentName.value), !name.contains("://") else { return nil }
-            return basename(name)
+        if !components.path.hasSuffix("/"),
+           let fileName = basename(components.path),
+           !(fileName as NSString).pathExtension.isEmpty {
+            return fileName
         }
-        let isLocator = components.host != nil || value.contains("://")
-            || components.scheme == "file" || isQueryOnly
-            || queryItems.contains { $0.value != nil }
-        guard isLocator else { return value }
-        guard let fileName = basename(components.path) else { return nil }
-        // A streaming endpoint or opaque locator ID is not a release filename,
-        // whether or not its URL also carries query parameters.
-        if (fileName as NSString).pathExtension.isEmpty { return nil }
-        return fileName
+        return queryFileName(from: components)
+    }
+
+    private static func queryFileName(from components: URLComponents) -> String? {
+        var candidates = Set<String>()
+        for item in components.queryItems ?? [] {
+            let key = item.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard fileNameQueryKeys.contains(key) else { continue }
+            // Decode once through URLComponents. Never guess a filename from
+            // unrelated values or display a nested locator as a filename.
+            guard let value = nonempty(item.value),
+                  !value.hasPrefix("//"), !value.contains("?"),
+                  !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+                  let fileName = basename(value) else { return nil }
+            let windowsPath = value.range(of: #"^[A-Za-z]:[\\/]"#, options: .regularExpression) != nil
+            guard URLComponents(string: value)?.scheme == nil || windowsPath else { return nil }
+            candidates.insert(fileName)
+        }
+        return candidates.count == 1 ? candidates.first : nil
     }
 
     public static func fileName(from path: String?) -> String? {

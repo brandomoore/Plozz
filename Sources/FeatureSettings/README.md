@@ -156,6 +156,12 @@ Detail Page exposes episodes, related titles, and extras. Central presets still
 replace all overrides; contextual edits preserve other views. Screen-specific
 sizing stays with its screen, while overall display size stays in Appearance.
 
+Collection-cover layout is a presentation setting, not a browse filter.
+Customize Libraries lists collection directories alongside video libraries and
+owns each library's Auto/Posters/Landscape choice. Collection-only directories
+do not request or display a Recommended-page editor. Home and Recommended rows
+retain their separate cover-layout choices in their settings editors.
+
 Live TV settings exposes TV sources and the automatic Plozz channels switch on
 the root page. Sources have a regular Add source header action and reuse the
 shared fading scroll container above four entries. Guide/browsing preferences
@@ -183,18 +189,43 @@ use the shared Settings card above a separate bottom privacy footer, with
 Its GitHub-marked link opens the repository
 on mobile or a scannable QR sheet on Apple TV; opening it does not grant consent.
 
+Settings and the consent screen also expose **Privacy Policy**, opening the
+public policy on mobile or its URL and QR code on Apple TV. `SettingsCopy` keeps
+automatic and manual diagnostic disclosures consistent across platforms.
+Automatic reports describe technical errors, app/device information, screen
+categories and performance diagnostics, not a blanket anonymity guarantee.
+Manual uploads disclose additional playback/connection records and the user's
+optional message, which is sent as written. Submission copy does not promise
+confirmed server delivery. Privacy-policy content is maintained on the website.
+Manual attachments are constructed from typed activity categories/severity,
+bounded technical operation timings, and structured playback/source journals.
+Library browsing, recommendations and Continue Watching failures retain their
+typed section, HTTP/decode route, coding-field path and paging evidence in a
+bounded in-memory journal; arbitrary error descriptions are never attached.
+Raw recent-activity messages and free-form persistent playback traces stay local:
+they can contain server addresses, account identifiers, titles or search text.
+Journal identifiers are replaced with report-local aliases and record times are
+relative ages, preserving relationships and timing without exporting persistent
+identity hashes or session UUIDs. Activity copy/share and prefilled issue links
+use the same filtered activity projection. Filtering cannot make the optional
+message anonymous or hide connection metadata from the receiving service.
+
 On tvOS, Video buffer and Live TV buffer use the shared `SettingsMenuRow`: one
 compact row showing the current value, with choices in the native menu and help
 text below. Opening, focusing, or cancelling the menu does not save a choice;
 Select does. Mobile retains its native pickers. These remain independent,
 device-local preferences with Automatic as the default.
 
-**Screens & Navigation → Navigation → Zoom when opening titles** is a tvOS-only,
-profile-scoped opt-in. Off uses native page opening and closing; on restores the
-cinematic artwork transition. The hero's staged content reveal is shared by both
-modes, without waiting for backdrop artwork when zoom is off.
-It defaults off for both new and existing profiles,
-stays local to the device, and still respects Reduce Motion.
+Playback's **Prefer lossless audio** toggle uses one short helper:
+**Turn off for surround sound over regular HDMI ARC, which requires compressed audio.**
+It defaults on for new and upgrading devices and is shared by Plozz
+profiles on that device, not synced to other audio setups. Off selects the
+ordinary compatibility-surround bridge; the spatial-height setting is separate.
+
+Title navigation uses native page opening and closing. The former
+**Zoom when opening titles** setting is removed, and saved values are ignored.
+The hero's staged content reveal remains, without waiting for backdrop artwork,
+and still respects Reduce Motion.
 
 Home hero, Showcase (TV), Recommended Page (TV), and Detail Page have independent
 profile-scoped **Logo size** controls. Thirteen stops span 0.5x to 1.5x, with finer
@@ -227,9 +258,27 @@ while Home and detail previews use edge-to-edge artwork.
 Mobile Home keeps native sliders beside their labels and one stacked preview.
 No artwork lookup is needed for these fictional previews.
 
-Detail Page theme music offers Low, Medium, and High volume; the Background mode
-owns Off. Older silent theme-music preferences migrate to Background Off without
-changing Home or trailer settings, with Low ready for the next explicit opt-in.
+Detail Page theme music uses the shared `ThemeMusicVolumeControl` on TV and mobile:
+0–100%, with native touch sliders and the shared remote-adjustable Settings stepper.
+TV shows the current percentage instead of notches, so each 1% Left/Right press
+has visible numeric feedback. This control opts into the shared fast hold-repeat:
+the unchanged 0.45-second initial delay, then one percentage point every 0.03 seconds
+instead of the standard 0.08 seconds. Other controls retain their existing speed.
+Mobile keeps its native slider and 1% precision. Saved values are not changed
+merely by opening the control.
+New/reset preferences start at 25%; existing saved volumes are not raised.
+There is no explanatory paragraph under the preview action; playback errors
+remain visible when they occur.
+The player uses the selected gain directly, up to the device's full volume;
+old Low/Medium/High preferences keep their exact 15/35/60% gains.
+Adjusting starts a preview, with an explicit Play/Stop preview action too.
+It samples up to eight recent/resume titles already admitted to the active
+profile's Home content, through `MediaProvider`; without an available theme,
+it loops an original locally generated instrumental sample. Errors are reported,
+not presented as a successful preview. Leaving the control or app stops previews.
+The Background mode owns Off. Only old string-valued silent preferences migrate
+to Background Off; a new slider value of 0% remains selected and persists.
+Migration does not change Home or trailer settings, with 25% ready for the next explicit opt-in.
 On tvOS, the selected Background option supplies its own explanation rather than
 repeating it in a section footer.
 
@@ -255,10 +304,10 @@ tvOS's swipe-up expansion and retains the same two item limits.
 Playback > Advanced also contains **Dolby Vision FEL (experimental)** on TV,
 iPhone and iPad. This is a profile-scoped, default-off preference, unlike the
 device-wide external-player choice. It applies to new built-in on-demand sessions
-and travels through profile settings transfer. The helper explains the memory
-cost, possible stuttering and loss of overhead sound on the FEL route.
-Audio still plays, including TrueHD and DTS. FEL also decodes otherwise directly
-compatible E-AC-3/JOC spatial audio to channel-based PCM.
+and travels through profile settings transfer. Its short helper warns that it
+may impact performance. On iPhone/iPad and tvOS before 26 it also warns that
+FEL disables spatial audio; ordinary channel audio still plays. On tvOS 26+,
+eligible FEL tracks can retain spatial audio when the Spatial audio setting is on.
 Live playback, shared players and muted previews do not opt in.
 See [playback engines](../../docs/playback-engines.md#dolby-vision-fel) for eligibility
 and output limits.
@@ -296,7 +345,8 @@ on-demand sessions, not live streams, shared players or muted previews. The
 helper identifies TrueHD Atmos and DTS:X as inputs and discloses lossy conversion
 to Apple spatial audio. Format names describe compatibility, not certification,
 lossless passthrough, or patent clearance.
-FEL retains channel PCM even when Spatial audio is on. Unsupported platforms
+FEL can use the same spatial conversion on tvOS 26+; source eligibility and
+fallback remain engine-owned. Unsupported platforms
 keep ordinary channel playback; directly compatible spatial audio is unaffected.
 Feature descriptions use neutral spatial-audio wording; track
 metadata, diagnostics and legal notices retain accurate format and dependency names.
@@ -358,12 +408,58 @@ watch history and planning-list behavior are documented in
 
 ## Responsibility
 
+- **Screen customization hierarchy** follows task boundaries. Screens & Navigation presents
+  App navigation before shared screen preferences and individual screen editors.
+  The App navigation entry and destination share that title on TV and mobile.
+  Customize Home opens Layout/Hero, Card labels, or Rows through matching
+  full-height navigation rows, without redundant subtitles. TV shows the current
+  layout as a secondary value. Home rows owns Preset, one Add row action, the
+  row list, and Edit/Done. Mobile uses a native toolbar editing action; TV places
+  the native action inline with the scrolling page title and Back control.
+  Editing remains available for one row so it can be removed; movement does not.
+  Presets and reordering never change page appearance. Showcase's fixed Discovery
+  row links back to Home layout rather than pretending to be reorderable.
+  Shared Continue Watching settings remain accessible when its Home row is hidden.
+  Detail Page keeps hero controls together and places its label editor under Cards.
+  These destinations preserve the existing profile-scoped stores. See CoreUI's
+  row-geometry guidance; the deprecated text-height focus strip must not return.
+- **Customize labels** uses one shared, page-organized visual editor from
+  Appearance's Cards page and the scoped Home, Libraries, and Detail Page links.
+  Home and Recommended each show Default (On/Off/Mixed), followed by an Overrides
+  section containing Continue Watching (Use default/On/Off). The short footer names
+  the other page sharing that override; Use default inherits each page's own choice.
+  Single-control pages retain Card labels without Default or Overrides headings.
+  Detail Page keeps independent Episodes, Related titles, and Extras controls;
+  Search, Watchlist, and People are also available from the full editor. Scoped
+  single-page editors omit the Page selector. All entry points edit the same
+  profile-scoped caption settings; navigation and preview focus never change
+  saved values. Previews highlight the affected captions, not a duplicate table
+  describing whether each label is on or off.
+  The scoped Home destination is titled Card labels and places its live preview
+  immediately below the controls and shared-scope note. Other editors retain their
+  pinned contextual help. TV Page opens a native checked selection menu rather than cycling through
+  pages. TV diagrams use fewer sample cards and larger row headings for viewing
+  at a distance. Mixed has a visible, platform-specific explanation; Home and
+  Recommended explicitly distinguish per-page inheritance from their shared
+  Continue Watching On/Off override.
 - **Customize Libraries** lives in Screens & Navigation on TV and mobile.
   Library Navigation comes first, including the first Down move from Back on TV.
-  The Recommended Page controls follow it; headings and helper copy name the
-  library's page explicitly rather than implying suggested settings.
-  The Libraries list opens each library's Recommended Page Rows editor.
+  Page appearance follows it, containing Recommended Page sizing on TV and the
+  separate label editor for all library tabs. Recommended rows lists libraries
+  and opens each library's Recommended Page Rows editor.
   The TV logo control reuses `HeroLogoSizeControl` with one Showcase preview.
+  Customize labels is the attached lower group beneath those controls, using
+  `SettingsConnectedControlGroups` rather than a prominent list of overrides.
+  Its editor selects a page: Recommended, Browse, Collections, or Playlists.
+  Recommended has Default and a separate Continue Watching override; the other
+  pages each have one Card labels control. TV focus and mobile value changes
+  highlight the affected captions on that page, without a duplicate status table.
+  VoiceOver retains the equivalent state description.
+  Use default retains the existing inheritance; On/Off remains
+  one shared override, explicitly noted as also affecting Home.
+  Recommended highlights Continue Watching only while it
+  follows the page. Collection/playlist covers are distinct from titles inside,
+  which retain Browse's labels. No stored defaults or profile scopes change.
   Library tabs share an arrangement across the profile; each library separately
   owns its Recommended row arrangement. Both editors use `LiftableReorderList`,
   its Hidden divider, native focus/drag behavior, and scoped reset actions.
@@ -375,45 +471,37 @@ watch history and planning-list behavior are documented in
   does not duplicate its Enabled controls: the Home editor manages section presentation,
   and Hero source selection uses the enabled library inventory. Discovering
   libraries for those controls must not restore a separate management list.
-- **Customize Home** is one shared section editor on TV, iPhone and iPad.
+- **Home rows** is one shared arrangement editor on TV, iPhone and iPad.
   Normal rows open their own settings. Source-specific rows and their settings
   use the shared provider brand mark, including the transport badge for shares.
-  In the editor, Add section, and reorder rows, the mark sits beside the
+  In the editor, Add row, and reorder rows, the mark sits beside the
   library/server name on the second line rather than before the section title;
   generic row glyphs appear only during reordering.
   An inline Preset selector sits below the title, with up/down chevrons beside
   its current value to expose the native menu; mobile uses a secondary heading
   with a trailing native menu capsule and a divider, not another section card.
-  TV gives this control row additional vertical separation from the header and sections.
   It scrolls with the content and stacks at large text sizes when needed.
-  Full-width Add section actions bracket the editable sections
-  on both platforms, after the page-level Preset and Home layout controls and
-  again below the list. A centered plus-and-label, native capsule button style,
-  and extra vertical spacing distinguish these actions from the editable rows.
-  Mobile keeps Reorder/Done in the native toolbar rather
-  than duplicating Add section as a small icon. Reorder/Done switches to
-  native movement controls with no Hidden drop zone; Hero stays
-  pinned and cannot move. Its editable row carries a subtle pin rather than a
-  lock, without a “Pinned at top” subtitle in either editing mode.
-  On TV, the single-line title is “Home layout: Hero” or “Home layout: Showcase”,
-  reflecting the active layout and opening the Home layout settings page.
+  One full-width Add row action appears below Preset and above the editable rows.
+  A centered plus-and-label, native capsule style, and vertical spacing distinguish
+  the action from the editable rows. Edit/Done switches to native movement controls
+  with no Hidden drop zone. Hero and Showcase remain on their separate layout page.
   Mobile uses the shared page inset without extra gutters.
-  Add section separates **Create section** from **Available sections** not already
-  shown. Creation starts with a library collection; the editor identifies that
-  source as Content and its presentation as Layout. Section names the configurable
-  Home area, row its horizontal layout, and collection its source grouping
-  (see [Home terminology](../../CONTEXT.md)). Choose a source collection first,
+  Add row separates **From a collection** from **Available rows** not already
+  shown. Empty results omit the empty heading; discovery failures show source
+  errors and Retry instead of claiming no rows are available. Creation starts with
+  a library collection; the editor identifies that source as Content and its
+  presentation as Layout (see [Home terminology](../../CONTEXT.md)). Choose a source collection first,
   then edit its name and Posters, Landscape or Featured presentation with the layout control immediately above a real-title
   preview. The preview uses the existing artwork preferences and spoiler protection.
   Each navigation destination explicitly forwards the active profile's card settings,
-  including Add section's nested creation destination; iOS navigation does not
+  including Add row's nested creation destination; iOS navigation does not
   inherit dependencies injected only into the preceding page.
   Save places a new independently configured row before Libraries; the ordinary
   arranger can move it anywhere among the movable rows. Editing never changes
   the collection on the server. Preview loading is bounded and retains server order;
   filtering and combining multiple sources are not yet supported. Removing a
   section hides it without erasing its configuration or disabling its libraries.
-  Holding a normal section opens Reorder and Remove section. Reorder keeps the
+  Holding a normal row opens Reorder and Remove from Home. Reorder keeps the
   selected section as the movement target: TV lifts and focuses it immediately;
   mobile exposes native drag handles without losing its position. Collection
   subtitles resolve their server mark from the current account even without a
@@ -430,6 +518,9 @@ watch history and planning-list behavior are documented in
   as evidence that the actual Home content request succeeded.
   Continue Watching owns its merge and artwork controls. Hero owns its sources
   and presentation, including the existing TV Home Layout/Showcase options.
+  Continue Watching groups artwork, playback details and labels before their shared
+  Recommended-page scope note; Include Next Up and selection behavior follow.
+  Showcase groups Ratings and Discovery with their dependent controls.
   **Center button action** on TV and **When tapping an item** on iPhone/iPad
   select **Play** or **Open detail page** for Home's movie/episode cards.
   Play remains the default for fresh and existing profiles. The choice uses the
@@ -468,27 +559,27 @@ watch history and planning-list behavior are documented in
   preference. The presentation is profile-scoped and also applies to library
   Continue Watching rows. All three styles expose a Labels control bound to the same
   Continue Watching override in Appearance -> Cards -> Labels by view:
-  Follow Appearance inherits Home rows or Recommended; On/Off controls the labels
+  Use default inherits Home or Recommended's default; On/Off controls the labels
   below any Continue Watching artwork. Each preview shows or hides its caption
   lines using the same choice. The previous portrait override is preserved.
   Caption presets/reset clear this override, and
   switching artwork presentation preserves it. Playback details is independently
   profile-scoped, survives layout changes, and does not change the Labels override.
-  The Merge Next Up explanation belongs to the native toggle's label, not a
+  The Include Next Up explanation belongs to the native toggle's label, not a
   separate helper-text row.
   Preset retains the confirmed Match server and Combined rows choices and shows
   Custom for edited arrangements. Selecting a new preset still requires
   confirmation.
   Merely opening the editor, a destination, or Reorder does not freeze a preset.
-  One bottom card on the main editor uses shared `InlineErrorMessage` warnings
-  to name affected sources and offers Retry, without repeating these on detail pages.
+  Home rows and Add row use shared `InlineErrorMessage` warnings to name affected
+  sources and offer Retry; appearance-only destinations do not repeat these.
   The root and every catalog-editing destination keep discovery active while
   visible and retain loading status and local edit failures. Preset changes reload the catalog.
-  Reorder is available as soon as two known sections can move, independently of
-  server discovery or failures. An editing session snapshots its known rows so
+  Edit is available as soon as one known row can be removed, independently of
+  server discovery or failures; movement requires two rows. An editing session snapshots its known rows so
   late discovery cannot move or disable a lifted row; the first actual move
   saves that arrangement, retaining unavailable saved identities. Newly discovered
-  sections remain available through Add section. Known, identity-scoped sections
+  sections remain available through Add row. Known, identity-scoped sections
   remain focusable and editable while optional discovery runs; loading only
   delays choices that have not been discovered yet.
   Mobile library discovery publishes one identity-scoped snapshot, never pairing
@@ -518,14 +609,19 @@ watch history and planning-list behavior are documented in
   Network-share aliases are a separate feature.
 - `ProfileSettingsCategory` in CoreUI owns the cross-platform profile category
   order, names, icons, and summaries: Playback, Subtitles, Live TV, Libraries,
-  Appearance, Screens & Navigation, Trackers, Language. iPhone and compact iPad
-  use native push navigation; regular-width iPad uses a sidebar and detail stack.
+  Appearance, Screens & Navigation, Trackers, Language. Compact mobile windows
+  use native push navigation; regular-width windows use a sidebar and detail stack.
   Both mobile layouts share their category section and destinations. Appearance
   groups Theme, Cards, Artwork, Spoiler Protection, and Circadian Mode; Display
   Size is last inside Cards. Screens & Navigation groups Customize Home,
   Navigation, and Detail Page; Music Player remains TV-only because mobile does
   not implement those presentation choices. Mobile navigation editing still
   excludes unsupported individual library tabs and Music/All Libraries entries.
+  The mobile app shell uses native adaptive tabs, sidebar, and system More
+  overflow. Destination declarations and their navigation stacks stay mounted
+  across width changes; profile-scoped ordering and visibility remain authoritative.
+  Settings opens as a sheet from direct tabs or native More without replacing
+  the selected page or its navigation history.
   Everyone uses the TV order, with mobile-only Downloads last. Version/build,
   release notes, and community links are inline on both mobile root layouts.
   Mobile Community uses standard-height, single-line Discord and GitHub links
@@ -924,7 +1020,12 @@ watch history and planning-list behavior are documented in
   Customization lists and their inset contextual cards occupy separate regions.
   Larger 16:9 illustrations highlight only the affected artwork, beside one sentence
   of help; full-page outlines sit inside the preview's rounded corners rather than
-  being clipped by its mask. Label settings reuse the card-style preview. Navigation follows the active
+  being clipped by its mask. Scoped label illustrations show tightly packed media
+  rows or a two-row grid, using the live card sizes, spacing, frame insets, and
+  Continue Watching aspect ratios. Row headings stay native text, including in RTL;
+  grid pages do not repeat invented section headings. Hidden labels disappear rather
+  than leaving dashed bars, and framing ends at the artwork when labels are off.
+  The all-page label presets retain the single-card comparison swatch. Navigation follows the active
   profile, including native sidebar, pinned rail, and top-tab differences. Ordinary
   title rows use 2:3 posters; episode/player thumbnails use their landscape ratios.
   Home follows the active Fullscreen Hero/Showcase layout, including disabled heroes;

@@ -71,6 +71,11 @@ public enum CardArtworkPolicy: Hashable, Sendable {
         case .poster:
             return item.artworkReferences(for: item.kind == .episode ? .seriesPoster : .poster)
         case .landscape:
+            if item.kind == .collection,
+               item.primaryImageAspectRatio.map({ $0 >= 1.33 }) ?? true {
+                return unique(item.artworkReferences(for: .poster)
+                    + item.artworkReferences(for: .detailBackdrop))
+            }
             if item.kind == .episode {
                 return unique(item.artworkReferences(for: .episodeThumbnail) + item.seriesArtworkReferences())
             }

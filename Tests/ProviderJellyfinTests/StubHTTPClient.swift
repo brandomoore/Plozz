@@ -26,6 +26,8 @@ final class StubHTTPClient: HTTPClient, @unchecked Sendable {
     private(set) var sentBodies: [String: Data] = [:]
     private(set) var sentQueryItems: [[URLQueryItem]] = []
     private(set) var sentHeaders: [[String: String]] = []
+    private(set) var sentBaseURLs: [URL] = []
+    private(set) var sentRedirectPolicies: [Endpoint.RedirectPolicy] = []
 
     func stub(pathSuffix: String, json: String, status: Int = 200) {
         stub(pathSuffix: pathSuffix, requiring: [], json: json, status: status)
@@ -79,6 +81,8 @@ final class StubHTTPClient: HTTPClient, @unchecked Sendable {
         if let body = endpoint.body { sentBodies[endpoint.path] = body }
         sentQueryItems.append(endpoint.queryItems)
         sentHeaders.append(endpoint.headers)
+        sentBaseURLs.append(baseURL)
+        sentRedirectPolicies.append(endpoint.redirectPolicy)
         let queuedKey = queues.keys.first {
             endpoint.path.hasSuffix($0) && !(queues[$0]?.isEmpty ?? true)
         }

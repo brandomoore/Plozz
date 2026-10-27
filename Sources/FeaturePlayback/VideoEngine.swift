@@ -83,6 +83,12 @@ public protocol VideoEngine: AnyObject {
     /// app-level center and still receive transport through this protocol.
     var nowPlayingPlayer: AVPlayer? { get }
 
+    #if os(iOS)
+    /// Borrowed software output for infrequent preview-color analysis, not a second decoder.
+    func previewVideoFrame() -> CVPixelBuffer?
+    var previewFrameGeneration: UInt64? { get }
+    #endif
+
     /// iOS opt-in for audio to continue without PiP or an external display.
     func setBackgroundAudioEnabled(_ enabled: Bool)
     var needsBackgroundReload: Bool { get }
@@ -382,6 +388,10 @@ public extension VideoEngine {
     var needsBackgroundReload: Bool { true }
     var maximumPlaybackSpeed: Double { 4 }
     var nowPlayingPlayer: AVPlayer? { nil }
+    #if os(iOS)
+    func previewVideoFrame() -> CVPixelBuffer? { nil }
+    var previewFrameGeneration: UInt64? { nil }
+    #endif
     func setBackgroundAudioEnabled(_ enabled: Bool) {}
 
     /// Default: the engine's playback resources survive background suspension.

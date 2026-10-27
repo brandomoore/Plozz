@@ -54,7 +54,9 @@ public enum NowPlayingVideoArtwork {
                     asyncFallbackURL: {
                         await ArtworkSession.artworkResolveLimiter.run {
                             guard !Task.isCancelled else { return nil }
-                            return await ArtworkRouter.shared.artworkURL(.logo, for: target)
+                            return await ArtworkRouter.shared.artworkURL(
+                                .logo, for: target, language: policy.logoLanguage
+                            )
                         }
                     },
                     prefersOnlineArtwork: policy.prefersOnlineArtwork

@@ -82,10 +82,109 @@ final class MediaBadgesTests: XCTestCase {
             audio: .init(codec: "eac3", profile: "Dolby Digital+ Atmos", channels: 6, channelLayout: "5.1")
         )
         XCTAssertEqual(meta.technicalBadges.map(\.label),
-                       ["4K", "Dolby Vision", "HDR10", "Dolby Digital+", "Dolby Atmos"])
+                       ["4K", "Dolby Vision", "Dolby Digital+", "Dolby Atmos"])
+        XCTAssertEqual(meta.technicalBadges[1].detail, "HDR10")
     }
 
     // MARK: Dynamic range
+
+    func testCombinedRangesAgreeAcrossDetailVersionAndCachedShareFacts() {
+        let cases: [(String, [String])] = [
+            ("DOVIWithHDR10Plus", ["Dolby Vision", "HDR10+"]),
+            ("DOVIWithHDR10PLUS", ["Dolby Vision", "HDR10+"]),
+            (" dovi_with_hdr10+ ", ["Dolby Vision", "HDR10+"]),
+            ("DOVIWithHDR10", ["Dolby Vision", "HDR10"]),
+            ("DOVIWithHLG", ["Dolby Vision", "HLG"]),
+            ("DOVIWithSDR", ["Dolby Vision"]),
+            ("DOVI", ["Dolby Vision"]),
+            ("HDR10Plus", ["HDR10+"]),
+            ("HDR10+", ["HDR10+"]),
+            ("HDR10", ["HDR10"]),
+            ("HLG", ["HLG"]),
+            ("SDR", ["SDR"])
+        ]
+        for (token, expected) in cases {
+            let metadata = MediaSourceMetadata(video: .init(videoRangeType: token))
+            let version = MediaVersion(id: "file", videoRange: token)
+            let item = MediaItem(id: "item", title: "Item", kind: .movie, mediaInfo: metadata)
+            let share = ProbedStreamFacts(videoRangeType: token).applying()
+            XCTAssertEqual(metadata.dynamicRangeBadges.map(\.label), expected, token)
+            XCTAssertEqual(version.technicalBadges, item.technicalBadges, token)
+            XCTAssertEqual(share.technicalBadges, item.technicalBadges, token)
+            if expected.count == 2 {
+                XCTAssertEqual(item.technicalBadges.count, 1, token)
+                XCTAssertEqual(item.technicalBadges.first?.detail, expected.last, token)
+                XCTAssertEqual(item.technicalBadges.first?.accessibilityText, expected.joined(separator: " "), token)
+            }
+            XCTAssertEqual(version.isHDR, token != "SDR", token)
+            XCTAssertEqual(version.hdrLabel, token == "SDR" ? nil : expected.first, token)
+        }
+    }
+
+    func testUnknownRangesDoNotAssertSDRAndExplicitFactsOutrankCoarseRange() {
+        for token in ["", " ", "Unknown", "unrecognized"] {
+            let metadata = MediaSourceMetadata(video: .init(videoRangeType: token))
+            XCTAssertTrue(metadata.dynamicRangeBadges.isEmpty, token)
+        }
+        for (type, expected) in [
+            ("DOVIWithHDR10Plus", ["Dolby Vision", "HDR10+"]),
+            ("DOVIWithHLG", ["Dolby Vision", "HLG"]),
+            ("HDR10Plus", ["HDR10+"]),
+            ("HDR", ["HDR"]),
+            ("HLG", ["HLG"])
+        ] {
+            let metadata = MediaSourceMetadata(video: .init(videoRange: "SDR", videoRangeType: type))
+            XCTAssertEqual(metadata.dynamicRangeBadges.map(\.label), expected)
+        }
+    }
+
+    func testTransferAndProfileHintsNeverInventDolbyVisionCompatibility() {
+        for (transfer, expected) in [
+            ("smpte2084", "HDR10"), ("smpte2094-40", "HDR10+"),
+            ("arib-std-b67", "HLG"), ("bt709", "SDR")
+        ] {
+            let metadata = MediaSourceMetadata(video: .init(colorTransfer: transfer))
+            XCTAssertEqual(metadata.dynamicRangeBadges.map(\.label), [expected])
+        }
+        for profile in [5, 7, 8] {
+            let metadata = MediaSourceMetadata(video: .init(
+                colorTransfer: "smpte2084", dolbyVisionProfile: profile
+            ))
+            XCTAssertEqual(metadata.dynamicRangeBadges.map(\.label), ["Dolby Vision"])
+        }
+        let plus = MediaSourceMetadata(video: .init(
+            videoRangeType: "HDR10", colorTransfer: "smpte2094-40"
+        ))
+        XCTAssertEqual(plus.dynamicRangeBadges.map(\.label), ["HDR10+"])
+    }
+
+    func testSeriesSummaryPreservesRicherDolbyVisionCompatibilityInEitherOrder() {
+        let combined = MediaSourceMetadata(video: .init(videoRangeType: "DOVIWithHDR10Plus"))
+        let plain = MediaSourceMetadata(video: .init(videoRangeType: "DOVI"))
+        for sources in [[combined, plain], [plain, combined]] {
+            XCTAssertEqual(MediaSourceMetadata.representativeTechnicalBadges(from: sources), [
+                MediaBadge("Dolby Vision", style: .dolby, detail: "HDR10+")
+            ])
+        }
+    }
+
+    func testResolutionTiersMatchVersionsAndKeep8K() {
+        for (width, height, label) in [
+            (7680, 3200, "8K"), (7680, 4320, "8K"),
+            (3840, 1600, "4K"), (2560, 1080, "1440p"),
+            (1920, 804, "1080p"), (1280, 540, "720p"), (720, 480, "SD")
+        ] {
+            let metadata = MediaSourceMetadata(video: .init(width: width, height: height))
+            let version = MediaVersion(id: "file", width: width, height: height)
+            XCTAssertEqual(metadata.resolutionBadge?.label, label)
+            XCTAssertEqual(version.resolutionLabel, label)
+            XCTAssertEqual(version.technicalBadges, metadata.technicalBadges)
+        }
+        let best = MediaSourceMetadata.representativeTechnicalBadges(from: [
+            .init(video: .init(height: 2160)), .init(video: .init(height: 4320))
+        ])
+        XCTAssertEqual(best.first?.label, "8K")
+    }
 
     func testDolbyVisionFromRangeType() {
         let meta = MediaSourceMetadata(video: .init(videoRangeType: "DOVIWithHDR10"))
@@ -146,6 +245,33 @@ final class MediaBadgesTests: XCTestCase {
     }
 
     // MARK: Audio
+
+    func testAudioCodecAliasesAndExplicitSpatialProfiles() {
+        for (codec, profile, labels) in [
+            ("ec-3", "JOC", ["Dolby Digital+", "Dolby Atmos"]),
+            ("eac3", "Dolby Digital Plus with Dolby Atmos", ["Dolby Digital+", "Dolby Atmos"]),
+            ("ac-3", "", ["Dolby Digital"]),
+            ("mlp", "Atmos", ["Dolby TrueHD", "Dolby Atmos"]),
+            ("dca", "DTS-HD MA / DTS-X", ["DTS-HD", "DTS:X"]),
+            ("dts-hd", "DTS:X", ["DTS-HD", "DTS:X"]),
+            ("dts", "DTS-HD HRA", ["DTS-HD"]),
+            ("dts", "HRA", ["DTS-HD"]),
+            ("dts", "Main", ["DTS"]),
+            ("dts", "", ["DTS"])
+        ] {
+            let metadata = MediaSourceMetadata(audio: .init(codec: codec, profile: profile, channels: 6))
+            XCTAssertEqual(metadata.audioBadges.map(\.label), labels, "\(codec) \(profile)")
+            XCTAssertEqual(metadata.audioBadges.first?.detail, "5.1")
+            if labels.count > 1 { XCTAssertNil(metadata.audioBadges.last?.detail) }
+        }
+        for codec in ["aac", "flac", "alac", "pcm_s24le", "opus"] {
+            let version = MediaVersion(id: "file", audioCodec: codec, audioChannels: 2)
+            XCTAssertTrue(version.technicalBadges.isEmpty, "Stereo codecs are detail facts, not headline badges.")
+            XCTAssertNotNil(version.audioFormatLabel, codec)
+        }
+        XCTAssertEqual(PlaybackDiagnostics.friendlyAudioName(codec: "ec-3", profile: "JOC"), "Dolby Atmos")
+        XCTAssertEqual(MediaSourceMetadata.audioBadges(codec: "aac", profile: "JOC", channels: nil), [])
+    }
 
     func testAtmosKeepsItsCodecAndAttachesKnownChannelsToThatCodec() {
         let meta = MediaSourceMetadata(audio: .init(codec: "eac3", profile: "Dolby Atmos", channels: 8, channelLayout: "7.1"))
@@ -241,7 +367,8 @@ final class MediaBadgesTests: XCTestCase {
                                        audio: .init(codec: "eac3", profile: "Dolby Digital+ Atmos", channels: 6))),
         ]
         XCTAssertEqual(episodes.representativeTechnicalBadges.map(\.label),
-                       ["4K", "Dolby Vision", "HDR10", "Dolby Digital+", "Dolby Atmos"])
+                       ["4K", "Dolby Vision", "Dolby Digital+", "Dolby Atmos"])
+        XCTAssertEqual(episodes.representativeTechnicalBadges[1].detail, "HDR10")
     }
 
     func testRepresentativeAudioDoesNotBorrowAnotherSourcesChannelsOrCodec() {

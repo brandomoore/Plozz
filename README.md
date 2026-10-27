@@ -35,25 +35,35 @@
 ## A look at it
 
 <p align="center">
-  <img src="docs/assets/screenshots/tv-home.jpg" width="412" alt="The Plozz home screen, with a featured show and a Continue Watching row" />
-  <img src="docs/assets/screenshots/tv-show.jpg" width="412" alt="A series detail page showing artwork, cast, ratings and episodes" />
+  <img src="docs/assets/screenshots/tv-home-licensed-1fb96bffee.jpg" width="412" alt="Plozz Home on Apple TV with Sol Levante artwork and Continue Watching" />
+  <img src="docs/assets/screenshots/tv-library-licensed-aea97840a6.jpg" width="412" alt="Plozz on Apple TV browsing a populated library with licensed film artwork" />
 </p>
 
 <p align="center">
-  <sub><b>Home</b> — one row set across every server you've connected.</sub>
+  <sub><b>Home</b> — return to what you're watching.</sub>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <sub><b>Detail</b> — artwork, ratings, cast and episodes, filled in automatically.</sub>
+  <sub><b>Library</b> — browse, sort and filter your media.</sub>
 </p>
 
 <p align="center">
-  <img src="docs/assets/screenshots/tv-player.jpg" width="412" alt="The Plozz player showing an episode with the transport bar visible" />
-  <img src="docs/assets/screenshots/tv-settings.jpg" width="412" alt="Plozz settings, showing a library sync in progress and the settings list" />
+  <img src="docs/assets/screenshots/tv-player-licensed-96e9b81d2f.jpg" width="412" alt="Plozz playback controls during Wing It!" />
+  <img src="docs/assets/screenshots/tv-subtitles-licensed-a7ae03ca39.jpg" width="412" alt="Plozz's subtitle style editor during Wing It! with scene-description captions" />
 </p>
 
 <p align="center">
-  <sub><b>Player</b> — plays essentially anything, with real subtitle control.</sub>
+  <sub><b>Player</b> — playback controls over your video.</sub>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <sub><b>Settings</b> — per-profile, and there is a lot you can change.</sub>
+  <sub><b>Subtitles</b> — style captions while you watch.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/assets/screenshots/iphone-library-licensed-c25db35ada.jpg" width="230" alt="Plozz on iPhone with several rows of licensed film artwork and saved playback progress" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/assets/screenshots/ipad-home-licensed-4a234f3e0d.jpg" width="374" alt="Plozz on iPad with Sol Levante artwork, several Continue Watching entries and a populated library" />
+</p>
+
+<p align="center">
+  <sub><b>iPhone and iPad</b> — your library on another screen. Real app captures with <a href="https://plozz.app/media-credits/">media credits and licenses</a>; <a href="docs/screenshots.md">capture details</a>.</sub>
 </p>
 
 <p align="center"><sub>More screens, including iPhone and iPad, are on <a href="https://plozz.app">plozz.app</a>.</sub></p>
@@ -116,7 +126,7 @@ available when you want them.
 - **Continue Watching without an app-imposed cutoff** — all titles supplied by
   your servers remain reachable, ordered by recency. Older next-up episodes move
   back instead of disappearing; server settings and your removals still apply.
-- **Plays essentially anything** — HDR, Dolby Vision, AV1, and the awkward files
+- **Plays essentially anything** — HDR, AV1, and the awkward files
   other clients hand back to you, powered by
   [AetherEngine](https://github.com/superuser404notfound/AetherEngine).
   ([The full format list](https://github.com/superuser404notfound/AetherEngine/blob/main/docs/formats.md).)
@@ -399,13 +409,13 @@ by any of the services below.
 <p align="center"><b>More open source</b></p>
 
 <p align="center">
-  <a href="https://github.com/brandomoore/hozz" title="Hozz — Apple Health, exported to storage you own"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/brandomoore/brando/main/logos/lockups/hozz-dark.svg" /><img src="https://raw.githubusercontent.com/brandomoore/brando/main/logos/lockups/hozz-light.svg" height="40" alt="Hozz" /></picture></a>
+  <a href="https://github.com/brandomoore/Hozz" title="Hozz — Apple Health, exported to storage you own"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/brandomoore/brando/main/logos/lockups/hozz-dark.svg" /><img src="https://raw.githubusercontent.com/brandomoore/brando/main/logos/lockups/hozz-light.svg" height="40" alt="Hozz" /></picture></a>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://github.com/brandomoore/Mozz" title="Mozz — Your music, wherever it lives"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/brandomoore/brando/main/logos/lockups/mozz-dark.svg" /><img src="https://raw.githubusercontent.com/brandomoore/brando/main/logos/lockups/mozz-light.svg" height="40" alt="Mozz" /></picture></a>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://github.com/brandomoore/Plozz" title="Plozz — Movies &amp; TV on Apple TV, iPhone &amp; iPad"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/brandomoore/brando/main/logos/lockups/plozz-dark.svg" /><img src="https://raw.githubusercontent.com/brandomoore/brando/main/logos/lockups/plozz-light.svg" height="40" alt="Plozz" /></picture></a>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/brandomoore/Twozz" title="Twozz — Twitch on Apple TV, with real emotes"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/brandomoore/brando/main/logos/lockups/twozz-dark.svg" /><img src="https://raw.githubusercontent.com/brandomoore/brando/main/logos/lockups/twozz-light.svg" height="40" alt="Twozz" /></picture></a>
+  <a href="https://github.com/brandomoore/strozz" title="Strozz — Twitch on Apple TV, with real emotes"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/brandomoore/brando/main/logos/lockups/strozz-dark.svg" /><img src="https://raw.githubusercontent.com/brandomoore/brando/main/logos/lockups/strozz-light.svg" height="40" alt="Strozz" /></picture></a>
 </p>
 
 <p align="center">

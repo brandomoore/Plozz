@@ -136,9 +136,10 @@ struct PlozziOSSearchView: View {
     }
 }
 
-/// Explicit top header: a touch-friendly search field that takes all available
-/// width with the active-profile settings avatar immediately to its right.
+/// Keep a local Settings entry only when native navigation does not expose it.
 private struct PlozziOSSearchHeader: View {
+    @Environment(\.themePalette) private var palette
+    @Environment(\.hasVisibleSettingsNavigationEntry) private var hasVisibleSettingsNavigationEntry
     @Binding var query: String
     let onShowSettings: () -> Void
 
@@ -149,9 +150,11 @@ private struct PlozziOSSearchHeader: View {
                     .plozzForeground(.secondary)
                 TextField(
                     "Movies, shows, and episodes",
-                    text: $query
+                    text: $query,
+                    prompt: Text("Movies, shows, and episodes").foregroundColor(palette.secondaryText)
                 )
                 .textFieldStyle(.plain)
+                .foregroundStyle(palette.primaryText)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
                 .accessibilityLabel("Search your libraries")
@@ -170,10 +173,13 @@ private struct PlozziOSSearchHeader: View {
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 44)
-            .background(.thinMaterial, in: Capsule())
+            .plozzSurface(.raised, cornerRadius: PlozzTheme.Metrics.Radius.card)
             .frame(maxWidth: .infinity)
 
-            PlozziOSSettingsAvatarButton(action: onShowSettings)
+            if !hasVisibleSettingsNavigationEntry {
+                PlozziOSSettingsAvatarButton(action: onShowSettings)
+                    .accessibilityIdentifier("search-settings-avatar")
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)

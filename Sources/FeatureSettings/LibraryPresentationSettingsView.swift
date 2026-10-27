@@ -45,25 +45,28 @@ public struct LibraryPresentationSettingsView: View {
                 )
             }
             .accessibilityIdentifier("library-navigation-settings")
-            SettingsSectionGroup("Card labels") {
-                CardCaptionSettingsControls(cards: cards, scope: .libraries)
-            } footer: {
-                Text("Choices apply across all libraries. Continue Watching shares its label setting with Home.")
-            }
             #if os(tvOS)
-            SettingsSectionGroup("Recommended Page") {
-                HeroLogoSizeControl(
-                    size: $model.settings.logoSize, textSize: $model.settings.textSize,
-                    surface: .showcase, showsLibraryPreview: true
-                )
+            SettingsFormGroup(title: Text("Page appearance"), hasGroupedContent: true) {
+                SettingsConnectedControlGroups {
+                    VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
+                        Text("Recommended Page").font(.headline)
+                        HeroLogoSizeControl(
+                            size: $model.settings.logoSize, textSize: $model.settings.textSize,
+                            surface: .showcase, showsLibraryPreview: true
+                        )
+                    }
+                    CardCaptionSettingsLink(cards: cards, scope: .libraries, visibility: visibility)
+                }
+            }
+            #else
+            SettingsSectionGroup("Page appearance") {
+                CardCaptionSettingsLink(cards: cards, scope: .libraries, visibility: visibility)
             }
             #endif
             Text("Libraries")
                 .font(.headline)
                 .padding(.top)
-            Text("Choose a library to arrange or hide rows on its Recommended page.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
             libraryChoices
         }
         .task(id: DiscoveryRequest(scope: requestID, revision: reloadRevision)) {
@@ -75,12 +78,12 @@ public struct LibraryPresentationSettingsView: View {
         if discoveryScope == requestID, let discovery {
             let libraries = discovery.libraries.filter {
                 visibility.isEnabled($0.key) && $0.providerKind != .mediaShare
-                    && [.movie, .series, .video].contains($0.library.kind)
+                    && [.movie, .series, .video, .collection].contains($0.library.kind)
             }
             ForEach(libraries, id: \.key) { library in
                 if let account = accounts.first(where: { $0.account.id == library.accountID }) {
                     HomeEditorLink {
-                        LibraryRecommendedRowsSettingsView(
+                        LibraryDisplaySettingsView(
                             library: library, account: account, model: model, loader: loader
                         )
                         .id([
@@ -97,7 +100,7 @@ public struct LibraryPresentationSettingsView: View {
                 }
             }
             if libraries.isEmpty, discovery.failures.isEmpty {
-                Text("No libraries with a Recommended page are available.")
+                Text("No libraries available.")
                     .foregroundStyle(.secondary)
             }
             if !discovery.failures.isEmpty {
@@ -147,7 +150,7 @@ struct LibraryNavigationSettingsView: View {
     }
 }
 
-struct LibraryRecommendedRowsSettingsView: View {
+struct LibraryDisplaySettingsView: View {
     let library: AggregatedLibrary
     let account: ResolvedAccount
     let model: LibraryPresentationSettingsModel
@@ -156,6 +159,26 @@ struct LibraryRecommendedRowsSettingsView: View {
     @State private var diagnostic: LibraryLoadDiagnostic?
     @State private var reloadRevision = 0
     @State private var isLifting = false
+
+    var showsRecommendedRows: Bool {
+        [.movie, .series, .video].contains(library.library.kind)
+    }
+
+    var showsCollectionCovers: Bool {
+        library.library.kind == .collection
+            || ([.movie, .series].contains(library.library.kind)
+                && (account.provider as? any CapabilityReporting)?.capabilities.contains(.libraryCollections) == true)
+    }
+
+    var collectionCoverSelection: Binding<CollectionCoverLayout> {
+        let address = LibraryPresentationSettings.collectionCoverAddress(
+            accountID: library.accountID, libraryID: library.library.id
+        )
+        return Binding(
+            get: { model.settings.collectionCoverLayout(at: address) },
+            set: { model.settings.collectionCoverLayouts[address] = $0 }
+        )
+    }
 
     private var choices: [LibrarySection] {
         var rows = state.value ?? []
@@ -172,22 +195,31 @@ struct LibraryRecommendedRowsSettingsView: View {
 
     var body: some View {
         HomeEditorPage(title: library.library.displayName, showsHeader: true) {
-            Text("Recommended Page Rows").font(.headline)
-            switch state {
-            case .idle, .loading:
-                ProgressView()
-            case .loaded, .empty:
-                rowEditor
-            case .failed(let error):
-                InlineErrorMessage(Text(error.userMessage))
-                retry
+            if showsCollectionCovers {
+                SettingsSectionGroup {
+                    CollectionCoverLayoutPicker(selection: collectionCoverSelection, title: "Collection covers")
+                }
+                .accessibilityIdentifier("library-collection-covers")
             }
-            if let error = diagnostic?.failures.first?.error, state.value != nil {
-                InlineErrorMessage(Text(error.userMessage))
-                retry
+            if showsRecommendedRows {
+                Text("Recommended Page Rows").font(.headline)
+                switch state {
+                case .idle, .loading:
+                    ProgressView()
+                case .loaded, .empty:
+                    rowEditor
+                case .failed(let error):
+                    InlineErrorMessage(Text(error.userMessage))
+                    retry
+                }
+                if let error = diagnostic?.failures.first?.error, state.value != nil {
+                    InlineErrorMessage(Text(error.userMessage))
+                    retry
+                }
             }
         }
         .task(id: reloadRevision) {
+            guard showsRecommendedRows else { return }
             if state.value == nil { state = .loading }
             let result = await loader.recommendations(library: library, account: account)
             guard !Task.isCancelled else { return }
@@ -224,6 +256,19 @@ struct LibraryRecommendedRowsSettingsView: View {
                     model.settings.recommendedRows[address] = updated
                 }
             )
+            ForEach(choices.filter { CollectionCoverLayout.isCollectionGroup($0.items) }) { row in
+                let coverAddress = LibraryPresentationSettings.collectionCoverAddress(
+                    accountID: library.accountID, libraryID: library.library.id, rowID: row.id
+                )
+                SettingsSectionGroup {
+                    row.displayName.font(.headline)
+                    CollectionCoverLayoutPicker(selection: Binding(
+                        get: { model.settings.collectionCoverLayout(at: coverAddress) },
+                        set: { model.settings.collectionCoverLayouts[coverAddress] = $0 }
+                    ))
+                }
+                .disabled(isLifting)
+            }
             Text("Changes apply only to this library's Recommended page, not Home.")
                 .font(.caption)
                 .foregroundStyle(.secondary)

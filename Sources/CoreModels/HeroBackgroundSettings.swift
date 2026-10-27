@@ -161,7 +161,8 @@ public final class HeroBackgroundSettingsStore: HeroBackgroundSettingsStoring, @
     }
 
     public func load() -> HeroBackgroundSettings {
-        let themeMusic = defaults.data(forKey: legacyThemeMusicKey).flatMap {
+        let themeData = defaults.data(forKey: legacyThemeMusicKey)
+        let themeMusic = themeData.flatMap {
             try? JSONDecoder().decode(ThemeMusicSettings.self, from: $0)
         }
         var settings: HeroBackgroundSettings
@@ -175,7 +176,10 @@ public final class HeroBackgroundSettingsStore: HeroBackgroundSettingsStoring, @
             settings = themeMusic?.isEnabled == true
                 ? HeroBackgroundSettings(detailMode: .themeMusic) : .default
         }
-        if var themeMusic, themeMusic.volume == .off {
+        let legacyVolume = themeData.flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+        }?["volume"] as? String
+        if var themeMusic, legacyVolume == "off" {
             if settings.detailMode == .themeMusic {
                 settings.detailMode = .off
             }

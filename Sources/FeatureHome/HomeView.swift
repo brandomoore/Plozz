@@ -133,6 +133,7 @@ final class HomeNavigationActivity {
 /// Continue Watching, Latest, and library shortcuts.
 public struct HomeView: View {
     @Environment(\.homeLiveTVSnapshot) private var liveTV
+    @Environment(LibraryPresentationSettingsModel.self) private var libraryPresentation: LibraryPresentationSettingsModel?
     @State private var viewModel: HomeViewModel
     private var visibility: HomeLibraryVisibilityModel
     private let spoilerSettings: SpoilerSettings
@@ -415,7 +416,8 @@ public struct HomeView: View {
                 skeletonLayout: viewModel.skeletonLayout
             )
             let presentationRows = HomePresentationRow.resolve(
-                rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV
+                rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
+                presentation: libraryPresentation?.settings ?? .default
             )
             let heroContent = HomeHeroLaunchPolicy.content(
                 content,
@@ -908,7 +910,8 @@ public struct HomeView: View {
                 loadingRows: viewModel.loadingRows, failures: viewModel.rowFailures
             )
             if HomePresentationRow.resolve(
-                rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV
+                rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
+                presentation: libraryPresentation?.settings ?? .default
             ).isEmpty, visibility.visibility.rowSections(choices: choices).enabled.isEmpty {
                 return .noHomeRows
             }
@@ -1385,16 +1388,14 @@ public struct HomeView: View {
         title: Text, error: AppError, report: PlaybackDiagnosticReport? = nil,
         onFocusEntered: (() -> Void)? = nil
     ) -> some View {
-        VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-            title
-                .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
-                .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
-            ContentStateView<Bool, EmptyView>(
-                state: .failed(error),
-                errorReport: report,
-                onRetry: { Task { await viewModel.load(showLoadingState: false) } }
-            ) { _ in EmptyView() }
-            .frame(height: metrics.posterHeight)
+        MediaRowSection(title: title, insetsContent: true) {
+            MediaRowStatusContent(message: error.userMessage, symbol: "exclamationmark.triangle") {
+                EmptyView()
+            } actions: {
+                ContentFailureActions(report: report) {
+                    Task { await viewModel.load(showLoadingState: false) }
+                }
+            }
             .disabled(viewModel.isRefreshing)
         }
         .background {
@@ -1457,7 +1458,8 @@ public struct HomeView: View {
         }
         var result: [(row: FocusHeroRow, source: FocusHomeRowSource)] = []
         for presentation in HomePresentationRow.resolve(
-            rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV
+            rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
+            presentation: libraryPresentation?.settings ?? .default
         ) {
             switch presentation.source {
             case let .home(row): result.append(entry(row))
@@ -1707,6 +1709,8 @@ public struct HomeView: View {
             )
         case .section(let row):
             let section = row.section
+            let playsOnSelect = row.browseItem == nil && section.style == .landscape
+                && !CollectionCoverLayout.isCollectionGroup(section.items)
             if let issue = row.issue {
                 sectionStatusView(issue, browseItem: row.browseItem)
                     .background { NativeFocusRegionObserver(onFocusEntered: reporter.entered) }
@@ -1731,9 +1735,9 @@ public struct HomeView: View {
                     onCardFocused: reporter.cardFocused,
                     loadingPlaceholderCount: row.isLoading ? 8 : 0,
                     reservesLoadingFocus: reservesLoadingFocus,
-                    playsOnSelect: row.browseItem == nil && section.style == .landscape,
+                    playsOnSelect: playsOnSelect,
                     onSeeAll: row.browseItem.map { item in { onSelectItem(item) } },
-                    onSelect: row.browseItem == nil && section.style == .landscape ? onPlayItem : onSelectItem
+                    onSelect: playsOnSelect ? onPlayItem : onSelectItem
                 )
             }
         }
@@ -1780,6 +1784,8 @@ public struct HomeView: View {
     @ViewBuilder
     private func libraryRowView(_ row: HomeLibrarySectionGroup.Row) -> some View {
             let section = row.section
+            let playsOnSelect = row.browseItem == nil && section.style == .landscape
+                && !CollectionCoverLayout.isCollectionGroup(section.items)
             if let issue = row.issue {
                 sectionStatusView(issue, browseItem: row.browseItem)
             } else if let failure = row.failure {
@@ -1793,9 +1799,9 @@ public struct HomeView: View {
                     style: cardStyle(section.style),
                     spoilerSettings: spoilerSettings,
                     loadingPlaceholderCount: row.isLoading ? 8 : 0,
-                    playsOnSelect: row.browseItem == nil && section.style == .landscape,
+                    playsOnSelect: playsOnSelect,
                     onSeeAll: row.browseItem.map { item in { onSelectItem(item) } },
-                    onSelect: row.browseItem == nil && section.style == .landscape ? onPlayItem : onSelectItem
+                    onSelect: playsOnSelect ? onPlayItem : onSelectItem
                 )
         }
     }
@@ -1815,11 +1821,9 @@ public struct HomeView: View {
     }
 
     private func sectionStatusView(_ issue: HomeSectionIssue, browseItem: MediaItem?) -> some View {
-        HomeSectionStatusView(issue: issue, onSeeAll: browseItem.map { item in { onSelectItem(item) } }) {
+        HomeSectionStatusRow(issue: issue, onSeeAll: browseItem.map { item in { onSelectItem(item) } }) {
             Task { await viewModel.load(showLoadingState: false) }
         }
-        .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
-        .padding(.vertical, metrics.sectionTitleSpacing)
         .disabled(viewModel.isRefreshing)
     }
 

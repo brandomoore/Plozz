@@ -808,6 +808,70 @@ final class SiloProviderTests: XCTestCase {
       item.mediaInfo?.audioBadges.isEmpty == true, "Unknown channel count must not invent surround")
   }
 
+  func testDolbyVisionCombinationsAndPresenceFlagsSurvivePerFileMapping() throws {
+    let raw = try credential().encoded()
+    let provider = try SiloProvider(
+      context: context(raw), credentials: SiloCredentialStub(raw), http: SiloHTTPStub([:]))
+    let cases: [(String, [String])] = [
+      (#""video_range_type":"DOVIWithHDR10Plus","dv_profile":8"#, ["Dolby Vision", "HDR10+"]),
+      (#""video_range_type":"DOVIWithHDR10","dv_profile":8"#, ["Dolby Vision", "HDR10"]),
+      (#""video_range_type":"DOVIWithHLG","dv_profile":8"#, ["Dolby Vision", "HLG"]),
+      (#""video_range_type":"DOVIWithSDR","dv_profile":8"#, ["Dolby Vision"]),
+      (#""video_range_type":"DOVI","dv_profile":8,"hdr10_plus":true"#, ["Dolby Vision", "HDR10+"]),
+      (#""dv_profile":8,"hdr10_plus":true"#, ["Dolby Vision", "HDR10+"]),
+      (#""dv_profile":8,"dv_bl_compat_id":1,"dv_bl_compat_id_present":true"#, ["Dolby Vision", "HDR10"]),
+      (#""dv_profile":8,"dv_bl_compat_id":4,"dv_bl_compat_id_present":true"#, ["Dolby Vision", "HLG"]),
+      (#""dv_profile":8,"dv_bl_compat_id":2,"dv_bl_compat_id_present":true"#, ["Dolby Vision"]),
+      (#""dv_profile":8,"dv_bl_compat_id_present":true"#, ["Dolby Vision"]),
+      (#""dv_profile":8,"dv_bl_compat_id":1,"dv_bl_compat_id_present":false"#, ["Dolby Vision"]),
+      (#""dv_profile":8"#, ["Dolby Vision"]),
+      (#""dv_profile":7"#, ["Dolby Vision", "HDR10"]),
+      (#""dv_profile":5,"color_transfer":"smpte2084""#, ["Dolby Vision"]),
+      (#""dv_profile":8,"dv_config_present":false,"video_range_type":"HDR10""#, ["HDR10"]),
+      (#""dv_profile":0,"color_transfer":"arib-std-b67""#, ["HLG"]),
+      (#""hdr10_plus":true"#, ["HDR10+"]),
+      (#""video_range_type":"Unknown""#, [])
+    ]
+    for (track, expected) in cases {
+      let payload = """
+      {"file_id":"file","resolution":"2160p","codec_video":"hevc","codec_audio":"aac",
+       "container":"mkv","file_size":100,"duration":600,"bitrate":12000,"video_tracks":[{\(track)}]}
+      """
+      let file = try JSONDecoder().decode(SiloFileVersion.self, from: Data(payload.utf8))
+      let metadata = provider.metadata(file)
+      XCTAssertEqual(metadata.dynamicRangeBadges.map(\.label), expected, track)
+    }
+  }
+
+  func testDetailAndVersionsRetainTheirOwnRangeAudioAndOriginalFileIDs() async throws {
+    let raw = try credential().encoded()
+    let http = SiloHTTPStub([
+      "/api/v2/catalog/items/movie:1": """
+      {"content_id":"movie:1","type":"movie","title":"Fixture","versions":[
+       {"file_id":"dv-file","resolution":"2160p","codec_video":"hevc","codec_audio":"eac3",
+        "container":"mkv","file_size":100,"duration":600,"bitrate":12000,
+        "video_tracks":[{"width":3840,"height":1600,"dv_profile":8,"video_range_type":"DOVIWithHDR10Plus"}],
+        "audio_tracks":[{"codec":"ec-3","channels":6,"profile":"JOC","default":true},
+                        {"codec":"truehd","channels":8,"profile":"Atmos","default":false}]},
+       {"file_id":"sdr-file","resolution":"1080p","hdr":false,"codec_video":"h264","codec_audio":"aac",
+        "container":"mp4","file_size":50,"duration":600,"bitrate":2000}
+      ]}
+      """
+    ])
+    let provider = try SiloProvider(
+      context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    let item = try await provider.item(id: "movie:1")
+    XCTAssertEqual(item.technicalBadges.map(\.label),
+                   ["4K", "Dolby Vision", "Dolby Digital+", "Dolby Atmos"])
+    XCTAssertEqual(item.technicalBadges[1].detail, "HDR10+")
+    XCTAssertEqual(item.versions.first?.technicalBadges, item.technicalBadges)
+    XCTAssertEqual(item.versions.first?.sourceMetadata?.audio?.channels, 6)
+    XCTAssertEqual(item.versions.last?.technicalBadges.map(\.label), ["1080p", "SDR"])
+    XCTAssertEqual(item.versions.map(\.playbackMediaSourceID), ["dv-file", "sdr-file"])
+    let requests = await http.requests
+    XCTAssertEqual(requests.map(\.path), ["/api/v2/catalog/items/movie:1"])
+  }
+
   func testDynamicRangeSummaryFallbackPreservesFalseTrueAndUnknown() throws {
     let raw = try credential().encoded()
     let provider = try SiloProvider(

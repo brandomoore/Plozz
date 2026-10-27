@@ -11,6 +11,9 @@ management, guide/search, Multiview, playback and profile-scoped iCloud sync. Ex
 profile authorization, parental approval, account, source and persistence gates
 remain in force.
 
+Source setup explains that viewers must have authorization for their channels
+and that Plozz does not provide TV content or channel subscriptions.
+
 For past failures, attempted repairs and related tests, see the short
 [IPTV troubleshooting history](iptv-history.md). It is historical context,
 not a specification.
@@ -114,6 +117,49 @@ install anything.
 Navigation uses the plain **Live TV** label in every style. The source-setup
 introduction carries a small, secondary **Experimental** note on both platforms,
 without a warning dialog or an extra confirmation step.
+
+On iPhone and iPad, selecting a channel opens a video preview above the guide,
+8 points below the existing navigation toolbar controls. There is no channel-artwork card or
+Watch channel button over the video. Tapping the preview shows or hides the
+shared player transport and fullscreen action; fullscreen keeps the same player
+and stream. Its video surface stays in the same native parent during expansion,
+return, and rotation; an interruptible resize follows the current window geometry
+without waiting for a forced orientation. Reduce Motion disables that animation.
+Expanding the current preview rechecks authorization and presentation ownership
+without starting channel preparation or showing an opening-channel banner.
+Before a channel is selected, the guide uses the available space.
+Opening the preview reduces the guide's viewport without replacing its scroll
+view or resetting its channel/time position. Search and the narrow category
+directory hide the preview surface while retaining the existing playback policy.
+In wide mobile layouts, the category sidebar retains its full height and scroll
+position; only the channel guide sits below the video in the adjacent column.
+Preview transport controls are centered on the video independently of its title
+row, with a larger Play/Pause button than Previous/Next.
+The playing surface is reflected below the preview, upward behind the toolbar,
+and into available side gutters, without moving the video or controls. This
+also fills the space around a fitted picture on folded and unfolded devices.
+When both horizontal sides have room, the sharp picture uses the shared content
+corner radius. The surrounding reflection uses native blur and a gradual fade into the guide
+background. The reflection starts at full intensity, then follows a quadratic
+falloff with a faint tail rather than a steep final cutoff. One transparency
+mask fades both the reflected video and its blur into the actual background,
+avoiding a flat-color edge where the reflection ends. The reflection sits
+behind guide content, adds no layout height, and shares the original video
+surface rather than opening another player or copying decoded frames. It is
+disabled in fullscreen, multiview, Reduce Transparency, and when the
+preview is inactive, interrupted, or continuing on an external presentation.
+Apple TV keeps its existing browsing info bar and focus-driven preview.
+
+In compact iPhone windows, browsing stays portrait. With Playback orientation set to Auto, rotating
+a visible playing preview sideways expands the existing player; rotating upright
+returns automatically expanded playback to the guide preview. Manually opened
+fullscreen stays open on rotation. Close restores portrait browsing and waits for
+physical upright before allowing another automatic expansion. This follows system
+rotation lock; iPad browsing and playback rotation are unchanged. Expanded phone
+windows (at least 600 points in both dimensions) follow system rotation instead.
+Resizing or unfolding alone does not expand the preview. Layout uses the current
+window and its independent leading/trailing safe areas; a vertical navigation
+bar does not reserve its full height above the video.
 
 For isolated physical-TV iteration, build a branded Debug app using the existing
 per-branch build configuration. It has its own bundle ID, preferences and data;

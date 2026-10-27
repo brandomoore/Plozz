@@ -13,6 +13,101 @@ import XCTest
 
 @MainActor
 final class HeroLogoPresentationHostedTests: XCTestCase {
+    func testShowcaseDisplaysServerSeriesSynopsisWithEpisodeSpoilersEnabled() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let logo = try seedLogo(size: CGSize(width: 600, height: 100))
+        defer { removeSeededLogo(logo) }
+        let episode = MediaItem(
+            id: UUID().uuidString, title: "Secret episode title", kind: .episode,
+            overview: "The secret murderer is revealed.", parentTitle: "A series",
+            seriesID: "series", logoURL: logo, allowsTitleBasedMetadataMatching: false,
+            sourceAccountID: "account"
+        )
+        let series = MediaItem(
+            id: "series", title: "A series", kind: .series,
+            overview: "A quiet village beside the ocean.", sourceAccountID: "account"
+        )
+        for mode in [SpoilerSettings.Mode.blur, .placeholder] {
+            var spoilers = SpoilerSettings.default
+            spoilers.isEnabled = true
+            spoilers.mode = mode
+            fixture.window.rootViewController = UIHostingController(rootView:
+                FocusHeroHomeView(
+                    rows: [.init(id: "row", itemIDs: [episode.id], leadItem: episode, items: [episode])],
+                    settings: .default, spoilerSettings: spoilers,
+                    navigationStyle: .rail, isFrontmost: true,
+                    enrich: { items in
+                        items.map {
+                            var enriched = $0
+                            enriched.seriesSynopsis = MediaSeriesSynopsis(series: series)
+                            return enriched
+                        }
+                    }
+                ) { _, _ in
+                    Color(uiColor: .blue).frame(height: 420)
+                }
+                .environment(\.plozzArtworkSettings, ArtworkSettings(preference: .library))
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+            )
+            func visibleText() throws -> String {
+                let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+                    fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true)
+                }
+                let request = VNRecognizeTextRequest()
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                    .joined(separator: " ").lowercased()
+            }
+            try await waitUntil { try visibleText().contains("quiet village") }
+            XCTAssertFalse(try visibleText().contains("secret"))
+            XCTAssertNotNil(try redBounds(in: fixture.window), "The series logo remains visible.")
+            attachPreview(in: fixture.window, name: "showcase-series-synopsis-\(mode.rawValue)")
+        }
+    }
+
+    func testLogoReloadsOnAppLanguageChangeWithoutRecreatingTheRoot() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let french = try seedLogo(size: CGSize(width: 300, height: 80), color: .red)
+        let english = try seedLogo(size: CGSize(width: 300, height: 80), color: .green)
+        defer { removeSeededLogo(french); removeSeededLogo(english) }
+        let state = LogoLanguageFixtureState()
+        let item = MediaItem(id: UUID().uuidString, title: "Series", kind: .series)
+        let fallback = HeroLogoFallback(for: item, localizedResolve: {
+            $0 == "fr" ? french : english
+        })
+        fixture.window.rootViewController = UIHostingController(rootView:
+            LogoLanguageFixture(state: state, fallback: fallback)
+        )
+        try await waitUntil { try colorBounds(in: fixture.window, channel: 1) != nil }
+        state.language = "fr-CA"
+        try await waitUntil { try redBounds(in: fixture.window) != nil }
+        XCTAssertNil(try colorBounds(in: fixture.window, channel: 1))
+        state.language = "en"
+        try await waitUntil { try colorBounds(in: fixture.window, channel: 1) != nil }
+        XCTAssertNil(try redBounds(in: fixture.window))
+    }
+
+    @Observable fileprivate final class LogoLanguageFixtureState {
+        var language = "en"
+    }
+
+    private struct LogoLanguageFixture: View {
+        let state: LogoLanguageFixtureState
+        let fallback: HeroLogoFallback
+
+        var body: some View {
+            HeroLogoArtwork(
+                primaryURL: nil, asyncFallbackURL: fallback,
+                maxWidth: 300, maxHeight: 80, presentationPolicy: .whenResolved
+            ) { Text("Fallback") }
+            .environment(\.locale, Locale(identifier: state.language))
+            .environment(\.colorScheme, .dark)
+        }
+    }
+
     func testDescriptionColumnMeasuresTheLiveWrappingFactsRow() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

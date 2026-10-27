@@ -197,8 +197,8 @@ public enum TrackLabeling {
     /// Plex's "Japanese (OPUS 5.1)") because provider audio titles are often a
     /// release/encoder tag that omits the language entirely ("[HR] 5.1 Channels
     /// (Doc_Ramen)") — returning such a title wholesale would hide the language.
-    /// A provider title that already *names* the language is kept as-is (it's a
-    /// complete human label, e.g. "English - Dolby Digital - 5.1"); otherwise the
+    /// A provider title that already *names* the language is kept, with missing
+    /// format details appended; otherwise the
     /// language leads and is annotated with the audio format ("DTS 7.1") and a
     /// Commentary marker. Falls back to a meaningful title, then "Track N", only
     /// when no language resolves.
@@ -224,29 +224,28 @@ public enum TrackLabeling {
             title, languageName: languageNm, codec: codec, channels: channels, format: format
         )
 
-        // A provider title that already names the language is a complete label.
+        let base: TrackLabel.Base
+        var formatIsBase = false
         if let languageNm,
            !generatedFormatTitle, !isGenericTitle(title),
            title.range(of: languageNm, options: .caseInsensitive) != nil {
-            return TrackLabel(base: .content(title))
-        }
-
-        let base: TrackLabel.Base
-        var formatIsBase = false
-        if let languageNm {
+            base = .content(title)
+        } else if let languageNm {
             base = .content(languageNm)
         } else if generatedFormatTitle, let format {
             base = .content(format)
             formatIsBase = true
         } else if !isGenericTitle(title) {
-            // No language, but the title says something real — trust it as-is.
-            return TrackLabel(base: .content(title))
+            base = .content(title)
         } else {
             base = .trackNumber(trackID)
         }
 
         var qualifiers: [TrackLabel.Qualifier] = []
-        if let format, !formatIsBase {
+        let baseTitle: String
+        if case .content(let value) = base { baseTitle = value } else { baseTitle = "" }
+        if let format, !formatIsBase,
+           !audioTitleContainsFormat(baseTitle, codec: codec, channels: channels, isAtmos: isAtmos) {
             qualifiers.append(.format(format))
         }
         // `audioFormatHint`/`channelLayoutName` say nothing for a channel count
@@ -258,9 +257,29 @@ public enum TrackLabeling {
         if !isAtmos, channelLayoutName(channels) == nil, let channels, channels > 0 {
             qualifiers.append(.channelCount(channels))
         }
-        if isCommentary { qualifiers.append(.commentary) }
+        if isCommentary, !baseTitle.localizedCaseInsensitiveContains("commentary") {
+            qualifiers.append(.commentary)
+        }
 
         return TrackLabel(base: base, qualifiers: qualifiers)
+    }
+
+    private static func audioTitleContainsFormat(
+        _ title: String, codec: String?, channels: Int?, isAtmos: Bool // l10n:content - provider track title and format facts.
+    ) -> Bool {
+        func contains(_ token: String) -> Bool {
+            guard !token.isEmpty else { return false }
+            let pattern = #"(?<![\p{L}\p{N}])"# + NSRegularExpression.escapedPattern(for: token)
+                + #"(?![\p{L}\p{N}])"#
+            return title.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        }
+        if isAtmos { return contains("Atmos") }
+        let codecs = [codec, audioCodecName(codec)].compactMap { $0 }.filter { !$0.isEmpty }
+        var layouts = [channelLayoutName(channels)].compactMap { $0 }
+        if channels == 1 { layouts.append("1.0") }
+        if channels == 2 { layouts.append("2.0") }
+        return (codecs.isEmpty || codecs.contains(where: contains))
+            && (layouts.isEmpty || layouts.contains(where: contains))
     }
 
     /// Match only titles completely described by known format facts; never

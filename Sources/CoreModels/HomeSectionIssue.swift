@@ -95,6 +95,13 @@ public final class HomeSectionDiagnosticsModel {
         issues = []
     }
 
+    public func update(
+        issues: [HomeSectionIssue], accounts: [ResolvedAccount], visibility: HomeLibraryVisibility
+    ) {
+        guard !isLoading, scope == Self.scope(accounts), self.visibility == visibility else { return }
+        self.issues = issues
+    }
+
     public func retry(accounts: [ResolvedAccount], visibility: HomeLibraryVisibility) async {
         guard !isLoading, scope == Self.scope(accounts), self.visibility == visibility else { return }
         await reload?()

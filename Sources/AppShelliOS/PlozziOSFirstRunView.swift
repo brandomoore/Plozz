@@ -79,18 +79,16 @@ struct PlozziOSFirstRunView: View {
             if let selection = appModel.plexHomeUsers.pendingPlexUserSelection
                 ?? lastPlexSelection {
                 PlozziOSPlexUserSelectionView(
+                    appModel: appModel,
                     selection: selection,
+                    onImportAll: appModel.importPlexHomeProfilesDuringOnboarding,
                     onSelect: appModel.selectPlexUserDuringOnboarding
                 )
             }
         case .libraries:
             if let selection = appModel.pendingLibrarySelection {
                 PlozziOSLibrarySelectionView(
-                    accounts: appModel.accountsProviders.resolvedAccounts(
-                        withIDs: selection.accountIDs
-                    ),
-                    visibility: appModel.settings.homeVisibility,
-                    onContinue: appModel.completeLibrarySelection
+                    appModel: appModel, accountIDs: selection.accountIDs
                 )
             }
         case .confirmProfile:

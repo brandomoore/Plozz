@@ -71,6 +71,7 @@ public extension View {
         sources: [MediaSourceRef], selectedSourceID: String?,
         offlineSourceAccountIDs: Set<String> = [],
         versions: [MediaVersion], selectedVersionID: String?,
+        loadVersions: MediaVersionInventoryLoader? = nil,
         onSelectSource: @escaping (String) -> Void,
         onSelectVersion: @escaping (String) -> Void,
         onPerformAction: @escaping (String) -> Void = { _ in },
@@ -80,6 +81,7 @@ public extension View {
             sources: sources, selectedSourceID: selectedSourceID,
             offlineSourceAccountIDs: offlineSourceAccountIDs,
             versions: versions, selectedVersionID: selectedVersionID,
+            loadVersions: loadVersions,
             onSelectSource: onSelectSource, onSelectVersion: onSelectVersion,
             onPerformAction: onPerformAction, onDismiss: onDismiss, state: state
         ))
@@ -95,6 +97,7 @@ public struct PlaybackSourceMenuButton<Label: View>: View {
     private let offlineSourceAccountIDs: Set<String>
     private let versions: [MediaVersion]
     private let selectedVersionID: String?
+    private let loadVersions: MediaVersionInventoryLoader?
     private let actions: [PlaybackSourceMenuAction]
     private let onSelectSource: (String) -> Void
     private let onSelectVersion: (String) -> Void
@@ -110,6 +113,7 @@ public struct PlaybackSourceMenuButton<Label: View>: View {
         offlineSourceAccountIDs: Set<String> = [],
         versions: [MediaVersion],
         selectedVersionID: String?,
+        loadVersions: MediaVersionInventoryLoader? = nil,
         actions: [PlaybackSourceMenuAction] = [],
         onSelectSource: @escaping (String) -> Void,
         onSelectVersion: @escaping (String) -> Void,
@@ -122,6 +126,7 @@ public struct PlaybackSourceMenuButton<Label: View>: View {
         self.offlineSourceAccountIDs = offlineSourceAccountIDs
         self.versions = versions
         self.selectedVersionID = selectedVersionID
+        self.loadVersions = loadVersions
         self.actions = actions
         self.onSelectSource = onSelectSource
         self.onSelectVersion = onSelectVersion
@@ -136,6 +141,7 @@ public struct PlaybackSourceMenuButton<Label: View>: View {
                 state: state, sources: sources, selectedSourceID: selectedSourceID,
                 offlineSourceAccountIDs: offlineSourceAccountIDs,
                 versions: versions, selectedVersionID: selectedVersionID,
+                loadVersions: loadVersions,
                 onSelectSource: onSelectSource, onSelectVersion: onSelectVersion,
                 onPerformAction: onPerformAction, onDismiss: onDismiss
             )
@@ -148,6 +154,7 @@ private struct PlaybackSourceMenuPresentation: ViewModifier {
     let offlineSourceAccountIDs: Set<String>
     let versions: [MediaVersion]
     let selectedVersionID: String?
+    let loadVersions: MediaVersionInventoryLoader?
     let onSelectSource: (String) -> Void
     let onSelectVersion: (String) -> Void
     let onPerformAction: (String) -> Void
@@ -292,6 +299,7 @@ private struct PlaybackSourceMenuPresentation: ViewModifier {
             offlineSourceAccountIDs: offlineSourceAccountIDs,
             versions: versions.sortedForPicker(),
             selectedVersionID: selectedVersionID,
+            loadVersions: loadVersions,
             actions: state.actions,
             onSelectSource: { id in
                 onSelectSource(id)
@@ -317,7 +325,7 @@ private struct PlaybackSourceMenuPresentation: ViewModifier {
         PlaybackSourceMenuMetrics.panelHeight(
             page: state.page,
             sourceCount: sources.count,
-            versionCount: versions.count,
+            versionCount: loadVersions == nil ? versions.count : max(2, versions.count),
             actionCount: state.actions.count
         )
     }
@@ -348,6 +356,7 @@ struct PlaybackSourceMenuPanel: View {
     var offlineSourceAccountIDs: Set<String> = []
     let versions: [MediaVersion]
     let selectedVersionID: String?
+    var loadVersions: MediaVersionInventoryLoader? = nil
     let actions: [PlaybackSourceMenuAction]
     let onSelectSource: (String) -> Void
     let onSelectVersion: (String) -> Void
@@ -421,6 +430,7 @@ struct PlaybackSourceMenuPanel: View {
             #endif
             .onAppear { focusFirstRow() }
             .onChange(of: page) { _, _ in focusFirstRow() }
+            .onChange(of: versions.map(\.id)) { _, _ in focusFirstRow() }
     }
 
     @ViewBuilder
@@ -524,7 +534,7 @@ struct PlaybackSourceMenuPanel: View {
     @ViewBuilder
     private var rootRows: some View {
         let hasServer = sources.count > 1
-        let hasVersion = versions.count > 1
+        let hasVersion = versions.count > 1 || loadVersions != nil
         if hasServer {
             drillInRow(
                 id: "root.servers",
@@ -662,20 +672,31 @@ struct PlaybackSourceMenuPanel: View {
 
     @ViewBuilder
     private var versionRows: some View {
-        VStack(spacing: 12) {
-            ForEach(versions.sortedForPicker()) { version in
-                let rowID = "version.\(version.id)"
-                MediaVersionChoiceButton(
-                    presentation: .init(version, locale: locale),
-                    isSelected: version.id == selectedVersionID,
-                    isFocused: focusedRowID == rowID
-                ) {
-                    onSelectVersion(version.id)
+        MediaVersionInventoryContent(versions: versions, loadVersions: loadVersions) { inventory in
+            VStack(spacing: 12) {
+                ForEach(inventory.sortedForPicker()) { version in
+                    let rowID = "version.\(version.id)"
+                    MediaVersionChoiceButton(
+                        presentation: .init(version, locale: locale),
+                        isSelected: version.id == selectedVersionID,
+                        isFocused: focusedRowID == rowID
+                    ) {
+                        onSelectVersion(version.id)
+                    }
+                    .focused($focusedRowID, equals: rowID)
+                    .accessibilityIdentifier(rowID)
+                    #if os(tvOS)
+                    .prefersDefaultFocus(rowID == initialRowID, in: panelFocusScope)
+                    #endif
                 }
-                .focused($focusedRowID, equals: rowID)
-                .accessibilityIdentifier(rowID)
+            }
+            .onAppear {
                 #if os(tvOS)
-                .prefersDefaultFocus(rowID == initialRowID, in: panelFocusScope)
+                if let selected = inventory.first(where: { $0.id == selectedVersionID })
+                    ?? inventory.sortedForPicker().first {
+                    focusedRowID = "version.\(selected.id)"
+                    resetFocus(in: panelFocusScope)
+                }
                 #endif
             }
         }
@@ -833,7 +854,7 @@ struct PlaybackSourceMenuPanel: View {
         switch page {
         case .root:
             if sources.count > 1 { return "root.servers" }
-            if versions.count > 1 { return "root.versions" }
+            if versions.count > 1 || loadVersions != nil { return "root.versions" }
             return actions.first.map { "action.\($0.id)" }
         case .servers:
             let source = sources.first { $0.accountID == selectedSourceID } ?? sources.first
@@ -848,7 +869,7 @@ struct PlaybackSourceMenuPanel: View {
         PlaybackSourceMenuMetrics.panelHeight(
             page: page,
             sourceCount: sources.count,
-            versionCount: versions.count,
+            versionCount: loadVersions == nil ? versions.count : max(2, versions.count),
             actionCount: actions.count
         )
     }

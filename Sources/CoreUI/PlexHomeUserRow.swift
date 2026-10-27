@@ -21,7 +21,7 @@ public struct PlexHomeUserAvatar: View {
 }
 
 /// The label content for a single Plex Home user row — a 52pt avatar, the
-/// user's name, and inline badges (Account owner / PIN required), plus an
+/// user's name, and a second line of badges (Account owner / PIN required), plus an
 /// optional trailing selection checkmark. Designed to sit inside a
 /// `Button { } .buttonStyle(SettingsFocusButtonStyle())`, so the Settings Plex-
 /// user picker and the first-run onboarding picker render identically.

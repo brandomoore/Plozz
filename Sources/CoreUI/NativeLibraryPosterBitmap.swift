@@ -231,7 +231,7 @@ enum NativePosterArtworkBitmap {
     static func image(
         source: UIImage?, overlay: UIImage? = nil, size: CGSize, scale: CGFloat,
         backgroundColor: UIColor? = nil, clipsToArtwork: Bool = true,
-        artworkBackground: NativePosterArtworkBackground = .init(),
+        artworkBackground: NativePosterArtworkBackground = .init(), aspectFit: Bool = false,
         drawOverlay: (CGContext) -> Void = { _ in }
     ) -> UIImage? {
         guard size.width.isFinite, size.height.isFinite, scale.isFinite,
@@ -245,6 +245,7 @@ enum NativePosterArtworkBitmap {
         return compose(
             source: source, overlay: overlay, size: size, scale: scale, backgroundColor: backgroundColor,
             clipsToArtwork: clipsToArtwork, dimming: artworkBackground.dimming, gradient: gradient,
+            aspectFit: aspectFit,
             drawOverlay: drawOverlay
         )
     }
@@ -295,7 +296,8 @@ enum NativePosterArtworkBitmap {
 
     static func composeOffMain(
         source: UIImage?, overlay: UIImage?, size: CGSize, scale: CGFloat,
-        backgroundColor: UIColor?, clipsToArtwork: Bool, dimming: CGFloat = 0, gradient: CGGradient? = nil
+        backgroundColor: UIColor?, clipsToArtwork: Bool, dimming: CGFloat = 0, gradient: CGGradient? = nil,
+        aspectFit: Bool = false
     ) async -> UIImage? {
         let cancelled = OSAllocatedUnfairLock(initialState: false)
         return await withTaskCancellationHandler {
@@ -306,7 +308,7 @@ enum NativePosterArtworkBitmap {
                         compose(
                             source: source, overlay: overlay, size: size, scale: scale,
                             backgroundColor: backgroundColor, clipsToArtwork: clipsToArtwork,
-                            dimming: dimming, gradient: gradient
+                            dimming: dimming, gradient: gradient, aspectFit: aspectFit
                         )
                     }
                     continuation.resume(returning: cancelled.withLock { $0 } ? nil : image)
@@ -321,7 +323,7 @@ enum NativePosterArtworkBitmap {
     nonisolated static func compose(
         source: UIImage?, overlay: UIImage?, size: CGSize, scale: CGFloat,
         backgroundColor: UIColor?, clipsToArtwork: Bool, dimming: CGFloat = 0, gradient: CGGradient? = nil,
-        drawOverlay: (CGContext) -> Void = { _ in }
+        aspectFit: Bool = false, drawOverlay: (CGContext) -> Void = { _ in }
     ) -> UIImage {
         #if DEBUG
         compositionCounter.withLock {
@@ -349,7 +351,9 @@ enum NativePosterArtworkBitmap {
                 context.fill(bounds)
             }
             if let source {
-                let ratio = max(size.width / source.size.width, size.height / source.size.height)
+                let ratio = aspectFit
+                    ? min(size.width / source.size.width, size.height / source.size.height)
+                    : max(size.width / source.size.width, size.height / source.size.height)
                 let target = CGSize(width: source.size.width * ratio, height: source.size.height * ratio)
                 source.draw(in: CGRect(
                     x: (size.width - target.width) / 2, y: (size.height - target.height) / 2,
@@ -459,6 +463,7 @@ enum NativePosterBitmapCache {
 @MainActor
 enum NativeLibraryPosterBitmap {
     struct Presentation: Equatable {
+        let preservesArtwork: Bool
         let playback: MediaPlaybackIndicatorState?
         let symbol: MediaArtworkPlaceholder.Symbol
         let title: String? // l10n:content — resolved provider title or spoiler-safe caption
@@ -490,6 +495,7 @@ enum NativeLibraryPosterBitmap {
         }
 
         init(item: MediaItem?, spoilerSettings: SpoilerSettings, environment: EnvironmentValues) {
+            preservesArtwork = item.map { PosterCardPresentation.preservesContainerArtwork(for: $0.kind) } ?? false
             playback = item.map(MediaPlaybackIndicatorState.init)
             symbol = item.map { .init(for: $0) } ?? .playback
             title = environment.plozzCardCaptionsHidden ? item.map {
@@ -589,7 +595,7 @@ enum NativeLibraryPosterBitmap {
         guard let overlay = indicatorLayer(source: source, key: key, environment: environment) else { return nil }
         let image = NativePosterArtworkBitmap.compose(
             source: source, overlay: overlay, size: key.size, scale: key.scale,
-            backgroundColor: .darkGray, clipsToArtwork: false
+            backgroundColor: .darkGray, clipsToArtwork: false, aspectFit: key.presentation.preservesArtwork
         )
         NativePosterBitmapCache.store(image, source: source, key: key)
         return image
@@ -607,7 +613,7 @@ enum NativeLibraryPosterBitmap {
         // Awaited directly rather than detached, so a cell that scrolls away cancels the draw too.
         guard let image = await NativePosterArtworkBitmap.composeOffMain(
             source: source, overlay: overlay, size: key.size, scale: key.scale,
-            backgroundColor: .darkGray, clipsToArtwork: false
+            backgroundColor: .darkGray, clipsToArtwork: false, aspectFit: key.presentation.preservesArtwork
         ),
               !Task.isCancelled else { return nil }
         if NativePosterBitmapCache.purges == purgesBefore {

@@ -141,6 +141,8 @@ public struct PlexClient: Sendable {
     private var resolver: PlexConnectionResolver { routing.resolver.withLock { $0 } }
     private let deviceProfile: PlexDeviceProfile
     private let token: String
+    private let serverID: String?
+    private let cloudTokenResolver: (@Sendable () async throws -> String?)?
     /// Token for **plex.tv Discover** calls (watchlist, Discover metadata,
     /// people) as opposed to per-server ones.
     ///
@@ -212,6 +214,8 @@ public struct PlexClient: Sendable {
         baseURL: URL,
         deviceProfile: PlexDeviceProfile,
         token: String,
+        serverID: String? = nil,
+        cloudTokenResolver: (@Sendable () async throws -> String?)? = nil,
         discoverToken: String? = nil,
         http: HTTPClient = URLSessionHTTPClient(),
         interactiveHTTP: HTTPClient? = nil,
@@ -222,6 +226,8 @@ public struct PlexClient: Sendable {
             resolver: PlexConnectionResolver(candidates: [baseURL], deviceProfile: deviceProfile, token: token),
             deviceProfile: deviceProfile,
             token: token,
+            serverID: serverID,
+            cloudTokenResolver: cloudTokenResolver,
             discoverToken: discoverToken,
             http: http,
             interactiveHTTP: interactiveHTTP,
@@ -247,6 +253,8 @@ public struct PlexClient: Sendable {
         resolver: PlexConnectionResolver,
         deviceProfile: PlexDeviceProfile,
         token: String,
+        serverID: String? = nil,
+        cloudTokenResolver: (@Sendable () async throws -> String?)? = nil,
         discoverToken: String? = nil,
         http: HTTPClient = URLSessionHTTPClient(),
         interactiveHTTP: HTTPClient? = nil,
@@ -256,6 +264,8 @@ public struct PlexClient: Sendable {
         self.routing = Routing(resolver)
         self.deviceProfile = deviceProfile
         self.token = token
+        self.serverID = serverID
+        self.cloudTokenResolver = cloudTokenResolver
         self.discoverToken = discoverToken
         self.http = http
         // Falls back to `http` when no dedicated foreground client is supplied, so
@@ -419,8 +429,22 @@ public struct PlexClient: Sendable {
     /// `GET /library/sections` — top-level libraries.
     func sections() async throws -> [PlexDirectory] {
         let endpoint = Endpoint(path: "/library/sections", headers: headers)
-        return try await decode(PlexMediaContainerResponse.self, endpoint)
-            .MediaContainer.Directory ?? []
+        do {
+            return try await decode(PlexMediaContainerResponse.self, endpoint)
+                .MediaContainer.Directory ?? []
+        } catch AppError.unauthorized {
+            guard let serverID else { throw AppError.unauthorized }
+            let auth = PlexAuthClient(deviceProfile: deviceProfile, http: http)
+            let cloudToken = try await cloudTokenResolver?() ?? plexTVToken
+            try Task.checkCancellation()
+            let grant = try await auth.serverAccessToken(forServerID: serverID, authToken: cloudToken)
+            try Task.checkCancellation()
+            let currentCloudToken = try await cloudTokenResolver?() ?? plexTVToken
+            guard currentCloudToken == cloudToken else { throw CancellationError() }
+            guard grant == nil else { throw AppError.unauthorized }
+            PlozzLog.auth.info("Plex cloud confirmed no server libraries are shared with the signed-in user")
+            return []
+        }
     }
 
     /// `GET /library/onDeck` — Continue Watching.

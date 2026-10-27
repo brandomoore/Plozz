@@ -2,22 +2,13 @@ import Foundation
 
 /// Process-wide memo of trailer resolution outcomes, keyed by library item id.
 ///
-/// Resolving a playable trailer is expensive (YouTube extraction + a byte-reach
-/// check, and sometimes a keyless search). Without a cache, every visit to a
-/// detail page — and every re-focus that reloads it — pays that cost again, which
-/// is the main reason the Trailer button used to take 5–10s to appear. Caching
-/// the *outcome* makes a revisited page resolve its button instantly, and lets a
-/// background verification done once stick for the session.
-///
-/// Only the keyless-trailer *decision* is cached (a working YouTube id, or "no
-/// playable trailer"); local server trailers aren't cached because they're cheap
-/// (no network) and provider-owned. Thread-safe so a background verification task
-/// can record into it.
+/// Caches metadata-supplied external links, not extracted media or playback availability.
+/// Provider-owned trailer files are resolved separately on every visit.
 public final class TrailerResolutionCache: @unchecked Sendable {
     public enum Outcome: Equatable, Codable {
-        /// A YouTube video id verified (or optimistically chosen) as the trailer.
+        /// A YouTube video id selected from trailer metadata.
         case working(String)
-        /// No playable trailer exists for this item — hide the button.
+        /// No external trailer link was found.
         case none
     }
 
@@ -37,7 +28,7 @@ public final class TrailerResolutionCache: @unchecked Sendable {
     private var loaded = false
 
     /// Schema-versioned filename; bump if `Outcome` coding changes.
-    private static let cacheFileName = "plozz-trailer-cache-v1.json"
+    private static let cacheFileName = "plozz-trailer-links-v2.json"
 
     /// In-memory only (no persistence) — the default for tests so instances stay
     /// isolated. Use `.shared` (or `init(directory:)`) for the persistent cache.
@@ -62,7 +53,8 @@ public final class TrailerResolutionCache: @unchecked Sendable {
     public func record(_ outcome: Outcome, for itemID: String) {
         lock.lock()
         loadIfNeeded()
-        store[itemID] = Entry(outcome: outcome, expires: Date().addingTimeInterval(ttl))
+        let lifetime = outcome == .none ? min(ttl, 10 * 60) : ttl
+        store[itemID] = Entry(outcome: outcome, expires: Date().addingTimeInterval(lifetime))
         let snapshot = store
         let url = fileURL
         lock.unlock()

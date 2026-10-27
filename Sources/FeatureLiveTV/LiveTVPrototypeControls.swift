@@ -190,6 +190,68 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
         }
     }
 }
+
+struct PrototypeToolbarBottomReader: UIViewControllerRepresentable {
+    let onChange: (CGFloat) -> Void
+
+    func makeUIViewController(context: Context) -> PrototypeToolbarBottomController {
+        PrototypeToolbarBottomController()
+    }
+
+    func updateUIViewController(_ controller: PrototypeToolbarBottomController, context: Context) {
+        controller.onChange = onChange
+        controller.reportControlsBottom()
+    }
+}
+
+final class PrototypeToolbarBottomController: UIViewController {
+    var onChange: ((CGFloat) -> Void)?
+    private var lastBottom: CGFloat?
+    private var updatePending = false
+
+    override func loadView() {
+        view = UIView()
+        view.isUserInteractionEnabled = false
+        view.accessibilityElementsHidden = true
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        reportControlsBottom()
+    }
+
+    func reportControlsBottom() {
+        guard !updatePending else { return }
+        updatePending = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            updatePending = false
+            guard let bar = navigationController?.navigationBar,
+                  let window = view.window else { return }
+            // Native toolbar buttons discard SwiftUI background geometry readers.
+            // Read their public accessibility bounds in the shared window instead.
+            func bottoms(in container: UIView) -> [CGFloat] {
+                guard !container.isHidden, container.alpha > 0 else { return [] }
+                if container is UIControl, container.isAccessibilityElement {
+                    let frame = window.convert(container.accessibilityFrame, from: window.screen.coordinateSpace)
+                    return frame.isEmpty ? [] : [frame.maxY]
+                }
+                return container.subviews.flatMap { bottoms(in: $0) }
+            }
+            let barFrame = bar.convert(bar.bounds, to: window)
+            let bottom: CGFloat
+            if bar.isHidden || barFrame.height > barFrame.width {
+                bottom = window.safeAreaInsets.top
+            } else {
+                guard let controlsBottom = bottoms(in: bar).max() else { return }
+                bottom = controlsBottom
+            }
+            guard bottom != lastBottom else { return }
+            lastBottom = bottom
+            onChange?(bottom)
+        }
+    }
+}
 #endif
 
 private struct PrototypeToolbarLabelStyle: LabelStyle {

@@ -41,6 +41,7 @@ public struct DetailOpenEnvironment {
     /// External ratings (IMDb/RT/Metacritic) provider for live enrichment.
     public let ratingsProvider: any ExternalRatingsProviding
     public let detailMetadataResolver: @Sendable (MediaItem) async -> MetadataEnrichment
+    public let onlineTrailerResolver: OnlineTrailerResolving
     /// Refreshes a discovery (Seerr) title's request/availability. `nil` when Seerr
     /// isn't wired.
     public let discoveryStatusRefresh: (@Sendable (MediaItem) async -> MediaRequestAvailability?)?
@@ -64,6 +65,7 @@ public struct DetailOpenEnvironment {
         continueWatchingSnapshot: @escaping @MainActor () -> [MediaItem] = { [] },
         ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
         detailMetadataResolver: @escaping @Sendable (MediaItem) async -> MetadataEnrichment = { _ in MetadataEnrichment() },
+        onlineTrailerResolver: @escaping OnlineTrailerResolving = ItemDetailViewModel.defaultOnlineTrailerResolver,
         discoveryStatusRefresh: (@Sendable (MediaItem) async -> MediaRequestAvailability?)? = nil,
         loadSeasonEpisodeRoster:
             (@Sendable (MediaItem, Int) async -> SeasonEpisodeRosterResult)? = nil,
@@ -78,6 +80,7 @@ public struct DetailOpenEnvironment {
         self.crossServerSourceResolver = crossServerSourceResolver
         self.ratingsProvider = ratingsProvider
         self.detailMetadataResolver = detailMetadataResolver
+        self.onlineTrailerResolver = onlineTrailerResolver
         self.discoveryStatusRefresh = discoveryStatusRefresh
         self.loadSeasonEpisodeRoster = loadSeasonEpisodeRoster
         self.makeRelatedTitlesLoader = makeRelatedTitlesLoader
@@ -297,6 +300,7 @@ public struct DetailOpenEnvironment {
             detailMetadataResolver: detailMetadataResolver,
             sourceAccountID: isDiscovery ? nil : selectedSource?.accountID ?? item.sourceAccountID ?? libraryOrigin,
             originSourceAccountID: libraryOrigin,
+            onlineTrailerResolver: onlineTrailerResolver,
             initialSources: sources,
             alternateProviderResolver: resolveOptionalProvider,
             crossServerSourceResolver: crossServerSourceResolver,
@@ -370,6 +374,7 @@ public struct DetailOpenEnvironment {
             detailMetadataResolver: detailMetadataResolver,
             sourceAccountID: sourceAccountID ?? originAccountID,
             originSourceAccountID: originAccountID,
+            onlineTrailerResolver: onlineTrailerResolver,
             alternateProviderResolver: resolveOptionalProvider,
             crossServerSourceResolver: crossServerSourceResolver,
             identitySources: identitySources,

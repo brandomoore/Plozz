@@ -9,9 +9,15 @@ struct ViewCustomizationHelp {
     var continueWatchingShowsSeriesArtwork = true
     var continueWatchingLayout: ContinueWatchingCardLayout = .landscape
 
+    var isPageCaptions: Bool {
+        if case .pageCaptions = illustration { return true }
+        return false
+    }
+
     enum Illustration: Hashable {
         case artwork(ArtworkArea)
         case captions(style: CardStyle, showsCaptions: Bool, showsMixedCaptions: Bool)
+        case pageCaptions(CardLabelScopePreview.Snapshot, style: CardStyle)
     }
 }
 
@@ -33,13 +39,22 @@ struct ViewCustomizationHelpCard: View {
         }
         .id(help.illustration)
         .transition(.opacity)
-        .frame(height: contentHeight)
+        .frame(height: help.isPageCaptions ? nil : contentHeight)
+        .frame(minHeight: contentHeight)
         .padding(24)
         .settingsGroupSurface(cornerRadius: PlozzTheme.Metrics.Radius.content)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: help.illustration)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(help.detail))
+        .accessibilityLabel(accessibilitySummary)
         .accessibilityIdentifier("view-customization-help")
+    }
+
+    private var accessibilitySummary: Text {
+        var text = Text(help.detail)
+        if case .pageCaptions(let preview, _) = help.illustration {
+            text = text + Text(verbatim: ". ") + preview.accessibilitySummary
+        }
+        return text
     }
 
     @ViewBuilder
@@ -63,6 +78,13 @@ struct ViewCustomizationHelpCard: View {
                 showsCaptions: showsCaptions, showsMixedCaptions: showsMixedCaptions
             )
             .frame(width: 256, height: 144)
+        case .pageCaptions(let preview, let style):
+            CardLabelScopePreview(preview: preview, style: style)
+                #if os(tvOS)
+                .frame(width: CardLabelScopePreview.illustrationWidth)
+                #else
+                .frame(width: 280)
+                #endif
         }
     }
 
@@ -187,15 +209,24 @@ struct ArtworkScopeDiagram: View {
             chrome = [Region(94, 8, 132, 12, kind: .navigation)]
         }
 
+        let metrics = PlozzMetrics(density: .standard)
+        let posterGapRatio = SettingsIllustrationCardGeometry.visibleGap(metrics: metrics, style: .borderless)
+            / metrics.posterWidth
+        let posterWidth = min((320 - leading - 12) / (6 + 5 * posterGapRatio), 40)
+        let posterPitch = posterWidth * (1 + posterGapRatio)
+        let landscapePitch = 80 * (1 + SettingsIllustrationCardGeometry.visibleGap(metrics: metrics, style: .borderless)
+            / metrics.landscapeWidth)
+
         func posters(y: CGFloat, highlighted: Bool) -> [Region] {
             (0..<6).map { column in
-                Region(leading + CGFloat(column) * 44, y, 28, 42, highlighted: highlighted, kind: .poster)
+                Region(leading + CGFloat(column) * posterPitch, y, posterWidth, posterWidth * 1.5,
+                       highlighted: highlighted, kind: .poster)
             }
         }
 
         func thumbnails(y: CGFloat, highlighted: Bool, kind: ArtworkKind) -> [Region] {
             (0..<3).map { column in
-                Region(leading + CGFloat(column) * 90, y, 80, 45, highlighted: highlighted, kind: kind)
+                Region(leading + CGFloat(column) * landscapePitch, y, 80, 45, highlighted: highlighted, kind: kind)
             }
         }
 
@@ -221,20 +252,21 @@ struct ArtworkScopeDiagram: View {
                 ]
                 if area == .home { return result }
             } else {
-                result = chrome + posters(y: 50, highlighted: area == .homeRows)
+                result = chrome + posters(y: 42, highlighted: area == .homeRows)
                 if area != .continueWatching {
-                    return result + posters(y: 120, highlighted: area == .homeRows)
+                    return result + posters(y: 110, highlighted: area == .homeRows)
                 }
             }
             if area == .continueWatching {
                 if continueWatchingLayout == .portrait {
                     result += (0..<6).map {
-                        Region(leading + CGFloat($0) * 44, 126, 28, 28 / continueWatchingPlaybackDetails.cardAspectRatio,
+                        Region(leading + CGFloat($0) * posterPitch, 100, posterWidth,
+                               posterWidth / continueWatchingPlaybackDetails.cardAspectRatio,
                                highlighted: true, kind: .portraitSeriesCard)
                     }
                 } else if continueWatchingShowsSeriesArtwork {
                     result += (0..<3).map {
-                        Region(leading + CGFloat($0) * 90, 116, 80, 80 / ContinueWatchingCardShape.aspectRatio,
+                        Region(leading + CGFloat($0) * landscapePitch, 116, 80, 80 / ContinueWatchingCardShape.aspectRatio,
                                highlighted: true, kind: .seriesCard)
                     }
                 } else {
@@ -242,19 +274,19 @@ struct ArtworkScopeDiagram: View {
                 }
                 if continueWatchingLayout == .portrait {
                     result += (0..<6).map {
-                        Region(leading + 3 + CGFloat($0) * 44,
-                               126 + 28 / continueWatchingPlaybackDetails.cardAspectRatio - 4, 22, 2)
+                        Region(leading + 3 + CGFloat($0) * posterPitch,
+                               100 + posterWidth / continueWatchingPlaybackDetails.cardAspectRatio - 5, posterWidth - 6, 2)
                     }
                 } else {
-                    result += (0..<3).map { Region(leading + 5 + CGFloat($0) * 90, 164, 47, 3) }
+                    result += (0..<3).map { Region(leading + 5 + CGFloat($0) * landscapePitch, 164, 47, 3) }
                 }
             } else {
-                result += posters(y: 126, highlighted: !highlightsHero)
+                result += posters(y: 110, highlighted: !highlightsHero)
             }
             return result
         case .browse, .collections, .playlists, .search, .watchlist:
             return chrome + [Region(leading, 36, area == .search ? 220 : 100, 8)]
-                + posters(y: 60, highlighted: true) + posters(y: 120, highlighted: true)
+                + posters(y: 50, highlighted: true) + posters(y: 58 + posterWidth * 1.5, highlighted: true)
         case .details, .episodes:
             let details = area == .details
             let background = Region(0, 0, 320, 180, highlighted: details, kind: .backdrop)
@@ -266,13 +298,14 @@ struct ArtworkScopeDiagram: View {
                 ]
             }
             return [
-                background, Region(110, 12, 100, 30, highlighted: details, kind: .logo),
-                Region(104, 48, 32, 8), Region(144, 48, 32, 8), Region(184, 48, 32, 8)
+                background, Region(16, 24, 104, 20, highlighted: details, kind: .logo),
+                Region(16, 53, 78, 4), Region(16, 64, 152, 4), Region(16, 74, 132, 4),
+                Region(16, 88, 40, 12), Region(64, 88, 12, 12)
             ] + (0..<3).flatMap { column -> [Region] in
-                let x = 16 + CGFloat(column) * 98
+                let x = 16 + CGFloat(column) * 94
                 return [
-                    Region(x, 70, 88, 49.5, highlighted: !details, kind: .episode),
-                    Region(x, 128, 62, 5), Region(x, 141, 82, 4), Region(x, 153, 73, 4)
+                    Region(x, 112, 88, 49.5, highlighted: !details, kind: .episode),
+                    Region(x, 166, 62, 3), Region(x, 173, 44, 2)
                 ]
             }
         case .playback:
@@ -300,10 +333,10 @@ struct ArtworkScopeDiagram: View {
                 + (0..<4).map { Region(12 + CGFloat($0) * 76, 136, 68, 38.25) }
         case .downloads:
             return (0..<4).flatMap { index -> [Region] in
-                let x = 20 + CGFloat(index % 2) * 160
-                let y = 12 + CGFloat(index / 2) * 86
-                return [Region(x, y, 112, 63, highlighted: true, kind: .thumbnail),
-                        Region(x, y + 69, 94, 5)]
+                let x = 16 + CGFloat(index % 2) * 152
+                let y = 8 + CGFloat(index / 2) * 88
+                return [Region(x, y, 136, 76.5, highlighted: true, kind: .thumbnail),
+                        Region(x, y + 80, 94, 3)]
             }
         }
     }

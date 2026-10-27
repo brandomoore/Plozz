@@ -553,7 +553,7 @@ final class JellyfinStreamingQualityTests: XCTestCase {
             let client = JellyfinClient(
                 baseURL: URL(string: "https://fixture.test")!,
                 deviceProfile: .init(deviceID: "fixture"),
-                providerKind: .emby, http: StreamingErrorHTTP(status: status)
+                providerKind: .emby, http: StreamingErrorHTTP(status: status), playbackRequests: .init()
             )
             do {
                 _ = try await client.playbackInfo(userID: "user", itemID: "movie", streaming: .init(quality: .hd720))
@@ -615,7 +615,7 @@ final class JellyfinStreamingQualityTests: XCTestCase {
         let provider = JellyfinProvider(session: .init(
             server: .init(id: "server", name: "Server", baseURL: URL(string: "https://media.example.test")!, provider: kind),
             userID: "user", userName: "User", deviceID: "device", accessToken: "fixture"
-        ), http: http)
+        ), http: http, playbackRequests: .init())
         return (provider, http)
     }
 

@@ -178,11 +178,13 @@ struct PlozziOSItemDetailView: View {
 }
 
 private struct PlozziOSCanonicalItemDetailView: View {
+    @State private var trailerOpening = YouTubeTrailerOpening()
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.themePalette) private var palette
     @Environment(HeroTrailerController.self) private var trailerController
+    @Environment(\.themeMusicController) private var themeMusicController
     @Environment(PlozziOSAppModel.self) private var appModel
     /// Pushes another title from the Related row. Read here rather than only in a
     /// subview because a `navigationDestination` is hosted by the stack, so it
@@ -302,6 +304,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
                 sourceAccountID: selectedSource?.accountID ?? item.sourceAccountID,
                 originSourceAccountID: originSourceAccountID,
+                onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
                 initialSources: initialSources,
                 alternateProviderResolver: { accountID in
                     appModel.accountsProviders.provider(forAccountID: accountID)
@@ -353,19 +356,28 @@ private struct PlozziOSCanonicalItemDetailView: View {
         }
         .artworkGradientBackground(scope: ObjectIdentifier(viewModel), isVisible: isPageVisible)
         .background(palette.backgroundBase.ignoresSafeArea())
-        .onAppear { isPageVisible = true }
-        .onDisappear { isPageVisible = false }
+        .onAppear {
+            isPageVisible = true
+            viewModel.resumeEnrichmentIfNeeded()
+        }
+        .onDisappear {
+            isPageVisible = false
+            viewModel.suspendEnrichment()
+        }
+        .themeMusicPlayback(
+            playbackID: viewModel.themeMusicPlaybackID,
+            source: viewModel.currentSourceForDisplay,
+            isActive: isPageVisible && playbackRequest == nil
+        )
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if trailerController.isPlaying,
-                   trailerController.activeSurfaceRole == .detail,
-                   trailerController.currentItemID == viewModel.state.value?.item.id {
-                    PlozziOSTrailerMuteToolbarButton(
-                        isMuted: trailerController.isMuted,
-                        onToggle: trailerController.toggleMuted
-                    )
-                }
+                PlozziOSDetailAudioMuteControl(
+                    trailer: trailerController, themeMusic: themeMusicController,
+                    itemID: viewModel.state.value?.item.id,
+                    themePlaybackID: viewModel.themeMusicPlaybackID,
+                    isActive: isPageVisible && playbackRequest == nil
+                )
 
                 if let detail = viewModel.state.value {
                     if seriesDownloadPresentation(for: detail).isVisible {
@@ -448,6 +460,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
             seriesHeroShowsSeries = false
         }
         .modifier(requestPresentation(inDownloadSheet: false))
+        .youTubeTrailerOpeningFailures(trailerOpening)
         .alert("Couldn't load versions", isPresented: Binding(
             get: { viewModel.playbackInventoryRetryError != nil },
             set: { if !$0 { viewModel.playbackInventoryRetryError = nil } }
@@ -537,6 +550,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     onSelectVersion: {
                         selectVersion($0, for: versionTarget)
                     },
+                    loadVersions: viewModel.playbackVersionsLoader(for: versionTarget),
                     actionHandler: appModel.mediaItemActionHandler,
                     // Re-resolve the play target at FIRE time rather than using
                     // the one captured when the body was evaluated. A tap that
@@ -788,6 +802,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     private func detailPlaybackOptions(
         for item: MediaItem
     ) -> DetailPlaybackOptions {
+        let item = viewModel.episodeWithEnrichedBadges(item)
         let available = availableSources
         let source = DetailPlaybackSelection.preferredSource(
             sourceOverride: sourceOverride,
@@ -933,7 +948,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 versions: versions,
                 selectedVersionID: versionID,
                 onSelectSource: selectSource,
-                onSelectVersion: { selectVersion($0, for: item) }
+                onSelectVersion: { selectVersion($0, for: item) },
+                loadVersions: viewModel.playbackVersionsLoader(for: item)
             )
         }
     }
@@ -964,6 +980,10 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private func play(_ item: MediaItem, fromBeginning: Bool = false) {
+        if item.isYouTubeTrailer {
+            Task { await trailerOpening.open(item) }
+            return
+        }
         let origin = playlistOrigin?.containsSelection(item) == true ? playlistOrigin : nil
         let playlist: VideoPlaylistPlaybackContext?
         if let origin {
@@ -1356,6 +1376,7 @@ private struct PlozziOSSourceVersionControls: View {
     let selectedVersionID: String?
     let onSelectSource: (String) -> Void
     let onSelectVersion: (String) -> Void
+    var loadVersions: MediaVersionInventoryLoader? = nil
     @State private var isVersionPickerPresented = false
 
     var body: some View {
@@ -1378,12 +1399,12 @@ private struct PlozziOSSourceVersionControls: View {
                 .buttonStyle(.bordered)
             }
 
-            if versions.count > 1, let selectedVersion {
+            if versions.count > 1 || loadVersions != nil {
                 Button {
                     isVersionPickerPresented = true
                 } label: {
                     Label {
-                        versionTitleText(selectedVersion.displayLabel)
+                        versionTitleText(selectedVersion?.displayLabel)
                     } icon: {
                         Image(systemName: "film.stack")
                     }
@@ -1394,12 +1415,20 @@ private struct PlozziOSSourceVersionControls: View {
                     attachmentAnchor: .rect(.bounds),
                     arrowEdge: .top
                 ) {
-                    PlozziOSVersionPickerPopover(
-                        versions: versions.sortedForPicker(),
-                        selectedVersionID: selectedVersion.id,
-                        onSelectVersion: onSelectVersion
-                    )
-                    .presentationCompactAdaptation(.popover)
+                    if let loadVersions {
+                        MediaVersionPicker(
+                            versions: versions, selectedVersionID: selectedVersionID,
+                            loadVersions: loadVersions, onSelect: onSelectVersion
+                        )
+                        .presentationCompactAdaptation(.popover)
+                    } else if let selectedVersion {
+                        PlozziOSVersionPickerPopover(
+                            versions: versions.sortedForPicker(),
+                            selectedVersionID: selectedVersion.id,
+                            onSelectVersion: onSelectVersion
+                        )
+                        .presentationCompactAdaptation(.popover)
+                    }
                 }
             }
         }

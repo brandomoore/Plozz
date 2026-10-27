@@ -13,7 +13,6 @@ import MetadataKit
 import FeatureSearch
 import FeatureSettings
 import FeatureProfiles
-import ProviderTrailers
 import RatingsService
 import TraktService
 import SeerService
@@ -49,6 +48,7 @@ private struct PlaylistDetailRoute: Hashable {
 /// full-screen player presentation. Every destination resolves its provider from
 /// the tapped item/library's `sourceAccountID`.
 struct HomeTab: View {
+    @State private var trailerOpening = YouTubeTrailerOpening()
     /// The app's effective language, injected by `AppLanguageScope`. Read here
     /// only to hand to the Top Shelf publisher: that snapshot crosses into
     /// another process, so its titles have to be resolved on this side.
@@ -228,6 +228,7 @@ struct HomeTab: View {
         runtime.homeViewModel.value(forKey: runtime.scopeKey) {
             HomeViewModel(
                 accounts: accounts,
+                profileNamespace: libraryPreferencesNamespace,
                 layoutStore: homeLayoutStore,
                 contentStore: homeContentStore,
                 identitySources: identitySources,
@@ -489,6 +490,7 @@ struct HomeTab: View {
                 itemDetail(for: item, libraryOrigin: nil)
             }
             .onChange(of: pendingTitleRoute) { _, _ in consumePendingTitleRoute() }
+            .youTubeTrailerOpeningFailures(trailerOpening)
             .onChange(of: artworkPolicy.forArea(.topShelf).identity) { _, _ in
                 if case .home = root { sharedHomeViewModel.publishCurrentContent() }
             }
@@ -1127,6 +1129,7 @@ struct HomeTab: View {
             continueWatchingSnapshot: { runtime.continueWatchingForDetail },
             ratingsProvider: ratingsProvider,
             detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
+            onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
             discoveryStatusRefresh: { await seer.requestAvailability(for: $0) },
             loadSeasonEpisodeRoster: { await seer.seasonEpisodeRoster(for: $0, seasonNumber: $1) },
             makeRelatedTitlesLoader: {
@@ -1241,6 +1244,10 @@ struct HomeTab: View {
     private func requestPlay(
         _ item: MediaItem, playlistOrigin: VideoPlaylistPlaybackOrigin? = nil
     ) {
+        if item.isYouTubeTrailer {
+            Task { await trailerOpening.open(item) }
+            return
+        }
         let origin = playlistOrigin?.containsSelection(item) == true ? playlistOrigin : nil
         let target = origin == nil
             ? bestSourcePlayItem(item, accounts: accounts, identitySources: identitySources)

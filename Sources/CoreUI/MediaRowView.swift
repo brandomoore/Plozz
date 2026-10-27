@@ -205,7 +205,6 @@ public struct MediaRowView: View {
     @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.plozzArtworkPolicy) private var presentationArtworkPolicy
-    @Environment(\.plozzRowTitleTightening) private var titleTightening
     /// Keeps branch-specific masking completely out of native navigation styles.
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     #if os(tvOS)
@@ -549,13 +548,10 @@ public struct MediaRowView: View {
 
     public var body: some View {
         if !items.isEmpty || !liveChannels.isEmpty || loadingPlaceholderCount > 0 || episodeEntry != nil || onSeeAll != nil {
-            VStack(alignment: .leading, spacing: layoutMetrics.sectionTitleSpacing - titleTightening) {
-                if let title {
-                    MediaRowHeader(
-                        title: title, leadingInset: leadingInset,
-                        onSeeAll: onSeeAll, onFocusEntered: onFocusEntered
-                    )
-                }
+            MediaRowSection(
+                title: title, leadingInset: leadingInset, spacing: layoutMetrics.sectionTitleSpacing,
+                onSeeAll: onSeeAll, onFocusEntered: onFocusEntered
+            ) {
                 if items.isEmpty && loadingPlaceholderCount == 0 && onSeeAll != nil {
                     Text("No titles in this collection.")
                         .plozzForeground(.secondary)

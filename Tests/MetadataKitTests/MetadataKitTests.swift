@@ -280,7 +280,59 @@ final class MetadataKitTests: XCTestCase {
             TMDbMetadataProvider.Image(file_path: "/vector.svg", iso_639_1: "en", vote_average: 10),
             TMDbMetadataProvider.Image(file_path: "/logo.png", iso_639_1: "en", vote_average: 5)
         ]
-        XCTAssertEqual(TMDbMetadataProvider.bestLogoPath(logos), "/vector.png")
+        XCTAssertEqual(TMDbMetadataProvider.bestLogoPath(logos, preferredLanguage: "en"), "/vector.png")
+    }
+
+    func testLogoPrefersAppLanguageThenNeutralThenEnglish() {
+        let french = TMDbMetadataProvider.Image(file_path: "/fr.svg", iso_639_1: "fr", vote_average: 1)
+        let english = TMDbMetadataProvider.Image(file_path: "/en.png", iso_639_1: "en", vote_average: 10)
+        let neutral = TMDbMetadataProvider.Image(file_path: "/neutral.png", iso_639_1: nil, vote_average: 5)
+        let german = TMDbMetadataProvider.Image(file_path: "/de.png", iso_639_1: "de", vote_average: 20)
+        XCTAssertEqual(TMDbMetadataProvider.bestLogoPath(
+            [english, neutral, french, german], preferredLanguage: "fr-CA"
+        ), "/fr.png")
+        XCTAssertEqual(TMDbMetadataProvider.bestLogoPath(
+            [english, neutral, german], preferredLanguage: "fr"
+        ), "/neutral.png")
+        XCTAssertEqual(TMDbMetadataProvider.bestLogoPath(
+            [english, german], preferredLanguage: "fr"
+        ), "/en.png")
+        XCTAssertEqual(TMDbMetadataProvider.bestLogoPath([german], preferredLanguage: "fr"), "/de.png")
+    }
+
+    func testLogoCacheSeparatesLanguagesButKeepsOtherArtworkShared() {
+        let query = MetadataQuery(item(kind: .episode, providerIDs: ["SeriesTmdb": "42"]))
+        let french = query.forArtworkLanguage("fr-CA")
+        let english = query.forArtworkLanguage("en-US")
+        XCTAssertNotEqual(french, english)
+        XCTAssertEqual(french, query.forArtworkLanguage("fr-FR"))
+        XCTAssertEqual(french.seriesScoped.artworkLanguage, "fr")
+        XCTAssertEqual(french.offering(episodeHints: [], titleAlternates: []).artworkLanguage, "fr")
+        XCTAssertNotEqual(french.cacheKey(for: .logo), english.cacheKey(for: .logo))
+        XCTAssertNotEqual(
+            ArtworkRouter.providerCacheKey(query: french, kind: .logo, source: .tmdb),
+            ArtworkRouter.providerCacheKey(query: english, kind: .logo, source: .tmdb)
+        )
+        for kind in [ArtworkKind.poster, .hero, .thumbnail] {
+            XCTAssertEqual(french.cacheKey(for: kind), english.cacheKey(for: kind))
+        }
+    }
+
+    func testLogoLookupUsesRequestedLanguage() async {
+        let provider = TMDbMetadataProvider(
+            access: .proxy(baseURL: URL(string: "https://metadata.example")!),
+            imagesRequest: { _, _ in
+                .init(backdrops: nil, logos: [
+                    .init(file_path: "/fr.svg", iso_639_1: "fr", vote_average: 1),
+                    .init(file_path: "/en.png", iso_639_1: "en", vote_average: 10)
+                ], posters: nil)
+            }
+        )
+        let query = MetadataQuery(item(kind: .episode, providerIDs: ["SeriesTmdb": "42"]))
+        let french = await provider.artworkURL(.logo, for: query.forArtworkLanguage("fr"))
+        let english = await provider.artworkURL(.logo, for: query.forArtworkLanguage("en"))
+        XCTAssertEqual(french?.lastPathComponent, "fr.png")
+        XCTAssertEqual(english?.lastPathComponent, "en.png")
     }
 
     func testBestLogoKeepsHigherRatedRasterAndStableTies() {

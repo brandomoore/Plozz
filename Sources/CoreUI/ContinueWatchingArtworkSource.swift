@@ -35,7 +35,7 @@ public struct ContinueWatchingArtworkSource: Sendable {
     public var identity: String {
         [
             pinIdentity, style == .poster ? "poster" : "landscape",
-            policy.identity, policy.settings.preference(in: .continueWatching).rawValue,
+            policy.forPlacement(.logo).identity, policy.settings.preference(in: .continueWatching).rawValue,
             allowsFallback ? "fallback" : "local-only",
             MetadataQuery(item.kind == .episode ? ArtworkRouter.seriesArtworkItem(for: item) : item).cacheKey(for: .hero),
             references(textlessBackdrop: nil).map(\.privacySafeIdentity).joined(separator: "\n"),
@@ -76,11 +76,11 @@ public struct ContinueWatchingArtworkSource: Sendable {
     func logoFallback(background: Bool = false) -> HeroLogoFallback? {
         guard allowsFallback else { return nil }
         let target = item.kind == .episode ? ArtworkRouter.seriesArtworkItem(for: item) : item
-        return HeroLogoFallback(for: target) {
+        return HeroLogoFallback(for: target, localizedResolve: { language in
             await ArtworkSession.resolveArtwork(background: background) {
-                await router.artworkURL(.logo, for: target)
+                await router.artworkURL(.logo, for: target, language: language)
             }
-        }
+        })
     }
 
     @MainActor

@@ -2,6 +2,7 @@
 import CoreModels
 import CoreNetworking
 import CoreUI
+import FeaturePlayback
 import Observation
 import SwiftUI
 import UIKit
@@ -13,7 +14,38 @@ public enum PlozziOSWindowOrientation {
 
     public static func supportedOrientations(for window: UIWindow?) -> UIInterfaceOrientationMask {
         guard let window else { return .all }
-        return owners.object(forKey: window)?.supportedInterfaceOrientations ?? .all
+        var controller = window.rootViewController
+        var presentedPlayer: PlozziOSOrientationHostingController?
+        while let current = controller {
+            if let player = current as? PlozziOSOrientationHostingController, !player.isBeingDismissed {
+                presentedPlayer = player
+            }
+            controller = current.presentedViewController
+        }
+        return presentedPlayer?.supportedInterfaceOrientations
+            ?? owners.object(forKey: window)?.supportedInterfaceOrientations
+            ?? browsingMask(for: window.traitCollection.userInterfaceIdiom, windowSize: window.bounds.size)
+    }
+
+    static func browsingMask(for idiom: UIUserInterfaceIdiom, windowSize: CGSize = .zero) -> UIInterfaceOrientationMask {
+        usesCompactPhonePolicy(idiom: idiom, windowSize: windowSize) ? .portrait : .all
+    }
+
+    static func usesCompactPhonePolicy(idiom: UIUserInterfaceIdiom, windowSize: CGSize) -> Bool {
+        idiom == .phone && min(windowSize.width, windowSize.height) < 600
+    }
+
+    static func restoreOrientation(for window: UIWindow?) {
+        guard let window, window.isKeyWindow,
+              window.rootViewController?.presentedViewController == nil,
+              let scene = window.windowScene, scene.activationState == .foregroundActive else { return }
+        window.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        let mask = supportedOrientations(for: window)
+        guard let current = PlozziOSPlayerOrientation.mask(for: scene.effectiveGeometry.interfaceOrientation),
+              mask.intersection(current).isEmpty else { return }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
+            PlozzLog.playback.error("Restoring browsing orientation failed: \(error.localizedDescription)")
+        }
     }
 
     static func acquire(_ owner: PlozziOSOrientationHostingController, for window: UIWindow) {
@@ -44,7 +76,7 @@ final class PlozziOSPlayerOrientation {
     }
 
     var requestedMask: UIInterfaceOrientationMask {
-        isPlaybackActive ? Self.mask(for: preference) : .all
+        isPlaybackActive ? Self.mask(for: preference) : .portrait
     }
 
     var supportedMask: UIInterfaceOrientationMask { isAvailable ? requestedMask : .all }
@@ -71,7 +103,7 @@ final class PlozziOSPlayerOrientation {
         idiom: UIUserInterfaceIdiom,
         windowSize: CGSize, screenSize: CGSize
     ) -> Bool {
-        guard idiom == .phone else { return false }
+        guard PlozziOSWindowOrientation.usesCompactPhonePolicy(idiom: idiom, windowSize: windowSize) else { return false }
         guard windowSize.width > 0, windowSize.height > 0 else { return false }
         // Compare independently of rotation while UIKit transitions between coordinate spaces.
         return abs(min(windowSize.width, windowSize.height) - min(screenSize.width, screenSize.height)) < 1
@@ -117,7 +149,8 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
     private let requestGeometry: GeometryRequest
     private let currentInterfaceOrientation: @MainActor (UIWindowScene) -> UIInterfaceOrientation
     private weak var orientationWindow: UIWindow?
-    private var precedingOrientation: UIInterfaceOrientation?
+    var onInterfaceOrientationChange: ((UIInterfaceOrientation) -> Void)?
+    private var reportedInterfaceOrientation: UIInterfaceOrientation?
     private var requestGeneration = 0
     private var hasAppeared = false
     private var geometryTask: Task<Void, Error>?
@@ -162,11 +195,38 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
         hasAppeared = true
         refreshAvailability()
         applyOrientation()
+        reportInterfaceOrientation()
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         refreshAvailability()
+        reportInterfaceOrientation()
+    }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: any UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            self?.reportInterfaceOrientation()
+        }
+    }
+
+    var acceptsLiveRotation: Bool {
+        hasAppeared && orientation.isAvailable && !hasPendingPresentation && viewIfLoaded?.window?.isKeyWindow == true
+            && viewIfLoaded?.window?.windowScene?.activationState == .foregroundActive
+    }
+
+    private func reportInterfaceOrientation() {
+        guard acceptsLiveRotation, let scene = view.window?.windowScene else { return }
+        let current = scene.effectiveGeometry.interfaceOrientation
+        guard current != reportedInterfaceOrientation else { return }
+        reportedInterfaceOrientation = current
+        Task { @MainActor [weak self, weak scene] in
+            guard let self, self.hasAppeared, let scene,
+                  scene.activationState == .foregroundActive,
+                  scene.effectiveGeometry.interfaceOrientation == current else { return }
+            self.onInterfaceOrientationChange?(current)
+        }
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -189,18 +249,9 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
     private func releaseWindowOrientation() {
         guard let window = orientationWindow else { return }
         orientationWindow = nil
-        let preceding = precedingOrientation
-        precedingOrientation = nil
         guard PlozziOSWindowOrientation.release(self, for: window) else { return }
         window.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-        guard orientation.isAvailable, orientation.preference != .auto, window.isKeyWindow,
-              window.rootViewController?.presentedViewController == nil,
-              let scene = window.windowScene, scene.activationState == .foregroundActive,
-              let preceding, scene.effectiveGeometry.interfaceOrientation != preceding,
-              let mask = PlozziOSPlayerOrientation.mask(for: preceding) else { return }
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
-            PlozzLog.playback.error("Restoring live guide orientation failed: \(error.localizedDescription)")
-        }
+        PlozziOSWindowOrientation.restoreOrientation(for: window)
     }
 
     private func refreshAvailability() {
@@ -227,7 +278,6 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
             if hasAppeared, orientation.isAvailable, let window = viewIfLoaded?.window {
                 if orientationWindow !== window {
                     releaseWindowOrientation()
-                    precedingOrientation = window.windowScene?.effectiveGeometry.interfaceOrientation
                     orientationWindow = window
                     PlozziOSWindowOrientation.acquire(self, for: window)
                 }
@@ -306,14 +356,11 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
 
 extension View {
     func plozziOSLivePlayerOrientation(
-        isPresented: Bool, orientation: PlaybackOrientation
+        isPresented: Bool, orientation: PlaybackOrientation, isActive: Bool = true
     ) -> some View {
-        overlay(alignment: .top) {
-            if isPresented, UIDevice.current.userInterfaceIdiom == .phone {
-                PlozziOSLiveOrientationOwner(preference: orientation)
-                    .allowsHitTesting(false)
-            }
-        }
+        modifier(PlozziOSLiveOrientationModifier(
+            isPresented: isPresented, preference: orientation, isActive: isActive
+        ))
     }
 
     func plozziOSPlayerCover<Content: View>(
@@ -332,28 +379,127 @@ extension View {
     }
 }
 
-private struct PlozziOSLiveOrientationOwner: View {
+struct PlozziOSLiveRotationPolicy {
+    enum Action: Equatable { case expand, returnToGuide }
+    private(set) var automaticallyExpanded = false
+    private(set) var awaitsUpright = false
+
+    func effectivePreference(_ preference: PlaybackOrientation, isPresented: Bool, canExpand: Bool) -> PlaybackOrientation {
+        if isPresented { return preference }
+        return preference == .auto && canExpand && !awaitsUpright ? .auto : .portrait
+    }
+
+    mutating func interfaceChanged(
+        _ interface: UIInterfaceOrientation, preference: PlaybackOrientation,
+        isPresented: Bool, canExpand: Bool
+    ) -> Action? {
+        guard preference == .auto else { automaticallyExpanded = false; return nil }
+        if interface.isLandscape, !isPresented, canExpand, !awaitsUpright {
+            automaticallyExpanded = true
+            return .expand
+        }
+        if interface == .portrait, isPresented, automaticallyExpanded {
+            automaticallyExpanded = false
+            return .returnToGuide
+        }
+        return nil
+    }
+
+    mutating func closed(interface: UIInterfaceOrientation, device: UIDeviceOrientation) {
+        automaticallyExpanded = false
+        awaitsUpright = device.isLandscape || (interface.isLandscape && device != .portrait)
+    }
+
+    mutating func deviceChanged(_ device: UIDeviceOrientation) {
+        if device == .portrait { awaitsUpright = false }
+    }
+
+    mutating func cancelAutomaticReturn() {
+        automaticallyExpanded = false
+    }
+}
+
+private struct PlozziOSLiveOrientationModifier: ViewModifier {
+    let isPresented: Bool
     let preference: PlaybackOrientation
+    let isActive: Bool
+    @State private var target: LiveChannelRotationTarget?
+
+    func body(content: Content) -> some View {
+        content
+            .onPreferenceChange(LiveChannelRotationTargetKey.self) { target = $0 }
+            .overlay(alignment: .top) {
+                if isActive, UIDevice.current.userInterfaceIdiom == .phone {
+                    PlozziOSLiveOrientationOwner(isPresented: isPresented, preference: preference, target: target)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+}
+
+private struct PlozziOSLiveOrientationOwner: View {
+    let isPresented: Bool
+    let preference: PlaybackOrientation
+    let target: LiveChannelRotationTarget?
     @State private var orientation: PlozziOSPlayerOrientation
+    @State private var policy = PlozziOSLiveRotationPolicy()
     @Environment(\.scenePhase) private var scenePhase
 
-    init(preference: PlaybackOrientation) {
+    init(isPresented: Bool, preference: PlaybackOrientation, target: LiveChannelRotationTarget?) {
+        self.isPresented = isPresented
         self.preference = preference
-        _orientation = State(initialValue: PlozziOSPlayerOrientation(preference: preference))
+        self.target = target
+        _orientation = State(initialValue: PlozziOSPlayerOrientation(
+            preference: isPresented ? preference : .portrait
+        ))
+    }
+
+    private var effectivePreference: PlaybackOrientation {
+        policy.effectivePreference(preference, isPresented: isPresented, canExpand: target?.canExpand == true)
+    }
+
+    private var interfaceOrientation: UIInterfaceOrientation {
+        orientation.host?.viewIfLoaded?.window?.windowScene?.effectiveGeometry.interfaceOrientation ?? .unknown
+    }
+
+    private func handleRotation(_ value: UIInterfaceOrientation) {
+        guard scenePhase == .active, orientation.host?.acceptsLiveRotation == true, let target else { return }
+        switch policy.interfaceChanged(value, preference: preference, isPresented: isPresented,
+                                       canExpand: target.canExpand) {
+        case .expand: target.expand()
+        case .returnToGuide: target.returnToGuide()
+        case nil: break
+        }
     }
 
     var body: some View {
-        PlozziOSLiveOrientationAttachment(orientation: orientation)
+        PlozziOSLiveOrientationAttachment(orientation: orientation, onInterfaceOrientationChange: handleRotation)
             .frame(width: 0, height: 0)
-            .onChange(of: preference) { _, value in orientation.updatePreference(value) }
+            .onChange(of: effectivePreference, initial: true) { _, value in orientation.updatePreference(value) }
+            .onChange(of: isPresented) { wasPresented, presented in
+                if wasPresented, !presented {
+                    policy.closed(interface: interfaceOrientation, device: UIDevice.current.orientation)
+                }
+            }
+            .onChange(of: preference) { _, _ in policy.cancelAutomaticReturn() }
+            .onChange(of: target) { _, target in
+                if target == nil, !isPresented { policy.cancelAutomaticReturn() }
+                handleRotation(interfaceOrientation)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+                policy.deviceChanged(UIDevice.current.orientation)
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { orientation.host?.applyOrientation() }
             }
+            .onAppear { UIDevice.current.beginGeneratingDeviceOrientationNotifications() }
+            .onDisappear { UIDevice.current.endGeneratingDeviceOrientationNotifications() }
     }
 }
 
 private struct PlozziOSLiveOrientationAttachment: UIViewControllerRepresentable {
     let orientation: PlozziOSPlayerOrientation
+    let onInterfaceOrientationChange: (UIInterfaceOrientation) -> Void
 
     func makeUIViewController(context: Context) -> PlozziOSOrientationHostingController {
         PlozziOSOrientationHostingController(
@@ -361,7 +507,9 @@ private struct PlozziOSLiveOrientationAttachment: UIViewControllerRepresentable 
         )
     }
 
-    func updateUIViewController(_ controller: PlozziOSOrientationHostingController, context: Context) {}
+    func updateUIViewController(_ controller: PlozziOSOrientationHostingController, context: Context) {
+        controller.onInterfaceOrientationChange = onInterfaceOrientationChange
+    }
 
     static func dismantleUIViewController(_ controller: PlozziOSOrientationHostingController, coordinator: ()) {
         controller.tearDown()
@@ -450,12 +598,14 @@ struct PlozziOSPlayerPresentation<Content: View>: UIViewControllerRepresentable 
             if let host {
                 guard request?.id == presentedID else {
                     transitioning = true
+                    let window = host.viewIfLoaded?.window
                     host.tearDown()
                     host.dismiss(animated: true) { [weak self] in
                         guard let self else { return }
                         self.host = nil
                         self.presentedID = nil
                         self.transitioning = false
+                        PlozziOSWindowOrientation.restoreOrientation(for: window)
                         self.reconcile()
                     }
                     return

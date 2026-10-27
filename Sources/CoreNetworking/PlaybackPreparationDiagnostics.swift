@@ -3,7 +3,7 @@ import Foundation
 
 /// Failure-only evidence for the version gate, carried by the existing recent-activity sender.
 public enum PlaybackPreparationDiagnostics {
-    public enum Operation: String, Sendable {
+    public enum Operation: String, Encodable, Sendable {
         case versions, alternateVersions, detailVersions, episodeVersions
     }
 
@@ -14,9 +14,18 @@ public enum PlaybackPreparationDiagnostics {
         let started = ProcessInfo.processInfo.systemUptime
         let captured = await HTTPResponseDiagnostics.capture(work)
         if case .failure(let error) = captured.result, !captured.isCancelled, !Task.isCancelled {
+            let elapsed = Int((ProcessInfo.processInfo.systemUptime - started) * 1_000)
+            recorder.append(Facts(
+                provider: provider, operation: operation,
+                error: (error as? AppError).map(HandoffDiagnostics.errorCode) ?? (error is StreamingQualityError ? "streaming" : "unknown"),
+                streamingFailure: (error as? StreamingQualityError).map(PlaybackDiagnosticJournal.Failure.init),
+                elapsedMilliseconds: max(0, elapsed), requests: captured.requests,
+                responses: captured.responses, paging: captured.paging, transport: captured.transport,
+                http: captured.http, validation: captured.validation
+            ))
             let text = supportText(
                 provider: provider, operation: operation, error: error, captured: captured,
-                elapsedMilliseconds: Int((ProcessInfo.processInfo.systemUptime - started) * 1_000)
+                elapsedMilliseconds: elapsed
             )
             PlozzLog.playback.error(text)
             HandoffDiagnostics.emit(text)
@@ -33,11 +42,58 @@ public enum PlaybackPreparationDiagnostics {
         else if resolved.kind != expectedKind { reason = .itemKindMismatch }
         else if let accountID = resolved.sourceAccountID, accountID != expectedAccountID { reason = .accountMismatch }
         else { return }
+        recorder.append(Facts(
+            provider: provider, operation: operation, error: "identityMismatch",
+            streamingFailure: nil, elapsedMilliseconds: nil, requests: [], responses: [], paging: [],
+            transport: [], http: [],
+            validation: [.init(route: .playbackInventory, reason: reason)]
+        ))
         // Compare identifiers locally; never include them in the diagnostic.
         PlozzLog.playback.error(
             "format=plozz-preparation-1 provider=\(provider.rawValue) operation=\(operation.rawValue) "
                 + "validation=\(reason.rawValue)"
         )
+    }
+
+    private struct Facts: Encodable, Sendable {
+        let provider: ProviderKind
+        let operation: Operation
+        let error: String
+        let streamingFailure: PlaybackDiagnosticJournal.Failure?
+        let elapsedMilliseconds: Int?
+        let requests: [ResponseRequestDiagnostic]
+        let responses: [ResponseDecodingDiagnostic]
+        let paging: [LibraryPagingDiagnostic]
+        let transport: [ResponseTransportDiagnostic]
+        let http: [ResponseStatusDiagnostic]
+        let validation: [ResponseValidationDiagnostic]
+    }
+
+    private static let recorder = DiagnosticRecordBuffer<Facts>()
+
+    public struct Export: Encodable, Sendable {
+        private let schema = 1
+        private let dropped: Int
+        private let entries: [ExportEntry]
+
+        fileprivate init(scope: DiagnosticExportScope) {
+            let snapshot = PlaybackPreparationDiagnostics.recorder.snapshot()
+            dropped = snapshot.dropped
+            entries = snapshot.entries.map {
+                ExportEntry(ageMilliseconds: scope.ageMilliseconds(for: $0.timestamp),
+                            attempt: scope.alias(for: $0.id.uuidString), facts: $0.value)
+            }
+        }
+    }
+
+    private struct ExportEntry: Encodable, Sendable {
+        let ageMilliseconds: Int?
+        let attempt: String
+        let facts: Facts
+    }
+
+    public static func export(scope: DiagnosticExportScope) -> Export {
+        Export(scope: scope)
     }
 
     // l10n:content — bounded, closed-vocabulary support fields, not user-facing copy

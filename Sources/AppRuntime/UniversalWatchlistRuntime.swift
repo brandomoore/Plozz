@@ -1036,6 +1036,14 @@ public extension UniversalWatchlistHost {
         }
     }
 
+    func watchlistProviderChange(for accountID: String) -> WatchlistProviderChange? {
+        guard let resolved = nativeWatchlistAccounts.first(where: { $0.account.id == accountID }) else { return nil }
+        return WatchlistProviderChange(
+            profileNamespace: profiles.activeNamespace, accountID: accountID,
+            serverUserID: resolved.plexHomeUserID ?? resolved.provider.session.userID
+        )
+    }
+
     func seedLegacyUniversalWatchlist() async throws {
         let profileID = profiles.activeProfileID
         let contentStore = HomeContentStore(
@@ -1971,6 +1979,7 @@ public extension UniversalWatchlistHost {
         await universalWatchlistRetryScheduler?.cancel()
         universalWatchlistRetryScheduler = nil
         var destinations: [any WatchlistDestination] = []
+        var providerChanges: [WatchlistDestinationID: WatchlistProviderChange] = [:]
         let profile = profiles.activeProfile
         // The PERSISTED native view must use a stable identity, never the
         // generation above.
@@ -1998,6 +2007,7 @@ public extension UniversalWatchlistHost {
             plexIdentityKey: plexIdentityKey
         )
         for resolved in nativeWatchlistAccounts {
+            let previousCount = destinations.count
             if let provider = resolved.provider as? PlexProvider,
                let destination = PlexWatchlistDestination(provider: provider) {
                 // Talk to Discover as the person this profile plays as: their
@@ -2035,6 +2045,9 @@ public extension UniversalWatchlistHost {
                       let destination = SiloWatchlistDestination(provider: provider) {
                 destinations.append(destination)
             }
+            if destinations.count > previousCount, let destination = destinations.last {
+                providerChanges[destination.id] = watchlistProviderChange(for: resolved.account.id)
+            }
         }
         let legacyValidatedDestinationIDs = Set(destinations.map(\.id.rawValue))
         destinations.append(contentsOf: trackerWatchlistDestinations)
@@ -2061,9 +2074,18 @@ public extension UniversalWatchlistHost {
             ),
             legacyValidatedDestinationIDs: legacyValidatedDestinationIDs
         )
+        let completedProviderChanges = providerChanges
         universalWatchlistReconciler = WatchlistReconciler(
             registry: WatchlistDestinationRegistry(destinations),
-            mutationStore: mutationStore
+            mutationStore: mutationStore,
+            onWriteSucceeded: { [weak self] completedProfileID, destinationID in
+                await MainActor.run {
+                    guard let self, self.profiles.activeProfileID == completedProfileID,
+                          self.universalWatchlistProfileID == reconcilerKey,
+                          let change = completedProviderChanges[destinationID] else { return }
+                    change.post()
+                }
+            }
         )
         let reconciler = universalWatchlistReconciler!
         let scheduler = WatchlistRetryScheduler(

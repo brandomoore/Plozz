@@ -58,6 +58,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
     private let disabledPlaceholder: LocalizedStringResource
     private let requiredEnabled: Set<Element>
     private let allowsHiding: Bool
+    private let removeTitle: LocalizedStringResource
     /// Mirrors "a row is currently lifted" outward so the host page can disable its
     /// other controls while a reorder is in progress.
     @Binding private var isLifting: Bool
@@ -82,6 +83,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
         isLifting: Binding<Bool>,
         requiredEnabled: Set<Element> = [],
         allowsHiding: Bool = true,
+        removeTitle: LocalizedStringResource = "Remove section",
         onRemove: ((Element) -> Void)? = nil,
         initialElement: Element? = nil,
         row: @escaping (Element) -> Row,
@@ -93,6 +95,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
         self._isLifting = isLifting
         self.requiredEnabled = allowsHiding ? requiredEnabled : requiredEnabled.union(sections.enabled)
         self.allowsHiding = allowsHiding
+        self.removeTitle = removeTitle
         self.row = row
         self.onChange = onChange
         self.onRemove = onRemove
@@ -196,6 +199,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
 
     /// Click handler: lift the focused row, or drop it if it's already lifted.
     private func toggleLift(_ element: Element) {
+        guard allowsHiding || sections.enabled.count > 1 else { return }
         liftedSections = liftedElement == element ? nil : sections
         withAnimation(reduceMotion ? nil : .snappy(duration: 0.16)) {
             liftedElement = (liftedElement == element) ? nil : element
@@ -240,7 +244,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
                 listRow(item)
                     .frame(height: max(0, height(for: item) - 16))
                     .contentShape(.dragPreview, RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .moveDisabled(item == .divider)
+                    .moveDisabled(item == .divider || (!allowsHiding && sections.enabled.count < 2))
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
             }
@@ -360,7 +364,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
         Button("Move to bottom", systemImage: "arrow.down.to.line") { perform(.moveToBottom, on: element) }
             .disabled(edit(.moveToBottom, for: element) == nil)
         if let onRemove {
-            Button("Remove section", systemImage: "minus.circle", role: .destructive) {
+            Button(removeTitle, systemImage: "minus.circle", role: .destructive) {
                 #if os(tvOS)
                 liftedElement = nil
                 let index = sections.enabled.firstIndex(of: element) ?? 0

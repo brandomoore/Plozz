@@ -61,6 +61,8 @@ struct FocusHostApp: App {
                 SubtitleStyleInputFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--home-layout-onboarding-fixture") {
                 HomeLayoutOnboardingFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--plex-home-onboarding-fixture") {
+                PlexHomeOnboardingFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--library-showcase-fixture") {
                 LibraryShowcaseFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--library-held-scroll-fixture") {
@@ -132,6 +134,16 @@ private struct HomeSectionsEditorFixture: View {
             store: HomeLibraryVisibilityStore(namespace: "home-section-remote-fixture")
         )
         visibility.useRowDefaults(.combined)
+        if ProcessInfo.processInfo.arguments.contains("--single-home-row") {
+            let choices = HomeRowChoice.shared
+            visibility.applyRows(
+                .init(
+                    enabled: [.global(.continueWatching)],
+                    disabled: choices.map(\.id).filter { $0 != .global(.continueWatching) }
+                ),
+                choices: choices
+            )
+        }
         _visibility = State(initialValue: visibility)
     }
 

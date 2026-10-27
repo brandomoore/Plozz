@@ -30,7 +30,8 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
 
     public static func resolve(
         rows: [HomeRow], content: HomeViewModel.Content, visibility: HomeLibraryVisibility,
-        liveTV: HomeLiveTVSnapshot = .empty
+        liveTV: HomeLiveTVSnapshot = .empty,
+        presentation: LibraryPresentationSettings = .default
     ) -> [Self] {
         let shared = HomeRowChoice.shared
         func entry(_ row: HomeRow) -> Self? {
@@ -136,6 +137,15 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
         }
         let byID = Dictionary(available.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let ordered = visibility.rowSections(choices: available.map(\.choice)).enabled
-        return ordered.compactMap { byID[$0] }
+        return ordered.compactMap { byID[$0] }.map { entry in
+            guard case let .library(row) = entry.source else { return entry }
+            return Self(choice: entry.choice, source: .library(.init(
+                section: row.section.resolvingCollectionCovers(presentation.collectionCoverLayout(
+                    at: LibraryPresentationSettings.collectionCoverAddress(for: entry.id)
+                )),
+                isLoading: row.isLoading, failure: row.failure, browseItem: row.browseItem,
+                issue: row.issue, collectionCardStyle: row.collectionCardStyle
+            )))
+        }
     }
 }

@@ -1,7 +1,9 @@
 #if os(iOS)
 import CoreModels
+import CoreNetworking
 import CoreUI
 import Foundation
+import MediaDownloads
 import MetadataKit
 import UIKit
 
@@ -68,6 +70,84 @@ enum PlozziOSDownloadArtwork {
                   let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return false }
             return isValid(data)
         }.value
+    }
+}
+
+actor PlozziOSDownloadArtworkIndex {
+    struct Entry: Sendable, Equatable {
+        let createdAt: Date
+        let fileName: String
+        let url: URL?
+
+        func matches(_ record: DownloadedMediaRecord) -> Bool {
+            createdAt == record.createdAt && fileName == record.snapshot.artworkFileName
+        }
+    }
+
+    private var entries: [String: Entry] = [:]
+
+    func snapshot(
+        records: [DownloadedMediaRecord],
+        storage: any DownloadStorageLocating,
+        refreshing: Bool
+    ) throws(CancellationError) -> [String: Entry] {
+        var next: [String: Entry] = [:]
+        for record in records {
+            guard !Task.isCancelled else { throw CancellationError() }
+            guard let fileName = record.snapshot.artworkFileName else { continue }
+            if !refreshing, let cached = entries[record.identityKey], cached.matches(record) {
+                next[record.identityKey] = cached
+            } else {
+                next[record.identityKey] = Entry(
+                    createdAt: record.createdAt, fileName: fileName,
+                    url: existingURL(fileName: fileName, identityKey: record.identityKey, storage: storage)
+                )
+            }
+        }
+        entries = next
+        return next
+    }
+
+    func write(
+        _ data: Data, for record: DownloadedMediaRecord, storage: any DownloadStorageLocating
+    ) throws -> URL {
+        try Task.checkCancellation()
+        guard PlozziOSDownloadArtwork.isValid(data) else {
+            throw PlozziOSDownloadArtwork.Failure.invalidImage
+        }
+        let folder = try storage.pinnedFolderURL(forKey: record.identityKey)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("artwork-\(UUID().uuidString).jpg", isDirectory: false)
+        try Task.checkCancellation()
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
+    func removeUnattachedFile(at url: URL) {
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch {
+            PlozzLog.networking.error("An unattached download artwork file could not be removed")
+        }
+    }
+
+    private func existingURL(
+        fileName: String, identityKey: String, storage: any DownloadStorageLocating
+    ) -> URL? {
+        guard !fileName.isEmpty,
+              fileName == URL(fileURLWithPath: fileName, isDirectory: false).lastPathComponent,
+              fileName != ".", fileName != ".." else {
+            PlozzLog.networking.error("A pinned download artwork filename is invalid")
+            return nil
+        }
+        do {
+            let folder = try storage.pinnedFolderURL(forKey: identityKey)
+            let url = folder.appendingPathComponent(fileName, isDirectory: false)
+            return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        } catch {
+            PlozzLog.networking.error("Download artwork storage could not be resolved")
+            return nil
+        }
     }
 }
 #endif

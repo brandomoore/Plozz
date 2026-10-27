@@ -1,23 +1,35 @@
 #if canImport(Sentry)
 import CoreModels
+import CoreNetworking
 import Foundation
 import Sentry
 import XCTest
 @testable import CrashReporting
+@testable import CoreModels
 
 final class CrashDiagnosticsTests: XCTestCase {
     @MainActor
-    func testPlaybackEvidenceSharesTheConsentedAttachment() {
+    func testPlaybackEvidenceSharesTheConsentedAttachment() async {
+        let journal = PlaybackDiagnosticJournal(url: nil)
+        let scope = DiagnosticExportScope()
+        journal.record(
+            .failed, session: UUID(), attempt: UUID(),
+            facts: .init(provider: .plex, engine: .plozzigen),
+            failure: .init(.serverHTTP(503))
+        )
+        let playback = await journal.export(scope: scope)
         for enabled in [false, true] {
             var captures = 0
             XCTAssertEqual(CrashDiagnostics.send(
-                logText: "activity", note: nil, isEnabled: enabled,
-                playbackDiagnostics: "bounded playback evidence",
+                note: nil, isEnabled: enabled,
+                sourceDiagnostics: { self.sourceExport(scope: scope) },
+                playbackDiagnostics: playback,
                 captureEvent: { _, attachment in
                     captures += 1
-                    XCTAssertEqual(attachment.data, Data(
-                        "activity\n\n--- Structured playback diagnostics ---\nbounded playback evidence".utf8
-                    ))
+                    let playback = self.payload(attachment)["playback"] as? [String: Any]
+                    let entries = playback?["entries"] as? [[String: Any]]
+                    XCTAssertEqual(entries?.first?["event"] as? String, "failed")
+                    XCTAssertEqual((entries?.first?["failure"] as? [String: Any])?["httpStatus"] as? Int, 503)
                     return SentryId()
                 },
                 captureFeedback: { _ in SentryId() }
@@ -30,20 +42,26 @@ final class CrashDiagnosticsTests: XCTestCase {
     func testEveryDiagnosticSendAppendsSourceSnapshotAfterConsentCheck() {
         var snapshots = 0
         XCTAssertFalse(CrashDiagnostics.send(
-            logText: "activity", note: nil, isEnabled: false,
-            sourceDiagnostics: { snapshots += 1; return "source evidence" },
+            note: nil, isEnabled: false,
+            activity: { XCTFail("No activity collection without consent"); return PlozzLog.activityExport() },
+            sourceDiagnostics: { snapshots += 1; return self.sourceExport() },
+            preparationDiagnostics: {
+                XCTFail("No preparation collection without consent")
+                return PlaybackPreparationDiagnostics.export(scope: DiagnosticExportScope())
+            },
+            libraryDiagnostics: {
+                XCTFail("No library collection without consent")
+                return LibraryDiagnosticJournal().export(scope: DiagnosticExportScope())
+            },
             captureEvent: { _, _ in XCTFail("No consent"); return .empty },
             captureFeedback: { _ in XCTFail("No consent"); return .empty }
         ))
         XCTAssertEqual(snapshots, 0)
         XCTAssertTrue(CrashDiagnostics.send(
-            logText: "activity", note: nil, isEnabled: true,
-            sourceDiagnostics: { snapshots += 1; return "source evidence" },
+            note: nil, isEnabled: true,
+            sourceDiagnostics: { snapshots += 1; return self.sourceExport() },
             captureEvent: { _, attachment in
-                XCTAssertEqual(
-                    attachment.data,
-                    Data("activity\n\n--- Persistent Live TV source diagnostics ---\nsource evidence".utf8)
-                )
+                XCTAssertNotNil(self.payload(attachment)["sources"])
                 return SentryId()
             },
             captureFeedback: { _ in SentryId() }
@@ -52,23 +70,24 @@ final class CrashDiagnosticsTests: XCTestCase {
     }
 
     @MainActor
-    func testSubmissionLinksAnonymousFeedbackToCapturedEventAndPreservesLog() {
+    func testSubmissionLinksExplicitFeedbackWithoutIncludingItInTheTechnicalAttachment() {
         let capturedID = SentryId()
         var didCaptureEvent = false
         var didCaptureFeedback = false
 
         let sent = CrashDiagnostics.send(
-            logText: "\nredacted recent activity\n",
             note: "  Sources disappeared\n",
             isEnabled: true,
+            sourceDiagnostics: { self.sourceExport() },
             captureEvent: { event, attachment in
                 didCaptureEvent = true
                 XCTAssertEqual(event.level, .info)
-                XCTAssertEqual(event.message?.formatted, "Sources disappeared")
+                XCTAssertEqual(event.message?.formatted, "User diagnostics report")
                 XCTAssertEqual(event.tags?["report.kind"], "user-diagnostics")
-                XCTAssertEqual(attachment.filename, "plozz-recent-activity.log")
-                XCTAssertEqual(attachment.contentType, "text/plain")
-                XCTAssertEqual(attachment.data, Data("redacted recent activity".utf8))
+                XCTAssertEqual(attachment.filename, "plozz-diagnostics.json")
+                XCTAssertEqual(attachment.contentType, "application/json")
+                XCTAssertEqual(self.payload(attachment)["format"] as? String, "plozz-user-diagnostics-2")
+                XCTAssertFalse(String(decoding: attachment.data ?? Data(), as: UTF8.self).contains("Sources disappeared"))
                 return capturedID
             },
             captureFeedback: { feedback in
@@ -93,7 +112,7 @@ final class CrashDiagnosticsTests: XCTestCase {
     @MainActor
     func testInactiveReportingSubmitsNeitherEventNorFeedback() {
         XCTAssertFalse(CrashDiagnostics.send(
-            logText: "recent activity", note: "note", isEnabled: false,
+            note: "note", isEnabled: false,
             captureEvent: { _, _ in
                 XCTFail("Inactive reporting must not capture diagnostics.")
                 return SentryId()
@@ -109,7 +128,8 @@ final class CrashDiagnosticsTests: XCTestCase {
     func testRejectedEventDoesNotReportSuccessOrSubmitUnlinkedFeedback() {
         var didCaptureEvent = false
         XCTAssertFalse(CrashDiagnostics.send(
-            logText: "recent activity", note: "note", isEnabled: true,
+            note: "note", isEnabled: true,
+            sourceDiagnostics: { self.sourceExport() },
             captureEvent: { _, _ in
                 didCaptureEvent = true
                 return .empty
@@ -126,7 +146,8 @@ final class CrashDiagnosticsTests: XCTestCase {
     func testRejectedFeedbackDoesNotReportSuccess() {
         var didCaptureFeedback = false
         XCTAssertFalse(CrashDiagnostics.send(
-            logText: "recent activity", note: "note", isEnabled: true,
+            note: "note", isEnabled: true,
+            sourceDiagnostics: { self.sourceExport() },
             captureEvent: { _, _ in SentryId() },
             captureFeedback: { _ in
                 didCaptureFeedback = true
@@ -137,14 +158,17 @@ final class CrashDiagnosticsTests: XCTestCase {
     }
 
     @MainActor
-    func testBlankNotesAndLogsHaveNonemptyFallbacksOnBothReports() {
+    func testBlankNotesHaveNonemptyFeedbackAndEmptyActivityIsExplicit() {
         for note: String? in [nil, "", " \n\t "] {
             var didCaptureFeedback = false
             XCTAssertTrue(CrashDiagnostics.send(
-                logText: " \n\t ", note: note, isEnabled: true,
+                note: note, isEnabled: true,
+                activity: { PlozzLog.activityExport(entries: []) },
+                sourceDiagnostics: { self.sourceExport() },
                 captureEvent: { event, attachment in
                     XCTAssertEqual(event.message?.formatted, "User diagnostics report")
-                    XCTAssertEqual(attachment.data, Data("(recent activity log was empty)".utf8))
+                    let activity = self.payload(attachment)["activity"] as? [String: Any]
+                    XCTAssertEqual((activity?["entries"] as? [Any])?.count, 0)
                     return SentryId()
                 },
                 captureFeedback: { feedback in
@@ -214,11 +238,135 @@ final class CrashDiagnosticsTests: XCTestCase {
         let client = try XCTUnwrap(SentryClient(options: options))
         defer { client.close() }
         XCTAssertFalse(CrashDiagnostics.send(
-            logText: "recent activity", note: "Sources disappeared", isEnabled: true,
+            note: "Sources disappeared", isEnabled: true,
+            sourceDiagnostics: { self.sourceExport() },
             captureEvent: { _, _ in SentryId() },
             captureFeedback: { client.capture(event: $0) }
         ))
         XCTAssertTrue(didPrepareFeedback)
+    }
+
+    @MainActor
+    func testCompleteAttachmentExcludesRawActivityIdentitiesAndSearchContent() async throws {
+        let privateValues = [
+            "https://alice:private-password@media.private.test:8096/items/private-item?api_key=private-token",
+            "192.168.1.24", "2001:db8::24", "private-account", "private-profile",
+            "Private Movie Title", "private-search-phrase", "/Users/private-person/Movies/private-file.mkv",
+            "private@example.test"
+        ]
+        PlozzLog.networking.error(privateValues.joined(separator: " "))
+        let scope = DiagnosticExportScope()
+        let sources = LiveTVSourceDiagnostics(url: nil)
+        sources.record(.sourceReadFailed, identities: [.account: privateValues[3], .profile: privateValues[4]],
+                       counts: [.channels: 42], reason: .timeout,
+                       error: NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut,
+                                      userInfo: [NSLocalizedDescriptionKey: privateValues[0]]))
+        let playback = PlaybackDiagnosticJournal(url: nil)
+        let session = UUID(), attempt = UUID()
+        let request = PlaybackRequest(
+            item: .init(id: "private-item", title: privateValues[5], kind: .movie),
+            streamURL: try XCTUnwrap(URL(string: privateValues[0])),
+            sourceMetadata: .init(container: "mkv", video: .init(codec: "hevc"), audio: .init(codec: "aac"))
+        )
+        playback.record(.loading, session: session, attempt: attempt,
+                        facts: .init(provider: .jellyfin, engine: .plozzigen, request: request))
+        playback.record(.failed, session: session, attempt: attempt,
+                        facts: .init(provider: .jellyfin, engine: .plozzigen, request: request),
+                        failure: .init(.serverHTTP(401)))
+        let journal = await playback.export(scope: scope)
+        let library = LibraryDiagnosticJournal()
+        library.record(.init(provider: .plex, operation: .libraryBrowse, failures: [
+            .init(
+                section: .collections, error: .unknown(privateValues.joined(separator: " ")),
+                responses: [.init(
+                    route: .collectionCandidates, httpStatus: 200, bytes: 512, payload: .object,
+                    error: DecodingError.typeMismatch([String].self, .init(
+                        codingPath: [], debugDescription: privateValues.joined(separator: " ")
+                    ))
+                )],
+                paging: [.init(stage: .collectionCandidates, reason: .emptyID, start: 0, rows: 3, total: 4)]
+            )
+        ]))
+        do {
+            let _: Int = try await PlaybackPreparationDiagnostics.capture(provider: .jellyfin, operation: .versions) {
+                HTTPResponseDiagnostics.recordRequest(.init(
+                    route: .playbackInventory, method: "GET", elapsedMilliseconds: 10_000,
+                    httpStatus: 502, urlErrorCode: nil, bytes: 512, format: .unknown,
+                    requestTimeoutMilliseconds: 10_000, resourceTimeoutMilliseconds: 12_000
+                ))
+                throw AppError.unknown(privateValues[0])
+            }
+            XCTFail("The original preparation failure must still throw")
+        } catch {
+            XCTAssertEqual(error as? AppError, .unknown(privateValues[0]))
+        }
+        let operations = PerformanceDiagnostics()
+        operations.start()
+        operations.begin(.serverRequest, provider: .jellyfin)?
+            .finish(.failed, metrics: .init(bytes: 128, requests: 1), httpStatus: 401)
+        XCTAssertTrue(CrashDiagnostics.send(
+            note: "My optional message", isEnabled: true,
+            activity: { PlozzLog.activityExport(scope: scope) },
+            sourceDiagnostics: { sources.export(scope: scope) },
+            preparationDiagnostics: { PlaybackPreparationDiagnostics.export(scope: scope) },
+            libraryDiagnostics: { library.export(scope: scope) },
+            playbackDiagnostics: journal, operations: operations,
+            captureEvent: { _, attachment in
+                let body = self.payload(attachment)
+                let text = self.strings(in: body).joined(separator: "\n")
+                for value in privateValues + [session.uuidString, attempt.uuidString,
+                                               HandoffDiagnostics.correlationID("private-account")] {
+                    XCTAssertFalse(text.contains(value), value)
+                }
+                XCTAssertFalse(text.contains("My optional message"))
+                let records = (body["playback"] as? [String: Any])?["entries"] as? [[String: Any]]
+                XCTAssertEqual(records?.count, 2)
+                XCTAssertEqual(records?.first?["session"] as? String, records?.last?["session"] as? String)
+                XCTAssertEqual(records?.first?["attempt"] as? String, records?.last?["attempt"] as? String)
+                XCTAssertEqual((records?.first?["facts"] as? [String: Any])?["sourceVideo"] as? String, "hevc")
+                XCTAssertNotNil(body["operations"])
+                let libraryEntry = (body["library"] as? [String: Any])?["entries"] as? [[String: Any]]
+                let libraryFacts = libraryEntry?.first?["facts"] as? [String: Any]
+                let libraryFailure = (libraryFacts?["failures"] as? [[String: Any]])?.first
+                XCTAssertEqual(libraryFailure?["section"] as? String, "collections")
+                XCTAssertEqual((libraryFailure?["responses"] as? [[String: Any]])?.first?["reason"] as? String, "wrongType")
+                XCTAssertEqual((libraryFailure?["paging"] as? [[String: Any]])?.first?["reason"] as? String, "emptyID")
+                let preparation = (body["preparation"] as? [String: Any])?["entries"] as? [[String: Any]]
+                XCTAssertTrue(preparation?.contains {
+                    let facts = $0["facts"] as? [String: Any]
+                    let requests = facts?["requests"] as? [[String: Any]]
+                    return requests?.first?["httpStatus"] as? Int == 502
+                        && requests?.first?["requestTimeoutMilliseconds"] as? Int == 10_000
+                } == true)
+                return SentryId()
+            },
+            captureFeedback: { feedback in
+                XCTAssertEqual(feedback.context?["feedback"]?["message"] as? String, "My optional message")
+                return SentryId()
+            }
+        ))
+    }
+
+    private func sourceExport(scope: DiagnosticExportScope = DiagnosticExportScope()) -> LiveTVSourceDiagnostics.Export {
+        LiveTVSourceDiagnostics(url: nil).export(scope: scope)
+    }
+
+    private func payload(_ attachment: Attachment) -> [String: Any] {
+        guard let data = attachment.data,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            XCTFail("Expected a valid JSON diagnostic attachment")
+            return [:]
+        }
+        return object
+    }
+
+    private func strings(in value: Any) -> [String] {
+        if let text = value as? String { return [text] }
+        if let values = value as? [Any] { return values.flatMap(strings(in:)) }
+        if let values = value as? [String: Any] {
+            return Array(values.keys) + values.values.flatMap(strings(in:))
+        }
+        return []
     }
 
     func testMalformedFeedbackIsRejectedInsteadOfSendingAnEmptyFeedbackEvent() {

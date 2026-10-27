@@ -7,6 +7,17 @@ final class LoadingMessageSequencerTests: XCTestCase {
         (0..<count).map { LoadingMessage(id: "m\($0)", text: "Message \($0)") }
     }
 
+    func testDefaultGracePeriodIsElevenSecondsWithoutChangingCycling() {
+        let messages = makeMessages(2)
+        let seq = LoadingMessageSequencer(messages: messages)
+        XCTAssertEqual(seq.initialDelay, 11.0)
+        XCTAssertEqual(seq.phase(atElapsed: 6.0), .spinnerOnly)
+        XCTAssertEqual(seq.phase(atElapsed: 10.999), .spinnerOnly)
+        XCTAssertEqual(seq.phase(atElapsed: 11.0), .message(messages[0], index: 0))
+        XCTAssertEqual(seq.phase(atElapsed: 16.499), .message(messages[0], index: 0))
+        XCTAssertEqual(seq.phase(atElapsed: 16.5), .message(messages[1], index: 1))
+    }
+
     func testSpinnerOnlyBeforeThreshold() {
         let seq = LoadingMessageSequencer(messages: makeMessages(3), initialDelay: 3.5, cycleInterval: 3.0)
         XCTAssertEqual(seq.phase(atElapsed: 0), .spinnerOnly)

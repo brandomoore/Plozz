@@ -43,6 +43,20 @@ final class PlozzigenPlaybackFailureTests: XCTestCase {
         XCTAssertEqual(failure?.allowsCodecFallback, true)
     }
 
+    func testNativeResourceErrorAllowsRecoveryButTypedRefusalDoesNot() throws {
+        for (kind, allowsRecovery) in [
+            (PlaybackErrorKind.nativeItemFailed, true), (.sourceRefused, false),
+            (.sourceRateLimited, false), (.sourceCertificateRejected, false)
+        ] {
+            let failure = try XCTUnwrap(PlozzigenPlaybackFailure.classify(.init(
+                kind: kind, message: "private",
+                underlyingDomain: NSURLErrorDomain, underlyingCode: URLError.resourceUnavailable.rawValue
+            )))
+            XCTAssertEqual(failure.diagnosticCode, "URL -1008")
+            XCTAssertEqual(failure.allowsCodecFallback, allowsRecovery)
+        }
+    }
+
     func testCertificateFailureUsesTypedEvidenceNotMessage() {
         let failure = PlozzigenPlaybackFailure.classify(.init(
             kind: .sourceCertificateRejected, message: "localized failure",

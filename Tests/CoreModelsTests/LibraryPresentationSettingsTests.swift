@@ -59,6 +59,7 @@ final class LibraryPresentationSettingsTests: XCTestCase {
         model.settings.logoSize = HeroLogoSize(rawValue: 10)
         model.settings.navigation = .init(order: ["titles", "recommended"], hidden: ["collections"])
         model.settings.recommendedRows["library"] = .init(order: ["recent", "hub"], hidden: ["hub"])
+        model.settings.collectionCoverLayouts["covers"] = .landscape
         XCTAssertEqual(LibraryPresentationSettingsStore(defaults: defaults, namespace: "one").load(), model.settings)
         XCTAssertEqual(LibraryPresentationSettingsStore(defaults: defaults, namespace: "two").load(), .default)
         XCTAssertEqual(HeroSettingsStore(defaults: defaults, namespace: "one").load().showcaseLogoSize, .default)
@@ -70,5 +71,21 @@ final class LibraryPresentationSettingsTests: XCTestCase {
         XCTAssertEqual(model.settings.logoSize.rawValue, 10)
         XCTAssertEqual(model.settings.navigation.hidden, ["collections"])
         XCTAssertNotNil(LibraryPresentationSettingsStore(defaults: defaults, namespace: "two").load().recommendedRows["library"])
+    }
+
+    func testCollectionCoverOverridesAreGroupQualifiedAndDefaultToAuto() {
+        let addresses = [
+            LibraryPresentationSettings.collectionCoverAddress(accountID: "a:b", libraryID: "c"),
+            LibraryPresentationSettings.collectionCoverAddress(accountID: "a", libraryID: "b:c"),
+            LibraryPresentationSettings.collectionCoverAddress(accountID: "a:b", libraryID: "c", rowID: "hub"),
+            LibraryPresentationSettings.collectionCoverAddress(for: .library(key: "a:b:c", section: "hub"))
+        ]
+        XCTAssertEqual(Set(addresses).count, addresses.count)
+        var settings = LibraryPresentationSettings.default
+        settings.collectionCoverLayouts[addresses[0]] = .landscape
+        XCTAssertEqual(settings.collectionCoverLayout(at: addresses[0]), .landscape)
+        for address in addresses.dropFirst() {
+            XCTAssertEqual(settings.collectionCoverLayout(at: address), .auto)
+        }
     }
 }

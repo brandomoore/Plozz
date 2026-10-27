@@ -157,6 +157,7 @@ public struct MediaVersionPicker: View {
     private let title: LocalizedStringKey
     private let footer: LocalizedStringKey?
     private let onSelect: (String) -> Void
+    private let loadVersions: MediaVersionInventoryLoader?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
     @FocusState private var focusedID: String?
@@ -166,6 +167,7 @@ public struct MediaVersionPicker: View {
         selectedVersionID: String?,
         title: LocalizedStringKey = "Version",
         footer: LocalizedStringKey? = nil,
+        loadVersions: MediaVersionInventoryLoader? = nil,
         onSelect: @escaping (String) -> Void
     ) {
         self.versions = versions
@@ -173,23 +175,29 @@ public struct MediaVersionPicker: View {
         self.title = title
         self.footer = footer
         self.onSelect = onSelect
+        self.loadVersions = loadVersions
     }
 
     public var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(versions.sortedForPicker()) { version in
-                        MediaVersionChoiceButton(
-                            presentation: .init(version, locale: locale),
-                            isSelected: version.id == selectedVersionID,
-                            isFocused: focusedID == version.id
-                        ) {
-                            dismiss()
-                            onSelect(version.id)
+                    MediaVersionInventoryContent(versions: versions, loadVersions: loadVersions) { inventory in
+                        ForEach(inventory.sortedForPicker()) { version in
+                            MediaVersionChoiceButton(
+                                presentation: .init(version, locale: locale),
+                                isSelected: version.id == selectedVersionID,
+                                isFocused: focusedID == version.id
+                            ) {
+                                dismiss()
+                                onSelect(version.id)
+                            }
+                            .focused($focusedID, equals: version.id)
+                            .accessibilityIdentifier("version-choice-\(version.id)")
                         }
-                        .focused($focusedID, equals: version.id)
-                        .accessibilityIdentifier("version-choice-\(version.id)")
+                        #if os(tvOS)
+                        .onAppear { focusedID = selectedVersionID ?? inventory.sortedForPicker().first?.id }
+                        #endif
                     }
                     if let footer {
                         Text(footer)

@@ -69,7 +69,6 @@ public struct RootView: View {
     @State private var showSyncErasure = false
     @State private var showsMarkerPreview = false
     /// Library discovery for the setup step's cover.
-    @State private var setupLibraries = ProfileSetupLibrariesLoader()
     @State private var showSyncSend = false
     @State private var rootPresentation = RootPresentationCoordinator()
     @State private var startupNotesPrepared = false
@@ -250,12 +249,18 @@ public struct RootView: View {
         pendingFeatureIntroduction = nil
     }
 
+    private var librarySelectionOwnsPlexPIN: Bool {
+        guard case .onboarding(.selectLibraries, _) = appState.state else { return false }
+        return true
+    }
+
     private var presentationRequests: [RootPresentationCoordinator.Destination] {
         guard !showsStartupLogo else { return [] }
         var requests: [RootPresentationCoordinator.Destination] = []
         let flow = appState.profileFlow
         if flow.pendingLockedProfile != nil || flow.pendingParentalSwitch != nil
-            || (flow.pendingSetupProfile == nil && appState.plexHomeUsers.pendingPlexPINRequest != nil) {
+            || (flow.pendingSetupProfile == nil && !librarySelectionOwnsPlexPIN
+                && appState.plexHomeUsers.pendingPlexPINRequest != nil) {
             requests.append(.accessGate)
         }
         if flow.pendingIdentityAccountID != nil { requests.append(.serverIdentity) }
@@ -582,10 +587,10 @@ public struct RootView: View {
                 ProfileSetupFlowView(
                     appState: appState,
                     profile: setupProfile,
-                    librariesStore: setupLibraries,
                     deviceColorScheme: systemColorScheme,
                     onAppearanceSelected: completeAppearanceIntroductions
                 )
+                .id(setupProfile.id)
             } else {
                 switch appState.rootPresentationState {
             case .launching:
@@ -1350,7 +1355,10 @@ private struct OnboardingPageContent: View {
             if let selection {
                 PlexUserSelectionView(
                     selection: selection,
-                    onSelect: { user in appState.selectPlexUserDuringOnboarding(user) }
+                    onImportAll: appState.importPlexHomeProfilesDuringOnboarding,
+                    onSelect: { user, addAll in
+                        appState.selectPlexUserDuringOnboarding(user, addAllProfiles: addAll)
+                    }
                 )
             } else {
                 LaunchView()
@@ -1443,7 +1451,7 @@ struct AccountSetupOverlay: ViewModifier {
 private struct ProfileSetupFlowView: View {
     let appState: AppState
     let profile: Profile
-    let librariesStore: ProfileSetupLibrariesLoader
+    @State private var librariesStore = ProfileSetupLibrariesLoader()
     let deviceColorScheme: ColorScheme
     let onAppearanceSelected: () -> Void
     @State private var stage: ProfileSetupStage = .libraries
@@ -1679,7 +1687,7 @@ private struct RootDisplaySettleObserver: ViewModifier {
 /// small lock badge) and name at the top, an "PIN" pill that fills as digits
 /// are entered, and a single horizontal strip of digit keys + delete below.
 /// One axis of focus is what the Siri remote handles best.
-private struct PlexPINEntryView: View {
+struct PlexPINEntryView: View {
     let appState: AppState
     let userName: String
     let avatarURLString: String?

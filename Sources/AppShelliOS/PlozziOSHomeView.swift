@@ -287,7 +287,7 @@ struct PlozziOSHomeView: View {
         .toolbar {
             if trailerController.isPlaying {
                 ToolbarItem(placement: .topBarTrailing) {
-                    PlozziOSTrailerMuteToolbarButton(
+                    PlozziOSHeroAudioMuteToolbarButton(
                         isMuted: trailerController.isMuted,
                         onToggle: toggleTrailerMute
                     )
@@ -554,7 +554,8 @@ struct PlozziOSHomeView: View {
             // here — the view itself is left in place.
 
             ForEach(HomePresentationRow.resolve(
-                rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV
+                rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
+                presentation: appModel.settings.libraryPresentation.settings
             )) { presentation in
                 switch presentation.source {
                 case let .home(row):
@@ -575,25 +576,9 @@ struct PlozziOSHomeView: View {
                 case let .library(row):
                         let section = row.section
                         if let issue = row.issue {
-                            VStack(alignment: .leading) {
-                                HomeSectionStatusView(issue: issue) {
-                                    Task { await viewModel.load(showLoadingState: false) }
-                                }
-                                if let item = row.browseItem {
-                                    NavigationLink {
-                                        PlozziOSHomeCardDetail(
-                                            item: item,
-                                            fallbackProvider: item.sourceAccountID.flatMap {
-                                                appModel.accountsProviders.provider(forAccountID: $0)
-                                            }
-                                        )
-                                    } label: {
-                                        Text("See all")
-                                    }
-                                }
-                            }
-                            .padding(.horizontal)
-                            .disabled(viewModel.isRefreshing)
+                            PlozziOSHomeSectionStatusRow(
+                                issue: issue, browseItem: row.browseItem, appModel: appModel, viewModel: viewModel
+                            )
                         } else if let failure = row.failure {
                             PlozziOSHomeRowFailure(
                                 title: section.displayName,
@@ -2319,20 +2304,55 @@ private struct PlozziOSFeaturedRow: View {
     }
 }
 
+private struct PlozziOSHomeSectionStatusRow: View {
+    let issue: HomeSectionIssue
+    let browseItem: MediaItem?
+    let appModel: PlozziOSAppModel
+    let viewModel: HomeViewModel
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var isBrowsing = false
+
+    var body: some View {
+        PlozziOSMediaSection(
+            title: issue.choice.localizedTitle.map(Text.init) ?? Text(verbatim: issue.choice.title),
+            onSeeAll: browseItem.map { _ in { isBrowsing = true } }
+        ) {
+            HomeSectionStatusView(issue: issue, showsTitle: false) {
+                Task { await viewModel.load(showLoadingState: false) }
+            }
+            .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: sizeClass))
+        }
+        .disabled(viewModel.isRefreshing)
+        .navigationDestination(isPresented: $isBrowsing) {
+            if let item = browseItem {
+                PlozziOSHomeCardDetail(
+                    item: item,
+                    fallbackProvider: item.sourceAccountID.flatMap {
+                        appModel.accountsProviders.provider(forAccountID: $0)
+                    }
+                )
+            }
+        }
+    }
+}
+
 private struct PlozziOSHomeRowFailure: View {
     let title: Text
     let error: AppError
     let viewModel: HomeViewModel
     var report: PlaybackDiagnosticReport? = nil
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         PlozziOSMediaSection(title: title) {
-            ContentStateView<Bool, EmptyView>(
-                state: .failed(error),
-                errorReport: report,
-                onRetry: { Task { await viewModel.load(showLoadingState: false) } }
-            ) { _ in EmptyView() }
-            .frame(minHeight: 220)
+            MediaRowStatusContent(message: error.userMessage, symbol: "exclamationmark.triangle") {
+                EmptyView()
+            } actions: {
+                ContentFailureActions(report: report) {
+                    Task { await viewModel.load(showLoadingState: false) }
+                }
+            }
+            .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: sizeClass))
             .disabled(viewModel.isRefreshing)
         }
     }
@@ -2899,7 +2919,7 @@ struct PlozziOSHomeMediaCard: View {
             // The chip is requested explicitly rather than riding an implicit
             // "landscape means playable" rule, so presentation and behaviour stay
             // independently controlled.
-            showsResumeChip: showsResumeChip || isLandscape || interaction == .play,
+            showsResumeChip: item.kind != .collection && (showsResumeChip || isLandscape || interaction == .play),
             downloadState: liveDownloadRecord?.badgeState,
             // No visible "…" while browsing: the actions people actually reach for
             // live on the detail page, which is far more discoverable than a tiny

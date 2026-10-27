@@ -13,6 +13,7 @@ from io import StringIO
 import json
 import os
 from pathlib import Path
+import plistlib
 import re
 import shutil
 import subprocess
@@ -45,6 +46,86 @@ def named_blocks(source: str, indent: int) -> dict[str, str]:
 
 
 JOBS = named_blocks(WORKFLOW.split("\njobs:\n", 1)[1], 2)
+
+
+class PrivacyManifestTests(unittest.TestCase):
+    def test_app_reasons_match_first_party_usage(self):
+        shared = {
+            "NSPrivacyAccessedAPICategoryFileTimestamp": {"C617.1"},
+            "NSPrivacyAccessedAPICategorySystemBootTime": {"35F9.1"},
+            "NSPrivacyAccessedAPICategoryUserDefaults": {"CA92.1"},
+        }
+        for platform, disk_reasons in (
+            ("tvOS", {"85F4.1"}),
+            ("iOS", {"85F4.1", "E174.1"}),
+        ):
+            with self.subTest(platform=platform):
+                path = ROOT / "App/Privacy" / platform / "PrivacyInfo.xcprivacy"
+                manifest = plistlib.loads(path.read_bytes())
+                entries = manifest["NSPrivacyAccessedAPITypes"]
+                actual = {
+                    entry["NSPrivacyAccessedAPIType"]: set(entry["NSPrivacyAccessedAPITypeReasons"])
+                    for entry in entries
+                }
+                self.assertEqual(len(entries), len(actual), "Do not duplicate API categories")
+                self.assertEqual(
+                    actual, {**shared, "NSPrivacyAccessedAPICategoryDiskSpace": disk_reasons}
+                )
+
+    def test_each_executable_bundles_its_own_manifest(self):
+        project = (ROOT / "project.yml").read_text()
+        targets = named_blocks(named_blocks(project, 0)["targets"], 2)
+        for target, path in (
+            ("Plozz", "App/Privacy/tvOS/PrivacyInfo.xcprivacy"),
+            ("PlozziOS", "App/Privacy/iOS/PrivacyInfo.xcprivacy"),
+            ("PlozzTopShelf", "TopShelf/PrivacyInfo.xcprivacy"),
+        ):
+            with self.subTest(target=target):
+                self.assertIn(f"- path: {path}\n        buildPhase: resources", targets[target])
+        extension = plistlib.loads((ROOT / "TopShelf/PrivacyInfo.xcprivacy").read_bytes())
+        self.assertEqual(extension["NSPrivacyAccessedAPITypes"], [])
+
+
+class AttributionTests(unittest.TestCase):
+    def test_license_references_follow_committed_dependency_pins(self):
+        packages = json.loads((ROOT / "Package.resolved").read_text())["pins"]
+        pins = {pin["identity"]: pin["state"] for pin in packages}
+        notice = (ROOT / "NOTICE.md").read_text()
+        attributions = (ROOT / "Sources/CoreModels/PlozzAttributions.swift").read_text()
+        self.assertIn(pins["aetherengine"]["revision"], notice)
+        for package in packages:
+            with self.subTest(package=package["identity"]):
+                ref = package["state"].get("version") or package["state"]["revision"]
+                self.assertIn(package["location"].removesuffix(".git") + "/tree/" + ref, attributions)
+        for identity in ("ffmpegbuild", "libdovi", "libtruehd"):
+            self.assertIn(f'`{pins[identity]["version"]}`', notice)
+
+    def test_metadata_services_and_bundled_fonts_are_credited(self):
+        attributions = (ROOT / "Sources/CoreModels/PlozzAttributions.swift").read_text()
+        metadata = (ROOT / "Sources/CoreModels/MetadataSourceAttribution.swift").read_text()
+        services = re.findall(r'name:\s*"([^"]+)"', metadata)
+        services += ["Emby", "Silo", "WeTrakr", "Last.fm", "Seerr", "LRCLIB", "IntroDB",
+                     "TheIntroDB", "Cover Art Archive", "Wikimedia Commons"]
+        for service in services:
+            with self.subTest(service=service):
+                self.assertIn(service, attributions)
+        normalized = re.sub(r"[^a-z0-9]", "", attributions.lower())
+        for directory in (ROOT / "App/Resources/Fonts", ROOT / "Sources/CoreUI/Resources"):
+            for path in sorted([*directory.glob("*.ttf"), *directory.glob("*.otf")]):
+                with self.subTest(font=path.name):
+                    family = re.sub(r"[^a-z0-9]", "", path.stem.split("-")[0].lower())
+                    self.assertIn(family, normalized)
+        titles = re.findall(r'title:\s*"([^"]+)"', attributions)
+        self.assertEqual(len(titles), len(set(titles)))
+
+    def test_current_engine_components_replace_retired_stack_credits(self):
+        attributions = (ROOT / "Sources/CoreModels/PlozzAttributions.swift").read_text()
+        for current in ("dav1d", "zimg", "WTFPL", "libzvbi", "SMBClient", "Sentry",
+                        "Swift Runtime Library Exception", "FreeType License"):
+            self.assertIn(current, attributions)
+        for retired in ("libavdevice", "libplacebo", "MoltenVK", "GnuTLS", "Nettle",
+                        "GMP", "AMSMB2", "OpenSSL", "libbluray", "YouTubeKit", "LibDTSX"):
+            self.assertNotIn(retired, attributions)
 
 
 def run_block(source: str) -> str:

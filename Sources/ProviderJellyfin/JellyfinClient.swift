@@ -25,6 +25,9 @@ public struct JellyfinClient: Sendable {
     /// One-way latch flipped the first time any request through this connection
     /// succeeds. See ``hasConfirmedReachableConnection``.
     private let reachability: ReachabilityLatch
+    private let playbackRequests: PlaybackInfoRequestCoordinator
+    private let playbackServerKey: String
+    private let inventoryScope = UUID()
 
     public init(
         baseURL: URL,
@@ -36,8 +39,11 @@ public struct JellyfinClient: Sendable {
         capabilityProfile: JellyfinCapabilityProfile = .detected(),
         serverID: String? = nil,
         alternateURLs: [URL] = [],
-        addressProbe: any HTTPClient = URLSessionHTTPClient(session: .plozzDiscovery)
+        addressProbe: any HTTPClient = URLSessionHTTPClient(session: .plozzDiscovery),
+        playbackRequests: PlaybackInfoRequestCoordinator = .shared
     ) {
+        self.playbackRequests = playbackRequests
+        self.playbackServerKey = "\(providerKind.rawValue)|\(serverID ?? baseURL.absoluteString)"
         let latch = ReachabilityLatch()
         let resolver: ServerAddressResolver?
         if let serverID {
@@ -90,8 +96,12 @@ public struct JellyfinClient: Sendable {
         http: HTTPClient,
         interactiveHTTP: HTTPClient,
         capabilityProfile: JellyfinCapabilityProfile,
-        addressResolver: ServerAddressResolver?
+        addressResolver: ServerAddressResolver?,
+        playbackRequests: PlaybackInfoRequestCoordinator,
+        playbackServerKey: String
     ) {
+        self.playbackRequests = playbackRequests
+        self.playbackServerKey = playbackServerKey
         self.savedBaseURL = baseURL
         self.addressResolver = addressResolver
         self.deviceProfile = deviceProfile
@@ -139,7 +149,9 @@ public struct JellyfinClient: Sendable {
             http: http,
             interactiveHTTP: interactiveHTTP,
             capabilityProfile: capabilityProfile,
-            addressResolver: addressResolver
+            addressResolver: addressResolver,
+            playbackRequests: playbackRequests,
+            playbackServerKey: playbackServerKey
         )
     }
 
@@ -694,6 +706,16 @@ public struct JellyfinClient: Sendable {
         }
     }
 
+    func cachedServerRatings(itemID: String) async throws -> MdbListCachedRatings {
+        let endpoint = Endpoint(
+            path: "/Plugins/MdbListRatings/CachedByItemId",
+            queryItems: [URLQueryItem(name: "itemId", value: itemID)],
+            headers: authHeaders,
+            redirectPolicy: .sameOrigin
+        )
+        return try await http.decode(MdbListCachedRatings.self, from: endpoint, baseURL: baseURL)
+    }
+
     /// `GET /Items/{id}/ThemeSongs`. Parent inheritance lets season and episode
     /// requests resolve their series theme when the server supports it.
     func themeSongs(userID: String, id: String) async throws -> ItemsResponse {
@@ -807,8 +829,7 @@ public struct JellyfinClient: Sendable {
 
     /// The item's online trailer links (`BaseItemDto.RemoteTrailers`) — YouTube
     /// watch URLs the server resolved from its own metadata provider. Unlike
-    /// local trailers these have no server item id; the caller extracts the
-    /// YouTube video id and plays it through the keyless trailer path. Returns an
+    /// local trailers these have no server item id and open externally. Returns an
     /// empty array when the server has none.
     func remoteTrailers(userID: String, id: String) async throws -> [MediaUrlDto] {
         let endpoint = Endpoint(
@@ -1099,20 +1120,28 @@ public struct JellyfinClient: Sendable {
 
     var canRequestHEVC: Bool { capabilityProfile.canRequestHEVC }
 
-    /// GET enumerates sources without a device profile, stream opening, or
-    /// playback reporting. Its generated PlaySessionId is not an encoding lease.
+    /// Explicit source discovery. GET can trigger server-side probing; it is not
+    /// a passive metadata read. Its PlaySessionId is not an encoding lease.
     func playbackSourceInventory(userID: String, itemID: String) async throws -> PlaybackInfoResponse {
-        try await HTTPResponseDiagnostics.$route.withValue(.playbackInventory) {
-            try await interactiveHTTP.decode(
-                PlaybackInfoResponse.self,
-                from: Endpoint(
-                    path: "/Items/\(itemID)/PlaybackInfo",
-                    queryItems: [URLQueryItem(name: "UserId", value: userID)],
-                    headers: authHeaders
-                ),
-                baseURL: baseURL
-            )
+        let result = try await HTTPResponseDiagnostics.$route.withValue(.playbackInventory) {
+            try await playbackRequests.run(
+                server: playbackServerKey,
+                inventoryKey: .init(scope: inventoryScope, userID: userID, itemID: itemID)
+            ) {
+                try await interactiveHTTP.decode(
+                    PlaybackInfoResponse.self,
+                    from: Endpoint(
+                        path: "/Items/\(itemID)/PlaybackInfo",
+                        queryItems: [URLQueryItem(name: "UserId", value: userID)],
+                        headers: authHeaders,
+                        allowsAutomaticAddressRetry: false
+                    ),
+                    baseURL: baseURL
+                )
+            }
         }
+        try Task.checkCancellation()
+        return result
     }
 
     func playbackInfo(
@@ -1194,7 +1223,14 @@ public struct JellyfinClient: Sendable {
             AllowVideoStreamCopy: allowStreamCopy,
             AllowAudioStreamCopy: allowStreamCopy
         ))
-        guard streaming != nil else {
+        let request = endpoint
+        return try await playbackRequests.run(server: playbackServerKey) {
+            try await sendPlaybackInfo(request, streaming: streaming != nil)
+        }
+    }
+
+    private func sendPlaybackInfo(_ endpoint: Endpoint, streaming: Bool) async throws -> PlaybackInfoResponse {
+        guard streaming else {
             return try await http.decode(PlaybackInfoResponse.self, from: endpoint, baseURL: baseURL)
         }
         let (data, response) = try await http.sendRaw(endpoint, baseURL: baseURL)

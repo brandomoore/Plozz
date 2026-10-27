@@ -6,9 +6,11 @@ import FeatureHomeCore
 import SwiftUI
 
 struct PlozziOSLibrarySelectionView: View {
-    let accounts: [ResolvedAccount]
-    @Bindable var visibility: HomeLibraryVisibilityModel
-    let onContinue: () -> Void
+    let appModel: PlozziOSAppModel
+    let accountIDs: [String]
+
+    private var visibility: HomeLibraryVisibilityModel { appModel.settings.homeVisibility }
+    private func onContinue() { appModel.completeLibrarySelection() }
 
     @State private var libraries: [LibraryChoice] = []
     @State private var isLoading = true
@@ -16,6 +18,29 @@ struct PlozziOSLibrarySelectionView: View {
     @State private var loadGeneration = 0
 
     var body: some View {
+        Group {
+            if let request = appModel.plexHomeUsers.pendingPlexPINRequest {
+                PlozziOSPlexPINView(
+                    model: appModel.plexHomeUsers, request: request, dismissOnSuccess: false
+                )
+            } else {
+                librarySelection
+            }
+        }
+        .task(id: loadID) {
+            guard appModel.plexHomeUsers.pendingPlexPINRequest == nil else { return }
+            await loadLibraries()
+        }
+        .interactiveDismissDisabled()
+    }
+
+    private var loadID: [String] {
+        [appModel.profiles.activeProfileID, String(appModel.plexHomeUsers.plexIdentityGeneration)]
+            + accountIDs
+            + appModel.accountsProviders.accounts.map { "\($0.id):\($0.credentialRevision.rawValue)" }
+    }
+
+    private var librarySelection: some View {
         NavigationStack {
             Group {
                 if isLoading {
@@ -57,8 +82,6 @@ struct PlozziOSLibrarySelectionView: View {
             .navigationTitle("Choose Your Libraries")
             .navigationBarTitleDisplayMode(.inline)
         }
-        .task { await loadLibraries() }
-        .interactiveDismissDisabled()
     }
 
     @ViewBuilder
@@ -130,12 +153,16 @@ struct PlozziOSLibrarySelectionView: View {
 
     @MainActor
     private func loadLibraries() async {
+        let scope = loadID
         loadGeneration += 1
         let generation = loadGeneration
         isLoading = true
         loadFailed = false
-        let discovery = await HomeAggregator().libraryDiscovery(from: accounts)
-        guard !Task.isCancelled, generation == loadGeneration else { return }
+        let accounts = appModel.accountsProviders.resolvedAccounts(withIDs: accountIDs)
+        let discovery = await HomeAggregator().libraryDiscovery(
+            from: accounts, expectedAccountIDs: Set(accountIDs)
+        )
+        guard !Task.isCancelled, generation == loadGeneration, scope == loadID else { return }
         loadFailed = !discovery.unreachableAccountIDs.isEmpty
         libraries = discovery.libraries.filter { !$0.library.isMusic }.map {
             LibraryChoice(accountID: $0.accountID, serverName: $0.serverName, library: $0.library)

@@ -6,6 +6,7 @@ import UIKit
 public enum PlayerZoomMenu {
     public static func make(
         model: PlayerVideoZoomModel, locale: Locale,
+        isCurrent: @escaping () -> Bool = { true },
         onCustomZoom: @escaping () -> Void
     ) -> UIMenu {
         let selection = model.settings.mode
@@ -16,6 +17,7 @@ public enum PlayerZoomMenu {
                 title: String(localized: title), // l10n:content - UIKit menu boundary.
                 state: selection == mode ? .on : .off
             ) { _ in
+                guard isCurrent() else { return }
                 model.settings.mode = mode
                 if mode == .custom { onCustomZoom() }
             }

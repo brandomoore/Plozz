@@ -8,10 +8,12 @@ to its underlying media sources.
 **Home section**:
 A configurable part of Home, such as Continue Watching, a library's Recently
 Added titles, Live TV, or the Hero. Its content is independent of its visual layout.
-_Avoid_: Row (as a synonym for the section), widget, module
+_Avoid_: Widget, module
 
-**Row**:
-A horizontal arrangement of cards within a Home section.
+**Home row**:
+A horizontal group of cards, such as Continue Watching, Recently Added, or a
+collection. Home's movable content is presented as rows; Hero and Showcase belong
+to the page layout.
 
 **Collection**:
 A named group of titles supplied by a media source. A Home section can use a
@@ -29,8 +31,9 @@ are configurable, but its position is not.
 The Apple TV layout whose preview follows the focused card. The preview belongs
 to the page layout rather than to a movable section.
 
-**Home layout preset**:
-A starting arrangement of Home sections. Match server follows available server
+**Row preset**:
+A starting arrangement of Home rows, independent of the page layout and card
+labels. Match server follows available server
 arrangements; Combined rows starts with cross-library rows.
 
 **Channel shortcut**:

@@ -117,6 +117,7 @@ public actor WatchlistReconciler {
     private let registry: WatchlistDestinationRegistry
     private let mutationStore: DurableWatchlistMutationStore
     private let retryPolicy: WatchlistRetryPolicy
+    private let onWriteSucceeded: @Sendable (String, WatchlistDestinationID) async -> Void
     private var activeProfileIDs: Set<String> = []
     private var inFlightKeys: Set<DestinationTitleKey> = []
     private var inFlightWriteCount = 0
@@ -126,11 +127,13 @@ public actor WatchlistReconciler {
     public init(
         registry: WatchlistDestinationRegistry,
         mutationStore: DurableWatchlistMutationStore,
-        retryPolicy: WatchlistRetryPolicy = .init()
+        retryPolicy: WatchlistRetryPolicy = .init(),
+        onWriteSucceeded: @escaping @Sendable (String, WatchlistDestinationID) async -> Void = { _, _ in }
     ) {
         self.registry = registry
         self.mutationStore = mutationStore
         self.retryPolicy = retryPolicy
+        self.onWriteSucceeded = onWriteSucceeded
     }
 
     public func enqueueFanOut(
@@ -775,6 +778,9 @@ public actor WatchlistReconciler {
                 try await destination.apply(mutation.desiredState, to: binding)
             }
             try await mutationStore.markSucceeded(mutation, now: Date())
+            if destination.reconciliationScope == operationScope {
+                await onWriteSucceeded(mutation.key.profileID, destination.id)
+            }
             // The destination is answering again, so stop punishing it.
             rateLimitCooldowns[destination.id] = nil
             FanoutDiagnostics.emit(
@@ -897,6 +903,7 @@ public actor WatchlistReconciler {
                 switch outcome {
                 case .success:
                     try await mutationStore.markSucceeded(entry.0, now: Date())
+                    await onWriteSucceeded(entry.0.key.profileID, destination.id)
                 case .failure(let error):
                     await recordFailure(error, mutation: entry.0, destination: destination, now: now)
                 }

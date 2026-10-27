@@ -105,7 +105,7 @@ final class JellyfinVersionsWatchlistRefreshTests: XCTestCase {
         }
     }
 
-    func testRemotePlaceholderLoadsReadOnlyInventoryWithSourceLocalFacts() async throws {
+    func testExplicitPlaybackLoadsInventoryWithSourceLocalFacts() async throws {
         for kind in [ProviderKind.jellyfin, .emby] {
             for itemType in ["Movie", "Episode"] {
                 let stub = StubHTTPClient()
@@ -127,7 +127,7 @@ final class JellyfinVersionsWatchlistRefreshTests: XCTestCase {
                 """)
                 var session = makeSession()
                 session.server.provider = kind
-                let item = try await JellyfinProvider(session: session, http: stub).item(id: "i1")
+                let item = try await JellyfinProvider(session: session, http: stub).playbackItem(id: "i1")
                 XCTAssertEqual(item.versions.map(\.playbackMediaSourceID), ["real-4k", "real-hd"])
                 let first = try XCTUnwrap(item.versions.first)
                 let last = try XCTUnwrap(item.versions.last)
@@ -158,6 +158,7 @@ final class JellyfinVersionsWatchlistRefreshTests: XCTestCase {
             let item = try await JellyfinProvider(session: makeSession(), http: stub).item(id: "i1")
             XCTAssertEqual(item.id, "i1")
             XCTAssertTrue(item.versions.isEmpty)
+            XCTAssertEqual(stub.sentPaths, ["/Users/u1/Items/i1"])
         }
     }
 
@@ -268,7 +269,9 @@ final class JellyfinVersionsWatchlistRefreshTests: XCTestCase {
 
     func testUnsupportedPlaybackInventoryAndCancellationBothPropagate() async throws {
         for cancelled in [false, true] {
-            let provider = JellyfinProvider(session: makeSession(), http: InventoryFailureHTTP(cancelled: cancelled))
+            let provider = JellyfinProvider(
+                session: makeSession(), http: InventoryFailureHTTP(cancelled: cancelled), playbackRequests: .init()
+            )
             do {
                 _ = try await provider.playbackItem(id: "i1")
                 XCTFail("Read-only discovery failure must not start playback.")
@@ -278,9 +281,11 @@ final class JellyfinVersionsWatchlistRefreshTests: XCTestCase {
         }
     }
 
-    func testOnlyRemoteSingleSourceVideoDetailsRequestInventory() async throws {
+    func testPassiveDetailsNeverRequestPlaybackInventory() async throws {
         for (type, sources) in [
             ("Movie", #"[]"#),
+            ("Movie", #"[{"Id":"remote","IsRemote":true}]"#),
+            ("Episode", #"[{"Id":"remote","IsRemote":true}]"#),
             ("Movie", #"[{"Id":"one","IsRemote":false}]"#),
             ("Movie", #"[{"Id":"one"}]"#),
             ("Movie", #"[{"Id":"one","IsRemote":true},{"Id":"two","IsRemote":true}]"#),
@@ -294,18 +299,12 @@ final class JellyfinVersionsWatchlistRefreshTests: XCTestCase {
         }
     }
 
-    func testUnsupportedInventoryFallsBackButCancellationPropagates() async throws {
+    func testBrowsingDoesNotContactUnsupportedOrCancelledInventory() async throws {
         for cancelled in [false, true] {
             let provider = JellyfinProvider(session: makeSession(), http: InventoryFailureHTTP(cancelled: cancelled))
-            do {
-                let item = try await provider.item(id: "i1")
-                XCTAssertFalse(cancelled, "Inventory cancellation must propagate.")
-                XCTAssertTrue(item.versions.isEmpty)
-                XCTAssertEqual(item.id, "i1")
-            } catch let error as AppError {
-                XCTAssertTrue(cancelled)
-                XCTAssertEqual(error, .cancelled)
-            }
+            let item = try await provider.item(id: "i1")
+            XCTAssertTrue(item.versions.isEmpty)
+            XCTAssertEqual(item.id, "i1")
         }
     }
 
@@ -385,11 +384,11 @@ final class JellyfinVersionsWatchlistRefreshTests: XCTestCase {
         XCTAssertEqual(stub.sentPaths, ["/Users/u1/Items/i2"], "Local single-source details need no inventory request.")
     }
 
-    func testTorrentSourcePathOnlyChangesTheDisplayFilename() throws {
-        let path = "https://media.example/stream?torrent_name=Film%20%26%20Friends.Extended.REMUX.mkv&id=tt123&media_type=movie"
+    func testFilenameHintOnlyChangesTheDisplayFilename() throws {
+        let path = "https://media.example/stream?file_name=Film%20%26%20Friends.Extended.REMUX.mkv&id=tt123&media_type=movie"
         let sources = try JSONDecoder.plozz.decode([MediaSourceInfo].self, from: Data("""
         [
-          {"Id":"torrent","Name":"4K Remux","Path":"\(path)"},
+          {"Id":"remote","Name":"4K Remux","Path":"\(path)"},
           {"Id":"local","Path":"/movies/Film.mkv"}
         ]
         """.utf8))
@@ -397,9 +396,29 @@ final class JellyfinVersionsWatchlistRefreshTests: XCTestCase {
         XCTAssertEqual(versions[0].fileName, "Film & Friends.Extended.REMUX.mkv")
         XCTAssertEqual(versions[0].sourceMetadata?.fileName, versions[0].fileName)
         XCTAssertEqual(MediaVersion.PickerPresentation(versions[0]).releaseName, versions[0].fileName)
-        XCTAssertEqual(versions[0].playbackMediaSourceID, "torrent")
+        XCTAssertEqual(versions[0].playbackMediaSourceID, "remote")
         XCTAssertEqual(sources[0].Path, path)
         XCTAssertEqual(versions[1].fileName, "Film.mkv")
+    }
+
+    func testOpaqueSourcePathKeepsServerLabelAndIdentity() throws {
+        let path = "https://media.example/stream?source_name=Hidden.Extended.mkv&token=fixture"
+        let sources = try JSONDecoder.plozz.decode([MediaSourceInfo].self, from: Data("""
+        [
+          {"Id":"remote","Name":"Server copy","Path":"\(path)","MediaStreams":[
+            {"Index":0,"Type":"Video","Codec":"hevc","Height":2160}
+          ]},
+          {"Id":"local","Path":"/movies/Film.mkv"}
+        ]
+        """.utf8))
+        let versions = JellyfinProvider.versions(from: sources)
+        XCTAssertNil(versions[0].fileName)
+        XCTAssertNil(versions[0].sourceMetadata?.fileName)
+        XCTAssertEqual(versions[0].resolutionLabel, "4K")
+        XCTAssertEqual(MediaVersion.PickerPresentation(versions[0]).releaseName, "Server copy")
+        XCTAssertNil(versions[0].editionLabel)
+        XCTAssertEqual(versions[0].playbackMediaSourceID, "remote")
+        XCTAssertEqual(sources[0].Path, path)
     }
 
     // MARK: - Feature B: Favorites-backed watchlist

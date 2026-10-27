@@ -4,7 +4,7 @@ import CoreModels
 import CoreNetworking
 import Foundation
 
-enum NativeStreamDetailsReader {
+public enum NativeStreamDetailsReader {
     static func read(_ item: AVPlayerItem) async -> MediaSourceMetadata {
         var metadata = MediaSourceMetadata()
         guard item.status == .readyToPlay else { return metadata }
@@ -62,15 +62,18 @@ enum NativeStreamDetailsReader {
         )
     }
 
-    static func audioStream(_ description: CMFormatDescription) -> MediaSourceMetadata.AudioStream {
-        let tag = fourCC(CMFormatDescriptionGetMediaSubType(description))
-        let codec: String
+    public static func audioCodec(_ subtype: FourCharCode) -> String { // l10n:content - technical codec identifiers, never translated.
+        let tag = fourCC(subtype)
         switch tag {
-        case "ac-3": codec = "ac3"
-        case "ec-3": codec = "eac3"
-        case "aac ", "aach", "aacp", "aacl": codec = "aac"
-        default: codec = tag.trimmingCharacters(in: .whitespaces)
+        case "ac-3": return "ac3"
+        case "ec-3": return "eac3"
+        case "aac ", "aach", "aacp", "aacl": return "aac"
+        default: return tag.trimmingCharacters(in: .whitespaces)
         }
+    }
+
+    public static func audioStream(_ description: CMFormatDescription) -> MediaSourceMetadata.AudioStream {
+        let codec = audioCodec(CMFormatDescriptionGetMediaSubType(description))
         let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee
         return .init(
             codec: codec,

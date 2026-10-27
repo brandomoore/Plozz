@@ -97,6 +97,29 @@ final class HomeAggregatorUnmergedTests: XCTestCase {
         XCTAssertTrue(recovered.unreachableAccountIDs.isEmpty)
     }
 
+    func testLibraryDiscoveryDoesNotCallUnresolvedAccountsEmptyLibraries() async {
+        let aggregator = HomeAggregator()
+        let unresolved = await aggregator.libraryDiscovery(from: [], expectedAccountIDs: ["plex"])
+        XCTAssertTrue(unresolved.libraries.isEmpty)
+        XCTAssertEqual(unresolved.failures, ["plex": .unauthorized])
+        XCTAssertEqual(unresolved.unreachableAccountIDs, ["plex"])
+
+        let partial = await aggregator.libraryDiscovery(
+            from: [resolved("ready", provider: UnmergedStub(libraries: [lib("movies", "Movies", .movie)]))],
+            expectedAccountIDs: ["ready", "plex"]
+        )
+        XCTAssertEqual(partial.libraries.map(\.library.id), ["movies"])
+        XCTAssertEqual(partial.failures, ["plex": .unauthorized])
+
+        let authenticatedEmpty = await aggregator.libraryDiscovery(
+            from: [resolved("plex", provider: UnmergedStub(libraries: []))],
+            expectedAccountIDs: ["plex"]
+        )
+        XCTAssertTrue(authenticatedEmpty.libraries.isEmpty)
+        XCTAssertTrue(authenticatedEmpty.failures.isEmpty)
+        XCTAssertTrue(authenticatedEmpty.unreachableAccountIDs.isEmpty)
+    }
+
     func testOnlyEnabledRowsAreFetchedAndShown() async {
         let stub = UnmergedStub(
             libraries: [lib("L1", "Movies", .movie)],

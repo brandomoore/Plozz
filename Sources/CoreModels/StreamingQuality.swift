@@ -530,7 +530,18 @@ public struct StreamingPlaybackFailure: Equatable, Sendable {
     }
 
     public var allowsCodecFallback: Bool {
-        kind == .unsupportedFormat || kind == .processingFailed || kind == .unknown || kind == .hdrConversionUnconfirmed
+        if kind == .unavailable {
+            // Native URL -1008 alone does not establish missing or expired media.
+            // Keep bounded compatibility recovery unless stronger failure evidence exists.
+            return domain == .url && code == URLError.resourceUnavailable.rawValue
+                && httpStatus == nil && providerReason == nil
+                && (engineFailure == nil || engineFailure == .nativeItemFailed)
+                && underlyingErrors.allSatisfy {
+                    $0.domain != .posix
+                        && ($0.domain != .url || $0.code == URLError.resourceUnavailable.rawValue)
+                }
+        }
+        return kind == .unsupportedFormat || kind == .processingFailed || kind == .unknown || kind == .hdrConversionUnconfirmed
     }
     public var diagnosticCode: String? {
         let components = [

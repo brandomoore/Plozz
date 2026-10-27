@@ -316,7 +316,10 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
             }
             for cell in collection.visibleCells {
                 guard let cell = cell as? NativeTVLibraryCell else { continue }
-                cell.configure(item: cell.item, spoilerSettings: spoilerSettings, environment: environment)
+                cell.configure(
+                    item: cell.item, spoilerSettings: spoilerSettings, environment: environment,
+                    style: model.gridStyle == .landscape ? .landscape : .poster
+                )
             }
         }
         view.setNeedsLayout()
@@ -328,10 +331,13 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
         scrollTarget?.moveHeader(with: collection.contentOffset.y + collection.adjustedContentInset.top)
         guard view.bounds.width > 0 else { return }
         let metrics = environment.plozzMetrics
-        let columns = max(1, metrics.libraryPosterColumns.count)
+        let landscape = model?.gridStyle == .landscape
+        let columns = max(1, metrics.libraryPosterColumns.count / (landscape ? 2 : 1))
         let usable = view.bounds.width - leadingInset - trailingInset - CGFloat(columns - 1) * metrics.gridSpacing
         let width = max(1, floor(usable / CGFloat(columns)))
-        let size = CGSize(width: width, height: NativeTVLibraryCell.height(for: width, environment: environment))
+        let size = CGSize(width: width, height: NativeTVLibraryCell.height(
+            for: width, environment: environment, style: landscape ? .landscape : .poster
+        ))
         let headerHeight: CGFloat
         if headerHost.view.bounds.width != view.bounds.width || measuredHeaderHeight <= 0 {
             headerHeight = headerHost.sizeThatFits(in: CGSize(width: view.bounds.width, height: .greatestFiniteMagnitude)).height
@@ -423,7 +429,10 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
         guard let cell = reusable as? NativeTVLibraryCell else {
             preconditionFailure("Library poster registration must produce NativeTVLibraryCell")
         }
-        cell.configure(item: model?.item(at: indexPath.item), spoilerSettings: spoilerSettings, environment: environment)
+        cell.configure(
+            item: model?.item(at: indexPath.item), spoilerSettings: spoilerSettings, environment: environment,
+            style: model?.gridStyle == .landscape ? .landscape : .poster
+        )
         return cell
     }
 
@@ -479,7 +488,10 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     private func observe(_ cell: NativeTVLibraryCell, index: Int, token: UUID) {
         guard let slot = model?.slot(at: index), bindings[ObjectIdentifier(cell)]?.token == token else { return }
         withObservationTracking {
-            cell.configure(item: slot.item, spoilerSettings: spoilerSettings, environment: environment)
+            cell.configure(
+                item: slot.item, spoilerSettings: spoilerSettings, environment: environment,
+                style: model?.gridStyle == .landscape ? .landscape : .poster
+            )
         } onChange: { [weak self, weak cell] in
             Task { @MainActor in
                 guard let self, let cell else { return }

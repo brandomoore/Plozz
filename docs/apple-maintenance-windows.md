@@ -50,7 +50,7 @@ close this bypass.
 
 1. Inventory every registered root, unregistered clone, raw/manual writer, and
    cleanup entrypoint on this machine. Include current **and** legacy Plozz,
-   Mozz, Twozz, and Hozz. Account for active and queued work, not just processes.
+   Mozz, Strozz, and Hozz. Account for active and queued work, not just processes.
 2. Obtain actual owner attestations and durable evidence for that exact scope.
    Unwrapped owners may explicitly hold their work for a bounded window; this
    tool does not request such holds or manufacture agreement.
@@ -158,6 +158,9 @@ Window request fields (exact, no unknown fields):
 | `cohorts` | One `{"name": "...", "roots": [...]}` for each required cohort |
 | `registries` | `{"app": "plozz\|mozz\|twozz\|hozz", "root": "/physical/repo", "sha256": "..."}` entries |
 | `approval` | Private SHA-bound reference to a supplied human approval document |
+
+Strozz retains the `twozz` registry identifier and `twozz-*` cohort names for
+compatibility with existing build-safety readers and attestations.
 
 The window must be open now, positive, and no longer than two hours. Each root
 is `{"identity": {"path": "...", "device": 1, "inode": 2}, "writers": [...]}`.

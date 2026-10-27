@@ -121,6 +121,7 @@ public final class NativeVideoEngine: VideoEngine {
     /// Detects an item that decodes audio but renders **no video frames** (e.g.
     /// HEVC AVPlayer can't display) so we can swap to the on-device engine.
     @ObservationIgnored private var missingVideoProbeTask: Task<Void, Never>?
+    @ObservationIgnored private var missingVideoProbe: (item: AVPlayerItem, output: AVPlayerItemVideoOutput)?
     /// Inspects the real container video format the moment it loads (concurrently
     /// with playback start) so a known AVPlayer-hostile codec can swap instantly
     /// instead of waiting out the no-frames probe.
@@ -217,6 +218,11 @@ public final class NativeVideoEngine: VideoEngine {
         guard !Task.isCancelled else { return }
         loadGeneration &+= 1
         let generation = loadGeneration
+        defer {
+            if generation == loadGeneration, Task.isCancelled {
+                stop()
+            }
+        }
         #if os(iOS)
         defer {
             if generation == loadGeneration, player == nil {
@@ -767,6 +773,7 @@ public final class NativeVideoEngine: VideoEngine {
         }
         routeChangeObserver = nil
         #endif
+        audioSessionConfigured = false
         teardownPlayer()
         #if os(tvOS)
         clearDisplayCriteria()
@@ -1009,7 +1016,7 @@ public final class NativeVideoEngine: VideoEngine {
     /// left completely untouched. The probe removes itself the moment a real frame
     /// appears, so healthy playback pays almost nothing.
     private func monitorForMissingVideo(item: AVPlayerItem, request: PlaybackRequest) {
-        missingVideoProbeTask?.cancel()
+        removeMissingVideoProbe()
         // Only meaningful when the source is expected to have video.
         guard request.sourceMetadata?.video != nil else { return }
         // Never probe HDR/Dolby Vision — protect the validated AVPlayer HDR path.
@@ -1017,6 +1024,7 @@ public final class NativeVideoEngine: VideoEngine {
 
         let output = AVPlayerItemVideoOutput(outputSettings: nil)
         item.add(output)
+        missingVideoProbe = (item, output)
 
         missingVideoProbeTask = Task { [weak self] in
             // Require this many seconds of *advancing* playback with no video frame
@@ -1028,12 +1036,12 @@ public final class NativeVideoEngine: VideoEngine {
 
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 300_000_000)
-                guard let self, let player = self.player,
+                guard !Task.isCancelled, let self, let player = self.player,
                       player.currentItem === item else { return }
 
                 // A decoded frame appeared → video is fine; drop the probe.
                 if output.hasNewPixelBuffer(forItemTime: player.currentTime()) {
-                    item.remove(output)
+                    self.removeMissingVideoProbe()
                     return
                 }
 
@@ -1047,7 +1055,7 @@ public final class NativeVideoEngine: VideoEngine {
                 if now.isFinite { lastSeconds = now }
 
                 if advanced >= requiredAdvance {
-                    item.remove(output)
+                    self.removeMissingVideoProbe()
                     PlozzLog.playback.info("AVPlayer rendered no video after \(Int(requiredAdvance))s of audio; swapping to the on-device engine")
                     self.onFailure?(.invalidResponse)
                     return
@@ -1056,9 +1064,15 @@ public final class NativeVideoEngine: VideoEngine {
         }
     }
 
-    /// Tears the current player down without touching the audio-session or
-    /// route-change observers. Used both when reloading for a retry and as part
-    /// of `stop()`.
+    private func removeMissingVideoProbe() {
+        missingVideoProbeTask?.cancel()
+        missingVideoProbeTask = nil
+        if let missingVideoProbe {
+            missingVideoProbe.item.remove(missingVideoProbe.output)
+        }
+        missingVideoProbe = nil
+    }
+
     /// Observes the natural end of `item` so the owner can react (e.g. dismiss a
     /// finished trailer). `didPlayToEndTimeNotification` fires only on a clean
     /// playthrough — never on a user-initiated stop or a failure — so it's a safe
@@ -1080,6 +1094,8 @@ public final class NativeVideoEngine: VideoEngine {
         }
     }
 
+    /// Release media resources even when presentation or diagnostics still retain
+    /// the outgoing player. Dropping our reference alone does not stop its item.
     private func teardownPlayer() {
         chapterMetadataTask?.cancel()
         chapterMetadataTask = nil
@@ -1089,8 +1105,7 @@ public final class NativeVideoEngine: VideoEngine {
         lifecycleDiagnostics = nil
         fallbackMonitorTask?.cancel()
         fallbackMonitorTask = nil
-        missingVideoProbeTask?.cancel()
-        missingVideoProbeTask = nil
+        removeMissingVideoProbe()
         formatInspectTask?.cancel()
         formatInspectTask = nil
         convertedVideoFormat = nil
@@ -1107,7 +1122,13 @@ public final class NativeVideoEngine: VideoEngine {
         }
         endOfPlaybackObserver = nil
         removeTimeObserver()
+        #if canImport(UIKit)
+        videoOutputView?.player = nil
+        #endif
         player?.pause()
+        player?.currentItem?.cancelPendingSeeks()
+        player?.currentItem?.asset.cancelLoading()
+        player?.replaceCurrentItem(with: nil)
         player = nil
         lastReportedSecond = -1
     }
@@ -1354,7 +1375,8 @@ public final class NativeVideoEngine: VideoEngine {
         preferredLanguages: [String]
     ) async {
         guard !preferredLanguages.isEmpty,
-              let group = try? await item.asset.loadMediaSelectionGroup(for: .audible)
+              let group = try? await item.asset.loadMediaSelectionGroup(for: .audible),
+              !Task.isCancelled, player?.currentItem === item
         else { return }
         let ranked = AVMediaSelectionGroup.mediaSelectionOptions(
             from: group.options,
@@ -1390,9 +1412,11 @@ public final class NativeVideoEngine: VideoEngine {
     /// currently owns audio switching; this rounds out the abstraction.
     public func selectAudioTrack(_ track: MediaTrack?) {
         guard let player, let item = player.currentItem else { return }
-        Task { [weak self] in
+        preferredAudioSelectionTask?.cancel()
+        preferredAudioSelectionTask = Task { [weak self] in
             guard let self,
-                  let group = try? await item.asset.loadMediaSelectionGroup(for: .audible) else { return }
+                  let group = try? await item.asset.loadMediaSelectionGroup(for: .audible),
+                  !Task.isCancelled, self.player?.currentItem === item else { return }
             self.select(track: track, in: group, on: item)
         }
     }

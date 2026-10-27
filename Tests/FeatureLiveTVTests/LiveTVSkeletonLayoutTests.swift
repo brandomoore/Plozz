@@ -33,7 +33,7 @@ final class LiveTVSkeletonLayoutTests: XCTestCase {
                      CGSize(width: 390, height: 844), CGSize(width: 844, height: 390)] {
             for largeText in [false, true] {
                 let layout = PrototypePreviewLayout(size: size, largeText: largeText)
-                let expectedHeight = min(layout.heroHeight - PrototypeLayout.smallGap, layout.compact ? 92 : 220)
+                let expectedHeight = max(0, min(layout.heroHeight - PrototypeLayout.smallGap, layout.compact ? 92 : 220))
                 XCTAssertEqual(layout.heroArtworkSize.height, expectedHeight.rounded())
                 XCTAssertEqual(layout.heroArtworkSize.width, (expectedHeight * 16 / 9).rounded())
                 XCTAssertGreaterThan(layout.guideWidth, 0)

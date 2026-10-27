@@ -83,7 +83,7 @@ struct CollectionSectionSettingsView: View {
     }
 
     var body: some View {
-        HomeEditorPage(title: isNew ? Text("Create section") : Text("Edit section"), showsHeader: true) {
+        HomeEditorPage(title: isNew ? Text("Create row") : Text("Edit row"), showsHeader: true) {
             VStack(alignment: .leading, spacing: 16) {
                 Picker("Layout", selection: $draft.cardStyle) {
                     ForEach(CollectionSection.CardStyle.allCases, id: \.self) { style in
@@ -107,7 +107,7 @@ struct CollectionSectionSettingsView: View {
             }
             .buttonStyle(SettingsFormButtonStyle())
             .accessibilityIdentifier("collection-section-source")
-            TextField("Section name", text: $draft.name, prompt: Text(verbatim: draft.source.title))
+            TextField("Row name", text: $draft.name, prompt: Text(verbatim: draft.source.title))
                 .accessibilityIdentifier("collection-section-name")
             Button {
                 do {
@@ -126,7 +126,7 @@ struct CollectionSectionSettingsView: View {
             .disabled(!accounts.contains(where: draft.source.matches))
             .accessibilityIdentifier("collection-section-save")
             if !isNew {
-                Button("Remove section", role: .destructive) {
+                Button("Remove from Home", role: .destructive) {
                     do {
                         try visibility.setHomeSectionVisible(false, id: draft.rowID, catalog: currentCatalog)
                         dismiss()
@@ -137,7 +137,7 @@ struct CollectionSectionSettingsView: View {
                 }
                 .plozzActionButton(role: .secondary)
             }
-            if saveFailed { InlineErrorMessage(Text("Couldn't update this section. Try again.")) }
+            if saveFailed { InlineErrorMessage(Text("Couldn't update this row. Try again.")) }
         }
         .settingsPageDestination(isPresented: $choosingSource) {
             HeroCollectionPickerView(

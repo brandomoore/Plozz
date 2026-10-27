@@ -55,4 +55,25 @@ final class MetadataSourceAttributionTests: XCTestCase {
         XCTAssertTrue(entry.detail.contains("filters and combines"))
         XCTAssertTrue(entry.licenses.contains { $0.label == "CC BY-SA 4.0" })
     }
+
+    func testAppCreditsCoverEveryExternalMetadataSource() {
+        let credits = PlozzAttributions.entries.map { "\($0.title) \($0.detail)" }.joined(separator: "\n")
+        for source in MetadataSourceAttribution.all {
+            XCTAssertTrue(credits.contains(source.name), "Missing app-wide credit for \(source.name)")
+        }
+        XCTAssertEqual(
+            Set(PlozzAttributions.entries.map(\.id)).count,
+            PlozzAttributions.entries.count
+        )
+    }
+
+    func testMetadataNoticesPreserveDataAndImageLicenseBoundaries() throws {
+        let tvmaze = try XCTUnwrap(MetadataSourceAttribution.for(.tvmaze))
+        XCTAssertTrue(tvmaze.notice.contains("https://creativecommons.org/licenses/by-sa/4.0/"))
+        for source in [MetadataSource.wikidata, .wikipedia] {
+            let credit = try XCTUnwrap(MetadataSourceAttribution.for(source))
+            XCTAssertTrue(credit.notice.contains("copyright"))
+            XCTAssertTrue(credit.notice.contains("license"))
+        }
+    }
 }

@@ -654,8 +654,8 @@ public struct DetailInformationSections: View {
         .presentationCornerRadius(overviewSheetCornerRadius)
         .preferredColorScheme(palette.isLight ? .light : .dark)
         // Elevation edge for dark themes, reusing the Settings sheet treatment:
-        // iPhone shows only the floating top rim (sides/bottom sit at the screen
-        // edge); iPad's centred card floats on all sides, so it gets a full
+        // Compact layouts show only the floating top rim (sides/bottom sit at the
+        // edge); a regular-width card floats on all sides, so it gets a full
         // border. Light themes already separate from the page behind them.
         .overlay {
             if !palette.isLight {
@@ -670,14 +670,6 @@ public struct DetailInformationSections: View {
     /// the card's rounded edge exactly. Matches the Settings sheet.
     private var overviewSheetCornerRadius: CGFloat { 20 }
 
-    private var isPadIdiom: Bool {
-        #if canImport(UIKit)
-        UIDevice.current.userInterfaceIdiom == .pad
-        #else
-        false
-        #endif
-    }
-
     @ViewBuilder
     private var overviewSheetElevationBorder: some View {
         let stroke = RoundedRectangle(
@@ -686,7 +678,7 @@ public struct DetailInformationSections: View {
         )
         .strokeBorder(palette.overlay.border ?? .clear, lineWidth: palette.overlay.borderWidth)
 
-        if isPadIdiom {
+        if horizontalSizeClass == .regular {
             // Full border: the whole card floats.
             stroke
                 .ignoresSafeArea()

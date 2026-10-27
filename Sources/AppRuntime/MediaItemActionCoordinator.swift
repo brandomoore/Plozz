@@ -37,6 +37,7 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
         @MainActor (String, LocalizedStringResource) -> Void
     private let beginUniversalWatchlistFanOut:
         @MainActor (Bool, MediaItem) -> Void
+    private let watchlistProviderChange: (String) -> WatchlistProviderChange?
     private let resolveDurableWatchlist: ([MediaItem]) -> [MediaItem]
     private let durableWatchlistPresentationReady: () -> Bool
     private let durableWatchlistLoadingTarget: () -> Int?
@@ -162,6 +163,7 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
             ) -> Void = { _, _ in },
         beginUniversalWatchlistFanOut:
             @escaping @MainActor (Bool, MediaItem) -> Void = { _, _ in },
+        watchlistProviderChange: @escaping (String) -> WatchlistProviderChange? = { _ in nil },
         resolveDurableWatchlist: @escaping ([MediaItem]) -> [MediaItem] = {
             $0.filter(\.isFavorite)
         },
@@ -191,6 +193,7 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
         self.presentUniversalWatchlistFeedback =
             presentUniversalWatchlistFeedback
         self.beginUniversalWatchlistFanOut = beginUniversalWatchlistFanOut
+        self.watchlistProviderChange = watchlistProviderChange
         self.resolveDurableWatchlist = resolveDurableWatchlist
         self.durableWatchlistPresentationReady =
             durableWatchlistPresentationReady
@@ -591,12 +594,16 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
         var scoped = Set(unionedSourceRefs(for: item).map(\.id))
         if let account = item.sourceAccountID { scoped.insert("\(account):\(item.id)") }
         MediaItemMutation(itemIDs: [item.id], scopedItemIDs: scoped, favorite: adding).post()
+        let changes = targets.map { target in
+            target.item.sourceAccountID.flatMap(watchlistProviderChange)
+        }
         Task {
             var anySucceeded = false
-            for target in targets {
+            for (target, change) in zip(targets, changes) {
                 do {
                     try await target.provider.setWatchlisted(adding, item: target.item)
                     anySucceeded = true
+                    change?.post()
                 } catch {
                     PlozzLog.app.error("Watchlist \(adding ? "add" : "remove") failed on a provider")
                 }

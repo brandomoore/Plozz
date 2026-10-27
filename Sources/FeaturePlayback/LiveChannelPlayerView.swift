@@ -12,6 +12,51 @@ struct LiveChannelSessionReporting {
     let failed: @MainActor (LiveChannelFailureReport) -> Void
 }
 
+#if os(iOS)
+public struct LiveChannelRotationTarget: Equatable {
+    public let id: UUID
+    public let canExpand: Bool
+    public let expand: @MainActor () -> Void
+    public let returnToGuide: @MainActor () -> Void
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id && lhs.canExpand == rhs.canExpand
+    }
+}
+
+public struct LiveChannelRotationTargetKey: PreferenceKey {
+    public static var defaultValue: LiveChannelRotationTarget? { nil }
+    public static func reduce(value: inout LiveChannelRotationTarget?, nextValue: () -> LiveChannelRotationTarget?) {
+        value = nextValue() ?? value
+    }
+}
+
+private struct LiveChannelSystemOverlaysHiddenKey: PreferenceKey {
+    static var defaultValue: Bool { false }
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = nextValue() || value
+    }
+}
+
+private struct LiveChannelSystemOverlays: ViewModifier {
+    @State private var hidden = false
+
+    func body(content: Content) -> some View {
+        content
+            .onPreferenceChange(LiveChannelSystemOverlaysHiddenKey.self) { hidden = $0 }
+            .statusBarHidden(hidden)
+            .persistentSystemOverlays(hidden ? .hidden : .automatic)
+    }
+}
+
+public extension View {
+    /// Apply outside navigation containers so their hosting controller owns the request.
+    func liveChannelSystemOverlays() -> some View {
+        modifier(LiveChannelSystemOverlays())
+    }
+}
+#endif
+
 /// Playback host for live channels.
 ///
 /// The host deliberately bypasses `PlayerViewModel`: live channels have no
@@ -31,6 +76,12 @@ public struct LiveChannelPlayerView: View {
     private let canToggleFavorite: Bool
     private let onToggleFavorite: () -> Void
     private let isExpanded: Bool
+    private let isPreviewVisible: Bool
+    private let onExpandPreview: (() -> Void)?
+    private let previewReflectionHeight: CGFloat
+    private let previewTopReflectionHeight: CGFloat
+    private let previewLeadingReflectionWidth: CGFloat
+    private let previewTrailingReflectionWidth: CGFloat
     private let usesNativeFullscreen: Bool
     private let isActive: Bool
     private let onReturnToGuide: (() -> Void)?
@@ -66,6 +117,7 @@ public struct LiveChannelPlayerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(GlassPerformanceModel.self) private var glassPerformance: GlassPerformanceModel?
     @State private var model: LiveChannelPlayerModel?
     @State private var sourceTask: Task<Void, Never>?
@@ -109,6 +161,29 @@ public struct LiveChannelPlayerView: View {
         #endif
     }
 
+    private var hasInlineControls: Bool {
+        #if os(iOS)
+        !isExpanded && !isMultiview && onExpandPreview != nil
+        #else
+        false
+        #endif
+    }
+
+    private var hasInteractiveControls: Bool { isExpanded || hasInlineControls }
+
+    #if os(iOS)
+    private var rotationTarget: LiveChannelRotationTarget? {
+        guard isActive, isAuthorized, scenePhase == .active, !isMultiview,
+              let model, sourceMatchesCurrentModel, model.hasPresentedFrame, !model.phase.isInterrupted,
+              model.interruption == nil, model.networkBlock == nil, !model.continuesExternally,
+              let reportingID, let onExpandPreview, let onReturnToGuide else { return nil }
+        return LiveChannelRotationTarget(
+            id: reportingID, canExpand: hasInlineControls && isPreviewVisible,
+            expand: onExpandPreview, returnToGuide: onReturnToGuide
+        )
+    }
+    #endif
+
     public init(
         channelID: String,
         title: String, // l10n:content — provider-supplied channel name
@@ -122,6 +197,12 @@ public struct LiveChannelPlayerView: View {
         canToggleFavorite: Bool,
         onToggleFavorite: @escaping () -> Void,
         isExpanded: Bool = true,
+        isPreviewVisible: Bool = true,
+        onExpandPreview: (() -> Void)? = nil,
+        previewReflectionHeight: CGFloat = 0,
+        previewTopReflectionHeight: CGFloat = 0,
+        previewLeadingReflectionWidth: CGFloat = 0,
+        previewTrailingReflectionWidth: CGFloat = 0,
         usesNativeFullscreen: Bool = false,
         isActive: Bool = true,
         onReturnToGuide: (() -> Void)? = nil,
@@ -168,6 +249,12 @@ public struct LiveChannelPlayerView: View {
         self.canToggleFavorite = canToggleFavorite
         self.onToggleFavorite = onToggleFavorite
         self.isExpanded = isExpanded
+        self.isPreviewVisible = isPreviewVisible
+        self.onExpandPreview = onExpandPreview
+        self.previewReflectionHeight = previewReflectionHeight
+        self.previewTopReflectionHeight = previewTopReflectionHeight
+        self.previewLeadingReflectionWidth = previewLeadingReflectionWidth
+        self.previewTrailingReflectionWidth = previewTrailingReflectionWidth
         self.usesNativeFullscreen = usesNativeFullscreen
         self.isActive = isActive
         self.onReturnToGuide = onReturnToGuide
@@ -272,22 +359,30 @@ public struct LiveChannelPlayerView: View {
 
     private var playerSurface: some View {
         ZStack {
-            Color.black
+            (hasInlineControls ? Color.clear : Color.black)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea()
+                .ignoresSafeArea(.all, edges: hasInlineControls ? [] : .all)
 
             if let model {
                 let sourceMatches = model.matchesSource(
                     channelID: channelID,
                     input: input
                 )
+                let showsReflection = hasInlineControls && !reduceTransparency && isActive
+                    && scenePhase == .active && !model.continuesExternally
                 VideoSurfaceContainer(
                     engine: model.engine, zoom: model.videoZoom.settings,
                     aspectRatio: model.videoAspectRatio,
-                    fitsInsideSafeArea: liveSubtitleViewport != nil && !model.continuesExternally,
-                    subtitleViewport: liveSubtitleViewport
+                    subtitleViewport: liveSubtitleViewport,
+                    reflectionHeight: showsReflection ? previewReflectionHeight : 0,
+                    topReflectionHeight: showsReflection ? previewTopReflectionHeight : 0,
+                    leadingReflectionWidth: showsReflection ? previewLeadingReflectionWidth : 0,
+                    trailingReflectionWidth: showsReflection ? previewTrailingReflectionWidth : 0,
+                    previewCornerRadius: hasInlineControls ? PlozzTheme.Metrics.Radius.content : 0,
+                    reflectionIsActive: sourceMatches && model.hasPresentedFrame
+                        && model.interruption == nil && model.networkBlock == nil
                 )
-                    .ignoresSafeArea()
+                    .ignoresSafeArea(.all, edges: hasInlineControls ? [] : .all)
 
                 if sourceMatches, model.networkBlock == nil, !model.continuesExternally {
                     LiveChannelSubtitleSurface(model: model, viewport: liveSubtitleViewport)
@@ -295,7 +390,14 @@ public struct LiveChannelPlayerView: View {
                 }
 
                 #if os(iOS)
-                if isExpanded {
+                if hasInlineControls {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if controlsVisible { dismissControls() }
+                            else { revealControls() }
+                        }
+                } else if isExpanded {
                     mobileGestureSurface(model: model)
                 }
                 #endif
@@ -318,13 +420,13 @@ public struct LiveChannelPlayerView: View {
                     Rectangle()
                         .fill(.black)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .ignoresSafeArea()
+                        .ignoresSafeArea(.all, edges: hasInlineControls ? [] : .all)
                         .allowsHitTesting(false)
                 }
 
                 if let networkBlock = model.networkBlock {
                     LiveChannelNetworkStatus(block: networkBlock)
-                } else if isExpanded {
+                } else if hasInteractiveControls {
                     #if os(tvOS)
                     if !controlsVisible {
                         LiveChannelRevealSurface(
@@ -336,7 +438,7 @@ public struct LiveChannelPlayerView: View {
                     #endif
 
                     if controlsVisible || touchGestures.skip != nil,
-                       !sourceMatches || model.interruption == nil {
+                       hasInlineControls || !sourceMatches || model.interruption == nil {
                         LiveChannelOverlay(
                             title: title,
                             logoURL: logoURL,
@@ -375,19 +477,23 @@ public struct LiveChannelPlayerView: View {
                             onTracksPresentationChange: { tracksArePresented = $0 },
                             onControlActivity: noteControlNavigation,
                             onDismissControls: dismissControls,
-                            hasTouchGestureSurface: true,
+                            hasTouchGestureSurface: !hasInlineControls,
                             touchBackgroundTapRevision: touchBackgroundTapRevision,
                             touchTimelineOnly: !controlsVisible,
                             onTouchScrubbingChanged: {
                                 touchScrubbing = $0
                                 if $0 { touchGestures.cancel() }
-                            }
+                            },
+                            onExpandPreview: hasInlineControls ? onExpandPreview : nil,
+                            onCollapsePreview: isExpanded && !isMultiview && onExpandPreview != nil
+                                ? dismissPlayer : nil,
+                            previewStatus: sourceMatches ? model.interruption?.title : nil
                         )
                         .onAppear(perform: focusPlaybackControlIfNeeded)
                         .transition(.opacity)
                     }
 
-                    if sourceMatches, let interruption = model.interruption {
+                    if isExpanded, sourceMatches, let interruption = model.interruption {
                         LiveChannelInterruptionView(
                             interruption: interruption,
                             report: model.failureReport,
@@ -493,6 +599,12 @@ public struct LiveChannelPlayerView: View {
             }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: controlsVisible)
+        #if os(iOS)
+        .preference(
+            key: LiveChannelSystemOverlaysHiddenKey.self,
+            value: isActive && isAuthorized && isExpanded && !isMultiview && !controlsVisible
+        )
+        #endif
         #if os(tvOS)
         .onReceive(NotificationCenter.default.publisher(for: LiveTVGuideButton.pressed)) { _ in
             guard isExpanded, isActive, guideOverlay != nil else { return }
@@ -515,7 +627,7 @@ public struct LiveChannelPlayerView: View {
         .task(id: autoHideRevision) {
             let startedAt = ProcessInfo.processInfo.systemUptime
             while !Task.isCancelled {
-                guard isExpanded, controlsVisible, !tracksArePresented, !guidePresented,
+                guard hasInteractiveControls, controlsVisible, !tracksArePresented, !guidePresented,
                       model?.phase == .playing else { return }
                 let remaining = hudInactivity.remainingDelay(
                     startedAt: startedAt,
@@ -538,6 +650,7 @@ public struct LiveChannelPlayerView: View {
     public var body: some View {
         presentationObservedRoot
             #if os(iOS)
+            .preference(key: LiveChannelRotationTargetKey.self, value: rotationTarget)
             .playerTouchLevelSession(
                 isActive: isActive && isAuthorized && isExpanded && !isMultiview
                     && model?.continuesExternally != true
@@ -574,7 +687,7 @@ public struct LiveChannelPlayerView: View {
 
     private var presentationObservedRoot: some View {
         ZStack {
-            Color.black
+            (hasInlineControls ? Color.clear : Color.black)
             if !fullscreenOwnsSurface {
                 playerSurface
             }
@@ -582,6 +695,9 @@ public struct LiveChannelPlayerView: View {
         .plozzFullScreenCover(isPresented: $fullscreenPresented, onDismiss: fullscreenDidDismiss) {
             playerSurface
                 .ignoresSafeArea()
+                #if os(iOS)
+                .liveChannelSystemOverlays()
+                #endif
         }
         .onChange(of: wantsNativeFullscreen, initial: true) { _, presented in
             returnsToGuideAfterFullscreen = presented
@@ -852,7 +968,7 @@ public struct LiveChannelPlayerView: View {
     }
 
     private func noteInteraction() {
-        guard isExpanded else { return }
+        guard hasInteractiveControls else { return }
         hudInactivity.recordInteraction(at: ProcessInfo.processInfo.systemUptime)
         controlsVisible = true
         autoHideRevision &+= 1
@@ -881,13 +997,13 @@ public struct LiveChannelPlayerView: View {
 
     /// A tap on the bare video, as VOD's touch player: whatever the phase.
     private func dismissControls() {
-        guard isExpanded else { return }
+        guard hasInteractiveControls else { return }
         focusedControl = nil
         controlsVisible = false
     }
 
     private func hideControls() {
-        guard isExpanded, model?.phase == .playing else { return }
+        guard hasInteractiveControls, model?.phase == .playing else { return }
         focusedControl = nil
         controlsVisible = false
         focusAfterPresentation(.surface)

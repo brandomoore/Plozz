@@ -69,15 +69,14 @@ struct AppearanceDetailView: View {
     private var rows: [SettingsSplitRow] {
         let availableRows = allRows
         if section == .screensNavigation {
-            return [
+            return availableRows.filter { $0.id == "navigation" }.map { $0.destination(.navigationLayout) } + [
                 SettingsSplitRow(
                     id: "content-ratings", title: "Show content ratings",
                     sectionStart: .heading(Text("All screens"))
                 ) {
                     ContentRatingToggle(model: contentRatings)
                 }.labeledControl()
-            ] + SpoilerRowsBuilder(spoilers: spoilers).rows.map { $0.page() }
-                + availableRows.filter { $0.id == "navigation" }.map { $0.destination(.navigationLayout) } + [
+            ] + SpoilerRowsBuilder(spoilers: spoilers).rows.map { $0.page() } + [
                     SettingsSplitRow(
                         id: "customize-home", title: "Customize Home",
                         sectionStart: .heading(Text("Customize individual screens"))
@@ -158,13 +157,15 @@ struct AppearanceDetailView: View {
                     id: "cards",
                     title: "Cards",
                     description: "How media cards look across the app.",
-                    subpage: SettingsDetailSubpage { CardCaptionCustomizationView(cards: cardStyle) }
+                    subpage: SettingsDetailSubpage {
+                        CardCaptionCustomizationView(cards: cardStyle, visibility: librariesScope.homeVisibility)
+                    }
                 ) {
                     cardsControls
                 }.groupedContent(),
                 SettingsSplitRow(
                     id: "navigation",
-                    title: "Navigation"
+                    title: "App navigation"
                 ) {
                     NavigationAppearanceDetail(
                         navigation: navigation,
@@ -237,8 +238,6 @@ struct AppearanceDetailView: View {
                 SettingsControlGroup(illustrated: true) {
                     CompactNavigationPicker(selection: $navigation.style)
                     Toggle("Prevent Accidental Exit", isOn: $navigation.preventsAccidentalExit)
-                    Toggle("Zoom when opening titles", isOn: $navigation.detailZoomEnabled)
-                        .accessibilityIdentifier("detail-zoom-enabled")
                 }
                 #else
                 CompactNavigationPicker(selection: $navigation.style)
@@ -257,7 +256,10 @@ struct AppearanceDetailView: View {
     }
 
     @ViewBuilder private var cardsControls: some View {
-        CardAppearanceControls(cards: cardStyle, watchIndicator: watchStatusIndicator, density: density)
+        CardAppearanceControls(
+            cards: cardStyle, watchIndicator: watchStatusIndicator,
+            density: density, visibility: librariesScope.homeVisibility
+        )
     }
 }
 
@@ -329,7 +331,8 @@ struct DetailPageDetailView: View {
         var rows = [
             SettingsSplitRow(
                 id: "detail-page-hero-mode",
-                title: "Background"
+                title: "Background",
+                sectionStart: detailHeaderSettings == nil ? .heading(Text("Hero")) : nil
             ) {
                 SettingsControlRows(nonTVSpacing: SettingsMetrics.sectionSpacing) {
                     DescribedSegmentedPicker(
@@ -342,14 +345,7 @@ struct DetailPageDetailView: View {
                         Toggle("Start muted", isOn: $heroBackground.settings.detailTrailerMuted)
                     }
                     if heroBackground.settings.detailMode == .themeMusic {
-                        SettingsDetailGroup(title: "Volume") {
-                            DescribedSegmentedPicker(
-                                options: ThemeMusicVolume.playbackLevels,
-                                selection: $themeMusic.settings.volume,
-                                title: { $0.displayName },
-                                detail: { $0.detail }
-                            )
-                        }
+                        ThemeMusicVolumeControl(model: themeMusic)
                     }
                 }
             }
@@ -357,7 +353,8 @@ struct DetailPageDetailView: View {
         if let detailHeaderSettings {
             rows.insert(SettingsSplitRow(
                 id: "detail-page-logo-size",
-                title: "Logo & text size"
+                title: "Logo & text size",
+                sectionStart: .heading(Text("Hero"))
             ) {
                 DetailLogoSizeSettingsForm(model: detailHeaderSettings)
             }, at: 0)
@@ -374,9 +371,11 @@ struct DetailPageDetailView: View {
                 DetailHeaderAgeSettingsForm(model: detailHeaderSettings)
             })
         }
-        rows.append(SettingsSplitRow(id: "detail-page-card-labels", title: "Card labels") {
-            CardCaptionSettingsControls(cards: cards, scope: .detail)
-        })
+        rows.append(SettingsSplitRow(
+            id: "detail-page-card-labels", title: "Customize labels", sectionStart: .heading(Text("Cards"))
+        ) {
+            CardCaptionSettingsLink(cards: cards, scope: .detail)
+        }.labeledControl())
         return rows
     }
 }
@@ -825,6 +824,9 @@ struct PlaybackDetailView: View {
                     Toggle("Remember audio language per series", isOn: $playback.settings.rememberAudioTrackPerSeries)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            },
+            SettingsSplitRow(id: "lossless-surround", title: "Audio") {
+                LosslessAudioControl()
             }
         ]
         #if os(tvOS)

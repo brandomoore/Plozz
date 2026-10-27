@@ -14,7 +14,7 @@ final class VersionPickerPresentationTests: XCTestCase {
         [
             MediaVersion(
                 id: "remux",
-                fileName: "https://media.example/stream?torrent_name=Movie.Extended.2160p.REMUX.HEVC.TrueHD-GROUP.mkv&id=tt123&media_type=movie",
+                fileName: "https://media.example/stream?filename=Movie.Extended.2160p.REMUX.HEVC.TrueHD-GROUP.mkv&id=tt123&media_type=movie",
                 edition: "Extended", height: 2160, bitrate: 80_000_000, sizeBytes: 42_000_000_000,
                 duration: 7_200, videoCodec: "hevc", videoRange: "SDR", audioCodec: "truehd", audioChannels: 8,
                 sourceMetadata: .init(
@@ -347,7 +347,7 @@ final class VersionPickerPresentationTests: XCTestCase {
             XCTAssertTrue(visible.localizedCaseInsensitiveContains(fact), "Missing \(fact) in \(name) at \(width): \(visible)")
         }
         XCTAssertTrue(observedBadgeFooter, "The version card's filename and badge footer must remain visible together.")
-        XCTAssertFalse(visible.contains("torrent_name"))
+        XCTAssertFalse(visible.contains("filename="))
         XCTAssertFalse(visible.contains("media_type"))
         XCTAssertFalse(visible.contains(hiddenLanguage), "Additional languages belong behind the compact count, not ten chips.")
     }

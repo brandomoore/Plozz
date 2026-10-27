@@ -5,11 +5,10 @@ import Foundation
 /// notice is *contractually required* (TheTVDB and TMDB both require visible
 /// attribution when their APIs are used).
 ///
-/// This is the single source of truth for that copy so the metadata Settings
-/// "Attribution" section and the existing app-wide credits screen render identical
-/// text instead of each hard-coding their own. `nil` from ``for(source:)`` means the
-/// source is internal (server / local NFO / filename / embedded / generated) and
-/// needs no third-party credit.
+/// Shared by the metadata settings screens. ``PlozzAttributions`` also credits
+/// these services alongside app dependencies and fonts; coverage tests keep the
+/// lists aligned. `nil` from ``for(source:)`` means the source is internal (server /
+/// local NFO / filename / embedded / generated) and needs no third-party credit.
 public struct MetadataSourceAttribution: Sendable, Equatable, Identifiable {
     public var source: MetadataSource
     /// Human-facing display name (e.g. "TheTVDB").
@@ -85,7 +84,7 @@ public struct MetadataSourceAttribution: Sendable, Equatable, Identifiable {
         add(.init(
             source: .tvmaze,
             name: "TVmaze",
-            notice: "TV series metadata is sourced from TVmaze (tvmaze.com), which does not endorse or affiliate with Plozz.",
+            notice: "TV series metadata is sourced from TVmaze (tvmaze.com) under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Plozz filters and combines this data. TVmaze does not endorse or affiliate with Plozz.",
             url: URL(string: "https://www.tvmaze.com")
         ))
         add(.init(
@@ -103,13 +102,13 @@ public struct MetadataSourceAttribution: Sendable, Equatable, Identifiable {
         add(.init(
             source: .wikidata,
             name: "Wikidata",
-            notice: "Fallback artwork lookup uses the Wikidata Query Service (wikidata.org).",
+            notice: "Entity data and artwork lookups use Wikidata (wikidata.org) under CC0. Images linked from Wikidata retain their own licenses and copyright.",
             url: URL(string: "https://www.wikidata.org")
         ))
         add(.init(
             source: .wikipedia,
             name: "Wikipedia",
-            notice: "Fallback artwork lookup uses Wikipedia (wikipedia.org), content under CC BY-SA.",
+            notice: "Text and biography lookups use Wikipedia (wikipedia.org) under CC BY-SA; see each page's terms. Artwork from Wikipedia and Wikimedia Commons retains its per-file license and copyright.",
             url: URL(string: "https://www.wikipedia.org")
         ))
         add(.init(

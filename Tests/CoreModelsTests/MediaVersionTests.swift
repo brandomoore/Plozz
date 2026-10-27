@@ -43,6 +43,15 @@ final class MediaVersionTests: XCTestCase {
         XCTAssertEqual(version.compatibility(with: .init(supportsHDR10: false)), .transcode)
     }
 
+    func testCombinedDolbyVisionBadgeDoesNotBypassNativeCompatibilityGating() {
+        let version = MediaVersion(
+            id: "dv", videoCodec: "hevc", videoRange: "DOVIWithHDR10Plus", audioCodec: "aac"
+        )
+        XCTAssertEqual(version.technicalBadges, [MediaBadge("Dolby Vision", style: .dolby, detail: "HDR10+")])
+        XCTAssertEqual(version.compatibility(with: .init(supportsDolbyVision: false)), .transcode)
+        XCTAssertEqual(version.compatibility(with: .init(supportsDolbyVision: true)), .directPlay)
+    }
+
     func testTechnicalBadgesUsePictureThenAudioOrder() {
         let dovi = MediaVersion(
             id: "1",
@@ -55,7 +64,8 @@ final class MediaVersionTests: XCTestCase {
             audioProfile: "Dolby Atmos"
         )
         XCTAssertEqual(dovi.technicalBadges.map(\.label),
-                       ["4K", "Dolby Vision", "HDR10", "Dolby Digital+", "Dolby Atmos"])
+                       ["4K", "Dolby Vision", "Dolby Digital+", "Dolby Atmos"])
+        XCTAssertEqual(dovi.technicalBadges[1].detail, "HDR10")
 
         // A 720p SDR stereo version should emit just 720p · SDR — no audio
         // headline, no HDR badges, and channels < 6 are not surfaced.
@@ -154,8 +164,9 @@ final class MediaVersionTests: XCTestCase {
         ])
         XCTAssertEqual(row.releaseName, "Film.Extended.2160p.REMUX-GROUP.mkv")
         XCTAssertEqual(row.badges.map(\.label), [
-            "4K", "Dolby Vision", "HDR10", "HEVC", "Dolby TrueHD", "Dolby Atmos", "English", "French"
+            "4K", "Dolby Vision", "HEVC", "Dolby TrueHD", "Dolby Atmos", "English", "French"
         ])
+        XCTAssertEqual(row.badges.first { $0.label == "Dolby Vision" }?.detail, "HDR10")
         XCTAssertEqual(row.badges.first { $0.label == "HEVC" }?.style, .spec)
         XCTAssertEqual(row.badges.suffix(2).map(\.style), [.audio, .audio])
         XCTAssertEqual(row.badges.first { $0.label == "Dolby TrueHD" }?.style, .dolby)
@@ -332,8 +343,8 @@ final class MediaVersionTests: XCTestCase {
         )
     }
 
-    func testPortsydeTorrentNamesAreDecodedWithoutChangingStoredSourceOrIdentity() throws {
-        let query = "torrent_name=Film%20%26%20Friends.Extended.2160p.REMUX-GROUP.mkv&id=tt123&media_type=movie"
+    func testFilenameHintsAreDecodedWithoutChangingStoredSourceOrIdentity() throws {
+        let query = "filename=Film%20%26%20Friends.Extended.2160p.REMUX-GROUP.mkv&id=tt123&media_type=movie"
         for rawName in [
             "https://media.example/stream?\(query)",
             "n?\n\(query)",
@@ -359,7 +370,7 @@ final class MediaVersionTests: XCTestCase {
 
     func testURLBackedProviderNameCannotLeakQueryTextIntoPickerTitles() {
         let version = MediaVersion(
-            id: "source", name: "https://media.example/stream?torrent_name=Release%20Name&id=tt123"
+            id: "source", name: "https://media.example/stream?file_name=Release%20Name&id=tt123"
         )
         XCTAssertEqual(version.displayLabel, "Release Name")
         XCTAssertEqual(version.menuTitle, "Release Name")
@@ -378,22 +389,39 @@ final class MediaVersionTests: XCTestCase {
 
     func testSourceDisplayNamesDecodeOnlyURLValuesAndPreserveOrdinaryNames() {
         let cases: [(String, String?)] = [
-            ("torrent_name=%E6%8C%87%E7%8E%AF%E7%8E%8B.mkv&id=tt123", "指环王.mkv"),
-            ("torrent_name=Film%20%26%20Friends%2BPlus.mkv&id=tt123", "Film & Friends+Plus.mkv"),
-            ("torrent_name=Film+Plus.mkv&id=tt123", "Film+Plus.mkv"),
-            ("torrent_name=Film%2520Name.mkv&id=tt123", "Film%20Name.mkv"),
+            ("filename=%E6%8C%87%E7%8E%AF%E7%8E%8B.mkv&id=tt123", "指环王.mkv"),
+            ("file_name=Film%20%26%20Friends%2BPlus.mkv&id=tt123", "Film & Friends+Plus.mkv"),
+            ("filename=Film+Plus.mkv&id=tt123", "Film+Plus.mkv"),
+            ("filename=Film%2520Name.mkv&id=tt123", "Film%20Name.mkv"),
+            ("filename=Episode%20%231.mkv", "Episode #1.mkv"),
+            ("file_name=C%3A%5CMovies%5CFilm.mkv", "Film.mkv"),
+            ("https://media.example/stream?FileName=Film.mkv", "Film.mkv"),
+            ("https://media.example/stream?file_name=Film.mkv&filename=Film.mkv", "Film.mkv"),
             ("https://media.example/Film%20Name.mkv?token=fixture#fragment", "Film Name.mkv"),
+            ("https://media.example/Original.mkv?filename=Different.Extended.mkv", "Original.mkv"),
+            ("https://media.example/folder.name/?filename=Film.mkv", "Film.mkv"),
             ("Film.mkv?token=fixture#fragment", "Film.mkv"),
             ("/movies/Film%20Name.mkv", "Film%20Name.mkv"),
+            ("/movies/Part=1.mkv", "Part=1.mkv"),
             (#"C:\Movies\Film.mkv"#, "Film.mkv"),
             ("Film & Friends+Plus.mkv", "Film & Friends+Plus.mkv"),
-            ("https://media.example/stream?torrent_name=&id=tt123", nil),
-            ("torrent_name=%E6%8C&id=tt123", nil),
+            ("https://media.example/stream?filename=&id=tt123", nil),
+            ("filename=%E6%8C&id=tt123", nil),
             ("https://media.example/stream?token=fixture", nil),
             ("https://media.example/stream", nil),
             ("https://media.example/Zk9xa1JpN25vY2xEMnJpcFQ5dGxY", nil),
             ("?token=fixture", nil),
-            ("torrent_name=https%3A%2F%2Fmedia.example%2Fstream%3Ftoken%3Dfixture", nil)
+            ("token=Private.mkv", nil),
+            ("name=Private.mkv", nil),
+            ("source_name=Private.mkv&id=tt123", nil),
+            ("https://media.example/stream?token=Private.mkv", nil),
+            ("https://media.example/folder.name/", nil),
+            ("https://media.example/stream?filename=One.mkv&file_name=Two.mkv", nil),
+            ("filename=https%3A%2F%2Fmedia.example%2Fstream%3Ftoken%3Dfixture", nil),
+            ("filename=file%3A%2F%2F%2Fprivate%2FSecret.mkv", nil),
+            ("filename=%2F%2Fmedia.example%2FSecret.mkv", nil),
+            ("filename=Film.mkv%3Ftoken%3Dfixture", nil),
+            ("filename=Film%0AName.mkv", nil)
         ]
         for (input, expected) in cases {
             XCTAssertEqual(MediaSourceDisplayName.fileName(from: input), expected, input)
@@ -403,6 +431,28 @@ final class MediaVersionTests: XCTestCase {
             id: "fallback", name: "Server copy", fileName: "stream?token=fixture", height: 1080
         ))
         XCTAssertEqual(fallback.releaseName, "Server copy")
+    }
+
+    func testUnsupportedFilenameQueriesFallBackToServerFactsWithoutChangingIdentity() throws {
+        let locator = "https://media.example/stream?source_name=Untrusted.Extended.REMUX.mkv&token=fixture"
+        let version = MediaVersion(
+            id: "server-source", name: "Server copy", fileName: locator,
+            height: 2160, videoCodec: "hevc",
+            sourceMetadata: .init(fileName: locator, audioLanguages: ["eng"])
+        ).qualified(accountID: "account", itemID: "item")
+        let restored = try JSONDecoder().decode(MediaVersion.self, from: JSONEncoder().encode(version))
+        let row = MediaVersion.PickerPresentation(restored, locale: Locale(identifier: "en_US"))
+        XCTAssertEqual(row.title, "4K")
+        XCTAssertEqual(row.releaseName, "Server copy")
+        XCTAssertTrue(row.badges.contains { $0.label == "HEVC" })
+        XCTAssertEqual(row.audioLanguages, ["English"])
+        XCTAssertNil(restored.editionLabel)
+        XCTAssertNil(restored.sourceQualityLabel)
+        XCTAssertEqual(restored.fileName, locator)
+        XCTAssertEqual(restored.sourceMetadata?.fileName, locator)
+        XCTAssertEqual(restored.playbackMediaSourceID, "server-source")
+        XCTAssertEqual(restored.id, version.id)
+        XCTAssertFalse(row.supplementalFacts.contains("Remux"))
     }
 
     func testMultilineSourceDescriptionUsesItsMarkedReleaseFilename() {

@@ -1,7 +1,7 @@
 # Disk reclaim safety
 
 `tools/reclaim-disk.sh` removes selected rebuildable Apple build caches across
-Plozz, Mozz, and Twozz. `tools/prune-deriveddata.sh` is its DerivedData-only
+Plozz, Mozz, and Strozz. `tools/prune-deriveddata.sh` is its DerivedData-only
 worker. Neither tool may run destructively while release/build ownership is
 uncertain.
 
@@ -41,13 +41,14 @@ Only `plozz-current-writers` is implemented by this change. Remaining blockers:
 
 - older Plozz worktrees containing pre-interlock scripts;
 - current and older Mozz writer entrypoints;
-- current and older Twozz writer entrypoints;
+- current and older Strozz writer entrypoints;
 - current and older Hozz writer entrypoints;
 - direct/manual Xcode, raw `xcodebuild`, and third-party build tools;
 - installed global cleanup entrypoints and reviewed owner evidence.
 
 The exact legacy file cannot express Hozz or time-bounded owner holds. Its wire
-format remains frozen for existing readers. **It is not sufficient authorization
+format remains frozen for existing readers, including the `twozz-*` cohort
+identifiers for Strozz. **It is not sufficient authorization
 for global cleanup.** The separate [attested maintenance-window policy](apple-maintenance-windows.md)
 adds Hozz, current/legacy inventories, exact release-manifest scope, and explicit
 human approval. Its updater writes only the companion file under the conflicting

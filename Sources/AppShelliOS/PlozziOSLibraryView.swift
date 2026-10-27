@@ -428,6 +428,7 @@ struct PlozziOSLibraryGridView: View {
                             slot: viewModel.slot(at: index),
                             index: index,
                             generation: generation,
+                            style: viewModel.gridStyle == .landscape ? .landscape : .poster,
                             provider: provider,
                             playlistOrigin: { viewModel.playlistOrigin(at: index) },
                             onAppear: { await viewModel.itemAppeared(at: index, generation: generation) },
@@ -497,6 +498,9 @@ struct PlozziOSLibraryGridView: View {
 
     private var gridColumns: [GridItem] {
         guard dynamicTypeSize.isAccessibilitySize else {
+            if viewModel.gridStyle == .landscape {
+                return [GridItem(.adaptive(minimum: horizontalSizeClass == .regular ? 240 : 160), spacing: 12)]
+            }
             return settings.density.density.iOSPosterGridColumns(horizontalSizeClass: horizontalSizeClass)
         }
         if horizontalSizeClass == .compact {
@@ -668,6 +672,7 @@ private struct PlozziOSLibraryItemCell: View {
     let slot: LibrarySlot?
     let index: Int
     let generation: Int
+    var style: PosterCardView.Style = .poster
     let provider: any MediaProvider
     let playlistOrigin: () -> VideoPlaylistPlaybackOrigin?
     let onAppear: () async -> Void
@@ -725,6 +730,7 @@ private struct PlozziOSLibraryItemCell: View {
             } else {
                 PlozziOSPosterCard(
                     item: slot?.item,
+                    style: style,
                     reservesSubtitleSpace: true
                 )
             }

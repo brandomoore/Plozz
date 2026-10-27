@@ -85,27 +85,6 @@ final class NavigationStyleSettingsStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testDetailZoomDefaultsOffAndPersistsPerProfile() {
-        let defaults = makeDefaults()
-        let primary = NavigationStyleSettingsStore(defaults: defaults)
-        let child = NavigationStyleSettingsStore(defaults: defaults, namespace: "child")
-        primary.save(.sidebar)
-        XCTAssertFalse(primary.loadDetailZoomEnabled(), "Existing profiles also use native navigation.")
-        let model = NavigationStyleSettingsModel(
-            store: primary, layoutStore: NavigationLibraryLayoutStore(defaults: defaults)
-        )
-        XCTAssertFalse(model.detailZoomEnabled)
-        model.detailZoomEnabled = true
-        XCTAssertTrue(NavigationStyleSettingsStore(defaults: defaults).loadDetailZoomEnabled())
-        XCTAssertFalse(child.loadDetailZoomEnabled())
-        child.saveDetailZoomEnabled(true)
-        model.detailZoomEnabled = false
-        XCTAssertFalse(NavigationStyleSettingsStore(defaults: defaults).loadDetailZoomEnabled())
-        XCTAssertTrue(child.loadDetailZoomEnabled())
-        XCTAssertEqual(primary.load(), .sidebar)
-    }
-
-    @MainActor
     func testModelUsesInjectedPersistenceForAccidentalExitPreference() {
         let store = NavigationStyleSettingsStore(defaults: makeDefaults())
         store.savePreventsAccidentalExit(true)

@@ -8,6 +8,17 @@ import XCTest
 
 @MainActor
 final class SettingsCommunityLinksHostedTests: XCTestCase {
+    func testPrivacyPolicyCodeOpensThePublicPolicyInBothThemes() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            _ = try await renderCodes(
+                PrivacyPolicyQRCodeView(),
+                scheme: scheme,
+                name: "privacy-policy-\(scheme)",
+                expectedURLs: [AppLinks.privacyPolicy.absoluteString]
+            )
+        }
+    }
+
     func testUpdateDialogShowsScannableFocusableDiscordCardInBothThemes() async throws {
         let suite = "ReleaseNotesCommunity.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

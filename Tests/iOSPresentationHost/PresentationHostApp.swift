@@ -3,11 +3,15 @@ import UIKit
 import CoreModels
 import CoreUI
 import FeatureAuth
-import FeatureHomeCore
+@testable import FeatureHomeCore
 @testable import FeatureLiveTV
 import FeatureLiveTVCore
 import FeatureSettings
 @testable import AppShelliOS
+
+@objc protocol PresentationOrientationWindow {
+    var supportedPresentationOrientations: UIInterfaceOrientationMask { get }
+}
 
 @main
 struct PresentationHostApp: App {
@@ -44,6 +48,11 @@ struct PresentationHostApp: App {
         model.settings.cardStyle.artwork = .default
         model.settings.cardStyle.style = .borderless
         model.settings.theme.theme = .dark
+        if ProcessInfo.processInfo.arguments.contains("--search-light-theme") {
+            model.settings.theme.theme = .light
+        } else if ProcessInfo.processInfo.arguments.contains("--search-black-theme") {
+            model.settings.theme.theme = .pureBlack
+        }
         model.settings.theme.gradientEnabled = true
         model.settings.playback.settings = .default
         if ProcessInfo.processInfo.arguments.contains("--reset-read-ahead") {
@@ -80,11 +89,21 @@ struct PresentationHostApp: App {
             }
             // Explicitly show fixture pages even when their empty content would hide them automatically.
             model.settings.navigation.applyLibrarySections(
-                .init(enabled: [], disabled: available), available: available
+                .init(enabled: [NavigationLibraryLayout.settingsKey],
+                      disabled: available.filter { $0 != NavigationLibraryLayout.settingsKey }),
+                available: available,
+                automaticallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys
+            )
+            model.settings.navigation.applyLibrarySections(
+                .init(enabled: [NavigationLibraryLayout.homeKey],
+                      disabled: available.filter { $0 != NavigationLibraryLayout.homeKey }),
+                available: available,
+                automaticallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys
             )
             model.settings.navigation.applyLibrarySections(
                 .init(enabled: enabled, disabled: available.filter { !enabled.contains($0) }),
-                available: available
+                available: available,
+                automaticallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys
             )
         }
         interactionModel = model
@@ -128,7 +147,11 @@ struct PresentationHostApp: App {
         func application(
             _ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?
         ) -> UIInterfaceOrientationMask {
-            PlozziOSWindowOrientation.supportedOrientations(for: window)
+            // Hosted XCTest links its own package globals; ask its window for its registry's policy.
+            if let owner = window?.windowScene?.keyWindow as? PresentationOrientationWindow {
+                return owner.supportedPresentationOrientations
+            }
+            return PlozziOSWindowOrientation.supportedOrientations(for: window)
         }
     }
 
@@ -144,6 +167,8 @@ struct PresentationHostApp: App {
                 CollectionSettingsInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--hero-request-controls-fixture") {
                 HeroRequestControlsFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--theme-mute-fixture") {
+                ThemeMusicMuteFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--home-hero-fixture") {
                 HomeHeroInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--player-layout-fixture") {
@@ -156,6 +181,10 @@ struct PresentationHostApp: App {
                 PlaybackFailureFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--server-address-fixture") {
                 ServerAddressNavigationFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--plex-home-onboarding-fixture") {
+                PlexHomeOnboardingFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--plex-home-settings-onboarding-fixture") {
+                PlexHomeSettingsOnboardingFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--iptv-organization-fixture") {
                 IPTVOrganizationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--category-search-fixture") {
@@ -187,6 +216,73 @@ struct PresentationHostApp: App {
             } else {
                 Color.black
             }
+        }
+    }
+}
+
+private struct ThemeMusicMuteFixture: View {
+    @State private var theme = ThemeMusicController()
+    @State private var trailer = HeroTrailerController()
+    @State private var matchesItem = true
+    @State private var isActive = true
+    @State private var sampleURL: URL?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Text(theme.isMuted && theme.player.isMuted ? "Muted" : "Audible")
+                    .accessibilityIdentifier("theme-player-audio")
+                Toggle("Current item", isOn: $matchesItem)
+                Toggle("Active detail", isOn: $isActive)
+                Button("Stop theme", action: stop)
+            }
+            .navigationTitle("Theme music")
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    PlozziOSDetailAudioMuteControl(
+                        trailer: trailer, themeMusic: theme, itemID: "movie",
+                        themePlaybackID: matchesItem ? "account:movie" : "account:other",
+                        isActive: isActive
+                    )
+                }
+            }
+        }
+        .task {
+            do {
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("theme-mute-fixture.wav")
+                var sample = ThemeMusicPreviewSample.data()
+                let pcmLength = 22_050 * 180 * 2
+                sample.replaceSubrange(44..<sample.count, with: Data(count: pcmLength))
+                for (offset, value) in [(4, pcmLength + 36), (40, pcmLength)] {
+                    var size = UInt32(value).littleEndian
+                    withUnsafeBytes(of: &size) { sample.replaceSubrange(offset..<(offset + 4), with: $0) }
+                }
+                try sample.write(to: url, options: .atomic)
+                sampleURL = url
+                theme.setAuthorization("fixture")
+                let owner = UUID()
+                precondition(theme.claimDetail(owner: owner, playbackID: "account:movie", authorizationID: "fixture"))
+                let music = ThemeMusic(
+                    itemID: "movie",
+                    playbackSource: .publicURL(try SecretFreeURLSource(url: URL(string: "https://example.test/theme.wav")!))
+                )
+                theme.play(music, resolvedURL: url, playbackID: "account:movie", owner: owner,
+                           authorizationID: "fixture", settings: ThemeMusicSettings(isEnabled: true))
+            } catch {
+                fatalError("Could not prepare theme mute fixture: \(error)")
+            }
+        }
+        .onDisappear(perform: stop)
+    }
+
+    private func stop() {
+        theme.stop()
+        guard let sampleURL else { return }
+        do {
+            try FileManager.default.removeItem(at: sampleURL)
+            self.sampleURL = nil
+        } catch {
+            fatalError("Could not clean up theme mute fixture: \(error)")
         }
     }
 }
@@ -499,8 +595,10 @@ private struct SettingsInteractionFixture: View {
         .environment(appModel)
         .environment(language)
         .environment(\.locale, Locale(identifier: "en_US"))
-        .environment(\.themePalette, .dark)
+        .environment(\.themePalette, ThemePalette.palette(
+            for: appModel.settings.theme.theme, systemColorScheme: .dark
+        ))
         .environment(\.plozzMetrics, .touch(density: .standard))
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(appModel.settings.theme.theme.preferredColorScheme ?? .dark)
     }
 }

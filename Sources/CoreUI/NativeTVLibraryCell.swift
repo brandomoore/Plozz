@@ -11,6 +11,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     public var onRequestFocus: (() -> Bool)?
     private var environment = EnvironmentValues()
     private var spoilerSettings = SpoilerSettings.default
+    private var style = PosterCardView.Style.poster
     private var artwork: UIImage?
     private var artworkReferences: [ArtworkReference] = []
     private var artworkPolicyIdentity: String?
@@ -37,7 +38,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     private var needsCompositeUpdate = true
 
     private var usesCompositedArtwork: Bool {
-        environment.compositedLibraryPosters
+        (environment.compositedLibraryPosters || item.map { PosterCardPresentation.preservesContainerArtwork(for: $0.kind) } == true)
             && environment.plozzCardFocusStyle.usesSystemEffect
     }
 
@@ -69,10 +70,15 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
 
     public override var canBecomeFocused: Bool { isConfiguredForDisplay && environment.isEnabled }
 
-    public static func height(for width: CGFloat, environment: EnvironmentValues) -> CGFloat {
+    public static func height(
+        for width: CGFloat, environment: EnvironmentValues, style: PosterCardView.Style = .poster
+    ) -> CGFloat {
         let metrics = environment.plozzMetrics
         let inset = environment.plozzCardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin
-        let size = CGSize(width: max(1, width - inset * 2), height: max(1, width - inset * 2) * 1.5)
+        let size = CGSize(
+            width: max(1, width - inset * 2),
+            height: max(1, width - inset * 2) * (style == .poster ? 1.5 : 9.0 / 16.0)
+        )
         if environment.plozzCardCaptionsHidden {
             return size.height + focusClearance * 2
         }
@@ -83,7 +89,12 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             + metrics.nativePosterCaptionFocusTravel + metrics.posterCaptionInset
     }
 
-    public func configure(item: MediaItem?, spoilerSettings: SpoilerSettings, environment: EnvironmentValues) {
+    public func configure(
+        item: MediaItem?, spoilerSettings: SpoilerSettings, environment: EnvironmentValues,
+        style: PosterCardView.Style = .poster
+    ) {
+        let styleChanged = self.style != style
+        self.style = style
         isConfiguredForDisplay = true
         self.item = item
         self.spoilerSettings = spoilerSettings
@@ -123,12 +134,15 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             item.map {
                 spoilerSettings.shouldHideThumbnail(for: $0) && $0.kind == .episode
                     ? $0.seriesArtworkReferences(prefersPortrait: true)
-                    : CardArtworkPolicy.standard.references(for: $0, style: .poster)
+                    : CardArtworkPolicy.standard.references(for: $0, style: style)
             } ?? []
+        let variant: ArtworkImageVariant = style == .poster ? .posterCard : .landscapeCard
+        let maxAspect: CGFloat? = style == .poster
+            && item.map { !PosterCardPresentation.preservesContainerArtwork(for: $0.kind) } != false ? 0.9 : nil
         let policy = environment.plozzArtworkPolicy
         let fallback = item.flatMap { CardArtworkPolicy.standard.posterFallback(for: $0) }
         let identity = item.map { CardArtworkPolicy.standard.pinIdentity(for: $0) }
-        if references != artworkReferences || artworkPolicyIdentity != policy.identity
+        if styleChanged || references != artworkReferences || artworkPolicyIdentity != policy.identity
             || artworkItemIdentity != identity {
             artworkItemIdentity = identity
             imageTask?.cancel()
@@ -138,12 +152,13 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             // never overtake a preferred image that has not finished loading.
             if !(policy.prefersOnlineArtwork && fallback != nil),
                let reference = references.first, case .remote(let url) = reference {
-                artwork = ArtworkImageCache.shared.cachedImage(for: url, variant: .posterCard)
+                artwork = ArtworkImageCache.shared.cachedImage(for: url, variant: variant)
             } else {
                 // Network-file cache reads must pass the resolver's access gate.
                 artwork = nil
             }
-            if let artwork, artwork.size.height <= 0 || artwork.size.width / artwork.size.height > 0.9 {
+            if let artwork, artwork.size.height <= 0
+                || maxAspect.map({ artwork.size.width / artwork.size.height > $0 }) == true {
                 self.artwork = nil
             }
             let revision = UUID()
@@ -151,7 +166,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             if artwork == nil, !references.isEmpty || fallback != nil {
                 imageTask = Task { [weak self] in
                     let result = await ArtworkFirstPaintResolver.resolve(
-                        references: references, variant: .posterCard, maxAspectRatio: 0.9,
+                        references: references, variant: variant, maxAspectRatio: maxAspect,
                         asyncOnlineURL: fallback.map { resolve in
                             {
                                 await ArtworkSession.artworkResolveLimiter.run {
@@ -216,9 +231,10 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         let width = max(1, bounds.width - inset * 2)
         let scale = traitCollection.displayScale
         // Keep native artwork and overlay projection on the same pixel-aligned surface.
+        let aspectHeight = style == .poster ? 1.5 : 9.0 / 16.0
         let size = usesCompositedArtwork
-            ? CGSize(width: ceil(width * scale) / scale, height: ceil(width * 1.5 * scale) / scale)
-            : CGSize(width: width, height: width * 1.5)
+            ? CGSize(width: ceil(width * scale) / scale, height: ceil(width * aspectHeight * scale) / scale)
+            : CGSize(width: width, height: width * aspectHeight)
         let artworkFrame = CGRect(x: inset, y: Self.focusClearance, width: size.width, height: size.height)
         if usesCompositedArtwork, let compositedArtwork {
             if compositedArtwork.frame != artworkFrame { compositedArtwork.frame = artworkFrame }

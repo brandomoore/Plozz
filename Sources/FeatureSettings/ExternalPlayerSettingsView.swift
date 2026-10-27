@@ -52,11 +52,20 @@ public struct PlaybackAdvancedSettingsView: View {
 private struct DolbyVisionFELControl: View {
     @Binding var isOn: Bool
 
+    private var helperText: LocalizedStringResource {
+        #if os(tvOS)
+        if #available(tvOS 26.0, *) {
+            return "May impact performance."
+        }
+        #endif
+        return "May impact performance. Disables spatial audio."
+    }
+
     var body: some View {
         SettingsControlRows {
             Toggle("Dolby Vision FEL (experimental)", isOn: $isOn)
                 .accessibilityIdentifier("playback-dolby-vision-fel")
-            Text("More picture detail for supported Dolby Vision Profile 7 videos. Uses more memory, may stutter, and turns off overhead sound.")
+            Text(helperText)
                 .settingsHelperText()
                 .fixedSize(horizontal: false, vertical: true)
         }

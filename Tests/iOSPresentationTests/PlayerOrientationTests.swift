@@ -3,14 +3,66 @@ import SwiftUI
 import UIKit
 import XCTest
 @testable import AppShelliOS
+@testable import PlozziOSPresentationHost
+
+final class PlayerOrientationTestWindow: UIWindow, PresentationOrientationWindow {
+    var supportedPresentationOrientations: UIInterfaceOrientationMask {
+        PlozziOSWindowOrientation.supportedOrientations(for: self)
+    }
+}
 
 @MainActor
 final class PlayerOrientationTests: XCTestCase {
+    func testPhoneBrowsingIsPortraitWhileIPadKeepsAllOrientations() {
+        XCTAssertEqual(PlozziOSWindowOrientation.browsingMask(for: .phone), .portrait)
+        XCTAssertEqual(PlozziOSWindowOrientation.browsingMask(for: .pad), .all)
+    }
+
+    func testAutoRotationReturnsOnlyAutomaticallyExpandedPlaybackToTheGuide() {
+        var policy = PlozziOSLiveRotationPolicy()
+        XCTAssertEqual(policy.effectivePreference(.auto, isPresented: false, canExpand: true), .auto)
+        XCTAssertEqual(policy.interfaceChanged(.landscapeLeft, preference: .auto,
+                                              isPresented: false, canExpand: true), .expand)
+        XCTAssertEqual(policy.interfaceChanged(.portrait, preference: .auto,
+                                              isPresented: true, canExpand: false), .returnToGuide)
+        XCTAssertFalse(policy.automaticallyExpanded)
+        XCTAssertNil(policy.interfaceChanged(.portrait, preference: .auto,
+                                             isPresented: true, canExpand: false),
+                     "Manually opened fullscreen stays fullscreen when rotated upright.")
+    }
+
+    func testClosingSidewaysWaitsForPhysicalUprightNotForcedPortrait() {
+        var policy = PlozziOSLiveRotationPolicy()
+        policy.closed(interface: .landscapeLeft, device: .landscapeRight)
+        XCTAssertEqual(policy.effectivePreference(.auto, isPresented: false, canExpand: true), .portrait)
+        XCTAssertNil(policy.interfaceChanged(.portrait, preference: .auto, isPresented: false, canExpand: true))
+        policy.deviceChanged(.landscapeLeft)
+        XCTAssertTrue(policy.awaitsUpright)
+        XCTAssertNil(policy.interfaceChanged(.landscapeRight, preference: .auto, isPresented: false, canExpand: true))
+        policy.deviceChanged(.portrait)
+        XCTAssertFalse(policy.awaitsUpright)
+        XCTAssertEqual(policy.interfaceChanged(.landscapeRight, preference: .auto,
+                                              isPresented: false, canExpand: true), .expand)
+    }
+
+    func testUnavailablePreviewAndFixedPreferencesNeverAutoExpand() {
+        var policy = PlozziOSLiveRotationPolicy()
+        policy.deviceChanged(.landscapeLeft)
+        XCTAssertFalse(policy.automaticallyExpanded, "Physical motion alone must not bypass system rotation lock.")
+        XCTAssertEqual(policy.effectivePreference(.auto, isPresented: false, canExpand: false), .portrait)
+        XCTAssertNil(policy.interfaceChanged(.landscapeLeft, preference: .auto, isPresented: false, canExpand: false))
+        for preference in [PlaybackOrientation.portrait, .landscape] {
+            XCTAssertEqual(policy.effectivePreference(preference, isPresented: false, canExpand: true), .portrait)
+            XCTAssertNil(policy.interfaceChanged(.landscapeLeft, preference: preference, isPresented: false, canExpand: true))
+            XCTAssertEqual(policy.effectivePreference(preference, isPresented: true, canExpand: true), preference)
+        }
+    }
+
     func testPrePlayCoverStaysPortraitUntilPlaybackStarts() async throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
+        let window = PlayerOrientationTestWindow(windowScene: scene)
         let anchor = PlozziOSPlayerPresentation<Color>.Anchor()
         let coordinator = PlozziOSPlayerPresentation<Color>.Coordinator()
         coordinator.anchor = anchor
@@ -34,9 +86,10 @@ final class PlayerOrientationTests: XCTestCase {
             coordinator.reconcile()
             try await waitUntil { coordinator.host?.orientation.isAvailable == true }
             let player = try XCTUnwrap(coordinator.host)
+            try await waitUntil { player.transitionCoordinator == nil }
             XCTAssertFalse(player.orientation.isPlaybackActive)
             XCTAssertEqual(player.preferredInterfaceOrientationForPresentation, .portrait)
-            XCTAssertEqual(player.supportedInterfaceOrientations, .all)
+            XCTAssertEqual(player.supportedInterfaceOrientations, .portrait)
             XCTAssertEqual(scene.effectiveGeometry.interfaceOrientation, .portrait)
 
             if startsPlayback {
@@ -57,10 +110,10 @@ final class PlayerOrientationTests: XCTestCase {
     func testPrePlayPreferenceUpdatesDoNotActivateRotation() {
         let orientation = PlozziOSPlayerOrientation(preference: .landscape, isPlaybackActive: false)
         orientation.updateAvailability(true)
-        XCTAssertEqual(orientation.requestedMask, .all)
-        XCTAssertEqual(orientation.supportedMask, .all)
+        XCTAssertEqual(orientation.requestedMask, .portrait)
+        XCTAssertEqual(orientation.supportedMask, .portrait)
         orientation.updatePreference(.portrait)
-        XCTAssertEqual(orientation.supportedMask, .all)
+        XCTAssertEqual(orientation.supportedMask, .portrait)
         orientation.beginPlayback()
         XCTAssertEqual(orientation.supportedMask, .portrait)
     }
@@ -69,7 +122,7 @@ final class PlayerOrientationTests: XCTestCase {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
+        let window = PlayerOrientationTestWindow(windowScene: scene)
         let anchor = PlozziOSPlayerPresentation<Color>.Anchor()
         let coordinator = PlozziOSPlayerPresentation<Color>.Coordinator()
         coordinator.anchor = anchor
@@ -118,7 +171,7 @@ final class PlayerOrientationTests: XCTestCase {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
+        let window = PlayerOrientationTestWindow(windowScene: scene)
         let anchor = UIViewController()
         window.rootViewController = anchor
         window.makeKeyAndVisible()
@@ -180,7 +233,7 @@ final class PlayerOrientationTests: XCTestCase {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
+        let window = PlayerOrientationTestWindow(windowScene: scene)
         let probe = LiveOrientationProbe()
         let host = UIHostingController(rootView: LiveOrientationFixture(probe: probe))
         window.rootViewController = host
@@ -194,7 +247,7 @@ final class PlayerOrientationTests: XCTestCase {
 
         for (preference, guideMask, playerMask) in [
             (PlaybackOrientation.landscape, UIInterfaceOrientationMask.portrait, UIInterfaceOrientationMask.landscape),
-            (.portrait, .landscapeRight, .portrait)
+            (.portrait, .portrait, .portrait)
         ] {
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: guideMask))
             try await waitUntil {
@@ -217,7 +270,7 @@ final class PlayerOrientationTests: XCTestCase {
 
             host.rootView = LiveOrientationFixture(probe: probe, expanded: false, preference: preference)
             try await waitUntil {
-                PlozziOSWindowOrientation.supportedOrientations(for: window) == .all
+                PlozziOSWindowOrientation.supportedOrientations(for: window) == .portrait
                     && scene.effectiveGeometry.interfaceOrientation == preceding
             }
             XCTAssertEqual(probe.appearances, 1)
@@ -230,7 +283,7 @@ final class PlayerOrientationTests: XCTestCase {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
+        let window = PlayerOrientationTestWindow(windowScene: scene)
         let probe = LiveOrientationProbe()
         let host = UIHostingController(rootView: LiveOrientationFixture(probe: probe, expanded: true, preference: .auto))
         window.rootViewController = host
@@ -263,7 +316,7 @@ final class PlayerOrientationTests: XCTestCase {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
+        let window = PlayerOrientationTestWindow(windowScene: scene)
         let root = UIViewController()
         let player = PlozziOSOrientationHostingController(
             rootView: AnyView(Color.black), orientation: .init(preference: .landscape),
@@ -299,12 +352,12 @@ final class PlayerOrientationTests: XCTestCase {
         player.view.removeFromSuperview()
         player.removeFromParent()
         player.tearDown()
-        XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .all)
+        XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .portrait)
         await withCheckedContinuation { continuation in
             controls.dismiss(animated: true) { continuation.resume() }
         }
         XCTAssertNil(player.orientation.host)
-        XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .all)
+        XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .portrait)
     }
 
     func testWindowOwnershipIsIsolatedAndOldOwnersCannotReleaseReplacements() {
@@ -320,12 +373,13 @@ final class PlayerOrientationTests: XCTestCase {
         replacement.orientation.updateAvailability(true)
         PlozziOSWindowOrientation.acquire(old, for: window)
         XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .portrait)
-        XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: otherWindow), .all)
+        let browsingMask = PlozziOSWindowOrientation.browsingMask(for: UIDevice.current.userInterfaceIdiom)
+        XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: otherWindow), browsingMask)
         PlozziOSWindowOrientation.acquire(replacement, for: window)
         XCTAssertFalse(PlozziOSWindowOrientation.release(old, for: window))
         XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .landscape)
         XCTAssertTrue(PlozziOSWindowOrientation.release(replacement, for: window))
-        XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .all)
+        XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), browsingMask)
         XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: nil), .all)
     }
 
@@ -346,7 +400,7 @@ final class PlayerOrientationTests: XCTestCase {
             } ?? ""
             return "\(type(of: controller)) [\(state)] children: \(controller.children.map(describe))"
         }
-        return "window=\(window.bounds) screen=\(window.screen.bounds) scene=\(scene.effectiveGeometry.interfaceOrientation.rawValue) mask=\(PlozziOSWindowOrientation.supportedOrientations(for: window).rawValue) \(describe(host))"
+        return "window=\(window.bounds) screen=\(window.screen.bounds) scene=\(scene.effectiveGeometry.interfaceOrientation.rawValue) mask=\(PlozziOSWindowOrientation.supportedOrientations(for: window).rawValue) applicationMask=\(UIApplication.shared.supportedInterfaceOrientations(for: window).rawValue) rootMask=\(host.supportedInterfaceOrientations.rawValue) \(describe(host))"
     }
 
     private func waitUntil(
@@ -365,7 +419,7 @@ final class PlayerOrientationTests: XCTestCase {
             UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         )
         let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
+        let window = PlayerOrientationTestWindow(windowScene: scene)
         let anchor = PlozziOSPlayerPresentation<Color>.Anchor()
         let coordinator = PlozziOSPlayerPresentation<Color>.Coordinator()
         var request: PlozziOSPlaybackRequest? = PlayerCloseProbe.makeRequest()
@@ -494,13 +548,22 @@ final class PlayerOrientationTests: XCTestCase {
         XCTAssertFalse(PlozziOSPlayerOrientation.supportsPreference(
             idiom: .phone, windowSize: CGSize(width: 500, height: 1366), screenSize: screen
         ))
-        XCTAssertTrue(PlozziOSPlayerOrientation.supportsPreference(
+        XCTAssertFalse(PlozziOSPlayerOrientation.supportsPreference(
             idiom: .phone,
             windowSize: CGSize(width: 1366, height: 1024), screenSize: screen
         ))
-        XCTAssertTrue(PlozziOSPlayerOrientation.supportsPreference(
+        XCTAssertFalse(PlozziOSPlayerOrientation.supportsPreference(
             idiom: .phone, windowSize: screen, screenSize: screen
         ))
+        let compact = CGSize(width: 402, height: 874)
+        XCTAssertTrue(PlozziOSPlayerOrientation.supportsPreference(
+            idiom: .phone, windowSize: compact, screenSize: compact
+        ))
+        XCTAssertTrue(PlozziOSPlayerOrientation.supportsPreference(
+            idiom: .phone, windowSize: CGSize(width: compact.height, height: compact.width), screenSize: compact
+        ))
+        XCTAssertEqual(PlozziOSWindowOrientation.browsingMask(for: .phone, windowSize: screen), .all)
+        XCTAssertEqual(PlozziOSWindowOrientation.browsingMask(for: .phone, windowSize: compact), .portrait)
     }
 
     func testWindowedModeSuspendsPreferenceButGeometryFailureDoesNotAbandonIt() {

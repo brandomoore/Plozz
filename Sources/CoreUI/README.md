@@ -6,6 +6,10 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+`ServerUserRow` keeps the user's name above its owner/PIN metadata. The metadata
+wraps independently, preserving the avatar, native focus treatment, and trailing
+selection indicator without squeezing the name alongside badges.
+
 `PlozzTypography` owns semantic text metrics, including additional line spacing,
 and composes local adjustments with `plozzAppTextScale` once at a surface boundary.
 SwiftUI text and the UIKit Home foreground resolve the same styles; badge children
@@ -25,6 +29,14 @@ without geometry state or an extra hidden copy of the badge views.
 `ActionProgressIcon` overlays native progress inside the original symbol's
 layout footprint. `PlayResumeButtonLabel.isLoading` uses it without changing the
 button's dimensions or the existing resume/placeholder layout.
+
+`TrailerActionButtonLabel` always renders icon-only on TV and mobile, preserving
+the destination description for accessibility regardless of available width.
+`TrailerActionIcon` keeps the film symbol for server files and adds a small
+outgoing arrow for external YouTube links. The arrow's surrounding stroke removes
+symbol pixels transparently, rather than painting a badge or background color,
+so native glass, focus, light/dark appearances, and reduced transparency still
+come from the existing button styles.
 
 The tvOS detail entrance checks cancellation after every timed reveal. A sleep
 that expired before cancellation can still be waiting for the main actor; it
@@ -46,6 +58,23 @@ which puts the shared minimum height and padding inside the TV focus fill.
 `SettingsFocusButtonStyle` is only for labels that already supply their own
 control geometry. Standalone and inline actions use `plozzActionButton`; do not
 use a text-height focus strip as a smaller action-button variant.
+The text-height disclosure-row treatment is deprecated: never apply
+`SettingsFocusButtonStyle` directly to a compact label such as
+`HomeEditorRowLabel`. Use a full-row wrapper such as `HomeEditorLink`, or a
+padding-free disclosure label with `SettingsFormButtonStyle`. Padding outside
+the button's focus fill does not replace its required internal row geometry.
+
+`SettingsPageHeader` accepts a trailing native action for page-scoped commands.
+Keep it in the header's full-width focus section and scroll the header with the
+page; do not add a separate action strip or shrink the native button.
+
+`SettingsStepper` retains every adjustment stop while limiting dense range tracks
+to 21 visual ticks. `ThemeMusicPreviewControlling` is the Settings-to-runtime
+preview seam; it carries ownership, availability, and errors without coupling
+Settings to the Home feature or a concrete audio player.
+The shared TV adjustment scope defaults to its standard hold-repeat speed.
+`settingsAdjustmentRepeatSpeed` lets dense percentage controls opt into faster
+repeat without changing their single-press increment or other settings controls.
 
 `ChannelLogoArtwork` renders generated Plozz channels with the shared Byline
 layout: a name-first title and inset pixel-mascot signature. Its optional
@@ -70,6 +99,10 @@ rasterizing the placeholder content or changing the sweep, masking, or intensity
 Inactive placeholders remain unmodified; Reduce Motion retains the static dim.
 The simulator lab's `skeletons-idle` and `skeletons-static` scenarios isolate this
 cost from loaded cards and network/provider work.
+
+Loading jokes wait 11 seconds before appearing by default, then retain their
+5.5-second cadence. `LoadingMessagesView` and the model share the sequencer's
+default delay; individual callers can still supply an explicit grace period.
 
 Continue Watching's profile-scoped Playback details choice applies to Artwork + logo,
 Thumbnail, and Poster, on Home and library rows.
@@ -171,6 +204,12 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Adaptive hero rows own `PlaybackSourceMenuState` and its presentation above
   `ViewThatFits`; candidate rows contain only triggers. Late trailer, action or
   inventory updates can rearrange the row without destroying an open version page.
+  An optional `MediaVersionInventoryLoader` keeps lazy sources discoverable even
+  with no cached alternatives. Only a mounted version page/sheet starts discovery,
+  not the overflow root or focus changes. Shared loading/error/Retry content
+  never starts playback or retries automatically. Loader identity fences retained
+  choices across owner, account and playable-target changes; dismissal cancels
+  the reader, not any server work already admitted by its provider.
   `NoStreamsButtonLabel` reserves its single-line width before actions overflow.
   Only the final stacked layout can scale it to fit; the retry spinner occupies
   the same 20-point icon slot and uses explicit contrast for the button surface.
@@ -302,16 +341,16 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   boolean destinations retain native navigation outside this workspace,
   including iOS/iPadOS. `SettingsPageMotion` is also used by nested form and
   subtitle panels, with Reduce Motion respected by their hosts.
-- **Title navigation** — tvOS uses native page pushes and pops by default.
-  The profile's **Zoom when opening titles** preference opts into cinematic
-  transitions. `detailNavigationZoom(isEnabled:)` applies the same policy to
-  SwiftUI destinations and the window-scoped native card/router preparation.
-  Both modes share the logo, metadata, controls, and episode entrance sequence.
-  With zoom off it starts when the native page appears, without a cover, window
+- **Title navigation** — tvOS uses native page pushes and pops. The app no longer
+  installs `detailNavigationZoom(isEnabled:)` or reads the retired zoom preference.
+  The logo, metadata, controls, and episode entrance sequence remains.
+  It starts when the native page appears, without a cover, window
   input guard, artwork wait, or custom Back handler. Leaving cancels the reveal;
   returning to an existing page does not replay it. Reduce Motion shows everything
   immediately. iOS/iPadOS navigation is unchanged.
-- **Opt-in cinematic detail returns** — TV browse stacks install
+- **Retained cinematic transition infrastructure** — the zoom implementation and
+  its focused fixtures remain available for future work, but no production shell
+  enables it. TV browse stacks install
   `cinematicDetailNavigation(path:)` on the stack so its destinations inherit it.
   Back changes that bound path in the reverse transition's nonanimated transaction:
   SwiftUI's environment dismiss action can still animate a native pop underneath
@@ -556,6 +595,19 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   accepting curated container logos must not admit landscape episode stills as
   movie/series posters. Library-tile collages likewise accept wide container covers
   while retaining their aspect guard for ordinary media posters.
+  Collection-cover groups resolve one uniform shape using Auto, Posters, or
+  Landscape. Auto samples at most nine initial primary covers, uses a strict
+  landscape majority, and falls back to posters for ties or unknown artwork.
+  Server-reported ratios avoid image requests; absent ratios use the normal
+  authenticated artwork loader before publication. Paging never changes the
+  browser's chosen shape. The native tvOS grid accepts and fits container covers
+  without relaxing the portrait filter for ordinary media.
+- **Home row recovery** — ordinary rails and compact empty/failed rows share
+  `MediaRowSection` and `MediaRowHeader`, including typography, header spacing,
+  pinned-navigation inset, and trailing safe space. `MediaRowStatusContent`
+  keeps the summary/source concise and wraps native recovery actions at narrow
+  widths. Detailed explanations stay behind Details. Inline Settings warnings
+  reuse the status content without adopting Home's full rail header.
 - **Mobile media corners** — posters and Continue Watching share a 12pt artwork
   radius at every display size and responsive width. Borderless cards use that
   radius directly; glass frames add their inset to remain concentric. Loaded

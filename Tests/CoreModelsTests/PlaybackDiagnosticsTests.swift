@@ -1,6 +1,51 @@
 import XCTest
 @testable import CoreModels
 
+final class PlaybackDiagnosticsAudioEncodingTests: XCTestCase {
+    func testEncodingDescribesTheActiveEncoderRatherThanTheSourceCodecOrChannelCount() {
+        let cases: [(String, LocalizedStringResource)] = [
+            ("DTS → FLAC bridge", "Lossless encoding"),
+            ("DTS → EAC3 bridge", "Lossy encoding"),
+            ("TRUEHD → FLAC bridge", "Lossless encoding"),
+            ("TRUEHD → EAC3 bridge", "Lossy encoding"),
+            ("AAC → FLAC bridge (timestamp correction)", "Lossless encoding"),
+            ("AAC → EAC3 bridge (timestamp correction)", "Lossy encoding"),
+            ("TRUEHD Atmos → APAC 7.1.4", "Lossy encoding"),
+            ("DTS:X → APAC 9.1.6", "Lossy encoding"),
+            ("Stream-copy (EAC3+JOC Atmos)", "No re-encoding"),
+            ("EAC3 Atmos → renderer (compressed)", "No re-encoding"),
+            ("Stream-copy (FLAC)", "No re-encoding"),
+            ("libavcodec DTS → CoreAudio", "Decoded to PCM")
+        ]
+        for (pipeline, expected) in cases {
+            for channels in [nil, 2, 6, 8] as [Int?] {
+                let diagnostics = PlaybackDiagnostics(
+                    audioCodec: "DTS-HD MA", audioChannels: channels,
+                    audioPipelineDescription: pipeline, mode: .plozzigen
+                )
+                XCTAssertEqual(diagnostics.audioEncodingDescription, expected, pipeline)
+                XCTAssertEqual(diagnostics.audioPipelineDescription, pipeline)
+            }
+        }
+    }
+
+    func testUnknownOrUnsupportedPathsDoNotAcquireAnEncodingClaim() {
+        for pipeline in [nil, "", "AVPlayer", "DTS", "Stream-copy ()", "DTS → unknown bridge",
+                         "FLAC → unknown bridge", " → FLAC bridge", "DTS → FLAC bridge → unknown",
+                         "DTS Atmos → renderer (compressed)", "EAC3 → renderer (compressed)"] {
+            let diagnostics = PlaybackDiagnostics(
+                audioCodec: "FLAC", audioChannels: 8,
+                audioPipelineDescription: pipeline, mode: .plozzigen
+            )
+            XCTAssertNil(diagnostics.audioEncodingDescription, pipeline ?? "nil")
+        }
+        for mode: PlaybackDiagnostics.PlaybackMode in [.directPlay, .remux, .transcode] {
+            let diagnostics = PlaybackDiagnostics(audioPipelineDescription: "DTS → FLAC bridge", mode: mode)
+            XCTAssertNil(diagnostics.audioEncodingDescription)
+        }
+    }
+}
+
 final class PlaybackDiagnosticsEngineMetricsTests: XCTestCase {
     func testPlayerBufferEngineCacheAndStallCountRemainDistinctFacts() {
         let diagnostics = PlaybackDiagnostics(

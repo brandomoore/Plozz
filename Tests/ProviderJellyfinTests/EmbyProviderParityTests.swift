@@ -263,14 +263,16 @@ final class EmbyProviderParityTests: XCTestCase {
         XCTAssertEqual(request.item.studios, ["Emby Studio"])
         XCTAssertEqual(
             request.item.technicalBadges.map(\.label),
-            ["4K", "Dolby Vision", "HDR10", "Dolby TrueHD"]
+            ["4K", "Dolby Vision", "Dolby TrueHD"]
         )
         XCTAssertEqual(request.sourceMetadata?.video?.dolbyVisionProfile, 8)
         XCTAssertEqual(request.sourceMetadata?.video?.videoRangeType, "DOVIWithHDR10")
         XCTAssertEqual(
             request.item.versions.first?.technicalBadges.map(\.label),
-            ["4K", "Dolby Vision", "HDR10", "Dolby TrueHD"]
+            ["4K", "Dolby Vision", "Dolby TrueHD"]
         )
+        XCTAssertEqual(request.item.technicalBadges[1].detail, "HDR10")
+        XCTAssertEqual(request.item.versions.first?.technicalBadges[1].detail, "HDR10")
         XCTAssertEqual(
             request.item.versions.last?.technicalBadges.map(\.label),
             ["1080p", "SDR"]
@@ -338,6 +340,55 @@ final class EmbyProviderParityTests: XCTestCase {
                 XCTAssertEqual(request.localRemuxSource?.sourceMetadata.video?.videoRangeType, "HDR10Plus")
                 XCTAssertEqual(SourceDynamicRange.providerHint(from: request.sourceMetadata), .hdr10Plus)
             }
+        }
+    }
+
+    func testConfirmedDolbyVisionCombinationsRemainOneBadgeOnBothProviders() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            for (range, compatibility) in [
+                ("DOVIWithHDR10Plus", "HDR10+"),
+                ("DOVIWithHDR10", "HDR10"),
+                ("DOVIWithHLG", "HLG")
+            ] {
+                let streams = """
+                [{"Index":0,"Type":"Video","Codec":"hevc","Width":3840,"Height":1600,
+                  "VideoRange":"HDR","VideoRangeType":"\(range)"},
+                 {"Index":1,"Type":"Audio","Codec":"eac3","Channels":6,"Profile":"JOC","IsDefault":true},
+                 {"Index":2,"Type":"Audio","Codec":"truehd","Channels":8,"Profile":"Atmos","IsDefault":false}]
+                """
+                let stub = StubHTTPClient()
+                stub.stub(pathSuffix: "/Users/u1/Items/dv", json: """
+                {"Id":"dv","Name":"DV","Type":"Movie","MediaStreams":\(streams),
+                 "MediaSources":[{"Id":"dv-file","Container":"mkv","MediaStreams":\(streams)},
+                                 {"Id":"sdr-file","Container":"mp4","MediaStreams":[
+                   {"Index":0,"Type":"Video","Codec":"h264","Width":1920,"Height":1080,"VideoRangeType":"SDR"}]}]}
+                """)
+                let provider = JellyfinProvider(session: makeSession(provider: kind), http: stub)
+                let item = try await provider.item(id: "dv")
+                XCTAssertEqual(item.technicalBadges.map(\.label),
+                               ["4K", "Dolby Vision", "Dolby Digital+", "Dolby Atmos"], range)
+                XCTAssertEqual(item.technicalBadges[1].detail, compatibility, range)
+                XCTAssertEqual(item.technicalBadges[2].detail, "5.1", "Do not borrow the other track's channels.")
+                XCTAssertEqual(item.versions.first?.technicalBadges, item.technicalBadges)
+                XCTAssertEqual(item.versions.last?.technicalBadges.map(\.label), ["1080p", "SDR"])
+            }
+        }
+    }
+
+    func testEmbyCompatibilityIDsAndJellyfinTrackTitlesKeepTheirOwnFacts() throws {
+        for (subtype, expected) in [
+            ("DoviProfile81", "HDR10"), ("DoviProfile84", "HLG"),
+            ("DoviProfile82", nil), ("DoviProfile50", nil), ("DoviProfile8", nil)
+        ] as [(String, String?)] {
+            let streams = try JSONDecoder.plozz.decode([MediaStreamDto].self, from: Data("""
+            [{"Index":0,"Type":"Video","Codec":"hevc","VideoRange":"SDR",
+              "ExtendedVideoType":"DolbyVision","ExtendedVideoSubType":"\(subtype)"},
+             {"Index":1,"Type":"Audio","Codec":"truehd","Channels":8,"IsDefault":true,"Title":"English Atmos"}]
+            """.utf8))
+            let metadata = try XCTUnwrap(JellyfinProvider.sourceMetadata(container: "mkv", streams: streams))
+            XCTAssertEqual(metadata.technicalBadges.first?.label, "Dolby Vision")
+            XCTAssertEqual(metadata.technicalBadges.first?.detail, expected, subtype)
+            XCTAssertEqual(metadata.audioBadges.map(\.label), ["Dolby TrueHD", "Dolby Atmos"])
         }
     }
 

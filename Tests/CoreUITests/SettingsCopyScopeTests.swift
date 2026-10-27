@@ -10,6 +10,23 @@ import XCTest
 /// want to assert.
 final class SettingsCopyScopeTests: XCTestCase {
 
+    func testDiagnosticsCopyDisclosesProcessorAndTechnicalActivity() {
+        let automatic = resolve(SettingsCopy.automaticDiagnostics)
+        XCTAssertTrue(automatic.contains("Sentry"), automatic)
+        XCTAssertTrue(automatic.contains("screen categories"), automatic)
+        XCTAssertTrue(automatic.contains("performance"), automatic)
+        XCTAssertFalse(automatic.localizedCaseInsensitiveContains("anonymous"), automatic)
+    }
+
+    func testManualDiagnosticsDisclosesRecordsAndUserWrittenMessage() {
+        let manual = resolve(SettingsCopy.manualDiagnostics)
+        XCTAssertTrue(manual.contains("Sentry"), manual)
+        XCTAssertTrue(manual.contains("playback and connection"), manual)
+        XCTAssertTrue(manual.contains("optional message"), manual)
+        XCTAssertTrue(manual.contains("Don't include passwords or personal information"), manual)
+        XCTAssertFalse(manual.localizedCaseInsensitiveContains("anonymous"), manual)
+    }
+
     private func resolve(_ resource: LocalizedStringResource) -> String {
         String(localized: resource)
     }

@@ -11,9 +11,8 @@ import CoreUI
 /// no backend — so the report flow is a **QR code to a pre-filled GitHub issue**
 /// the user opens on their phone (with a short manual URL + a feedback email as
 /// fallbacks). The pre-filled body carries a small, non-secret environment
-/// summary; nothing that could contain a token ever leaves the device. Recent
-/// activity from the `PlozzLog` ring buffer is shown read-only for transparency
-/// and inherits its redaction (see `PlozzLog.LogEntry`).
+/// summary and a filtered activity projection. The full local activity buffer
+/// remains read-only on the device, separate from the export representation.
 struct HelpDiagnosticsDetailView: View {
     let appVersion: String
     let appBuild: String
@@ -34,7 +33,7 @@ struct HelpDiagnosticsDetailView: View {
             appBuild: appBuild,
             providers: providerSummary,
             repoURL: repoURL,
-            recentLogTail: PlozzLog.recentLogText(limit: 8),
+            recentLogTail: PlozzLog.privacyFilteredLogText(entries: PlozzLog.recentEntries(limit: 8)),
             marketingVersion: AppVersionIdentity.current.marketingVersion
         )
     }
@@ -72,10 +71,6 @@ struct HelpDiagnosticsDetailView: View {
     /// shipped with a crash-reporting endpoint AND the user has opted in.
     private var canSendDiagnostics: Bool {
         crashReportingConfigured && crashReporting.isEnabled
-    }
-
-    private var crashReportingFooter: LocalizedStringResource {
-        "Anonymous crash, freeze, and IPTV setup failure reports. No servers, logins, credentials, or viewing activity."
     }
 
     // MARK: - Report a Problem
@@ -116,13 +111,13 @@ struct HelpDiagnosticsDetailView: View {
     // MARK: - Send to Developer (surfaced here so it's discoverable, not buried)
 
     /// The fastest bug-report path for anyone who's turned on crash reporting:
-    /// one tap sends the redacted recent-activity log straight to the developer.
+    /// one tap sends privacy-filtered technical evidence to the developer.
     /// Placed right under "Report a Problem" so people actually find it instead
     /// of only stumbling on it deep inside the Recent Activity page.
     private var sendDiagnosticsPanel: some View {
         SendDiagnosticsCard(
             canSend: canSendDiagnostics,
-            idleDescription: "Send recent app logs to help diagnose a problem. Logins, servers, and media titles are excluded.",
+            idleDescription: SettingsCopy.manualDiagnostics,
             disabledDescription: "Turn on Share Crash Reports below to send recent app logs."
         )
     }
@@ -134,10 +129,12 @@ struct HelpDiagnosticsDetailView: View {
         if crashReportingConfigured {
             SettingsPanel(
                 title: "Crash Reports",
-                footer: crashReportingFooter
+                footer: SettingsCopy.automaticDiagnostics
             ) {
                 Toggle("Share Crash Reports", isOn: $crashReporting.isEnabled)
                     .toggleStyle(SettingsSwitchToggleStyle())
+                Text(SettingsCopy.automaticDiagnosticsExclusions)
+                    .settingsHelperText()
             }
         } else {
             // No DSN baked in ⇒ the toggle can't do anything, so it's disabled
@@ -184,7 +181,7 @@ struct HelpDiagnosticsDetailView: View {
     // MARK: - Recent activity (read-only, redacted) — opens its own page
     private var recentActivityPanel: some View {
         SettingsPanel(
-            footer: "The most recent app log lines, kept only on this Apple TV and already stripped of tokens and secrets. Shown so a maintainer can ask what Plozz was doing when a bug happened."
+            footer: "Recent app logs are stored on this Apple TV. You can choose to share them when reporting a problem."
         ) {
             SettingsRouteLink(value: SettingsRoute.recentActivity) {
                 SettingsRowLabel(icon: "list.bullet.rectangle", title: "Recent Activity") {

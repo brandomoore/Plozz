@@ -112,6 +112,10 @@ public struct SettingsStepper<Value: Hashable>: View {
     }
 
     private var index: Int { options.firstIndex(of: selection) ?? 0 }
+    private var rangePositions: [Int] {
+        guard options.count > 21 else { return Array(options.indices) }
+        return (0...20).map { Int((Double($0) * Double(options.count - 1) / 20).rounded()) }
+    }
     private var canDecrement: Bool { !options.isEmpty && (wraps || index > 0) }
     private var canIncrement: Bool { !options.isEmpty && (wraps || index < options.count - 1) }
 
@@ -254,7 +258,7 @@ public struct SettingsStepper<Value: Hashable>: View {
             HStack(spacing: 12) {
                 adjustmentGlyph("minus", enabled: canDecrement)
                 HStack(spacing: 4) {
-                    ForEach(options.indices, id: \.self) { position in
+                    ForEach(rangePositions, id: \.self) { position in
                         Capsule()
                             .fill(.primary.opacity(position <= index ? 1 : 0.2))
                             .frame(height: position == options.count / 2 ? 10 : 6)
@@ -270,7 +274,7 @@ public struct SettingsStepper<Value: Hashable>: View {
                 adjustmentGlyph("minus", enabled: canDecrement)
                 VStack(spacing: 0) {
                     HStack(spacing: 4) {
-                        ForEach(options.indices, id: \.self) { position in
+                        ForEach(rangePositions, id: \.self) { position in
                             Capsule()
                                 .fill(.primary.opacity(position <= index ? 1 : 0.2))
                                 .frame(height: 6)

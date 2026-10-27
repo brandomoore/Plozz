@@ -49,6 +49,8 @@ struct SettingsAboutSection: View {
                     Text("Bring all of your media together into one unified experience. Free forever and open source.")
                         .settingsHelperText()
                         .fixedSize(horizontal: false, vertical: true)
+                    PrivacyPolicyLink()
+                        .buttonStyle(.bordered)
                 }
             }
             SettingsCommunityLinks(repoURL: repoURL, compact: true)
@@ -113,6 +115,8 @@ struct SettingsAboutSection: View {
                         .font(.callout)
                         .plozzForeground(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    PrivacyPolicyLink()
+                        .buttonStyle(.bordered)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

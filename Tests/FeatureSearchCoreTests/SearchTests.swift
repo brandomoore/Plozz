@@ -197,6 +197,30 @@ final class SearchSectionTests: XCTestCase {
 
 @MainActor
 final class SearchViewModelTests: XCTestCase {
+    func testSearchDiagnosticsKeepCountsAndOutcomeWithoutQueryOrAccountContent() async throws {
+        for error: AppError? in [nil, .serverUnreachable] {
+            let diagnostics = PerformanceDiagnostics()
+            diagnostics.start()
+            let provider = SearchStubProvider(
+                results: [.init(id: "private-item", title: "Private title", kind: .movie)],
+                error: error, accountID: "private-account"
+            )
+            let account = ResolvedAccount(account: Account(id: provider.accountID, from: provider.session), provider: provider)
+            let model = SearchViewModel(accounts: [account], debounceMilliseconds: 0, diagnostics: diagnostics)
+            model.query = "private-search-phrase"
+            await model.search()
+            let snapshot = try XCTUnwrap(diagnostics.snapshot())
+            let record = try XCTUnwrap((snapshot.recent + snapshot.slow).first { $0.operation == .search })
+            XCTAssertEqual(record.outcome, error == nil ? .succeeded : .failed)
+            XCTAssertEqual(record.metrics.items, error == nil ? 1 : 0)
+            XCTAssertEqual(record.metrics.accounts, 1)
+            let text = String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self)
+            for value in ["private", "Private", "Alice", "TOKEN", "host:8096"] {
+                XCTAssertFalse(text.contains(value), value)
+            }
+        }
+    }
+
     private func makeVM(_ providers: SearchStubProvider..., debounceMilliseconds: Int = 0) -> SearchViewModel {
         let accounts = providers.map { provider in
             ResolvedAccount(account: Account(id: provider.accountID, from: provider.session), provider: provider)

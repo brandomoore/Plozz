@@ -16,9 +16,9 @@ public struct ContinueWatchingNextUpControl: View {
             set: { visibility.setMergeNextUpIntoContinueWatching($0) }
         )) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Merge Next Up rows")
+                Text("Include Next Up")
                 if visibility.isGlobalRowEnabled(.continueWatching) {
-                    Text("Include next episodes in this section.")
+                    Text("Combines Next Up rows here.")
                         .settingsHelperText()
                         .fixedSize(horizontal: false, vertical: true)
                 } else {

@@ -8,7 +8,7 @@ public enum PlozzControlShape: Equatable {
 }
 
 public extension View {
-    /// Liquid-glass pill matching the Twozz player control / chat-settings
+    /// Liquid-glass pill matching the Strozz player control / chat-settings
     /// buttons: native Liquid Glass on tvOS 26+ — `.glassProminent` when
     /// `isSelected`, plain `.glass` otherwise — with **no focus outline** (the
     /// native glass lift is the only focus treatment). When the system Reduce
@@ -54,7 +54,7 @@ struct PlozzGlassPillButtonModifier: ViewModifier {
 /// Season-tab styling: a single, **identity-stable** button style for the series
 /// detail season tabs. Unlike swapping `.glass` ↔ `.glassProminent` by selection
 /// (which changes the view's identity and makes tvOS snap focus back to the first
-/// tab — see Twozz's `settingPillStyle`), this style is applied unconditionally
+/// tab — see Strozz's `settingPillStyle`), this style is applied unconditionally
 /// and varies only *animatable* properties (opacity, fill, weight, scale). That
 /// keeps the focused tab's identity intact so left/right navigation never breaks.
 ///
@@ -176,7 +176,7 @@ public struct PlozzSeasonTabStyle: ButtonStyle {
 }
 
 /// Opaque, theme-aware pill used when Liquid Glass is unavailable/disabled.
-/// Ported from Twozz's `TwozzOpaquePillButtonStyle`: reads the button's own focus
+/// Ported from Strozz's opaque pill button style: reads the button's own focus
 /// state and flips to the standard tvOS focused look (white fill + dark label),
 /// marks the selected option with the brand accent, and crucially drops its
 /// border to `.clear` whenever focused or selected — so focus never reads as an

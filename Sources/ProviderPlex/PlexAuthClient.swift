@@ -141,15 +141,7 @@ public struct PlexAuthClient: Sendable {
     /// `GET /api/v2/resources?includeHttps=1` — the servers this account can
     /// reach, each resolved to its best connection's base URL + server token.
     public func servers(authToken: String) async throws -> [PlexServerCandidate] {
-        let endpoint = Endpoint(
-            path: "/api/v2/resources",
-            queryItems: [
-                URLQueryItem(name: "includeHttps", value: "1"),
-                URLQueryItem(name: "includeRelay", value: "1")
-            ],
-            headers: deviceProfile.headers(token: authToken)
-        )
-        let resources = try await http.decode([PlexResourceDTO].self, from: endpoint, baseURL: baseURL)
+        let resources = try await serverResources(authToken: authToken)
         let servers = resources.filter { $0.provides?.contains("server") == true }
 
         return await withTaskGroup(of: PlexServerCandidate?.self) { group in
@@ -164,6 +156,32 @@ public struct PlexAuthClient: Sendable {
             }
             return candidates
         }
+    }
+
+    /// A successful cloud response can confirm that a signed-in Home user has
+    /// no grant for a server. Transport/authentication failures are not absence.
+    public func serverAccessToken(forServerID serverID: String, authToken: String) async throws -> String? {
+        guard !serverID.isEmpty, !authToken.isEmpty else { throw AppError.unauthorized }
+        try Task.checkCancellation()
+        let resources = try await serverResources(authToken: authToken)
+        try Task.checkCancellation()
+        guard let resource = resources.first(where: { $0.clientIdentifier == serverID }) else { return nil }
+        guard resource.provides?.contains("server") == true else { throw AppError.invalidResponse }
+        let token = resource.accessToken ?? authToken
+        guard !token.isEmpty else { throw AppError.invalidResponse }
+        return token
+    }
+
+    private func serverResources(authToken: String) async throws -> [PlexResourceDTO] {
+        let endpoint = Endpoint(
+            path: "/api/v2/resources",
+            queryItems: [
+                URLQueryItem(name: "includeHttps", value: "1"),
+                URLQueryItem(name: "includeRelay", value: "1")
+            ],
+            headers: deviceProfile.headers(token: authToken)
+        )
+        return try await http.decode([PlexResourceDTO].self, from: endpoint, baseURL: baseURL)
     }
 
     /// The reachable-ordered connection URLs for one specific server the account

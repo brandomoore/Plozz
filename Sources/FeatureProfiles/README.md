@@ -47,6 +47,39 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
 - **Default profile is special.** Stable id
   `ProfileStore.defaultProfileID` (`com.plozz.profile.default`); `nil`
   settings namespace; cannot be removed. Don't break the upgrade path.
+- **Plex Home onboarding is opt-in.** After linking Plex, the shared page offers
+  Add all profiles or Just me. Add all commits the missing profiles first, confirms
+  Profiles added (or Profiles ready when already present), then offers Choose your
+  profile using those same Home identities. Just me offers Choose your Plex user
+  and binds only the current profile. Confirmation advances without another Continue
+  button; only the uncommitted Just me choice offers Back. Transitions use a short
+  lift/fade; Reduce Motion uses only a fade.
+  Import preserves existing profiles and their customization. New profiles have
+  explicit membership in that login's selected
+  Plex servers, their own Home-user bindings/photos, and the normal setup gate.
+  Import is metadata-only: no other user's PIN or session is requested, and
+  each user's current Plex protection is checked when they enter their profile.
+  Choosing an imported profile uses the normal parental/local-lock gates before
+  changing persona, then scopes settings and library choices to that profile.
+  The selected viewer authenticates before library selection, including during
+  first run. The library-selection surface owns verification and any required
+  Plex PIN, then loads libraries using the resolved viewer credentials. Missing
+  providers are failures, not an empty inventory, and credential/profile changes
+  restart discovery. Other imported users remain unauthenticated. A
+  just-entered linked local PIN is spent immediately rather than held across setup;
+  only the selected viewer's setup gate is cleared. The default owner's identity
+  and other imported profiles remain intact when a different viewer is selected.
+  If account setup began inside another profile's unfinished setup, choosing an
+  imported viewer retargets the setup identity and navigation to that viewer,
+  without completing the previous profile. The mobile chooser owns its local
+  and parental PIN surface, including when it sits above Settings.
+  Extra imported profiles cannot skip the remaining onboarding pages; once the
+  viewer finishes, a synced household still avoids repeating first-run elsewhere.
+  Short choice pages center vertically; overflowing viewer lists start at the
+  top so initial native focus stays visible and remote navigation scrolls normally.
+  The import preview and confirmation show every household avatar in centered,
+  wrapping rows. Viewer names have their own line; owner/PIN metadata sits below
+  rather than competing with the name for horizontal space.
 - **Photo fallback.** Borrowed photos fall back to the profile's emoji or
   symbol if loading fails; preserve symbol-only profiles on both platforms.
 - **Profile-aware everywhere.** Any feature reading per-user state

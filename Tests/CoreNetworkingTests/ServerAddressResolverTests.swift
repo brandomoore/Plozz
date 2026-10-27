@@ -91,6 +91,21 @@ final class ServerAddressResolverTests: XCTestCase {
         }
     }
 
+    func testProbeCapableGETDoesNotReplayOnAnotherServerAddress() async {
+        let resolver = ServerAddressResolver(baseURL: remote, alternatives: [local]) { _ in }
+        let transport = AddressTransport(failing: local)
+        let client = ServerAddressHTTPClient(wrapped: transport, resolver: resolver)
+        do {
+            _ = try await client.send(
+                Endpoint(path: "/Items/movie/PlaybackInfo", allowsAutomaticAddressRetry: false),
+                baseURL: remote
+            )
+            XCTFail("An ambiguous probe failure must reach the caller.")
+        } catch { XCTAssertEqual(error as? AppError, .serverUnreachable) }
+        let calls = await transport.calls
+        XCTAssertEqual(calls.map(\.0), [local])
+    }
+
     func testRetryDoesNotJoinSweepThatStillIncludesTheFailedAddress() async throws {
         let local = local
         let gate = HeldAddressProbe()

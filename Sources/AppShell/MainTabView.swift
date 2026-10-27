@@ -14,7 +14,6 @@ import MetadataKit
 import FeatureSearch
 import FeatureSettings
 import FeatureProfiles
-import ProviderTrailers
 import RatingsService
 import TraktService
 import SeerService
@@ -1065,6 +1064,18 @@ struct MainTabView: View {
         ThemePalette.palette(for: themeModel.theme, systemColorScheme: systemColorScheme)
     }
 
+    private var themeMusicAuthorization: ThemeMusicPlaybackAuthorization {
+        let scope = accountsProviders.liveTVAuthorizationID
+        return ThemeMusicPlaybackAuthorization(
+            id: isLiveTVProfileAuthorized() ? scope : nil,
+            provider: { accountID in
+                guard isLiveTVProfileAuthorized(),
+                      accountsProviders.liveTVAuthorizationID == scope else { return nil }
+                return accountsProviders.homeAccounts.first { $0.account.id == accountID }?.provider
+            }
+        )
+    }
+
     /// The identity of both tab subtrees. Includes the active profile, so
     /// switching profiles rebuilds Home/Search even when the two profiles share
     /// the same servers — otherwise the cached view model keeps serving the
@@ -1959,62 +1970,47 @@ struct MainTabView: View {
         let _ = plozzPrintChanges { Self._printChanges() }
         let _ = PlozzBodyRate.tick("MainTabView")
         return playbackShell
-        .detailNavigationZoom(isEnabled: navigationStyleModel.detailZoomEnabled)
-        .environment(\.themeMusicController, themeMusicController)
+        .themeMusicScope(
+            controller: themeMusicController,
+            model: themeMusicModel,
+            background: heroBackgroundModel.settings,
+            isBlocked: audioController.hasActivePlayback || heroTrailerController.isPlaying
+                || heroTrailerController.isPlaybackSuppressed || playRequest != nil
+                || isLiveTVDestinationActive,
+            authorization: themeMusicAuthorization,
+            authenticatedHTTPResolver: authenticatedHTTPResolver
+        )
+        .environment(\.themeMusicPreviewResolver, {
+            try await ThemeMusicPreviewResolver.resolve(
+                content: homeRuntime.homeViewModel.existingValue(forKey: homeRuntime.scopeKey)?.state.value,
+                accounts: currentAccounts()
+            )
+        })
         .environment(
             \.seasonRequestContextID,
             "\(seer.connectionRevision)|\(activeProfile.id)|\(activeProfile.seerrUserID.map(String.init) ?? "admin")|\(activeProfile.seerrServerIdentity?.canonicalURL ?? "")"
         )
-        .environment(\.themeMusicSettings, themeMusicModel.settings)
         .environment(heroTrailerController)
         .environment(heroBackgroundModel)
-        .environment(
-            \.themeMusicAuthenticatedHTTPResolver,
-            authenticatedHTTPResolver
-        )
         .onChange(of: artworkPolicy.forArea(.music), initial: true) { _, policy in
             audioController.updateArtworkPolicy(policy)
         }
-        .onChange(of: audioController.hasActivePlayback, initial: true) { _, active in
-            themeMusicController.setBlocked(
-                active || heroTrailerController.isPlaying || isLiveTVDestinationActive
-            )
-        }
         .onChange(of: playRequest != nil) { _, videoStarting in
-            if videoStarting {
-                themeMusicController.stop()
-            }
             // Full-screen playback suspends the ambient hero in place; dismissing
             // the player resumes the same trailer/timeline instead of restarting.
             heroTrailerController.setPaused(videoStarting)
         }
         .onChange(of: heroBackgroundModel.settings, initial: true) { _, settings in
-            // Theme music is a DETAIL-page concern; keep the legacy theme-music
-            // controller's enabled state mirrored from the detail mode.
-            themeMusicModel.settings.isEnabled = settings.themeMusicEnabled
             // Stop the shared trailer player only when NEITHER surface wants a
             // trailer; otherwise leave it to the active hero view. Mute is a live
             // session state on the controller, so it isn't touched here.
             if !settings.homeTrailerEnabled && !settings.detailTrailerEnabled {
                 heroTrailerController.stop()
             }
-            themeMusicController.setBlocked(
-                audioController.hasActivePlayback
-                    || heroTrailerController.isPlaying
-                    || isLiveTVDestinationActive
-            )
-        }
-        .onChange(of: heroTrailerController.isPlaying) { _, playing in
-            themeMusicController.setBlocked(
-                audioController.hasActivePlayback || playing || isLiveTVDestinationActive
-            )
         }
         .onChange(of: activeDestinationKey) {
-            themeMusicController.stop()
+            themeMusicController.fadeOutAndStop()
             heroTrailerController.stop()
-            themeMusicController.setBlocked(
-                audioController.hasActivePlayback || isLiveTVDestinationActive
-            )
         }
         .environment(musicPlayerModel)
         .environment(uiDensityModel)

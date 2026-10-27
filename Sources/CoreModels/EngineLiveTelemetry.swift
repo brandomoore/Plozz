@@ -30,14 +30,25 @@ public struct EngineLiveTelemetry: Equatable, Sendable {
     }
 }
 
-/// The engine's active temporary cache, including its protected playback-window floor.
-/// The effective budget is not a promise of a fixed buffered duration.
+/// The engine's active temporary cache and its effective budget.
+/// Memory usage excludes purgeable played history; disk usage includes retained history.
+/// The budget and requested duration are not promises of contiguous playable coverage.
 public struct EngineSessionCache: Equatable, Sendable {
+    public enum Storage: Equatable, Sendable {
+        case memory, disk
+    }
     public let residentBytes: Int64
     public let effectiveBudgetBytes: Int64
+    public let storage: Storage
+    public let targetSeconds: Double?
+    public let byteLimitReached: Bool
 
-    public init(residentBytes: Int64, effectiveBudgetBytes: Int64) {
+    public init(residentBytes: Int64, effectiveBudgetBytes: Int64,
+                storage: Storage = .disk, targetSeconds: Double? = nil, byteLimitReached: Bool = false) {
         self.residentBytes = residentBytes
         self.effectiveBudgetBytes = effectiveBudgetBytes
+        self.storage = storage
+        self.targetSeconds = targetSeconds
+        self.byteLimitReached = byteLimitReached
     }
 }

@@ -1405,6 +1405,46 @@ final class PlexProviderMappingTests: XCTestCase {
         XCTAssertEqual(item.mediaInfo?.dynamicRangeBadges.map(\.label), ["HDR10+"])
     }
 
+    func testPlexDolbyVisionCompatibilityAndFalseFlagsRemainAccurate() throws {
+        let cases: [(String, [String], String?)] = [
+            (#""DOVIPresent":true,"DOVIProfile":8,"DOVIBLCompatID":1,"displayTitle":"4K DoVi/HDR10+""#,
+             ["Dolby Vision"], "HDR10+"),
+            (#""DOVIPresent":true,"DOVIProfile":8,"DOVIBLCompatID":1"#, ["Dolby Vision"], "HDR10"),
+            (#""DOVIPresent":true,"DOVIProfile":8,"DOVIBLCompatID":4"#, ["Dolby Vision"], "HLG"),
+            (#""DOVIPresent":true,"DOVIProfile":8,"displayTitle":"DoVi/HLG""#, ["Dolby Vision"], "HLG"),
+            (#""DOVIPresent":true,"DOVIProfile":8"#, ["Dolby Vision"], nil),
+            (#""DOVIPresent":true,"DOVIProfile":5,"DOVIBLCompatID":0,"colorTrc":"smpte2084""#,
+             ["Dolby Vision"], nil),
+            (#""DOVIPresent":false,"DOVIBLPresent":false,"DOVIProfile":0,"DOVILevel":0"#, ["SDR"], nil),
+            (#""colorTrc":"smpte2094-40""#, ["HDR10+"], nil),
+            (#""colorTrc":"arib-std-b67""#, ["HLG"], nil)
+        ]
+        for (fields, expected, detail) in cases {
+            let streams = try JSONDecoder.plozz.decode([PlexStream].self, from: Data("""
+            [{"streamType":1,"codec":"hevc",\(fields)},
+             {"streamType":2,"codec":"eac3","channels":6,"profile":"JOC","selected":true},
+             {"streamType":2,"codec":"truehd","channels":8,"profile":"Atmos","selected":false}]
+            """.utf8))
+            let metadata = try XCTUnwrap(PlexProvider.sourceMetadata(container: "mkv", streams: streams))
+            XCTAssertEqual(metadata.technicalBadges.filter { !$0.isAudio }.map(\.label), expected, fields)
+            XCTAssertEqual(metadata.technicalBadges.first?.detail, detail, fields)
+            XCTAssertEqual(metadata.audioBadges.map(\.label), ["Dolby Digital+", "Dolby Atmos"])
+            XCTAssertEqual(metadata.audioBadges.first?.detail, "5.1")
+        }
+    }
+
+    func testPlex8KSummaryAndPerVersionFactsRetainCombinedBadges() throws {
+        let media = try JSONDecoder.plozz.decode([PlexMedia].self, from: Data("""
+        [{"id":1,"videoResolution":"8k","videoCodec":"hevc","videoStreamDisplayTitle":"DoVi/HDR10+",
+          "audioCodec":"truehd","audioChannels":8,"audioProfile":"Atmos"},
+         {"id":2,"videoResolution":"1080","videoCodec":"h264","audioCodec":"aac","audioChannels":2}]
+        """.utf8))
+        let versions = PlexProvider.versions(from: media)
+        XCTAssertEqual(versions[0].technicalBadges.map(\.label), ["8K", "Dolby Vision", "Dolby TrueHD", "Dolby Atmos"])
+        XCTAssertEqual(versions[0].technicalBadges[1].detail, "HDR10+")
+        XCTAssertEqual(versions[1].technicalBadges.map(\.label), ["1080p"])
+    }
+
     func testItemMapsDolbyVisionFromMediaLevelDisplayTitleWithoutStreams() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/library/metadata/80", json: """
@@ -1551,7 +1591,8 @@ final class PlexProviderMappingTests: XCTestCase {
         XCTAssertTrue(labels.contains("Dolby Digital+"),
                       "The codec and spatial capability describe the same stream, got \(labels)")
         XCTAssertEqual(item.technicalBadges.first(where: { $0.label == "Dolby Digital+" })?.detail, "5.1")
-        XCTAssertEqual(labels, ["4K", "Dolby Vision", "HDR10", "Dolby Digital+", "Dolby Atmos"])
+        XCTAssertEqual(labels, ["4K", "Dolby Vision", "Dolby Digital+", "Dolby Atmos"])
+        XCTAssertEqual(item.technicalBadges[1].detail, "HDR10")
     }
 
     func testMediaLevelFallbackDetectsAtmosFromAudioProfile() async throws {
@@ -1575,7 +1616,8 @@ final class PlexProviderMappingTests: XCTestCase {
         let labels = item.technicalBadges.map(\.label)
         XCTAssertEqual(item.mediaInfo?.dynamicRangeBadges.map(\.label), ["Dolby Vision", "HDR10"])
         XCTAssertTrue(labels.contains("Dolby Atmos"))
-        XCTAssertEqual(labels, ["4K", "Dolby Vision", "HDR10", "Dolby Digital+", "Dolby Atmos"])
+        XCTAssertEqual(labels, ["4K", "Dolby Vision", "Dolby Digital+", "Dolby Atmos"])
+        XCTAssertEqual(item.technicalBadges[1].detail, "HDR10")
     }
 
     func testItemFallsBackToMediaLevelFactsWithoutStreams() async throws {
@@ -1768,7 +1810,7 @@ final class PlexProviderMappingTests: XCTestCase {
         let children = try await provider.children(of: "s1")
         XCTAssertEqual(children.count, 1)
         let labels = children[0].technicalBadges.map(\.label)
-        XCTAssertEqual(labels, ["4K", "Dolby Vision", "HDR10", "Dolby Digital+", "Dolby Atmos"],
+        XCTAssertEqual(labels, ["4K", "Dolby Vision", "Dolby Digital+", "Dolby Atmos"],
                        "DoVi/HDR10/Atmos must all survive the /children path; got \(labels)")
     }
 

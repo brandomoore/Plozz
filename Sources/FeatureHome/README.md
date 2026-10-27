@@ -7,6 +7,34 @@ an empty provider feed from local curation without recording media or account ID
 Home rows, item detail, series/season experience, and the online-trailer
 fallback when the user's server has no attached trailer.
 
+Theme audio is owned by `FeatureHomeCore.ThemeMusicController` and the shared
+`themeMusicScope` / `themeMusicPlayback` modifiers on both TV and mobile.
+Only the frontmost active detail owns playback. Full video, Live TV, hero trailers,
+and full music playback take precedence. Volume changes update the same player
+without re-resolving or restarting a source. Leaving a detail for Home or a library
+fades its current volume to silence over 750ms before releasing the player.
+App inactivity uses the same bounded fade before pausing, then resumes the retained
+timeline with a fade-in on return. Rapid returns cancel the outgoing fade without
+discarding the item. Forced termination cannot guarantee a fade. Playback
+suppression, authorization changes, and audio interruptions still stop or pause
+immediately. Settings previews instead stop and
+require a new adjustment or Play action. Late resolution cannot revive a stopped
+preview, switch profiles, or bypass current playback suppression.
+Each detail instance owns a separate theme-playback token, even when a repeated
+title has the same account/item ID. Covered pages cannot release another page's
+audio. Both shells re-resolve themes through the currently authorized provider,
+not a provider retained by an old detail model. Profile/account/effective
+credential changes invalidate playback; live authorization is rechecked after
+theme and authenticated-URL resolution, including for public theme URLs.
+Audio-interruption changes cancel pending resolution and retry the still-current
+foreground detail when the interruption ends.
+On iPhone and iPad, active detail theme music uses the trailer mute button's
+trailing toolbar position. Mute changes the existing player's audio without
+changing the saved volume, restarting playback, or interrupting its fade.
+It survives temporary app inactivity but resets when that detail playback ends;
+settings previews and another profile do not inherit it. The control is absent
+for a covered page, another item's theme, or a settings preview.
+
 tvOS detail entry keeps the real primary action focusable while its play target
 loads. An early press queues one activation, replacing the icon with a spinner
 without resizing the button. Readiness consumes that intent once through the
@@ -130,18 +158,20 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   family succeeds, including an authoritative empty result. Cancellation never
   publishes a partial success or replaces the last completed diagnostic.
 
-- **Deferred version inventory** — providers that advertise lazy file discovery
-  refresh movie/episode choices after detail first paint and the existing dwell
-  gate. Inventory publication is fenced by the current source and cancellation;
-  later cross-server discovery cannot overwrite it with the original sparse
-  seed. Leaving cancels the work and returning resumes an unfinished attempt.
+- **Explicit version inventory** — providers that advertise lazy file discovery
+  expose Version regardless of the cached source count, but load it only after
+  that action is opened. Home, detail dwell, returning to a page and passive
+  episode badge enrichment use presentation metadata, never playback inventory.
+  Publication is fenced by the current source and the picker task's cancellation;
+  later sparse metadata cannot erase authoritative file choices. Same-account
+  alternate files use the same sequential discovery as the Play gate.
   Failure keeps browsing available but never authorizes playback: Play runs its
   own strict gate. Providers with complete detail inventories incur no extra fetch.
-  Series heroes resolve the episode that Play would start through the same
-  inventory contract. Mobile source/version actions use that episode even while
+  Series heroes enrich the playable episode's ordinary metadata. Explicit
+  mobile source/version actions use that episode even while
   the hero shows the series' artwork and description, matching tvOS. Choosing a
   version therefore remembers the episode/series preference, not a container file.
-  An explicit no-stream result from the provider replaces the detail Play action with
+  A confirmed no-stream result from explicit detail discovery replaces Play with
   `No streams found` on both platforms. It rechecks the selected source without
   starting playback; successful recovery restores Play. This page-local result is
   scoped to the active server and episode, not inferred from timeouts, missing
@@ -157,10 +187,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   off. Public provider caches stay profile-independent; server-owned library titles
   continue to follow the selected server user's access rather than an invented
   app-wide maturity threshold.
-- **Home section customization** — Settings > Screens & Navigation > Customize Home
-  uses the same section editor on TV, iPhone and iPad. Tap a section to configure
-  it, Reorder to move it, or Add section to choose a collection or another existing feed. Hero
-  stays configurable at the top, outside the movable row list. Rows from different
+- **Home row customization** — Settings > Screens & Navigation > Customize Home > Rows
+  uses the same arrangement editor on TV, iPhone and iPad. Tap a row to configure
+  it, Edit to reorder or remove it, or Add row to choose a collection or another existing feed.
+  Layout/Hero and Card labels have separate destinations. Rows from different
   libraries can be interleaved, reordered or hidden, including the Libraries
   tiles. `HomeRowCustomization` stores typed identity, order and explicit
   visibility inside the profile's existing Home settings blob; profile transfer
@@ -179,7 +209,7 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   Global rows say **All libraries**; native server and library rows identify their
   source. All can be freely interleaved. Changing presets requires confirmation;
   selecting the already active preset does nothing.
-  **Merge Next Up rows** is a profile-scoped setting inside the **Continue Watching**
+  **Include Next Up** is a profile-scoped setting inside the **Continue Watching**
   section's configuration on every platform, alongside its artwork choice.
   **Continue Watching action** chooses **Play** (the unchanged default) or
   **Open details** for movie/episode cards on Home, including merged Next Up
@@ -224,6 +254,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   dynamic recommendations may be empty or changed. Normal empty default library
   feeds remain quiet unless explicitly added. Existing usable cached/partial
   cards remain visible, with any load warning available in the editor.
+  Empty and failed Home rows use the same header and keyline as populated rows,
+  including pinned-navigation clearance. Status/source and native recovery
+  actions stay compact; they do not use a full-page error panel or reserve an
+  empty poster wall. Mobile uses its ordinary media-section heading and insets.
   Warnings are runtime-only, scoped to the current profile, accounts, server
   users, credentials, and settings; cancellation is not a failure and successful
   recovery clears the warning. Details expose safe error categories, not URLs,
@@ -237,10 +271,42 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   and membership, showing supported movie and series cards without reconstructing
   library membership. **See all** opens the existing collection browser using
   the original provider ID. All card styles open title details.
+  This member-row layout is separate from collection **covers**. Lists and Home
+  or Recommended rows containing only collection containers use a uniform
+  Auto/Posters/Landscape cover layout. Overrides are profile-scoped and keyed
+  independently by Home row or account/library/browser/Recommended row. Browsers
+  resolve Auto from the initial page and retain that shape through later pages.
+  Cover layout controls live only in Settings: Customize Libraries owns each
+  library's collection browser and Recommended rows; Customize Home owns Home
+  rows. Browse headers contain query controls, not cover appearance controls.
+  Landscape collection covers still open the collection, never direct playback.
   Collection definitions persist with the profile separately from arrangement:
-  removing a row or choosing a preset retains its configuration in Add section.
+  removing a row or choosing a preset retains its configuration in Add row.
   Disabled libraries and a different server viewer prevent collection requests;
   failures remain distinct from empty collections.
+  Successful Watchlist server writes (add **and** remove, including retries or
+  reconciliation that actually writes) quietly refresh the affected profile/viewer's
+  configured collection rows. Read-only reconciliation, unchanged confirmations,
+  optimistic local intent, and navigation do not schedule this extra pass; normal
+  Home loads retain their existing behavior. Watchlist/Watch Later/My List-like
+  names are prioritized, not used to exclude custom names. Changes coalesce for 750 ms; one utility task
+  reads at most 20 members per collection, with 250 ms between previews and one
+  follow-up after three seconds for server automation. Duplicate collection sources
+  share a request. A new confirmation wakes a pending deadline without cancelling
+  an active preview or skipping the pacing delay. Unrelated accounts/feeds, library inventories, artwork caches,
+  and Top Shelf are untouched. Navigation postpones requests/publication; full Home
+  loads cancel and supersede in-flight previews. Unchanged rows are not published,
+  failures keep prior items with diagnostics, and snapshot writes are coalesced.
+  This bounds client work by configured rows, not server size; external automation
+  may still take longer than the follow-up window.
+  Naming evidence includes Kometa's
+  [My Watchlist example](https://kometa.wiki/en/latest/files/builders/plex/watchlist/),
+  [community collection configurations](https://github.com/Kometa-Team/Community-Configs/blob/ca959423cd75f49397311eac865901096f7ac609/ladywhiskers/movies/movies_watchlist.yml),
+  YouTube's [Watch Later](https://support.google.com/youtube/answer/56101?hl=en),
+  and Netflix's [My List](https://help.netflix.com/en/node/10523).
+  These are observed conventions, not a prevalence survey or an exhaustive
+  multilingual dictionary. Names do not establish that a collection is a watchlist,
+  and this does not add support for third-party plugins with separate watchlist storage.
   Featured is available only for authored collection rows. Large artwork cards
   place the title logo (or text fallback) and real metadata at the lower left.
   TV rows reuse the standard media-row heading and See all action, with the same
@@ -314,11 +380,16 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   configured. Completion belongs to the current curation inputs and profile;
   cancelled work cannot settle a replacement request. This never changes saved
   preferences or treats a failed fetch as authority to erase cached candidates.
-  New profiles include Discovery in the carousel only while Seerr is configured.
+  New profiles enable Continue Watching, Recently Added, Random from Library,
+  and Watchlist; Collections is opt-in. They include Discovery in the carousel
+  only while Seerr is configured.
   Explicitly toggling Discovery saves that profile's choice, independent of later
   connections or disconnections. Other Hero edits retain the automatic default,
   and temporary Seerr reachability failures do not change it. Existing saved
   source lists retain their selection; Kids restrictions still take precedence.
+  The developer first-run reset preserves saved Hero preferences, including the
+  default profile's unsuffixed settings. Repeating onboarding through that reset
+  is not a fresh-settings test; use a new profile namespace to verify defaults.
   Showcase's separate Discovery row remains opt-in.
   On iPhone and iPad, tapping the Home hero artwork, logo or metadata opens its
   item/provider detail page instead of a separate More Info button. The artwork
@@ -679,10 +750,23 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   playlists remain in `MusicProvider`. Unsupported sources (including Silo)
   do not advertise a video-playlist mode. Snapshots are bound to the provider
   account and refreshed on the first page, not during poster scrolling.
-- **Trailers** — `OnlineTrailerSource` and `TrailerResolutionCache`
-  handle the TMDb → YouTube fallback when the server has no attached
-  trailer, by routing through `ProviderTrailers.YouTubeTrailerProvider`
-  to surface a real `PlaybackRequest`.
+- **Trailers** — Server-owned trailer files retain in-app playback and take
+  priority across the title's server copies. Server-supplied YouTube links and
+  TMDB's documented videos API supply external trailer actions. Hero trailer
+  buttons are always icon-only, using the shared cutout-arrow `TrailerActionIcon`
+  for external links. "Watch on YouTube" is a VoiceOver label, not visible button
+  text; overflow menus use "Trailer" with an external-opening symbol.
+  `YouTubeTrailerOpening` opens the YouTube app, with browser fallback on mobile
+  and a visible failure on TV when no handler is available. Returning to Plozz
+  is manual; no completion callback or QR fallback is implied.
+  App links retain the complete `www.youtube.com/watch?v=…` host/path/query with
+  the `youtube` scheme; an abbreviated link may launch the TV app without
+  navigating to the requested video.
+  No YouTube scraping, stream extraction, embed probing, or media caching runs
+  during browsing or playback. Household metadata settings and the active TMDB
+  credential apply; unavailable external metadata never removes server trailers.
+  `TrailerResolutionCache` stores link decisions, not media/playability claims.
+  Its new namespace does not reuse old extracted/scraped decisions.
   Background hero trailers use one shared player. Detail departure stops its
   trailer unless the router is returning directly to a rendered, unreceded Home
   hero showing the same title with trailers enabled. Library, Watchlist, pushed
@@ -841,6 +925,13 @@ resolved heroes use the same row-recede geometry. The `PLZBOOT` row-ready events
 data from completion of the entire Home load.
 
 ## Showcase
+
+Episode-backed Home heroes use a separately scoped `MediaSeriesSynopsis` fetched
+from the authenticated parent-series record. The server's series tagline/synopsis
+is shown without episode spoiler masking; episode prose is never substituted
+when that series text is absent. The original episode overview, playback route,
+and watch state remain intact. Detail pages retain episode-specific spoiler rules.
+This description policy is shared by Showcase, the TV carousel, and mobile Home.
 
 `FocusHeroHomeView` keeps focus-driven movement and hero updates outside the
 row-building view. Posters use the profile's full normal poster dimensions.

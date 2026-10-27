@@ -11,7 +11,6 @@ import MetadataKit
 import FeatureSearch
 import FeatureSettings
 import FeatureProfiles
-import ProviderTrailers
 import RatingsService
 import TraktService
 import SeerService
@@ -24,6 +23,7 @@ import LastFmService
 /// player presentation, mirroring `HomeTab`'s wiring. Search is aggregated
 /// across every active account; results route to their owning provider.
 struct SearchTab: View {
+    @State private var trailerOpening = YouTubeTrailerOpening()
     /// The rail's chrome model, present only under ``NavigationStyle/rail``. This
     /// stack reports its depth so the rail steps aside on a detail page.
     @Environment(NavigationChromeModel.self) private var navigationChrome: NavigationChromeModel?
@@ -156,6 +156,7 @@ struct SearchTab: View {
                 spoilerSettings: spoilerSettings,
                 onSelect: { open($0) }
             )
+            .youTubeTrailerOpeningFailures(trailerOpening)
             .navigationDestination(for: MediaItem.self) { item in
                 let provider = try? resolveProvider(item.sourceAccountID, in: accounts)
                 if let provider, let route = CollectionBrowseRoute(
@@ -389,6 +390,7 @@ struct SearchTab: View {
             continueWatchingSnapshot: continueWatchingSnapshot,
             ratingsProvider: ratingsProvider,
             detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
+            onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
             discoveryStatusRefresh: { await seer.requestAvailability(for: $0) },
             loadSeasonEpisodeRoster: { await seer.seasonEpisodeRoster(for: $0, seasonNumber: $1) },
             makeRelatedTitlesLoader: {
@@ -424,6 +426,10 @@ struct SearchTab: View {
     /// In-progress items prompt "Resume vs Start Over"; fully-unwatched items
     /// play immediately from the start.
     private func requestPlay(_ item: MediaItem) {
+        if item.isYouTubeTrailer {
+            Task { await trailerOpening.open(item) }
+            return
+        }
         let target = bestSourcePlayItem(item, accounts: accounts, identitySources: identitySources)
         if let resume = target.resumePosition, resume > 1 {
             resumePrompt = target

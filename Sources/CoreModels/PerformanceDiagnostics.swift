@@ -9,7 +9,7 @@ public final class PerformanceDiagnostics: @unchecked Sendable {
     public enum Operation: String, Codable, Sendable {
         case homeLoad, homeFetch, homeMerge, homePublish, serverRequest, serverDecode
         case shareScan, playlistFetch, playlistParse, playlistImport, playlistCommit, guideFetch
-        case liveTVRefresh, automaticChannels
+        case liveTVRefresh, automaticChannels, search
     }
 
     public enum Outcome: String, Codable, Sendable {

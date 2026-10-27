@@ -12,7 +12,6 @@ import MetadataKit
 import FeatureSearch
 import FeatureSettings
 import FeatureProfiles
-import ProviderTrailers
 import RatingsService
 import TraktService
 import SeerService

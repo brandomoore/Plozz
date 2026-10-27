@@ -8,6 +8,29 @@ public enum SettingsMoveCommandDirection {
 #if os(tvOS)
 import UIKit
 
+public enum SettingsAdjustmentRepeatSpeed: Sendable {
+    case standard
+    case fast
+
+    var interval: TimeInterval {
+        switch self {
+        case .standard: 0.08
+        case .fast: 0.03
+        }
+    }
+}
+
+private struct SettingsAdjustmentRepeatSpeedKey: EnvironmentKey {
+    static let defaultValue = SettingsAdjustmentRepeatSpeed.standard
+}
+
+public extension EnvironmentValues {
+    var settingsAdjustmentRepeatSpeed: SettingsAdjustmentRepeatSpeed {
+        get { self[SettingsAdjustmentRepeatSpeedKey.self] }
+        set { self[SettingsAdjustmentRepeatSpeedKey.self] = newValue }
+    }
+}
+
 @MainActor
 public protocol SettingsAdjustmentRemoteInput: AnyObject, HorizontalNavigationInputOwning {
     func beginPress(_ direction: SettingsMoveCommandDirection)
@@ -16,6 +39,7 @@ public protocol SettingsAdjustmentRemoteInput: AnyObject, HorizontalNavigationIn
 
 /// Owns adjustment input on one axis without moving native focus to another row.
 public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UIViewControllerRepresentable {
+    @Environment(\.settingsAdjustmentRepeatSpeed) private var repeatSpeed
     let content: Content
     let screen: Screen
     let adjustableRow: () -> Int?
@@ -48,6 +72,7 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         controller.safeAreaRegions = []
         controller.screen = screen
         controller.axis = axis
+        controller.repeatSpeed = repeatSpeed
         controller.adjustableRow = adjustableRow
         controller.submenuRow = submenuRow
         controller.onMove = onMove
@@ -57,6 +82,7 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
     public func updateUIViewController(_ controller: Controller, context: Context) {
         controller.screen = screen
         controller.axis = axis
+        controller.repeatSpeed = repeatSpeed
         controller.rootView = hostedContent(environment: context.environment)
         controller.adjustableRow = adjustableRow
         controller.submenuRow = submenuRow
@@ -103,6 +129,11 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         var axis: Axis = .horizontal {
             didSet {
                 if oldValue != axis { stopRepeating() }
+            }
+        }
+        var repeatSpeed: SettingsAdjustmentRepeatSpeed = .standard {
+            didSet {
+                if oldValue != repeatSpeed { stopRepeating() }
             }
         }
         private var heldRow: Int?
@@ -258,7 +289,7 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
                       let direction = self.heldDirection else { return }
                 self.onMove?(direction, true)
                 if self.repeatGeneration == generation {
-                    self.scheduleRepeat(after: 0.08)
+                    self.scheduleRepeat(after: self.repeatSpeed.interval)
                 }
             }
             repeatWork = work

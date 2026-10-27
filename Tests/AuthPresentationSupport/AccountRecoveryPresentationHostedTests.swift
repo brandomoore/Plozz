@@ -9,6 +9,32 @@ import XCTest
 
 @MainActor
 final class AccountRecoveryPresentationHostedTests: XCTestCase {
+    #if os(tvOS)
+    func testManagedSignInPhaseOwnsItsOpaqueSurfaceInsteadOfShowingTheExpiredPageBehindIt() async throws {
+        let model = AccountReauthenticationModel(
+            account: .init(
+                id: "account",
+                server: .init(id: "server", name: "Server", baseURL: URL(string: "https://server.example")!, provider: .jellyfin),
+                userID: "user", userName: "Viewer", deviceID: "fixture"
+            ),
+            deviceID: "fixture", store: AccountStore(secureStore: InMemorySecureStore()),
+            isAuthorized: { true }, onComplete: {}
+        )
+        try await verify(
+            ZStack(alignment: .leading) {
+                Color.red.ignoresSafeArea()
+                Text("EXPIRED UNDERLAY").font(.system(size: 48)).padding(120)
+                AccountReauthenticationView(model: model, onCancel: {}) { _ in
+                    Text("Link your account")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            },
+            name: "Opaque account-link phase", palette: .dark,
+            expected: ["Link your account"], notExpected: ["EXPIRED", "UNDERLAY"]
+        )
+    }
+    #endif
+
     func testPlexRecoveryKeepsExplanationAndAllActionsVisibleWithNativePrimaryFocus() async throws {
         #if os(iOS)
         let widths: [CGFloat] = [320, 390, 430, 844]
@@ -74,7 +100,7 @@ final class AccountRecoveryPresentationHostedTests: XCTestCase {
 
     private func verify<Content: View>(
         _ content: Content, name: String, palette: ThemePalette,
-        expected: [String], focusedTitle: String? = nil,
+        expected: [String], notExpected: [String] = [], focusedTitle: String? = nil,
         mobileWidth: CGFloat = 390, checksPlexActionLayout: Bool = false
     ) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
@@ -134,6 +160,9 @@ final class AccountRecoveryPresentationHostedTests: XCTestCase {
         let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
         for value in expected {
             XCTAssertTrue(text.contains(value), "\(name) must show \(value): \(text)")
+        }
+        for value in notExpected {
+            XCTAssertFalse(text.contains(value), "\(name) must hide the covered page's \(value): \(text)")
         }
         #if os(iOS)
         if checksPlexActionLayout {

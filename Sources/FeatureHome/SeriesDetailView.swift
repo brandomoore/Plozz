@@ -402,7 +402,13 @@ struct SeriesDetailView: View {
                         scheduleLine: upcomingHeroLine,
                         spoilerSettings: spoilerSettings,
                         playTitle: playTarget.map { viewModel.playButtonTitle(for: $0) },
-                        onPlay: playTarget.map { target in { onPlay(target.selectingVersion(effectivePlayVersionID)) } },
+                        onPlay: playTarget.map { target in {
+                            onPlay(DetailPlaybackSelection.playItem(
+                                for: target, sources: target.sources, activeAccountID: target.sourceAccountID,
+                                versionID: effectivePlayVersionID,
+                                explicit: versionOverride != nil || target.explicitSourceSelection
+                            ))
+                        } },
                         showsPlayPlaceholder: DetailPlaybackSelection.showsPlayPlaceholder(
                             for: series,
                             hasPlayTarget: playTarget != nil,
@@ -424,9 +430,11 @@ struct SeriesDetailView: View {
                         playRemainingText: playTarget?.resumeRemainingText,
                         playSeasonEpisodeText: playTarget.flatMap { HeroForegroundModelBuilder.seasonEpisodeButtonText(for: $0) },
                         onPlayTrailer: trailerButtonAction,
+                        trailerItem: heroItem.id == series.id ? viewModel.trailers.first : nil,
                         versions: playVersions,
                         selectedVersionID: effectivePlayVersionID,
-                        onSelectVersion: playVersions.count > 1 ? { selectVersion($0) } : nil,
+                        onSelectVersion: { selectVersion($0) },
+                        loadVersions: playTarget.flatMap { viewModel.playbackVersionsLoader(for: $0) },
                         sources: distinctServerChoices,
                         offlineSourceAccountIDs: viewModel.unreachableSourceAccountIDs,
                         selectedSourceAccountID: series.sourceAccountID,
@@ -1014,7 +1022,7 @@ struct SeriesDetailView: View {
     }
 
     /// A single season tab. It reads as text-only until focused or active, then
-    /// lifts into a Liquid-glass pill (matching the Twozz player controls). The
+    /// lifts into a Liquid-glass pill (matching the Strozz player controls). The
     /// style is applied unconditionally so selection never changes the tab's
     /// identity — that is what keeps left/right focus moving between tabs.
     private func seasonChip(_ season: MediaItem, activeID: String?) -> some View {
@@ -1418,7 +1426,10 @@ struct SeriesDetailView: View {
     /// only appears when an episode genuinely has more than one file — matching the
     /// movie behaviour.
     private var playVersions: [MediaVersion] {
-        playTarget?.versions ?? []
+        guard let target = playTarget else { return [] }
+        return DetailPlaybackSelection.versions(
+            for: target, sources: target.sources, activeAccountID: target.sourceAccountID
+        )
     }
 
     /// Applies to the WHOLE SHOW, not just this episode.

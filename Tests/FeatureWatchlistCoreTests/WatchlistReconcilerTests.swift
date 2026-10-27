@@ -3,6 +3,68 @@ import XCTest
 @testable import FeatureWatchlistCore
 
 final class WatchlistReconcilerTests: XCTestCase {
+    func testReadsAndAlreadyConfirmedReconciliationDoNotSendWriteNotifications() async throws {
+        let destination = FakeWatchlistDestination()
+        let store = try DurableWatchlistMutationStore(store: InMemoryWatchlistMutationStateStore())
+        let confirmations = WatchlistWriteConfirmations()
+        let reconciler = WatchlistReconciler(
+            registry: .init([destination]), mutationStore: store,
+            onWriteSucceeded: { profile, destinationID in
+                await confirmations.record(profile, destinationID: destinationID)
+            }
+        )
+        let target = makeTarget()
+        _ = await reconciler.fetchNativeEntries()
+        _ = try await reconciler.observeNativePresence(
+            profileID: "p", destinationID: destination.id, aliasID: target.aliasID,
+            isPresent: true, localDesiredState: .present
+        )
+        _ = await reconciler.drain(profileID: "p")
+        let beforeWrite = await confirmations.profiles
+        XCTAssertTrue(beforeWrite.isEmpty)
+        try await reconciler.enqueueFanOut(profileID: "p", desiredState: .present, target: target)
+        _ = await reconciler.drain(profileID: "p")
+        for _ in 0..<20 {
+            try await reconciler.identityEvidenceChanged(profileID: "p", desiredState: .present, target: target)
+            _ = await reconciler.fetchNativeEntries()
+            let writes = await reconciler.drain(profileID: "p")
+            XCTAssertEqual(writes, 0)
+        }
+        let afterReconciliation = await confirmations.profiles
+        XCTAssertEqual(afterReconciliation, ["p"])
+    }
+
+    func testSuccessCallbackFollowsServerWriteAndIncludesSuccessfulRetriesOnly() async throws {
+        let destination = FakeWatchlistDestination()
+        let store = try DurableWatchlistMutationStore(store: InMemoryWatchlistMutationStateStore())
+        let confirmations = WatchlistWriteConfirmations()
+        let reconciler = WatchlistReconciler(
+            registry: .init([destination]), mutationStore: store,
+            retryPolicy: .init(jitterFraction: 0),
+            onWriteSucceeded: { profile, destinationID in
+                let applied = await destination.appliedStates()
+                XCTAssertFalse(applied.isEmpty)
+                await confirmations.record(profile, destinationID: destinationID)
+            }
+        )
+        let now = Date()
+        await destination.setFailure(.transient)
+        try await reconciler.enqueueFanOut(profileID: "p", desiredState: .present, target: makeTarget(), now: now)
+        let beforeWrite = await confirmations.profiles
+        XCTAssertTrue(beforeWrite.isEmpty)
+        _ = await reconciler.drain(profileID: "p", now: now)
+        let afterFailure = await confirmations.profiles
+        XCTAssertTrue(afterFailure.isEmpty)
+        await destination.setFailure(nil)
+        _ = await reconciler.drain(profileID: "p", now: now.addingTimeInterval(600))
+        try await reconciler.enqueueFanOut(profileID: "p", desiredState: .absent, target: makeTarget())
+        _ = await reconciler.drain(profileID: "p")
+        let afterSuccess = await confirmations.profiles
+        let destinations = await confirmations.destinations
+        XCTAssertEqual(afterSuccess, ["p", "p"])
+        XCTAssertEqual(destinations, [destination.id, destination.id])
+    }
+
     func testConcurrentNativeReadsShareTheInFlightResult() async throws {
         let destination = SlowReadableWatchlistDestination()
         let store = try DurableWatchlistMutationStore(
@@ -45,9 +107,13 @@ final class WatchlistReconcilerTests: XCTestCase {
         let store = try DurableWatchlistMutationStore(
             store: InMemoryWatchlistMutationStateStore()
         )
+        let confirmations = WatchlistWriteConfirmations()
         let reconciler = WatchlistReconciler(
             registry: WatchlistDestinationRegistry([destination]),
-            mutationStore: store
+            mutationStore: store,
+            onWriteSucceeded: { profile, destinationID in
+                await confirmations.record(profile, destinationID: destinationID)
+            }
         )
         let target = makeTarget()
         try await reconciler.enqueue(
@@ -61,6 +127,8 @@ final class WatchlistReconcilerTests: XCTestCase {
         _ = await reconciler.drain(profileID: "p")
 
         XCTAssertEqual(destination.appliedStates(), [])
+        let profiles = await confirmations.profiles
+        XCTAssertTrue(profiles.isEmpty)
         let mutations = await store.allMutations()
         XCTAssertTrue(mutations.isEmpty)
     }
@@ -1495,6 +1563,9 @@ private actor FakeWatchlistDestination: WatchlistDestination {
         globalIdentityNamespaces: [.imdb]
     )
     private var applied: [WatchlistDesiredState] = []
+    private var failure: WatchlistDestinationError?
+
+    func setFailure(_ failure: WatchlistDestinationError?) { self.failure = failure }
 
     func fetchEntries() async throws -> [WatchlistDestinationEntry] { [] }
 
@@ -1513,11 +1584,21 @@ private actor FakeWatchlistDestination: WatchlistDestination {
         _ desiredState: WatchlistDesiredState,
         to binding: WatchlistDestinationBinding
     ) async throws {
+        if let failure { throw failure }
         applied.append(desiredState)
     }
 
     func appliedStates() -> [WatchlistDesiredState] { applied }
 
+}
+
+private actor WatchlistWriteConfirmations {
+    var profiles: [String] = []
+    var destinations: [WatchlistDestinationID] = []
+    func record(_ profile: String, destinationID: WatchlistDestinationID) {
+        profiles.append(profile)
+        destinations.append(destinationID)
+    }
 }
 
 private actor SlowReadableWatchlistDestination: WatchlistDestination {

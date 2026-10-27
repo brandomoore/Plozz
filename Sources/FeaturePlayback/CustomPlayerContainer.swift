@@ -125,16 +125,36 @@ struct CustomPlayerContainer: UIViewControllerRepresentable {
 /// loading so engines that require an attached/windowed render target
 /// can initialize before playback reaches `.ready`.
 struct VideoSurfaceContainer: UIViewRepresentable {
+    @Environment(\.layoutDirection) private var layoutDirection
+    @Environment(\.playbackReflectionColorScheme) private var reflectionColorScheme
     let engine: any VideoEngine
     var zoom = PlayerVideoZoom()
     var aspectRatio: Double? = nil
     var fitsInsideSafeArea = false
     var subtitleViewport: VideoSubtitleViewport?
+    var reflectionHeight: CGFloat = 0
+    var topReflectionHeight: CGFloat = 0
+    var leadingReflectionWidth: CGFloat = 0
+    var trailingReflectionWidth: CGFloat = 0
+    var previewCornerRadius: CGFloat = 0
+    var reflectionIsActive = true
+
+    private func updateReflection(_ view: VideoPresentationView) {
+        view.updateReflection(
+            height: reflectionHeight, topHeight: topReflectionHeight,
+            leftWidth: layoutDirection == .rightToLeft ? trailingReflectionWidth : leadingReflectionWidth,
+            rightWidth: layoutDirection == .rightToLeft ? leadingReflectionWidth : trailingReflectionWidth,
+            previewCornerRadius: previewCornerRadius,
+            lightAppearance: reflectionColorScheme == .light,
+            isActive: reflectionIsActive
+        )
+    }
 
     func makeUIView(context: Context) -> VideoPresentationView {
         let root = VideoPresentationView(frame: .zero)
         root.subtitleViewport = subtitleViewport
         root.attach(engine)
+        updateReflection(root)
         root.update(zoom: zoom, aspectRatio: aspectRatio, fitsInsideSafeArea: fitsInsideSafeArea)
         return root
     }
@@ -142,6 +162,7 @@ struct VideoSurfaceContainer: UIViewRepresentable {
     func updateUIView(_ uiView: VideoPresentationView, context: Context) {
         uiView.subtitleViewport = subtitleViewport
         uiView.attach(engine)
+        updateReflection(uiView)
         uiView.update(zoom: zoom, aspectRatio: aspectRatio, fitsInsideSafeArea: fitsInsideSafeArea)
     }
 }

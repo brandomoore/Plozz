@@ -309,16 +309,27 @@ final class IPTVLibrarySelectionHostedTests: XCTestCase {
         )
         completed = { state.state == .ready && state.pendingLibrarySelectionAccountIDs.isEmpty }
         #else
-        var continueCount = 0
+        let profileStore = ProfileStore(defaults: defaults)
+        profileStore.setFirstRunProfileSetupComplete(true)
+        let app = PlozziOSAppModel(
+            appAdmissionStore: AppAdmissionStore(defaults: defaults),
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: profileStore
+        )
+        app.accountsProviders.registry.register(.iptv) { _ in provider }
+        XCTAssertTrue(app.persist([provider.session]))
+        let selectionDeadline = ContinuousClock.now + .seconds(5)
+        while app.pendingLibrarySelection == nil, ContinuousClock.now < selectionDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(app.pendingLibrarySelection?.accountIDs, [account.id])
         controller = UIHostingController(rootView:
             PlozziOSLibrarySelectionView(
-                accounts: [.init(account: account, provider: provider)],
-                visibility: .init(store: HomeLibraryVisibilityStore(defaults: defaults)),
-                onContinue: { continueCount += 1 }
+                appModel: app, accountIDs: [account.id]
             ).environment(\.themePalette, ThemePalette.dark)
                 .environment(\.gradientBackgroundsEnabled, true)
         )
-        completed = { continueCount == 1 }
+        completed = { app.pendingLibrarySelection == nil }
         #endif
         controller.overrideUserInterfaceStyle = .dark
         let sceneDeadline = ContinuousClock.now + .seconds(5)

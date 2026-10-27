@@ -52,6 +52,7 @@ public struct LibraryPresentationSettings: Codable, Equatable, Sendable {
     public var textSize: HeroTextSize
     public var navigation: LibraryContentLayout
     public var recommendedRows: [String: LibraryContentLayout]
+    public var collectionCoverLayouts: [String: CollectionCoverLayout]
 
     public static let `default` = LibraryPresentationSettings()
 
@@ -59,16 +60,18 @@ public struct LibraryPresentationSettings: Codable, Equatable, Sendable {
         logoSize: HeroLogoSize = .default,
         textSize: HeroTextSize = .default,
         navigation: LibraryContentLayout = .init(),
-        recommendedRows: [String: LibraryContentLayout] = [:]
+        recommendedRows: [String: LibraryContentLayout] = [:],
+        collectionCoverLayouts: [String: CollectionCoverLayout] = [:]
     ) {
         self.logoSize = logoSize
         self.textSize = textSize
         self.navigation = navigation
         self.recommendedRows = recommendedRows
+        self.collectionCoverLayouts = collectionCoverLayouts
     }
 
     private enum CodingKeys: String, CodingKey {
-        case logoSize, textSize, navigation, recommendedRows
+        case logoSize, textSize, navigation, recommendedRows, collectionCoverLayouts
     }
 
     public init(from decoder: Decoder) throws {
@@ -79,8 +82,25 @@ public struct LibraryPresentationSettings: Codable, Equatable, Sendable {
             navigation: try values.decodeIfPresent(LibraryContentLayout.self, forKey: .navigation) ?? .init(),
             recommendedRows: try values.decodeIfPresent(
                 [String: LibraryContentLayout].self, forKey: .recommendedRows
+            ) ?? [:],
+            collectionCoverLayouts: try values.decodeIfPresent(
+                [String: CollectionCoverLayout].self, forKey: .collectionCoverLayouts
             ) ?? [:]
         )
+    }
+
+    public static func collectionCoverAddress(for row: HomeRowID) -> String {
+        "home:\(row.presentationID)"
+    }
+
+    public static func collectionCoverAddress(accountID: String, libraryID: String, rowID: String = "") -> String {
+        LibraryBrowsePreferencesStore.address(
+            accountID: accountID, libraryID: libraryID, mode: "collectionCovers:\(rowID)"
+        )
+    }
+
+    public func collectionCoverLayout(at address: String) -> CollectionCoverLayout {
+        collectionCoverLayouts[address] ?? .default
     }
 
     public func visibleModes(supported: [LibraryContentMode]) -> [LibraryContentMode] {

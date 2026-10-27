@@ -6,6 +6,13 @@ import XCTest
 
 @MainActor
 final class NativeStreamDetailsTests: XCTestCase {
+    func testNativeMediaSelectionCodecTypesUseSharedNamesWithoutInventingChannels() {
+        XCTAssertEqual(NativeStreamDetailsReader.audioCodec(kAudioFormatMPEG4AAC), "aac")
+        XCTAssertEqual(NativeStreamDetailsReader.audioCodec(kAudioFormatAC3), "ac3")
+        XCTAssertEqual(NativeStreamDetailsReader.audioCodec(kAudioFormatEnhancedAC3), "eac3")
+        XCTAssertEqual(NativeStreamDetailsReader.audioCodec(kAudioFormatOpus), "opus")
+    }
+
     func testUnknownColorIsNotInventedSDROrOriginalHDR() throws {
         let unknown = NativeStreamDetailsReader.videoStream(try videoFormat(transfer: nil))
         XCTAssertEqual(unknown.width, 426)

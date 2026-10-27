@@ -4,7 +4,7 @@ import SwiftUI
 /// A horizontally-scrolling row of selectable "cards" — one tile per option,
 /// laid out side-by-side instead of stacked in a vertical `Picker`.
 ///
-/// This is the building block of the Twozz-style settings look that Plozz
+/// This is the building block of the Strozz-style settings look that Plozz
 /// adopts: choices read as a row of focusable tiles in the 10-foot UI, the
 /// current selection highlighted with the accent tint and a checkmark. It lives
 /// in `CoreUI` so both the Settings screen and the in-player caption controls

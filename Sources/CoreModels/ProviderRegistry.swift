@@ -26,17 +26,22 @@ public struct ProviderResolutionContext: Equatable, Sendable {
     public let accountID: String
     public let credentialRevision: CredentialRevision
     public let localMediaContext: LocalMediaContext?
+    /// Live cloud credential lookup fenced to this account and credential
+    /// revision by the runtime. Kept out of cache identity and diagnostics.
+    public let cloudTokenResolver: (@Sendable () async throws -> String?)?
 
     public init(
         session: UserSession,
         accountID: String,
         credentialRevision: CredentialRevision,
-        localMediaContext: LocalMediaContext? = nil
+        localMediaContext: LocalMediaContext? = nil,
+        cloudTokenResolver: (@Sendable () async throws -> String?)? = nil
     ) {
         self.session = session
         self.accountID = accountID
         self.credentialRevision = credentialRevision
         self.localMediaContext = localMediaContext
+        self.cloudTokenResolver = cloudTokenResolver
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
@@ -241,7 +246,8 @@ public final class ProviderRegistry: ProviderResolving, @unchecked Sendable {
             let context = ProviderResolutionContext(
                 session: session, accountID: entry.context.accountID,
                 credentialRevision: entry.context.credentialRevision,
-                localMediaContext: entry.context.localMediaContext
+                localMediaContext: entry.context.localMediaContext,
+                cloudTokenResolver: entry.context.cloudTokenResolver
             )
             cache[key] = CacheEntry(context: context, provider: entry.provider)
         }

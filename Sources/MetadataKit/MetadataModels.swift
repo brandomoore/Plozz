@@ -20,6 +20,18 @@ public enum ArtworkKind: String, Sendable, Hashable, CaseIterable {
 /// Built once from a ``MediaItem`` so providers never re-derive the same fields
 /// (series-vs-episode title, season/episode numbers, the relevant external ids).
 public struct MetadataQuery: Sendable, Hashable {
+    public private(set) var artworkLanguage: String
+
+    public static func normalizedArtworkLanguage(_ identifier: String) -> String {
+        Locale(identifier: identifier).language.languageCode?.identifier.lowercased() ?? "en"
+    }
+
+    public func forArtworkLanguage(_ identifier: String) -> Self {
+        var copy = self
+        copy.artworkLanguage = Self.normalizedArtworkLanguage(identifier)
+        return copy
+    }
+
     public let contentType: ContentType
     public let kind: MediaItemKind
     /// The title to search by. For an episode/season this is the *series* title
@@ -52,8 +64,10 @@ public struct MetadataQuery: Sendable, Hashable {
         animeIDs: AnimeIDs,
         providerIDs: [String: String],
         episodeHints: [SeriesEpisodeHint] = [],
-        titleAlternates: [String] = []
+        titleAlternates: [String] = [],
+        artworkLanguage: String = Locale.current.identifier
     ) {
+        self.artworkLanguage = Self.normalizedArtworkLanguage(artworkLanguage)
         self.contentType = contentType
         self.kind = kind
         self.title = title
@@ -72,13 +86,15 @@ public struct MetadataQuery: Sendable, Hashable {
     /// same show are the same query whether or not the caller could offer help, so
     /// gathering more hints must never split a cache entry or a dedupe key.
     public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.contentType == rhs.contentType && lhs.kind == rhs.kind && lhs.title == rhs.title
+        lhs.artworkLanguage == rhs.artworkLanguage
+            && lhs.contentType == rhs.contentType && lhs.kind == rhs.kind && lhs.title == rhs.title
             && lhs.alternateTitle == rhs.alternateTitle && lhs.year == rhs.year
             && lhs.seasonNumber == rhs.seasonNumber && lhs.episodeNumber == rhs.episodeNumber
             && lhs.animeIDs == rhs.animeIDs && lhs.providerIDs == rhs.providerIDs
     }
 
     public func hash(into hasher: inout Hasher) {
+        hasher.combine(artworkLanguage)
         hasher.combine(contentType)
         hasher.combine(kind)
         hasher.combine(title)
@@ -120,7 +136,8 @@ public struct MetadataQuery: Sendable, Hashable {
             animeIDs: animeIDs,
             providerIDs: ids,
             episodeHints: episodeHints,
-            titleAlternates: titleAlternates
+            titleAlternates: titleAlternates,
+            artworkLanguage: artworkLanguage
         )
     }
 
@@ -147,7 +164,8 @@ public struct MetadataQuery: Sendable, Hashable {
             animeIDs: animeIDs,
             providerIDs: providerIDs,
             episodeHints: episodeHints,
-            titleAlternates: titleAlternates
+            titleAlternates: titleAlternates,
+            artworkLanguage: artworkLanguage
         )
     }
 
@@ -209,6 +227,7 @@ public struct MetadataQuery: Sendable, Hashable {
         if kind == .thumbnail, let s = seasonNumber, let e = episodeNumber {
             parts.append("s\(s)e\(e)")
         }
+        if kind == .logo { parts.append("language-v1:\(artworkLanguage)") }
         return parts.joined(separator: "|")
     }
 }

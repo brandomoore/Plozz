@@ -1,0 +1,101 @@
+{
+  "appRevision": "ce355f2bc1d1e427ce07475a19e3121930929c8c",
+  "mediaInventorySha256": "8765eed31888846922088a9d0e2b33ddf80f620f9794b77346033d6ad7e29678",
+  "catalogSha256": "c29dd609fbea7ab6b036fe71f15f04b5fb8ff96d5503ca5030d9bf5704b1c37a",
+  "method": "simctl-framebuffer",
+  "onlineMetadata": false,
+  "mediaCredits": "https://plozz.app/media-credits/",
+  "scope": "20 real film identities; reviewed licensed/public-domain art, synthetic watch progress. Not legal certification or a provider interoperability test.",
+  "screenshots": [
+    {
+      "file": "tv-home-licensed-1fb96bffee.jpg",
+      "sha256": "c755d7b89bbef571be66cf071050a905110e06145d379181c7c1f3ce90fc0e0f",
+      "dimensions": [
+        1920,
+        1080
+      ],
+      "native_dimensions": [
+        1920,
+        1080
+      ],
+      "native_sha256": "1fb96bffee6343cb31d5430d70d56edcf72cbeb2c307c1b27068736bea8eb61e",
+      "capture": "tv-home",
+      "operation": "proportionate resize and JPEG encoding; no UI retouching"
+    },
+    {
+      "file": "tv-library-licensed-aea97840a6.jpg",
+      "sha256": "6777b6b5d392eb591ac9e19ff805258782dd206dcd23306402a1115472540a83",
+      "dimensions": [
+        1920,
+        1080
+      ],
+      "native_dimensions": [
+        1920,
+        1080
+      ],
+      "native_sha256": "aea97840a66914c0536aa315eca8c52c054f96c39fcf5a46575888702d8c9484",
+      "capture": "tv-library",
+      "operation": "proportionate resize and JPEG encoding; no UI retouching"
+    },
+    {
+      "file": "tv-player-licensed-96e9b81d2f.jpg",
+      "sha256": "c434a99e9a7b9913a602955555d34d62a8bb318d44dfd8542525b078fdcea937",
+      "dimensions": [
+        1920,
+        1080
+      ],
+      "native_dimensions": [
+        1920,
+        1080
+      ],
+      "native_sha256": "96e9b81d2f5485be6bc234cbbbc356da407e881af9150e1b85c370628e50e841",
+      "capture": "tv-player",
+      "operation": "proportionate resize and JPEG encoding; no UI retouching"
+    },
+    {
+      "file": "tv-subtitles-licensed-a7ae03ca39.jpg",
+      "sha256": "972a34adf88ca146451540af096bd09d46a5ae2152bbb5bb2a29040b9b825b0f",
+      "dimensions": [
+        1920,
+        1080
+      ],
+      "native_dimensions": [
+        1920,
+        1080
+      ],
+      "native_sha256": "a7ae03ca39eb766af1468f189cb8359eee153a0b66b6aa85166238fccb6b2cb8",
+      "capture": "tv-subtitles",
+      "operation": "proportionate resize and JPEG encoding; no UI retouching"
+    },
+    {
+      "file": "iphone-library-licensed-c25db35ada.jpg",
+      "sha256": "49c8048440ad19edfda4985b49cd4a1c56a7d447162688225f2679047fd6604a",
+      "dimensions": [
+        883,
+        1920
+      ],
+      "native_dimensions": [
+        1206,
+        2622
+      ],
+      "native_sha256": "c25db35ada456fd9daad45cba41fdeade08d08763b562fc6f34a35c9548c9926",
+      "capture": "iphone-library",
+      "operation": "proportionate resize and JPEG encoding; no UI retouching"
+    },
+    {
+      "file": "ipad-home-licensed-4a234f3e0d.jpg",
+      "sha256": "c96a9243dd919736a70d46747c031bc7ca0945932f0cf49c42c0740b904278fa",
+      "dimensions": [
+        1440,
+        1920
+      ],
+      "native_dimensions": [
+        2064,
+        2752
+      ],
+      "native_sha256": "4a234f3e0d05a8af69bfc1c7bed046bbcacc0341ff64536b2f3af5854e51369f",
+      "capture": "ipad-home",
+      "operation": "proportionate resize and JPEG encoding; no UI retouching"
+    }
+  ]
+}

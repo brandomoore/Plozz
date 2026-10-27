@@ -103,13 +103,16 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         )
         XCTAssertEqual(layout.bounds, CGRect(x: -90, y: -60, width: 1_920, height: 1_080))
         XCTAssertEqual(layout.videoFrame.maxX, layout.bounds.maxX, accuracy: 0.5)
+        #if os(tvOS)
         XCTAssertEqual(layout.videoFrame.minX, layout.bounds.minX, accuracy: 0.5)
         XCTAssertEqual(layout.videoFrame.minY, layout.bounds.minY, accuracy: 0.5)
         XCTAssertEqual(layout.videoFrame.width / layout.videoFrame.height, 16.0 / 9.0, accuracy: 0.001)
-        #if os(tvOS)
         XCTAssertEqual(layout.contentFrame.minX - layout.bounds.minX, 32, accuracy: 0.5)
         XCTAssertEqual(layout.bounds.maxX - layout.contentFrame.maxX, 32, accuracy: 0.5)
         XCTAssertEqual(layout.bounds.maxY - layout.contentFrame.maxY, 20, accuracy: 0.5)
+        #else
+        XCTAssertGreaterThan(layout.videoFrame.minX, layout.contentFrame.minX + layout.sidebarWidth)
+        XCTAssertEqual(layout.videoFrame.minY, layout.contentFrame.minY + 8, accuracy: 0.5)
         #endif
     }
 
@@ -206,7 +209,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
 
     func testCategoriesUseAvailableSpaceInsteadOfDeviceFamily() {
         for size in [CGSize(width: 732, height: 600), CGSize(width: 820, height: 1_180)] {
-            let layout = PrototypePreviewLayout(size: size, showsCategories: true)
+            let layout = PrototypePreviewLayout(size: size, showsCategories: true, showsVideoPreview: true)
             XCTAssertEqual(layout.sidebarWidth, 200)
             XCTAssertGreaterThan(layout.guideWidth, 450)
             XCTAssertGreaterThan(layout.heroHeight, 0)
@@ -733,7 +736,13 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
                 layout.contentFrame.width, accuracy: 0.01
             )
             XCTAssertGreaterThanOrEqual(layout.guideWidth - PrototypeLayout.guideInset * 2, 650)
+            #if os(tvOS)
             XCTAssertEqual(layout.videoFrame.width, layout.bounds.width)
+            #else
+            XCTAssertLessThan(layout.videoFrame.width, layout.bounds.width)
+            XCTAssertGreaterThan(layout.videoFrame.minX, layout.contentFrame.minX + layout.sidebarWidth)
+            XCTAssertEqual(layout.videoFrame.maxX, layout.bounds.maxX)
+            #endif
         }
     }
 

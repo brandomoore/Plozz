@@ -5,7 +5,7 @@
     <key>Label</key>
     <string>com.thatcube.reclaim-disk</string>
 
-    <!-- Runs the shared, process-guarded build-cache reclaim for Plozz/Mozz/Twozz.
+    <!-- Runs the shared, process-guarded build-cache reclaim for Plozz/Mozz/Strozz.
          Installed by tools/install-reclaim-agent.sh (which rewrites the
          ProgramArguments path to this machine's checkout). Use instead of,
          not alongside, the app's daily reclaim workflow. -->

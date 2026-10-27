@@ -3,6 +3,24 @@ import XCTest
 @testable import FeatureWatchlistCore
 
 final class WatchlistBatchReconcilerTests: XCTestCase {
+    func testBatchNotifiesOnlySuccessfullyWrittenTitles() async throws {
+        let store = try DurableWatchlistMutationStore(store: InMemoryWatchlistMutationStateStore())
+        let destination = BatchDestination(partial: true)
+        let confirmations = BatchConfirmations()
+        let reconciler = WatchlistReconciler(
+            registry: .init([destination]), mutationStore: store,
+            onWriteSucceeded: { profile, destinationID in
+                await confirmations.append(profile: profile, destinationID: destinationID)
+            }
+        )
+        try await reconciler.identityEvidenceChanged(
+            profileID: "p", changes: (1...3).map { .init(desiredState: .present, target: target($0)) }
+        )
+        _ = await reconciler.drain(profileID: "p")
+        let profiles = await confirmations.profiles
+        XCTAssertEqual(profiles, ["p", "p"])
+    }
+
     func testBatchDrainIsBoundedAndConfirmedWorkStaysQuietAfterRelaunch() async throws {
         let backing = InMemoryWatchlistMutationStateStore()
         let store = try DurableWatchlistMutationStore(store: backing)
@@ -25,6 +43,14 @@ final class WatchlistBatchReconcilerTests: XCTestCase {
         )
         let idle = await next.drain(profileID: "p")
         XCTAssertEqual(idle, 0)
+    }
+
+    private actor BatchConfirmations {
+        var profiles: [String] = []
+        func append(profile: String, destinationID: WatchlistDestinationID) {
+            XCTAssertEqual(destinationID.rawValue, "batch")
+            profiles.append(profile)
+        }
     }
 
     func testRetryRetainsBatchKeyAndDoesNotSpinThroughDestinationCooldown() async throws {

@@ -69,7 +69,7 @@ public struct MediaBadge: Hashable, Sendable, Identifiable {
 
     public var label: String  // l10n:content — technical spec/brand name (e.g. "4K", "Dolby Vision"), never translated
     public var style: Style
-    /// Audio detail displayed in an attached segment, never a detached channel chip.
+    /// Attached detail: an audio channel layout or Dolby Vision's compatible range.
     public var detail: String?  // l10n:content — technical spec (e.g. channel layout), never translated
 
     public var id: String { "\(style.rawValue):\(label):\(detail ?? "")" }
@@ -127,6 +127,7 @@ public extension MediaSourceMetadata {
         }
         let label: String  // l10n:content — technical spec (resolution tier), never translated
         switch lines {
+        case 4320...: label = "8K"
         case 2000...: label = "4K"
         case 1400..<2000: label = "1440p"
         case 1000..<1400: label = "1080p"
@@ -146,29 +147,57 @@ public extension MediaSourceMetadata {
     /// Vision uses `.dolby`, and standard dynamic range uses `.sdr`.
     var dynamicRangeBadges: [MediaBadge] {
         guard let video else { return [] }
-        let rangeType = (video.videoRangeType ?? "").uppercased()
-        let range = (video.videoRange ?? "").uppercased()
+        func normalized(_ token: String?) -> String {
+            (token ?? "").uppercased()
+                .replacingOccurrences(of: "+", with: "PLUS")
+                .filter { $0.isLetter || $0.isNumber }
+        }
+        let rangeType = normalized(video.videoRangeType)
+        let range = normalized(video.videoRange)
+        let transfer = video.colorTransfer?.lowercased()
 
-        if rangeType.hasPrefix("DOVI") || rangeType.contains("DOLBY") || range == "DOVI" {
+        if rangeType.hasPrefix("DOVI") || rangeType.hasPrefix("DOLBYVISION")
+            || range.hasPrefix("DOVI") || range.hasPrefix("DOLBYVISION")
+            || (video.dolbyVisionProfile ?? 0) > 0 {
             var badges = [MediaBadge("Dolby Vision", style: .dolby)]
-            // DoVi profiles 7/8 ship an HDR10 base layer; surface it as a second
-            // badge so a "DoVi/HDR10" file shows both. Pure DoVi (profile 5)
-            // carries no HDR10 fallback and shows Dolby Vision alone.
-            if rangeType.contains("HDR10PLUS") || rangeType.contains("HDR10+") {
+            // Only explicit compatibility facts establish a base layer, not
+            // the Dolby Vision profile number or its PQ transfer function.
+            let compatibility = rangeType.isEmpty ? range : rangeType
+            if compatibility.contains("HDR10PLUS") {
                 badges.append(MediaBadge("HDR10+", style: .hdr))
-            } else if rangeType.contains("HDR10") {
+            } else if compatibility.contains("HDR10") {
                 badges.append(MediaBadge("HDR10", style: .hdr))
+            } else if compatibility.contains("HLG") {
+                badges.append(MediaBadge("HLG", style: .hdr))
             }
             return badges
         }
-        if rangeType.contains("HDR10PLUS") || rangeType.contains("HDR10+") {
+        if rangeType == "HDR10PLUS" || range == "HDR10PLUS"
+            || (rangeType == "HDR10" && transfer == "smpte2094-40") {
             return [MediaBadge("HDR10+", style: .hdr)]
         }
         if rangeType.hasPrefix("HDR10") {
             return [MediaBadge("HDR10", style: .hdr)]
         }
-        if rangeType == "HLG" || rangeType.hasPrefix("HLG") {
+        if rangeType == "HLG" || rangeType == "HYPERLOGGAMMA" {
             return [MediaBadge("HLG", style: .hdr)]
+        }
+        if rangeType == "SDR" { return [MediaBadge("SDR", style: .sdr)] }
+        if let hint = SourceDynamicRange.classify(
+            videoRangeType: rangeType.isEmpty ? range : rangeType,
+            videoRange: video.videoRange,
+            colorTransfer: transfer
+        ) {
+            switch hint {
+            case .hdr10Plus: return [MediaBadge("HDR10+", style: .hdr)]
+            case .hdr10: break
+            case .hlg: return [MediaBadge("HLG", style: .hdr)]
+            case .sdr: return [MediaBadge("SDR", style: .sdr)]
+            case .dolbyVision: return [MediaBadge("Dolby Vision", style: .dolby)]
+            }
+            if range == "HDR10" || transfer == "smpte2084" {
+                return [MediaBadge("HDR10", style: .hdr)]
+            }
         }
         if rangeType.hasPrefix("HDR") || range == "HDR" {
             return [MediaBadge("HDR", style: .hdr)]
@@ -180,10 +209,6 @@ public extension MediaSourceMetadata {
         // may still be DoVi/HDR even when the trimmed children response strips
         // the HDR display-title hint. Staying silent then lets us show
         // "4K · Dolby Atmos" rather than a misleading "4K · SDR" pill.
-        let hasRangeToken = !range.isEmpty || !rangeType.isEmpty
-        if hasRangeToken {
-            return [MediaBadge("SDR", style: .sdr)]
-        }
         return []
     }
 
@@ -213,20 +238,43 @@ public extension MediaSourceMetadata {
         )
     }
 
+    /// Preserve the selected track's profile and explicit format hints. File
+    /// names and other tracks must never supply this track's spatial format.
+    static func audioProfile(_ profile: String?, displayTitles: [String?]) -> String? { // l10n:content - normalized audio-format tokens, not translatable prose.
+        let hints = displayTitles.compactMap { $0?.lowercased() }.joined(separator: " ")
+        var parts = [profile].compactMap { $0 }.filter { !$0.isEmpty }
+        let formats: [(String, Bool)] = [
+            ("Atmos", hints.contains("atmos")),
+            ("JOC", hints.split(whereSeparator: { !$0.isLetter }).contains("joc")),
+            ("DTS:X", ["dts:x", "dts-x", "dtsx", "dts x"].contains { hints.contains($0) })
+        ]
+        for (label, present) in formats where present {
+            if !parts.contains(where: { $0.localizedCaseInsensitiveContains(label) }) {
+                parts.append(label)
+            }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
     static func audioBadges(
         codec: String?, profile: String?, channels: Int?, channelLayout: String? = nil
     ) -> [MediaBadge] {
         let profile = (profile ?? "").lowercased()
-        let codec = (codec ?? "").lowercased()
+        let codec = PlaybackDiagnostics.friendlyCodecName(codec)
         let layout = surroundLabel(channelLayout: channelLayout, channels: channels)
         var format: MediaBadge?
-        if codec == "truehd" {
+        if codec == "Dolby TrueHD" {
             format = MediaBadge("Dolby TrueHD", style: .dolby)
-        } else if codec == "dts" {
-            format = MediaBadge(profile.contains("hd") || profile.contains("ma") ? "DTS-HD" : "DTS", style: .dts)
-        } else if codec == "eac3" {
+        } else if codec == "DTS-HD" || codec == "DTS-HD MA" {
+            format = MediaBadge("DTS-HD", style: .dts)
+        } else if codec == "DTS" {
+            let tokens = profile.split(whereSeparator: { !$0.isLetter })
+            let highDefinition = tokens.contains("hd") || tokens.contains("ma")
+                || tokens.contains("hra") || profile.contains("master audio")
+            format = MediaBadge(highDefinition ? "DTS-HD" : "DTS", style: .dts)
+        } else if codec == "Dolby Digital+" {
             format = MediaBadge("Dolby Digital+", style: .dolby)
-        } else if codec == "ac3" {
+        } else if codec == "Dolby Digital" {
             format = MediaBadge("Dolby Digital", style: .dolby)
         }
         var result: [MediaBadge] = []
@@ -234,9 +282,11 @@ public extension MediaSourceMetadata {
             format.detail = layout
             result.append(format)
         }
-        if profile.contains("atmos") {
+        if profile.contains("atmos")
+            || (codec == "Dolby Digital+" && profile.split(whereSeparator: { !$0.isLetter }).contains("joc")) {
             result.append(MediaBadge("Dolby Atmos", style: .dolby, detail: format == nil ? layout : nil))
-        } else if profile.contains("dts:x") || profile.contains("dtsx") || profile.contains("dts x") {
+        } else if profile.contains("dts:x") || profile.contains("dtsx") || profile.contains("dts x")
+            || profile.contains("dts-x") {
             result.append(MediaBadge("DTS:X", style: .dts, detail: format == nil ? layout : nil))
         }
         if result.isEmpty, let layout { result.append(MediaBadge(layout, style: .audio)) }
@@ -260,7 +310,13 @@ public extension MediaSourceMetadata {
     ) -> [MediaBadge] {
         var badges: [MediaBadge] = []
         if let resolution { badges.append(resolution) }
-        badges.append(contentsOf: range)
+        if var vision = range.first, vision.label == "Dolby Vision",
+           range.count == 2, range[1].style == .hdr {
+            vision.detail = range[1].label
+            badges.append(vision)
+        } else {
+            badges.append(contentsOf: range)
+        }
         badges.append(contentsOf: audio)
         return badges
     }
@@ -297,69 +353,7 @@ public extension MediaVersion {
     /// WEB-DL flips the badges to match the *selected* file rather than the
     /// default's media-info snapshot.
     var technicalBadges: [MediaBadge] {
-        // A version synthesised from a whole backing item carries that file's
-        // real stream metadata — render through the authoritative path so the
-        // badges match exactly what the file's own hero would show (no HDR10+
-        // → SDR downgrade, no resolution loss from sparse flattened fields).
-        if let sourceMetadata {
-            return sourceMetadata.technicalBadges
-        }
-        let resolution: MediaBadge? = {
-            // Reuse the effective-lines classifier so a 1920×804 cinematic
-            // version still reads 1080p rather than 720p — matching how the
-            // per-item resolutionBadge categorises the same file.
-            guard let lines = PlaybackDiagnostics.effectiveResolutionLines(
-                width: width,
-                height: height
-            ) else {
-                if let label = resolutionLabel { return MediaBadge(label, style: .prominent) }
-                return nil
-            }
-            let label: String  // l10n:content — technical spec (resolution tier), never translated
-            switch lines {
-            case 2000...: label = "4K"
-            case 1400..<2000: label = "1440p"
-            case 1000..<1400: label = "1080p"
-            case 700..<1000: label = "720p"
-            default: label = "SD"
-            }
-            return MediaBadge(label, style: .prominent)
-        }()
-
-        let range: [MediaBadge] = {
-            let normalized = (videoRange ?? "").uppercased()
-                .replacingOccurrences(of: "+", with: "PLUS")
-                .replacingOccurrences(of: " ", with: "")
-                .replacingOccurrences(of: "_", with: "")
-                .replacingOccurrences(of: "-", with: "")
-            if normalized == "HDR10PLUS" {
-                return [MediaBadge("HDR10+", style: .hdr)]
-            }
-            guard let token = videoRange, let hdr = HDRRange(rawValue: token) else { return [] }
-            switch hdr {
-            case .sdr: return [MediaBadge("SDR", style: .sdr)]
-            case .hlg: return [MediaBadge("HLG", style: .hdr)]
-            case .hdr10: return [MediaBadge("HDR10", style: .hdr)]
-            case .hdr10Plus: return [MediaBadge("HDR10+", style: .hdr)]
-            case .dolbyVision, .dolbyVisionWithSDR:
-                return [MediaBadge("Dolby Vision", style: .dolby)]
-            case .dolbyVisionWithHDR10:
-                return [MediaBadge("Dolby Vision", style: .dolby),
-                        MediaBadge("HDR10", style: .hdr)]
-            case .dolbyVisionWithHLG:
-                return [MediaBadge("Dolby Vision", style: .dolby),
-                        MediaBadge("HLG", style: .hdr)]
-            }
-        }()
-
-        let audio = MediaSourceMetadata.audioBadges(
-            codec: audioCodec, profile: audioProfile, channels: audioChannels
-        )
-        return MediaSourceMetadata.orderedTechnicalBadges(
-            resolution: resolution,
-            range: range,
-            audio: audio
-        )
+        (sourceMetadata ?? flattenedSourceMetadata).technicalBadges
     }
 }
 
@@ -626,14 +620,15 @@ public extension MediaSourceMetadata {
         )
     }
 
-    /// Highest `dynamicRangeRank` across a badge array, used to pick the source
-    /// with the strongest dynamic-range set when summarising a series.
-    private static func topRank(of badges: [MediaBadge]) -> Int {
-        badges.map { dynamicRangeRank($0.label) }.max() ?? 0
+    /// Keep the confirmed compatibility layer when primary formats tie.
+    private static func topRank(of badges: [MediaBadge]) -> (Int, Int) {
+        (badges.map { dynamicRangeRank($0.label) }.max() ?? 0,
+         badges.dropFirst().map { dynamicRangeRank($0.label) }.max() ?? 0)
     }
 
     private static func resolutionRank(_ label: String) -> Int {  // l10n:content — technical spec label, never translated
         switch label {
+        case "8K": return 6
         case "4K": return 5
         case "1440p": return 4
         case "1080p": return 3

@@ -198,7 +198,7 @@ public struct ServerAddressHTTPClient: HTTPClient {
             let underlying = (error as? HTTPRequestNotSentError)?.underlying ?? error as? AppError
             guard underlying == .serverUnreachable else { throw error }
             resolver.reportFailure(address)
-            guard request.method == .get else { throw error }
+            guard request.method == .get, request.allowsAutomaticAddressRetry else { throw error }
             let next = try await resolver.resolved(excluding: address)
             do {
                 return try await perform(request, baseURL: next, raw: raw)

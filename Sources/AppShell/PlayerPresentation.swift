@@ -13,7 +13,6 @@ import MetadataKit
 import FeatureSearch
 import FeatureSettings
 import FeatureProfiles
-import ProviderTrailers
 import RatingsService
 import TraktService
 import SeerService
@@ -349,19 +348,14 @@ struct PlayerPresentation: View {
     }
 
     private func preparedRequest(_ request: PlayRequest) async throws -> PlayRequest {
-        // Online trailers use their own provider, even with no connected library.
-        let item: MediaItem
-        if request.item.isYouTubeTrailer {
-            item = request.item
-        } else {
-            let prepared = try await PlaybackVersionChoiceModel.prepareWithFailover(
-                request.item, triedAccountIDs: triedAccountIDs,
-                prepare: { try await prepareVersion(versionChoice, $0) },
-                nextSource: makeFailover, isCurrent: { isPresented }
-            )
-            triedAccountIDs = prepared.triedAccountIDs
-            item = prepared.item
-        }
+        guard !request.item.isYouTubeTrailer else { throw AppError.invalidResponse }
+        let prepared = try await PlaybackVersionChoiceModel.prepareWithFailover(
+            request.item, triedAccountIDs: triedAccountIDs,
+            prepare: { try await prepareVersion(versionChoice, $0) },
+            nextSource: makeFailover, isCurrent: { isPresented }
+        )
+        triedAccountIDs = prepared.triedAccountIDs
+        let item = prepared.item
         try Task.checkCancellation()
         guard isPresented else { throw CancellationError() }
         return PlayRequest(

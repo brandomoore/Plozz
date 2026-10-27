@@ -35,11 +35,23 @@ final class PlaybackPreparationDiagnosticsTests: XCTestCase {
         ] { XCTAssertTrue(text.contains(field), field) }
         for privateValue in ["private", "secret-token", "https://"] { XCTAssertFalse(text.contains(privateValue)) }
         XCTAssertTrue(PlozzLog.recentLogText(limit: 500).contains(text),
-                      "The existing Send Recent Activity action must receive the record.")
+                      "The detailed developer text stays available locally.")
+        let exported = PlaybackPreparationDiagnostics.export(scope: DiagnosticExportScope())
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(exported)) as? [String: Any])
+        let facts = try XCTUnwrap((body["entries"] as? [[String: Any]])?.last?["facts"] as? [String: Any])
+        let request = try XCTUnwrap((facts["requests"] as? [[String: Any]])?.first)
+        XCTAssertEqual(request["route"] as? String, "playbackInventory")
+        XCTAssertEqual(request["elapsedMilliseconds"] as? Int, 10_005)
+        XCTAssertEqual(request["urlErrorCode"] as? Int, -1001)
+        XCTAssertEqual(request["requestTimeoutMilliseconds"] as? Int, 10_000)
+        let exportedText = String(decoding: try JSONEncoder().encode(exported), as: UTF8.self)
+        for value in ["private", "secret-token", "https"] { XCTAssertFalse(exportedText.contains(value), value) }
     }
 
     func testSuccessAndCancellationDoNotPublishFailureDiagnostics() async throws {
         let before = Set(PlozzLog.recentEntries(limit: 500).map(\.id))
+        let scope = DiagnosticExportScope()
+        let beforeAttempts = try exportedAttempts(scope: scope)
         let value = try await PlaybackPreparationDiagnostics.capture(provider: .plex, operation: .versions) { 7 }
         XCTAssertEqual(value, 7)
         for error: any Error in [AppError.cancelled, CancellationError()] {
@@ -55,6 +67,7 @@ final class PlaybackPreparationDiagnosticsTests: XCTestCase {
         XCTAssertFalse(PlozzLog.recentEntries(limit: 500).contains {
             !before.contains($0.id) && $0.message.hasPrefix("format=plozz-preparation-1")
         })
+        XCTAssertEqual(try exportedAttempts(scope: scope), beforeAttempts)
     }
 
     func testIdentityFailureNamesTheRejectedCheckNotTheIdentity() throws {
@@ -73,5 +86,11 @@ final class PlaybackPreparationDiagnosticsTests: XCTestCase {
             XCTAssertTrue(entry.message.contains("validation=\(reason)"))
             XCTAssertFalse(entry.message.contains("private"))
         }
+    }
+
+    private func exportedAttempts(scope: DiagnosticExportScope) throws -> [String] {
+        let data = try JSONEncoder().encode(PlaybackPreparationDiagnostics.export(scope: scope))
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return try XCTUnwrap(body["entries"] as? [[String: Any]]).compactMap { $0["attempt"] as? String }
     }
 }

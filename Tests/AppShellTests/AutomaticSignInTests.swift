@@ -198,6 +198,58 @@ final class AutomaticSignInTests: XCTestCase {
         XCTAssertFalse(next.plex.restoreAutomaticSignInAtLaunch(), "The launch exemption is one-shot")
     }
 
+    func testRestoredHomeSessionAuthorizesReenabledSiblingButNotManualActivation() async throws {
+        let house = try household()
+        try house.accounts.add(Account(
+            id: "sibling", server: MediaServer(
+                id: "sibling-server", name: "Sibling", baseURL: URL(string: "https://sibling.example")!, provider: .plex
+            ), userID: "owner", userName: "Owner", deviceID: "device"
+        ), token: "sibling-owner")
+        let initial = launch(house)
+        for id in ["account", "sibling"] {
+            initial.profiles.update(initial.profiles.activeProfile.settingHomeUserBinding(
+                .init(homeUserID: "parent", name: "Parent", requiresPIN: true), forPlexAccount: id
+            ))
+        }
+        let profile = initial.profiles.activeProfile
+        try house.startup.enable(with: .init(
+            profile: .init(profile),
+            accounts: initial.hub.accounts.map { .init($0, profile: profile) }.sorted { $0.id < $1.id },
+            plexCredentials: Dictionary(uniqueKeysWithValues: ["account", "sibling"].map {
+                ($0, .init(serverToken: "saved-\($0)", discoverToken: "parent-cloud", pinVerified: true))
+            })
+        ))
+        let next = launch(house)
+        next.plex.plexHomeUsersFetch = { _, _ in
+            [PlexHomeUser(id: "parent", name: "Parent", requiresPIN: true)]
+        }
+        next.plex.plexHomeUserSwitch = { _, _, _, _ in
+            XCTFail("A restored authorized sibling should not request or replay a PIN.")
+            return "unexpected"
+        }
+        XCTAssertTrue(next.plex.restoreAutomaticSignInAtLaunch())
+        next.plex.ensurePlexIdentityForActiveProfile()
+        next.profiles.setActiveAccountIDs(["account"], for: profile.id)
+        next.hub.reloadAccounts()
+        next.plex.activeAccountsDidChange()
+        XCTAssertNil(next.plex.resolvedToken(for: "sibling"))
+        next.profiles.setActiveAccountIDs(["account", "sibling"], for: profile.id)
+        next.hub.reloadAccounts()
+        next.plex.activeAccountsDidChange()
+        await next.plex.waitForPlexPINRequirementCheck()
+        XCTAssertNil(next.plex.pendingPlexPINRequest)
+        XCTAssertEqual(next.plex.discoverToken(for: "sibling"), "parent-cloud")
+        XCTAssertEqual(next.plex.resolvedToken(for: "sibling"), "server-parent-cloud")
+
+        next.plex.beginExplicitProfileActivation()
+        next.plex.ensurePlexIdentityForActiveProfile()
+        await next.plex.waitForPlexPINRequirementCheck()
+        XCTAssertEqual(next.plex.plexPINEntryAvailability, .available)
+        XCTAssertNotNil(next.plex.pendingPlexPINRequest)
+        XCTAssertNil(next.plex.discoverToken(for: "account"))
+        XCTAssertNil(next.plex.discoverToken(for: "sibling"))
+    }
+
     func testManualSwitchBackToSamePlexUserStillPrompts() async throws {
         let house = try household()
         let first = launch(house)

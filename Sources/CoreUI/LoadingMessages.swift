@@ -425,6 +425,8 @@ public extension LoadingMessage {
 /// once loading drags on. Keeping this free of any clock, async, or UI means the
 /// threshold and cycling behaviour can be unit-tested exhaustively.
 public struct LoadingMessageSequencer: Sendable, Equatable {
+    public static let defaultInitialDelay: TimeInterval = 11.0
+
     public enum Phase: Sendable, Equatable {
         /// Show only the normal loading indicator (no playful message yet).
         case spinnerOnly
@@ -444,7 +446,7 @@ public struct LoadingMessageSequencer: Sendable, Equatable {
 
     public init(
         messages: [LoadingMessage] = LoadingMessage.playfulDefaults,
-        initialDelay: TimeInterval = 6.0,
+        initialDelay: TimeInterval = Self.defaultInitialDelay,
         cycleInterval: TimeInterval = 5.5
     ) {
         self.messages = messages

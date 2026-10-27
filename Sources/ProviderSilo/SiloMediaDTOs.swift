@@ -122,6 +122,10 @@ struct SiloVideoTrack: Decodable, Sendable {
     let video_range_type: String?
     let hdr10_plus: Bool?
     let dv_profile: Int?
+    let dv_config_present: Bool?
+    let dv_bl_compat_id: Int?
+    let dv_bl_compat_id_present: Bool?
+    let color_transfer: String?
 }
 
 struct SiloAudioTrack: Decodable, Sendable {

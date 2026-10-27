@@ -34,6 +34,13 @@ ranks them with a shared policy.
 
 ## Where to look first
 
+The mobile presentation lives in `AppShelliOS/PlozziOSSearchView.swift`. Its input
+uses CoreUI's shared raised surface and theme text colors so the field remains
+distinct over page gradients in light, dark, and black appearances. The native
+Settings navigation entry displays the active profile avatar. Search keeps a
+local avatar only when that navigation entry is not visible, including compact
+layouts where Settings is under More.
+
 - `SearchViewModel.swift` — the debounced fan-out / merge loop.
 - `SearchDeduplicator.swift` + `SearchPolicy.swift` — the pure logic
   pieces (test these without a simulator).

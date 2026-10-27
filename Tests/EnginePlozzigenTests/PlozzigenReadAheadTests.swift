@@ -7,7 +7,7 @@ final class PlozzigenReadAheadTests: XCTestCase {
     func testPresetsRequestTheExistingEngineWindowsWithoutChangingOtherOptions() {
         let expected: [Int?] = [nil, 15, 75, 150, 2_700]
         for (choice, segments) in zip(PlaybackReadAhead.allCases, expected) {
-            let options = PlozzigenVideoEngine.onDemandLoadOptions(audioChannels: 8, readAhead: choice)
+            let options = PlozzigenVideoEngine.onDemandLoadOptions(readAhead: choice)
             XCTAssertEqual(options.forwardBufferSegments, segments)
             XCTAssertEqual(options.sessionCacheByteBudget, choice == .automatic ? nil : Int.max)
             XCTAssertEqual(options.softwarePacketCacheStorage, .automatic)
@@ -18,7 +18,7 @@ final class PlozzigenReadAheadTests: XCTestCase {
             XCTAssertTrue(options.matchContentEnabled)
             XCTAssertEqual(options.audioBridgeMode, .lossless)
         }
-        XCTAssertNil(PlozzigenVideoEngine.onDemandLoadOptions(audioChannels: 2).forwardBufferSegments)
+        XCTAssertNil(PlozzigenVideoEngine.onDemandLoadOptions().forwardBufferSegments)
     }
 
     func testEachNewLoadReadsCurrentDevicePreferenceAndKeepsPriorOptionsUnchanged() throws {

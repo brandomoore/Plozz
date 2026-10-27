@@ -195,7 +195,7 @@ final class JellyfinTranscodingRangeTests: XCTestCase {
         let provider = JellyfinProvider(session: .init(
             server: .init(id: "server", name: "Server", baseURL: URL(string: "https://media.example.test")!, provider: kind),
             userID: "user", userName: "User", deviceID: "device", accessToken: "fixture"
-        ), http: http)
+        ), http: http, playbackRequests: .init())
         return (provider, http)
     }
 }

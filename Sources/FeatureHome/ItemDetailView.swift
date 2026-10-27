@@ -387,7 +387,8 @@ public struct ItemDetailView: View {
         #if canImport(AVFoundation)
         .themeMusicPlayback(
             playbackID: viewModel.themeMusicPlaybackID,
-            resolve: { await viewModel.resolveThemeMusic() }
+            source: viewModel.currentSourceForDisplay,
+            isActive: isTrailerOwner
         )
         #endif
         // Overrides rather than replaces, so a caller that supplies no router
@@ -698,9 +699,11 @@ public struct ItemDetailView: View {
                         playRemainingText: canPlay ? detail.item.resumeRemainingText : nil,
                         playSeasonEpisodeText: canPlay ? HeroForegroundModelBuilder.seasonEpisodeButtonText(for: detail.item) : nil,
                         onPlayTrailer: viewModel.trailers.first.map { trailer in { onPlay(trailer) } },
+                        trailerItem: viewModel.trailers.first,
                         versions: usesExternalDetail ? [] : effectiveVersions,
                         selectedVersionID: effectiveVersionID,
                         onSelectVersion: { id in selectVersion(id, for: detail.item) },
+                        loadVersions: viewModel.playbackVersionsLoader(for: detail.item),
                         sources: usesExternalDetail ? [] : serverChoices,
                         offlineSourceAccountIDs: viewModel.unreachableSourceAccountIDs,
                         selectedSourceAccountID: effectiveSource?.accountID,

@@ -5,11 +5,68 @@ import FeatureHomeCore
 import Observation
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 @testable import FeatureHome
 
 @MainActor
 final class DetailPrimaryFocusHostedTests: XCTestCase {
+    func testActualTVHeroTrailerButtonsNeverShowText() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1_920, height: 1_080)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let model = PrimaryFocusModel(mode: .ready)
+        for discovery in [false, true] {
+            for external in [false, true] {
+                let trailer = external
+                    ? MediaItem.youTubeTrailer(videoID: "dQw4w9WgXcQ", title: "Fixture")
+                    : MediaItem(id: "local", title: "Fixture", kind: .video)
+                host.rootView = AnyView(
+                    DetailHeroView(
+                        item: MediaItem(id: "feature", title: "Feature fixture", kind: .movie,
+                                        allowsTitleBasedMetadataMatching: false),
+                        spoilerSettings: .default, playTitle: "Play", onPlay: {},
+                        onPlayTrailer: {}, trailerItem: trailer,
+                        isDiscoveryItem: discovery, requestCTA: .request, onRequest: {}
+                    )
+                    .environment(model.trailer)
+                    .environment(model.background)
+                    .mediaItemActionHandler(model.actions)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+                    .environment(\.scenePhase, .active)
+                    .preferredColorScheme(.dark)
+                )
+                window.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(500))
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "actual-tv-trailer-icon-only-\(discovery)-\(external)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                XCTAssertTrue(text.contains(discovery ? "Request" : "Play"), text)
+                XCTAssertFalse(text.localizedCaseInsensitiveContains("YouTube"), text)
+                XCTAssertFalse(text.localizedCaseInsensitiveContains("Trailer"), text)
+            }
+        }
+    }
+
     func testLoadingPlayOwnsEntryBeforePlaybackIsReady() async throws {
         try await verifyEntry(.loading)
     }

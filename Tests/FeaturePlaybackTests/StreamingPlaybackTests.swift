@@ -1091,6 +1091,46 @@ final class StreamingPlaybackTests: XCTestCase {
         await model.stop()
     }
 
+    func testPlexNativeResourceFailureAfterEngineSwapCanPrepareOneServerRendition() async {
+        let provider = QualityPlaybackProvider()
+        let native = QualityEngine()
+        let plozzigen = QualityEngine()
+        let model = PlayerViewModel(
+            provider: provider, itemID: "movie", mediaSourceID: "version",
+            streamingOptions: .init(quality: .original),
+            engineFactory: .init(makeNative: { _ in native }, makePlozzigen: { plozzigen })
+        )
+        await model.load()
+        XCTAssertEqual(plozzigen.positions.count, 1)
+        plozzigen.streamingFailure = .init(kind: .unsupportedFormat)
+        plozzigen.onFailure?(.invalidResponse)
+        await wait { model.phase == .ready && native.positions.count == 1 }
+
+        native.currentTime = 125
+        native.streamingFailure = NativePlaybackFailure.classify(NSError(
+            domain: NSURLErrorDomain, code: URLError.resourceUnavailable.rawValue,
+            userInfo: [NSUnderlyingErrorKey: NSError(domain: NSOSStatusErrorDomain, code: -16849)]
+        ))
+        native.onFailure?(.invalidResponse)
+        await wait { model.phase == .ready && plozzigen.positions.count == 2 }
+        let recovered = await provider.calls
+        XCTAssertEqual(recovered.map(\.forceTranscode), [false, true])
+        XCTAssertEqual(recovered.map(\.source), ["version", "version"])
+        XCTAssertEqual(recovered.map(\.item), ["movie", "movie"])
+        XCTAssertEqual(recovered.map(\.options.quality), [.original, .original])
+        XCTAssertEqual(plozzigen.positions.last, 125)
+        XCTAssertEqual(native.positions.count, 1, "Recovery must not swap back to the failed native attempt.")
+
+        plozzigen.streamingFailure = NativePlaybackFailure.classify(
+            URLError(.resourceUnavailable) as NSError, httpStatus: 404
+        )
+        plozzigen.onFailure?(.invalidResponse)
+        await wait { if case .failed = model.phase { return true }; return false }
+        let final = await provider.calls
+        XCTAssertEqual(final.count, 2, "A confirmed missing rendition must not trigger another recovery.")
+        await model.stop()
+    }
+
     func testMissingConvertedResourceDoesNotPretendChangingCodecWillFixIt() async {
         let (model, engine, provider) = make(options: .init(quality: .low, codec: .preferHEVC))
         await model.load()

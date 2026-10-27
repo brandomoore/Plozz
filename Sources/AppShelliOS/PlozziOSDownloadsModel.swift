@@ -44,6 +44,14 @@ final class PlozziOSDownloadsModel {
             recordIndex.update(records)
         }
     }
+    var library: PlozziOSDownloadLibrary { recordIndex.library }
+    private var artworkFiles: [String: PlozziOSDownloadArtworkIndex.Entry] = [:]
+    @ObservationIgnored
+    private let artworkIndex = PlozziOSDownloadArtworkIndex()
+    @ObservationIgnored
+    private var artworkNeedsRefresh = true
+    @ObservationIgnored
+    private var artworkRefreshRevision: UInt64 = 0
     /// `records` indexed by identity key. `cachedRecord(forSelectedVersionOf:)` is
     /// called from SwiftUI `body` (menus are built as cards render), so the linear
     /// scan it replaces ran per card per frame during a scroll.
@@ -658,16 +666,8 @@ final class PlozziOSDownloadsModel {
     }
 
     func artworkURL(for record: DownloadedMediaRecord) -> URL? {
-        guard let storage,
-              let fileName = record.snapshot.artworkFileName,
-              fileName == URL(fileURLWithPath: fileName).lastPathComponent,
-              let folder = try? storage.pinnedFolderURL(
-                forKey: record.identityKey
-              ) else {
-            return nil
-        }
-        let url = folder.appendingPathComponent(fileName)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        guard let entry = artworkFiles[record.identityKey], entry.matches(record) else { return nil }
+        return entry.url
     }
 
     func detailItem(for record: DownloadedMediaRecord) -> MediaItem? {
@@ -1083,30 +1083,19 @@ final class PlozziOSDownloadsModel {
                 }
                 data = try await loadArtwork(item, artworkPolicy)
             }
-            let valid = await Task.detached(priority: .utility) {
-                PlozziOSDownloadArtwork.isValid(data)
-            }.value
-            guard valid else { throw PlozziOSDownloadArtwork.Failure.invalidImage }
             let current = await registry.record(forKey: identityKey)
             try Task.checkCancellation()
             guard acceptsNewWork, applicationIsActive,
                   artworkNetworkConditions.map(policy.allows) == true,
                   current?.createdAt == record.createdAt else { return }
-            let folder = try storage.pinnedFolderURL(forKey: identityKey)
-            try FileManager.default.createDirectory(
-                at: folder,
-                withIntermediateDirectories: true
-            )
-            let fileName = "artwork-\(UUID().uuidString).jpg"
-            let artworkURL = folder.appendingPathComponent(fileName)
+            let artworkURL = try await artworkIndex.write(data, for: record, storage: storage)
             unattachedFile = artworkURL
-            try data.write(
-                to: artworkURL,
-                options: .atomic
-            )
+            try Task.checkCancellation()
+            guard acceptsNewWork, applicationIsActive,
+                  artworkNetworkConditions.map(policy.allows) == true else { throw CancellationError() }
             let attached = try await registry.setArtworkFileName(
                 identityKey: identityKey,
-                fileName: fileName,
+                fileName: artworkURL.lastPathComponent,
                 expectedCreatedAt: record.createdAt
             )
             if attached {
@@ -1115,6 +1104,7 @@ final class PlozziOSDownloadsModel {
                 artworkRetryAfter[identityKey] = nil
                 await reload()
             }
+        } catch is CancellationError {
         } catch {
             if !Task.isCancelled {
                 artworkRetryAfter[identityKey] = Date().addingTimeInterval(60)
@@ -1122,11 +1112,7 @@ final class PlozziOSDownloadsModel {
             }
         }
         if let unattachedFile {
-            do {
-                try FileManager.default.removeItem(at: unattachedFile)
-            } catch {
-                PlozzLog.networking.error("An unattached download artwork file could not be removed")
-            }
+            await artworkIndex.removeUnattachedFile(at: unattachedFile)
         }
     }
 
@@ -1335,12 +1321,6 @@ final class PlozziOSDownloadsModel {
         await reload()
     }
 
-    /// A grouped, browsable projection of the current downloads: standalone
-    /// movies plus shows collapsed into seasons/episodes.
-    var library: PlozziOSDownloadLibrary {
-        PlozziOSDownloadLibrary.make(from: records)
-    }
-
     /// Total bytes stored across completed and in-flight downloads.
     var totalBytesDownloaded: Int64 {
         records.reduce(0) { $0 + $1.bytesDownloaded }
@@ -1461,6 +1441,8 @@ final class PlozziOSDownloadsModel {
         } else {
             verifiedArtwork.removeAll()
             artworkRetryAfter.removeAll()
+            artworkNeedsRefresh = true
+            artworkRefreshRevision &+= 1
         }
         guard acceptsNewWork else { return }
         guard let queue else { return }
@@ -1764,10 +1746,26 @@ final class PlozziOSDownloadsModel {
         let generation = reloadGeneration
         let refreshed = (await registry?.all() ?? [])
             .sorted { $0.updatedAt > $1.updatedAt }
-        guard generation == reloadGeneration else { return }
+        guard acceptsNewWork, generation == reloadGeneration, !Task.isCancelled else { return }
         sampleTransferSpeed(refreshed)
-        records = refreshed
+        if records != refreshed { records = refreshed }
         hasLoadedRecords = true
+        if let storage {
+            let artworkRevision = artworkRefreshRevision
+            let files: [String: PlozziOSDownloadArtworkIndex.Entry]
+            do {
+                files = try await artworkIndex.snapshot(
+                    records: refreshed, storage: storage, refreshing: artworkNeedsRefresh
+                )
+            } catch {
+                return
+            }
+            // Identical progress reloads can share a lookup, but a newer visit or record cannot.
+            guard acceptsNewWork, !Task.isCancelled,
+                  artworkRevision == artworkRefreshRevision, records == refreshed else { return }
+            artworkFiles = files
+            artworkNeedsRefresh = false
+        }
         await downloadNotifications?.deliverPending()
         guard generation == reloadGeneration else { return }
         if !applyingActivityPolicy {
@@ -1815,10 +1813,14 @@ final class PlozziOSDownloadsModel {
     }
 
     func refreshArtwork() async {
+        artworkNeedsRefresh = true
+        artworkRefreshRevision &+= 1
+        verifiedArtwork.removeAll()
         artworkRetryAfter.removeAll()
         await reload()
         let tasks = artworkTasks.values.map(\.task)
         for task in tasks { await task.value }
+        await reload()
     }
 
     private func persistPolicy(restartActiveManagedDownloads: Bool = false) {

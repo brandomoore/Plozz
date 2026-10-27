@@ -91,7 +91,7 @@ public actor ConcurrencyLimiter {
     /// Throwing variant of ``run(_:)``. Releases the permit whether `operation`
     /// returns or throws, so a thrown error never leaks the permit (which would
     /// permanently shrink the gate). Used to serialize fallible background work
-    /// such as YouTubeKit's JavaScriptCore stream extraction.
+    /// such as a resource-intensive media probe.
     public nonisolated func run<T: Sendable>(_ operation: @Sendable () async throws -> T) async throws -> T {
         _ = await acquire()
         do {

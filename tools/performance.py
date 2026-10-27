@@ -36,6 +36,34 @@ HOME_HOST_FITTING_COUNTERS = [
     "hostFittingMaxNanoseconds", "hostFittingReentrantCalls",
 ]
 SCENARIOS = {
+    "server-ratings-critical-path": {
+        "suite": "network", "target": "ProviderJellyfinTests",
+        "test": "ServerRatingsLatencyTests/testPerformanceRequiredItemAndPlayback",
+        "file": "Tests/ProviderJellyfinTests/ServerRatingsLatencyTests.swift",
+        "description": "Load four item details and playback inventories with a 150-ms optional server-rating cache endpoint.",
+        "counters": ["items", "playbackItems", "nativeRequests", "playbackRequests", "cacheRequests"],
+    },
+    "mobile-video-glow-hd": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "LiveTVPreviewPresentationTests/testPerformanceHDVideoGlow",
+        "file": "Tests/iOSPresentationTests/LiveTVPreviewPresentationTests.swift",
+        "description": "Play 1080p30 synthetic video with light preview color sampling; require advancing playback and bounded completed samples.",
+        "counters": ["players", "visiblePreviews", "windowMilliseconds"],
+    },
+    "mobile-video-glow-hd-disabled": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "LiveTVPreviewPresentationTests/testPerformanceHDVideoWithoutGlow",
+        "file": "Tests/iOSPresentationTests/LiveTVPreviewPresentationTests.swift",
+        "description": "Play the same 1080p30 fixture without glow as the sampling-cost control.",
+        "counters": ["players", "visiblePreviews", "windowMilliseconds"],
+    },
+    "mobile-video-glow": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "LiveTVPreviewPresentationTests/testPerformanceLightVideoPreview",
+        "file": "Tests/iOSPresentationTests/LiveTVPreviewPresentationTests.swift",
+        "description": "Play the native synthetic video in a visible light-mode preview with surrounding glow over 2.3-second windows; require advancing playback and one retained surface.",
+        "counters": ["players", "visiblePreviews", "windowMilliseconds"],
+    },
     "live-tv-schedule-capture": {
         "suite": "core", "target": "AppRuntimeTests",
         "test": "LiveTVPortableCapturePerformanceTests/testPerformanceDefinitionOnlyCaptures",

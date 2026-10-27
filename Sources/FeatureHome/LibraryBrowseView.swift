@@ -171,7 +171,9 @@ public struct LibraryBrowseView: View {
         // Shared dense "Browse" wall — flexible columns from the live density
         // metrics so each glass tile stretches to fill its column and the wall
         // scales with the UI-density setting, with six columns at default density.
-        let columns = metrics.libraryPosterColumns
+        let columns = viewModel.gridStyle == .landscape
+            ? Array(metrics.libraryPosterColumns.prefix(max(1, metrics.libraryPosterColumns.count / 2)))
+            : metrics.libraryPosterColumns
         let generation = viewModel.contentGeneration
         return ZStack {
             if viewModel.contentMode == .recommended {
@@ -537,6 +539,7 @@ public struct LibraryBrowseView: View {
                                 index: index,
                                 generation: generation,
                                 spoilerSettings: spoilerSettings,
+                                style: viewModel.gridStyle == .landscape ? .landscape : .poster,
                                 focusRequest: viewModel.alphabet.destination.flatMap {
                                     $0.focusesItem && $0.index == index ? $0.id : nil
                                 },
@@ -755,6 +758,7 @@ public struct LibraryBrowseView: View {
               viewModel.contentMode != .recommended,
               index >= 0, index < viewModel.totalCount else { return }
         let tracker = artworkPrefetch
+        let style: PosterCardView.Style = viewModel.gridStyle == .landscape ? .landscape : .poster
         let range = tracker.indices(
             aheadFrom: index, total: viewModel.totalCount,
             columns: metrics.libraryPosterColumns.count, generation: viewModel.contentGeneration
@@ -763,8 +767,10 @@ public struct LibraryBrowseView: View {
             guard let candidate = viewModel.item(at: candidateIndex) else {
                 return [ArtworkPrefetchWindow.Request]()
             }
-            return candidate.artworkCandidates(for: .poster).prefix(2).compactMap {
-                ArtworkImageCache.shared.prefetchRequest(for: $0, variant: .posterCard)
+            return candidate.artworkCandidates(for: style).prefix(2).compactMap {
+                ArtworkImageCache.shared.prefetchRequest(
+                    for: $0, variant: style == .poster ? .posterCard : .landscapeCard
+                )
             }
         })
         #endif
@@ -890,6 +896,7 @@ private struct LibraryGridCell: View {
     let index: Int
     let generation: Int
     let spoilerSettings: SpoilerSettings
+    var style: PosterCardView.Style = .poster
     let focusRequest: UUID?
     let onFocusRequestHandled: (UUID) -> Void
     let onSelect: (MediaItem) -> Void
@@ -906,7 +913,7 @@ private struct LibraryGridCell: View {
                 } else {
                     PosterCardView(
                         item: item,
-                        style: .poster,
+                        style: style,
                         spoilerSettings: spoilerSettings,
                         focusRequest: focusRequest,
                         onFocusRequestHandled: {
@@ -917,7 +924,7 @@ private struct LibraryGridCell: View {
                     }
                 }
             } else {
-                PosterPlaceholderView()
+                PosterPlaceholderView(style: style)
             }
         }
         .task(id: generation) { await onAppear(index) }
@@ -929,13 +936,14 @@ private struct LibraryGridCell: View {
 /// match `PosterCardView`'s `.poster` artwork so columns stay aligned while a page
 /// is in flight. Inert (non-focusable) so focus skips over it.
 private struct PosterPlaceholderView: View {
+    var style: PosterCardView.Style = .poster
     @Environment(\.themePalette) private var palette
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             RoundedRectangle(cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius, style: .continuous)
                 .fill(palette.fill)
-                .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                .aspectRatio(style == .poster ? 2.0 / 3.0 : 16.0 / 9.0, contentMode: .fit)
                 .frame(maxWidth: .infinity)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Loading").font(.headline)

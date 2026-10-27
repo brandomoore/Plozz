@@ -435,6 +435,7 @@ struct PlozziOSDetailHeroSection: View {
     let selectedVersionID: String?
     let onSelectSource: (String) -> Void
     let onSelectVersion: (String) -> Void
+    var loadVersions: MediaVersionInventoryLoader? = nil
     let actionHandler: any MediaItemActionHandling
     let onPlay: (MediaItem, Bool) -> Void
     var trailerItem: MediaItem?
@@ -489,6 +490,7 @@ struct PlozziOSDetailHeroSection: View {
                 selectedVersionID: selectedVersionID,
                 onSelectSource: onSelectSource,
                 onSelectVersion: onSelectVersion,
+                loadVersions: loadVersions,
                 presentation: presentation,
                 fallbackPresentation: backdropPresentation,
                 style: style,
@@ -1888,6 +1890,7 @@ struct PlozziOSDetailHeroForeground: View {
     let selectedVersionID: String?
     let onSelectSource: (String) -> Void
     let onSelectVersion: (String) -> Void
+    var loadVersions: MediaVersionInventoryLoader? = nil
     let presentation: HeroPresentation
     let fallbackPresentation: HeroPresentation
     let style: HeroArtworkStyle
@@ -1970,7 +1973,7 @@ struct PlozziOSDetailHeroForeground: View {
     }
 
     private var hasSourceVersionOptions: Bool {
-        sources.count > 1 || versions.count > 1
+        sources.count > 1 || versions.count > 1 || loadVersions != nil
     }
 
     /// The episode's own 16:9 still, shown above its details on an episode page.
@@ -2043,15 +2046,11 @@ struct PlozziOSDetailHeroForeground: View {
             // when they'd otherwise wrap — and the same page always lays out the
             // same way for a given width.
             ViewThatFits(in: .horizontal) {
-                // Widest first: everything inline with Trailer labelled, then the
-                // same row with Trailer reduced to its glyph, and only then start
-                // folding actions into "…".
-                actionRow(actions: entries, collapsing: 0, labelledTrailer: true, resume: .full)
+                // Keep icon-only trailer actions inline before folding into overflow.
                 ForEach(0...extras.count, id: \.self) { collapseCount in
                     actionRow(
                         actions: entries,
                         collapsing: collapseCount,
-                        labelledTrailer: false,
                         resume: .full
                     )
                 }
@@ -2063,13 +2062,11 @@ struct PlozziOSDetailHeroForeground: View {
                 actionRow(
                     actions: entries,
                     collapsing: extras.count,
-                    labelledTrailer: false,
                     resume: .seasonEpisodeOnly
                 )
                 actionRow(
                     actions: entries,
                     collapsing: extras.count,
-                    labelledTrailer: false,
                     resume: .hidden
                 )
                 stackedActionRows(actions: entries)
@@ -2101,6 +2098,7 @@ struct PlozziOSDetailHeroForeground: View {
         .playbackSourceMenu(
             state: sourceMenu, sources: sources, selectedSourceID: selectedSourceAccountID,
             versions: versions, selectedVersionID: selectedVersionID,
+            loadVersions: loadVersions,
             onSelectSource: onSelectSource, onSelectVersion: onSelectVersion,
             onPerformAction: performCompactPanelAction
         )
@@ -2108,6 +2106,7 @@ struct PlozziOSDetailHeroForeground: View {
             MediaVersionPicker(
                 versions: versions,
                 selectedVersionID: selectedVersion?.id,
+                loadVersions: loadVersions,
                 onSelect: onSelectVersion
             )
         }
@@ -2154,8 +2153,7 @@ struct PlozziOSDetailHeroForeground: View {
 
     /// Fold priority, lowest folds into "…" first. Navigation goes
     /// before everyday watch-state actions, and the trailer is the last to leave
-    /// the row. It sheds its label first (see `actionRow`), which usually buys
-    /// enough width that it never has to leave at all.
+    /// the row. Its icon-only treatment preserves room for the other actions.
     private func foldRank(_ extra: InlineExtra) -> Int {
         switch extra {
         case .primary(let entry):
@@ -2170,7 +2168,6 @@ struct PlozziOSDetailHeroForeground: View {
     private func actionRow(
         actions: [ActionEntry],
         collapsing collapseCount: Int,
-        labelledTrailer: Bool,
         resume: PlayResumeButtonLabel.ResumeTrailingStyle
     ) -> some View {
         let extras = orderedInlineExtras(from: actions)
@@ -2196,7 +2193,7 @@ struct PlozziOSDetailHeroForeground: View {
             playActionButton(resume: resume)
             heroRequestButton
             ForEach(inline) { extra in
-                inlineExtraButton(extra, labelled: labelledTrailer)
+                inlineExtraButton(extra)
             }
             if hasSourceVersionOptions || !menu.isEmpty || fileBrowserAction != nil {
                 sourceVersionMenuButton(actions: menu, fileBrowserAction: fileBrowserAction)
@@ -2216,7 +2213,7 @@ struct PlozziOSDetailHeroForeground: View {
             if !extras.isEmpty || hasSourceVersionOptions || fileBrowserAction != nil {
                 WrappingHStackLayout(alignment: style == .compactPortrait ? .center : .leading) {
                     ForEach(extras) { extra in
-                        inlineExtraButton(extra, labelled: false)
+                        inlineExtraButton(extra)
                     }
                     if hasSourceVersionOptions || fileBrowserAction != nil {
                         sourceVersionMenuButton(actions: [], fileBrowserAction: fileBrowserAction)
@@ -2237,15 +2234,12 @@ struct PlozziOSDetailHeroForeground: View {
     }
 
     @ViewBuilder
-    private func inlineExtraButton(
-        _ extra: InlineExtra,
-        labelled labelledTrailer: Bool
-    ) -> some View {
+    private func inlineExtraButton(_ extra: InlineExtra) -> some View {
         switch extra {
         case .primary(let entry):
             primaryActionButton(entry)
         case .trailer:
-            trailerActionButton(labelled: labelledTrailer)
+            trailerActionButton()
         }
     }
 
@@ -2257,32 +2251,21 @@ struct PlozziOSDetailHeroForeground: View {
         }
     }
 
-    /// `labelled` false renders the glyph alone, which is about a third of the
-    /// width. Tried before any action is pushed into "…", because a recognisable
-    /// icon in the row beats a full word hidden in a menu.
     @ViewBuilder
-    private func trailerActionButton(labelled: Bool) -> some View {
+    private func trailerActionButton() -> some View {
         if let trailerItem, let onPlayTrailer {
             Button {
                 onPlayTrailer(trailerItem)
             } label: {
-                if labelled {
-                    Label("Trailer", systemImage: "film.fill")
-                } else {
-                    Image(systemName: "film.fill")
-                        .font(.headline)
-                }
+                TrailerActionButtonLabel(trailer: trailerItem)
             }
-            // Without a label this is a glyph like the watchlist and download
-            // buttons beside it, so it takes their circle. A capsule around a
-            // lone icon read as a different kind of control.
             .buttonStyle(
                 PlozziOSHeroActionButtonStyle(
                     kind: .secondary,
-                    circular: !labelled
+                    circular: true
                 )
             )
-            .accessibilityLabel("Trailer")
+            .accessibilityLabel(Text(trailerItem.trailerActionTitle))
         }
     }
 
@@ -2387,11 +2370,11 @@ struct PlozziOSDetailHeroForeground: View {
             )
         }
         // So a collapsed Trailer is still reachable rather than simply gone.
-        if trailerItem != nil, onPlayTrailer != nil {
+        if let trailerItem, onPlayTrailer != nil {
             result.append(PlaybackSourceMenuAction(
                 id: "trailer",
                 title: "Trailer",
-                systemImage: "film.fill"
+                systemImage: trailerItem.isYouTubeTrailer ? "arrow.up.right" : "film.fill"
             ))
         }
         return result
@@ -2476,7 +2459,7 @@ struct PlozziOSDetailHeroForeground: View {
             }
             .pickerStyle(.menu)
         }
-        if versions.count > 1 {
+        if versions.count > 1 || loadVersions != nil {
             Button("Version", systemImage: "film.stack") {
                 isVersionPickerPresented = true
             }
@@ -2624,7 +2607,9 @@ private struct PlozziOSHeroMetadata: View {
         case .folder, .collection, .playlist, .unknown:
             return nil
         default:
-            return HeroLogoFallback(for: item) { await ArtworkRouter.shared.artworkURL(.logo, for: item) }
+            return HeroLogoFallback(for: item, localizedResolve: { language in
+                await ArtworkRouter.shared.artworkURL(.logo, for: item, language: language)
+            })
         }
     }
 
@@ -2941,15 +2926,49 @@ private struct PlozziOSDetailCredits: View {
 
 }
 
-struct PlozziOSTrailerMuteToolbarButton: View {
+struct PlozziOSDetailAudioMuteControl: View {
+    let trailer: HeroTrailerController
+    let themeMusic: ThemeMusicController?
+    let itemID: String?
+    let themePlaybackID: String?
+    let isActive: Bool
+
+    var body: some View {
+        if trailer.isPlaying, trailer.activeSurfaceRole == .detail,
+           trailer.currentItemID == itemID {
+            PlozziOSHeroAudioMuteToolbarButton(isMuted: trailer.isMuted, onToggle: trailer.toggleMuted)
+        } else if let themeMusic, let themePlaybackID,
+                  themeMusic.isPlaying, !themeMusic.isPreviewing,
+                  themeMusic.currentPlaybackID == themePlaybackID, isActive {
+            PlozziOSHeroAudioMuteToolbarButton(
+                isMuted: themeMusic.isMuted, onToggle: themeMusic.toggleMuted, source: .themeMusic
+            )
+        }
+    }
+}
+
+struct PlozziOSHeroAudioMuteToolbarButton: View {
     let isMuted: Bool
     let onToggle: () -> Void
+    var source: Source = .trailer
+
+    enum Source {
+        case trailer, themeMusic
+
+        func label(isMuted: Bool) -> LocalizedStringResource {
+            switch self {
+            case .trailer: isMuted ? "Unmute trailer" : "Mute trailer"
+            case .themeMusic: isMuted ? "Unmute theme music" : "Mute theme music"
+            }
+        }
+    }
 
     var body: some View {
         Button(action: onToggle) {
             Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
         }
-        .accessibilityLabel(isMuted ? "Unmute trailer" : "Mute trailer")
+        .accessibilityLabel(Text(source.label(isMuted: isMuted)))
+        .accessibilityIdentifier(source == .themeMusic ? "theme-music-mute" : "trailer-mute")
     }
 }
 

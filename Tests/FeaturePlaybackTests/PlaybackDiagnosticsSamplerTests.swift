@@ -10,7 +10,8 @@ final class PlaybackDiagnosticsSamplerTests: XCTestCase {
     func testCacheTelemetryClearsWhenMissingUnsupportedStoppedOrRestarted() {
         let sampler = PlaybackDiagnosticsSampler()
         defer { sampler.stop() }
-        let cache = EngineSessionCache(residentBytes: 0, effectiveBudgetBytes: 2_147_483_648)
+        let cache = EngineSessionCache(residentBytes: 0, effectiveBudgetBytes: 96 << 20,
+                                       storage: .memory, targetSeconds: 300, byteLimitReached: true)
         var telemetry: EngineLiveTelemetry? = .init(sessionCache: cache)
         var route = LiveChannelEngineRoute.localHLS
         sampler.start(
@@ -51,15 +52,22 @@ final class PlaybackDiagnosticsSamplerTests: XCTestCase {
             engineTelemetry: { telemetry }, includesSystemMetrics: false
         )
         XCTAssertNil(sampler.latest?.audioPipelineDescription)
+        XCTAssertNil(sampler.latest?.audioEncodingDescription)
         XCTAssertNil(sampler.latest?.audioOutputDescription)
-        for pipeline in [
-            "TRUEHD Atmos → APAC 7.1.4", "TRUEHD → FLAC bridge",
-            "TRUEHD → EAC3 bridge", "Stream-copy (EAC3+JOC Atmos)",
-            "libavcodec aac -> CoreAudio", nil
-        ] {
+        let cases: [(String?, LocalizedStringResource?)] = [
+            ("TRUEHD Atmos → APAC 7.1.4", "Lossy encoding"),
+            ("TRUEHD → FLAC bridge", "Lossless encoding"),
+            ("DTS → EAC3 bridge", "Lossy encoding"),
+            ("DTS → FLAC bridge", "Lossless encoding"),
+            ("Stream-copy (EAC3+JOC Atmos)", "No re-encoding"),
+            ("libavcodec AAC → CoreAudio", "Decoded to PCM"),
+            ("Unreported pipeline", nil), (nil, nil)
+        ]
+        for (pipeline, encoding) in cases {
             telemetry = .init(audioPipelineDescription: pipeline)
             sampler.sampleTick()
             XCTAssertEqual(sampler.latest?.audioPipelineDescription, pipeline)
+            XCTAssertEqual(sampler.latest?.audioEncodingDescription, encoding)
             XCTAssertNil(sampler.latest?.audioOutputDescription)
         }
         telemetry = .init(audioPipelineDescription: "TRUEHD Atmos → APAC 7.1.4")
@@ -67,6 +75,7 @@ final class PlaybackDiagnosticsSamplerTests: XCTestCase {
         telemetry = nil
         sampler.sampleTick()
         XCTAssertNil(sampler.latest?.audioPipelineDescription, "Missing telemetry must not retain a previous pipeline")
+        XCTAssertNil(sampler.latest?.audioEncodingDescription)
     }
 
     func testAudioPipelineDoesNotLeakAcrossStopRestartOrNativeRouteHandoff() {
@@ -83,14 +92,17 @@ final class PlaybackDiagnosticsSamplerTests: XCTestCase {
         route = .nativeHLS
         sampler.sampleTick()
         XCTAssertNil(sampler.latest?.audioPipelineDescription)
+        XCTAssertNil(sampler.latest?.audioEncodingDescription)
         route = .localHLS
         sampler.sampleTick()
         XCTAssertNotNil(sampler.latest?.audioPipelineDescription)
         sampler.stop()
         XCTAssertNil(sampler.latest?.audioPipelineDescription)
+        XCTAssertNil(sampler.latest?.audioEncodingDescription)
         sampler.start(player: nil, mode: .plozzigen, includesSystemMetrics: false)
         sampler.sampleTick()
         XCTAssertNil(sampler.latest?.audioPipelineDescription)
+        XCTAssertNil(sampler.latest?.audioEncodingDescription)
     }
 
     func testNativeAndServerTranscodesDoNotAcquireAnEngineConversionClaim() {

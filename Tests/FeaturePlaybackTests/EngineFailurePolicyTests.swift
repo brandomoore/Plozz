@@ -193,5 +193,35 @@ final class EngineFailurePolicyTests: XCTestCase {
             )
         )
     }
+
+    func testNativeResourceUnavailableStillWalksTheBoundedFallbackChain() {
+        let failure = NativePlaybackFailure.classify(URLError(.resourceUnavailable) as NSError)
+        var state = EngineFallbackState()
+        let native = EngineFailurePolicy.decide(
+            tokenMatches: true, hasRequest: true, isNetworkFile: false,
+            isTranscoding: false, hasExternalAudio: false, currentEngineKind: .native,
+            alternateEngineKind: .plozzigen, resume: 60,
+            allowsCompatibilityFallback: failure.allowsCodecFallback, state: &state
+        )
+        XCTAssertEqual(native, .swapAlternate(kind: .plozzigen, resume: 60))
+        let alternate = EngineFailurePolicy.decide(
+            tokenMatches: true, hasRequest: true, isNetworkFile: false,
+            isTranscoding: false, hasExternalAudio: false, currentEngineKind: .plozzigen,
+            alternateEngineKind: .native, resume: 60,
+            allowsCompatibilityFallback: failure.allowsCodecFallback, state: &state
+        )
+        XCTAssertEqual(alternate, .forceServerTranscode(resume: 60))
+        let converted = EngineFailurePolicy.decide(
+            tokenMatches: true, hasRequest: true, isNetworkFile: false,
+            isTranscoding: true, hasExternalAudio: false, currentEngineKind: .native,
+            alternateEngineKind: .plozzigen, resume: 60,
+            allowsCompatibilityFallback: failure.allowsCodecFallback, state: &state
+        )
+        XCTAssertEqual(converted, .exhausted)
+        XCTAssertEqual(state, .init(
+            hasTriedAlternateEngine: true, hasRetriedNetworkFileEngine: false,
+            hasAttemptedTranscodeFallback: true
+        ))
+    }
 }
 #endif

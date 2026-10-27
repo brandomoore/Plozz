@@ -5,6 +5,22 @@ import XCTest
 @testable import ProviderJellyfin
 
 final class MediaBrowserNativeCollectionTests: XCTestCase {
+    func testCollectionPrimaryAspectRatioIsPreservedForJellyfinAndEmby() async throws {
+        for kind: ProviderKind in [.jellyfin, .emby] {
+            let http = StubHTTPClient()
+            http.stub(pathSuffix: "/Users/user/Items", json: """
+            {"Items":[
+                {"Id":"wide","Name":"Wide","Type":"BoxSet","PrimaryImageAspectRatio":1.7777777777777777,
+                 "ImageTags":{"Primary":"cover","Backdrop":"background"}},
+                {"Id":"unknown","Name":"Unknown","Type":"BoxSet"}
+            ],"TotalRecordCount":2}
+            """)
+            let page = try await provider(http, kind: kind).collections(in: "movies", page: .init())
+            XCTAssertEqual(page.items.first?.primaryImageAspectRatio, 16.0 / 9)
+            XCTAssertNil(page.items.last?.primaryImageAspectRatio)
+            XCTAssertEqual(page.items.first?.posterURL?.path, "/Items/wide/Images/Primary")
+        }
+    }
     func testCompatibleServersGetOneCollectionDirectoryWithOneExistenceRequest() async throws {
         for kind: ProviderKind in [.jellyfin, .emby] {
             let http = StubHTTPClient()

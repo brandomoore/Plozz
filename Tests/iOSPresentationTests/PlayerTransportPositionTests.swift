@@ -11,6 +11,53 @@ import XCTest
 
 @MainActor
 final class PlayerTransportPositionTests: XCTestCase {
+    func testInlineLiveControlsFitPreviewWithoutFullscreenCards() async throws {
+        let input = LiveChannelInput.stream(
+            url: try XCTUnwrap(URL(string: "https://fixture.invalid/live.m3u8")), httpHeaders: [:]
+        )
+        let tracks = LiveChannelPlayerModel(engine: try PlozzigenVideoEngine(), input: input)
+        defer { tracks.stop() }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: LiveLayoutFixture(input: input, tracks: tracks, inline: true)
+            .environment(\.themePalette, .dark)
+            .environment(\.colorScheme, .dark)
+            .background(.blue))
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for size in [CGSize(width: 320, height: 160), CGSize(width: 393, height: 180),
+                     CGSize(width: 834, height: 360), CGSize(width: 852, height: 170)] {
+            window.frame = CGRect(origin: .zero, size: size)
+            host.view.frame = window.bounds
+            window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(300))
+            let center = try XCTUnwrap(tracks.subtitles.controlsLayout.frame(for: .centerTransport))
+            let title = try XCTUnwrap(tracks.subtitles.controlsLayout.frame(for: .title))
+            XCTAssertGreaterThan(center.height, 44)
+            XCTAssertLessThanOrEqual(center.height, 64)
+            XCTAssertEqual(center.midY, size.height / 2, accuracy: 1)
+            XCTAssertLessThanOrEqual(center.maxY, title.minY)
+            XCTAssertGreaterThanOrEqual(center.minY, 0)
+            XCTAssertLessThanOrEqual(title.maxY, size.height)
+            XCTAssertGreaterThanOrEqual(title.height, 44)
+            XCTAssertNil(tracks.subtitles.controlsLayout.frame(for: .timeline))
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Inline preview controls \(Int(size.width))x\(Int(size.height))"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testLivePresentationControlsWithoutExternalRoutesHaveNoStopButtonOrEmptyPill() async throws {
         let engine = try PlozzigenVideoEngine()
         defer { engine.stop() }
@@ -496,10 +543,9 @@ final class PlayerTransportPositionTests: XCTestCase {
                         isScrubbing: model.controls.isScrubbing, scrubPreviewImage: thumbnail, showsScrubPreview: true,
                         pictureInPictureAvailable: false, onTogglePictureInPicture: {},
                         onScrubChanged: { _ in }, onScrubEditingChanged: { _ in },
-                        onSkipBackward: {}, onPlayPause: {}, onSkipForward: {}, onShowSpeed: {},
-                        supportsVideoZoom: false, onShowCustomZoom: {}, onShowSubtitles: {},
-                        onShowQuality: {}, onShowTimestamps: nil, hasVersions: false, onShowVersions: {},
-                        onOptionsMenuPresentationChange: { _ in }, isCardOpen: .constant(false),
+                        onSkipBackward: {}, onPlayPause: {}, onSkipForward: {},
+                        supportsVideoZoom: false, hasTimestamps: false, hasVersions: false, menuPresentation: .init(),
+                        isCardOpen: .constant(false),
                         onInteraction: {}, availableSize: geometry.size
                     )
                 }
@@ -519,6 +565,7 @@ final class PlayerTransportPositionTests: XCTestCase {
         var phase = LiveChannelPlaybackPhase.playing
         var canGoLive = true
         var canMultiview = false
+        var inline = false
         @FocusState private var focus: LiveChannelControl?
         private let now = Date()
 
@@ -535,7 +582,8 @@ final class PlayerTransportPositionTests: XCTestCase {
                 onMultiview: canMultiview ? {} : nil, guideContent: nil, pendingGuideOpen: false, consumeGuideOpen: {},
                 onGuideCardChange: { _ in }, loadOnNow: { [] }, onTuneChannel: nil,
                 tracks: tracks, diagnosticsEnabled: false, toggleDiagnostics: {},
-                onTracksPresentationChange: { _ in }, onControlActivity: {}, onDismissControls: {}
+                onTracksPresentationChange: { _ in }, onControlActivity: {}, onDismissControls: {},
+                onExpandPreview: inline ? {} : nil
             )
         }
     }

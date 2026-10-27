@@ -3,6 +3,10 @@ import CoreModels
 import FeatureProfiles
 import SwiftUI
 
+extension EnvironmentValues {
+    @Entry var hasVisibleSettingsNavigationEntry = false
+}
+
 /// The settings entry point shown across the iOS app — Home, Search, Downloads
 /// and the empty-library shell. It renders the **active profile's real avatar**
 /// (borrowed photo, emoji, or symbol on its chosen colour, via the shared

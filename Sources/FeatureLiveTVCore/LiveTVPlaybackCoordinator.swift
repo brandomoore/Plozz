@@ -165,6 +165,23 @@ public final class LiveTVPlaybackCoordinator {
         ))
     }
 
+    /// Expands the retained preview without entering another preparation state.
+    @discardableResult
+    public func expandPreview(presentationID: UUID, preparedID: UUID) -> Bool {
+        guard isInteractionActive, ownsPlayerPresentation(presentationID),
+              preparation.current?.id == preparedID else { return false }
+        validateAuthorization()
+        guard let current = preparation.current, current.id == preparedID,
+              authorizes(current.channel, current.serverReference) else { return false }
+        cancelWatch()
+        cancelPreviewPreparation()
+        suppressedPreviewChannelID = nil
+        preview.watch(current.channel.id, origin: preview.watchOrigin)
+        acceptedWatchID = UUID()
+        synchronizePlayerState()
+        return preview.isExpanded
+    }
+
     /// Explicit recovery only. A stale alert never stops a replacement stream.
     @discardableResult
     public func stopCurrentAndRetry(_ failure: LiveTVWatchFailure) -> Task<Bool, Never> {

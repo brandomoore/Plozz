@@ -8,6 +8,7 @@ import UIKit
 final class LiveTVCategorySearchInteractionTests: XCTestCase {
     #if os(iOS)
     func testChannelAndProgrammeTapsStartTheTopPreviewWithoutOpeningFullscreen() {
+        XCUIDevice.shared.orientation = .portrait
         let app = launch(guideFirst: true)
         defer { app.terminate() }
         let arena = channel("Arena One", in: app)
@@ -18,8 +19,16 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         XCTAssertTrue(preview.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(preview.label, "Arena One")
         XCTAssertEqual(preview.value as? String, "Preview")
-        XCTAssertTrue(channel("Daily News", in: app).isHittable)
-        XCTAssertGreaterThanOrEqual(preview.frame.minY, app.frame.minY + 40)
+        XCTAssertTrue(app.staticTexts["category-preview-frame"].wait(
+            for: \.label, toEqual: "Frame: ready", timeout: 10
+        ), app.staticTexts["category-preview-frame"].label)
+        XCTAssertTrue(channel("Daily News", in: app).exists, "The guide must stay mounted below the preview.")
+        let filters = app.buttons["live-tv-category"].frame
+        XCTAssertTrue(
+            abs(preview.frame.minY - filters.maxY - 8) <= 2 || preview.frame.maxX <= filters.minX,
+            "The video must sit 8 pt below a horizontal toolbar or clear a vertical toolbar."
+        )
+        XCTAssertFalse(app.buttons["Watch channel"].exists)
         let programme = app.buttons["Championship Highlights"].firstMatch
         XCTAssertTrue(programme.waitForExistence(timeout: 5))
         programme.tap()
@@ -29,13 +38,290 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [tuned], timeout: 10), .completed)
         XCTAssertEqual(preview.value as? String, "Preview")
         XCTAssertTrue(channel("Arena One", in: app).isHittable)
+        XCTAssertTrue(app.staticTexts["category-preview-frame"].wait(
+            for: \.label, toEqual: "Frame: ready", timeout: 10
+        ), app.staticTexts["category-preview-frame"].label)
+        let fullscreen = app.buttons["live-channel-fullscreen"]
+        if !fullscreen.isHittable {
+            preview.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.25)).tap()
+        }
+        let playPause = app.buttons["live-channel-play-pause"]
+        XCTAssertTrue(playPause.exists)
+        playPause.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 5))
         capture("channel-tap-starts-top-preview", in: app)
-        app.buttons["Watch channel"].tap()
+        let loads = app.staticTexts["category-preview-loads"].label
+        fullscreen.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.staticTexts["category-preview-expands"].wait(for: \.label, toEqual: "Expands: 1", timeout: 5))
         let expanded = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value == %@", "Fullscreen"), object: preview
         )
         XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 5), .completed)
+        XCTAssertEqual(app.staticTexts["category-preview-loads"].label, loads, "Fullscreen must not reload the stream.")
         XCTAssertFalse(channel("Arena One", in: app).isHittable)
+        capture("live-preview-fullscreen", in: app)
+        let collapse = app.buttons["live-channel-exit-fullscreen"]
+        XCTAssertTrue(collapse.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["live-channel-close"].exists, "Keep the top-left close action too.")
+        collapse.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        waitForPresentation("Preview", preview: preview)
+        XCTAssertEqual(app.staticTexts["category-preview-loads"].label, loads)
+    }
+
+    func testPreviewFullscreenRoundTripWithAutomaticRotation() {
+        verifyFullscreenRoundTrip(orientation: "auto")
+    }
+
+    func testLightPreviewReflectionKeepsDarkPlayerControlsAndContinuousPlayback() {
+        let app = launch(guideFirst: true, lightAppearance: true)
+        defer { app.terminate() }
+        let arena = channel("Arena One", in: app)
+        XCTAssertTrue(arena.waitForExistence(timeout: 15))
+        arena.tap()
+        let preview = app.otherElements["category-search-playback"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["category-preview-frame"].wait(
+            for: \.label, toEqual: "Frame: ready", timeout: 10
+        ))
+        let playPause = app.buttons["live-channel-play-pause"]
+        XCTAssertTrue(playPause.waitForExistence(timeout: 5))
+        playPause.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 5))
+        capture("light-preview-reflection", in: app)
+        let loads = app.staticTexts["category-preview-loads"].label
+        let fullscreen = app.buttons["live-channel-fullscreen"]
+        fullscreen.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        waitForPresentation("Fullscreen", preview: preview)
+        capture("light-preview-fullscreen", in: app)
+        let close = app.buttons["live-channel-close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        waitForPresentation("Preview", preview: preview)
+        XCTAssertEqual(app.staticTexts["category-preview-loads"].label, loads)
+        XCTAssertTrue(arena.isHittable)
+        channel("Daily News", in: app).tap()
+        XCTAssertTrue(app.staticTexts["category-preview-loads"].wait(
+            for: \.label, toEqual: "Loads: 2", timeout: 10
+        ))
+        XCTAssertTrue(app.staticTexts["category-preview-frame"].wait(
+            for: \.label, toEqual: "Frame: ready", timeout: 10
+        ))
+        XCTAssertEqual(preview.label, "Daily News")
+        XCTAssertEqual(preview.value as? String, "Preview")
+        capture("light-preview-retuned", in: app)
+    }
+
+    func testLightPreviewReflectionWithDarkVideo() {
+        let app = launch(guideFirst: true, lightAppearance: true, dimVideo: true)
+        defer { app.terminate() }
+        let arena = channel("Arena One", in: app)
+        XCTAssertTrue(arena.waitForExistence(timeout: 15))
+        arena.tap()
+        XCTAssertTrue(app.staticTexts["category-preview-frame"].wait(
+            for: \.label, toEqual: "Frame: ready", timeout: 10
+        ))
+        let playPause = app.buttons["live-channel-play-pause"]
+        XCTAssertTrue(playPause.waitForExistence(timeout: 5))
+        playPause.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 5))
+        capture("light-preview-dark-video", in: app)
+    }
+
+    func testFullscreenControlsAndStatusBarAutoHideAndReturnTogether() {
+        let app = launch(guideFirst: true)
+        defer { app.terminate() }
+        let arena = channel("Arena One", in: app)
+        XCTAssertTrue(arena.waitForExistence(timeout: 15))
+        arena.tap()
+        let preview = app.otherElements["category-search-playback"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["category-preview-frame"].wait(
+            for: \.label, toEqual: "Frame: ready", timeout: 10
+        ))
+        let fullscreen = app.buttons["live-channel-fullscreen"]
+        if !fullscreen.isHittable {
+            preview.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.25)).tap()
+        }
+        fullscreen.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        waitForPresentation("Fullscreen", preview: preview)
+        let loads = app.staticTexts["category-preview-loads"].label
+        let close = app.buttons["live-channel-close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        capture("fullscreen-controls-visible", in: app)
+        XCTAssertTrue(close.waitForNonExistence(timeout: 10))
+        XCTAssertTrue(app.statusBars.firstMatch.waitForNonExistence(timeout: 5))
+        capture("fullscreen-controls-hidden", in: app)
+        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        capture("fullscreen-controls-revealed", in: app)
+        XCTAssertEqual(app.staticTexts["category-preview-loads"].label, loads)
+        close.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        waitForPresentation("Preview", preview: preview)
+        XCTAssertTrue(arena.isHittable)
+        XCTAssertEqual(app.staticTexts["category-preview-loads"].label, loads)
+        capture("fullscreen-returned-to-preview", in: app)
+    }
+
+    func testPhoneAutoRotationExpandsPreviewAndClosingRequiresUprightBeforeReopening() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(guideFirst: true)
+        defer {
+            app.terminate()
+            XCUIDevice.shared.orientation = .portrait
+        }
+        let arena = channel("Arena One", in: app)
+        XCTAssertTrue(arena.waitForExistence(timeout: 15))
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let browsingRotates = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.frame.width > app.frame.height
+        }, object: nil)
+        browsingRotates.isInverted = true
+        XCTAssertEqual(XCTWaiter.wait(for: [browsingRotates], timeout: 1), .completed)
+        XCUIDevice.shared.orientation = .portrait
+        arena.tap()
+        let preview = app.otherElements["category-search-playback"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 10))
+        let engineID = app.staticTexts["category-preview-engine"].label
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitForPresentation("Fullscreen", preview: preview)
+        XCTAssertGreaterThan(preview.frame.width, preview.frame.height)
+        XCUIDevice.shared.orientation = .portrait
+        waitForPresentation("Preview", preview: preview)
+        XCTAssertTrue(arena.isHittable)
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitForPresentation("Fullscreen", preview: preview)
+        let close = app.buttons["live-channel-close"]
+        if !close.exists { preview.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).tap() }
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        waitForPresentation("Preview", preview: preview)
+        let portrait = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.frame.height > app.frame.width
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [portrait], timeout: 5), .completed)
+        XCUIDevice.shared.orientation = .landscapeRight
+        let reopens = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Fullscreen"), object: preview
+        )
+        reopens.isInverted = true
+        XCTAssertEqual(XCTWaiter.wait(for: [reopens], timeout: 1), .completed)
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitForPresentation("Fullscreen", preview: preview)
+        XCTAssertEqual(app.staticTexts["category-preview-engine"].label, engineID)
+        XCTAssertEqual(app.staticTexts["category-preview-loads"].label, "Loads: 1")
+        capture("iphone-automatic-live-fullscreen", in: app)
+    }
+
+    func testWideSidebarStaysFullHeightBesideVideoPreview() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom != .pad, "Requires a wide iPad sidebar.")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = launch(guideFirst: true)
+        defer {
+            app.terminate()
+            XCUIDevice.shared.orientation = .portrait
+        }
+        let search = app.buttons["live-tv-search"]
+        let category = app.buttons["live-tv-sidebar-category-all"]
+        XCTAssertTrue(search.waitForExistence(timeout: 15), app.debugDescription)
+        let searchFrame = search.frame
+        let categoryFrame = category.frame
+        let arena = channel("Arena One", in: app)
+        XCTAssertTrue(arena.waitForExistence(timeout: 5))
+        arena.tap()
+        let preview = app.otherElements["category-search-playback"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 10))
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            abs(search.frame.minY - searchFrame.minY) < 1
+                && arena.frame.minY >= preview.frame.maxY
+                && preview.frame.minX >= search.frame.maxX
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 5), .completed)
+        XCTAssertEqual(category.frame.minY, categoryFrame.minY, accuracy: 1)
+        XCTAssertTrue(search.isHittable)
+        XCTAssertTrue(category.isHittable)
+        capture("ipad-full-height-sidebar-preview", in: app)
+        search.tap()
+        XCTAssertTrue(searchField(in: app).waitForExistence(timeout: 5))
+    }
+
+    func testPreviewFullscreenRoundTripWithPortraitPreference() {
+        verifyFullscreenRoundTrip(orientation: "portrait")
+    }
+
+    func testPreviewFullscreenRoundTripWithLandscapePreference() {
+        verifyFullscreenRoundTrip(orientation: "landscape")
+    }
+
+    private func verifyFullscreenRoundTrip(orientation: String) {
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(guideFirst: true, orientation: orientation)
+        defer {
+            app.terminate()
+            XCUIDevice.shared.orientation = .portrait
+        }
+        let arena = channel("Arena One", in: app)
+        XCTAssertTrue(arena.waitForExistence(timeout: 15))
+        arena.tap()
+        let preview = app.otherElements["category-search-playback"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 10))
+        let engineID = app.staticTexts["category-preview-engine"].label
+        let fullscreen = app.buttons["live-channel-fullscreen"]
+        if !fullscreen.exists {
+            preview.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.65)).tap()
+        }
+        XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
+        fullscreen.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        waitForPresentation("Fullscreen", preview: preview)
+        assertLandscape(orientation == "landscape", preview: preview)
+        XCTAssertEqual(app.staticTexts["category-preview-engine"].label, engineID)
+        XCTAssertEqual(app.staticTexts["category-preview-loads"].label, "Loads: 1")
+        capture("fullscreen-\(orientation)", in: app)
+
+        if orientation != "landscape" {
+            XCUIDevice.shared.orientation = .landscapeLeft
+            assertLandscape(orientation == "auto", preview: preview)
+            XCTAssertEqual(app.staticTexts["category-preview-engine"].label, engineID)
+            XCTAssertEqual(app.staticTexts["category-preview-loads"].label, "Loads: 1")
+            XCUIDevice.shared.orientation = .portrait
+            assertLandscape(false, preview: preview)
+        }
+
+        let close = app.buttons["live-channel-close"]
+        let background = preview.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5))
+        if close.exists {
+            background.tap()
+            XCTAssertTrue(close.waitForNonExistence(timeout: 5))
+        }
+        background.tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        waitForPresentation("Preview", preview: preview)
+        let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.frame.height > app.frame.width
+                && abs(preview.frame.minY - app.buttons["live-tv-category"].frame.maxY - 8) < 2
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 10), .completed)
+        XCTAssertEqual(app.staticTexts["category-preview-engine"].label, engineID)
+        XCTAssertEqual(app.staticTexts["category-preview-loads"].label, "Loads: 1")
+        XCTAssertTrue(arena.isHittable)
+        capture("returned-preview-\(orientation)", in: app)
+    }
+
+    private func assertLandscape(_ landscape: Bool, preview: XCUIElement) {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            landscape ? preview.frame.width > preview.frame.height : preview.frame.height > preview.frame.width
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 10), .completed)
+    }
+
+    private func waitForPresentation(_ value: String, preview: XCUIElement) {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", value), object: preview
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 5), .completed)
     }
 
     func testChannelSearchSelectionClosesSearchAndStartsVisiblePreview() {
@@ -53,9 +339,39 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         XCTAssertTrue(preview.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(preview.label, "Daily News")
         XCTAssertEqual(preview.value as? String, "Preview")
-        XCTAssertGreaterThanOrEqual(preview.frame.minY, app.frame.minY + 40)
+        XCTAssertEqual(preview.frame.minY - app.buttons["live-tv-category"].frame.maxY, 8, accuracy: 2)
         XCTAssertTrue(channel("Arena One", in: app).isHittable)
         capture("channel-search-starts-top-preview", in: app)
+    }
+
+    func testTopPreviewTogglesSharedControlsAndPausesWithoutOpeningFullscreen() {
+        let app = launch(guideFirst: true)
+        defer { app.terminate() }
+        let arena = channel("Arena One", in: app)
+        XCTAssertTrue(arena.waitForExistence(timeout: 15))
+        arena.tap()
+        let preview = app.otherElements["category-search-playback"]
+        let fullscreen = app.buttons["live-channel-fullscreen"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 10))
+        let background = preview.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.65))
+        if !fullscreen.isHittable { background.tap() }
+        XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
+        app.buttons["live-channel-play-pause"].tap()
+        XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 5))
+        XCTAssertEqual(preview.value as? String, "Preview")
+        let play = app.buttons["live-channel-play-pause"]
+        let previous = app.buttons["live-channel-previous"]
+        let next = app.buttons["live-channel-next"]
+        XCTAssertGreaterThan(play.frame.height, previous.frame.height)
+        for control in [play, previous, next] {
+            XCTAssertEqual(control.frame.midY, preview.frame.midY, accuracy: 2)
+        }
+        background.tap()
+        XCTAssertTrue(fullscreen.waitForNonExistence(timeout: 5))
+        background.tap()
+        XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
+        XCTAssertEqual(preview.value as? String, "Preview")
+        XCTAssertTrue(channel("Daily News", in: app).isHittable)
     }
 
     func testNativeToolbarGroupsProfileAndBrowseActions() {
@@ -258,7 +574,10 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         #endif
     }
 
-    private func launch(guideFirst: Bool = false, failsLoading: Bool = false) -> XCUIApplication {
+    private func launch(
+        guideFirst: Bool = false, failsLoading: Bool = false, orientation: String = "auto",
+        lightAppearance: Bool = false, dimVideo: Bool = false
+    ) -> XCUIApplication {
         continueAfterFailure = false
         #if os(tvOS)
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
@@ -266,8 +585,11 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
         #endif
         app.launchArguments = ["--category-search-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments.append("--category-preview-\(orientation)")
         if guideFirst { app.launchArguments.append("--category-search-guide-first") }
         if failsLoading { app.launchArguments.append("--category-search-failure") }
+        if lightAppearance { app.launchArguments.append("--category-preview-light") }
+        if dimVideo { app.launchArguments.append("--category-preview-dim") }
         app.launch()
         return app
     }
@@ -342,9 +664,15 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
     #endif
 
     private func capture(_ name: String, in app: XCUIApplication) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+        for (index, screen) in XCUIScreen.screens.enumerated() where index > 0 {
+            let display = XCTAttachment(screenshot: screen.screenshot())
+            display.name = "\(name)-display-\(index)"
+            display.lifetime = .keepAlways
+            add(display)
+        }
     }
 }

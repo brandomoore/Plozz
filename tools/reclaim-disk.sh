@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # reclaim-disk.sh — daily, safe reclaim of rebuildable Xcode/Swift build data
-# across ALL of my tvOS/iOS apps (Plozz, Mozz, Twozz) that share one machine.
+# across ALL of my tvOS/iOS apps (Plozz, Mozz, Strozz) that share one machine.
 #
 # WHY
 #   Every branch/worktree builds into caches that nothing ever cleans up:

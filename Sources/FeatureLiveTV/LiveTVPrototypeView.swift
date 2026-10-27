@@ -20,6 +20,12 @@ public struct LiveTVPrototypePlayback {
     public let canToggleFavorite: Bool
     public let onToggleFavorite: () -> Void
     public let isExpanded: Bool
+    public let isPreviewVisible: Bool
+    public let expandPreview: () -> Void
+    public let previewReflectionHeight: CGFloat
+    public let previewTopReflectionHeight: CGFloat
+    public let previewLeadingReflectionWidth: CGFloat
+    public let previewTrailingReflectionWidth: CGFloat
     public let returnToGuide: () -> Void
     public let playPauseRequest: Int
     public let playbackStarted: () -> Void
@@ -98,6 +104,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var nowRequest = 0
     @State private var channelSequence = LiveTVChannelSequence(channels: [])
     @State private var controlsActive = false
+    @State private var toolbarControlsBottom: CGFloat?
     @State private var categoryFocusRequest = 0
     @State private var sidebarRestoresCategoryFocus = false
     @State private var guideHasFocus = false
@@ -360,9 +367,16 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 size: geometry.size, safeAreaInsets: geometry.safeAreaInsets,
                 navigationInset: navigationInset, nativeNavigation: usesNativeFullscreen,
                 largeText: typeSize.isAccessibilitySize,
-                isSearching: isSearching, showsCategories: showsCategoryDirectory
+                isSearching: isSearching, showsCategories: showsCategoryDirectory,
+                showsVideoPreview: playback.preparation.current != nil || playback.pendingWatchChannelID != nil,
+                toolbarControlsBottom: toolbarControlsBottom.map { $0 - geometry.frame(in: .global).minY }
             )
             let expanded = multiviewSelection == nil && (preview.isExpanded || multiview.isEnabled)
+            #if os(iOS)
+            let playerTransition: Animation? = reduceMotion ? nil : .smooth(duration: 0.35)
+            #else
+            let playerTransition: Animation? = reduceMotion ? nil : .easeInOut(duration: 0.32)
+            #endif
             ZStack(alignment: .topLeading) {
                 #if !os(tvOS)
                 AppBackground(palette: palette)
@@ -383,13 +397,28 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                             )
                             .offsetBy(dx: layout.bounds.minX, dy: layout.bounds.minY)
                             : (expanded ? layout.bounds : layout.videoFrame)
-                        player(playbackInput(for: pane, prepared: prepared))
+                        let reflectionHeight = !expanded && !showingMultiview && !reduceTransparency
+                            ? layout.videoReflectionHeight : 0
+                        let topReflectionHeight = reflectionHeight > 0 ? layout.videoTopReflectionHeight : 0
+                        let leadingReflectionWidth = reflectionHeight > 0 ? layout.videoLeadingReflectionWidth : 0
+                        let trailingReflectionWidth = reflectionHeight > 0 ? layout.videoTrailingReflectionWidth : 0
+                        player(playbackInput(for: pane, prepared: prepared, reflectionHeight: reflectionHeight,
+                                             topReflectionHeight: topReflectionHeight,
+                                             leadingReflectionWidth: leadingReflectionWidth,
+                                             trailingReflectionWidth: trailingReflectionWidth,
+                                             isPreviewVisible: !expanded && layout.heroHeight > 0))
+                    .environment(\.playbackReflectionColorScheme, palette.isLight ? .light : .dark)
                     .environment(\.themePalette, ThemePalette.dark)
                     .environment(\.colorScheme, .dark)
                     .frame(width: videoFrame.width, height: videoFrame.height)
-                    .clipShape(RoundedRectangle(
+                    .clipShape(PrototypeVideoClip(
+                        reflectionHeight: reflectionHeight,
+                        topReflectionHeight: topReflectionHeight,
+                        leftReflectionWidth: layoutDirection == .rightToLeft ? trailingReflectionWidth : leadingReflectionWidth,
+                        rightReflectionWidth: layoutDirection == .rightToLeft ? leadingReflectionWidth : trailingReflectionWidth,
                         cornerRadius: showingMultiview && multiview.isEditingLayout ? 10 : 0))
                     .overlay {
+                        #if os(tvOS)
                         LinearGradient(
                             stops: [
                                 .init(color: palette.backgroundBase, location: 0),
@@ -401,22 +430,38 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         .opacity(expanded || layout.compact ? 0 : 1)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
+                        #endif
                     }
                     .position(
                         x: !showingMultiview && layoutDirection == .rightToLeft
                             ? geometry.size.width - videoFrame.midX : videoFrame.midX,
                         y: videoFrame.midY
                     )
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: preview.isExpanded)
+                    #if os(iOS)
+                    .animation(playerTransition, value: videoFrame)
+                    #else
+                    .animation(playerTransition, value: preview.isExpanded)
+                    #endif
+                    #if os(iOS)
+                    .zIndex(showingMultiview
+                        ? (pane.id != multiview.primaryPaneID ? 1 : 0) : (expanded ? 1 : 0))
+                    #else
                     .zIndex(showingMultiview && pane.id != multiview.primaryPaneID ? 1 : 0)
+                    #endif
                     .opacity(multiviewSelection != nil
                         ? (pane.id == multiview.audiblePaneID ? 1 : 0)
                         : (multiview.expandedPaneID == nil || multiview.expandedPaneID == pane.id ? 1 : 0))
                     .allowsHitTesting(!multiview.isEnabled)
                     .accessibilityHidden(multiview.isEnabled)
+                    #if os(iOS)
+                    .opacity(expanded || layout.heroHeight > 0 ? 1 : 0)
+                    .allowsHitTesting(expanded || layout.heroHeight > 0)
+                    .accessibilityHidden(!expanded && layout.heroHeight == 0)
+                    #endif
                     }
                 }
 
+                #if os(tvOS)
                 PrototypePreviewScrim(layout: layout, reduceTransparency: reduceTransparency)
                     .frame(width: layout.bounds.width, height: layout.bounds.height)
                     .position(
@@ -424,24 +469,31 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                             ? geometry.size.width - layout.bounds.midX : layout.bounds.midX,
                         y: layout.bounds.midY
                     )
-                    #if os(tvOS)
                     .opacity(expanded || model.channels.isEmpty ? 0 : 1)
-                    #else
-                    .opacity(expanded ? 0 : 1)
-                    #endif
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: preview.isExpanded)
+                #endif
 
                 guideContent(layout, canvasWidth: geometry.size.width)
                 #if os(tvOS)
                 .focusSection()
                 #endif
                 .frame(width: geometry.size.width, height: geometry.size.height)
+                #if os(iOS)
+                .contentShape(PrototypeGuideHitRegion(
+                    top: layout.heroHeight > 0 ? max(0, layout.videoFrame.maxY) : 0,
+                    sidebarWidth: layout.sidebarWidth > 0 ? max(0, layout.videoFrame.minX) : 0,
+                    sidebarOnTrailing: layoutDirection == .rightToLeft))
+                #endif
                 .opacity(expanded ? 0 : 1)
+                #if os(iOS)
+                .offset(y: expanded && !reduceMotion ? 24 : 0)
+                #else
                 .offset(y: expanded && !reduceMotion ? geometry.size.height * 0.55 : 0)
+                #endif
                 .disabled(expanded || !isActive || showsPreviewIntroduction)
                 .allowsHitTesting(!expanded && isActive && !showsPreviewIntroduction)
                 .accessibilityHidden(expanded || !isActive || showsPreviewIntroduction)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: preview.isExpanded)
+                .animation(playerTransition, value: preview.isExpanded)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: isSearching)
                 if showingMultiview {
                     LiveTVMultiviewOverlay(
@@ -464,6 +516,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             #if os(tvOS)
             .settingsPageBackground()
             #elseif os(iOS)
+            .background(PrototypeToolbarBottomReader {
+                if !expanded, $0 > 0 { toolbarControlsBottom = $0 }
+            })
             .toolbar {
                 PrototypeTouchBrowseToolbar(
                     model: model, isSearching: isSearching,
@@ -521,7 +576,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     }
 
     private func playbackInput(
-        for pane: LiveTVMultiviewPane, prepared: LiveTVPreparedStream
+        for pane: LiveTVMultiviewPane, prepared: LiveTVPreparedStream, reflectionHeight: CGFloat = 0,
+        topReflectionHeight: CGFloat = 0, leadingReflectionWidth: CGFloat = 0,
+        trailingReflectionWidth: CGFloat = 0, isPreviewVisible: Bool = false
     ) -> LiveTVPrototypePlayback {
         let presentationID = playback.presentationID
         return LiveTVPrototypePlayback(
@@ -534,6 +591,15 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             canToggleFavorite: model.preferencesIssue != .loadFailed,
             onToggleFavorite: { model.toggleFavoriteWithFeedback(prepared.channel.id) },
             isExpanded: preview.isExpanded && !multiview.isEnabled,
+            isPreviewVisible: isPreviewVisible && !multiview.isEnabled,
+            expandPreview: {
+                guard activity.acceptsInteraction, !multiview.isEnabled else { return }
+                playback.expandPreview(presentationID: presentationID, preparedID: prepared.id)
+            },
+            previewReflectionHeight: reflectionHeight,
+            previewTopReflectionHeight: topReflectionHeight,
+            previewLeadingReflectionWidth: leadingReflectionWidth,
+            previewTrailingReflectionWidth: trailingReflectionWidth,
             returnToGuide: {
                 guard playback.ownsPlayerPresentation(presentationID) else { return }
                 leavePlaybackForGuide()
@@ -1564,12 +1630,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             )
             .disabled(blocksBrowseControls)
         } else {
-            PrototypePreviewHero(
-                channel: heroChannel, program: heroProgram, layout: layout,
-                watch: { if let id = heroChannel?.id { tune(id) } },
-                watchTitle: multiviewSelection?.title, isLoading: isInitialCatalogLoading
-            )
-            .frame(height: layout.heroHeight, alignment: layout.heroAlignment)
+            Color.clear
+                .frame(height: layout.heroHeight)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
         #else
         ZStack(alignment: .bottomLeading) {
@@ -2172,7 +2236,11 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             of: playback.pendingWatchChannelID ?? playback.preparation.current?.channel.id,
             offset: offset, visibleChannels: model.visibleChannels
         ) else { return }
+        #if os(iOS)
+        tune(id, expandsPlayer: preview.isExpanded)
+        #else
         tune(id)
+        #endif
     }
 }
 

@@ -32,7 +32,7 @@ public struct LibrarySection: Identifiable, Equatable, Sendable {
     public let localizedTitleSuffix: String?  // l10n:content — server-name qualification
 
     /// Poster vs landscape presentation.
-    public let style: Style
+    public var style: Style
 
     /// The cards to render. Never empty for a section the aggregator keeps — empty
     /// sections are dropped upstream so the view never renders a headed-but-blank

@@ -1039,7 +1039,9 @@ struct HomeHeroView: View {
                     .frame(maxWidth: textWidth, alignment: .leading)
                     .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
 
-                if !hideText, let heroText = item.tagline ?? item.overview {
+                if let heroText = HeroContentPolicy.homeDescription(
+                    for: HeroPresentation(item: item, artworkStyle: .landscape, surface: .home)
+                ) {
                     // tvOS can't tap links, so flatten inline markdown to plain
                     // label text ("[Sei](url)" → "Sei") — never leak raw brackets
                     // or a URL into the hero. (iPadOS renders tappable links; this
@@ -1251,7 +1253,7 @@ struct HomeHeroView: View {
         let slideIndex = items.firstIndex(where: { $0.id == item.id }) ?? index
         return HeroForegroundModelBuilder.model(
             item: item,
-            overviewVisible: !hideText,
+            overviewVisible: true,
             ratingsVisible: settings.shouldShowRatings(for: item, spoilerSettings: spoilerSettings),
             showsContentRatings: showsContentRatings,
             ratingPreferences: settings.ratingPreferences,
@@ -1353,9 +1355,10 @@ struct HomeHeroView: View {
             for i in [previous, next] where items.indices.contains(i) { targets.append(items[i]) }
         }
         var result: [String: @Sendable () async -> URL?] = [:]
+        let language = artworkPolicy.logoLanguage
         for target in targets where result[target.id] == nil {
             let source = target
-            result[source.id] = { await ArtworkRouter.shared.artworkURL(.logo, for: source) }
+            result[source.id] = { await ArtworkRouter.shared.artworkURL(.logo, for: source, language: language) }
         }
         return result
     }

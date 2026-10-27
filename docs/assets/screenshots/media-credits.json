@@ -1,0 +1,1061 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "id": "netflix-sol-levante",
+      "title": "Sol Levante",
+      "credit": "Sol Levante (2020) — Netflix / Production I.G. — CC BY 4.0.",
+      "rights": "CC BY 4.0",
+      "rightsStatement": "The linked source identifies this material under CC BY 4.0; attribution and adaptation notices are retained. Current project-root master material, not legacy samples with different terms.",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "sources": [
+        "https://opencontent.netflix.com/",
+        "https://s3.amazonaws.com/download.opencontent.netflix.com/SolLevante/creative-commons-attribution-4-intl-public-license.txt"
+      ],
+      "changes": "Film frames extracted, cropped and resized; HDR sources converted to SDR where recorded.",
+      "reviewed": true,
+      "visualReview": "Official SDR master frames inspected. Portrait in an ornate mirror and a luminous forest portal. Genuine Japanese anime, no title cards, logos, visible injury or explicit content.",
+      "poster": {
+        "sha256": "a6d62953455ba21efb3b2b9c9e56d41cf6d96a0bcf4b62cf5389659b3485a815",
+        "source_sha256": "4aa17b78aaed6169a29b80b6519e6bd9775055dba2ea816f92cd6c5cd00645b9",
+        "source_dimensions": [
+          1920,
+          1080
+        ],
+        "crop_box": [
+          588,
+          0,
+          1308,
+          1080
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "f0f66564f9b5318b3d4f9dcda27ce3f98d8d2fc6a55ed8bfb6154ca125d7e13d",
+        "source_sha256": "d25507347f3733c4eb3eb27bf7c0b541d1607da242567667f4dd2d2e6e0dfb16",
+        "source_dimensions": [
+          1920,
+          1080
+        ],
+        "crop_box": [
+          0,
+          0,
+          1920,
+          1080
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "netflix-meridian",
+      "title": "Meridian",
+      "credit": "Meridian (2016) — © Netflix Inc. — CC BY 4.0.",
+      "rights": "CC BY 4.0",
+      "rightsStatement": "The linked source identifies this material under CC BY 4.0; attribution and adaptation notices are retained. Current project-root master material, not legacy samples with different terms.",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "sources": [
+        "https://opencontent.netflix.com/",
+        "https://s3.amazonaws.com/download.opencontent.netflix.com/Meridian/creative-commons-attribution-4-intl-public-license.txt"
+      ],
+      "changes": "Film frames extracted, cropped and resized; HDR sources converted to SDR where recorded.",
+      "reviewed": true,
+      "visualReview": "Currently licensed project-root master frames inspected. Cinematic car portrait and coastal silhouette; gun-pointing frame rejected. No logos, readable title lettering or injury. Recorded SDR conversion, not the legacy NC-ND sample.",
+      "poster": {
+        "sha256": "b4a1e3473e68a973fe5a27d688dc3a78577443618b75639cbed0287bf42b4701",
+        "source_sha256": "2caa32b6ef5ffc69a0b90a0f126152ee3850dc4166fd66ee27a4495243d338b1",
+        "source_dimensions": [
+          1920,
+          1080
+        ],
+        "crop_box": [
+          744,
+          0,
+          1464,
+          1080
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "c782a5379921953dbe3b9290fa6190d3f021d743f445c74d9945f95b5a33afc0",
+        "source_sha256": "f8c6d397a158f22a541ff0056fa6a09fc5c49040084a32ce4da014c34dc9a6d5",
+        "source_dimensions": [
+          1920,
+          1080
+        ],
+        "crop_box": [
+          0,
+          0,
+          1920,
+          1080
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "spring",
+      "title": "Spring",
+      "credit": "Spring — © Blender Foundation | cloud.blender.org/spring. Licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/. Source: https://studio.blender.org/projects/api/assets/889/. Frame extracted, cropped and resized for Plozz demonstration imagery.",
+      "rights": "CC BY 4.0",
+      "rightsStatement": "The linked source identifies this material under CC BY 4.0; attribution and adaptation notices are retained.",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "sources": [
+        "https://studio.blender.org/projects/spring/pages/about/"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Shepherd girl and a bright mountain valley from the same film. No text or logos.",
+      "poster": {
+        "sha256": "fab4a8521d6abb24481835942eb1f29b1396828f9302c72d1ff8f8698789d012",
+        "source_sha256": "2f35a9c453a44968c5d9f683194f4155206dca731eae922301866e75402f7996",
+        "source_dimensions": [
+          1920,
+          804
+        ],
+        "crop_box": [
+          913,
+          0,
+          1449,
+          804
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "e947c142ded5978a32478ee1964ba34cdcd1a56f07218bc43d70fdc4aa9ada59",
+        "source_sha256": "7e3d8dfd7ff293da7809925c20bef23c3b4a4fc9105525aaa8faccc93bc8921c",
+        "source_dimensions": [
+          1920,
+          804
+        ],
+        "crop_box": [
+          246,
+          0,
+          1675,
+          804
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "netflix-nocturne",
+      "title": "Nocturne",
+      "credit": "Nocturne (2018) — © Netflix Inc. — CC BY 4.0.",
+      "rights": "CC BY 4.0",
+      "rightsStatement": "The linked source identifies this material under CC BY 4.0; attribution and adaptation notices are retained. Current project-root master material, not legacy samples with different terms.",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "sources": [
+        "https://opencontent.netflix.com/",
+        "https://s3.amazonaws.com/download.opencontent.netflix.com/Nocturne/creative-commons-attribution-4-intl-public-license.txt"
+      ],
+      "changes": "Film frames extracted, cropped and resized; HDR sources converted to SDR where recorded.",
+      "reviewed": true,
+      "visualReview": "Ballet performance frames inspected. Clothed performers, blue stage light and falling stage snow. Transit-sign/logo frame and motion-blurred frame rejected. Recorded SDR conversion.",
+      "poster": {
+        "sha256": "34c5f6253116e546ce4b2371827fdd7e359a7cf610ec91a271faf82ca06ad141",
+        "source_sha256": "205898e01e6739cbe15646ebbfc8c3bbf8b1923f5f204fab3d757056afd812ce",
+        "source_dimensions": [
+          1920,
+          1080
+        ],
+        "crop_box": [
+          1032,
+          0,
+          1752,
+          1080
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "2077133ec00215ca8b076d48884e62b33db30ab5c46c338eaf89808fac077f31",
+        "source_sha256": "66d551b1ca59d2f35e0ff55a5844dc17cb45f5e7bd7ab8a82dac6362da75f58f",
+        "source_dimensions": [
+          1920,
+          1080
+        ],
+        "crop_box": [
+          0,
+          0,
+          1920,
+          1080
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "inhumaine",
+      "title": "L'Inhumaine",
+      "credit": "L'Inhumaine (1924), Georges Djo Bourgeois; historical artwork via Wikimedia Commons and the cited Billposters source.",
+      "rights": "Public domain",
+      "rightsStatement": "The named historical artwork is identified by the linked collection/source record; the recorded public-domain assessment does not clear unrelated editions or all territories.",
+      "license_url": null,
+      "sources": [
+        "https://commons.wikimedia.org/wiki/File:L%27inhumaine_film1924.jpg"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Original graphic poster details, not film stills. Crops avoid the bottom title and publisher text. Artwork-only catalog reference.",
+      "poster": {
+        "sha256": "f4997f79aa3a05d8f648f7165144b4815de0f3f69a7ea80924d37b759a1bb642",
+        "source_sha256": "c0b2c3376af2c679e1c2b24a930b4779c0207822af89066f7b98b9ce4b3632df",
+        "source_dimensions": [
+          1600,
+          2152
+        ],
+        "crop_box": [
+          262,
+          43,
+          1338,
+          1657
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "b2a061f44068c4a9a4f0d5c9afda1073e2962477cc157f41a762f242601e9dd0",
+        "source_sha256": "c0b2c3376af2c679e1c2b24a930b4779c0207822af89066f7b98b9ce4b3632df",
+        "source_dimensions": [
+          1600,
+          2152
+        ],
+        "crop_box": [
+          48,
+          126,
+          1552,
+          972
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "charge",
+      "title": "Charge",
+      "credit": "Charge — Blender Studio / Blender Foundation — CC BY 4.0; official poster by Andy Goralczyk.",
+      "rights": "CC BY 4.0",
+      "rightsStatement": "The linked source identifies this material under CC BY 4.0; attribution and adaptation notices are retained.",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "sources": [
+        "https://studio.blender.org/projects/charge/",
+        "https://studio.blender.org/terms-and-conditions/",
+        "https://studio.blender.org/projects/api/assets/6234/?site_context=featured_artwork",
+        "https://commons.wikimedia.org/wiki/File:Charge_-_Blender_Open_Movie-full_movie.webm"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Robot close-up and industrial city from the released animated film. No identifiable real actors, credits, logos or interface overlays.",
+      "poster": {
+        "sha256": "bfc28b7a59d71f79b549885d9429dbd9ccdd3c4846eecea38b6d7bd1a15114d7",
+        "source_sha256": "b2e5c9448a4d17ad22038604f62893264a8f63fe0f8fdbc76391f3becfe2d661",
+        "source_dimensions": [
+          3840,
+          1608
+        ],
+        "crop_box": [
+          637,
+          0,
+          1709,
+          1608
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "51ccaf93e1a33f5f0988caf19856d31da2046a39c7adc74c8eb6fade03984de1",
+        "source_sha256": "99f267bbde746a0f4d7919c25532dfcc5a7eefde23e12d189e14cfccd00870da",
+        "source_dimensions": [
+          1920,
+          804
+        ],
+        "crop_box": [
+          295,
+          0,
+          1724,
+          804
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "netflix-sparks",
+      "title": "Sparks",
+      "credit": "Sparks (2017) — © Netflix Inc. — CC BY 4.0.",
+      "rights": "CC BY 4.0",
+      "rightsStatement": "The linked source identifies this material under CC BY 4.0; attribution and adaptation notices are retained. Current project-root master material, not legacy samples with different terms.",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "sources": [
+        "https://opencontent.netflix.com/",
+        "https://s3.amazonaws.com/download.opencontent.netflix.com/sparks/creative-commons-attribution-4-intl-public-license.txt"
+      ],
+      "changes": "Film frames extracted, cropped and resized; HDR sources converted to SDR where recorded.",
+      "reviewed": true,
+      "visualReview": "Official SDR master frame inspected. Close view of industrial sparks; no identifiable face, logo, title card or explicit injury. Actor/helmet-label closeups and title/credit frames rejected.",
+      "poster": {
+        "sha256": "648572a4888e5a4b80b1d2f205c9da970b0ccbb5e4b35f2b5192bf607177a62d",
+        "source_sha256": "7621b490cc14608a730e763170c30592029ac7b77be588d0dd4854d2f98ea1b7",
+        "source_dimensions": [
+          1920,
+          1012
+        ],
+        "crop_box": [
+          560,
+          0,
+          1235,
+          1012
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "82238750873e32abd31e2d85263c98e95e6465fe2f3790b01432ba80a3106635",
+        "source_sha256": "7621b490cc14608a730e763170c30592029ac7b77be588d0dd4854d2f98ea1b7",
+        "source_dimensions": [
+          1920,
+          1012
+        ],
+        "crop_box": [
+          60,
+          0,
+          1859,
+          1012
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "coffee-run",
+      "title": "Coffee Run",
+      "credit": "Coffee Run — (CC) Blender Foundation | studio.blender.org. Licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/. Source: https://studio.blender.org/projects/coffee-run/. Frame extracted, cropped and resized for Plozz demonstration imagery.",
+      "rights": "CC BY 4.0",
+      "rightsStatement": "The linked source identifies this material under CC BY 4.0; attribution and adaptation notices are retained.",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "sources": [
+        "https://studio.blender.org/projects/coffee-run/pages/licensing/"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Released-film imagery, not the work-in-progress cafe assets. Colorful character and cafe scenes; no title cards or logos.",
+      "poster": {
+        "sha256": "ea421936412059eaf2261df6459f84d26cfcaf1e6f7240f968a510fddf49f0c5",
+        "source_sha256": "f4cffe9f59b225d3c183bd1a3a79264d31d01892e8b756f8f34fe7855c749e54",
+        "source_dimensions": [
+          1920,
+          804
+        ],
+        "crop_box": [
+          443,
+          0,
+          979,
+          804
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "f2abf2ca512f7c588d588a74dd4c09c08ecf7022f8c2387d3b37b0b614e5f181",
+        "source_sha256": "573c7b8935d1ee4c226d9688fa10680cffdff426d5d9a3c14a2e98d50c4f66fb",
+        "source_dimensions": [
+          1920,
+          804
+        ],
+        "crop_box": [
+          246,
+          0,
+          1675,
+          804
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "wing-it",
+      "title": "Wing It!",
+      "credit": "Wing It! — (CC) Blender Foundation | studio.blender.org — CC BY 4.0. Official frame pack credited on its asset page to Beau Gerbrands / Blender Studio.",
+      "rights": "CC BY 4.0",
+      "rightsStatement": "The linked source identifies this material under CC BY 4.0; attribution and adaptation notices are retained.",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "sources": [
+        "https://studio.blender.org/projects/wing-it/pages/licensing/",
+        "https://studio.blender.org/projects/api/assets/7037/?site_context=gallery",
+        "https://commons.wikimedia.org/wiki/File:WING_IT!_-_Blender_Open_Movie-full_movie.webm"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Actual released film frames. Cartoon character and cockpit in the cover; flying machine and clouds in the hero. No title cards or logos.",
+      "poster": {
+        "sha256": "2e0adf5efa4e4ab0475bef71e64bd0f1e1ab3e7cf4b1fc765b857f0a10a601bf",
+        "source_sha256": "dbc632a67679723c50e3e15c06ad89184d97c78ec477d467bdf3521aa8f57ba6",
+        "source_dimensions": [
+          1920,
+          1080
+        ],
+        "crop_box": [
+          432,
+          0,
+          1152,
+          1080
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "a8838259541def3c3513b9bc549705499fce27e2c5fb0b7361e99adbbf0d0953",
+        "source_sha256": "679135451e403de0c87d61791c10cbf9516c3dced3b771d195b6a39ed6c891d2",
+        "source_dimensions": [
+          1920,
+          1080
+        ],
+        "crop_box": [
+          0,
+          0,
+          1920,
+          1080
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "glass-half",
+      "title": "Glass Half",
+      "credit": "Glass Half — (CC) Blender Foundation | studio.blender.org. Official HD movie asset licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/. Source: https://studio.blender.org/projects/api/assets/141/. Frame extracted, cropped and resized for Plozz demonstration imagery.",
+      "rights": "CC BY 4.0",
+      "rightsStatement": "The linked source identifies this material under CC BY 4.0; attribution and adaptation notices are retained.",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "sources": [
+        "https://studio.blender.org/projects/glass-half/pages/licensing/",
+        "https://studio.blender.org/projects/api/assets/141/"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Crops exclude the film's decorative outer frames. Actual animated characters and gallery imagery; no added padding.",
+      "poster": {
+        "sha256": "c8c97fadc9946c995567377b573662c868d84ba04e3e71e9ba4dea79494f5e44",
+        "source_sha256": "bf416a3cddd0286f23c18e76df100b759ac350a00e5fdda9cc725f13030ab2dd",
+        "source_dimensions": [
+          1920,
+          1080
+        ],
+        "crop_box": [
+          414,
+          151,
+          961,
+          972
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "1fa920195578bd86e11faa827c4c719c509a0d8696462ba925297e41f698c660",
+        "source_sha256": "1f2fdb9646bf6f3b29890e81cc8e13db0300d5da399f7d01ffeaa9b7acfb1500",
+        "source_dimensions": [
+          1920,
+          1080
+        ],
+        "crop_box": [
+          154,
+          86,
+          1766,
+          993
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "coast",
+      "title": "Les Vampires de la côte",
+      "credit": "Les Vampires de la côte (1908), Cândido de Faria; Eye Filmmuseum.",
+      "rights": "Public domain",
+      "rightsStatement": "The named historical artwork is identified by the linked collection/source record; the recorded public-domain assessment does not clear unrelated editions or all territories.",
+      "license_url": null,
+      "sources": [
+        "https://commons.wikimedia.org/wiki/File:Les_Vampires_de_la_c%C3%B4te_-_C%C3%A2ndido_de_Faria_-_1908_-_EYE_A03060_-_neg0069.jpg"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Only one Faria work in the final mixed library. Original poster-detail crops exclude title and publisher mark; they are not described as film frames.",
+      "poster": {
+        "sha256": "8c4f9be32b2e7560c2a7e6ee4c541592c49a9e2bb2a7f1a108eae2037ad5253d",
+        "source_sha256": "ba5a70e1873a5d05c3175057b45085b37b7a6c8d817a8888145b8d73263c8541",
+        "source_dimensions": [
+          4690,
+          3543
+        ],
+        "crop_box": [
+          1624,
+          514,
+          3124,
+          2764
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "8da738eccff174695082cc5afe38456d31ec5ed038053ea08028a96474157ab9",
+        "source_sha256": "ba5a70e1873a5d05c3175057b45085b37b7a6c8d817a8888145b8d73263c8541",
+        "source_dimensions": [
+          4690,
+          3543
+        ],
+        "crop_box": [
+          345,
+          514,
+          4345,
+          2764
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "tears-of-steel",
+      "title": "Tears of Steel",
+      "credit": "Tears of Steel — (CC) Blender Foundation | mango.blender.org — CC BY 3.0.",
+      "rights": "CC BY 3.0",
+      "rightsStatement": "The linked source identifies this material under CC BY 3.0; attribution and adaptation notices are retained. Environment imagery only, without identifiable actor portraits.",
+      "license_url": "https://creativecommons.org/licenses/by/3.0/",
+      "sources": [
+        "https://mango.blender.org/sharing/",
+        "https://mango.blender.org/download/",
+        "https://media.xiph.org/tearsofsteel/tearsofsteel-1080-png/README.txt"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Full-resolution published film frame 01762 inspected: city and machinery only, no identifiable actors, title lettering, logos or sponsor marks. Satisfies the review's actor-image restriction.",
+      "poster": {
+        "sha256": "e51d3bf6cbda48043c3e87bb0472ef0ffe3953368355ec7d92a5eeecb6894e1b",
+        "source_sha256": "a667ef848756e0c29430c920754ff3b1d8aeae56773baeb702403e79b52ca40e",
+        "source_dimensions": [
+          1920,
+          800
+        ],
+        "crop_box": [
+          416,
+          0,
+          949,
+          800
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "8045b57986ec7d5942371b7b711fcf56915ba907c9eb7520b6aca4c65ca9df4c",
+        "source_sha256": "a667ef848756e0c29430c920754ff3b1d8aeae56773baeb702403e79b52ca40e",
+        "source_dimensions": [
+          1920,
+          800
+        ],
+        "crop_box": [
+          219,
+          0,
+          1641,
+          800
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "sita",
+      "title": "Sita Sings the Blues",
+      "credit": "Sita Sings the Blues — Nina Paley — movie visual work dedicated under CC0. Film frame extracted, cropped and resized.",
+      "rights": "CC0 1.0",
+      "rightsStatement": "The linked source identifies this material under CC0 1.0; attribution and adaptation notices are retained. Film-derived visuals only; the soundtrack and separately licensed still collection are excluded.",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sources": [
+        "https://www.sitasingstheblues.com/license.html",
+        "https://www.sitasingstheblues.com/watch.html",
+        "https://archive.org/metadata/Sita_Sings_the_Blues",
+        "https://www.sitasingstheblues.com/press.html",
+        "https://archive.org/metadata/SitaStills"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "High-resolution extracted film frame inspected: original cartoon characters and vegetation, no text, logos or nudity. The separately extracted airplane frame was rejected because it contains a map crossfade and visible place labels. Film-derived CC0 visuals, not the separately licensed still collection. Local playback copy has all audio removed.",
+      "poster": {
+        "sha256": "531b62efbef8937b85d48ada3db77512a25079e89eeb55d4a19aa0fa42632d33",
+        "source_sha256": "74680fdda0431201de007f210770b4a7d5ccb048ca995b18037a8cab0f1bf267",
+        "source_dimensions": [
+          1920,
+          1080
+        ],
+        "crop_box": [
+          204,
+          0,
+          924,
+          1080
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "aed45742e09d52b9287839717280c62f921f19d8e993f66167391ce3e10de613",
+        "source_sha256": "74680fdda0431201de007f210770b4a7d5ccb048ca995b18037a8cab0f1bf267",
+        "source_dimensions": [
+          1920,
+          1080
+        ],
+        "crop_box": [
+          0,
+          0,
+          1920,
+          1080
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "golem",
+      "title": "The Golem: How He Came into the World",
+      "credit": "The Golem (1920), Hans Poelzig; Museum of Modern Art, object 4987; reproduction via Wikimedia Commons.",
+      "rights": "Public domain",
+      "rightsStatement": "The named historical artwork is identified by the linked collection/source record; the recorded public-domain assessment does not clear unrelated editions or all territories.",
+      "license_url": null,
+      "sources": [
+        "https://commons.wikimedia.org/wiki/File:The_Golem_-_How_He_Came_into_the_World_(1920)_poster.jpg"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Poster-detail crops only, not film stills. No claim that a licensed movie edition is supplied. Final crop inspection required.",
+      "poster": {
+        "sha256": "38314414507a4375af836aa03ad615725ce0aafe212d815970fd82918b22693f",
+        "source_sha256": "0759c733fa604eed80219c50a9095babc65badf58cc4a35333c7969c9182a443",
+        "source_dimensions": [
+          2000,
+          1511
+        ],
+        "crop_box": [
+          485,
+          559,
+          1059,
+          1420
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "6646782acb47811806415ef05e5c64e447fea6c2d9f362924e0a6eefc4b4c606",
+        "source_sha256": "0759c733fa604eed80219c50a9095babc65badf58cc4a35333c7969c9182a443",
+        "source_dimensions": [
+          2000,
+          1511
+        ],
+        "crop_box": [
+          386,
+          650,
+          1595,
+          1330
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "eye-all-dolled",
+      "title": "All Dolled Up",
+      "credit": "All Dolled Up — Rollin S. Sturgeon; Universal — Eye Filmmuseum/Open Images.",
+      "rights": "Public domain",
+      "rightsStatement": "The named historical artwork is identified by the linked collection/source record; the recorded public-domain assessment does not clear unrelated editions or all territories.",
+      "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "sources": [
+        "https://eye.openbeelden.nl/media/685751.en"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Street/gate scene and restaurant scene from the archive edition. Rejected the underexposed fourth frame. No added padding.",
+      "poster": {
+        "sha256": "e6151c0086f48b47b3cbc75441423a278bf730485d9cecca2f8c332c9b95340d",
+        "source_sha256": "300f71e0b414384bd45e77d0402ded7cdc53eead0fc084892b2b19d944f127f5",
+        "source_dimensions": [
+          720,
+          404
+        ],
+        "crop_box": [
+          227,
+          0,
+          496,
+          404
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "10505de800aab1a4e8f27969de0d4255263d04c5de4f54fa05554a5f25f4e647",
+        "source_sha256": "04331a4661e8b4e6f190618d710e5ea79ea66ac665f3380ca3df7fbd422be465",
+        "source_dimensions": [
+          720,
+          404
+        ],
+        "crop_box": [
+          96,
+          54,
+          624,
+          351
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "eye-poe",
+      "title": "Edgar Allan Poe",
+      "credit": "Edgar Allan Poe — D.W. Griffith; American Mutoscope and Biograph — Eye Filmmuseum/Open Images.",
+      "rights": "Public domain",
+      "rightsStatement": "The named historical artwork is identified by the linked collection/source record; the recorded public-domain assessment does not clear unrelated editions or all territories.",
+      "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "sources": [
+        "https://eye.openbeelden.nl/media/685469.en"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Actual period interior/desk scenes. Excludes the intertitle and bedside scene; no readable promotional lettering or marks.",
+      "poster": {
+        "sha256": "83322b699f14e0e4858e22f7fc3f7102b382cb9c09717009fd133748ad9a6fef",
+        "source_sha256": "ffe514b6f8dc7ee0e061291ef84f8018059628b0adcbc5f1c487a4cef7b12e27",
+        "source_dimensions": [
+          720,
+          404
+        ],
+        "crop_box": [
+          264,
+          0,
+          533,
+          404
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "5ab79babc6f9384ddf54c13b06d6513aeb575154d4dc3a595a0a4ca0134eea84",
+        "source_sha256": "424619dd5fe5757398e3f05e08ddd48a933fa1ec1098c42898f7f812ea9ad22c",
+        "source_dimensions": [
+          720,
+          404
+        ],
+        "crop_box": [
+          93,
+          52,
+          627,
+          352
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "eye-zoo",
+      "title": "Een kijkje in de dierentuin",
+      "credit": "Een kijkje in de dierentuin — director unknown; Universal — Eye Filmmuseum/Open Images.",
+      "rights": "Public domain",
+      "rightsStatement": "The named historical artwork is identified by the linked collection/source record; the recorded public-domain assessment does not clear unrelated editions or all territories.",
+      "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "sources": [
+        "https://eye.openbeelden.nl/media/687157.en"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Animal portrait from the actual tinted archive film. No visible injury, intertitle or branding.",
+      "poster": {
+        "sha256": "8e4867450a6f1ec6e344a00af1023179b1c1143359ec48d70d432d2f94776a78",
+        "source_sha256": "fba825cc4cd9a5c1e6915be6864dc5438096b7e3108fe44335eed649232e96c8",
+        "source_dimensions": [
+          720,
+          404
+        ],
+        "crop_box": [
+          242,
+          0,
+          511,
+          404
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "cd2342194b553d65e3d0e93eb09adabbd302ed39d40a361ee8411c63e1fca9ab",
+        "source_sha256": "fba825cc4cd9a5c1e6915be6864dc5438096b7e3108fe44335eed649232e96c8",
+        "source_dimensions": [
+          720,
+          404
+        ],
+        "crop_box": [
+          94,
+          52,
+          627,
+          352
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "eye-frank-merriwell",
+      "title": "Frank Merriwell in Arizona",
+      "credit": "Frank Merriwell in Arizona — director unknown; Feature Photoplay — Eye Filmmuseum/Open Images.",
+      "rights": "Public domain",
+      "rightsStatement": "The named historical artwork is identified by the linked collection/source record; the recorded public-domain assessment does not clear unrelated editions or all territories.",
+      "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "sources": [
+        "https://eye.openbeelden.nl/media/685595.en"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Actual period interior with clothed characters; rejected the text-heavy second frame and the scuffle. No visible injury or branding.",
+      "poster": {
+        "sha256": "96d3796019e27f7b0205b07792de3d088a737a9e3b2a7fd9eb96d0646706f94b",
+        "source_sha256": "af1dc0e93bdf6256927ca860854a415ca68f646f6a409958fba51f5609db6695",
+        "source_dimensions": [
+          720,
+          404
+        ],
+        "crop_box": [
+          254,
+          0,
+          523,
+          404
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "46f4573ba89ea599f77541891124abc50dd588a330bc71ff0c110b92fa3afbba",
+        "source_sha256": "af1dc0e93bdf6256927ca860854a415ca68f646f6a409958fba51f5609db6695",
+        "source_dimensions": [
+          720,
+          404
+        ],
+        "crop_box": [
+          108,
+          59,
+          616,
+          345
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "eye-schilderachtig",
+      "title": "Schilderachtig Oud Amsterdam",
+      "credit": "Schilderachtig Oud Amsterdam — director unknown; Orion Filmfabriek (Den Haag) — Eye Filmmuseum/Open Images.",
+      "rights": "Public domain",
+      "rightsStatement": "The named historical artwork is identified by the linked collection/source record; the recorded public-domain assessment does not clear unrelated editions or all territories.",
+      "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "sources": [
+        "https://eye.openbeelden.nl/media/687265.en"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Genuine photographic Amsterdam street and canal scenes. Both intertitle frames rejected.",
+      "poster": {
+        "sha256": "b2187c98a8b43a93500be5ceac2347f79acb08851aaaf52280798ab7d35bf41d",
+        "source_sha256": "eab45c499c0a2c7b04e79e9d10c36bca08e1280ab719a29f79cdbaf7aae5c464",
+        "source_dimensions": [
+          720,
+          404
+        ],
+        "crop_box": [
+          212,
+          0,
+          471,
+          388
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "82bd4e6fe6b8f3be9ea76fb023dfb0e004067e0a3faa5fc2c37b9ec3b0858739",
+        "source_sha256": "0a84c59b725622f35d1cf8d43452ce86ef4af2ac4be5b85c63dba0223d93084a",
+        "source_dimensions": [
+          720,
+          404
+        ],
+        "crop_box": [
+          96,
+          53,
+          626,
+          351
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    },
+    {
+      "id": "eye-four-seasons",
+      "title": "The Four Seasons",
+      "credit": "The Four Seasons — Raymond L. Ditmars and Charles Urban; Kineto Film Company of America — Eye Filmmuseum/Open Images.",
+      "rights": "Public domain",
+      "rightsStatement": "The named historical artwork is identified by the linked collection/source record; the recorded public-domain assessment does not clear unrelated editions or all territories.",
+      "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "sources": [
+        "https://eye.openbeelden.nl/media/685757.en"
+      ],
+      "changes": "Frames extracted where indicated; imagery cropped and resized. No added padding.",
+      "reviewed": true,
+      "visualReview": "Tinted coastal water from the nature film. Intertitles and the low-detail egg composition rejected. No injury, text or logos.",
+      "poster": {
+        "sha256": "4403da6125026d5bcf2c0f24662f52b7d0f5cf7ba0440b89f943eaf0175cad1d",
+        "source_sha256": "0658a2d9a0ed32a668206386636418785f30a877bae2bb3937002b12340a0cf8",
+        "source_dimensions": [
+          720,
+          404
+        ],
+        "crop_box": [
+          232,
+          0,
+          501,
+          404
+        ],
+        "dimensions": [
+          1000,
+          1500
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      },
+      "backdrop": {
+        "sha256": "a2719c03fc205a894f4a787f52fe52370bd524f7896e3a497137abfb77683c95",
+        "source_sha256": "0658a2d9a0ed32a668206386636418785f30a877bae2bb3937002b12340a0cf8",
+        "source_dimensions": [
+          720,
+          404
+        ],
+        "crop_box": [
+          95,
+          63,
+          627,
+          362
+        ],
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "operation": "crop-and-uniform-resize; no padding, extension or stretching"
+      }
+    }
+  ]
+}

@@ -22,8 +22,8 @@ public protocol MediaProvider: Sendable {
     /// before publishing those cards as complete identity-index/search evidence.
     var catalogIdentityRequiresEnrichment: Bool { get }
 
-    /// Browsing metadata may omit lazily resolved files. Detail pages should
-    /// refresh `playbackItem` after first paint, without opening a stream.
+    /// Browsing metadata may omit lazily resolved files. Offer explicit source
+    /// discovery when opening the version picker; never preload it while browsing.
     var playbackInventoryRequiresEnrichment: Bool { get }
 
     // MARK: Library browsing
@@ -59,10 +59,11 @@ public protocol MediaProvider: Sendable {
     /// ``continueWatching(limit:inLibraries:)`` for the scoping/tagging contract.
     func latest(limit: Int, inLibraries libraryIDs: [String]?) async throws -> [MediaItem]
 
-    /// Full detail for a single item.
+    /// Full presentation metadata without probe-capable playback preparation.
     func item(id: String) async throws -> MediaItem
 
-    /// Authoritative file inventory before playback, without opening a stream.
+    /// Authoritative file inventory for explicit playback or version selection.
+    /// This may trigger expensive server-side probing even without opening a stream.
     /// Unlike browsing detail, unresolved source discovery must throw rather than
     /// return a placeholder that could bypass the version picker.
     func playbackItem(id: String) async throws -> MediaItem

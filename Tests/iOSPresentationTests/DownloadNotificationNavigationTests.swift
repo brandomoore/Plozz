@@ -303,7 +303,7 @@ final class DownloadNotificationNavigationTests: XCTestCase {
                         resolve: { _ in destination }
                     )
                     try await Task.sleep(for: .milliseconds(300))
-                    let expectedDepth = (name == "overflow" ? 2 : 1) + (destination == .library ? 0 : 1)
+                    let expectedDepth = destination == .library ? 1 : 2
                     let stack = try await self.waitForNavigation(in: window, depth: expectedDepth)
                     let text = try self.captureText(window, name: "notification-\(name)")
                     XCTAssertEqual(text.contains("removed or replaced"), destination == .unavailable, text)
@@ -313,7 +313,7 @@ final class DownloadNotificationNavigationTests: XCTestCase {
                 let stack = try XCTUnwrap(self.visibleNavigation(in: window))
                 stack.popViewController(animated: false)
                 try await Task.sleep(for: .milliseconds(300))
-                XCTAssertEqual(stack.viewControllers.count, name == "overflow" ? 2 : 1)
+                XCTAssertEqual(stack.viewControllers.count, 1)
                 XCTAssertFalse(try self.captureText(window, name: "notification-\(name)-back").contains("removed or replaced"))
             }
         }
@@ -358,6 +358,63 @@ final class DownloadNotificationNavigationTests: XCTestCase {
         }
     }
 
+    func testResizingKeepsAllNativeTabsAndTheSelectedDownloadsStack() async throws {
+        let app = PlozziOSAppModel(appAdmissionStore: NotificationAdmissionStore())
+        let original = app.profiles.activeProfileID
+        let profile = app.profiles.add(name: "Adaptive navigation", isAwaitingSetup: false)
+        let keys = NavigationDestinationDefaults.iOS
+        let order = [
+            NavigationLibraryLayout.homeKey, NavigationLibraryLayout.watchlistKey,
+            NavigationLibraryLayout.liveTVKey, NavigationLibraryLayout.searchKey,
+            NavigationLibraryLayout.settingsKey, NavigationLibraryLayout.downloadsKey
+        ]
+        let store = NavigationLibraryLayoutStore(namespace: profile.id)
+        let layout = NavigationLibraryLayout(order: order, hiddenKeys: [], shownKeys: Set(keys))
+        store.save(layout)
+        app.selectProfile(profile.id)
+        app.clearFirstRunStepIfHouseholdSetUp()
+        defer {
+            PlozziOSDownloadNotificationNavigation.shared.cancelPending()
+            app.selectProfile(original)
+            app.profiles.remove(profile.id)
+            store.save(.default)
+        }
+        try await withTabShell(app) { window in
+            let navigation = PlozziOSDownloadNotificationNavigation.shared
+            navigation.receive(try self.target(self.record(), profileID: profile.id))
+            navigation.advance(
+                context: self.context(navigation, active: profile.id),
+                selectProfile: { _ in XCTFail("The fixture profile is already active.") },
+                resolve: { _ in .unavailable }
+            )
+            let stack = try await self.waitForNavigation(in: window, depth: 2)
+            func findTabs(_ controller: UIViewController) -> UITabBarController? {
+                if let tabs = controller as? UITabBarController { return tabs }
+                return controller.children.lazy.compactMap(findTabs).first
+            }
+            let tabs = try XCTUnwrap(window.rootViewController.flatMap(findTabs))
+            let identities = try XCTUnwrap(tabs.viewControllers).map(ObjectIdentifier.init)
+            XCTAssertEqual(identities.count, 6, "Overflow must not remove destination declarations.")
+            for (size, sizeClass) in [
+                (CGSize(width: 900, height: 1100), UIUserInterfaceSizeClass.regular),
+                (CGSize(width: 1100, height: 700), .regular),
+                (CGSize(width: 390, height: 844), .compact)
+            ] {
+                window.frame.size = size
+                window.traitOverrides.horizontalSizeClass = sizeClass
+                window.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(300))
+                XCTAssertEqual(window.bounds.size, size)
+                XCTAssertTrue(try XCTUnwrap(self.visibleNavigation(in: window)) === stack)
+                XCTAssertEqual(tabs.viewControllers?.map(ObjectIdentifier.init), identities)
+                XCTAssertEqual(stack.viewControllers.count, 2)
+                XCTAssertEqual(app.settings.navigation.libraryLayout, layout)
+                XCTAssertTrue(try self.captureText(window, name: "adaptive-navigation-\(Int(size.width))")
+                    .contains("removed or replaced"))
+            }
+        }
+    }
+
     private func withTabShell(
         _ app: PlozziOSAppModel, exercise: (UIWindow) async throws -> Void
     ) async throws {
@@ -365,6 +422,7 @@ final class DownloadNotificationNavigationTests: XCTestCase {
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.traitOverrides.horizontalSizeClass = .compact
         window.rootViewController = UIHostingController(rootView:
             PlozziOSTabShell(
                 appModel: app, homeViewModelBox: LazyViewState<HomeViewModel>(), onAddServer: {},
@@ -375,7 +433,6 @@ final class DownloadNotificationNavigationTests: XCTestCase {
             .environment(HeroTrailerController())
             .environment(PlozziOSSidebarGeometryModel())
             .environment(\.themePalette, .dark)
-            .environment(\.horizontalSizeClass, .compact)
             .environment(\.locale, Locale(identifier: "en"))
         )
         window.makeKeyAndVisible()
@@ -390,9 +447,10 @@ final class DownloadNotificationNavigationTests: XCTestCase {
 
     private func visibleNavigation(in window: UIWindow) -> UINavigationController? {
         func find(_ controller: UIViewController) -> UINavigationController? {
+            if let nested = controller.children.lazy.compactMap(find).first { return nested }
             if let navigation = controller as? UINavigationController,
                navigation.topViewController?.viewIfLoaded?.window === window { return navigation }
-            return controller.children.lazy.compactMap(find).first
+            return nil
         }
         return window.rootViewController.flatMap(find)
     }

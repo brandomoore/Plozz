@@ -1,6 +1,6 @@
 import CoreModels
 import CoreImage
-import CoreUI
+@testable import CoreUI
 import FeatureHomeCore
 import Observation
 import SwiftUI
@@ -10,6 +10,59 @@ import XCTest
 
 @MainActor
 final class PlaybackVersionChoiceHostedTests: XCTestCase {
+    func testSourceMenuOnlyDiscoversInventoryAfterOpeningItsVersionPage() async throws {
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let menu = PlaybackSourceMenuState()
+        let probe = VersionChoiceHostedProbe()
+        let loader = MediaVersionInventoryLoader(id: "explicit-inventory") {
+            probe.inventoryRequests += 1
+            return [.init(id: "hd", fileName: "Discovered.First.mkv", height: 1080),
+                    .init(id: "uhd", fileName: "Discovered.Second.mkv", height: 2160)]
+        }
+        let window = UIWindow(windowScene: scene)
+        #if os(tvOS)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        #else
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        #endif
+        window.rootViewController = UIHostingController(rootView:
+            Color.black.ignoresSafeArea()
+                .playbackSourceMenu(
+                    state: menu, sources: [], selectedSourceID: "account",
+                    versions: [], selectedVersionID: nil, loadVersions: loader,
+                    onSelectSource: { _ in XCTFail("Inventory does not select a server.") },
+                    onSelectVersion: { _ in XCTFail("Inventory does not select or play a file.") }
+                )
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+        )
+        window.makeKeyAndVisible()
+        defer {
+            menu.isPresented = false
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        menu.open(from: CGRect(x: 100, y: 100, width: 80, height: 48))
+        try await waitUntil { window.rootViewController?.presentedViewController != nil }
+        let root = try await visibleText(in: window, name: "inventory-root")
+        XCTAssertTrue(root.localizedCaseInsensitiveContains("version"), "Lazy sources remain discoverable.")
+        XCTAssertEqual(probe.inventoryRequests, 0, "Opening/focusing overflow must remain metadata-only.")
+        menu.page = .versions
+        try await waitUntil { probe.inventoryRequests == 1 }
+        let versions = try await visibleText(in: window, name: "inventory-discovered")
+        XCTAssertTrue(versions.contains("1080"), "The previously unknown file must reach the native picker.")
+        menu.page = .root
+        _ = try await visibleText(in: window, name: "inventory-back")
+        XCTAssertEqual(probe.inventoryRequests, 1, "Returning to the menu root must not repeat discovery.")
+    }
+
     func testIntroductionHandsOffToNativeVersionChoicesWithoutStartingPlayback() async throws {
         #if os(tvOS)
         let layouts: [(CGFloat, DynamicTypeSize)] = [(1920, .large)]
@@ -138,7 +191,9 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
                 window.layoutIfNeeded()
                 let scroll = try XCTUnwrap(scrollViews(in: window).first)
                 XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
-                _ = try await visibleText(in: window, name: "version-filename-\(localeID)-\(Int(width))")
+                _ = try await visibleText(
+                    in: window, name: "version-filename-\(localeID)-\(Int(width))", screenshotsOnly: true
+                )
             }
         }
     }
@@ -414,7 +469,7 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
     }
     #endif
 
-    private func visibleText(in window: UIWindow, name: String) async throws -> String {
+    private func visibleText(in window: UIWindow, name: String, screenshotsOnly: Bool = false) async throws -> String {
         var result = ""
         let scrolls = scrollViews(in: window).filter { !$0.isHidden && $0.window != nil }
         // Capture the initial layout and the bottom of each native scroll area,
@@ -436,6 +491,9 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
             attachment.name = "\(name)-\(index)"
             attachment.lifetime = .keepAlways
             add(attachment)
+            // Geometry checks need these screenshots, not OCR of pathological
+            // filenames whose rectification can exceed simulator texture limits.
+            if screenshotsOnly { continue }
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.recognitionLanguages = ["en-US"]
@@ -501,6 +559,7 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
 
 @MainActor @Observable
 private final class VersionChoiceHostedProbe {
+    var inventoryRequests = 0
     var selected: MediaItem?
     var disappeared = false
     var error: String?

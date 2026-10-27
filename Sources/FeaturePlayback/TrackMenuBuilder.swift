@@ -80,17 +80,14 @@ enum TrackMenuBuilder {
         locale: Locale = .current
     ) -> [PlayerTrackOption] {
         guard !tracks.isEmpty else { return [] }
-        var options = [PlayerTrackOption(id: PlayerTrackOption.offID, title: Text(LocalizedStringResource(
-        "subtitlePicker.option.off",
-        defaultValue: "Off",
-        comment: "The row in the subtitle track picker that shows no subtitles. Sits in a list of track names, not next to a switch, so it may need to agree with 'subtitles' rather than read as a generic on/off state."
-    )), isSelected: selectedID == nil)]
+        var options = [subtitleOffOption(isSelected: selectedID == nil, locale: locale)]
         options.append(contentsOf: tracks.sortedByPreferredLanguage(preferred).map { track in
-            PlayerTrackOption(
+            let label = subtitlePresentation(track, detectedLanguages: detectedLanguages, locale: locale)
+            return PlayerTrackOption(
                 id: track.id,
-                title: subtitleLabel(track, detectedLanguages: detectedLanguages, locale: locale),
+                title: label.text,
                 isSelected: track.id == selectedID,
-                isExternal: track.isExternal
+                isExternal: track.isExternal, nativeTitle: label.nativeTitle
             )
         })
         return options
@@ -107,16 +104,13 @@ enum TrackMenuBuilder {
         locale: Locale = .current
     ) -> [PlayerTrackOption] {
         guard !eligible.isEmpty else { return [] }
-        var options = [PlayerTrackOption(id: PlayerTrackOption.offID, title: Text(LocalizedStringResource(
-        "subtitlePicker.option.off",
-        defaultValue: "Off",
-        comment: "The row in the subtitle track picker that shows no subtitles. Sits in a list of track names, not next to a switch, so it may need to agree with 'subtitles' rather than read as a generic on/off state."
-    )), isSelected: selectedID == nil)]
+        var options = [subtitleOffOption(isSelected: selectedID == nil, locale: locale)]
         options.append(contentsOf: eligible.sortedByPreferredLanguage(preferred).map { track in
-            PlayerTrackOption(
+            let label = subtitlePresentation(track, detectedLanguages: detectedLanguages, locale: locale)
+            return PlayerTrackOption(
                 id: track.id,
-                title: subtitleLabel(track, detectedLanguages: detectedLanguages, locale: locale),
-                isSelected: track.id == selectedID
+                title: label.text,
+                isSelected: track.id == selectedID, nativeTitle: label.nativeTitle
             )
         })
         return options
@@ -184,8 +178,16 @@ enum TrackMenuBuilder {
         return primary
     }
 
-    private static func subtitleLabel(_ track: MediaTrack, detectedLanguages: [Int: String],
-                                      locale: Locale) -> Text {
+    private static func subtitleOffOption(isSelected: Bool, locale: Locale) -> PlayerTrackOption {
+        let label = LabelPresentation(resource: LocalizedStringResource(
+            "subtitlePicker.option.off", defaultValue: "Off",
+            comment: "The row in the subtitle track picker that shows no subtitles. Sits in a list of track names, not next to a switch, so it may need to agree with 'subtitles' rather than read as a generic on/off state."
+        ), locale: locale)
+        return PlayerTrackOption(id: PlayerTrackOption.offID, title: label.text, isSelected: isSelected, nativeTitle: label.nativeTitle)
+    }
+
+    private static func subtitlePresentation(_ track: MediaTrack, detectedLanguages: [Int: String],
+                                             locale: Locale) -> LabelPresentation {
         presentation(for: TrackLabeling.subtitleLabel(
             displayTitle: track.displayTitle,
             language: track.language,
@@ -197,7 +199,7 @@ enum TrackMenuBuilder {
             detectedLanguage: detectedLanguages[track.id],
             trackID: track.id,
             locale: locale
-        ), locale: locale).text
+        ), locale: locale)
     }
 
     /// Composes a structured ``TrackLabel`` (base + qualifiers) into the final

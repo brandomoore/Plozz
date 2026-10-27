@@ -30,6 +30,18 @@ public final class LibraryLiveChannelEngine: LiveChannelEngine {
         hasSource && decoderGeneration == generation && underlyingEngine.isCapturingLiveFailureDiagnostic
     }
     public var isPlaybackPositionReady: Bool { status == .ready && underlyingEngine.isPlaybackPositionReady }
+    public var hasPresentedVideoFrame: Bool {
+        hasSource && !isLoading && decoderGeneration == generation
+            && status == .ready && underlyingEngine.hasPresentedVideoFrame
+    }
+    #if os(iOS)
+    public func previewVideoFrame() -> CVPixelBuffer? {
+        hasPresentedVideoFrame ? underlyingEngine.previewVideoFrame() : nil
+    }
+    public var previewFrameGeneration: UInt64? {
+        hasPresentedVideoFrame ? underlyingEngine.previewFrameGeneration : nil
+    }
+    #endif
     public var subtitlePresentationTime: TimeInterval { underlyingEngine.subtitlePresentationTime }
     public func renderSubtitles(at time: TimeInterval, style: SubtitleStyle) {
         underlyingEngine.renderSubtitles(at: time, style: style)

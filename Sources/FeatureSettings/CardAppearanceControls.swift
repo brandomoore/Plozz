@@ -7,14 +7,16 @@ public struct CardAppearanceControls: View {
     @Bindable private var cards: CardStyleSettingsModel
     @Bindable private var watchIndicator: WatchStatusIndicatorSettingsModel
     private let density: UIDensitySettingsModel?
+    private let visibility: HomeLibraryVisibilityModel?
 
     public init(
         cards: CardStyleSettingsModel, watchIndicator: WatchStatusIndicatorSettingsModel,
-        density: UIDensitySettingsModel? = nil
+        density: UIDensitySettingsModel? = nil, visibility: HomeLibraryVisibilityModel? = nil
     ) {
         self.cards = cards
         self.watchIndicator = watchIndicator
         self.density = density
+        self.visibility = visibility
     }
 
     public var body: some View {
@@ -29,7 +31,7 @@ public struct CardAppearanceControls: View {
         #if os(tvOS)
         VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
             SettingsDetailGroup(title: "Labels", illustrated: true) {
-                CardLabelControls(settings: $cards.captions, style: cards.style)
+                CardLabelControls(settings: $cards.captions, style: cards.style, visibility: visibility)
             }
             SettingsDetailGroup(title: "Watched Indicator", illustrated: true) {
                 CompactWatchIndicatorPicker(selection: $watchIndicator.indicator, swatchHeight: 150)
@@ -60,7 +62,7 @@ public struct CardAppearanceControls: View {
         #else
         List {
             SettingsSectionGroup("Labels") {
-                CardLabelControls(settings: $cards.captions, style: cards.style)
+                CardLabelControls(settings: $cards.captions, style: cards.style, visibility: visibility)
             }
             SettingsSectionGroup("Watched Indicator") {
                 CompactWatchIndicatorPicker(selection: $watchIndicator.indicator, swatchHeight: 112)
@@ -119,12 +121,13 @@ public struct CardAppearanceControls: View {
 struct CardLabelControls: View {
     @Binding var settings: CardCaptionSettings
     let style: CardStyle
+    var visibility: HomeLibraryVisibilityModel? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: spacing) {
             CardCaptionPicker(settings: $settings, style: style)
-            ViewCustomizationLink(isCustomized: settings.selectedPreset == nil) {
-                CardCaptionCustomizationContent(settings: $settings, style: style)
+            ViewCustomizationLink(isCustomized: settings.selectedPreset == nil, title: "Customize labels") {
+                CardCaptionCustomizationContent(settings: $settings, style: style, visibility: visibility)
             }
             .accessibilityIdentifier("card-label-customization")
         }
@@ -186,10 +189,11 @@ private struct CardCaptionPicker: View {
 }
 
 public enum CardCaptionSettingsScope: CaseIterable, Sendable {
-    case home, libraries, detail
+    case all, home, libraries, detail
 
     public var views: [CardCaptionView] {
         switch self {
+        case .all: CardCaptionView.allCases
         case .home: [.home, .continueWatching]
         case .libraries: [.recommended, .browse, .collections, .playlists, .continueWatching]
         case .detail: [.episodes, .related, .extras]
@@ -197,80 +201,73 @@ public enum CardCaptionSettingsScope: CaseIterable, Sendable {
     }
 }
 
-public struct CardCaptionSettingsControls: View {
-    @Bindable private var cards: CardStyleSettingsModel
+public struct CardCaptionSettingsLink: View {
+    private let cards: CardStyleSettingsModel
     private let scope: CardCaptionSettingsScope
+    private let visibility: HomeLibraryVisibilityModel?
+    @State private var isPresented = false
 
-    public init(cards: CardStyleSettingsModel, scope: CardCaptionSettingsScope) {
+    public init(
+        cards: CardStyleSettingsModel, scope: CardCaptionSettingsScope,
+        visibility: HomeLibraryVisibilityModel? = nil
+    ) {
         self.cards = cards
         self.scope = scope
+        self.visibility = visibility
     }
 
     public var body: some View {
-        ForEach(scope.views, id: \.self) { view in
-            CardCaptionViewChoices(view: view, settings: $cards.captions)
+        #if os(tvOS)
+        SettingsPageLink {
+            destination
+        } label: {
+            SettingsDisclosureLabel { Text("Customize labels") }
+                .settingsFormRowLayout()
+        }
+        .buttonStyle(SettingsFormButtonStyle())
+        .accessibilityIdentifier(identifier)
+        #else
+        Button { isPresented = true } label: {
+            SettingsDisclosureLabel { Text("Customize labels") }
+        }
+        .navigationDestination(isPresented: $isPresented) { destination }
+        .accessibilityIdentifier(identifier)
+        #endif
+    }
+
+    private var destination: some View {
+        CardCaptionCustomizationView(cards: cards, scope: scope, visibility: visibility)
+    }
+
+    private var identifier: String {
+        switch scope {
+        case .all: "card-label-customization"
+        case .home: "home-customize-labels"
+        case .libraries: "library-customize-labels"
+        case .detail: "detail-customize-labels"
         }
     }
 }
 
 public struct CardCaptionCustomizationView: View {
     @Bindable private var cards: CardStyleSettingsModel
+    private let scope: CardCaptionSettingsScope
+    private let visibility: HomeLibraryVisibilityModel?
 
-    public init(cards: CardStyleSettingsModel) { self.cards = cards }
+    public init(
+        cards: CardStyleSettingsModel, scope: CardCaptionSettingsScope = .all,
+        visibility: HomeLibraryVisibilityModel? = nil
+    ) {
+        self.cards = cards
+        self.scope = scope
+        self.visibility = visibility
+    }
 
     public var body: some View {
-        CardCaptionCustomizationContent(settings: $cards.captions, style: cards.style)
+        CardCaptionCustomizationContent(
+            settings: $cards.captions, style: cards.style, scope: scope, visibility: visibility
+        )
     }
-}
-
-struct CardCaptionCustomizationContent: View {
-    @Binding var settings: CardCaptionSettings
-    var style: CardStyle = .borderless
-
-    var body: some View {
-        ViewCustomizationList(
-            title: "Labels by view", initialRowID: "card-label-view-home",
-            focusedHelp: { id in
-                CardCaptionView.allCases.first { "card-label-view-\($0.rawValue)" == id }
-                    .map { settings.customizationHelp(in: $0, style: style) }
-            }
-        ) {
-            #if os(tvOS)
-            CardCaptionViewChoices(view: .home, settings: $settings)
-            CardCaptionViewChoices(view: .continueWatching, settings: $settings)
-            #else
-            Section("Home") {
-                CardCaptionViewChoices(view: .home, settings: $settings)
-                CardCaptionViewChoices(view: .continueWatching, settings: $settings)
-            }
-            #endif
-            Section {
-                ForEach(CardCaptionView.customizableCases.filter(\.isLibraryView), id: \.rawValue) { view in
-                    CardCaptionViewChoices(view: view, settings: $settings)
-                }
-            } header: {
-                Text("Libraries")
-                    #if os(tvOS)
-                    .settingsSectionHeader()
-                    #endif
-            }
-            Section {
-                ForEach(CardCaptionView.customizableCases.filter {
-                    $0 != .home && $0 != .continueWatching && !$0.isLibraryView
-                }, id: \.rawValue) { view in
-                    CardCaptionViewChoices(view: view, settings: $settings)
-                }
-            } header: {
-                Text("Other views")
-                    #if os(tvOS)
-                    .settingsSectionHeader()
-                    #endif
-            } footer: {
-                Text("Choices apply across all libraries. Titles inside collections and playlists use Browse.")
-            }
-        }
-    }
-
 }
 
 struct CardCaptionViewChoices: View {
@@ -292,7 +289,7 @@ struct CardCaptionViewChoices: View {
         ) {
             ForEach(view.customizationChoices) { choice in
                 Text(view == .continueWatching && choice == .automatic
-                    ? LocalizedStringResource("Follow Appearance") : choice.displayName).tag(choice)
+                    ? LocalizedStringResource("Use default") : choice.displayName).tag(choice)
             }
         }
         #else
@@ -326,7 +323,7 @@ extension CardCaptionSettings {
 
     func customizationValue(in view: CardCaptionView) -> LocalizedStringResource {
         if view == .continueWatching, customization(in: view) == .automatic {
-            return "Follow Appearance"
+            return "Use default"
         }
         return customization(in: view).displayName
     }

@@ -74,7 +74,9 @@ struct PlozziOSProfileSetupView: View {
         // the libraries step.
         .plozzSheet(item: plexUserSelectionBinding) { selection in
             PlozziOSPlexUserSelectionView(
+                appModel: appModel,
                 selection: selection,
+                onImportAll: appModel.importPlexHomeProfilesDuringOnboarding,
                 onSelect: appModel.selectPlexUserDuringOnboarding
             )
         }
@@ -86,11 +88,7 @@ struct PlozziOSProfileSetupView: View {
         }
         .plozzSheet(item: librarySelectionBinding) { selection in
             PlozziOSLibrarySelectionView(
-                accounts: appModel.accountsProviders.resolvedAccounts(
-                    withIDs: selection.accountIDs
-                ),
-                visibility: appModel.settings.homeVisibility,
-                onContinue: appModel.completeLibrarySelection
+                appModel: appModel, accountIDs: selection.accountIDs
             )
         }
     }
@@ -235,6 +233,7 @@ struct PlozziOSProfileOnboardingCover: View {
                 EmptyView()
             }
         }
+        .id(appModel.profileOnboardingID)
         .transaction { $0.animation = nil }
     }
 }

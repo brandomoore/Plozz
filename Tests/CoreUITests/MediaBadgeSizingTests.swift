@@ -11,6 +11,9 @@ final class MediaBadgeSizingTests: XCTestCase {
     private let badges: [MediaBadge] = [
         MediaBadge("4K", style: .prominent),
         MediaBadge("Dolby Vision", style: .dolby),
+        MediaBadge("Dolby Vision", style: .dolby, detail: "HDR10+"),
+        MediaBadge("Dolby Vision", style: .dolby, detail: "HDR10"),
+        MediaBadge("Dolby Vision", style: .dolby, detail: "HLG"),
         MediaBadge("Dolby Atmos", style: .dolby),
         MediaBadge("HDR10", style: .hdr),
         MediaBadge("HDR10+", style: .hdr),

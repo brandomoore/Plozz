@@ -480,8 +480,13 @@ public extension PlaybackDiagnostics {
     static public func friendlyAudioName(codec: String?, profile: String?) -> String? {  // l10n:content — audio codec/spatial-format brand names (Dolby Atmos, DTS:X, ...), never translated
         if let profile = profile?.trimmingCharacters(in: .whitespaces), !profile.isEmpty {
             let lower = profile.lowercased()
-            if lower.contains("atmos") { return "Dolby Atmos" }
-            if lower.contains("dts:x") || lower.contains("dts-x") || lower.contains("dts x") { return "DTS:X" }
+            if lower.contains("atmos")
+                || (friendlyCodecName(codec) == "Dolby Digital+"
+                    && lower.split(whereSeparator: { !$0.isLetter }).contains("joc")) {
+                return "Dolby Atmos"
+            }
+            if lower.contains("dts:x") || lower.contains("dts-x") || lower.contains("dts x")
+                || lower.contains("dtsx") { return "DTS:X" }
             if lower.contains("truehd") { return "Dolby TrueHD" }
             if lower.contains("dts-hd ma") || lower.contains("dts-hd master") { return "DTS-HD MA" }
             if lower.contains("dts-hd") { return "DTS-HD" }
@@ -868,6 +873,30 @@ public extension PlaybackDiagnostics {
     var hdrText: String { hdr == .unknown ? Self.placeholder : hdr.displayName }
     var videoCodecText: String { videoCodec ?? Self.placeholder }
     var audioCodecText: String { audioCodec ?? Self.placeholder }
+    /// Display-only interpretation of the active engine label, not source fidelity or receiver output.
+    var audioEncodingDescription: LocalizedStringResource? {
+        guard mode == .plozzigen, let pipeline = audioPipelineDescription else { return nil }
+        if pipeline.hasPrefix("Stream-copy ("), pipeline.hasSuffix(")"),
+           pipeline.count > "Stream-copy ()".count {
+            return "No re-encoding"
+        }
+        let parts = pipeline.components(separatedBy: " → ")
+        guard parts.count == 2, !parts[0].isEmpty else { return nil }
+        switch parts[1] {
+        case "FLAC bridge", "FLAC bridge (timestamp correction)":
+            return "Lossless encoding"
+        case "EAC3 bridge", "EAC3 bridge (timestamp correction)":
+            return "Lossy encoding"
+        case let output where output.hasPrefix("APAC "):
+            return "Lossy encoding"
+        case "renderer (compressed)" where parts[0] == "EAC3 Atmos":
+            return "No re-encoding"
+        case "CoreAudio" where parts[0].hasPrefix("libavcodec "):
+            return "Decoded to PCM"
+        default:
+            return nil
+        }
+    }
     var droppedFramesText: String { droppedVideoFrames.map(String.init) ?? Self.placeholder }
     var observedFpsText: String { observedFps.map { String(format: "%.0f fps", $0) } ?? Self.placeholder }
 

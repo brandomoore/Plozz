@@ -92,8 +92,13 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         }
         try await Task.sleep(for: .milliseconds(400))
         let text = try visibleText(in: window, attachment: "FEL advanced playback setting")
-        for label in ["FEL", "experimental", "memory", "stutter", "turns off overhead sound"] {
+        for label in ["FEL", "experimental", "May impact performance."] {
             XCTAssertTrue(text.contains(label), "The setting and tradeoff must be visible: \(text)")
+        }
+        if #available(tvOS 26.0, *) {
+            XCTAssertFalse(text.contains("Disables spatial audio."), text)
+        } else {
+            XCTAssertTrue(text.contains("Disables spatial audio."), text)
         }
         XCTAssertFalse(text.contains("Dolby Atmos"), text)
         XCTAssertFalse(text.contains("DTS:X"), text)

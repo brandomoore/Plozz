@@ -219,11 +219,11 @@ private struct FeaturedCardLogo: View {
     var body: some View {
         HeroLogoArtwork(
             references: item.artworkReferences(for: .logo),
-            asyncFallbackURL: HeroLogoFallback(for: item) { [item] in
+            asyncFallbackURL: HeroLogoFallback(for: item, localizedResolve: { [item] language in
                 await ArtworkSession.resolveArtwork(background: false) {
-                    await ArtworkRouter.shared.artworkURL(.logo, for: item)
+                    await ArtworkRouter.shared.artworkURL(.logo, for: item, language: language)
                 }
-            },
+            }),
             maxWidth: size.width * 0.72, maxHeight: size.height * 0.19,
             constrainsToBounds: true, haloStyle: .gentle, logoNeedsHelp: needsHelp,
             onResolve: { logoTone = $0 }

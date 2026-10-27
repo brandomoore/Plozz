@@ -1,9 +1,245 @@
 import CoreModels
 import CoreUI
 @testable import FeatureSettings
+import SwiftUI
 import XCTest
 
 final class ViewCustomizationCycleTests: XCTestCase {
+    func testMixedHelpExplainsBehaviorOnlyWhenSelected() throws {
+        var settings = CardCaptionSettings.default
+        for view in [CardCaptionView.home, .recommended] {
+            for choice in view.customizationChoices {
+                settings.setOverride(choice, for: view)
+                let explanation = settings.cardLabelMixedExplanation(in: view)
+                XCTAssertEqual(explanation != nil, choice == .mixed)
+                if choice == .mixed {
+                    let text = String(localized: try XCTUnwrap(explanation))
+                    XCTAssertTrue(text.contains("series artwork"))
+                    XCTAssertTrue(text.contains("other cards keep their labels"))
+                    #if os(tvOS)
+                    XCTAssertTrue(text.contains("Showcase"))
+                    #else
+                    XCTAssertFalse(text.contains("Showcase"))
+                    #endif
+                    XCTAssertEqual(settings.cardLabelHelp(in: view), explanation)
+                } else {
+                    XCTAssertEqual(settings.cardLabelHelp(in: view), view.cardLabelDetail)
+                }
+            }
+        }
+        XCTAssertNil(settings.cardLabelMixedExplanation(in: .browse))
+        XCTAssertNil(settings.cardLabelMixedExplanation(in: .continueWatching))
+    }
+
+    func testSharedRowCopyDistinguishesEachParentFromTheSharedOverride() throws {
+        let home = try XCTUnwrap(CardCaptionSettingsPage.home.sharedRowNote)
+        XCTAssertEqual(String(localized: home), "Shared with Recommended.")
+        let recommended = try XCTUnwrap(CardCaptionSettingsPage.recommended.sharedRowNote)
+        XCTAssertEqual(String(localized: recommended), "Shared with Home.")
+        for page in CardCaptionSettingsPage.allCases where page != .home && page != .recommended {
+            XCTAssertNil(page.sharedRowNote)
+        }
+        var settings = CardCaptionSettings.default
+        for choice in [CardCaptionOverride.show, .hide] {
+            settings.setOverride(choice, for: .continueWatching)
+            XCTAssertEqual(settings.cardLabelHelp(in: .continueWatching),
+                           settings.customizationDetail(in: .continueWatching))
+        }
+        settings.setOverride(.automatic, for: .continueWatching)
+        XCTAssertEqual(String(localized: settings.cardLabelHelp(in: .continueWatching)), "Uses this page's default.")
+    }
+
+    func testOnlyPagesWithOverridesUseDefaultControlTitles() {
+        for page in CardCaptionSettingsPage.allCases {
+            XCTAssertEqual(page.hasOverrides, page == .home || page == .recommended)
+            for view in page.controls {
+                let expected: String
+                if page == .detail || view == .continueWatching {
+                    expected = String(localized: view.cardLabelTitle)
+                } else {
+                    expected = page.hasOverrides ? "Default" : "Card labels"
+                }
+                XCTAssertEqual(String(localized: page.controlTitle(for: view)), expected)
+            }
+        }
+    }
+
+    func testLibraryLabelControlsAreGroupedByPage() {
+        XCTAssertEqual(CardCaptionSettingsScope.libraries.pages, [.recommended, .browse, .collections, .playlists])
+        XCTAssertEqual(CardCaptionSettingsPage.recommended.controls, [.recommended, .continueWatching])
+        for page in CardCaptionSettingsScope.libraries.pages where page != .recommended {
+            XCTAssertEqual(page.controls, [page.firstControl])
+        }
+    }
+
+    func testEveryCaptionSettingHasARecognizablePageInTheSharedEditor() {
+        XCTAssertEqual(CardCaptionSettingsScope.home.pages, [.home])
+        XCTAssertEqual(CardCaptionSettingsScope.detail.pages, [.detail])
+        XCTAssertEqual(CardCaptionSettingsPage.home.controls, [.home, .continueWatching])
+        XCTAssertEqual(CardCaptionSettingsPage.detail.controls, [.episodes, .related, .extras])
+        XCTAssertEqual(CardCaptionSettingsPage.people.controls, [.filmography])
+        let controls = CardCaptionSettingsScope.all.pages.flatMap(\.controls)
+        XCTAssertEqual(Set(controls), Set(CardCaptionView.allCases))
+        for view in CardCaptionView.allCases {
+            XCTAssertEqual(controls.filter { $0 == view }.count, view == .continueWatching ? 2 : 1)
+        }
+    }
+
+    func testDetailPreviewHighlightsOnlyTheEditedRow() {
+        var settings = CardCaptionSettings.default
+        settings.setOverride(.hide, for: .episodes)
+        for editing in CardCaptionSettingsPage.detail.controls {
+            let snapshot = CardLabelScopePreview.snapshot(
+                page: .detail, editing: editing, settings: settings,
+                isShowcase: false, seriesArtwork: true, layout: .landscape
+            )
+            XCTAssertEqual(snapshot.rows.map(\.view), [.episodes, .related, .extras])
+            XCTAssertEqual(snapshot.rows.filter(\.highlighted).map(\.view), [editing])
+            XCTAssertEqual(snapshot.rows.map(\.showsLabels), [false, true, true])
+        }
+    }
+
+    func testLibraryLabelPreviewShowsEachParentAndTheSharedRowOverride() throws {
+        var settings = CardCaptionSettings.default
+        settings.setOverride(.show, for: .home)
+        settings.setOverride(.hide, for: .recommended)
+        for choice in CardCaptionView.continueWatching.customizationChoices {
+            settings.setOverride(choice, for: .continueWatching)
+            for page in [CardCaptionSettingsPage.home, .recommended] {
+                let preview = CardLabelScopePreview.snapshot(
+                    page: page, editing: .continueWatching, settings: settings, isShowcase: true,
+                    seriesArtwork: true, layout: .landscape
+                )
+                XCTAssertEqual(preview.page, page)
+                let watching = try XCTUnwrap(preview.rows.first)
+                let ordinary = try XCTUnwrap(preview.rows.last)
+                XCTAssertTrue(watching.isContinueWatching)
+                XCTAssertTrue(watching.highlighted)
+                XCTAssertFalse(ordinary.highlighted)
+                XCTAssertEqual(watching.showsLabels, choice == .automatic ? preview.page == .home : choice == .show)
+                XCTAssertEqual(ordinary.showsLabels, preview.page == .home)
+            }
+            let recommended = CardLabelScopePreview.snapshot(
+                page: .recommended, editing: .recommended, settings: settings, isShowcase: true,
+                seriesArtwork: true, layout: .landscape
+            )
+            XCTAssertEqual(recommended.rows.first?.highlighted, choice == .automatic)
+            XCTAssertEqual(recommended.rows.last?.highlighted, true)
+        }
+    }
+
+    func testLibraryLabelPreviewsUseTheActualLayoutAndDoNotChangePreferences() {
+        let settings = CardCaptionSettings.default
+        for showcase in [false, true] {
+            for seriesArtwork in [false, true] {
+                for layout in [ContinueWatchingCardLayout.portrait, .landscape] {
+                    for page in CardCaptionSettingsScope.all.pages {
+                        for view in page.controls {
+                            let isShowcase = [.home, .recommended].contains(page) && showcase
+                            let snapshot = CardLabelScopePreview.snapshot(
+                                page: page, editing: view, settings: settings,
+                                isShowcase: isShowcase,
+                                seriesArtwork: seriesArtwork, layout: layout
+                            )
+                            XCTAssertEqual(snapshot.layout, layout)
+                            for row in snapshot.rows {
+                                XCTAssertEqual(row.showsLabels, settings.showsLabels(
+                                    in: row.isContinueWatching ? page.firstControl : row.view,
+                                    isShowcase: isShowcase,
+                                    hasArtworkTitle: row.isContinueWatching && seriesArtwork,
+                                    isContinueWatching: row.isContinueWatching
+                                ))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        XCTAssertEqual(settings, .default)
+    }
+
+    func testEveryLabelIllustrationUsesPackedCardsAndTheActualArtworkShape() throws {
+        for viewport: CGFloat in [390, 1024, 1920] {
+            let metrics = viewport == 1920 ? PlozzMetrics(density: .standard) : .touch(density: .standard)
+            for style in CardStyle.allCases {
+                for page in CardCaptionSettingsPage.allCases {
+                    for layout in ContinueWatchingCardLayout.allCases {
+                        for seriesArtwork in [false, true] {
+                            let preview = CardLabelScopePreview.snapshot(
+                                page: page, editing: page.firstControl, settings: .init(preference: .show),
+                                isShowcase: false, seriesArtwork: seriesArtwork, layout: layout
+                            )
+                            XCTAssertEqual(preview.seriesArtwork, seriesArtwork)
+                            for details in ContinueWatchingPlaybackDetails.allCases {
+                                for row in preview.rows {
+                                    let geometry = SettingsIllustrationCardGeometry(
+                                        row: row, preview: preview, style: style, metrics: metrics,
+                                        playbackDetails: details, viewportWidth: viewport
+                                    )
+                                    let first = try XCTUnwrap(geometry.cards.first)
+                                    let second = try XCTUnwrap(geometry.cards.dropFirst().first)
+                                    XCTAssertEqual(first.surface.minX, 0, accuracy: 0.001)
+                                    XCTAssertEqual(second.surface.minX - first.surface.maxX, geometry.gap, accuracy: 0.001)
+                                    XCTAssertLessThan(geometry.gap / first.artwork.width, 0.3,
+                                                      "A media row must not distribute its cards across empty space.")
+                                    let landscape = row.isContinueWatching ? layout == .landscape
+                                        : row.view == .episodes || row.view == .extras
+                                    let expected: CGFloat = if row.isContinueWatching && layout == .portrait {
+                                        details.cardAspectRatio
+                                    } else if row.isContinueWatching && seriesArtwork {
+                                        ContinueWatchingCardShape.aspectRatio
+                                    } else {
+                                        landscape ? 16.0 / 9 : 2.0 / 3
+                                    }
+                                    XCTAssertEqual(first.artwork.width / first.artwork.height, expected, accuracy: 0.005)
+                                    for card in geometry.cards {
+                                        XCTAssertLessThanOrEqual(card.surface.maxY, geometry.height + 0.001)
+                                        XCTAssertGreaterThan(card.captions[0].minY, card.artwork.maxY)
+                                        XCTAssertLessThan(card.captions[0].width, card.artwork.width)
+                                    }
+                                    if preview.isGrid {
+                                        XCTAssertEqual(Set(geometry.cards.map(\.artwork.minY)).count, 2)
+                                        XCTAssertTrue(geometry.cards.allSatisfy {
+                                            $0.surface.maxX <= SettingsIllustrationCardGeometry.width + 0.001
+                                        })
+                                    } else {
+                                        XCTAssertEqual(Set(geometry.cards.map(\.artwork.minY)).count, 1)
+                                        XCTAssertGreaterThanOrEqual(try XCTUnwrap(geometry.cards.last).surface.maxX, 300)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func testLabelIllustrationsKeepGeometryStableWithoutDrawingEmptyFramesAsCaptions() throws {
+        let metrics = PlozzMetrics(density: .standard)
+        for page in CardCaptionSettingsPage.allCases {
+            let preview = CardLabelScopePreview.snapshot(
+                page: page, editing: page.firstControl, settings: .init(preference: .show),
+                isShowcase: false, seriesArtwork: true, layout: .landscape
+            )
+            for row in preview.rows {
+                let hidden = CardLabelScopePreview.Row(view: row.view, showsLabels: false, highlighted: row.highlighted)
+                let shown = SettingsIllustrationCardGeometry(
+                    row: row, preview: preview, style: .framed, metrics: metrics,
+                    playbackDetails: .detailed, viewportWidth: 1920
+                )
+                let off = SettingsIllustrationCardGeometry(
+                    row: hidden, preview: preview, style: .framed, metrics: metrics,
+                    playbackDetails: .detailed, viewportWidth: 1920
+                )
+                XCTAssertEqual(shown.height, off.height)
+                XCTAssertEqual(shown.cards.map(\.artwork), off.cards.map(\.artwork))
+                XCTAssertLessThan(try XCTUnwrap(off.cards.first).surface.height,
+                                  try XCTUnwrap(shown.cards.first).surface.height)
+            }
+        }
+    }
+
     func testArtworkCyclesThroughExactlyItsSupportedChoicesAndRemainsCustom() {
         for preference in ArtworkPreference.allCases {
             for area in ArtworkArea.allCases {
@@ -92,7 +328,7 @@ final class ViewCustomizationCycleTests: XCTestCase {
         XCTAssertEqual(String(localized: labels.customizationValue(in: .recommended)), "Mixed")
         XCTAssertEqual(String(localized: labels.customizationDetail(in: .home)),
                        "Labels are visible except in Showcase and on series artwork.")
-        XCTAssertEqual(String(localized: labels.customizationValue(in: .continueWatching)), "Follow Appearance")
+        XCTAssertEqual(String(localized: labels.customizationValue(in: .continueWatching)), "Use default")
         for view in CardCaptionView.allCases where view != .home && view != .recommended && view != .continueWatching {
             XCTAssertEqual(String(localized: labels.customizationValue(in: view)), "On")
         }
@@ -170,6 +406,25 @@ final class ViewCustomizationCycleTests: XCTestCase {
             .contains { $0.kind == .navigation })
         XCTAssertEqual(ArtworkScopeDiagram.regions(for: .search, navigationStyle: .rail)
             .filter { $0.kind == .navigation }.count, 1)
+    }
+
+    func testArtworkGridCardsHaveConsistentGuttersWithoutOverlappingRows() throws {
+        for area in [ArtworkArea.browse, .collections, .playlists, .search, .watchlist] {
+            for navigation in NavigationStyle.allCases {
+                let posters = ArtworkScopeDiagram.regions(for: area, navigationStyle: navigation)
+                    .filter { $0.kind == .poster }
+                for (index, poster) in posters.enumerated() {
+                    for other in posters.dropFirst(index + 1) {
+                        XCTAssertFalse(poster.frame.intersects(other.frame), "\(area): overlapping cards")
+                    }
+                }
+                let first = try XCTUnwrap(posters.first)
+                let next = try XCTUnwrap(posters.dropFirst().first)
+                let gap = next.frame.minX - first.frame.maxX
+                XCTAssertGreaterThan(gap, 2)
+                XCTAssertLessThan(gap / first.frame.width, 0.3)
+            }
+        }
     }
 
     func testIllustrationsPreservePosterThumbnailAndAlbumAspectRatios() {

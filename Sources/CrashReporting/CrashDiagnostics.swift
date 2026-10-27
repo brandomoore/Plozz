@@ -1,13 +1,12 @@
 import Foundation
 import CoreModels
+import CoreNetworking
 #if canImport(Sentry)
 import Sentry
 #endif
 
-/// On-demand upload of the user's recent (already-redacted) log buffer to the
-/// crash-reporting backend, so the developer can read the full log on a real
-/// computer instead of squinting at a TV or trying to scan an impossibly dense
-/// QR code.
+/// On-demand technical reports constructed from allowlisted fields.
+/// Raw activity messages and free-form playback traces never become attachments.
 ///
 /// This deliberately piggybacks on the existing opt-in Sentry pipe: it only does
 /// anything when crash reporting is both **configured** (a DSN was baked into the
@@ -15,20 +14,23 @@ import Sentry
 /// SDK is actually running). Otherwise it sends nothing and returns `false`, and
 /// the caller should tell the user to turn crash reporting on first.
 public enum CrashDiagnostics {
-    /// Send a diagnostic event with its log attachment and linked anonymous feedback.
+    /// Send a filtered diagnostic attachment and explicitly submitted feedback.
     /// Returns `true` for SDK handoff, not confirmation of server delivery;
     /// `false` when reporting is inactive or either event was rejected.
     @MainActor
     @discardableResult
-    public static func send(logText: String, note: String? = nil) async -> Bool {
+    public static func send(note: String? = nil) async -> Bool {
         #if canImport(Sentry)
         guard SentrySDK.isEnabled else { return false }
-        let playbackJournal = await PlaybackDiagnosticJournal.shared.report()
+        let scope = DiagnosticExportScope()
+        let playbackJournal = await PlaybackDiagnosticJournal.shared.export(scope: scope)
         return send(
-            logText: logText,
             note: note,
             isEnabled: SentrySDK.isEnabled,
-            sourceDiagnostics: { LiveTVSourceDiagnostics.captureReport() },
+            activity: { PlozzLog.activityExport(scope: scope) },
+            sourceDiagnostics: { LiveTVSourceDiagnostics.captureExport(scope: scope) },
+            preparationDiagnostics: { PlaybackPreparationDiagnostics.export(scope: scope) },
+            libraryDiagnostics: { LibraryDiagnosticJournal.shared.export(scope: scope) },
             playbackDiagnostics: playbackJournal,
             captureEvent: { event, attachment in
                 SentrySDK.capture(event: event) { scope in
@@ -45,35 +47,54 @@ public enum CrashDiagnostics {
     #if canImport(Sentry)
     @MainActor
     static func send(
-        logText: String,
         note: String?,
         isEnabled: Bool,
-        sourceDiagnostics: @MainActor () -> String = { "" },
-        playbackDiagnostics: String = "",
+        activity: @MainActor () -> PlozzLog.ActivityExport = { PlozzLog.activityExport() },
+        sourceDiagnostics: @MainActor () -> LiveTVSourceDiagnostics.Export = {
+            LiveTVSourceDiagnostics.captureExport(scope: DiagnosticExportScope())
+        },
+        preparationDiagnostics: @MainActor () -> PlaybackPreparationDiagnostics.Export = {
+            PlaybackPreparationDiagnostics.export(scope: DiagnosticExportScope())
+        },
+        libraryDiagnostics: @MainActor () -> LibraryDiagnosticJournal.Export = {
+            LibraryDiagnosticJournal.shared.export(scope: DiagnosticExportScope())
+        },
+        playbackDiagnostics: PlaybackDiagnosticJournal.Export? = nil,
+        operations: PerformanceDiagnostics = .shared,
         captureEvent: (Event, Attachment) -> SentryId,
         captureFeedback: (Event) -> SentryId
     ) -> Bool {
         guard isEnabled else { return false }
 
-        let trimmed = logText.trimmingCharacters(in: .whitespacesAndNewlines)
-        var body = trimmed.isEmpty ? "(recent activity log was empty)" : trimmed
-        let sourceJournal = sourceDiagnostics()
-        if !sourceJournal.isEmpty {
-            body += "\n\n--- Persistent Live TV source diagnostics ---\n" + sourceJournal
+        let report = TechnicalReport(
+            activity: activity(), sources: sourceDiagnostics(), preparation: preparationDiagnostics(),
+            library: libraryDiagnostics(),
+            playback: playbackDiagnostics,
+            operations: operations.snapshot()
+        )
+        let body: Data
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            body = try encoder.encode(report)
+        } catch {
+            PlozzLog.app.error("Unable to encode the privacy-filtered diagnostic report; nothing submitted.")
+            return false
         }
-        if !playbackDiagnostics.isEmpty {
-            body += "\n\n--- Structured playback diagnostics ---\n" + playbackDiagnostics
+        guard body.count <= 4 * 1_024 * 1_024 else {
+            PlozzLog.app.error("Privacy-filtered diagnostic report exceeded its size limit; nothing submitted.")
+            return false
         }
         let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let message = trimmedNote.isEmpty ? "User diagnostics report" : trimmedNote
         let attachment = Attachment(
-            data: Data(body.utf8),
-            filename: "plozz-recent-activity.log",
-            contentType: "text/plain"
+            data: body,
+            filename: "plozz-diagnostics.json",
+            contentType: "application/json"
         )
 
         let event = Event(level: .info)
-        event.message = SentryMessage(formatted: message)
+        event.message = SentryMessage(formatted: "User diagnostics report")
         event.tags = ["report.kind": "user-diagnostics"]
         let eventID = captureEvent(event, attachment)
         guard eventID != .empty else { return false }
@@ -91,6 +112,16 @@ public enum CrashDiagnostics {
         feedbackEvent.tags = ["report.kind": "user-feedback"]
         feedbackEvent.context = ["feedback": feedback.serialize()]
         return captureFeedback(feedbackEvent) != .empty
+    }
+
+    private struct TechnicalReport: Encodable {
+        let format = "plozz-user-diagnostics-2"
+        let activity: PlozzLog.ActivityExport
+        let sources: LiveTVSourceDiagnostics.Export
+        let preparation: PlaybackPreparationDiagnostics.Export
+        let library: LibraryDiagnosticJournal.Export
+        let playback: PlaybackDiagnosticJournal.Export?
+        let operations: PerformanceDiagnostics.Snapshot?
     }
     #endif
 

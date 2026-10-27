@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreModels
 import EnginePlozzigen
 import FeaturePlayback
@@ -8,6 +9,49 @@ import XCTest
 
 @MainActor
 final class IPTVPlaybackHostedTests: XCTestCase {
+    func testRepeatedNativeMovieReopensReleaseItemsAndStillAllowIPTVPlayback() async throws {
+        let file = try XCTUnwrap(Bundle(for: Self.self).url(
+            forResource: "embedded", withExtension: "mp4", subdirectory: "Fixtures"
+        ))
+        var retiredPlayers: [AVPlayer] = []
+        for cycle in 0..<12 {
+            let engine = NativeVideoEngine(startsMuted: true)
+            defer { engine.stop() }
+            await engine.load(request: .init(
+                item: .init(id: "reopen", title: "Reopen fixture", kind: .movie),
+                streamURL: file,
+                sourceMetadata: .init(video: .init(codec: "h264")),
+                sourceProvider: cycle.isMultiple(of: 2) ? .jellyfin : .plex
+            ), startPosition: cycle.isMultiple(of: 2) ? 0 : 3)
+            let player = try XCTUnwrap(engine.underlyingPlayer)
+            let item = try XCTUnwrap(player.currentItem)
+            let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+            ])
+            item.add(output)
+            let deadline = ContinuousClock.now + .seconds(15)
+            var decoded = false
+            while ContinuousClock.now < deadline, item.status != .failed {
+                if output.copyPixelBuffer(forItemTime: player.currentTime(), itemTimeForDisplay: nil) != nil {
+                    decoded = true
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            item.remove(output)
+            XCTAssertTrue(decoded, "Reopen \(cycle) must decode a frame, not merely construct a player.")
+            engine.stop()
+            retiredPlayers.append(player)
+            XCTAssertTrue(retiredPlayers.allSatisfy { $0.currentItem == nil })
+            XCTAssertTrue(item.outputs.isEmpty)
+        }
+        // Keep retired presentation references alive while the production live
+        // engine opens an authenticated HLS stream in the same process.
+        try await play(hls: true, fragmented: true)
+        XCTAssertEqual(retiredPlayers.count, 12)
+        XCTAssertTrue(retiredPlayers.allSatisfy { $0.currentItem == nil })
+    }
+
     func testRawTransportStreamPlaysThroughAuthenticatedIPTVProxy() async throws {
         try await play(hls: false)
     }

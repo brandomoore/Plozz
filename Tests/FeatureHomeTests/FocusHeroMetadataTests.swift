@@ -1,10 +1,47 @@
 #if os(tvOS)
 import XCTest
 import CoreModels
+import FeatureHomeCore
 @testable import FeatureHome
 
 @MainActor
 final class FocusHeroMetadataTests: XCTestCase {
+    func testSeriesSynopsisWinsOverNonemptyEpisodeTextWithoutReplacingPlaybackState() async {
+        let metadata = FocusHeroMetadata()
+        var episode = MediaItem(
+            id: "episode", title: "Episode title", kind: .episode,
+            overview: "Episode spoiler", taglines: ["Episode tagline"],
+            seriesID: "series", resumePosition: 90, sourceAccountID: "account"
+        )
+        let series = MediaItem(
+            id: "series", title: "La serie", kind: .series,
+            overview: "Le synopsis du serveur.", sourceAccountID: "account"
+        )
+        await metadata.load(episode) { items in
+            items.map {
+                var full = $0
+                full.seriesSynopsis = MediaSeriesSynopsis(series: series)
+                full.isPlayed = true
+                full.resumePosition = 300
+                return full
+            }
+        }
+        let presented = metadata.item(for: episode)
+        XCTAssertEqual(presented.overview, episode.overview)
+        XCTAssertEqual(presented.taglines, episode.taglines)
+        XCTAssertEqual(presented.resumePosition, 90)
+        XCTAssertFalse(presented.isPlayed)
+        XCTAssertEqual(presented.id, episode.id)
+        XCTAssertEqual(HeroContentPolicy.homeDescription(
+            for: HeroPresentation(item: presented, artworkStyle: .landscape, surface: .home)
+        ), series.overview)
+        episode.seriesID = "another-series"
+        XCTAssertNil(metadata.item(for: episode).seriesSynopsis)
+        episode.seriesID = series.id
+        episode.sourceAccountID = "another-account"
+        XCTAssertNil(metadata.item(for: episode).seriesSynopsis)
+    }
+
     func testCurrentWatchStateAndRoutingWinOverCachedDetails() async {
         let metadata = FocusHeroMetadata()
         var cached = MediaItem(id: "episode", title: "Episode", kind: .episode)

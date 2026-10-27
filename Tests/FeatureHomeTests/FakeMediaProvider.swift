@@ -15,7 +15,7 @@ import CoreModels
 /// `stateLock`. (Production resolves a *distinct* provider per account, so this
 /// sharing — and the race it exposes — is unique to the tests.) The lock is
 /// never held across an `await`.
-final class FakeMediaProvider: MediaProvider, InteractiveBrowseActivityReporting,
+class FakeMediaProvider: MediaProvider, InteractiveBrowseActivityReporting,
     SupplementalStreamFactsProviding, @unchecked Sendable {
     let kind: ProviderKind
     let session: UserSession

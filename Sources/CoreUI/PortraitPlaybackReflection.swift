@@ -12,6 +12,18 @@ private struct PortraitPlaybackReflectionHeightKey: EnvironmentKey {
     static let defaultValue: CGFloat = 0
 }
 
+private struct PlaybackReflectionColorSchemeKey: EnvironmentKey {
+    static let defaultValue: ColorScheme = .dark
+}
+
+public extension EnvironmentValues {
+    /// The surrounding page's appearance, independent of dark video controls.
+    var playbackReflectionColorScheme: ColorScheme {
+        get { self[PlaybackReflectionColorSchemeKey.self] }
+        set { self[PlaybackReflectionColorSchemeKey.self] = newValue }
+    }
+}
+
 extension EnvironmentValues {
     var portraitPlaybackReflectionHeight: CGFloat {
         get { self[PortraitPlaybackReflectionHeightKey.self] }

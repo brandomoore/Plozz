@@ -190,8 +190,10 @@ public actor ArtworkRouter {
 
     /// Resolves a `kind` artwork URL for `item`, trying the content-type-specific
     /// provider chain and caching the (positive or negative) result. Never throws.
-    public func artworkURL(_ kind: ArtworkKind, for item: MediaItem) async -> URL? {
-        await sourcedArtworkURL(kind, for: item)?.value
+    public func artworkURL(
+        _ kind: ArtworkKind, for item: MediaItem, language: String = Locale.current.identifier
+    ) async -> URL? {
+        await sourcedArtworkURL(kind, for: item, language: language)?.value
     }
 
     public func portraitHeroArtworkURL(
@@ -212,12 +214,13 @@ public actor ArtworkRouter {
 
     public func sourcedArtworkURL(
         _ kind: ArtworkKind,
-        for item: MediaItem
+        for item: MediaItem,
+        language: String = Locale.current.identifier
     ) async -> SourcedValue<URL>? {
         guard item.supportsExternalArtworkLookup else { return nil }
         let subject = item.artworkLookupItem
         return await sourcedArtworkURL(
-            kind, for: MetadataQuery(subject),
+            kind, for: MetadataQuery(subject).forArtworkLanguage(language),
             catalogCandidates: subject.metadataArtworkURLs(for: Self.placement(for: kind))
         )
     }

@@ -25,13 +25,11 @@ private enum NavigationPreviewColors {
 ///   icon dots, with Settings pinned to the bottom.
 /// - `.tabBar` ("Top Bar"): a centred pill of tabs across the top, page content
 ///   beneath.
-/// - `.sidebar` ("Sidebar"): a compact top-left rail of tabs, page content to its
-///   right.
+/// - `.sidebar` ("Sidebar"): the collapsed native sidebar trigger above content.
 ///
-/// The tab "items" are the *same* small pill size in both variants (only their
-/// arrangement — a row vs a short column — differs), and the page content (a row
-/// of neutral mock posters) is identical, so the two cards read as the same app
-/// wearing different chrome. Fills whatever frame the caller gives it and stays
+/// The page content uses the same neutral posters in every variant, so the
+/// choices read as the same app wearing different chrome.
+/// Fills whatever frame the caller gives it and stays
 /// proportionate at the compact and full sizes.
 private struct NavigationStyleMini: View {
     let style: NavigationStyle
@@ -110,27 +108,15 @@ private struct NavigationStyleMini: View {
 
     private func sidebar(availW: CGFloat, availH: CGFloat) -> some View {
         let thick = tabThickness(availH)
-        let railPadV = thick * 1.0
-        let railPadH = thick * 1.1
-        return HStack(alignment: .top, spacing: availW * 0.06) {
-            // A compact top-left rail: the same tab pills stacked vertically. Sized
-            // to its content, it naturally stands about half the window tall.
-            VStack(alignment: .leading, spacing: tabGap(availH)) {
-                ForEach(0..<4, id: \.self) { i in
-                    tabPill(availH: availH, active: i == 0)
+        return VStack(alignment: .leading, spacing: availH * 0.09) {
+            Circle()
+                .fill(NavigationPreviewColors.chrome)
+                .overlay {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: thick * 1.4, weight: .medium))
+                        .foregroundStyle(NavigationPreviewColors.itemIdle)
                 }
-            }
-            .padding(.vertical, railPadV)
-            .padding(.horizontal, railPadH)
-            .background(
-                RoundedRectangle(cornerRadius: thick * 1.6, style: .continuous)
-                    .fill(NavigationPreviewColors.chrome)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: thick * 1.6, style: .continuous)
-                    .strokeBorder(NavigationPreviewColors.chromeBorder, lineWidth: 1)
-            )
-
+                .frame(width: barHeight(availH), height: barHeight(availH))
             posterRow(availH: availH)
         }
     }

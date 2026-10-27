@@ -179,6 +179,113 @@ final class HomeRowsFocusHost: UIHostingController<AnyView> {
 }
 @MainActor
 final class HomeRowArrangementHostedTests: XCTestCase {
+    func testEveryCardLabelIllustrationRendersAcrossStylesVisibilityAndDirection() throws {
+        #if os(tvOS)
+        let width: CGFloat = CardLabelScopePreview.illustrationWidth
+        let metrics = PlozzMetrics(density: .standard)
+        #else
+        let width: CGFloat = 340
+        let metrics = PlozzMetrics.touch(density: .standard)
+        #endif
+        for style in CardStyle.allCases {
+            for showsLabels in [true, false] {
+                for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+                    let palette: ThemePalette = direction == .leftToRight ? .dark : .light
+                    let content = Grid(alignment: .topLeading, horizontalSpacing: 24, verticalSpacing: 24) {
+                        ForEach(0..<3) { line in
+                            GridRow(alignment: .top) {
+                                ForEach(Array(CardCaptionSettingsPage.allCases[(line * 3)..<(line * 3 + 3)]), id: \.self) { page in
+                                    CardLabelScopePreview(
+                                        preview: CardLabelScopePreview.snapshot(
+                                            page: page, editing: page.firstControl,
+                                            settings: .init(preference: showsLabels ? .show : .hide),
+                                            isShowcase: false, seriesArtwork: true, layout: .landscape
+                                        ),
+                                        style: style
+                                    )
+                                    .frame(width: width)
+                                }
+                            }
+                        }
+                    }
+                    .padding(24)
+                    .background(palette.settingsBackground)
+                    .environment(\.themePalette, palette)
+                    .environment(\.plozzMetrics, metrics)
+                    .environment(\.layoutDirection, direction)
+                    .environment(\.horizontalSizeClass, direction == .leftToRight ? .compact : .regular)
+                    .environment(\.dynamicTypeSize, direction == .leftToRight ? .large : .accessibility1)
+                    .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                    let renderer = ImageRenderer(content: content)
+                    renderer.scale = 2
+                    let image = try XCTUnwrap(renderer.uiImage)
+                    let request = VNRecognizeTextRequest()
+                    request.recognitionLevel = .accurate
+                    request.recognitionLanguages = ["en-US"]
+                    try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                    let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                    for page in CardCaptionSettingsPage.allCases {
+                        XCTAssertTrue(text.contains(String(localized: page.title)), "\(page): \(text)")
+                    }
+                    XCTAssertTrue(text.contains("Recently Added"), text)
+                    XCTAssertFalse(text.contains("Card labels"), "Do not invent a Card labels row on Home.")
+                    let attachment = XCTAttachment(image: image)
+                    attachment.name = "label-illustrations-\(style.rawValue)-\(showsLabels)-\(direction)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+            }
+        }
+    }
+
+    func testArtworkAndPickerIllustrationsContactSheet() throws {
+        let areas = ArtworkArea.allCases
+        let renderer = ImageRenderer(content:
+            VStack(spacing: 24) {
+                Grid(horizontalSpacing: 20, verticalSpacing: 20) {
+                    ForEach(0..<Int(ceil(Double(areas.count) / 4))) { line in
+                        GridRow {
+                            ForEach(Array(areas.dropFirst(line * 4).prefix(4)), id: \.self) { area in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(verbatim: area.rawValue).font(.caption).foregroundStyle(.white)
+                                    ArtworkScopeDiagram(area: area)
+                                        .frame(width: 320, height: 180)
+                                }
+                            }
+                        }
+                    }
+                }
+                HStack(spacing: 20) {
+                    ForEach(NavigationStyle.allCases, id: \.self) { style in
+                        NavigationStyleSwatch(style: style).frame(width: 320, height: 180)
+                    }
+                }
+                HStack(spacing: 20) {
+                    ForEach(HeroStyle.allCases, id: \.self) { style in
+                        HomeLayoutSwatch(style: style).frame(width: 320, height: 180)
+                    }
+                    DisplaySizeSwatch(density: .standard).frame(width: 320, height: 180)
+                }
+                HStack(spacing: 20) {
+                    CardStyleSwatch(style: .framed).frame(width: 320, height: 180)
+                    CardStyleSwatch(style: .borderless).frame(width: 320, height: 180)
+                    ContinueWatchingArtworkSwatch(style: .logoAndArtwork, showsCaptions: true)
+                        .frame(width: 320, height: 180)
+                }
+            }
+            .padding(24)
+            .background(ThemePalette.dark.settingsBackground)
+            .environment(\.themePalette, .dark)
+        )
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.uiImage)
+        XCTAssertGreaterThan(image.size.height, 800)
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "artwork-and-picker-illustrations"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testFeaturedLogosUseOnDarkTreatmentInEveryPageTheme() async throws {
         let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
         let artworkURL = try XCTUnwrap(URL(string: "https://featured-contrast.invalid/\(UUID())/artwork.png"))
@@ -380,6 +487,62 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         }
     }
 
+    #if os(tvOS)
+    func testEmptySectionSharesThePopulatedRowHeaderAndPinnedNavigationKeyline() async throws {
+        let item = MediaItem(
+            id: "status-reference", title: "Reference title", kind: .movie,
+            allowsTitleBasedMetadataMatching: false
+        )
+        let issue = HomeSectionIssue(
+            choice: .init(id: .server(accountID: "fixture", section: "empty"), title: "Collection row", isProviderDefault: true),
+            reason: .empty, serverName: "Collection server", providerKind: .jellyfin
+        )
+        for pinned in [false, true] {
+            try await withWindow {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 28) {
+                        MediaRowView(title: Text("Collection row"), items: [item], onSelect: { _ in })
+                        HomeSectionStatusRow(issue: issue, onRetry: {})
+                    }
+                }
+                .environment(\.plozzPinnedSidebarActive, pinned)
+                .environment(\.plozzNavigationContentInset, pinned ? 64 : 0)
+                .environment(\.plozzCardFocusStyle, .system)
+            } inspect: { window in
+                let image = try await self.snapshot(window, name: "Empty row keyline pinned \(pinned)")
+                let bitmap = try XCTUnwrap(image.cgImage)
+                let pixels = try self.rgba(bitmap)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: bitmap).perform([request])
+                let observations = request.results ?? []
+                let lines = observations.compactMap { observation in
+                    observation.topCandidates(1).first.map { ($0.string, observation.boundingBox) }
+                }
+                let text = lines.map(\.0).joined(separator: " | ")
+                let headings = try observations.filter { $0.topCandidates(1).first?.string == "Collection row" }
+                    .map { try self.textInkBounds($0, bitmap: bitmap, pixels: pixels) }.sorted { $0.minY < $1.minY }
+                XCTAssertEqual(headings.count, 2, text)
+                let reference = try XCTUnwrap(headings.first)
+                let empty = try XCTUnwrap(headings.last)
+                XCTAssertEqual(empty.minX, reference.minX, accuracy: 3)
+                XCTAssertEqual(empty.height, reference.height, accuracy: 3)
+                XCTAssertTrue(text.contains("No titles to show"), text)
+                XCTAssertTrue(text.contains("Collection server"), text)
+                for title in ["Details", "Retry"] {
+                    let label = try XCTUnwrap(lines.first { $0.0.contains(title) }, text).1
+                    let point = CGPoint(x: label.midX * window.bounds.width, y: (1 - label.midY) * window.bounds.height)
+                    let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+                    XCTAssertTrue(target.canBecomeFocused)
+                    try await self.focus(target, in: window)
+                    XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
+                }
+            }
+        }
+    }
+    #endif
+
     func testPersonalCollectionSourceUsesCurrentAccountBrand() throws {
         for kind in [ProviderKind.plex, .jellyfin] {
             let provider = HomeSettingsLibraryProvider(name: "Collection server", kind: kind)
@@ -430,31 +593,19 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 request.recognitionLevel = .accurate
                 request.recognitionLanguages = ["en-US"]
                 try VNImageRequestHandler(cgImage: bitmap).perform([request])
-                // Vision locates words; its approximate boxes are not glyph geometry.
-                func inkBounds(_ observation: VNRecognizedTextObservation) throws -> CGRect {
-                    let box = observation.boundingBox
-                    let search = CGRect(
-                        x: box.minX * CGFloat(bitmap.width), y: (1 - box.maxY) * CGFloat(bitmap.height),
-                        width: box.width * CGFloat(bitmap.width), height: box.height * CGFloat(bitmap.height)
-                    ).insetBy(dx: -12, dy: -12).intersection(CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
-                    var ink = CGRect.null
-                    for y in Int(search.minY)..<Int(search.maxY) {
-                        for x in Int(search.minX)..<Int(search.maxX) {
-                            let offset = (y * bitmap.width + x) * 4
-                            if pixels[offset] > 80, pixels[offset + 1] > 80, pixels[offset + 2] > 80 {
-                                ink = ink.union(CGRect(x: x, y: y, width: 1, height: 1))
-                            }
-                        }
-                    }
-                    XCTAssertFalse(ink.isNull)
-                    return ink
-                }
                 let lines = request.results ?? []
-                let reference = try inkBounds(XCTUnwrap(lines.first { $0.topCandidates(1).first?.string == "Reference row" }))
-                let featured = try inkBounds(XCTUnwrap(lines.first { $0.topCandidates(1).first?.string == "Featured row" }))
+                let reference = try self.textInkBounds(
+                    XCTUnwrap(lines.first { $0.topCandidates(1).first?.string == "Reference row" }),
+                    bitmap: bitmap, pixels: pixels
+                )
+                let featured = try self.textInkBounds(
+                    XCTUnwrap(lines.first { $0.topCandidates(1).first?.string == "Featured row" }),
+                    bitmap: bitmap, pixels: pixels
+                )
                 XCTAssertEqual(featured.minX, reference.minX, accuracy: 3)
                 XCTAssertEqual(featured.height, reference.height, accuracy: 3)
-                let actions = try lines.filter { $0.topCandidates(1).first?.string == "See all" }.map(inkBounds)
+                let actions = try lines.filter { $0.topCandidates(1).first?.string == "See all" }
+                    .map { try self.textInkBounds($0, bitmap: bitmap, pixels: pixels) }
                 XCTAssertEqual(actions.count, 2)
                 if actions.count == 2 {
                     XCTAssertEqual(actions[0].maxX, actions[1].maxX, accuracy: 3)
@@ -635,11 +786,87 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         } inspect: { window in
             let lines = try await self.capture(window, name: "Create or add a Home section")
             let text = lines.map(\.0).joined(separator: " ")
-            XCTAssertTrue(text.contains("Start with a library collection"), text)
-            XCTAssertGreaterThan(try self.y("Create section", in: lines), try self.y("Available sections", in: lines))
-            XCTAssertGreaterThan(try self.y("Available sections", in: lines), try self.y("Recently Added", in: lines))
+            XCTAssertFalse(text.contains("Start with a library collection"), text)
+            XCTAssertGreaterThan(try self.y("From a collection", in: lines), try self.y("Available rows", in: lines))
+            XCTAssertGreaterThan(try self.y("Available rows", in: lines), try self.y("Recently Added", in: lines))
             XCTAssertFalse(text.contains("Choose the titles"), text)
             XCTAssertTrue(visibility.visibility.collectionSections.isEmpty)
+        }
+    }
+
+    func testAddRowShowsAnEmptyStateWithoutAnEmptyHeading() async throws {
+        let suite = "HomeAddEmpty.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        visibility.useRowDefaults(.combined)
+        visibility.setMergeNextUpIntoContinueWatching(true)
+        let inventory = HomeSectionCatalogModel()
+        try await withWindow {
+            HomeAddSectionView(inventory: inventory, visibility: visibility, libraries: [], accounts: [])
+                #if os(tvOS)
+                .frame(width: SettingsFormMetrics.pageWidth)
+                #endif
+        } inspect: { window in
+            let lines = try await self.capture(window, name: "Home Add row empty state")
+            let text = lines.map(\.0).joined(separator: " ")
+            XCTAssertTrue(text.contains("From a collection"), text)
+            XCTAssertTrue(text.contains("No additional rows available."), text)
+            XCTAssertFalse(text.contains("Available rows"), text)
+            XCTAssertTrue(text.contains("Next Up is included in Continue Watching."), text)
+        }
+    }
+
+    func testAddRowShowsDiscoveryFailureAndClearsItAfterRecovery() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            let suite = "HomeAddRecovery.\(UUID())"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+            visibility.useRowDefaults(.combined)
+            visibility.setMergeNextUpIntoContinueWatching(true)
+            let provider = HomeSettingsLibraryProvider(
+                name: "Basement", homeError: .serverUnreachable, kind: kind,
+                homeLayout: .init(
+                    sections: [.init(id: "native", kind: .recommendations, title: "Native picks")],
+                    source: .promotedHubs
+                )
+            )
+            let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+            let inventory = HomeSectionCatalogModel()
+            try await withWindow {
+                HomeAddSectionView(
+                    inventory: inventory, visibility: visibility, libraries: [], accounts: [account]
+                )
+                #if os(tvOS)
+                .frame(width: SettingsFormMetrics.pageWidth)
+                #endif
+            } inspect: { window in
+                let failed = XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in
+                        !inventory.isLoading && inventory.serverFailures[account.account.id] == .serverUnreachable
+                    }, object: nil
+                )
+                await self.fulfillment(of: [failed], timeout: 5)
+                let lines = try await self.capture(window, name: "Add row failed discovery \(kind)")
+                let text = lines.map(\.0).joined(separator: " ")
+                XCTAssertTrue(text.contains("Basement is offline."), text)
+                XCTAssertTrue(text.contains("Retry"), text)
+                XCTAssertFalse(text.contains("No additional rows available."), text)
+                #if os(tvOS)
+                let retry = try XCTUnwrap(lines.first { $0.0 == "Retry" }).1
+                XCTAssertNotNil(self.focusableItem(at: CGPoint(
+                    x: retry.midX * window.bounds.width, y: (1 - retry.midY) * window.bounds.height
+                ), in: window))
+                #endif
+                await provider.setHomeError(nil)
+                await inventory.load(libraries: [], accounts: [account], visibility: visibility)
+                let recovered = try await self.capture(window, name: "Add row recovered discovery \(kind)")
+                let recoveredText = recovered.map(\.0).joined(separator: " ")
+                XCTAssertTrue(recoveredText.contains("Native picks"), recoveredText)
+                XCTAssertFalse(recoveredText.contains("Basement is offline."), recoveredText)
+                XCTAssertFalse(recoveredText.contains("Retry"), recoveredText)
+            }
         }
     }
 
@@ -715,7 +942,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         } inspect: { window in
             await self.fulfillment(of: [requested], timeout: 5)
             XCTAssertTrue(inventory.isLoading)
-            let lines = try await self.capture(window, name: "Add section during pending discovery")
+            let lines = try await self.capture(window, name: "Add row during pending discovery")
             let label = try XCTUnwrap(lines.first { $0.0.contains("Recently Added") }).1
             let point = CGPoint(x: label.midX * window.bounds.width, y: (1 - label.midY) * window.bounds.height)
             let item = try XCTUnwrap(self.focusableItem(at: point, in: window),
@@ -756,7 +983,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
         let inventory = HomeSectionCatalogModel()
         try await withWindow {
-            HomeRowsSettingsView(libraries: [], accounts: [account], visibility: visibility, inventory: inventory)
+            HomeSectionsSettingsView(libraries: [], accounts: [account], visibility: visibility, inventory: inventory)
                 .frame(width: SettingsFormMetrics.pageWidth)
         } inspect: { window in
             await self.fulfillment(of: [requested], timeout: 5)
@@ -778,7 +1005,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
 
     private func assertReorderFocusable(in window: UIWindow, name: String) async throws {
         let lines = try await capture(window, name: name)
-        let label = try XCTUnwrap(lines.first { $0.0.contains("Reorder") }).1
+        let label = try XCTUnwrap(lines.first { $0.0.contains("Edit") }).1
         let point = CGPoint(x: label.midX * window.bounds.width, y: (1 - label.midY) * window.bounds.height)
         XCTAssertNotNil(focusableItem(at: point, in: window),
                         "Known sections must be reorderable without waiting for server discovery.")
@@ -821,7 +1048,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         XCTAssertEqual(inventory.serverFailures[account.account.id], .serverUnreachable)
 
         try await withWindow {
-            HomeRowsSettingsView(libraries: [], accounts: [account], visibility: visibility, inventory: inventory)
+            HomeSectionsSettingsView(libraries: [], accounts: [account], visibility: visibility, inventory: inventory)
         } inspect: { window in
             _ = try await self.capture(window, name: "Preset before server recovery")
             await provider.setHomeError(nil)
@@ -889,7 +1116,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             let inventory = HomeSectionCatalogModel()
             try await withWindow(size: CGSize(width: width, height: 900), colorScheme: scheme) {
                 NavigationStack {
-                    HomeRowsSettingsView(
+                    HomeSectionsSettingsView(
                         libraries: libraries, accounts: [account], visibility: visibility, inventory: inventory
                     )
                 }
@@ -905,7 +1132,8 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 await self.fulfillment(of: [ready], timeout: 5)
                 let before = try await self.capture(window, name: "Home preset header \(width) \(size) \(scheme)")
                 let text = before.map(\.0).joined(separator: " ")
-                for label in ["Preset", "Reorder", "Custom"] {
+                    .replacingOccurrences(of: "- ", with: "")
+                for label in ["Preset", "Edit", "Custom"] {
                     XCTAssertTrue(text.contains(label), text)
                 }
                 func scrollViews(_ view: UIView) -> [UIScrollView] {
@@ -920,7 +1148,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 XCTAssertGreaterThan(scroll.contentOffset.y, initialOffset + 250)
                 XCTAssertFalse(after.contains { $0.0.contains("Preset") },
                                "The preset must scroll away rather than remain pinned below the toolbar.")
-                XCTAssertEqual(try self.y("Reorder", in: before), try self.y("Reorder", in: after), accuracy: 0.003)
+                XCTAssertEqual(try self.y("Edit", in: before), try self.y("Edit", in: after), accuracy: 0.003)
                 scroll.setContentOffset(CGPoint(x: 0, y: initialOffset), animated: false)
                 let restored = try await self.capture(window, name: "Home preset restored \(width) \(size) \(scheme)")
                 XCTAssertEqual(try self.y("Preset", in: before), try self.y("Preset", in: restored), accuracy: 0.003)
@@ -963,7 +1191,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 }, object: nil
             )
             await self.fulfillment(of: [discovered], timeout: 5)
-            let lines = try await self.capture(window, name: "Native section discovered on Add section")
+            let lines = try await self.capture(window, name: "Native section discovered on Add row")
             XCTAssertTrue(lines.contains { $0.0.contains("Native picks") }, lines.map(\.0).joined(separator: " "))
             try visibility.setHomeSectionVisible(true, id: native, catalog: inventory.catalog)
             navigation.path = []
@@ -1004,8 +1232,8 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                         window, name: "Merge Next Up \(scheme) \(size)", scale: window.traitCollection.displayScale
                     )
                     let text = lines.map(\.0).joined(separator: " ")
-                    XCTAssertTrue(text.contains("Merge Next Up rows"), text)
-                    XCTAssertTrue(text.contains("next episodes"), text)
+                    XCTAssertTrue(text.contains("Include Next Up"), text)
+                    XCTAssertTrue(text.contains("Combines Next Up rows here."), text)
                     visibility.setGlobalRowEnabled(false, for: .continueWatching)
                     let disabled = try await self.capture(
                         window, name: "Merge Next Up with hidden Continue Watching", scale: window.traitCollection.displayScale
@@ -1045,8 +1273,10 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             #else
             let actionTitle = "When tapping an item"
             #endif
-            let controls = ["Playback details", "Labels", "Merge Next Up rows", actionTitle]
+            let controls = ["Playback details", "Labels", "Include Next Up", actionTitle]
             let detailsY = try self.y("Playback details", in: lines)
+            XCTAssertLessThan(try self.y("Appearance also applies", in: lines), try self.y("Labels", in: lines))
+            XCTAssertGreaterThan(try self.y("Appearance also applies", in: lines), try self.y("Include Next Up", in: lines))
             for artwork in ["Artwork + logo", "Thumbnail", "Poster"] {
                 XCTAssertGreaterThan(try self.y(artwork, in: lines), detailsY,
                                      "All three artwork choices belong above the settings groups.")
@@ -1056,7 +1286,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                                      "\(upper) must appear before \(lower).")
             }
             XCTAssertGreaterThan(try self.y(actionTitle, in: lines),
-                                 try self.y("Remove section", in: lines))
+                                 try self.y("Remove from Home", in: lines))
             #if os(tvOS)
             XCTAssertFalse(lines.contains { $0.0.contains("Back") },
                            "The shared back control shows only its chevron.")
@@ -1103,11 +1333,9 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 XCTAssertTrue(text.contains(String(localized: action.displayName)), text)
                 XCTAssertEqual(store.load().continueWatchingAction, action)
                 #if os(tvOS)
-                XCTAssertTrue(text.contains("on your remote to play the focused item."), text)
-                XCTAssertTrue(text.contains("You can also press Play/Pause"),
-                              "The helper describes a separate remote shortcut.")
+                XCTAssertTrue(text.contains("Play/Pause always starts playback."), text)
                 XCTAssertLessThan(
-                    try self.y("You can also", in: lines), try self.y(actionTitle, in: lines),
+                    try self.y("Play/Pause", in: lines), try self.y(actionTitle, in: lines),
                     "The explanation belongs below the selection control."
                 )
                 let label = try XCTUnwrap(lines.first { $0.0.contains(actionTitle) }).1
@@ -1142,9 +1370,9 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             XCTAssertTrue(text.contains("Reorder"), text)
             XCTAssertTrue(text.contains("Hero"), text)
             XCTAssertTrue(text.contains("Continue Watching"), text)
-            XCTAssertTrue(text.contains("Add section"), text)
+            XCTAssertTrue(text.contains("Add row"), text)
             XCTAssertFalse(text.contains("Artwork"), text)
-            XCTAssertFalse(text.contains("Merge Next Up rows"), text)
+            XCTAssertFalse(text.contains("Include Next Up"), text)
             XCTAssertFalse(text.contains("No video libraries are available"), text)
             XCTAssertTrue(store.load().mergeNextUpIntoContinueWatching)
 
@@ -1153,7 +1381,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             let hiddenText = hidden.map(\.0).joined(separator: " ")
             XCTAssertFalse(hiddenText.contains("Artwork"), hiddenText)
             XCTAssertFalse(hiddenText.contains("CONTINUE WATCHING"), "Do not leave an empty section for a hidden row.")
-            XCTAssertFalse(hiddenText.contains("Merge Next Up rows"), hiddenText)
+            XCTAssertFalse(hiddenText.contains("Include Next Up"), hiddenText)
             XCTAssertTrue(store.load().mergeNextUpIntoContinueWatching)
         }
     }
@@ -1194,7 +1422,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             XCTAssertEqual(visibility.visibility.rowCustomization?.defaults, .combined)
             let text = lines.map(\.0).joined(separator: " ")
             XCTAssertTrue(text.contains("Continue Watching"), text)
-            XCTAssertTrue(text.contains("Merge Next Up rows"), text)
+            XCTAssertTrue(text.contains("Include Next Up"), text)
         }
     }
 
@@ -1444,16 +1672,16 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         try await withWindow {
             #if os(iOS)
             NavigationStack {
-                HomeRowsSettingsView(libraries: libraries, accounts: accounts, visibility: visibility)
+                HomeSectionsSettingsView(libraries: libraries, accounts: accounts, visibility: visibility)
             }
             #else
-            HomeRowsSettingsView(libraries: libraries, accounts: accounts, visibility: visibility)
+            HomeSectionsSettingsView(libraries: libraries, accounts: accounts, visibility: visibility)
             .frame(width: 1050)
             #endif
         } inspect: { window in
             let before = try await self.capture(window, name: "Home arranger original order")
-            XCTAssertFalse(before.contains { $0.0.contains("Merge Next Up rows") })
-            XCTAssertTrue(before.contains { $0.0.contains("Hero") })
+            XCTAssertFalse(before.contains { $0.0.contains("Include Next Up") })
+            XCTAssertFalse(before.contains { $0.0.contains("Home layout") })
             XCTAssertGreaterThan(try self.y("Alpha", in: before), try self.y("Beta", in: before))
             XCTAssertTrue(before.contains { $0.0.contains("All libraries") })
             visibility.applyRows(.init(enabled: Array(ids.reversed()), disabled: hidden), choices: choices)
@@ -1549,7 +1777,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             try await withWindow {
                 NavigationStack {
                     if page == 0 {
-                        HomeRowsSettingsView(libraries: [], accounts: accounts, visibility: visibility, inventory: inventory)
+                        HomeSectionsSettingsView(libraries: [], accounts: accounts, visibility: visibility, inventory: inventory)
                     } else if page == 1 {
                         HomeSectionSettingsView(
                             choice: choice, inventory: inventory, visibility: visibility, libraries: [], accounts: accounts
@@ -1755,6 +1983,28 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     }
     #endif
 
+    private func textInkBounds(
+        _ observation: VNRecognizedTextObservation, bitmap: CGImage, pixels: [UInt8]
+    ) throws -> CGRect {
+        // Vision locates words; its approximate boxes are not glyph geometry.
+        let box = observation.boundingBox
+        let search = CGRect(
+            x: box.minX * CGFloat(bitmap.width), y: (1 - box.maxY) * CGFloat(bitmap.height),
+            width: box.width * CGFloat(bitmap.width), height: box.height * CGFloat(bitmap.height)
+        ).insetBy(dx: -12, dy: -12).intersection(CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
+        var ink = CGRect.null
+        for y in Int(search.minY)..<Int(search.maxY) {
+            for x in Int(search.minX)..<Int(search.maxX) {
+                let offset = (y * bitmap.width + x) * 4
+                if pixels[offset] > 80, pixels[offset + 1] > 80, pixels[offset + 2] > 80 {
+                    ink = ink.union(CGRect(x: x, y: y, width: 1, height: 1))
+                }
+            }
+        }
+        XCTAssertFalse(ink.isNull)
+        return ink
+    }
+
     private func withWindow<Content: View>(
         size: CGSize? = nil,
         colorScheme: ColorScheme = .dark,
@@ -1848,7 +2098,7 @@ private struct HomeCatalogNavigationHost: View {
 
     var body: some View {
         NavigationStack(path: $navigation.path) {
-            HomeRowsSettingsView(libraries: [], accounts: accounts, visibility: visibility, inventory: inventory)
+            HomeSectionsSettingsView(libraries: [], accounts: accounts, visibility: visibility, inventory: inventory)
                 .onDisappear { navigation.rootDisappeared = true }
                 .navigationDestination(for: String.self) { _ in
                     HomeAddSectionView(inventory: inventory, visibility: visibility, libraries: [], accounts: accounts)

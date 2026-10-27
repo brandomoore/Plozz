@@ -32,7 +32,7 @@ final class PlayerZoomMenuPresentationTests: XCTestCase {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
+        let window = PlayerOrientationTestWindow(windowScene: scene)
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
@@ -79,7 +79,7 @@ final class PlayerZoomMenuPresentationTests: XCTestCase {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
+        let window = PlayerOrientationTestWindow(windowScene: scene)
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
@@ -116,7 +116,7 @@ final class PlayerZoomMenuPresentationTests: XCTestCase {
         XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .landscape)
         state.livePlayback = false
         try await waitUntil {
-            PlozziOSWindowOrientation.supportedOrientations(for: window) == .all
+            PlozziOSWindowOrientation.supportedOrientations(for: window) == .portrait
                 && scene.effectiveGeometry.interfaceOrientation == .portrait
         }
     }

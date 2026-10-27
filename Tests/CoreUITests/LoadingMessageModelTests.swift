@@ -6,10 +6,12 @@ import XCTest
 private final class GatedSleeper: @unchecked Sendable {
     private let lock = NSLock()
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var requestedDurations: [TimeInterval] = []
 
     func sleep(_ seconds: TimeInterval) async {
         await withCheckedContinuation { continuation in
             lock.lock()
+            requestedDurations.append(seconds)
             waiters.append(continuation)
             lock.unlock()
         }
@@ -27,12 +29,36 @@ private final class GatedSleeper: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         return waiters.count
     }
+
+    var durations: [TimeInterval] {
+        lock.lock(); defer { lock.unlock() }
+        return requestedDurations
+    }
 }
 
 @MainActor
 final class LoadingMessageModelTests: XCTestCase {
     private func makeMessages(_ count: Int) -> [LoadingMessage] {
         (0..<count).map { LoadingMessage(id: "m\($0)", text: "Message \($0)") }
+    }
+
+    func testDefaultModelWaitsElevenSecondsBeforeShowingAnyJoke() async {
+        let sleeper = GatedSleeper()
+        let model = LoadingMessageModel(
+            shufflesMessages: false,
+            sleep: { await sleeper.sleep($0) }
+        )
+        defer {
+            model.stop()
+            sleeper.releaseNext()
+        }
+        model.start()
+        await assertEventually { sleeper.pendingCount == 1 }
+        XCTAssertEqual(sleeper.durations, [11.0])
+        XCTAssertNil(model.currentMessage)
+        sleeper.releaseNext()
+        await assertEventually { model.currentMessage != nil && sleeper.pendingCount == 1 }
+        XCTAssertEqual(sleeper.durations, [11.0, 5.5])
     }
 
     /// Yields repeatedly until `predicate` holds or we exhaust `tries`.

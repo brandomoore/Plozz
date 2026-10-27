@@ -13,7 +13,6 @@ import MetadataKit
 import FeatureSearch
 import FeatureSettings
 import FeatureProfiles
-import ProviderTrailers
 import RatingsService
 import TraktService
 import SeerService
@@ -548,10 +547,7 @@ private func failoverPlayItem(
     )
 }
 
-/// Builds the player for a play request. Online (TMDb → YouTube) trailers carry a
-/// YouTube video-id marker and have no backing account, so they are routed to
-/// ``YouTubeTrailerProvider`` (which extracts a playable stream); every other
-/// item resolves through its owning account provider as usual.
+/// Builds the player for server-owned media. YouTube trailers open externally.
 @MainActor
 private func makePlayerViewModel(
     for request: PlayRequest,
@@ -574,51 +570,9 @@ private func makePlayerViewModel(
     continuation: PlaybackContinuation? = nil,
     versionPreferences: any VersionPreferenceStoring = VersionPreferenceStore()
 ) throws -> PlayerViewModel {
-    if let videoID = request.item.youTubeTrailerVideoID {
-        let trailerItem = request.item
-        let onlineTrailerResolver = ItemDetailViewModel.defaultOnlineTrailerResolver
-        let engineFactory = HybridPlayback.engineFactory(
-            networkFileResolver: networkFileResolver,
-            authenticatedHTTPResolver: authenticatedHTTPResolver
-        )
-        let trailerViewModel = PlayerViewModel(
-            provider: YouTubeTrailerProvider(
-                item: trailerItem,
-                videoID: videoID,
-                alternatives: {
-                    // The server's stored trailer URL can go stale (the YouTube
-                    // video gets made private/removed). When that happens, fall
-                    // back to a keyless search for a still-playable replacement
-                    // trailer for the same title.
-                    let results = await onlineTrailerResolver(
-                        trailerItem.alternativeTrailerSearchSubject
-                    )
-                    return results.compactMap(\.youTubeTrailerVideoID)
-                },
-                // Adaptive (separate audio) trailers pair a video-only stream
-                // with an audio-only stream. The native engine muxes them via a
-                // synthesized HLS master (TrailerAudioMuxComposer) so AVPlayer
-                // plays them in sync — unlocking 1080p H.264, which YouTube only
-                // serves as adaptive tracks. Falls back to the progressive muxed
-                // (~360p) stream if the adaptive path fails.
-                allowsSeparateAudio: true
-            ),
-            itemID: videoID,
-            behavior: behavior,
-            style: style,
-            subtitlePolicy: subtitlePolicy,
-            audioPolicy: audioPolicy,
-            playbackSettings: playbackSettings,
-            spoilerSettings: spoilerSettings,
-            seriesTrackStore: seriesTrackStore,
-            startPosition: request.startPosition,
-            scrobbler: scrobbler,
-            engineFactory: engineFactory,
-            authenticatedHTTPResolver: authenticatedHTTPResolver,
-            autoDismissOnEnd: true
-        )
-        trailerViewModel.onSubtitleStyleChanged = onSubtitleStyleChanged
-        return trailerViewModel
+    guard !request.item.isYouTubeTrailer else {
+        PlozzLog.playback.error("External YouTube trailer was incorrectly routed to the built-in player.")
+        throw AppError.invalidResponse
     }
     // The player can invoke convergence off-main. Its bound bridge selects the
     // identity snapshot on the main actor, atomically with profile validation,

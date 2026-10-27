@@ -9,7 +9,7 @@ import Observation
 /// different language from the device, which is exactly the case that matters:
 /// one TV, several people, not all of whom read the same language.
 ///
-/// Deliberately narrow in scope. Changing this changes **Plozz's own copy**. It
+/// Changes Plozz's own copy and the preferred language of external title logos. It
 /// does not change:
 ///   * media titles, overviews or genres — those come from Jellyfin/Plex in
 ///     whatever language that server was configured with (a separate setting,

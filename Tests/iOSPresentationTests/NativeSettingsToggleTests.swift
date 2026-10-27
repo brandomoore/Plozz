@@ -208,7 +208,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                 let text = try captureText(
                     window, name: "fel-settings-\(Int(width))-\(scheme)"
                 )
-                for label in ["FEL", "experimental", "memory", "stutter", "turns off overhead sound"] {
+                for label in ["FEL", "experimental", "May impact performance.", "Disables spatial audio."] {
                     XCTAssertTrue(text.contains(label), "The setting and tradeoff must be visible: \(text)")
                 }
                 XCTAssertFalse(text.contains("Dolby Atmos"), text)

@@ -64,11 +64,11 @@ public struct SurfaceStyle: Equatable, Sendable {
 
 /// The concrete colours a resolved `AppTheme` paints with.
 ///
-/// Ported from my Twozz `ThemePalette` for structural parity, trimmed to the
+/// Ported from my Strozz `ThemePalette` for structural parity, trimmed to the
 /// tokens Plozz needs: a two-stop background (driven into a soft vertical
 /// gradient by `AppBackground`), card surface + border, primary/secondary text,
 /// an accent/tint, and an optional top glow. The accent is **Plozz's own**
-/// `AccentColor` (via `Color.accentColor`) — never Twozz's brand purple.
+/// `AccentColor` (via `Color.accentColor`) — never Strozz's brand purple.
 public struct ThemePalette: Equatable, Sendable {
     /// Top stop of the vertical background gradient.
     public let backgroundBase: Color
@@ -117,7 +117,7 @@ public struct ThemePalette: Equatable, Sendable {
     /// `nil` keeps a theme flat (e.g. Black stays free of a colored glow).
     public let topGlow: Color?
 
-    // MARK: Focused-card glass treatment (ported 1:1 from Twozz)
+    // MARK: Focused-card glass treatment (ported 1:1 from Strozz)
 
     /// Tint blended into a focused card's Liquid Glass so focus reads as a clear
     /// lightness shift — not just the scale bump. Dark and Black brighten toward
@@ -270,12 +270,12 @@ public extension ThemePalette {
 
     /// Plozz's brand blue — the Jellyfin blue (`#00A4DC`) the pixel logo is
     /// painted in. Used to give the app-wide background a gentle blue wash and
-    /// top glow in every theme, mirroring how Twozz tints its backdrop with its
-    /// own brand colour (Plozz's is BLUE, never Twozz's purple).
+    /// top glow in every theme, mirroring how Strozz tints its backdrop with its
+    /// own brand colour (Plozz's is BLUE, never Strozz's purple).
     static let brandBlue = Color(red: 0.0, green: 0.643, blue: 0.863) // #00A4DC
 
     /// Frosted-glass tone for the hairline rim around media thumbnails — the
-    /// theme's lower background stop nudged 9% toward white, ported from Twozz's
+    /// theme's lower background stop nudged 9% toward white, ported from Strozz's
     /// `mediaEdgeColor`. It blends with the surrounding card while quietly
     /// covering the ~1–2px a clipped image/video plane can bleed past the rounded
     /// corners, giving every thumbnail the same clean inner glass edge.
@@ -338,8 +338,8 @@ public extension ThemePalette {
     }
 
     /// Soft dark theme. Uses the exact two-stop background gradient from my
-    /// Twozz `ThemePalette.dark`, with the top glow recoloured to Plozz's brand
-    /// blue (Twozz uses purple). The stops stay close in value so the backdrop
+    /// Strozz `ThemePalette.dark`, with the top glow recoloured to Plozz's brand
+    /// blue (Strozz uses purple). The stops stay close in value so the backdrop
     /// gently shifts rather than banding.
     static let dark = ThemePalette(
         backgroundBase: Color(red: 0.13, green: 0.13, blue: 0.14),

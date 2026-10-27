@@ -149,12 +149,36 @@ public struct HeroLogoFallback: Sendable {
 
     let identity: Identity
     public let resolve: @Sendable () async -> URL?
+    private let localizedResolve: @Sendable (String) async -> URL?
 
     public init(for item: MediaItem, resolve: @escaping @Sendable () async -> URL?) {
+        self.init(for: item, localizedResolve: { _ in await resolve() })
+    }
+
+    public init(for item: MediaItem, localizedResolve: @escaping @Sendable (String) async -> URL?) {
         identity = Identity(
             itemID: item.id, sourceAccountID: item.sourceAccountID, query: MetadataQuery(item)
         )
-        self.resolve = resolve
+        self.localizedResolve = localizedResolve
+        let language = identity.query.artworkLanguage
+        resolve = { await localizedResolve(language) }
+    }
+
+    private init(identity: Identity, localizedResolve: @escaping @Sendable (String) async -> URL?) {
+        self.identity = identity
+        self.localizedResolve = localizedResolve
+        let language = identity.query.artworkLanguage
+        resolve = { await localizedResolve(language) }
+    }
+
+    public func localized(to language: String) -> Self {
+        Self(
+            identity: Identity(
+                itemID: identity.itemID, sourceAccountID: identity.sourceAccountID,
+                query: identity.query.forArtworkLanguage(language)
+            ),
+            localizedResolve: localizedResolve
+        )
     }
 }
 
@@ -242,7 +266,7 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
         let logoPolicy = policy.forPlacement(.logo)
         LoadedLogo(
             references: references,
-            asyncFallbackURL: asyncFallbackURL,
+            asyncFallbackURL: asyncFallbackURL?.localized(to: logoPolicy.logoLanguage),
             prefersOnlineArtwork: logoPolicy.prefersOnlineArtwork,
             providerPolicyIdentity: logoPolicy.identity,
             backgroundSample: backgroundSample,
@@ -766,6 +790,7 @@ public enum HeroLogoPreloader {
         policy: ArtworkPresentationPolicy
     ) async {
         let policy = policy.forPlacement(.logo)
+        let fallback = fallback?.localized(to: policy.logoLanguage)
         let key = HeroLogoMemo.key(
             for: references, fallback: fallback,
             prefersOnlineArtwork: policy.prefersOnlineArtwork,

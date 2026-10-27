@@ -183,9 +183,9 @@ public enum PlozzTheme {
         // (`posterCardCornerRadius` / `landscapeCardCornerRadius`), so the glass
         // corner always stays concentric with the artwork at every density.
 
-        /// Inner artwork corner radius for a poster ("Browse") card. Matches Twozz.
+        /// Inner artwork corner radius for a poster ("Browse") card. Matches Strozz.
         public static let posterArtCornerRadius: CGFloat = 16
-        /// Inner media corner radius for a landscape (medium) card. Matches Twozz.
+        /// Inner media corner radius for a landscape (medium) card. Matches Strozz.
         public static let mediumMediaCornerRadius: CGFloat = 18
         /// Shared artwork rounding for posters and Continue Watching on touch.
         public static let touchMediaCornerRadius: CGFloat = 12
@@ -317,7 +317,7 @@ public enum PlozzTheme {
         /// Leaves clearance inside the information grid's 18pt gutters, including
         /// the outgoing card while native focus settles onto its neighbor.
         public static let informationFocusMaximumOutset: CGFloat = 6
-        /// Scale applied to a focused browsing tile (matches Twozz Browse).
+        /// Scale applied to a focused browsing tile (matches Strozz Browse).
         public static let focusedCardScale: CGFloat = 1.08
 
         // MARK: Focus — "Highlight" style (outline off)

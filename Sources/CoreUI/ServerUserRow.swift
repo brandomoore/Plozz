@@ -71,27 +71,34 @@ public struct ServerUserRow: View {
     public var body: some View {
         HStack(spacing: 16) {
             ServerUserAvatar(provider: provider, name: name, avatarURL: avatarURL)
-            HStack(spacing: 6) {
-                Text(name).font(.headline)
-                if showsOwnerBadge {
-                    Text("Account owner")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(ProviderBrandMark.brandTint(provider).opacity(0.18)))
-                        .foregroundStyle(ProviderBrandMark.brandTint(provider))
-                }
-                if requiresPIN {
-                    HStack(spacing: 3) {
-                        Image(systemName: "lock.fill")
-                        Text("PIN")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(name)
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("server-user-name")
+                if showsOwnerBadge || requiresPIN {
+                    WrappingHStackLayout(spacing: 8, lineSpacing: 4) {
+                        if showsOwnerBadge {
+                            Text("Account owner")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(ProviderBrandMark.brandTint(provider).opacity(0.18)))
+                                .foregroundStyle(ProviderBrandMark.brandTint(provider))
+                        }
+                        if requiresPIN {
+                            HStack(spacing: 3) {
+                                Image(systemName: "lock.fill")
+                                Text("PIN")
+                            }
+                            .font(.caption2.weight(.semibold))
+                            .settingsRowSecondary()
+                            .accessibilityLabel("PIN required")
+                        }
                     }
-                    .font(.caption2.weight(.semibold))
-                    .settingsRowSecondary()
-                    .accessibilityLabel("PIN required")
                 }
             }
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
             if accessory == .selected { SettingsSelectionIndicator() }
         }
         .padding(.vertical, 12)

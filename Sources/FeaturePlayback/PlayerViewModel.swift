@@ -286,6 +286,7 @@ public final class PlayerViewModel {
         (provider as? any StreamingQualityProviding)?.streamingQualitySupport ?? .standard
     }
     public var currentPlaybackItem: MediaItem? { request?.item ?? offlineItem }
+    public var maximumPlaybackSpeed: Double { engine.maximumPlaybackSpeed }
     public var currentMediaSourceID: String? {
         if case .authenticatedHTTP(let locator) = request?.playbackSource { return locator.mediaSourceID }
         return streamingMediaSourceID ?? mediaSourceID

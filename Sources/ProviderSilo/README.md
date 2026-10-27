@@ -134,6 +134,14 @@ These Home and device-login contracts were checked at upstream revision
   channels never imply stereo or surround. Detail heroes observe source-scoped
   episode metadata separately from the rail, so a later sparse season/resume
   result cannot erase badges or restore stale progress.
+  Explicit Dolby Vision/HDR10+ combinations survive profile mapping. Native
+  `dv_bl_compat_id` and its presence flag distinguish HDR10, HLG, SDR, and no
+  compatible base; an omitted zero with a true presence flag means no compatible
+  base, while a false flag does not authorize use of a legacy numeric value.
+  Profile 8 alone does not imply HDR10. The selected audio track's profile/title
+  retains declared Atmos/JOC and DTS:X hints without borrowing other tracks.
+  These facts reuse the detail response; no new media probes or card hydration
+  requests are added.
   Progress is read through the paged, library-scoped progress endpoint; Home's
   native next-up selections are corroborated before inclusion in a restricted
   library view. Versions use the original Silo file ID.

@@ -116,7 +116,6 @@ ALLOWED_FEATURE_EDGES = {
 # (`{"product": ["<name>", "<package>", ...]}`) and in `import <name>` source
 # lines. The owner's `<Owner>Tests` target is implicitly allowed too.
 VENDOR_OWNERS = {
-    "YouTubeKit": {"ProviderTrailers"},
     "Sentry": {"CrashReporting"},          # imported framework module
     "Sentry-Static": {"CrashReporting"},   # sentry-apple-binaries product
     "SMBClient": {"ProviderShare", "MediaTransportSMB"},
@@ -893,7 +892,6 @@ def _self_test() -> int:
             _target("FeatureHome", ["CoreModels", "RatingsService"]),
             _target("FeatureSettings", ["CoreModels", "FeatureProfiles"]),
             _target("FeatureProfiles", ["CoreModels"]),
-            _target("ProviderTrailers", ["CoreModels"], ["YouTubeKit"]),
             _target("EnginePlozzigen", ["CoreModels", "FeaturePlayback"], ["AetherEngine"]),
             _target("FeaturePlayback", ["CoreModels"]),
             _target("EnginePlozzigenTests", ["EnginePlozzigen"], ["AetherEngine"], "test"),

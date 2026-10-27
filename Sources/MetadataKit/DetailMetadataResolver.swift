@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 
 /// Gap-only enrichment after a provider's full detail response, shared by both shells.
@@ -29,6 +30,27 @@ public actor DetailMetadataResolver {
             config: MetadataEnrichmentConfig.resolved().merged(withUserOverrides: settingsStore.load())
         )
         return await pipeline.enrich(Self.metadataQuery(for: item), requesting: missing, tier: .foregroundFill)
+    }
+
+    public func trailers(for item: MediaItem, limit: Int = 6) async -> [MediaItem] {
+        guard item.allowsTitleBasedMetadataMatching,
+              [.movie, .video, .series].contains(item.kind), !Task.isCancelled,
+              !settingsStore.load().isDisabled(.tmdb) else { return [] }
+        do {
+            let provider = TMDbMetadataProvider(access: providerConfig().tmdb)
+            let ids = try await provider.trailerVideoIDs(for: MetadataQuery(item), limit: limit)
+            return ids.map {
+                MediaItem.youTubeTrailer(
+                    videoID: $0, title: item.title,
+                    parentTitle: item.title, posterURL: item.posterURL
+                )
+            }
+        } catch is CancellationError {
+            return []
+        } catch {
+            PlozzLog.networking.error("Trailer metadata lookup failed; retaining available server trailers.")
+            return []
+        }
     }
 
     static func metadataQuery(for item: MediaItem) -> MetadataQuery {

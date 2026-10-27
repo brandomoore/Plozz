@@ -488,7 +488,7 @@ private struct FocusHeroArtworkPrefetch: View {
                 for: item, avoiding: row.shownArtwork(for: item), policy: policy
             )
             let identity = [
-                item.stablePresentationID, policy.identity,
+                item.stablePresentationID, policy.forPlacement(.logo).identity,
                 MetadataQuery(item).cacheKey(for: .hero),
                 MetadataQuery(logoItem).cacheKey(for: .logo),
                 references.map(\.privacySafeIdentity).joined(separator: "\n"),
@@ -561,14 +561,18 @@ final class FocusHeroMetadata {
     func item(for current: MediaItem) -> MediaItem {
         guard let full = entry(for: Key(current)).item else { return current }
         var item = current
+        if let synopsis = full.seriesSynopsis, synopsis.matches(current) {
+            item.seriesSynopsis = synopsis
+        }
         if item.genres.isEmpty { item.genres = full.genres }
         if item.officialRating?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
             item.officialRating = full.officialRating
         }
-        if item.overview?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+        if item.kind != .episode,
+           item.overview?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
             item.overview = full.overview
         }
-        if item.taglines.isEmpty { item.taglines = full.taglines }
+        if item.kind != .episode, item.taglines.isEmpty { item.taglines = full.taglines }
         item.mergeHydratedRatings(from: full)
         if item.familyGuidance == nil { item.familyGuidance = full.familyGuidance }
         if item.logoURL == nil { item.logoURL = full.logoURL }
@@ -1512,7 +1516,7 @@ struct FocusHeroColumn: View {
     }
 
     @ViewBuilder private func itemDetails(_ item: MediaItem, descriptionLines: Int = 3) -> some View {
-        let hideText = spoilerSettings.shouldHideText(for: item)
+        let presentation = HeroPresentation(item: item, artworkStyle: .landscape, surface: .home)
         let detailed = enrich == nil || metadata.hasDetails(for: item)
         VStack(alignment: .leading, spacing: 12) {
             if detailed {
@@ -1521,7 +1525,7 @@ struct FocusHeroColumn: View {
 
                 let ratings = ratingsRow(for: item)
                 let showsRatings = ratings.map { !$0.ratings.isEmpty || $0.age != nil } ?? false
-                if descriptionLines > 0, !hideText, let description = item.tagline ?? item.overview {
+                if descriptionLines > 0, let description = HeroContentPolicy.homeDescription(for: presentation) {
                     // The ratings row takes the room of two description lines.
                     Text(description.overviewPlainText)
                         .accessibilityIdentifier("showcase-description")

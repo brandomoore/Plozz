@@ -172,19 +172,20 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         XCTAssertTrue(home.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(sidebar.frame, originalFrame)
         XCTAssertEqual(home.value as? String, "Mixed")
-        XCTAssertTrue(waitUntil { self.hasFocus(home) }, app.debugDescription)
+        XCTAssertTrue(waitUntil { self.hasFocus(app.buttons["card-label-page"]) }, app.debugDescription)
+        focus(home, in: app)
         let help = app.descendants(matching: .any)["view-customization-help"]
         let initialHelpFrame = help.frame
         let viewport = app.scrollViews["view-customization-scroll"]
         let initialViewportFrame = viewport.frame
-        cycle(home, expecting: "Off")
-        XCTAssertEqual(help.frame, initialHelpFrame)
-        XCTAssertEqual(viewport.frame, initialViewportFrame)
-        capture(app, "labels-flat-child-page")
         cycle(home, expecting: "On")
         XCTAssertEqual(help.frame, initialHelpFrame)
         XCTAssertEqual(viewport.frame, initialViewportFrame)
+        capture(app, "labels-flat-child-page")
         cycle(home, expecting: "Off")
+        XCTAssertEqual(help.frame, initialHelpFrame)
+        XCTAssertEqual(viewport.frame, initialViewportFrame)
+        cycle(home, expecting: "Mixed")
         cycle(home, expecting: "On")
         focus(app.buttons["view-customization-back"], in: app, direction: .up)
         XCUIRemote.shared.press(.select)
@@ -210,8 +211,52 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         XCTAssertFalse(customize.label.hasSuffix("Custom"))
         XCUIRemote.shared.press(.down)
         XCUIRemote.shared.press(.select)
-        XCTAssertTrue(waitUntil { self.hasFocus(home) })
+        XCTAssertTrue(waitUntil { self.hasFocus(app.buttons["card-label-page"]) })
+        focus(home, in: app)
         XCTAssertEqual(home.value as? String, "Mixed")
+    }
+
+    func testLabelsPageMenuSelectsDirectlyAndCancelPreservesPageAndValues() {
+        let app = launch(labels: true)
+        defer { app.terminate() }
+        let sidebar = app.buttons["settings-master-cards"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitUntil { sidebar.hasFocus })
+        XCUIRemote.shared.press(.right)
+        focus(app.buttons["card-label-customization"], in: app)
+        XCUIRemote.shared.press(.select)
+        let page = app.buttons["card-label-page"]
+        XCTAssertTrue(waitUntil { self.hasFocus(page) }, app.debugDescription)
+        XCTAssertEqual(page.value as? String, "Home")
+        XCUIRemote.shared.press(.select)
+        let detail = pageMenuChoice("Detail Page", in: app)
+        XCTAssertTrue(detail.waitForExistence(timeout: 5), app.debugDescription)
+        let selected = pageMenuChoice("Home", in: app)
+        XCTAssertTrue(selected.descendants(matching: .any).allElementsBoundByIndex.contains(where: \.isSelected),
+                      "The current page must have the native selection checkmark.")
+        capture(app, "labels-native-page-menu")
+        focus(detail, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(waitUntil { self.hasFocus(page) && page.value as? String == "Detail Page" }, app.debugDescription)
+        let episodes = app.buttons["card-label-view-episodes"]
+        XCTAssertEqual(episodes.value as? String, "On")
+        focus(episodes, in: app)
+        cycle(episodes, expecting: "Off")
+        capture(app, "labels-selected-detail-page")
+        focus(page, in: app, direction: .up)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(pageMenuChoice("Detail Page", in: app).waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(waitUntil { self.hasFocus(page) && page.value as? String == "Detail Page" })
+        XCTAssertEqual(episodes.value as? String, "Off")
+        XCUIRemote.shared.press(.select)
+        focus(pageMenuChoice("Home", in: app), in: app, direction: .up)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(waitUntil { self.hasFocus(page) && page.value as? String == "Home" })
+        XCTAssertEqual(app.buttons["card-label-view-home"].value as? String, "Mixed",
+                       "Selecting pages must not commit caption changes.")
+        XCTAssertEqual(app.buttons["card-label-view-continueWatchingPortrait"].value as? String, "Use default")
+        capture(app, "labels-home-after-menu-return")
     }
 
     func testBackAndSidebarChangesResetOnlyNavigation() {
@@ -251,6 +296,10 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         }
         app.launch()
         return app
+    }
+
+    private func pageMenuChoice(_ title: String, in app: XCUIApplication) -> XCUIElement {
+        app.collectionViews.cells.containing(.other, identifier: title).firstMatch
     }
 
     private func focus(_ target: XCUIElement, in app: XCUIApplication,

@@ -197,6 +197,7 @@ struct BaseItemDto: Decodable {
     let MediaSources: [MediaSourceInfo]?
     let MediaStreams: [MediaStreamDto]?
     let ImageTags: [String: String]?
+    let PrimaryImageAspectRatio: Double?
     let BackdropImageTags: [String]?
     /// Emby exposes intro and credits markers as chapter entries.
     let Chapters: [ChapterInfoDto]?

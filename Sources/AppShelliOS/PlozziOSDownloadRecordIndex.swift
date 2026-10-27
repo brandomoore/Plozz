@@ -16,6 +16,7 @@ final class PlozziOSDownloadRecordIndex {
     }
 
     private var entries: [String: Entry] = [:]
+    private(set) var library = PlozziOSDownloadLibrary(movies: [], shows: [])
     @ObservationIgnored private var snapshot: [DownloadedMediaRecord] = []
 
     // Lookup routing observes membership; only the selected entry observes progress.
@@ -29,6 +30,7 @@ final class PlozziOSDownloadRecordIndex {
     }
 
     func update(_ records: [DownloadedMediaRecord]) {
+        library = PlozziOSDownloadLibrary.make(from: records)
         var next = entries
         let keys = Set(records.map(\.identityKey))
         var membershipChanged = keys != Set(entries.keys)

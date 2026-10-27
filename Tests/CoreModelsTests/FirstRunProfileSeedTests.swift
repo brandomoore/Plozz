@@ -69,6 +69,32 @@ final class FirstRunProfileSeedModelTests: XCTestCase {
         XCTAssertEqual(reloaded.profiles.first?.name, "Alice")
     }
 
+    func testImportedProfilesAwaitingSetupDoNotFinishFirstRun() {
+        let defaults = makeDefaults()
+        let model = ProfilesModel(store: ProfileStore(defaults: defaults))
+        var viewer = model.activeProfile
+        viewer.needsSetup = true
+        model.update(viewer)
+        model.add(name: "Child", isAwaitingSetup: true)
+        model.add(name: "Guest", isAwaitingSetup: true)
+        XCTAssertFalse(model.firstRunProfileSetupComplete)
+        XCTAssertFalse(ProfilesModel(store: ProfileStore(defaults: defaults)).firstRunProfileSetupComplete)
+        model.markFirstRunProfileSetupComplete()
+        XCTAssertTrue(model.firstRunProfileSetupComplete)
+        XCTAssertFalse(model.activeProfile.needsSetup)
+        ProfileStore(defaults: defaults).setFirstRunProfileSetupComplete(false)
+        XCTAssertTrue(ProfilesModel(store: ProfileStore(defaults: defaults)).firstRunProfileSetupComplete,
+                      "A synced configured viewer must not repeat first-run because other Home profiles still need setup.")
+    }
+
+    func testConfiguredMultiProfileHouseholdStillSkipsLocalFirstRun() {
+        let defaults = makeDefaults()
+        let model = ProfilesModel(store: ProfileStore(defaults: defaults))
+        model.add(name: "Configured")
+        XCTAssertTrue(model.firstRunProfileSetupComplete)
+        XCTAssertTrue(ProfilesModel(store: ProfileStore(defaults: defaults)).firstRunProfileSetupComplete)
+    }
+
     func testResetToPristineDefaultCollapsesProfilesAndClearsFlag() {
         let defaults = makeDefaults()
         let model = ProfilesModel(store: ProfileStore(defaults: defaults))

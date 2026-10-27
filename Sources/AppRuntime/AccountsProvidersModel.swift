@@ -75,6 +75,8 @@ public final class AccountsProvidersModel {
     /// The effective credential revision for an account (Plex override aware).
     @ObservationIgnored
     public var credentialRevision: @MainActor (Account) -> CredentialRevision = { $0.credentialRevision }
+    @ObservationIgnored
+    public var cloudTokenResolver: @MainActor (Account, CredentialRevision) async throws -> String? = { _, _ in nil }
     /// Fired after `reloadAccounts` recomputes the active set, with the resolved
     /// active ids and the full account list, so the media-share runtime can update
     /// its preferred-account keys without the hub knowing about media shares.
@@ -541,11 +543,22 @@ public final class AccountsProvidersModel {
                 profileNamespace: profilesModel.activeNamespace
             )
             : nil
+        let revision = credentialRevision(account)
+        let cloudTokenResolver: (@Sendable () async throws -> String?)?
+        if account.server.provider == .plex {
+            cloudTokenResolver = { [weak self] in
+                guard let self else { throw CancellationError() }
+                return try await self.cloudTokenResolver(account, revision)
+            }
+        } else {
+            cloudTokenResolver = nil
+        }
         return ProviderResolutionContext(
             session: account.session(token: token),
             accountID: account.id,
-            credentialRevision: credentialRevision(account),
-            localMediaContext: localMediaContext
+            credentialRevision: revision,
+            localMediaContext: localMediaContext,
+            cloudTokenResolver: cloudTokenResolver
         )
     }
 

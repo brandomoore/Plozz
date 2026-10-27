@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import AppRuntime
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureMusic
 import FeatureProfiles
@@ -208,7 +209,20 @@ public final class ProfileFlowModel {
     /// Nothing is switched until both are satisfied: no settings rebuild, no
     /// account reload, and above all no Plex identity apply for a profile the
     /// person hasn't proved they can open.
+    @ObservationIgnored
+    private var plexOnboardingSelection: (id: String, onActivated: @MainActor () -> Void)?
+
+    public func switchProfileForPlexOnboarding(to id: String, onActivated: @escaping @MainActor () -> Void) {
+        plexOnboardingSelection = (id, onActivated)
+        requestProfileSwitch(to: id)
+    }
+
     public func switchProfile(to id: String) {
+        plexOnboardingSelection = nil
+        requestProfileSwitch(to: id)
+    }
+
+    private func requestProfileSwitch(to id: String) {
         guard let target = profilesModel.profiles.first(where: { $0.id == id }) else {
             performSwitch(to: id, reason: "switchProfile-unknown")
             return
@@ -263,6 +277,7 @@ public final class ProfileFlowModel {
 
     /// Abandons a held switch, leaving the child where they were.
     public func cancelParentalSwitch() {
+        plexOnboardingSelection = nil
         pendingParentalSwitch = nil
         parentalPINError = nil
     }
@@ -282,6 +297,8 @@ public final class ProfileFlowModel {
     ///   profile's settings — a reported bug that has not yet been reproduced on
     ///   demand. The emit is a no-op outside debug builds.
     private func performSwitch(to id: String, reason: String, unlocking lock: ProfileLock? = nil) {
+        let onboarding = plexOnboardingSelection?.id == id ? plexOnboardingSelection : nil
+        plexOnboardingSelection = nil
         let before = profilesModel.activeProfileID
         profilesModel.select(id)
         HandoffDiagnostics.emit(
@@ -294,6 +311,16 @@ public final class ProfileFlowModel {
         // picker on a switch that never happened would strand the child in the
         // grown-up profile the gate exists to withhold.
         guard profilesModel.activeProfileID == id else { return }
+        if onboarding != nil {
+            if pendingSetupProfile != nil {
+                pendingSetupProfile = profilesModel.activeProfile.needsSetup ? profilesModel.activeProfile : nil
+            }
+            if profilesModel.activeProfile.needsSetup { appearanceSetupStore.markPending(profileID: id) }
+            profileAwaitingAppearancePick = nil
+            profileAwaitingLockOffer = nil
+            pendingLockOfferProfile = nil
+            isPickingAppearanceForNewProfile = false
+        }
         if let lock, profilesModel.activeProfile.lock == lock { profilesModel.noteProfileUnlocked(id) }
         plexHomeUsers.beginExplicitProfileActivation()
         audioController.stop()
@@ -305,11 +332,13 @@ public final class ProfileFlowModel {
         accountsProviders.reloadAccounts()
         isChoosingProfile = false
         // Verify current Plex protection before opening the selected identity.
-        plexHomeUsers.ensurePlexIdentityForActiveProfile()
+        if onboarding == nil || lock?.matchesPlexPIN == true {
+            plexHomeUsers.ensurePlexIdentityForActiveProfile()
+        }
         // Switching INTO a profile that never finished setup — abandoned here, or
         // created on another device and synced across — asks the question again
         // rather than leaving it permanently unable to import.
-        resumeSetupIfNeeded()
+        if onboarding == nil { resumeSetupIfNeeded() }
         Task { @MainActor [weak self] in
             guard let self else { return }
             await self.updateTrackersForActiveProfile()
@@ -318,6 +347,7 @@ public final class ProfileFlowModel {
             guard self.profilesModel.activeProfileID == id else { return }
             self.activateUniversalWatchlist()
         }
+        onboarding?.onActivated()
     }
 
     /// Checks `pin` against the pending profile's lock and, on a match, completes
@@ -357,6 +387,7 @@ public final class ProfileFlowModel {
 
     /// Abandons a pending unlock, leaving the active profile untouched.
     public func cancelProfileLockPrompt() {
+        plexOnboardingSelection = nil
         pendingLockedProfile = nil
         profileLockError = nil
     }
@@ -524,9 +555,10 @@ public final class ProfileFlowModel {
     /// answer that's both safe and correct: importing anyway is the leak the gate
     /// exists to prevent, and clearing it without asking is the same thing.
     public func resumeSetupIfNeeded() {
-        guard pendingSetupProfile == nil else { return }
+        guard pendingSetupProfile == nil, plexHomeUsers.pendingPlexUserSelection == nil else { return }
         let active = profilesModel.activeProfile
         if active.needsSetup {
+            appearanceSetupStore.markPending(profileID: active.id)
             pendingSetupProfile = active
         } else if appearanceSetupStore.isPending(profileID: active.id) {
             isPickingAppearanceForNewProfile = true
@@ -552,6 +584,10 @@ public final class ProfileFlowModel {
     /// Releases the watchlist import after Libraries while keeping the full setup
     /// cover alive for Seerr, Theme and Lock.
     public func completeLibrariesInsideSetup(for id: String) {
+        guard profilesModel.activeProfileID == id, pendingSetupProfile?.id == id else {
+            PlozzLog.app.error("Ignoring library completion for a superseded profile setup")
+            return
+        }
         guard profilesModel.finishSetup(for: id) else { return }
         activateUniversalWatchlist()
     }

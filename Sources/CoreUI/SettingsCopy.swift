@@ -19,6 +19,15 @@ public enum SettingsCopy {
         comment: "Navigation row for the screen crediting third-party software and data sources."
     )
 
+    public static let automaticDiagnostics: LocalizedStringResource =
+        "Share technical errors, app and device information, screen categories, and performance diagnostics with the developer through Sentry."
+
+    public static let automaticDiagnosticsExclusions: LocalizedStringResource =
+        "Automatic reports exclude logins, server addresses, and media titles."
+
+    public static let manualDiagnostics: LocalizedStringResource =
+        "Send recent logs, technical playback and connection diagnostics, and your optional message to the developer through Sentry. Don't include passwords or personal information."
+
     // MARK: - Scope headers
 
     /// Heading for the settings every profile shares.

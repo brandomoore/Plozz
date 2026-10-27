@@ -60,6 +60,6 @@ final class JellyfinInventoryDiagnosticsTests: XCTestCase {
             server: MediaServer(id: "server", name: "private-server", baseURL: URL(string: "https://fixture.invalid")!,
                                 provider: kind),
             userID: "viewer", userName: "private-user", deviceID: "device", accessToken: "private-token"
-        ), http: http)
+        ), http: http, playbackRequests: .init())
     }
 }

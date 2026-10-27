@@ -67,7 +67,9 @@ enum HomeHeroArtwork {
         case .folder, .collection, .unknown: return nil
         default: break
         }
-        return HeroLogoFallback(for: item) { await ArtworkRouter.shared.artworkURL(.logo, for: item) }
+        return HeroLogoFallback(for: item, localizedResolve: { language in
+            await ArtworkRouter.shared.artworkURL(.logo, for: item, language: language)
+        })
     }
 
     @MainActor
@@ -78,9 +80,9 @@ enum HomeHeroArtwork {
         let backdropLookup = backdropFallback(for: item)
         let logoLookup = logoFallback(for: logoItem)
         let fallback = logoLookup.map { lookup in
-            HeroLogoFallback(for: logoItem) {
-                await ArtworkSession.resolveArtwork(background: true, lookup.resolve)
-            }
+            HeroLogoFallback(for: logoItem, localizedResolve: { language in
+                await ArtworkSession.resolveArtwork(background: true, lookup.localized(to: language).resolve)
+            })
         }
         async let logo: Void = HeroLogoPreloader.prepare(
             references: logoItem.artworkReferences(for: .logo), fallback: fallback, policy: policy

@@ -21,7 +21,7 @@ struct SendDiagnosticsCard: View {
     /// Context-specific explainer shown when sending is unavailable. Defaults to
     /// pointing at Help & Diagnostics (correct from anywhere); the Help page
     /// passes a "below" variant since the toggle is right there.
-    var disabledDescription: LocalizedStringResource = "Turn on Share Crash Reports in Help & Diagnostics to enable this. Your recent activity is then sent anonymously — no logins, tokens, servers, or titles."
+    var disabledDescription: LocalizedStringResource = "Turn on Share Crash Reports in Help & Diagnostics to send logs and technical diagnostics."
 
     private enum SendState { case idle, sent, failed }
     @State private var sendState: SendState = .idle
@@ -37,25 +37,16 @@ struct SendDiagnosticsCard: View {
 
                     Button {
                         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let recentActivity = PlozzLog.recentLogText(limit: 500)
-                        let playbackJournal = HandoffDiagnostics.persistentPlaybackLogText()
-                        let logText = playbackJournal.isEmpty
-                            ? recentActivity
-                            : recentActivity
-                                + "\n\n--- Persistent playback journal ---\n"
-                                + playbackJournal
                         isSending = true
                         Task {
                             defer { isSending = false }
-                            let ok = await CrashDiagnostics.send(
-                                logText: logText, note: trimmed.isEmpty ? nil : trimmed
-                            )
+                            let ok = await CrashDiagnostics.send(note: trimmed.isEmpty ? nil : trimmed)
                             sendState = ok ? .sent : .failed
                             if ok { message = "" }
                         }
                     } label: {
                         Label(
-                            sendState == .sent ? "Sent" : "Send Recent Activity to Developer",
+                            sendState == .sent ? "Submitted" : "Send Recent Activity to Developer",
                             systemImage: sendState == .sent ? "checkmark.circle.fill" : "paperplane.fill"
                         )
                         .font(.headline)
@@ -82,9 +73,9 @@ struct SendDiagnosticsCard: View {
         case .idle:
             return idleDescription
         case .sent:
-            return "Thanks! Your recent activity was sent to the developer."
+            return "Diagnostics submitted for delivery. Thank you."
         case .failed:
-            return "Couldn't send — crash reporting isn't active. Turn on Share Crash Reports below and try again."
+            return "Couldn't submit diagnostics. Check that crash reporting is enabled and try again."
         }
     }
 }

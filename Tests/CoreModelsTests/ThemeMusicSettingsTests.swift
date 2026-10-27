@@ -23,6 +23,7 @@ final class ThemeMusicSettingsTests: XCTestCase {
         let settings = ThemeMusicSettings.default
         XCTAssertFalse(settings.isEnabled)
         XCTAssertFalse(settings.shouldPlay)
+        XCTAssertEqual(settings.volume.level, 0.25)
     }
 
     func testShouldPlayRequiresEnabledAndAudibleVolume() {
@@ -33,28 +34,40 @@ final class ThemeMusicSettingsTests: XCTestCase {
         XCTAssertTrue(ThemeMusicSettings(isEnabled: true, volume: .high).shouldPlay)
     }
 
-    func testVolumeGainIsSoftAndMonotonic() {
+    func testVolumeGainCoversSilenceToFullDeviceVolume() {
         XCTAssertEqual(ThemeMusicVolume.off.gain, 0)
         XCTAssertLessThan(ThemeMusicVolume.low.gain, ThemeMusicVolume.medium.gain)
         XCTAssertLessThan(ThemeMusicVolume.medium.gain, ThemeMusicVolume.high.gain)
-        XCTAssertLessThanOrEqual(ThemeMusicVolume.high.gain, 0.7)
+        XCTAssertEqual(ThemeMusicVolume(1).gain, 1)
+        XCTAssertEqual(ThemeMusicVolume(0.01).gain, 0.01)
+        XCTAssertEqual(ThemeMusicVolume(0.73).gain, 0.73)
+        XCTAssertEqual(ThemeMusicVolume(-1).gain, 0)
+        XCTAssertEqual(ThemeMusicVolume(2).gain, 1)
+        XCTAssertEqual(ThemeMusicVolume(.nan), .default)
+        XCTAssertEqual(ThemeMusicVolume(.infinity), .default)
     }
 
-    func testSelectableVolumeLevelsAreAllAudible() {
-        XCTAssertEqual(ThemeMusicVolume.playbackLevels, [.low, .medium, .high])
-        XCTAssertTrue(ThemeMusicVolume.playbackLevels.allSatisfy { $0.gain > 0 })
+    func testLegacyLevelsKeepExactGain() throws {
+        for (token, gain): (String, Float) in [("off", 0), ("low", 0.15), ("medium", 0.35), ("high", 0.6)] {
+            let settings = try JSONDecoder().decode(
+                ThemeMusicSettings.self, from: Data(#"{"isEnabled":true,"volume":"\#(token)"}"#.utf8)
+            )
+            XCTAssertEqual(settings.volume.gain, gain)
+        }
     }
 
     func testCodableRoundTrip() throws {
         let settings = ThemeMusicSettings(
             isEnabled: true,
-            volume: .medium
+            volume: ThemeMusicVolume(0.73)
         )
         let data = try JSONEncoder().encode(settings)
         XCTAssertEqual(
             try JSONDecoder().decode(ThemeMusicSettings.self, from: data),
             settings
         )
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["volume"] as? Double, 0.73)
     }
 
     func testLenientDecodeUsesDefaultsForMissingAndUnknownFields() throws {
@@ -63,13 +76,13 @@ final class ThemeMusicSettingsTests: XCTestCase {
             from: Data(#"{"isEnabled":true,"loops":true}"#.utf8)
         )
         XCTAssertTrue(missing.isEnabled)
-        XCTAssertEqual(missing.volume, .low)
+        XCTAssertEqual(missing.volume, .default)
 
         let unknown = try JSONDecoder().decode(
             ThemeMusicSettings.self,
             from: Data(#"{"isEnabled":true,"volume":"deafening"}"#.utf8)
         )
-        XCTAssertEqual(unknown.volume, .low)
+        XCTAssertEqual(unknown.volume, .default)
     }
 
     func testStoreRoundTripAndProfileIsolation() {
@@ -88,6 +101,8 @@ final class ThemeMusicSettingsTests: XCTestCase {
         primary.save(saved)
         XCTAssertEqual(primary.load(), saved)
         XCTAssertEqual(second.load(), .default)
+        primary.save(ThemeMusicSettings(volume: .low))
+        XCTAssertEqual(primary.load().volume.level, 0.15, "An existing saved low volume must not be raised to the new default.")
     }
 
     @MainActor

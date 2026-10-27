@@ -35,13 +35,16 @@ final class LibraryDiscoveryModel {
 
     /// Discovers libraries across `accounts`, resiliently. Always reloads so the
     /// checklist reflects servers added/removed since it was last opened.
-    func load(from accounts: [ResolvedAccount]) async {
+    func load(
+        from accounts: [ResolvedAccount], expectedAccountIDs: Set<String> = [],
+        isCurrent: () -> Bool = { true }
+    ) async {
         let generation = UUID()
         loadGeneration = generation
         state = .loading
         canSkipSelection = false
-        let discovery = await libraryDiscovery(from: accounts)
-        guard !Task.isCancelled, generation == loadGeneration else { return }
+        let discovery = await aggregator.libraryDiscovery(from: accounts, expectedAccountIDs: expectedAccountIDs)
+        guard !Task.isCancelled, generation == loadGeneration, isCurrent() else { return }
         canSkipSelection = discovery.canSkipSelection(for: accounts)
         if discovery.libraries.isEmpty, !discovery.unreachableAccountIDs.isEmpty {
             state = .failed(.serverUnreachable)

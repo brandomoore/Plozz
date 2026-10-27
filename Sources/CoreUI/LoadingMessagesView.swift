@@ -28,7 +28,7 @@ public struct LoadingMessagesView: View {
     ///   - messageColor: message text colour.
     public init(
         messages: [LoadingMessage] = LoadingMessage.playfulDefaults,
-        initialDelay: TimeInterval = 6.0,
+        initialDelay: TimeInterval = LoadingMessageSequencer.defaultInitialDelay,
         cycleInterval: TimeInterval = 5.5,
         spinnerScale: CGFloat = 1.5,
         spinnerTint: Color? = nil,

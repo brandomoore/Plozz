@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class LiveTVPlaybackCoordinatorTests: XCTestCase {
-    func testExplicitInlineWatchStartsWithoutAutoPreviewAndExpandsWithoutReplacingPlayback() async {
+    func testExplicitInlineWatchStartsWithoutAutoPreviewAndExpandsWithoutReplacingPlayback() async throws {
         let fixture = CoordinatorFixture()
         fixture.preview.setFollowsFocus(false)
         fixture.preview.setKeepWatchingWhileBrowsing(false)
@@ -15,16 +15,36 @@ final class LiveTVPlaybackCoordinatorTests: XCTestCase {
         XCTAssertFalse(fixture.preview.isExpanded)
         XCTAssertTrue(fixture.preview.isWatchingInline)
         XCTAssertTrue(fixture.preview.isHoldingWatchedChannel)
-        let prepared = fixture.preparation.current?.id
+        let prepared = try XCTUnwrap(fixture.preparation.current?.id)
         let presentation = fixture.coordinator.presentationID
-        let expanded = await fixture.coordinator.watch("iptv").value
+        let expanded = fixture.coordinator.expandPreview(presentationID: presentation, preparedID: prepared)
         XCTAssertTrue(expanded)
+        XCTAssertNil(fixture.coordinator.pendingWatchChannelID)
+        XCTAssertFalse(fixture.preparation.isPreparing)
         XCTAssertTrue(fixture.preview.isExpanded)
         XCTAssertFalse(fixture.preview.isWatchingInline)
         XCTAssertEqual(fixture.preparation.current?.id, prepared)
         XCTAssertEqual(fixture.coordinator.presentationID, presentation)
         fixture.coordinator.stop()
         XCTAssertFalse(fixture.preview.isWatchingInline)
+        await fixture.preparation.close()
+    }
+
+    func testPreviewExpansionRejectsRevokedAuthorizationAndStaleOwnership() async throws {
+        let fixture = CoordinatorFixture()
+        _ = await fixture.coordinator.watch("iptv", expandsPlayer: false).value
+        let prepared = try XCTUnwrap(fixture.preparation.current?.id)
+        let presentation = fixture.coordinator.presentationID
+        XCTAssertFalse(fixture.coordinator.expandPreview(presentationID: UUID(), preparedID: prepared))
+        XCTAssertFalse(fixture.coordinator.expandPreview(presentationID: presentation, preparedID: UUID()))
+        XCTAssertFalse(fixture.preview.isExpanded)
+        fixture.coordinator.setInteractionActive(false)
+        XCTAssertFalse(fixture.coordinator.expandPreview(presentationID: presentation, preparedID: prepared))
+        fixture.coordinator.setInteractionActive(true)
+        fixture.scope.profileID = "replacement-profile"
+        XCTAssertFalse(fixture.coordinator.expandPreview(presentationID: presentation, preparedID: prepared))
+        XCTAssertFalse(fixture.preview.isExpanded)
+        XCTAssertNil(fixture.preparation.current)
         await fixture.preparation.close()
     }
 

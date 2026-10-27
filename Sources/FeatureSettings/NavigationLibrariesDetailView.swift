@@ -2,9 +2,6 @@
 import SwiftUI
 import CoreModels
 import CoreUI
-#if os(iOS)
-import UIKit
-#endif
 
 /// Shared navigation arrangement. Hiding a shortcut never disables its content.
 public struct NavigationLibrariesDetailView: View {
@@ -14,9 +11,6 @@ public struct NavigationLibrariesDetailView: View {
     let excludedKeys: Set<String>
 
     @State private var isReordering = false
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    #endif
 
     public init(
         scope: ProfileLibrariesScope,
@@ -85,11 +79,8 @@ public struct NavigationLibrariesDetailView: View {
             available: available, automaticallyHiddenKeys: automaticallyHiddenDestinations
         )
         #if os(iOS)
-        let overflow = UIDevice.current.userInterfaceIdiom == .phone || horizontalSizeClass == .compact
-            ? NavigationDestinationDefaults.iPhoneOverflowKeys(visible: sections.enabled) : []
         let requiredEnabled = sections.enabled.count == 1 ? Set(sections.enabled) : navigation.requiredNavigationKeys
         #else
-        let overflow: Set<String> = []
         let requiredEnabled = navigation.requiredNavigationKeys
         #endif
 
@@ -101,9 +92,7 @@ public struct NavigationLibrariesDetailView: View {
                 isLifting: $isReordering,
                 requiredEnabled: requiredEnabled,
                 row: { key in
-                    var row = titles[key] ?? LiftableReorderList.Row(title: Text(verbatim: key))
-                    if overflow.contains(key) { row.detail = Text("In More") }
-                    return row
+                    titles[key] ?? LiftableReorderList.Row(title: Text(verbatim: key))
                 },
                 onChange: {
                     navigation.applyLibrarySections(

@@ -50,7 +50,7 @@ final class PreparationHTTPDiagnosticsTests: XCTestCase {
             (#"{"MediaSources":[{"Id":"private-source"},{"Id":"private-source"}]}"#,
              "validation_0.reason=duplicateSourceID", .invalidResponse)
         ] {
-            let (provider, _) = try await fixture(.jellyfin, inventory: .json(json))
+            let (provider, server) = try await fixture(.jellyfin, inventory: .json(json))
             let before = Set(PlozzLog.recentEntries(limit: 500).map(\.id))
             do {
                 _ = try await PlaybackPreparationDiagnostics.capture(provider: .jellyfin, operation: .detailVersions) {
@@ -67,6 +67,8 @@ final class PreparationHTTPDiagnosticsTests: XCTestCase {
             XCTAssertTrue(text.contains("request_1.http_status=200"), text)
             XCTAssertTrue(text.contains("operation=detailVersions"), text)
             XCTAssertFalse(text.contains("private"))
+            let requests = await server.requests
+            XCTAssertEqual(requests.filter { $0.target.contains("/PlaybackInfo") }.count, 1)
         }
     }
 
@@ -104,9 +106,11 @@ final class PreparationHTTPDiagnosticsTests: XCTestCase {
     private func fixture(
         _ kind: ProviderKind, inventory: LoopbackHTTPServer.Response
     ) async throws -> (any MediaProvider, LoopbackHTTPServer) {
+        // Separate fixtures must not inherit the shared coordinator's per-server backoff.
+        let serverID = UUID().uuidString
         let server = try LoopbackHTTPServer { request in
             switch request.target.split(separator: "?").first {
-            case "/System/Info/Public": return .json(#"{"Id":"fixture"}"#)
+            case "/System/Info/Public": return .json(#"{"Id":"\#(serverID)"}"#)
             case "/Users/private-user/Items/private-item":
                 return .json(#"{"Id":"private-item","Name":"private-title","Type":"Movie"}"#)
             case "/Items/private-item/PlaybackInfo": return inventory
@@ -116,7 +120,7 @@ final class PreparationHTTPDiagnosticsTests: XCTestCase {
         addTeardownBlock { await server.stop() }
         let url = try await server.start()
         let session = UserSession(
-            server: MediaServer(id: "fixture", name: "private-server", baseURL: url, provider: kind),
+            server: MediaServer(id: serverID, name: "private-server", baseURL: url, provider: kind),
             userID: "private-user", userName: "private-user", deviceID: "device", accessToken: "private-token"
         )
         let registry = ManagedProviderRegistry.make()

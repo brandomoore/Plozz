@@ -4,26 +4,18 @@ import SwiftUI
 /// Place this heading inside ordinary pages' scrollable content. Full-screen
 /// editors may keep it outside their independently scrolling tool pane.
 /// Add a subtitle only when the title cannot communicate the scope of the page.
-public struct SettingsPageHeader: View {
+public struct SettingsPageHeader<Trailing: View>: View {
     private let title: Text
     private let subtitle: Text?
+    private let trailing: Trailing
     #if os(tvOS)
     @Environment(\.settingsPageBackButton) private var backButton
     #endif
 
-    public init(_ title: Text, subtitle: Text? = nil) {
+    public init(_ title: Text, subtitle: Text? = nil, @ViewBuilder trailing: () -> Trailing) {
         self.title = title
         self.subtitle = subtitle
-    }
-
-    public init(_ title: LocalizedStringResource, subtitle: LocalizedStringResource? = nil) {
-        self.title = Text(title)
-        self.subtitle = subtitle.map(Text.init)
-    }
-
-    public init(verbatim title: String, subtitle: LocalizedStringResource? = nil) { // l10n:content
-        self.title = Text(verbatim: title)
-        self.subtitle = subtitle.map(Text.init)
+        self.trailing = trailing()
     }
 
     public var body: some View {
@@ -34,6 +26,9 @@ public struct SettingsPageHeader: View {
             }
             #endif
             heading
+                .frame(maxWidth: .infinity, alignment: .leading)
+            trailing
+                .fixedSize()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         #if os(tvOS)
@@ -57,6 +52,20 @@ public struct SettingsPageHeader: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+}
+
+extension SettingsPageHeader where Trailing == EmptyView {
+    public init(_ title: Text, subtitle: Text? = nil) {
+        self.init(title, subtitle: subtitle) { EmptyView() }
+    }
+
+    public init(_ title: LocalizedStringResource, subtitle: LocalizedStringResource? = nil) {
+        self.init(Text(title), subtitle: subtitle.map(Text.init))
+    }
+
+    public init(verbatim title: String, subtitle: LocalizedStringResource? = nil) { // l10n:content
+        self.init(Text(verbatim: title), subtitle: subtitle.map(Text.init))
     }
 }
 

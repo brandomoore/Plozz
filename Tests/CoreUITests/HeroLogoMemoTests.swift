@@ -1,4 +1,5 @@
 import CoreModels
+import SwiftUI
 import XCTest
 @testable import CoreUI
 #if canImport(UIKit)
@@ -7,6 +8,39 @@ import UIKit
 
 @MainActor
 final class HeroLogoMemoTests: XCTestCase {
+    func testAppLocaleReachesLogoResolutionAndSeparatesMemoEntries() async {
+        let item = MediaItem(id: "series", title: "Series", kind: .series)
+        let fallback = HeroLogoFallback(for: item, localizedResolve: { language in
+            URL(string: "https://example.test/\(language).png")
+        })
+        var environment = EnvironmentValues()
+        environment.locale = Locale(identifier: "fr_CA")
+        let policy = environment.plozzArtworkPolicy
+        XCTAssertEqual(policy.logoLanguage, "fr")
+        XCTAssertEqual(policy.forArea(.home).forPlacement(.logo).logoLanguage, "fr")
+        let french = fallback.localized(to: policy.logoLanguage)
+        let english = fallback.localized(to: "en")
+        let frenchURL = await french.resolve()
+        let englishURL = await english.resolve()
+        XCTAssertEqual(frenchURL?.lastPathComponent, "fr.png")
+        XCTAssertEqual(englishURL?.lastPathComponent, "en.png")
+        XCTAssertNotEqual(
+            HeroLogoMemo.key(for: [], fallback: french),
+            HeroLogoMemo.key(for: [], fallback: english)
+        )
+        environment.locale = Locale(identifier: "en")
+        XCTAssertNotEqual(
+            policy.forPlacement(.logo).identity,
+            environment.plozzArtworkPolicy.forPlacement(.logo).identity
+        )
+        XCTAssertEqual(policy.identity, environment.plozzArtworkPolicy.identity,
+                       "Non-logo artwork must retain its shared first-paint cache keys.")
+        XCTAssertEqual(
+            HeroLogoMemo.key(for: [], fallback: french),
+            HeroLogoMemo.key(for: [], fallback: fallback.localized(to: "fr-FR"))
+        )
+    }
+
     func testFallbackOnlyTitlesHaveDifferentKeysWithEitherArtworkPreference() {
         let first = MediaItem(id: "first", title: "First series", kind: .series)
         let second = MediaItem(id: "second", title: "Second series", kind: .series)

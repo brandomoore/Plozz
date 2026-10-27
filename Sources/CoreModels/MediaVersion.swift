@@ -229,50 +229,23 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
     /// effective lines from width too, so a letterboxed 1920×804 file reads
     /// 1080p rather than 720p).
     public var resolutionLabel: String? {  // l10n:content — technical resolution label, never translated
-        if let sourceMetadata, let badge = sourceMetadata.resolutionBadge { return badge.label }
-        guard let height else { return nil }
-        switch height {
-        case 4321...: return "8K"
-        case 1601...4320: return "4K"
-        case 1081...1600: return "1440p"
-        case 901...1080: return "1080p"
-        case 651...900: return "720p"
-        case 1...650: return "SD"
-        default: return nil
-        }
+        sourceMetadata?.resolutionBadge?.label ?? flattenedSourceMetadata.resolutionBadge?.label
     }
 
     /// Whether this version carries any HDR (non-SDR) video range. Prefers the
     /// authoritative `sourceMetadata` range classification when present.
     public var isHDR: Bool {
-        if let sourceMetadata {
-            return sourceMetadata.dynamicRangeBadges.contains { $0.style == .hdr || $0.style == .dolby }
+        (sourceMetadata ?? flattenedSourceMetadata).dynamicRangeBadges.contains {
+            $0.style == .hdr || $0.style == .dolby
         }
-        if normalizedVideoRange == "HDR10PLUS" { return true }
-        guard let token = videoRange, let range = HDRRange(rawValue: token) else { return false }
-        return range != .sdr
     }
 
     /// A compact HDR badge label, e.g. `Dolby Vision`, `HDR10`, `HDR10+`, `HLG`,
     /// or `nil` for SDR/unknown — used in the version diff row. Prefers the
     /// authoritative `sourceMetadata` classification (so HDR10+ is preserved).
     public var hdrLabel: String? {  // l10n:content — brand/format name (Dolby Vision, HDR10, HLG), never translated
-        if let sourceMetadata {
-            let range = sourceMetadata.dynamicRangeBadges
-            if range.contains(where: { $0.style == .dolby }) { return "Dolby Vision" }
-            if let hdr = range.first(where: { $0.style == .hdr }) { return hdr.label }
-            return nil
-        }
-        if normalizedVideoRange == "HDR10PLUS" { return "HDR10+" }
-        guard let token = videoRange, let range = HDRRange(rawValue: token) else { return nil }
-        switch range {
-        case .sdr: return nil
-        case .hlg: return "HLG"
-        case .hdr10: return "HDR10"
-        case .hdr10Plus: return "HDR10+"
-        case .dolbyVision, .dolbyVisionWithHDR10, .dolbyVisionWithHLG, .dolbyVisionWithSDR:
-            return "Dolby Vision"
-        }
+        let range = (sourceMetadata ?? flattenedSourceMetadata).dynamicRangeBadges
+        return range.first { $0.style == .dolby || $0.style == .hdr }?.label
     }
 
     private var normalizedVideoRange: String {
@@ -560,6 +533,9 @@ public extension MediaVersion {
         // non-DoVi display) forces a tone-mapped transcode.
         if let token = videoRange, let range = HDRRange(rawValue: token) {
             if !capabilities.allowedHDRRanges.contains(range) { return .transcode }
+        } else if normalizedVideoRange.hasPrefix("DOVI"),
+                  !capabilities.allowedHDRRanges.contains(.dolbyVision) {
+            return .transcode
         } else if normalizedVideoRange == "HDR10PLUS",
                   !capabilities.allowedHDRRanges.contains(.hdr10) {
             return .transcode

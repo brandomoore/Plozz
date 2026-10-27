@@ -5,77 +5,36 @@ import CoreUI
 import SwiftUI
 
 struct PlozziOSPlexUserSelectionView: View {
+    let appModel: PlozziOSAppModel
     let selection: PlexHomeUsersModel.PendingPlexUserSelection
-    let onSelect: (PlexHomeUser) -> Void
-
-    private var orderedUsers: [PlexHomeUser] {
-        selection.users.sorted { lhs, rhs in
-            if lhs.isAdmin != rhs.isAdmin {
-                return lhs.isAdmin
-            }
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        }
-    }
+    let onImportAll: () -> PlexHomeProfileImportResult
+    let onSelect: (PlexHomeUser, Bool) -> Void
+    @State private var hasPresentedAuthorization = false
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    ForEach(orderedUsers) { user in
-                        Button {
-                            onSelect(user)
-                        } label: {
-                            userRow(user)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    Text("Choose your user on \(selection.serverName).")
-                } footer: {
-                    Text("You can change this later in Settings.")
+        ZStack {
+            NavigationStack {
+                PlexHomeOnboardingView(users: selection.users, onImportAll: onImportAll, onSelect: onSelect)
+                    .id(selection.id)
+                    .settingsPageSurface()
+            }
+            .opacity(presentsProfileAuthorization ? 0 : 1)
+            .allowsHitTesting(!presentsProfileAuthorization)
+            .accessibilityHidden(presentsProfileAuthorization)
+            if presentsProfileAuthorization {
+                PlozziOSProfileAccessGateView(appModel: appModel) {
+                    hasPresentedAuthorization = false
                 }
             }
-            .settingsPageSurface()
-            .navigationTitle("Which Plex User Are You?")
-            .navigationBarTitleDisplayMode(.inline)
         }
         .interactiveDismissDisabled()
+        .onChange(of: presentsProfileAuthorization) { _, presented in
+            if presented { hasPresentedAuthorization = true }
+        }
     }
 
-    private func userRow(_ user: PlexHomeUser) -> some View {
-        HStack(spacing: 14) {
-            AsyncImage(url: user.avatarURL) { image in
-                image
-                    .resizable()
-                    .scaledToFill()
-            } placeholder: {
-                Image(systemName: "person.crop.circle.fill")
-                    .resizable()
-                    .plozzForeground(.secondary)
-            }
-            .frame(width: 48, height: 48)
-            .clipShape(Circle())
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(user.name)
-                    .foregroundStyle(.primary)
-                if user.isAdmin {
-                    Text("Account Owner")
-                        .font(.caption)
-                        .plozzForeground(.secondary)
-                }
-            }
-
-            Spacer()
-
-            if user.requiresPIN {
-                Image(systemName: "lock.fill")
-                    .font(.caption)
-                    .plozzForeground(.secondary)
-                    .accessibilityLabel("Requires PIN")
-            }
-        }
-        .contentShape(Rectangle())
+    private var presentsProfileAuthorization: Bool {
+        hasPresentedAuthorization || appModel.parentalSwitch != nil || appModel.lockedSwitch != nil
     }
 }
 #endif

@@ -51,6 +51,16 @@ early (the decision tree in §4 routes you):
 
 ---
 
+## Downloads rendering boundary
+
+Mobile Downloads rows read a cached artwork index and grouped library. Storage
+resolution, existence checks, and artwork writes belong to the artwork actor,
+not SwiftUI `body` or synchronous row getters. Refreshing Downloads revalidates
+local files so removed artwork can still be repaired without changing the media.
+Fatal iOS 18 Downloads samples have included filesystem metadata lookup during
+episode-row rendering; a sampled UI frame alone does not prove a decoder fault
+or establish that every Downloads hang shares one cause.
+
 ## Sentry diagnostics and matching symbols
 
 Crash-reporting consent gates all uploads. Automatic UI/network breadcrumbs and
@@ -73,13 +83,24 @@ This is separate from automatic Sentry events and the in-memory performance
 snapshot below. It captures pseudonymous source/account/profile transitions and
 a fresh source-storage snapshot so a disappearing source can be distinguished
 from failed enrollment, suppression, changed profile scope or stale presentation.
+The attachment is a typed JSON report, not a copy of Recent Activity or the
+free-form playback trace. It retains category/severity history, version-preparation
+request/decode evidence, playback/connection failures, codecs and timings.
+Library browsing, recommendations and Continue Watching additionally retain
+typed section, route, decode/paging facts and numeric errors, rather than relying
+on the local free-form log. These and preparation failures use bounded local
+record buffers with explicit dropped-record counts.
+Source/account/profile/attempt references are remapped within each report,
+including relationships between journals; stable local hashes and UUIDs do not
+leave the device. Record times are relative ages. The optional written message
+is submitted separately as written, so feedback is not guaranteed anonymous.
 
 Opted-in reports also carry a bounded, in-memory performance snapshot. It records
 coarse operation/provider categories, elapsed time, start-thread identity,
 overlapping work, and available item/row/credit/account/request/byte counts.
 Home fetching, merging and state publication are distinguished from HTTP
 transport/JSON decoding, share scans, playlist imports, guide batches and
-automatic-channel work. Active operations remain visible if a hang prevents
+automatic-channel work and search counts/timing (never search text). Active operations remain visible if a hang prevents
 their completion. Slow completed operations are retained separately from recent
 work so a burst of fast requests cannot immediately erase them.
 Terminal outcomes include failures in requested individual Home rows and earlier
@@ -1619,7 +1640,8 @@ sometimes crashed. "It's an artwork/scroll bug."
   collector** — alongside `JavaScriptCore libpas scavenger` and `JSC Heap Collector
   Thread`. Aggregated **by leaf binary**: a huge `UNKNOWN` (JIT) bucket plus
   `JavaScriptCore`. JavaScriptCore is pulled in by exactly one dependency:
-  **YouTubeKit** (trailer extraction).
+  **YouTubeKit** (trailer extraction in that historical build). That dependency
+  and extraction path have since been removed; current YouTube trailers open externally.
 
 **Root cause.** Opening a detail page speculatively verified its trailer button by
 running `YouTubeTrailerProvider.firstPlayableVideoID`, which extracted **every**

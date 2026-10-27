@@ -1,4 +1,5 @@
 import Foundation
+import CoreModels
 #if canImport(OSLog)
 import OSLog
 #endif
@@ -112,14 +113,12 @@ public enum PlozzLog {
     // MARK: - Recent-log ring buffer
 
     /// Severity of a captured log line.
-    public enum Level: String, Sendable {
+    public enum Level: String, Codable, Sendable {
         case debug, info, error
     }
 
-    /// One captured log line. Holds exactly what was passed to `os_log` — which
-    /// is already secret-safe because every call site redacts via
-    /// `redact(headers:)` / `redact(url:)`. Nothing extra is stored, so the
-    /// buffer inherits the same "never logs tokens" guarantee.
+    /// A local developer message, not a privacy-safe export. Call sites must
+    /// protect secrets; server and content details may still be present.
     public struct LogEntry: Sendable, Identifiable {
         public let id: UUID
         public let date: Date
@@ -175,13 +174,52 @@ public enum PlozzLog {
         return Array(all.suffix(limit))
     }
 
-    /// The recent log window rendered as plain text (one line per entry),
-    /// suitable for pasting into a bug report. Already redacted at source.
+    /// Local developer text. Outbound reports must use `activityExport` instead.
     public static func recentLogText(limit: Int = 100) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return recentEntries(limit: limit)
             .map { "\(formatter.string(from: $0.date)) [\($0.level.rawValue)] \($0.category): \($0.message)" }
             .joined(separator: "\n")
+    }
+
+    public struct ActivityExport: Encodable, Sendable {
+        private let schema = 1
+        private let entries: [ActivityEntry]
+
+        fileprivate init(entries: [LogEntry], scope: DiagnosticExportScope) {
+            self.entries = entries.suffix(500).map {
+                ActivityEntry(ageMilliseconds: scope.ageMilliseconds(for: $0.date),
+                              category: ActivityCategory(rawValue: $0.category) ?? .other, level: $0.level)
+            }
+        }
+
+        public var supportText: String { // l10n:content — fixed technical support protocol fields, not UI copy
+            (["format=plozz-activity-1", "message_text=excluded"] + entries.map {
+                let age = $0.ageMilliseconds.map(String.init) ?? "unknown"
+                return "age_ms=\(age) category=\($0.category.rawValue) level=\($0.level.rawValue)"
+            }).joined(separator: "\n")
+        }
+    }
+
+    private enum ActivityCategory: String, Encodable, Sendable {
+        case networking, auth, discovery, playback, app, sync, other
+    }
+
+    private struct ActivityEntry: Encodable, Sendable {
+        let ageMilliseconds: Int?
+        let category: ActivityCategory
+        let level: Level
+    }
+
+    /// Arbitrary message text remains local, regardless of call-site redaction.
+    public static func activityExport(
+        entries: [LogEntry]? = nil, scope: DiagnosticExportScope = DiagnosticExportScope()
+    ) -> ActivityExport {
+        ActivityExport(entries: entries ?? recentEntries(limit: 500), scope: scope)
+    }
+
+    public static func privacyFilteredLogText(entries: [LogEntry]) -> String {
+        activityExport(entries: entries).supportText
     }
 }

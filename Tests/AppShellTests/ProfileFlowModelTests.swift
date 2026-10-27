@@ -58,6 +58,94 @@ final class ProfileFlowModelTests: XCTestCase {
         XCTAssertFalse(model.isChoosingProfile)
     }
 
+    func testImportedOnboardingSelectionKeepsExistingLocksAndCompletesOnlyAfterActivation() async {
+        let (model, profiles) = makeModel()
+        let original = profiles.activeProfileID
+        var target = profiles.add(name: "Imported", isAwaitingSetup: true)
+        target.replaceLock(with: ProfileLock.make(pin: "2468", iterations: 1))
+        profiles.update(target)
+        var activated = 0
+        model.switchProfileForPlexOnboarding(to: target.id) { activated += 1 }
+        XCTAssertEqual(profiles.activeProfileID, original)
+        XCTAssertEqual(model.pendingLockedProfile?.id, target.id)
+        XCTAssertEqual(activated, 0)
+        model.cancelProfileLockPrompt()
+        XCTAssertEqual(profiles.activeProfileID, original)
+        XCTAssertEqual(activated, 0)
+        model.switchProfileForPlexOnboarding(to: target.id) { activated += 1 }
+        let accepted = await model.submitProfileLockPIN("2468")
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(profiles.activeProfileID, target.id)
+        XCTAssertEqual(activated, 1)
+        XCTAssertNil(model.pendingSetupProfile, "The already-open onboarding flow owns its continuation.")
+    }
+
+    func testOnboardingSpendsLinkedProfilePINImmediatelyWithoutAskingAgain() async throws {
+        let env = try makeEnv(accounts: [("plex", .plex)])
+        var target = env.profiles.add(
+            name: "Imported", activeAccountIDs: ["plex"],
+            plexHomeUserBindings: ["plex": .init(
+                homeUserID: "parent", name: "Parent", requiresPIN: true, pinRequirementVerified: true
+            )],
+            isAwaitingSetup: true
+        )
+        target.replaceLock(with: ProfileLock.make(pin: "2468", matchesPlexPIN: true, iterations: 1))
+        env.profiles.update(target)
+        let authenticated = expectation(description: "Linked PIN authenticates exactly once")
+        authenticated.assertForOverFulfill = true
+        env.plex.plexHomeUsersFetch = { _, _ in
+            XCTFail("The just-entered linked PIN should go directly to authentication.")
+            return []
+        }
+        env.plex.plexHomeUserSwitch = { _, pin, _, _ in
+            XCTAssertEqual(pin, "2468")
+            authenticated.fulfill()
+            return "parent-cloud"
+        }
+        env.plex.plexServerTokenResolve = { _, _, _ in "parent-server" }
+        var activated = false
+        env.flow.switchProfileForPlexOnboarding(to: target.id) { activated = true }
+        let accepted = await env.flow.submitProfileLockPIN("2468")
+        XCTAssertTrue(accepted)
+        XCTAssertTrue(activated)
+        await env.plex.waitForPlexPINRequirementCheck()
+        XCTAssertNil(env.plex.pendingPlexPINRequest)
+        XCTAssertEqual(env.plex.resolvedToken(for: "plex"), "parent-server")
+        env.plex.ensurePlexIdentityForActiveProfile()
+        XCTAssertNil(env.plex.pendingPlexPINRequest)
+        await fulfillment(of: [authenticated], timeout: 2)
+    }
+
+    func testOnboardingRetargetsAnAlreadyRunningSetupWithoutCompletingItsPreviousOwner() {
+        let (model, profiles) = makeModel()
+        let previous = profiles.add(name: "Previous", isAwaitingSetup: true)
+        model.switchProfile(to: previous.id)
+        XCTAssertEqual(model.pendingSetupProfile?.id, previous.id)
+        let selected = profiles.add(name: "Imported", isAwaitingSetup: true)
+        model.switchProfileForPlexOnboarding(to: selected.id) {}
+        XCTAssertEqual(model.pendingSetupProfile?.id, selected.id)
+        XCTAssertEqual(profiles.activeProfileID, selected.id)
+        model.completeLibrariesInsideSetup(for: previous.id)
+        XCTAssertTrue(profiles.profiles.first { $0.id == previous.id }?.needsSetup == true)
+        model.completeLibrariesInsideSetup(for: selected.id)
+        XCTAssertTrue(profiles.profiles.first { $0.id == previous.id }?.needsSetup == true)
+        XCTAssertFalse(profiles.activeProfile.needsSetup)
+    }
+
+    func testImportedProfileResumesAppearanceIfOnlyItsLibrariesWereCompleted() {
+        let (model, profiles) = makeModel()
+        let imported = profiles.add(name: "Imported", isAwaitingSetup: true)
+        model.switchProfile(to: imported.id)
+        model.completeLibrariesInsideSetup(for: imported.id)
+        XCTAssertFalse(profiles.activeProfile.needsSetup)
+        model.finishSetupFlow()
+        XCTAssertTrue(model.hasResumableSetup)
+        model.resumeSetupIfNeeded()
+        XCTAssertTrue(model.isPickingAppearanceForNewProfile)
+        model.completeAppearanceSetup(for: imported.id)
+        XCTAssertFalse(model.hasResumableSetup)
+    }
+
     func testPrepareLaunchPickerHiddenForSingleProfile() {
         let (model, _) = makeModel()
         // A brand-new household has one (default) profile → no launch picker,

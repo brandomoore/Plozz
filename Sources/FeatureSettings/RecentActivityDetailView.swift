@@ -12,9 +12,8 @@ import CoreUI
 /// focusable row, so pressing down walks the log and the `ScrollView` follows —
 /// giving a proper, readable console. Newest entries are shown first.
 ///
-/// The lines come straight from `PlozzLog`'s ring buffer, which is already
-/// redacted at the source (tokens/secrets stripped), so nothing sensitive is
-/// shown here.
+/// Local messages may contain configuration or content details. Submitted reports
+/// use a separate allowlisted representation, never these displayed messages.
 struct RecentActivityDetailView: View {
     /// Whether the on-demand "Send to Developer" upload is possible right now —
     /// i.e. the build shipped with a crash-reporting endpoint AND the user has
@@ -84,21 +83,18 @@ struct RecentActivityDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             SettingsPageHeader("Recent Activity")
-            Text("The most recent app log lines, kept only on this Apple TV and already stripped of tokens and secrets. Newest first — a maintainer may ask what Plozz was doing when a bug happened.")
+            Text("Recent app logs stored on this Apple TV, newest first. You can choose to share logs and additional technical diagnostics when reporting a problem.")
                 .font(.callout)
                 .plozzForeground(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    /// The whole point of this page for real debugging: hand the *full* log off
-    /// to the developer's crash-reporting service in one click, so it can be read
-    /// on a computer instead of squinting at (or trying to QR-scan) a TV. Shared
-    /// with the Help & Diagnostics page via `SendDiagnosticsCard`.
+    /// Submit filtered technical evidence, not the displayed free-form messages.
     private var sendSection: some View {
         SendDiagnosticsCard(
             canSend: canSendDiagnostics,
-            idleDescription: "Uploads the full log below so it can be read on a computer instead of scrolling here. Sent anonymously — no logins, tokens, servers, or titles are included."
+            idleDescription: SettingsCopy.manualDiagnostics
         )
     }
 }

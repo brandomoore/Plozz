@@ -19,6 +19,32 @@ final class OnlineTrailerTests: XCTestCase {
         let movie = MediaItem(id: "m1", title: "Dune", kind: .movie)
         XCTAssertFalse(movie.isYouTubeTrailer)
         XCTAssertNil(movie.youTubeTrailerVideoID)
+        XCTAssertNil(movie.youTubeTrailerAppURL)
+        XCTAssertNil(movie.youTubeTrailerWatchURL)
+    }
+
+    func testExternalTrailerLinksUseOnlyValidatedVideoID() {
+        let item = MediaItem.youTubeTrailer(videoID: "dQw4w9WgXcQ", title: "Trailer")
+        XCTAssertEqual(item.youTubeTrailerAppURL?.absoluteString, "youtube://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        XCTAssertEqual(item.youTubeTrailerWatchURL?.absoluteString, "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        let invalid = MediaItem.youTubeTrailer(videoID: "bad&v=other", title: "Trailer")
+        XCTAssertTrue(invalid.isYouTubeTrailer)
+        XCTAssertNil(invalid.youTubeTrailerAppURL)
+        XCTAssertNil(invalid.youTubeTrailerWatchURL)
+        XCTAssertNil(MediaItem.youTubeVideoID(fromURL: "https://notyoutube.com/watch?v=dQw4w9WgXcQ"))
+        XCTAssertNil(MediaItem.youTubeVideoID(fromURL: "https://notyoutu.be/dQw4w9WgXcQ"))
+        XCTAssertNil(MediaItem.youTubeVideoID(fromURL: "áQw4w9WgXcQ"))
+    }
+
+    func testYouTubeAppLinkPreservesVideoNavigationHostPathAndQuery() throws {
+        let item = MediaItem.youTubeTrailer(videoID: "aqz-KE-bpKQ", title: "Trailer")
+        let components = try XCTUnwrap(URLComponents(
+            url: try XCTUnwrap(item.youTubeTrailerAppURL), resolvingAgainstBaseURL: false
+        ))
+        XCTAssertEqual(components.scheme, "youtube")
+        XCTAssertEqual(components.host, "www.youtube.com")
+        XCTAssertEqual(components.path, "/watch")
+        XCTAssertEqual(components.queryItems, [URLQueryItem(name: "v", value: "aqz-KE-bpKQ")])
     }
 
     // MARK: - YouTube URL parsing (server RemoteTrailers / Plex remote extras)

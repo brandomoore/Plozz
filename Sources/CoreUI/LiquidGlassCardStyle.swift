@@ -1,11 +1,11 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-/// Liquid-glass card surface for browsing tiles, ported from the Twozz "Browse"
+/// Liquid-glass card surface for browsing tiles, ported from the Strozz "Browse"
 /// styling so Plozz's library grid matches it. Uses native Liquid Glass on
 /// tvOS 26+ and a lightweight translucent fallback on older versions.
 ///
-/// On focus the surface picks up a **subtle translucent tint** (matching Twozz's
+/// On focus the surface picks up a **subtle translucent tint** (matching Strozz's
 /// focus treatment) — unless the system **Reduce Transparency** accessibility
 /// setting is on, in which case it switches to a **solid/opaque** focus fill so
 /// the lift stays legible without relying on translucency.
@@ -118,7 +118,7 @@ public struct PlozzGlassCardModifier: ViewModifier {
 }
 
 /// Hairline frosted-glass rim drawn around a clipped media thumbnail, ported
-/// from Twozz's `mediaEdgeColor` overlay. Gives every card's artwork the same
+/// from Strozz's `mediaEdgeColor` overlay. Gives every card's artwork the same
 /// inner glass edge and covers the sub-pixel bleed a clipped image/video plane
 /// can show past rounded corners.
 public struct PlozzMediaEdgeModifier: ViewModifier {
@@ -146,7 +146,7 @@ public struct PlozzMediaEdgeModifier: ViewModifier {
 /// Custom fallback style for focusable browsing **cards** (Home's library
 /// shortcuts, Music tiles, genre/category cards). Replaces the platform's
 /// default `.card` style — whose focus state paints a stark **white** plate —
-/// with Plozz's Twozz-ported liquid-glass focus surface: a subtle, theme-tinted
+/// with Plozz's Strozz-ported liquid-glass focus surface: a subtle, theme-tinted
 /// lift that deepens on focus, draws a hairline border, and respects Reduce
 /// Transparency. Drive it through `.plozzCardButton(cornerRadius:)`, which also
 /// chooses the UIKit control for System and this fallback for custom focus.
@@ -207,7 +207,7 @@ public extension View {
         modifier(PlozzFocusableCardModifier(cornerRadius: cornerRadius, variant: variant))
     }
 
-    /// Draws Twozz's hairline "inner glass" rim around a clipped media thumbnail:
+    /// Draws Strozz's hairline "inner glass" rim around a clipped media thumbnail:
     /// a 1.5pt frosted-glass stroke (the theme's `mediaEdgeColor`) inset half a
     /// point outside the artwork's rounded rect. Apply it **after** the artwork's
     /// `.clipShape`, passing the same corner radius, so every card shares the same
@@ -216,7 +216,7 @@ public extension View {
         modifier(PlozzMediaEdgeModifier(cornerRadius: cornerRadius, isEnabled: isEnabled))
     }
 
-    /// Styles a `Button` as a Plozz browsing card: the Twozz-ported liquid-glass
+    /// Styles a `Button` as a Plozz browsing card: the Strozz-ported liquid-glass
     /// focus surface in place of tvOS's white `.card` focus plate, with the
     /// system focus effect disabled so no white halo remains.
     func plozzCardButton(

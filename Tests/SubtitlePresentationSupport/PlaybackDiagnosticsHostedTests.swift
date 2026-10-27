@@ -40,7 +40,7 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
         try await assertControlClearance(diagnostics: fixture, expectedTokens: [
             "AetherEngine", "v7.44.0", "APAC", "7.1.4", "HDMI", "Thermal", "engines 2", "Stalls", "Dropped",
             "33.2", "82.0", "45.0", "10.0", "24.00", "23 fps live", "P8", "10-bit", "DOVIWITHHDR10",
-            "Playback cache", "512 MB"
+            "Playback cache", "512 MB", "Encoding", "Lossy encoding"
         ])
     }
 

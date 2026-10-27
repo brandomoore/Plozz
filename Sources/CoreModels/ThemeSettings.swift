@@ -2,7 +2,7 @@ import Foundation
 
 /// User-selectable app appearance (pure data model).
 ///
-/// Mirrors the `AppTheme` in my Twozz app for structural parity, but the chosen
+/// Mirrors the `AppTheme` in my Strozz app for structural parity, but the chosen
 /// theme is persisted **locally** (standard `UserDefaults`) — there is no App
 /// Group or cross-app preference sharing. The concrete colours each theme paints
 /// with live in `CoreUI` (`ThemePalette`), so this stays Foundation-only and the

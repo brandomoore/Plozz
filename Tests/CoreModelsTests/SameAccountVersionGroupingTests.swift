@@ -162,8 +162,9 @@ final class SameAccountVersionGroupingTests: XCTestCase {
         XCTAssertEqual(version.technicalBadges, item.mediaInfo?.technicalBadges)
         XCTAssertEqual(
             version.technicalBadges.map(\.label),
-            ["4K", "Dolby Vision", "HDR10", "Dolby Digital+", "Dolby Atmos"]
+            ["4K", "Dolby Vision", "Dolby Digital+", "Dolby Atmos"]
         )
+        XCTAssertEqual(version.technicalBadges[1].detail, "HDR10")
     }
 
     /// The old flattened path dropped HDR10+ to SDR. Rich source metadata must

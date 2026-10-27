@@ -247,6 +247,11 @@ final class DownloadPresentationTests: XCTestCase {
         )
         defer { model.beginProfileTransition() }
         try await waitUntil { model.records.count == downloads.count }
+        let storedCount = await registry.all().count
+        XCTAssertEqual(
+            model.records.count, downloads.count,
+            "Published \(model.records.count), grouped \(model.library.shows.count), stored \(storedCount)."
+        )
         await model.refreshArtwork()
         let app = PlozziOSAppModel()
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -739,6 +744,37 @@ final class DownloadPresentationTests: XCTestCase {
         ])
     }
 
+    func testDownloadRowArtworkReadsNeverAccessStorageOnTheMainThread() async throws {
+        let backing = try temporaryStorage()
+        var download = record()
+        download.snapshot.artworkFileName = "artwork.png"
+        let folder = try backing.pinnedFolderURL(forKey: download.identityKey)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let expected = folder.appendingPathComponent("artwork.png", isDirectory: false)
+        try imageData().write(to: expected)
+        let storage = DownloadStorageThreadProbe(backing: backing)
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(
+            records: [download.identityKey: download]
+        )))
+        let model = makeModel(
+            registry: registry, storage: storage,
+            probe: ArtworkProbe(data: imageData()), startsActive: false
+        )
+        defer { model.beginProfileTransition() }
+        try await waitUntil { model.records.count == 1 }
+        try await waitUntil { model.artworkURL(for: download) == expected }
+        storage.reset()
+
+        for _ in 0..<100 {
+            XCTAssertEqual(model.artworkURL(for: download), expected)
+        }
+
+        let calls = storage.calls
+        print("Download row storage calls: total=\(calls.total) main=\(calls.main)")
+        XCTAssertEqual(calls.total, 0, "Rendering cached rows must not resolve or prepare download storage.")
+        XCTAssertEqual(calls.main, 0, "Filesystem work must not block SwiftUI's main-thread rendering.")
+    }
+
     func testExistingDownloadsRepairMissingAndCorruptArtworkWithoutChangingMedia() async throws {
         let storage = try temporaryStorage()
         let fixtures = (0..<4).map { record(id: "episode-\($0)") }
@@ -781,6 +817,116 @@ final class DownloadPresentationTests: XCTestCase {
         await reopened.refreshArtwork()
         let reopenedCalls = await probe.calls
         XCTAssertEqual(reopenedCalls, calls, "Pinned artwork must survive a fresh registry/model without contacting a server.")
+    }
+
+    func testArtworkIndexResolvesOffMainAndCachesUntilRefreshOrReplacement() async throws {
+        let backing = try temporaryStorage()
+        var download = record()
+        download.snapshot.artworkFileName = "artwork.png"
+        let folder = try backing.pinnedFolderURL(forKey: download.identityKey)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("artwork.png", isDirectory: false)
+        try imageData().write(to: url)
+        let storage = DownloadStorageThreadProbe(backing: backing)
+        let index = PlozziOSDownloadArtworkIndex()
+
+        let first = try await index.snapshot(records: [download], storage: storage, refreshing: false)
+        XCTAssertEqual(first[download.identityKey]?.url, url)
+        XCTAssertEqual(storage.calls.total, 1)
+        XCTAssertEqual(storage.calls.main, 0)
+
+        storage.reset()
+        _ = try await index.snapshot(records: [download], storage: storage, refreshing: false)
+        XCTAssertEqual(storage.calls.total, 0, "Progress updates must reuse unchanged artwork metadata.")
+
+        download.createdAt = download.createdAt.addingTimeInterval(1)
+        let replacement = try await index.snapshot(records: [download], storage: storage, refreshing: false)
+        XCTAssertFalse(try XCTUnwrap(first[download.identityKey]).matches(download))
+        XCTAssertTrue(try XCTUnwrap(replacement[download.identityKey]).matches(download))
+        XCTAssertEqual(storage.calls.total, 1, "Replacing a download must not reuse its previous generation's lookup.")
+
+        try FileManager.default.removeItem(at: url)
+        let refreshed = try await index.snapshot(records: [download], storage: storage, refreshing: true)
+        XCTAssertNil(refreshed[download.identityKey]?.url)
+        XCTAssertEqual(storage.calls.main, 0)
+        let removed = try await index.snapshot(records: [], storage: storage, refreshing: false)
+        XCTAssertTrue(removed.isEmpty)
+
+        storage.reset()
+        let written = try await index.write(imageData(), for: download, storage: storage)
+        XCTAssertEqual(storage.calls.total, 1)
+        XCTAssertEqual(storage.calls.main, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: written.path))
+        await index.removeUnattachedFile(at: written)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: written.path))
+    }
+
+    func testSlowArtworkStorageDoesNotDelayRowsOrPublishAfterProfileTransition() async throws {
+        let backing = try temporaryStorage()
+        var download = record()
+        download.snapshot.artworkFileName = "artwork.png"
+        let folder = try backing.pinnedFolderURL(forKey: download.identityKey)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try imageData().write(to: folder.appendingPathComponent("artwork.png", isDirectory: false))
+        let storage = DownloadStorageThreadProbe(backing: backing, blocksFirstLookup: true)
+        defer { storage.resume() }
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(
+            records: [download.identityKey: download]
+        )))
+        let model = makeModel(
+            registry: registry, storage: storage,
+            probe: ArtworkProbe(data: imageData()), startsActive: false
+        )
+        defer { model.beginProfileTransition() }
+        try await waitUntil { storage.isWaiting }
+        XCTAssertEqual(model.records.count, 1, "Rows must appear without waiting for filesystem metadata.")
+        XCTAssertEqual(model.library.shows.count, 1)
+        for _ in 0..<100 { XCTAssertNil(model.artworkURL(for: download)) }
+        XCTAssertEqual(storage.calls.total, 1)
+        XCTAssertEqual(storage.calls.main, 0)
+
+        let refresh = Task { await model.refreshArtwork() }
+        model.beginProfileTransition()
+        storage.resume()
+        await refresh.value
+        XCTAssertNil(model.artworkURL(for: download), "A retiring profile must not publish a late lookup.")
+    }
+
+    func testReturningToDownloadsRepairsArtworkRemovedAfterItWasCached() async throws {
+        let storage = try temporaryStorage()
+        var download = record()
+        download.snapshot.artworkFileName = "artwork.png"
+        let folder = try storage.pinnedFolderURL(forKey: download.identityKey)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let original = folder.appendingPathComponent("artwork.png", isDirectory: false)
+        try imageData().write(to: original)
+        let mediaURL = try storage.pinnedFileURL(for: download)
+        let media = Data("downloaded media".utf8)
+        try media.write(to: mediaURL)
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(
+            records: [download.identityKey: download]
+        )))
+        let probe = ArtworkProbe(data: imageData())
+        let model = makeModel(registry: registry, storage: storage, probe: probe)
+        defer { model.beginProfileTransition() }
+        try await waitUntil { model.records.count == 1 }
+        await model.refreshArtwork()
+        XCTAssertEqual(model.artworkURL(for: download), original)
+        let initialCalls = await probe.calls
+        XCTAssertEqual(initialCalls, 0)
+
+        try FileManager.default.removeItem(at: original)
+        await model.refreshArtwork()
+
+        let repaired = try XCTUnwrap(model.records.first)
+        let repairedURL = try XCTUnwrap(model.artworkURL(for: repaired))
+        XCTAssertNotEqual(repairedURL, original)
+        XCTAssertNotNil(UIImage(contentsOfFile: repairedURL.path))
+        XCTAssertNil(model.artworkURL(for: download), "Old row snapshots must not resolve replacement artwork.")
+        let repairedCalls = await probe.calls
+        XCTAssertEqual(repairedCalls, 1)
+        XCTAssertEqual(try Data(contentsOf: mediaURL), media)
+        XCTAssertEqual(repaired.status, .completed)
     }
 
     func testFailedArtworkCanRecoverOnTheNextVisit() async throws {
@@ -1046,6 +1192,55 @@ private struct DownloadTabFixture: View {
 private struct TemporaryDownloadStorage: DownloadStorageLocating {
     let root: URL
     func pinnedMediaDirectory() throws -> URL { root }
+}
+
+private final class DownloadStorageThreadProbe: DownloadStorageLocating, @unchecked Sendable {
+    private enum Failure: Error { case timedOut }
+    private let backing: any DownloadStorageLocating
+    private let lock = NSLock()
+    private let gate: DispatchSemaphore?
+    private var hasBlocked = false
+    private var waiting = false
+    private var totalCalls = 0
+    private var mainCalls = 0
+
+    init(backing: any DownloadStorageLocating, blocksFirstLookup: Bool = false) {
+        self.backing = backing
+        gate = blocksFirstLookup ? DispatchSemaphore(value: 0) : nil
+    }
+
+    var calls: (total: Int, main: Int) {
+        lock.withLock { (totalCalls, mainCalls) }
+    }
+
+    var isWaiting: Bool { lock.withLock { waiting } }
+
+    func resume() { gate?.signal() }
+
+    func reset() {
+        lock.withLock {
+            totalCalls = 0
+            mainCalls = 0
+        }
+    }
+
+    func pinnedMediaDirectory() throws -> URL {
+        let shouldWait = lock.withLock {
+            totalCalls += 1
+            if Thread.isMainThread { mainCalls += 1 }
+            if gate != nil, !hasBlocked {
+                hasBlocked = true
+                waiting = true
+                return true
+            }
+            return false
+        }
+        if shouldWait, let gate {
+            defer { lock.withLock { waiting = false } }
+            guard gate.wait(timeout: .now() + 5) == .success else { throw Failure.timedOut }
+        }
+        return try backing.pinnedMediaDirectory()
+    }
 }
 
 private struct UnusedNetworkResolver: MediaTransportNetworkFileResolving {

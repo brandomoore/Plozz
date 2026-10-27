@@ -20,10 +20,14 @@ final class ArtworkPrefetchTrackerTests: XCTestCase {
     func testReversalRebasesTheWindowWithoutDiscardingOverlappingWork() async throws {
         let tracker = ArtworkPrefetchTracker(limiter: ConcurrencyLimiter(limit: 1))
         let calls = PrefetchCalls()
-        let request = ArtworkPrefetchWindow.Request(id: "shared-url-poster") { await calls.record() }
+        let started = expectation(description: "Artwork preparation started")
+        let request = ArtworkPrefetchWindow.Request(id: "shared-url-poster") {
+            await calls.record()
+            started.fulfill()
+        }
         _ = tracker.indices(aheadFrom: 24, total: 100, columns: 6, generation: 1)
         tracker.window.update([request])
-        try await waitUntil { await calls.count == 1 }
+        await fulfillment(of: [started], timeout: 10)
         tracker.updateDirection(at: 2_000)
         for _ in 0..<20 {
             XCTAssertTrue(tracker.updateDirection(at: 1_999))
@@ -47,14 +51,6 @@ final class ArtworkPrefetchTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.indices(aheadFrom: 1, total: 3, columns: 6, generation: 2), [1, 2])
     }
 
-    private func waitUntil(_ predicate: () async -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(2)
-        while !(await predicate()), ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        let satisfied = await predicate()
-        XCTAssertTrue(satisfied)
-    }
 }
 
 private actor PrefetchCalls {

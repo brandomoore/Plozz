@@ -13,17 +13,12 @@ public protocol NavigationStyleSettingsStoring: Sendable {
     func save(_ style: NavigationStyle)
     func loadPreventsAccidentalExit() -> Bool
     func savePreventsAccidentalExit(_ preventsExit: Bool)
-    func loadDetailZoomEnabled() -> Bool
-    func saveDetailZoomEnabled(_ enabled: Bool)
 }
 
 public final class NavigationStyleSettingsStore: NavigationStyleSettingsStoring, @unchecked Sendable {
-    public static let detailZoomStorageKey = "detailZoomEnabled"
-
     private let defaults: UserDefaults
     private let styleKey: String
     private let preventsAccidentalExitKey: String
-    private let detailZoomKey: String
 
     /// - Parameter namespace: per-profile scope. `nil` (the default/primary
     ///   profile) uses the legacy un-suffixed key (`NavigationStyle.storageKey`);
@@ -35,7 +30,6 @@ public final class NavigationStyleSettingsStore: NavigationStyleSettingsStoring,
             "preventsAccidentalExit",
             namespace: namespace
         )
-        self.detailZoomKey = SettingsKey.scoped(Self.detailZoomStorageKey, namespace: namespace)
     }
 
     public func load() -> NavigationStyle {
@@ -56,14 +50,6 @@ public final class NavigationStyleSettingsStore: NavigationStyleSettingsStoring,
 
     public func savePreventsAccidentalExit(_ preventsExit: Bool) {
         defaults.set(preventsExit, forKey: preventsAccidentalExitKey)
-    }
-
-    public func loadDetailZoomEnabled() -> Bool {
-        defaults.bool(forKey: detailZoomKey)
-    }
-
-    public func saveDetailZoomEnabled(_ enabled: Bool) {
-        defaults.set(enabled, forKey: detailZoomKey)
     }
 }
 
@@ -86,11 +72,6 @@ public final class NavigationStyleSettingsModel {
     /// changing Back navigation inside content or system Home controls.
     public var preventsAccidentalExit: Bool {
         didSet { store.savePreventsAccidentalExit(preventsAccidentalExit) }
-    }
-
-    /// Opt-in tvOS title zoom. Native page transitions are the default.
-    public var detailZoomEnabled: Bool {
-        didSet { store.saveDetailZoomEnabled(detailZoomEnabled) }
     }
 
     /// Which optional destinations and libraries navigation shows, plus the library
@@ -130,7 +111,6 @@ public final class NavigationStyleSettingsModel {
         self.layoutStore = layoutStore
         self.style = store.load()
         self.preventsAccidentalExit = store.loadPreventsAccidentalExit()
-        self.detailZoomEnabled = store.loadDetailZoomEnabled()
         self.libraryLayout = layoutStore.load()
         self.librariesSnapshotStore = librariesSnapshotStore
         let libraries = librariesSnapshotStore?.load() ?? []

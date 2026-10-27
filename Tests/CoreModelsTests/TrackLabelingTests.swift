@@ -151,19 +151,23 @@ final class TrackLabelingTests: XCTestCase {
     }
 
     func testFormatCleanupDoesNotEraseCustomTitlesOrInventMissingFacts() {
-        for title in ["AC3 5.1 Director's Mix", "Original theatrical 5.1", "Director's Default"] {
+        for title in ["Original theatrical 5.1", "Director's Default"] {
             XCTAssertEqual(
                 TrackLabeling.audioLabel(displayTitle: title, language: nil, codec: "ac3", channels: 6, trackID: 1),
-                TrackLabel(base: .content(title))
+                TrackLabel(base: .content(title), qualifiers: [.format("Dolby Digital 5.1")])
             )
         }
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "AC3 5.1 Director's Mix", language: nil, codec: "ac3", channels: 6, trackID: 1),
+            TrackLabel(base: .content("AC3 5.1 Director's Mix"))
+        )
         XCTAssertEqual(
             TrackLabeling.audioLabel(displayTitle: "AC3 5.1 (Default)", language: nil, trackID: 1),
             TrackLabel(base: .content("AC3 5.1")), "Do not guess structured codec/channel facts from a title"
         )
         XCTAssertEqual(
             TrackLabeling.audioLabel(displayTitle: "English Commentary (Default)", language: "en", codec: "ac3", channels: 6, trackID: 1),
-            TrackLabel(base: .content("English Commentary"))
+            TrackLabel(base: .content("English Commentary"), qualifiers: [.format("Dolby Digital 5.1")])
         )
     }
 
@@ -202,12 +206,44 @@ final class TrackLabelingTests: XCTestCase {
     }
 
     func testAudioLabelKeepsDescriptiveTitleThatNamesLanguage() {
-        // A title that already names the language is a complete human label.
         XCTAssertEqual(
             TrackLabeling.audioLabel(
                 displayTitle: "Japanese Commentary", language: "ja", codec: "aac", channels: 2, trackID: 1
             ),
-            TrackLabel(base: .content("Japanese Commentary"))
+            TrackLabel(base: .content("Japanese Commentary"), qualifiers: [.format("AAC Stereo")])
+        )
+    }
+
+    func testBareLanguageStillIncludesKnownAudioFormat() {
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "English", language: "en", codec: "opus", channels: 6,
+                                    trackID: 1, locale: Locale(identifier: "en")),
+            TrackLabel(base: .content("English"), qualifiers: [.format("Opus 5.1")])
+        )
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "English (Default)", language: "en", codec: "aac", channels: 2,
+                                    trackID: 1, locale: Locale(identifier: "en")),
+            TrackLabel(base: .content("English"), qualifiers: [.format("AAC Stereo")])
+        )
+    }
+
+    func testRichAudioTitlesDoNotDuplicateFormatsOrCommentary() {
+        for title in ["English Opus 5.1 Director's Mix", "English opus 5.1 Commentary"] {
+            XCTAssertEqual(
+                TrackLabeling.audioLabel(displayTitle: title, language: "en", codec: "opus", channels: 6,
+                                        trackID: 1, locale: Locale(identifier: "en")),
+                TrackLabel(base: .content(title))
+            )
+        }
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "English Commentary", language: "en", codec: "aac", channels: 2,
+                                    isCommentary: true, trackID: 1, locale: Locale(identifier: "en")),
+            TrackLabel(base: .content("English Commentary"), qualifiers: [.format("AAC Stereo")])
+        )
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "English EAC3 5.1 Custom", language: "en", codec: "ac3", channels: 6,
+                                    trackID: 1, locale: Locale(identifier: "en")),
+            TrackLabel(base: .content("English EAC3 5.1 Custom"), qualifiers: [.format("Dolby Digital 5.1")])
         )
     }
 

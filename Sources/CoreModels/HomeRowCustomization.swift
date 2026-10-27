@@ -47,11 +47,13 @@ public struct HomeRowChoice: Identifiable, Equatable, Sendable {
     public let isLegacyDefault: Bool
     public let serverRow: HomeServerRowDefinition?
     public let collectionSection: CollectionSection?
+    public let hasCollectionCovers: Bool
 
     public init(
         id: HomeRowID, title: String, localizedTitle: LocalizedStringResource? = nil,
         library: AggregatedLibrary? = nil, isProviderDefault: Bool, isLegacyDefault: Bool = true,
-        serverRow: HomeServerRowDefinition? = nil, collectionSection: CollectionSection? = nil
+        serverRow: HomeServerRowDefinition? = nil, collectionSection: CollectionSection? = nil,
+        hasCollectionCovers: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -61,6 +63,7 @@ public struct HomeRowChoice: Identifiable, Equatable, Sendable {
         self.isLegacyDefault = isLegacyDefault
         self.serverRow = serverRow
         self.collectionSection = collectionSection
+        self.hasCollectionCovers = hasCollectionCovers
     }
 
     public static var shared: [Self] {
@@ -95,7 +98,8 @@ public struct HomeRowChoice: Identifiable, Equatable, Sendable {
             Self(
                 id: .library(library.key, kind: $0),
                 title: $0.rawValue, localizedTitle: $0.displayName,
-                library: library, isProviderDefault: true
+                library: library, isProviderDefault: true,
+                hasCollectionCovers: library.library.kind == .collection
             )
         }
     }
@@ -107,7 +111,9 @@ public struct HomeRowChoice: Identifiable, Equatable, Sendable {
             library: library,
             isProviderDefault: section.isHomeDefault
                 ?? (section.id == "recentlyAdded" || section.id == "nextUp" || library.providerKind == .plex),
-            isLegacyDefault: section.isLegacyHomeDefault ?? true
+            isLegacyDefault: section.isLegacyHomeDefault ?? true,
+            hasCollectionCovers: CollectionCoverLayout.isCollectionGroup(section.items)
+                || library.library.kind == .collection
         )
     }
 }

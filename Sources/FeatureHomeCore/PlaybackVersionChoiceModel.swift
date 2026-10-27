@@ -122,48 +122,9 @@ public final class PlaybackVersionChoiceModel {
                     item.sources.append(source)
                 }
             }
-            for index in item.sources.indices
-            where item.sources[index].accountID == item.sourceAccountID
-                && item.sources[index].itemID == item.id
-                && (item.sources[index].kind == nil || item.sources[index].kind == item.kind) {
-                item.sources[index].versions = item.versions.isEmpty
-                    ? [MediaVersion.synthesized(from: item)] : item.versions
+            item = try await Self.resolvingAlternateInventories(in: item, provider: provider) {
+                self.owner == id && isCurrent()
             }
-            var unavailableAlternates = Set<String>()
-            for index in item.sources.indices
-            where item.sources[index].accountID == item.sourceAccountID
-                && item.sources[index].itemID != item.id
-                && (item.sources[index].kind == nil || item.sources[index].kind == item.kind) {
-                let source = item.sources[index]
-                do {
-                    let alternate = try await PlaybackPreparationDiagnostics.capture(
-                        provider: provider.kind, operation: .alternateVersions
-                    ) {
-                        try await provider.playbackItem(id: source.itemID)
-                    }
-                    try Task.checkCancellation()
-                    guard owner == id, isCurrent() else { throw CancellationError() }
-                    guard alternate.id == source.itemID, alternate.kind == item.kind,
-                          alternate.sourceAccountID == nil || alternate.sourceAccountID == source.accountID else {
-                        PlaybackPreparationDiagnostics.identityFailure(
-                            provider: provider.kind, operation: .alternateVersions, expectedID: source.itemID,
-                            expectedKind: item.kind, expectedAccountID: source.accountID, resolved: alternate
-                        )
-                        PlozzLog.playback.error("Version details did not match the alternate source.")
-                        throw AppError.invalidResponse
-                    }
-                    item.sources[index].versions = alternate.versions.isEmpty
-                        ? [MediaVersion.synthesized(from: alternate)] : alternate.versions
-                    item.sources[index].edition = alternate.edition ?? source.edition
-                } catch {
-                    try Task.checkCancellation()
-                    guard owner == id, isCurrent(), !(error is CancellationError),
-                          (error as? AppError) != .cancelled else { throw CancellationError() }
-                    _ = Self.reportFailure(error, stage: "alternate-inventory")
-                    unavailableAlternates.insert(source.id)
-                }
-            }
-            item.sources.removeAll { unavailableAlternates.contains($0.id) }
             if !item.explicitSourceSelection {
                 item.selectedVersionID = nil
             }
@@ -204,6 +165,57 @@ public final class PlaybackVersionChoiceModel {
         } onCancel: {
             Task { @MainActor [weak self] in self?.cancel(owner: id) }
         }
+    }
+
+    static func resolvingAlternateInventories(
+        in opened: MediaItem, provider: any MediaProvider, isCurrent: () -> Bool
+    ) async throws -> MediaItem {
+        var item = opened
+        for index in item.sources.indices
+        where item.sources[index].accountID == item.sourceAccountID
+            && item.sources[index].itemID == item.id
+            && (item.sources[index].kind == nil || item.sources[index].kind == item.kind) {
+            item.sources[index].versions = item.versions.isEmpty
+                ? [MediaVersion.synthesized(from: item)] : item.versions
+        }
+        var unavailableAlternates = Set<String>()
+        for index in item.sources.indices
+        where item.sources[index].accountID == item.sourceAccountID
+            && item.sources[index].itemID != item.id
+            && (item.sources[index].kind == nil || item.sources[index].kind == item.kind) {
+            try Task.checkCancellation()
+            guard isCurrent() else { throw CancellationError() }
+            let source = item.sources[index]
+            do {
+                let alternate = try await PlaybackPreparationDiagnostics.capture(
+                    provider: provider.kind, operation: .alternateVersions
+                ) {
+                    try await provider.playbackItem(id: source.itemID)
+                }
+                try Task.checkCancellation()
+                guard isCurrent() else { throw CancellationError() }
+                guard alternate.id == source.itemID, alternate.kind == item.kind,
+                      alternate.sourceAccountID == nil || alternate.sourceAccountID == source.accountID else {
+                    PlaybackPreparationDiagnostics.identityFailure(
+                        provider: provider.kind, operation: .alternateVersions, expectedID: source.itemID,
+                        expectedKind: item.kind, expectedAccountID: source.accountID, resolved: alternate
+                    )
+                    PlozzLog.playback.error("Version details did not match the alternate source.")
+                    throw AppError.invalidResponse
+                }
+                item.sources[index].versions = alternate.versions.isEmpty
+                    ? [MediaVersion.synthesized(from: alternate)] : alternate.versions
+                item.sources[index].edition = alternate.edition ?? source.edition
+            } catch {
+                try Task.checkCancellation()
+                guard isCurrent(), !(error is CancellationError),
+                      (error as? AppError) != .cancelled else { throw CancellationError() }
+                _ = reportFailure(error, stage: "alternate-inventory")
+                unavailableAlternates.insert(source.id)
+            }
+        }
+        item.sources.removeAll { unavailableAlternates.contains($0.id) }
+        return item
     }
 
     public func chooseMode(_ mode: PlaybackVersionSelectionMode, promptID: UUID) {

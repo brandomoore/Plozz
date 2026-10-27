@@ -959,17 +959,22 @@ public final class ProfilesModel {
     /// Whether the one-time first-run profile setup has completed.
     ///
     /// True when the local flag is set OR the household already has more than the
-    /// default profile — extra profiles only exist because setup was already done
-    /// (here or on another device, arriving via sync/pairing), so a device that
-    /// receives a multi-profile household must not re-run first-run onboarding just
-    /// because its LOCAL flag (which isn't synced) is still false.
+    /// default profile and at least one profile has completed setup. Plex Home
+    /// import marks every profile as pending until the viewer finishes first-run.
+    /// A configured household still skips this on a new device even when its
+    /// other imported profiles have not finished their own setup.
     public var firstRunProfileSetupComplete: Bool {
-        store.firstRunProfileSetupComplete() || profiles.count > 1
+        store.firstRunProfileSetupComplete()
+            || (profiles.count > 1 && profiles.contains { !$0.needsSetup })
     }
 
     /// Marks the one-time first-run profile setup as done so it never runs
     /// again — even if the user later signs out of every server and re-adds one.
     public func markFirstRunProfileSetupComplete() {
+        if var profile = profiles.first(where: { $0.id == activeProfileID }), profile.needsSetup {
+            profile.needsSetup = false
+            update(profile)
+        }
         store.setFirstRunProfileSetupComplete(true)
     }
 

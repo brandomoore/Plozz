@@ -65,6 +65,48 @@ public struct TMDbMetadataProvider: ArtworkProvider {
 
     public var isEnabled: Bool { access.isEnabled }
 
+    /// Trailer links from TMDB's documented videos API; no YouTube requests or media extraction.
+    public func trailerVideoIDs(for query: MetadataQuery, limit: Int = 6) async throws -> [String] {
+        guard isEnabled, limit > 0,
+              [.movie, .video, .series].contains(query.kind),
+              let id = try await detailID(for: query),
+              let url = url("/3/\(query.isTV ? "tv" : "movie")/\(id)/videos") else { return [] }
+        try Task.checkCancellation()
+        guard let response = try await detailResponse(TrailerVideos.self, url: url) else { return [] }
+        try Task.checkCancellation()
+        return Self.trailerVideoIDs(from: response, limit: limit)
+    }
+
+    struct TrailerVideos: Decodable, Sendable {
+        let results: [TrailerVideo]
+    }
+
+    struct TrailerVideo: Decodable, Sendable {
+        let key: String?
+        let site: String?
+        let type: String?
+        let official: Bool?
+    }
+
+    static func trailerVideoIDs(from response: TrailerVideos, limit: Int) -> [String] {
+        guard limit > 0 else { return [] }
+        let candidates = response.results.enumerated().filter {
+            $0.element.site == "YouTube"
+                && ($0.element.type == "Trailer" || $0.element.type == "Teaser")
+        }.sorted {
+            let lhs = ($0.element.type == "Trailer" ? 2 : 0) + ($0.element.official == true ? 1 : 0)
+            let rhs = ($1.element.type == "Trailer" ? 2 : 0) + ($1.element.official == true ? 1 : 0)
+            return lhs == rhs ? $0.offset < $1.offset : lhs > rhs
+        }
+        var seen = Set<String>()
+        return candidates.compactMap { candidate in
+            guard let key = candidate.element.key,
+                  MediaItem.youTubeVideoID(fromURL: key) == key,
+                  seen.insert(key).inserted else { return nil }
+            return key
+        }.prefix(limit).map { $0 }
+    }
+
     /// The work's original spoken language (ISO-639-1), when TMDb knows it.
     ///
     /// This is not a cosmetic metadata lookup. Playback's "Original" audio
@@ -210,7 +252,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
     private func logoPath(for query: MetadataQuery) async -> String? {
         guard let id = await resolveID(for: query) else { return nil }
         let images = await images(forID: id, isTV: query.isTV)
-        return Self.bestLogoPath(images?.logos)
+        return Self.bestLogoPath(images?.logos, preferredLanguage: query.artworkLanguage)
     }
 
     private func posterPath(for query: MetadataQuery) async -> String? {
@@ -681,14 +723,16 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         }.prefix(limit).compactMap(\.file_path)
     }
 
-    static func bestLogoPath(_ logos: [Image]?) -> String? {
+    static func bestLogoPath(
+        _ logos: [Image]?, preferredLanguage: String = Locale.current.identifier
+    ) -> String? {
         guard let logos else { return nil }
+        let preferred = MetadataQuery.normalizedArtworkLanguage(preferredLanguage)
         func rank(_ image: Image) -> Int {
-            switch image.iso_639_1 {
-            case "en": return 0
-            case nil, "": return 1
-            default: return 2
-            }
+            guard let language = image.iso_639_1, !language.isEmpty else { return 1 }
+            let normalized = MetadataQuery.normalizedArtworkLanguage(language)
+            if normalized == preferred { return 0 }
+            return normalized == "en" ? 2 : 3
         }
         guard let path = logos.lazy.filter({ $0.file_path?.isEmpty == false }).min(by: {
             let (lr, rr) = (rank($0), rank($1))

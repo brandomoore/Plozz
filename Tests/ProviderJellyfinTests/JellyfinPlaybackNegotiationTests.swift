@@ -301,7 +301,7 @@ final class JellyfinPlaybackNegotiationTests: XCTestCase {
         JellyfinProvider(session: .init(
             server: .init(id: "server", name: "Server", baseURL: URL(string: "https://fixture.test")!, provider: kind),
             userID: "user", userName: "User", deviceID: "device", accessToken: "fixture"
-        ), http: http, hybridEngineEnabled: hybrid)
+        ), http: http, hybridEngineEnabled: hybrid, playbackRequests: .init())
     }
 
     private func fixtureHTTP(decisions: [String]) -> StubHTTPClient {

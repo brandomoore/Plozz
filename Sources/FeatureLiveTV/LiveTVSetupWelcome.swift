@@ -152,7 +152,7 @@ private struct LiveTVSetupIntroduction: View {
             Text("Add your channels")
                 .font(.largeTitle.weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Choose a source to start watching.")
+            Text("Connect channels you are authorized to access. Plozz does not provide TV content or channel subscriptions.")
                 .font(.callout)
                 .foregroundStyle(palette.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
