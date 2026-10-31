@@ -38,7 +38,10 @@ final class PlayerControlsRenderingHostedTests: XCTestCase {
         window.makeKeyAndVisible()
         for level in [-2, 2] {
             model.skipGesture.scanLevel = level
-            let image = try await captureTimeline(in: window, matching: level < 0 ? "2.*10:00" : "10:00.*2")
+            // Accurate OCR can discard a standalone level beside the circle glyph.
+            let image = try await captureTimeline(
+                in: window, matching: level < 0 ? "2.*10:00" : "10:00.*2", recognitionLevel: .fast
+            )
             let attachment = XCTAttachment(image: image)
             attachment.name = level < 0 ? "Rewind level 2 left of timestamp" : "Forward level 2 right of timestamp"
             attachment.lifetime = .keepAlways
@@ -231,7 +234,10 @@ private final class InfoFocusDriver {
 }
 
 @MainActor
-private func captureTimeline(in window: UIWindow, matching expected: String) async throws -> UIImage {
+private func captureTimeline(
+    in window: UIWindow, matching expected: String,
+    recognitionLevel: VNRequestTextRecognitionLevel = .accurate
+) async throws -> UIImage {
     let deadline = ContinuousClock.now + .seconds(4)
     var rendered = UIImage()
     var text = ""
@@ -241,7 +247,7 @@ private func captureTimeline(in window: UIWindow, matching expected: String) asy
         rendered = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
-        text = try recognizedTimelineText(in: rendered)
+        text = try recognizedTimelineText(in: rendered, recognitionLevel: recognitionLevel)
             .compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
         if text.range(of: expected, options: .regularExpression) != nil { return rendered }
     } while ContinuousClock.now < deadline
@@ -249,10 +255,16 @@ private func captureTimeline(in window: UIWindow, matching expected: String) asy
     return rendered
 }
 
-private func recognizedTimelineText(in image: UIImage) throws -> [VNRecognizedTextObservation] {
+private func recognizedTimelineText(
+    in image: UIImage, recognitionLevel: VNRequestTextRecognitionLevel = .accurate
+) throws -> [VNRecognizedTextObservation] {
     let recognition = VNRecognizeTextRequest()
-    recognition.recognitionLevel = .accurate
+    recognition.recognitionLevel = recognitionLevel
     recognition.recognitionLanguages = ["en-US"]
+    if recognitionLevel == .fast {
+        recognition.minimumTextHeight = 0.005
+        recognition.usesLanguageCorrection = false
+    }
     try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([recognition])
     return recognition.results ?? []
 }

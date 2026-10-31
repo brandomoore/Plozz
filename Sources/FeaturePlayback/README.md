@@ -65,7 +65,18 @@ bounded language-match/accessibility flags without track titles or URLs.
   `GeneratedScrubThumbnailLoader` decodes keyframe stills on the device from
   the original file through `ScrubStillExtracting`, which Plozzigen supplies
   via `EngineFactory.makeScrubStillExtractor`. Pending requests in the same
-  two-second cell share one decode. Playback teardown invalidates stills and
+  two-second cell share one decode. The shared preview coordinator completes
+  one request at a time and retains only the latest pending position, so
+  continuous scanning cannot starve the decoder. Cache hits remain immediate;
+  late results cannot overwrite them or cross a direction reversal. Transient
+  misses retain the last useful frame. Clearing a preview cancels generated
+  extraction, and a replacement waits for cancelled work to finish rather than
+  opening another decoder concurrently. Server index/tile warmups remain reusable.
+  Final settling may require finishing the current extraction and one latest
+  extraction; this trades a bounded extra decode for continuous motion feedback.
+  The opt-in `seek-generated-*` and `seek-plex-bif` workloads in
+  [the performance lab](../../docs/performance-lab.md) cover this contract.
+  Playback teardown invalidates stills and
   closes every network-reader clone before awaiting transport drainage, even
   while the outgoing preview view remains mounted. Original-quality Plex,
   Jellyfin, and Emby transcodes retain a preview-only original source; reduced

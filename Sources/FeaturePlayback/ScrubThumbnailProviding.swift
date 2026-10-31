@@ -23,6 +23,10 @@ protocol ScrubThumbnailProviding: AnyObject {
     /// scrub, so previews are ready when the viewer starts dragging. Idempotent.
     func prefetch()
 
+    /// Stops disposable extraction when the preview closes. Server index/tile
+    /// warmups may finish and remain cached for the next scrub.
+    func cancelPendingThumbnail()
+
     /// Whether this source has proven it can never yield previews (e.g. the
     /// server advertised a BIF that returns 404), so a fallback can take over.
     /// Transient failures stay `false` and are retried.
@@ -31,6 +35,7 @@ protocol ScrubThumbnailProviding: AnyObject {
 
 extension ScrubThumbnailProviding {
     func prefetch() {}
+    func cancelPendingThumbnail() {}
     var isPermanentlyUnavailable: Bool { false }
 }
 #endif

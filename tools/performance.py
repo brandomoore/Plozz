@@ -36,6 +36,25 @@ HOME_HOST_FITTING_COUNTERS = [
     "hostFittingMaxNanoseconds", "hostFittingReentrantCalls",
 ]
 SCENARIOS = {
+    "seek-plex-bif": {
+        "suite": "network", "target": "FeaturePlaybackTests",
+        "test": "ScrubPreviewLoaderTests/testPerformancePlexBIFScan",
+        "file": "Tests/FeaturePlaybackTests/ScrubPreviewLoaderTests.swift",
+        "description": "Cold then warm Plex BIF scanning at all eight speeds in both directions; verify JPEG pixel identity and one real loopback download with 100-ms latency.",
+        "counters": ["inputSamples", "stages", "motionFrames", "httpRequests", "bifBytes", "firstFrameMicroseconds"],
+    },
+    **{
+        f"seek-generated-{delay}ms": {
+            "suite": "core", "target": "FeaturePlaybackTests",
+            "test": f"ScrubPreviewPerformanceTests/{method}",
+            "file": "Tests/FeaturePlaybackTests/ScrubPreviewPerformanceTests.swift",
+            "description": f"All eight scan speeds in both directions, 384 paced inputs, {delay}-ms synthetic still extraction; require the correct settled frames and measure motion starvation.",
+            "counters": ["stages", "inputSamples", "motionFrames", "starvedStages", "settledStages",
+                         "decodeStarts", "decodeCompletions", "decodeCancellations", "maxInFlight",
+                         "blankPublications", "maxPublicationGapMicroseconds", "maxSettleMicroseconds"],
+        }
+        for delay, method in [(80, "testPerformanceGeneratedScan"), (180, "testPerformanceSlowGeneratedScan")]
+    },
     "server-ratings-critical-path": {
         "suite": "network", "target": "ProviderJellyfinTests",
         "test": "ServerRatingsLatencyTests/testPerformanceRequiredItemAndPlayback",

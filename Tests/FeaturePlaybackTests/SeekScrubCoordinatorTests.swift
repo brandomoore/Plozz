@@ -520,6 +520,42 @@ final class PlayerScrubInputTests: XCTestCase {
         XCTAssertEqual(model.skipGesture.scanLevel, 0)
     }
 
+    func testRealScanTimerKeepsDeliveringThumbnailsThroughEverySpeed() async throws {
+        for forward in [false, true] {
+            let (controller, model, recorder) = makeInput()
+            defer { controller.viewDidDisappear(false) }
+            model.currentSeconds = 3_600
+            let extractor = PacedScrubExtractor(delay: .milliseconds(80))
+            controller.configureScrubPreview(nil, authenticatedHTTPResolver: nil, generatedStills: extractor)
+            let hold = ScrubInputHold()
+            hold.allowedPressTypes = [NSNumber(value: (forward
+                ? UIPress.PressType.rightArrow : .leftArrow).rawValue)]
+            hold.phase = .began
+            controller.handleSeekHold(hold)
+            hold.phase = .ended
+            controller.handleSeekHold(hold)
+            for level in 1...8 {
+                if level > 1 {
+                    if forward { controller.handleRight() } else { controller.handleLeft() }
+                }
+                let before = extractor.completions
+                try await Task.sleep(for: .milliseconds(400))
+                XCTAssertEqual(model.skipGesture.scanLevel, forward ? level : -level)
+                XCTAssertGreaterThan(extractor.completions, before, "Level \(level) must deliver during motion.")
+                XCTAssertNotNil(model.previewImage)
+                XCTAssertTrue(recorder.targets.isEmpty, "Scanning must not repeatedly seek the playback engine.")
+            }
+            let target = model.scrubSeconds
+            controller.handleSelect()
+            XCTAssertEqual(recorder.targets, [target])
+            XCTAssertFalse(model.isScrubbing)
+            XCTAssertNil(model.previewImage)
+            XCTAssertEqual(extractor.maxInFlight, 1)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(extractor.inFlight, 0)
+        }
+    }
+
     func testScanSelectPreservesPauseAndPlayPauseResumes() {
         for playPause in [false, true] {
             let (controller, model, recorder) = makeInput()

@@ -95,6 +95,7 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(set(performance.select(None, None)), {
             "sync-unchanged", "library-unchanged", "catalog-import", "watchlist-artwork-rehydration",
             "live-tv-schedule-capture", "live-tv-schedule-sync", "poster-preview-admission",
+            "seek-generated-80ms", "seek-generated-180ms",
         })
         self.assertEqual(performance.select(None, ["guide-large-batches"]), ["guide-large-batches"])
         self.assertEqual(performance.select(None, ["poster-preview-admission"]),

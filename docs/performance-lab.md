@@ -464,6 +464,25 @@ idle window's wall time as work; its comparison gates CPU only.
 
 ## Adding a scenario
 
+`seek-generated-80ms` and `seek-generated-180ms` exercise the production scrub
+coordinator at all eight remote scan speeds in both directions. Each sample
+delivers 384 inputs at 33-ms intervals through a paced synthetic extractor and
+requires every final target to arrive. Motion-frame, starvation, cancellation,
+concurrency, blank-publication, publication-gap and settle-latency counters
+distinguish a responsive preview from one that only appears after input stops.
+The synthetic delay is controlled fixture latency, not a decoder benchmark;
+these scenarios do not establish Plex-network or physical-device performance.
+Both require zero starved stages, zero motion cancellations, one in-flight
+extraction, no blank publications, and publication/settle gaps below 500 ms.
+This budget allows two 180-ms extractions plus scheduling overhead; the
+two-second thumbnail grid limits visible frame changes at the slowest speed.
+
+`seek-plex-bif` uses a real loopback HTTP server with 100-ms response latency
+and a 3,601-frame, 320-pixel BIF fixture. Cold and warm passes cover both
+directions at every speed, verify the final JPEG's pixel identity, require
+frames during every moving stage, and permit only one index download.
+This is controlled HTTP/JPEG coverage, not the reporter's Plex server.
+
 Reuse existing production fixtures and helpers first. Add an opt-in XCTest
 method that calls `PerformanceProbe.requireEnabled()` **before setup**, then
 `PerformanceProbe.measure(self, scenario: ...)` around the bounded workload.

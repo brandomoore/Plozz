@@ -14,7 +14,7 @@ import Foundation
 public protocol ScrubStillExtracting: AnyObject {
     /// A still near `seconds`, at most `maxWidth` pixels wide, or `nil` when the
     /// source can't produce one right now (not loaded yet, playback starved, or a
-    /// decode failure). A `nil` simply shows no preview for that position.
+    /// decode failure). A `nil` leaves the previous preview in place.
     func thumbnail(atSeconds seconds: TimeInterval, maxWidth: Int) async -> CGImage?
 }
 
@@ -45,12 +45,20 @@ final class GeneratedScrubThumbnailLoader: ScrubThumbnailProviding {
     }
 
     func thumbnail(forSeconds seconds: TimeInterval) async -> CGImage? {
+        guard !Task.isCancelled else { return nil }
         let cell = Self.cell(forSeconds: seconds)
         if let cached = decoded[cell] { return cached }
-        if let pending, pending.cell == cell {
-            return await pending.task.value
+        if let pending {
+            if pending.cell == cell, !pending.task.isCancelled {
+                return await pending.task.value
+            }
+            pending.task.cancel()
+            _ = await pending.task.value
+            if self.pending?.id == pending.id { self.pending = nil }
+            // A cancelled decoder can finish asynchronously. Do not start
+            // another until it has actually released its extraction work.
+            return await thumbnail(forSeconds: seconds)
         }
-        pending?.task.cancel()
         let id = UUID()
         let task = Task { [extractor] in
             guard !Task.isCancelled else { return nil as CGImage? }
@@ -67,6 +75,10 @@ final class GeneratedScrubThumbnailLoader: ScrubThumbnailProviding {
         guard let image else { return nil }
         store(image, at: cell)
         return image
+    }
+
+    func cancelPendingThumbnail() {
+        pending?.task.cancel()
     }
 
     func cachedThumbnail(forSeconds seconds: TimeInterval) -> CGImage? {
@@ -125,6 +137,11 @@ final class FallbackScrubThumbnailLoader: ScrubThumbnailProviding {
         // Only the primary warms ahead of time; a missing BIF is discovered here
         // so the first scrub already goes straight to the fallback.
         primary.prefetch()
+    }
+
+    func cancelPendingThumbnail() {
+        primary.cancelPendingThumbnail()
+        fallback.cancelPendingThumbnail()
     }
 }
 #endif
