@@ -486,9 +486,7 @@ struct HomeRowStyleSettingsView: View {
                             textSize: $hero.settings.showcaseTextSize, surface: .showcase
                         )
                     }
-                    SettingsControlGroup {
-                        HeroSettingsLink(page: .ratings, libraries: libraries, accounts: accounts)
-                    }
+                    HeroRatingControls()
                     if hero.settings.style == .followsFocus {
                         if hero.allowsDiscovery {
                             SettingsControlGroup {

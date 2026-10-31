@@ -1475,6 +1475,45 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         #endif
     }
 
+    func testRowStyleShowsShowcaseFirstAndEditsRatingsInline() throws {
+        #if targetEnvironment(simulator)
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--view-customization-fixture", "--preview-row-style", "--preview-ratings-off",
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
+        ]
+        app.launch()
+        defer { app.terminate() }
+        let showcase = app.buttons["home-rows-showcase"]
+        let classic = app.buttons["home-rows-classic"]
+        XCTAssertTrue(showcase.waitForExistence(timeout: 5))
+        XCTAssertLessThan(showcase.frame.minX, classic.frame.minX)
+        XCTAssertTrue(showcase.isSelected)
+        let ratings = app.switches["hero-ratings"]
+        let age = app.switches["hero-common-sense-age"]
+        XCTAssertTrue(ratings.exists)
+        XCTAssertFalse(app.buttons["hero-settings-ratings"].exists)
+        XCTAssertFalse(age.exists)
+        try focus(ratings, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(age.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Maximum ratings shown"].exists)
+        XCTAssertTrue(showcase.exists, "Editing ratings must stay on the Row style page.")
+        try focus(classic, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertFalse(ratings.exists)
+        try focus(showcase, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(age.waitForExistence(timeout: 5), "Changing row style must preserve ratings.")
+        try focus(ratings, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(age.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(showcase.exists)
+        #else
+        throw XCTSkip("Simulator-only Settings review.")
+        #endif
+    }
+
     func testHomeSectionEditorKeepsHeroFixedAndUsesNativeBack() throws {
         #if targetEnvironment(simulator)
         let app = try launchSettings()

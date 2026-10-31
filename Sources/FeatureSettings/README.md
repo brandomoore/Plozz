@@ -462,8 +462,9 @@ watch history and planning-list behavior are documented in
   enabled state, sources, sizing, rotation, ratings, and trailers. Its On/Off
   preview cards use the shared settings selection style; Off previews the current
   Classic or Showcase rows without changing that preference. Row style has
-  Classic and Showcase preview cards independent of Hero, with Showcase
-  sizing and ratings below. Standalone Showcase also exposes Discovery and its
+  Showcase followed by Classic preview cards independent of Hero, with Showcase
+  sizing and inline rating controls below, rather than a Ratings subpage.
+  Standalone Showcase also exposes Discovery and its
   providers, respecting Kids policy. These controls map to existing persisted
   hero style/enabled fields without resetting content preferences. Mobile keeps
   its Hero controls and carousel presentation. Fresh TV profiles default to

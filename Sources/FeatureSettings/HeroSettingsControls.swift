@@ -132,7 +132,7 @@ private struct HeroAutomaticChangeControls: View {
     }
 }
 
-private struct HeroRatingControls: View {
+struct HeroRatingControls: View {
     @Environment(HeroSettingsModel.self) private var hero
 
     var body: some View {

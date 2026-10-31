@@ -21,6 +21,12 @@ struct ViewCustomizationFixture: View {
             models.heroSettingsModel.settings.spotlightEnabled =
                 !ProcessInfo.processInfo.arguments.contains("--preview-hero-off")
         }
+        if ProcessInfo.processInfo.arguments.contains("--preview-row-style") {
+            models.heroSettingsModel.settings.immersiveRows =
+                !ProcessInfo.processInfo.arguments.contains("--preview-classic")
+            models.heroSettingsModel.settings.showsRatings =
+                !ProcessInfo.processInfo.arguments.contains("--preview-ratings-off")
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-episode-stills") {
             models.homeLibraryVisibilityModel.setContinueWatchingShowsSeriesArtwork(false)
         }
@@ -36,6 +42,9 @@ struct ViewCustomizationFixture: View {
                 HomeHeroSettingsView(
                     libraries: [], accounts: [], visibility: models.homeLibraryVisibilityModel
                 )
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-row-style") {
+                HomeRowStyleSettingsView(libraries: [], accounts: [])
+                    .frame(width: 1100)
             } else {
                 AppearanceDetailView(
                     librariesScope: ProfileLibrariesScope(

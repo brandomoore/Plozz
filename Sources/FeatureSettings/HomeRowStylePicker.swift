@@ -3,7 +3,7 @@ import SwiftUI
 import CoreModels
 import CoreUI
 
-/// Row previews omit Spotlight so the two choices stay independent.
+/// Row previews omit the featured hero so the two choices stay independent.
 struct HomeRowStylePicker: View {
     @Binding var immersive: Bool
     var logoSize: HeroLogoSize = .default
@@ -24,7 +24,7 @@ struct HomeRowStylePicker: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: Self.spacing) {
-            ForEach([false, true], id: \.self) { option in
+            ForEach([true, false], id: \.self) { option in
                 PreviewCard(
                     title: option ? "Showcase" : "Classic",
                     isSelected: immersive == option,
