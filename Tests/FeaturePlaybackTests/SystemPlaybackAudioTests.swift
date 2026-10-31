@@ -81,24 +81,25 @@ final class SystemPlaybackAudioTests: XCTestCase {
                        "com.apple.TVPAudioVideoSettings.disableEnhanceDialog")
     }
 
-    func testInitializationAndExternalRefreshNeverWritePreferences() {
+    func testInitializationAndExternalRefreshNeverWritePreferences() async {
         let backend = SystemAudioTestBackend()
         backend.values = [.enhanceDialogue: true, .reduceLoudSounds: false]
         let audio = SystemPlaybackAudio(backend: backend)
+        await audio.refresh().value
         XCTAssertEqual(audio.availableSettings, [.enhanceDialogue, .reduceLoudSounds])
         backend.values = [.enhanceDialogue: false]
-        audio.refresh()
+        await audio.refresh().value
         XCTAssertEqual(audio.values, [.enhanceDialogue: false])
         XCTAssertTrue(backend.writes.isEmpty)
     }
 
-    func testPlayerInstancesShareSystemStateWithoutChangingEngineFlags() {
+    func testPlayerInstancesShareSystemStateWithoutChangingEngineFlags() async {
         let backend = SystemAudioTestBackend()
         let audio = SystemPlaybackAudio(backend: backend)
         let vod = PlayerControlsModel(systemAudio: audio)
         let live = PlayerControlsModel(systemAudio: audio)
         backend.values = [.enhanceDialogue: true]
-        vod.systemAudio.refresh()
+        await vod.systemAudio.refresh().value
         XCTAssertEqual(live.systemAudio.values, [.enhanceDialogue: true])
         XCTAssertFalse(vod.dialogEnhanceEnabled)
         XCTAssertFalse(live.dialogEnhanceEnabled)
@@ -107,10 +108,11 @@ final class SystemPlaybackAudioTests: XCTestCase {
         XCTAssertTrue(PlayerControlsModel().systemAudio === PlayerControlsModel().systemAudio)
     }
 
-    func testSystemOnlyRowsKeepAudioReachableForVODAndLive() {
+    func testSystemOnlyRowsKeepAudioReachableForVODAndLive() async {
         let backend = SystemAudioTestBackend()
         backend.values = [.reduceLoudSounds: false, .enhanceDialogue: false]
         let audio = SystemPlaybackAudio(backend: backend)
+        await audio.refresh().value
         let model = PlayerControlsModel(systemAudio: audio)
         for trackCount in 0...1 {
             model.audioOptions = trackCount == 0 ? [] : [.init(id: 42, title: Text("English"), isSelected: true)]
@@ -126,17 +128,18 @@ final class SystemPlaybackAudioTests: XCTestCase {
                            .row(-101))
         }
         backend.values = [:]
-        audio.refresh()
+        await audio.refresh().value
         XCTAssertFalse(model.hasAudioControls)
         XCTAssertFalse(LiveChannelOverlay.showsAudio(trackCount: 1, systemAudio: audio))
         XCTAssertTrue(LiveChannelOverlay.showsAudio(trackCount: 2, systemAudio: audio))
         XCTAssertTrue(backend.writes.isEmpty)
     }
 
-    func testTrackSelectionAndEngineEffectStaySeparateFromSystemEffects() {
+    func testTrackSelectionAndEngineEffectStaySeparateFromSystemEffects() async {
         let backend = SystemAudioTestBackend()
         backend.values = [.enhanceDialogue: true]
         let audio = SystemPlaybackAudio(backend: backend)
+        await audio.refresh().value
         let model = PlayerControlsModel(systemAudio: audio)
         model.audioOptions = [
             .init(id: 12, title: Text("English"), isSelected: false),
@@ -264,13 +267,14 @@ final class SystemPlaybackAudioTests: XCTestCase {
         XCTAssertEqual(SystemDialogueLevel.choices, [.enhanceMore, .enhance, .off])
     }
 
-    func testDialogueSubmenuReplacesToggleOnlyWhenLevelsAreAvailable() {
+    func testDialogueSubmenuReplacesToggleOnlyWhenLevelsAreAvailable() async {
         let backend = SystemAudioTestBackend()
         backend.values = [.enhanceDialogue: true, .reduceLoudSounds: false]
         let model = PlayerControlsModel(systemAudio: SystemPlaybackAudio(backend: backend))
+        await model.systemAudio.refresh().value
         XCTAssertNil(PlayerOptionsPanel.audioRows(model: model, actions: .init())[0].submenu)
         backend.dialogueLevel = .enhanceMore
-        model.systemAudio.refresh()
+        await model.systemAudio.refresh().value
         var opened = false
         let rows = PlayerOptionsPanel.audioRows(model: model, actions: .init(), openDialogue: { opened = true })
         guard case let .submenu(summary, open)? = rows[0].submenu?.kind else {
@@ -292,7 +296,7 @@ final class SystemPlaybackAudioTests: XCTestCase {
             for: .audio, subtitleScreen: .tracks, model: model, audioScreen: .dialogue
         ), .row(-202))
         backend.dialogueLevel = .isolate
-        model.systemAudio.refresh()
+        await model.systemAudio.refresh().value
         XCTAssertFalse(PlayerOptionsPanel.dialogueRows(model: model).contains(where: \.isSelected))
         XCTAssertTrue(backend.writes.isEmpty)
         XCTAssertTrue(backend.levelWrites.isEmpty)
@@ -344,6 +348,7 @@ final class SystemPlaybackAudioTests: XCTestCase {
         backend.dialogueLevel = .enhance
         backend.onSetLevel = { _ in }
         let model = PlayerControlsModel(systemAudio: SystemPlaybackAudio(backend: backend))
+        await model.systemAudio.refresh().value
         var returns = 0
         let rows = PlayerOptionsPanel.dialogueRows(model: model, selected: { returns += 1 })
         try XCTUnwrap(rows.first { $0.id == -202 }).action()

@@ -187,6 +187,22 @@ URL comparisons. This isolates synchronous admission/URL work, without network
 requests, image decoding, UI layout, or a claim about the duration of a reported
 device hang.
 
+`player-controls-reveal` mounts the production TV transport with sixteen audio
+tracks and thirty-two subtitle tracks, then shows and hides it four times per
+sample. `player-controls-reveal-contended` repeats the same interaction with a
+controlled 180 ms synchronous preference read through the real system-audio
+backend's reader seam. Both require four completed reads and visible timeline
+geometry on every reveal. They report main-thread read counts and the largest
+2 ms main-actor heartbeat gap separately from app CPU.
+
+These isolate the controls' preference synchronization, not remux decoding,
+network throughput, GPU presentation or second-generation Apple TV performance.
+The separate `PlayerControlsRevealRenderingHostedTests` retains hidden,
+intermediate and fully visible screenshots while a preference read is still
+blocked, so removing the fade cannot count as the fix. Run the existing native
+audio-menu and controls-rendering regressions alongside it to preserve focus,
+confirmed settings, hidden/background polling and both glass/fallback materials.
+
 ## Native Home navigation attribution
 
 For focus/scroll lag rather than isolated work counts, run the production Home

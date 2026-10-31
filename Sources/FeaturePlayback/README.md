@@ -227,6 +227,13 @@ notification bridge, fails closed when it is unavailable, and requires bounded
 state readback before showing a changed selection. Controls refresh while visible,
 on route changes and on foreground return. No preference is changed on startup,
 profile changes, or teardown, and Plozz never writes the system preference domain.
+Preference synchronization and validated commands run on a serial actor, never
+on the UI thread. Initialization, reveal, route-change and confirmation refreshes
+share one in-flight read; the menu retains its last confirmed state until that
+read completes. Pending changes are reserved before awaiting preflight, so rapid
+repeat presses cannot post duplicate commands. Cancellation is checked again
+after preflight and before posting. A delayed preference service must not block
+the transport's existing fade animation or remote input.
 When tvOS reports dialogue-level support, **Enhance Dialogue** opens the existing
 player-style submenu with **Enhance More**, **Enhance**, and **Off**. Outputs with
 binary-only support keep a toggle. The tvOS Audio menu and its submenu use a

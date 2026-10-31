@@ -232,6 +232,22 @@ SCENARIOS = {
         "description": "The same notifications with bounded recording and completed encoding/persistence.",
         "counters": ["notifications", "retained", "discarded", "persistedBytes", "enqueueMicroseconds"],
     },
+    "player-controls-reveal": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "PlayerControlsRevealPerformanceTests/testPerformanceControlsReveal",
+        "file": "Tests/FocusIntegrationTests/PlayerControlsRevealPerformanceTests.swift",
+        "description": "Four reveals of production transport controls with immediate preference reads; no video decoding.",
+        "counters": ["reveals", "preferenceReads", "mainThreadReads", "maxMainActorGapMicroseconds"],
+        "timing": ["cpuMilliseconds"],
+    },
+    "player-controls-reveal-contended": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "PlayerControlsRevealPerformanceTests/testPerformanceControlsRevealWithContendedPreferences",
+        "file": "Tests/FocusIntegrationTests/PlayerControlsRevealPerformanceTests.swift",
+        "description": "The same controls with a controlled 180-ms synchronous preference read; heartbeat gaps are not rendered FPS or remux decoding.",
+        "counters": ["reveals", "preferenceReads", "mainThreadReads", "maxMainActorGapMicroseconds"],
+        "timing": ["cpuMilliseconds"],
+    },
     "skeletons-idle": {
         "suite": "ui", "test": "ShimmerPerformanceTests/testPerformanceLoadingCards",
         "file": "Tests/PerformancePresentationSupport/ShimmerPerformanceTests.swift",
