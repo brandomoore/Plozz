@@ -358,7 +358,7 @@ final class HeroShowcaseStageTests: XCTestCase {
         cue.layoutIfNeeded()
         let frame = cue.arrow.convert(cue.arrow.bounds, to: window)
         XCTAssertEqual(frame.midX, window.bounds.midX, accuracy: 0.5)
-        XCTAssertEqual(frame.midY, 72, accuracy: 0.5)
+        XCTAssertEqual(frame.midY, 48, accuracy: 0.5)
         XCTAssertFalse(cue.isUserInteractionEnabled)
         XCTAssertTrue(cue.accessibilityElementsHidden)
         XCTAssertEqual(cue.arrow.alpha, 0)

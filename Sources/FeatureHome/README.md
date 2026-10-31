@@ -1095,7 +1095,7 @@ The bar travels only far enough to clear the screen and receives an additive
 native translation in the stage's own animation transaction, including reversals.
 There is no display-link-to-SwiftUI follower or independent SwiftUI animation.
 Using the full stage distance would hide it early and reveal it late.
-Detach and reduced-motion updates clear owned animations. The return chevron sits 72 points from the top in all navigation styles,
+Detach and reduced-motion updates clear owned animations. The return chevron sits 48 points from the top in all navigation styles,
 without reserving space for the now-hidden Top Bar.
 Back still reveals navigation immediately, cancelling its remaining translations.
 The navigation fixture samples the bar's rendered position against stage
@@ -1129,7 +1129,7 @@ transaction's default start time, not a wall-clock timestamp captured before
 layout and focus work. Cold first-entry work therefore cannot use up their
 duration before that transaction is submitted.
 Reduce Motion omits foreground and artwork travel and snaps the rows.
-A shallow, text-free up chevron sits at the screen's horizontal center, 72 points
+A shallow, text-free up chevron sits at the screen's horizontal center, 48 points
 from the top. It fades in only after two seconds on the first row when arriving
 upward from a deeper row. Coming down from the hero never shows it, and leaving
 before the delay ends cancels it. It fades away after three seconds of visibility;

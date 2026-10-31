@@ -249,7 +249,7 @@ struct HeroShowcaseReturnCue: UIViewRepresentable {
 
     final class CueView: UIView {
         let arrow = UIView()
-        var top: CGFloat = 72 {
+        var top: CGFloat = 48 {
             didSet { if oldValue != top { setNeedsLayout() } }
         }
         private(set) var isEligible = false

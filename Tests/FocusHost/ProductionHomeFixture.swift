@@ -515,7 +515,7 @@ struct ProductionHomeFixture: View {
                         }
                         let cueY = returnCue.arrow.convert(returnCue.arrow.bounds, to: window).midY
                         let cueHidden = returnCue.arrow.alpha == 0 && !returnCue.isEligible
-                        passed = passed && abs(cueY - 72) < 1 && cueHidden
+                        passed = passed && abs(cueY - 48) < 1 && cueHidden
                         print("HERO_STAGE_NAV cueY=\(cueY) hiddenAfterHeroDescent=\(cueHidden)")
                         do { try await Task.sleep(for: .seconds(1)) }
                         catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
