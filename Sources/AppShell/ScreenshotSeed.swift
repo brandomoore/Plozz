@@ -68,7 +68,6 @@ enum ScreenshotSeed {
                 appState.finishThemeSelection()
                 FeatureIntroductionStore().markCompleted(.navigationStyles)
                 appState.finishNavigationSelection()
-                appState.finishHomeLayoutSelection()
             }
             if let mode = environment["PLOZZ_SHOTS_SETTINGS_KIDS"],
                var sam = appState.profilesModel.profiles.first(where: { $0.name == "Sam" }) {

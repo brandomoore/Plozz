@@ -51,8 +51,6 @@ public enum OnboardingStep: Equatable, Sendable {
     /// its theme. Existing installs receive the same picker through feature
     /// onboarding instead of re-entering the account setup state machine.
     case selectNavigation
-    /// Choose the active profile's Home layout after navigation.
-    case selectHomeLayout
 }
 
 public enum SessionState: Equatable, Sendable {
@@ -100,7 +98,6 @@ public enum SessionEvent: Sendable {
     case themeSelected
     /// The user confirmed a navigation style on first run.
     case navigationSelected
-    case homeLayoutSelected
     case authenticationFailed(AppError)
     /// Back out of onboarding without adding an account.
     case cancelOnboarding
@@ -220,12 +217,10 @@ public struct SessionStateMachine: Sendable {
         case (.onboarding(.selectSeerr, _), .seerrSelected):
             return .onboarding(.selectTheme, canReturnToApp: true)
 
-        // Appearance choices finish with Home layout, then enter the app.
+        // Navigation finishes appearance setup; Home can be customized in Settings.
         case (.onboarding(.selectTheme, _), .themeSelected):
             return .onboarding(.selectNavigation, canReturnToApp: true)
         case (.onboarding(.selectNavigation, _), .navigationSelected):
-            return .onboarding(.selectHomeLayout, canReturnToApp: true)
-        case (.onboarding(.selectHomeLayout, _), .homeLayoutSelected):
             return .ready
 
         // Cancelling the Quick Connect / password step steps BACK to the

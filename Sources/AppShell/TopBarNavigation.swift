@@ -179,10 +179,10 @@ private struct TopBarNavigationContent: View {
             if destinationFocus.request?.destination != current { destinationFocus.cancel() }
             contentRequest = nil
             returnFocus.clear()
-            if current == .settings, destinationFocus.request == nil {
+            if destinationFocus.request == nil {
                 navigationRequest = nil
                 isNavigating = true
-                destinationFocus.begin(.settings)
+                destinationFocus.begin(current)
             }
         }
         .onChange(of: profile?.id) { _, _ in

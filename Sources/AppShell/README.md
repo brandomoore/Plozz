@@ -169,25 +169,25 @@ registry.
 
 ## Appearance onboarding
 
-Apple TV first-run and new-profile setup share Theme, Navigation, and Home Layout
-choices in that order. Each selection writes to the active profile's existing
-settings model. Continue or Menu accepts the current selection; profile setup
-is not complete until Home Layout is accepted.
+Apple TV first-run and new-profile setup share Theme then Navigation. Continue
+or Menu on Navigation completes appearance setup, including the durable profile
+resume marker and Plex identity reconciliation. There is no Home layout setup
+step or upgrade introduction. Existing navigation introductions remain available.
 
-Existing installations receive a device-local, one-time Home Layout chooser
-after any pending navigation introduction and before release notes. The current
-layout is preselected; dismissing does not reset it or change other profiles.
-Finishing setup also completes these introductions, preventing a duplicate
-prompt on first entry. iPhone and iPad retain their existing carousel layout.
-
-`CoreUI.HomeLayoutOptionCard` supplies the same names and previews to onboarding
-and Settings. Its illustrations omit navigation chrome, since Home layout and
-navigation style are independent choices.
+Fresh profiles use Spotlight above Showcase rows. Settings > Home exposes
+Spotlight and Row style independently, backed by the existing profile-scoped
+hero settings. Existing saved layouts are preserved, including older blobs with
+no style field, which still decode as Classic rows with their saved hero choice.
+iPhone and iPad retain their existing carousel presentation.
 
 ## Navigation planning
 
 Settings is a normal destination in all three navigation shells. Its root keeps
 app navigation visible and available; categories and nested pages hide it.
+In the custom pinned and top-bar shells, programmatic destination changes,
+including Home's Watchlist See all action,
+use the same rendered-presentation focus handoff as navigation selections.
+An already pending handoff is preserved, including Back's navigation-focus target.
 Root Back restores navigation focus, while child Back restores its Settings row.
 The top-bar root reserves foreground clearance without moving subpage headers.
 Chrome stays unavailable until a returning Settings page can receive focus.

@@ -264,9 +264,9 @@ private struct NavigationRailShellContent<Content: View>: View {
                     destinationFocus.cancel()
                 }
                 chrome.resetForDestinationChange()
-                // Programmatic returns from Settings can bypass
-                // selectDestination and needs the same presentation-gated handoff.
-                if previous == .settings, destination != .settings {
+                // Content actions (including Watchlist See all) bypass the rail.
+                // Preserve an existing handoff, especially Back's navigation target.
+                if destinationFocus.request == nil {
                     destinationFocus.begin(destination)
                 }
                 isOpeningNavigation = false

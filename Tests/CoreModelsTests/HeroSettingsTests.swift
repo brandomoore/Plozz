@@ -348,7 +348,7 @@ final class HeroSettingsTests: XCTestCase {
         var settings = HeroSettings.default
         settings.style = .heroShowcase
         secondary.save(settings)
-        XCTAssertEqual(primary.load().style, .carousel)
+        XCTAssertEqual(primary.load().style, .heroShowcase)
         XCTAssertEqual(secondary.load().style, .heroShowcase)
         XCTAssertTrue(secondary.load().hasFeaturedHero)
         XCTAssertTrue(secondary.load().followsFocus)
@@ -369,6 +369,65 @@ final class HeroSettingsTests: XCTestCase {
         XCTAssertFalse(decoded.followsFocus)
         XCTAssertFalse(decoded.showsCardCaptions, "The hero names the focused title, so cards start without one")
         XCTAssertFalse(decoded.showsDiscoverRow)
+    }
+
+    func testFreshProfilesDefaultToSpotlightAndShowcaseWithoutChangingSavedProfiles() {
+        let existing = HeroSettingsStore(defaults: defaults)
+        var classic = HeroSettings.default
+        classic.style = .carousel
+        existing.save(classic)
+        let fresh = HeroSettingsStore(defaults: defaults, namespace: "new-profile")
+        XCTAssertTrue(fresh.load().spotlightEnabled)
+        XCTAssertTrue(fresh.load().immersiveRows)
+        XCTAssertEqual(existing.load(), classic)
+    }
+
+    func testIndependentHomeControlsPreserveTheOtherChoiceAndCustomization() throws {
+        for originalStyle in HeroStyle.allCases {
+            for enabled in [false, true] {
+                var original = HeroSettings.default
+                original.style = originalStyle
+                original.isEnabled = enabled
+                original.maxItems = 13
+                original.sources = [.watchlist]
+                original.showsDiscoverRow = true
+                for desired in [false, true] {
+                    var spotlight = original
+                    spotlight.spotlightEnabled = desired
+                    XCTAssertEqual(spotlight.spotlightEnabled, desired)
+                    XCTAssertEqual(spotlight.immersiveRows, original.immersiveRows)
+                    var rows = original
+                    rows.immersiveRows = desired
+                    XCTAssertEqual(rows.immersiveRows, desired)
+                    XCTAssertEqual(rows.spotlightEnabled, original.spotlightEnabled)
+                    for changed in [spotlight, rows] {
+                        XCTAssertEqual(changed.sources, original.sources)
+                        XCTAssertEqual(changed.maxItems, original.maxItems)
+                        XCTAssertTrue(changed.showsDiscoverRow)
+                        let restored = try JSONDecoder().decode(HeroSettings.self, from: JSONEncoder().encode(changed))
+                        XCTAssertEqual(restored, changed)
+                    }
+                }
+            }
+        }
+    }
+
+    func testLegacyShowcaseDoesNotGainSpotlightWhenChoosingClassicRows() throws {
+        var settings = try JSONDecoder().decode(
+            HeroSettings.self, from: Data(#"{"isEnabled":true,"style":"followsFocus"}"#.utf8)
+        )
+        XCTAssertFalse(settings.spotlightEnabled)
+        settings.immersiveRows = false
+        XCTAssertEqual(settings.style, .carousel)
+        XCTAssertFalse(settings.isEnabled)
+        settings.spotlightEnabled = true
+        XCTAssertEqual(settings.style, .carousel)
+        XCTAssertTrue(settings.hasFeaturedHero)
+        settings.immersiveRows = true
+        XCTAssertEqual(settings.style, .heroShowcase)
+        settings.spotlightEnabled = false
+        XCTAssertEqual(settings.style, .followsFocus)
+        XCTAssertFalse(settings.hasFeaturedHero)
     }
 
     func testAnUnknownStyleFallsBackWithoutResettingOtherSettings() throws {

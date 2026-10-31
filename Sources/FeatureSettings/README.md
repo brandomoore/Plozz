@@ -344,7 +344,7 @@ watch history and planning-list behavior are documented in
   the native action inline with the scrolling page title and Back control.
   Editing remains available for one row so it can be removed; movement does not.
   Presets and reordering never change page appearance. Showcase's fixed Discovery
-  row links back to Home layout rather than pretending to be reorderable.
+  row links back to Row style rather than pretending to be reorderable.
   Shared Continue Watching settings remain accessible when its Home row is hidden.
   Home → Filtering groups two independent switches under **Hide watched content**:
   **Recently Added** (off by default) and **Hero & discovery** (on by default).
@@ -426,7 +426,7 @@ watch history and planning-list behavior are documented in
   One full-width Add row action appears below Preset and above the editable rows.
   A centered plus-and-label, native capsule style, and vertical spacing distinguish
   the action from the editable rows. Edit/Done switches to native movement controls
-  with no Hidden drop zone. Hero and Showcase remain on their separate layout page.
+  with no Hidden drop zone. Spotlight and Row style remain separate Home settings.
   Mobile uses the shared page inset without extra gutters.
   Add row separates **From a collection** from **Available rows** not already
   shown. Empty results omit the empty heading; discovery failures show source
@@ -451,15 +451,21 @@ watch history and planning-list behavior are documented in
   provider mark beside each library's second-line server label, including personal
   collection sources. Featured previews share the live card's artwork, logo and
   metadata layout without starting playback in Settings. Reorder menus include Move to top
-  and Move to bottom within the movable sections, never above Home layout.
+  and Move to bottom within the movable sections.
   On TV, picked-up rows retain native focus during rapid directional presses
   and held Up/Down; reaching an edge does not move focus out of the list.
   Home's latest section warnings also appear here with Details and Retry.
   These are transient results fenced by profile, account, effective viewer,
   credentials, and the loaded Home settings; catalog discovery is not treated
   as evidence that the actual Home content request succeeded.
-  Continue Watching owns its merge and artwork controls. Hero owns its sources
-  and presentation, including the existing TV Home Layout/Showcase options.
+  Continue Watching owns its merge and artwork controls. TV Spotlight owns its
+  enabled state, sources, sizing, rotation, ratings, and trailers. Row style has
+  Classic and Showcase preview cards independent of Spotlight, with Showcase
+  sizing and ratings below. Standalone Showcase also exposes Discovery and its
+  providers, respecting Kids policy. These controls map to existing persisted
+  hero style/enabled fields without resetting content preferences. Mobile keeps
+  its Hero controls and carousel presentation. Fresh TV profiles default to
+  Spotlight + Showcase; existing saved choices remain unchanged.
   Continue Watching groups artwork, playback details and labels before their shared
   Recommended-page scope note; Include Next Up and selection behavior follow.
   Showcase groups Ratings and Discovery with their dependent controls.

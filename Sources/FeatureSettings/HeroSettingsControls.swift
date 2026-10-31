@@ -8,7 +8,12 @@ enum HeroSettingsPage: String, CaseIterable {
 
     var title: LocalizedStringResource {
         switch self {
-        case .titles: "Hero content sources"
+        case .titles:
+            #if os(tvOS)
+            "Content sources"
+            #else
+            "Hero content sources"
+            #endif
         case .ratings: "Ratings"
         case .trailers: "Trailers"
         case .discovery: "Discovery"
@@ -52,10 +57,15 @@ public struct HeroSettingsControls: View {
     public var body: some View {
         @Bindable var hero = hero
         HeroSettingsGroup {
+            #if os(tvOS)
+            Toggle("Spotlight", isOn: $hero.settings.spotlightEnabled)
+                .accessibilityIdentifier("hero-enabled")
+            #else
             Toggle("Show hero", isOn: $hero.settings.isEnabled)
                 .accessibilityIdentifier("hero-enabled")
+            #endif
         }
-        if hero.settings.isEnabled {
+        if showsControls {
             HeroSettingsGroup {
                 HeroLogoSizeControl(size: $hero.settings.logoSize, textSize: $hero.settings.textSize, surface: .home)
             }
@@ -66,6 +76,14 @@ public struct HeroSettingsControls: View {
                 HeroSettingsLink(page: .trailers, libraries: libraries, accounts: accounts)
             }
         }
+    }
+
+    private var showsControls: Bool {
+        #if os(tvOS)
+        hero.settings.spotlightEnabled
+        #else
+        hero.settings.isEnabled
+        #endif
     }
 }
 
@@ -139,7 +157,7 @@ private struct HeroTrailerControls: View {
     var body: some View {
         @Bindable var background = background
         HeroSettingsGroup {
-            Toggle("Play trailer behind the hero", isOn: $background.settings.homeTrailerEnabled)
+            Toggle(trailerLabel, isOn: $background.settings.homeTrailerEnabled)
                 .accessibilityIdentifier("hero-trailers")
                 .modifier(ViewCustomizationRowFocus(id: "hero-trailers"))
             if background.settings.homeTrailerEnabled {
@@ -147,6 +165,14 @@ private struct HeroTrailerControls: View {
                     .accessibilityIdentifier("hero-trailers-muted")
             }
         }
+    }
+
+    private var trailerLabel: LocalizedStringResource {
+        #if os(tvOS)
+        "Play trailers"
+        #else
+        "Play trailer behind the hero"
+        #endif
     }
 }
 

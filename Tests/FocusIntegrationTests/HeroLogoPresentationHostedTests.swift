@@ -975,7 +975,7 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
         add(attachment)
     }
 
-    func testLayoutPickerUpdatesOnlyTheSelectedLogo() async throws {
+    func testRowStylePickerUpdatesShowcaseLogoWithoutChangingClassicPreview() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
         let model = SizingModel()
@@ -992,15 +992,15 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
         system.updateFocusIfNeeded()
         try await waitUntil { input.ownsHorizontalNavigationInput }
         host.target = nil
-        for style in HeroStyle.allCases {
+        for style in [HeroStyle.followsFocus] {
             model.layout = style
             try await Task.sleep(for: .milliseconds(200))
             fixture.window.layoutIfNeeded()
             let picker = try XCTUnwrap(findPreviewCard(in: host.view, identifier: "logo-layout-picker-frame"))
             let frame = picker.convert(picker.bounds, to: fixture.window)
-            let other: HeroStyle = style == .carousel ? .followsFocus : .carousel
             let baseline = try layoutWordmarkBounds(style: style, pickerFrame: frame, in: fixture.window)
-            let otherBaseline = try layoutWordmarkBounds(style: other, pickerFrame: frame, in: fixture.window)
+            let classicFrame = CGRect(x: frame.minX, y: frame.minY, width: (frame.width - 16) / 2, height: frame.height).integral
+            let otherBaseline = try rgbaPixels(in: fixture.window, rect: classicFrame)
             for _ in HeroLogoSize.default.position..<(HeroLogoSize.allSizes.count - 1) {
                 input.beginPress(.right)
                 input.stopRepeating()
@@ -1009,7 +1009,7 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
             let large = try layoutWordmarkBounds(style: style, pickerFrame: frame, in: fixture.window)
             XCTAssertEqual(large.width / baseline.width, 1.5, accuracy: 0.04)
             XCTAssertEqual(large.maxY, baseline.maxY, accuracy: 2)
-            XCTAssertEqual(try layoutWordmarkBounds(style: other, pickerFrame: frame, in: fixture.window), otherBaseline)
+            XCTAssertEqual(try rgbaPixels(in: fixture.window, rect: classicFrame), otherBaseline)
             attachPreview(in: fixture.window, name: "logo-layout-live-\(style)-large")
             for _ in 1..<HeroLogoSize.allSizes.count {
                 input.beginPress(.left)
@@ -1020,7 +1020,7 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
             XCTAssertEqual(small.width / baseline.width, 0.5, accuracy: 0.04)
             // The fictional text includes scaled font descent; trimmed real artwork is checked separately.
             XCTAssertEqual(small.maxY, baseline.maxY, accuracy: 4)
-            XCTAssertEqual(try layoutWordmarkBounds(style: other, pickerFrame: frame, in: fixture.window), otherBaseline)
+            XCTAssertEqual(try rgbaPixels(in: fixture.window, rect: classicFrame), otherBaseline)
             attachPreview(in: fixture.window, name: "logo-layout-live-\(style)-small")
         }
     }
@@ -1189,9 +1189,12 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
 
         var body: some View {
             VStack(spacing: 24) {
-                HomeLayoutPicker(
-                    layout: Binding(get: { model.layout }, set: { model.layout = $0 }),
-                    homeLogoSize: model.homeSize, showcaseLogoSize: model.showcaseSize
+                HomeRowStylePicker(
+                    immersive: Binding(
+                        get: { model.layout != .carousel },
+                        set: { model.layout = $0 ? .followsFocus : .carousel }
+                    ),
+                    logoSize: model.showcaseSize
                 )
                 .background(PreviewCardFrame(identifier: "logo-layout-picker-frame"))
                 SettingsControlGroup {

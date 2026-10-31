@@ -56,11 +56,22 @@ struct ProductionHomeFixture: View {
                 Group {
                     if isPinned {
                         NavigationRailShell(
-                            profile: profile, entries: [], destinations: [.home, .search, .settings],
+                            profile: profile, entries: [], destinations: [.home, .watchlist, .search, .settings],
                             selection: $selection, onOpenProfileSwitcher: {},
                             chrome: fixture.chrome,
-                            content: ProductionHomeContent(fixture: fixture, path: $path, libraryPath: $libraryPath, isPinned: true),
-                            contentDestination: .home
+                            content: Group {
+                                if selection == .watchlist {
+                                    NavigationStack {
+                                        WatchlistBrowseView(
+                                            viewModel: fixture.model, visibility: fixture.visibility.visibility,
+                                            onSelect: { _ in }
+                                        )
+                                    }
+                                } else {
+                                    ProductionHomeContent(fixture: fixture, path: $path, libraryPath: $libraryPath, isPinned: true)
+                                }
+                            },
+                            contentDestination: selection
                         )
                     } else if isNativeSidebar {
                         TabView(selection: Binding(
@@ -153,6 +164,41 @@ struct ProductionHomeFixture: View {
                         )
                     } else {
                         ProductionHomeContent(fixture: fixture, path: $path, libraryPath: $libraryPath, isPinned: false)
+                    }
+                }
+                .environment(\.openWatchlist, { selection = .watchlist })
+                .task {
+                    guard ProcessInfo.processInfo.arguments.contains("--watchlist-entry-probe"),
+                          isPinned || ProcessInfo.processInfo.arguments.contains("--top-bar-home") else { return }
+                    do {
+                        try await Task.sleep(for: .seconds(3))
+                        selection = .watchlist
+                        try await Task.sleep(for: .seconds(3))
+                        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                            .flatMap(\.windows).first(where: \.isKeyWindow)
+                        let focused = window.flatMap { UIFocusSystem.focusSystem(for: $0)?.focusedItem }
+                        var views: [UIView] = window.map { [$0] } ?? []
+                        var enteredGrid = false
+                        while let view = views.popLast() {
+                            if let region = view as? NavigationEntryFocusRegionView,
+                               region.preference == .content, let focused, let window,
+                               let frame = NavigationRowFocusRequester.frame(of: focused, relativeTo: window) {
+                                enteredGrid = enteredGrid || view.convert(view.bounds, to: window).contains(CGPoint(x: frame.midX, y: frame.midY))
+                            }
+                            views.append(contentsOf: view.subviews)
+                        }
+                        print("WATCHLIST_ENTRY_PROBE selected=\(selection.storageValue) focusedType=\(focused.map { String(describing: type(of: $0)) } ?? "nil") enteredGrid=\(enteredGrid)")
+                        try await Task.sleep(for: .seconds(1))
+                        selection = .home
+                        try await Task.sleep(for: .seconds(3))
+                        let returned = window.flatMap { UIFocusSystem.focusSystem(for: $0)?.focusedItem }
+                        let returnFrame = returned.flatMap { item in
+                            window.flatMap { NavigationRowFocusRequester.frame(of: item, relativeTo: $0) }
+                        }
+                        let returnedVisible = window.map { $0.bounds.intersects(returnFrame ?? .null) } ?? false
+                        print("WATCHLIST_ENTRY_PROBE complete enteredGrid=\(enteredGrid) returnedVisible=\(returnedVisible)")
+                    } catch {
+                        print("WATCHLIST_ENTRY_PROBE failed: \(error)")
                     }
                 }
                 .overlay(alignment: .topTrailing) {

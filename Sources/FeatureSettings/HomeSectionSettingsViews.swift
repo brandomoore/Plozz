@@ -453,62 +453,66 @@ struct HomeHeroSettingsView: View {
     }
 
     @ViewBuilder private var page: some View {
-        @Bindable var hero = hero
         HomeEditorPage(title: pageTitle, showsHeader: true) {
-            #if os(tvOS)
-            HomeLayoutPicker(
-                layout: $hero.settings.style,
-                homeLogoSize: hero.settings.logoSize, showcaseLogoSize: hero.settings.showcaseLogoSize,
-                homeTextSize: hero.settings.textSize, showcaseTextSize: hero.settings.showcaseTextSize
-            )
-            if hero.settings.followsFocus {
-                if hero.settings.style == .heroShowcase {
-                    Text("Hero").font(.headline)
-                    HeroSettingsControls(libraries: availableLibraries, accounts: accounts)
-                    Text("Showcase").font(.headline)
-                }
-                SettingsControlGroup {
-                    HeroLogoSizeControl(
-                        size: $hero.settings.showcaseLogoSize, textSize: $hero.settings.showcaseTextSize, surface: .showcase
-                    )
-                }
-                if hero.settings.style == .followsFocus || !hero.settings.isEnabled {
-                    SettingsControlGroup {
-                        Toggle("Ratings", isOn: $hero.settings.showsRatings)
-                        if hero.settings.showsRatings {
-                            Toggle("Show Common Sense age", isOn: $hero.settings.ratingPreferences.showsHeaderFamilyGuidance)
-                            HeaderReviewScoreCountPicker(settings: $hero.settings.ratingPreferences)
-                        }
-                    }
-                }
-                if hero.settings.style == .followsFocus && hero.allowsDiscovery {
-                    SettingsControlGroup {
-                        Toggle("Discovery row", isOn: $hero.settings.showsDiscoverRow)
-                        if hero.settings.showsDiscoverRow {
-                            HeroSettingsLink(page: .discovery, libraries: availableLibraries, accounts: accounts)
-                        }
-                    }
-                } else if hero.settings.style == .followsFocus {
-                    Text("Discovery is unavailable in Kids profiles.")
-                        .settingsHelperText()
-                }
-            } else {
-                HeroSettingsControls(libraries: availableLibraries, accounts: accounts)
-            }
-            #else
             HeroSettingsControls(libraries: availableLibraries, accounts: accounts)
-            #endif
         }
     }
 
     private var pageTitle: Text {
         #if os(tvOS)
-        Text("Home layout")
+        Text("Spotlight")
         #else
         Text("Hero")
         #endif
     }
 }
+
+#if os(tvOS)
+struct HomeRowStyleSettingsView: View {
+    let libraries: [AggregatedLibrary]
+    let accounts: [ResolvedAccount]
+    @Environment(HeroSettingsModel.self) private var hero
+    @State private var navigation = SettingsDetailNavigation()
+
+    var body: some View {
+        @Bindable var hero = hero
+        SettingsDetailPages(navigation: navigation) {
+            HomeEditorPage(title: Text("Row style"), showsHeader: true) {
+                HomeRowStylePicker(
+                    immersive: $hero.settings.immersiveRows,
+                    logoSize: hero.settings.showcaseLogoSize,
+                    textSize: hero.settings.showcaseTextSize
+                )
+                if hero.settings.immersiveRows {
+                    SettingsControlGroup {
+                        HeroLogoSizeControl(
+                            size: $hero.settings.showcaseLogoSize,
+                            textSize: $hero.settings.showcaseTextSize, surface: .showcase
+                        )
+                    }
+                    SettingsControlGroup {
+                        HeroSettingsLink(page: .ratings, libraries: libraries, accounts: accounts)
+                    }
+                    if hero.settings.style == .followsFocus {
+                        if hero.allowsDiscovery {
+                            SettingsControlGroup {
+                                Toggle("Discovery row", isOn: $hero.settings.showsDiscoverRow)
+                                if hero.settings.showsDiscoverRow {
+                                    HeroSettingsLink(page: .discovery, libraries: libraries, accounts: accounts)
+                                }
+                            }
+                        } else {
+                            Text("Discovery is unavailable in Kids profiles.").settingsHelperText()
+                        }
+                    }
+                }
+            }
+        } detail: {
+            HeroSettingsDestination(libraries: libraries, accounts: accounts)
+        }
+    }
+}
+#endif
 
 struct HomeCatalogStatus: View {
     let inventory: HomeSectionCatalogModel

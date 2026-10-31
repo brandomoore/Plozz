@@ -29,8 +29,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         return settings
     }
 
-    /// Whether the hero section is shown at all. When `false`, Home renders its
-    /// classic rows unchanged.
+    /// Enables the featured section where the selected style supports it.
+    /// Disabling it does not change Classic versus Showcase rows.
     public var isEnabled: Bool
 
     /// The enabled sources, in carousel order. Empty means "nothing to show" —
@@ -78,9 +78,31 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     public var autoAdvanceSeconds: Int
 
     /// How Apple TV's Home is arranged. Other platforms always show the carousel.
-    /// Lives with the hero's settings because Fullscreen Hero is the carousel, but it is
-    /// a layout choice, not a hero option. Standalone Showcase has no featured section.
+    /// The persisted representation of independent Spotlight and row-style choices.
+    /// Standalone Showcase has no featured section, even in legacy enabled blobs.
     public var style: HeroStyle
+
+    /// Independent TV controls backed by the existing persisted layout values.
+    public var spotlightEnabled: Bool {
+        get { isEnabled && style != .followsFocus }
+        set {
+            guard newValue != spotlightEnabled else { return }
+            let immersive = immersiveRows
+            isEnabled = newValue
+            style = immersive ? (newValue ? .heroShowcase : .followsFocus) : .carousel
+        }
+    }
+
+    public var immersiveRows: Bool {
+        get { style != .carousel }
+        set {
+            guard newValue != immersiveRows else { return }
+            let spotlight = spotlightEnabled
+            isEnabled = spotlight
+            style = newValue ? (spotlight ? .heroShowcase : .followsFocus) : .carousel
+        }
+    }
+
     public var logoSize: HeroLogoSize
     public var showcaseLogoSize: HeroLogoSize
     public var textSize: HeroTextSize
@@ -93,7 +115,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// Fullscreen Hero's Featured source would show. Off by default.
     public var showsDiscoverRow: Bool
 
-    /// Hero on, library categories enabled, Discovery following Seerr, a modest
+    /// Fresh profiles use Spotlight + Showcase, library categories enabled, Discovery following Seerr, a modest
     /// rotation, and gentle auto-advance. Optional discovery credits are hidden.
     /// Feed defaults are defined by ``HeroDiscoverySource/defaultSelection``.
     public static let `default` = HeroSettings(
@@ -105,6 +127,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         randomLibraryKeys: [],
         autoAdvance: true,
         autoAdvanceSeconds: 12,
+        style: .heroShowcase,
         discoveryFollowsSeerr: true
     )
 
@@ -211,7 +234,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
             randomLibraryKeys: value(Set<String>.self, .randomLibraryKeys, d.randomLibraryKeys),
             autoAdvance: value(Bool.self, .autoAdvance, d.autoAdvance),
             autoAdvanceSeconds: value(Int.self, .autoAdvanceSeconds, d.autoAdvanceSeconds),
-            style: value(HeroStyle.self, .style, d.style),
+            // Blobs predating layout selection used the carousel, not the fresh-profile default.
+            style: value(HeroStyle.self, .style, .carousel),
             logoSize: value(HeroLogoSize.self, .logoSize, d.logoSize),
             showcaseLogoSize: value(HeroLogoSize.self, .showcaseLogoSize, d.showcaseLogoSize),
             textSize: value(HeroTextSize.self, .textSize, d.textSize),

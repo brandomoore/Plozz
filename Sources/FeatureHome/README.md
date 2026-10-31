@@ -1067,7 +1067,7 @@ data from completion of the entire Home load.
 
 ## Showcase
 
-The separate **Hero + Showcase** Home option keeps the featured carousel above
+The default **Spotlight + Showcase** Home presentation keeps the featured carousel above
 the same Showcase rows. Its native stage preserves the three hosting trees:
 the featured hero, Showcase details/artwork, and the row viewport. Down admits
 the first row before animating its viewport into place; Up from that row restores
@@ -1115,8 +1115,10 @@ It is informational, never an additional focus stop. Deeper rows retain ordinary
 Row translation uses additive compositor animations so reversing direction retains
 the in-flight motion. Artwork planes crossfade; Reduce Motion uses the same
 destinations without animation. Carousel dwell and trailers suspend while rows
-are active. Disabling the featured hero leaves Showcase rows available. This
-option does not replace the two existing layouts or change their defaults.
+are active. Settings exposes Spotlight independently from Classic/Showcase row
+style. Fresh profiles use both Spotlight and Showcase; saved styles and disabled
+heroes retain their previous behavior. Blobs without a style field keep the old
+carousel layout rather than adopting the new-profile default.
 
 The production Home fixture's `--hero-showcase-focus-probe` records initial
 native focus and invokes the same boundary handoff used by remote input. It

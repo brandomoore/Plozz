@@ -48,6 +48,19 @@ public struct HomeRowsSettingsView: View {
             .accessibilityLabel(heroTitle)
             .accessibilityValue(heroSummary ?? Text(verbatim: ""))
             .accessibilityIdentifier("home-section-hero")
+            #if os(tvOS)
+            HomeEditorLink {
+                HomeRowStyleSettingsView(libraries: libraries, accounts: accounts)
+                    .environment(hero)
+                    .environment(heroBackground)
+            } label: {
+                HomeEditorRowLabel(
+                    title: Text("Row style"),
+                    value: hero.settings.immersiveRows ? Text("Showcase") : Text("Classic")
+                )
+            }
+            .accessibilityIdentifier("home-row-style")
+            #endif
             HomeEditorLink {
                 CardCaptionCustomizationView(cards: cards, scope: .home, visibility: visibility)
                     .environment(hero)
@@ -79,7 +92,7 @@ public struct HomeRowsSettingsView: View {
 
     private var heroTitle: Text {
         #if os(tvOS)
-        Text("Layout")
+        Text("Spotlight")
         #else
         Text("Hero")
         #endif
@@ -87,9 +100,7 @@ public struct HomeRowsSettingsView: View {
 
     private var heroSummary: Text? {
         #if os(tvOS)
-        if hero.settings.style == .heroShowcase { return Text(hero.settings.style.layoutTitle) }
-        if hero.settings.style == .followsFocus { return Text("Showcase") }
-        return hero.settings.isEnabled ? Text("Hero") : Text("Off")
+        return hero.settings.spotlightEnabled ? Text("On") : Text("Off")
         #else
         return hero.settings.isEnabled ? nil : Text("Off")
         #endif
@@ -281,13 +292,13 @@ struct HomeSectionsSettingsView: View {
             #if os(tvOS)
             if hero.settings.style == .followsFocus {
                 HomeEditorLink {
-                    HomeHeroSettingsView(libraries: libraries, accounts: accounts, visibility: visibility)
+                    HomeRowStyleSettingsView(libraries: libraries, accounts: accounts)
                         .environment(hero)
                         .environment(heroBackground)
                 } label: {
                     HomeEditorRowLabel(
                         title: Text("Discovery"),
-                        subtitle: Text("Managed by Home layout.")
+                        subtitle: Text("Managed by Row style.")
                     )
                 }
                 .disabled(isReordering)

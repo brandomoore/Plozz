@@ -71,7 +71,7 @@ public protocol ProfileAppearanceSetupStoring: Sendable {
     func markCompleted(profileID: String)
 }
 
-/// Durable resume marker for a new profile's Theme + Navigation + Home layout flow.
+/// Durable resume marker for a new profile's Theme + Navigation flow.
 ///
 /// This is separate from the app-wide feature introduction: old inactive
 /// profiles must not be prompted on switch, while a newly-created profile must
