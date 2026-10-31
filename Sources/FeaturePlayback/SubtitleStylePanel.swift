@@ -42,9 +42,8 @@ struct SubtitleStylePanel: View {
         styleInputScope(styleInputRows) {
             switch screen {
             case .style:
-                // Image-based captions cannot be restyled.
-                if let format = model.secondarySubtitleImagePrimaryFormat {
-                    styleUnavailableForImageSubtitle(format: format)
+                if model.secondarySubtitleImagePrimaryFormat != nil {
+                    styleScreen(bitmapPositionRows)
                 } else {
                     let main = styleMainRows
                     styleScreen(main.rows, dividerBefore: main.dividerBefore)
@@ -66,7 +65,7 @@ struct SubtitleStylePanel: View {
 
     private var styleInputRows: [StyleRowSpec] {
         switch screen {
-        case .style: styleMainRows.rows
+        case .style: model.secondarySubtitleImagePrimaryFormat == nil ? styleMainRows.rows : bitmapPositionRows
         case .styleFont: [systemFontRow]
         case .styleOutline: styleOutlineRows
         case .styleBackground: styleBackgroundRows
@@ -76,6 +75,22 @@ struct SubtitleStylePanel: View {
     }
 
     typealias StyleRowSpec = PlayerOptionsRowSpec
+
+    private var bitmapPositionRows: [StyleRowSpec] {
+        let style = effectiveStyle
+        var rows = [choiceRow(
+            0, "Position relative to", options: SubtitleStyle.PositionReference.allCases,
+            current: style.positionReference, label: { $0.displayName }
+        ) { value in updateStyle { $0.positionReference = value } }]
+        if style.positionReference == .picture {
+            rows.append(numberRow(
+                1, "Position", options: Self.positionOptions,
+                current: Int((style.verticalPosition / SubtitleStyle.verticalPositionStep).rounded()),
+                label: { Text(Double($0) * SubtitleStyle.verticalPositionStep, format: .percent.precision(.fractionLength(0...1))) }
+            ) { value in updateStyle { $0.verticalPosition = Double(value) * SubtitleStyle.verticalPositionStep } })
+        }
+        return rows
+    }
 
     /// The live subtitle-appearance editor, hosted over the running video so every
     /// tweak previews instantly on the real subtitles behind the panel. Each row is
@@ -150,7 +165,10 @@ struct SubtitleStylePanel: View {
     }
 
     @ViewBuilder private var styleFooter: some View {
-        if screen == .styleBackground {
+        if screen == .style, model.secondarySubtitleImagePrimaryFormat != nil {
+            Text("Picture positioning moves lower captions, not artwork. Image subtitles keep their original font and color.")
+                .font(.footnote).playerMenuRowSecondary().padding(16)
+        } else if screen == .styleBackground {
             Text("Window padding is set by Plozz. Apple does not expose subtitle padding or line spacing.")
                 .font(.footnote).playerMenuRowSecondary().padding(16)
         }
@@ -183,6 +201,10 @@ struct SubtitleStylePanel: View {
             next: { updateStyle { $0.selectFontWeight(SubtitleSystemFonts.adjacentWeight(for: s, forward: true)) } }
         ))); slot += 1
         rows.append(numberRow(slot, "Text Size", options: Self.sizeOptions, current: Int((s.fontScale * 100).rounded()), displayValue: Text(s.fontScale, format: .percent.precision(.fractionLength(0...3))), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.fontScale = Double(v) / 100 } }); slot += 1
+        rows.append(choiceRow(
+            slot, "Position relative to", options: SubtitleStyle.PositionReference.allCases,
+            current: s.positionReference, label: { $0.displayName }
+        ) { v in updateStyle { $0.positionReference = v } }); slot += 1
         rows.append(numberRow(
             slot, "Position",
             options: Self.positionOptions,
@@ -594,27 +616,5 @@ struct SubtitleStylePanel: View {
         PlayerControlsFormatting.nearestIndex(options, value)
     }
 
-    /// Shown in place of the whole style editor when the primary subtitle is a
-    /// bitmap (PGS/DVD/DVB/VobSub): those cues are pre-rendered images by the
-    /// source, so none of the font/colour/size/position controls apply. A calm
-    /// centered card explains why rather than presenting dead knobs.
-    private func styleUnavailableForImageSubtitle(format: String) -> some View {
-        VStack(spacing: 14) {
-            Image(systemName: "photo")
-                .font(.system(size: 44, weight: .regular))
-                .foregroundStyle(Color.primary.opacity(0.5))
-            Text("\(format) subtitles can't be restyled")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(Color.primary)
-                .multilineTextAlignment(.center)
-            Text("They're rendered as images by the source, so font, color, size and position controls don't apply.")
-                .font(.callout)
-                .foregroundStyle(Color.primary.opacity(0.65))
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, 44)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-    }
 }
 #endif

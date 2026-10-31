@@ -110,6 +110,18 @@ class EvidenceTests(unittest.TestCase):
             with self.assertRaises(performance.Failure):
                 performance.select(suite, names)
 
+    def test_active_picture_comparisons_cover_both_platforms_without_entering_default_suite(self):
+        names = [f"active-picture-{players}-{state}"
+                 for players in (1, 4) for state in ("enabled", "disabled")]
+        self.assertFalse(set(names) & set(performance.select(None, None)))
+        for platform in ("tvOS", "iOS"):
+            self.assertEqual(performance.select(None, names, platform), sorted(names))
+        for name in names:
+            spec = performance.SCENARIOS[name]
+            self.assertEqual(spec["counters"], ["players", "samples", "windowMilliseconds"])
+            source = (performance.ROOT / spec["file"]).read_text()
+            self.assertIn("func " + spec["test"].split("/")[-1] + "(", source)
+
     def test_measurement_contract_rejects_missing_nonfinite_and_duplicate_samples(self):
         original = report()
         spec = performance.SCENARIOS["sync-unchanged"]

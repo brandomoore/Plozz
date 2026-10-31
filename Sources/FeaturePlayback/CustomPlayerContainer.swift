@@ -132,6 +132,7 @@ struct VideoSurfaceContainer: UIViewRepresentable {
     var aspectRatio: Double? = nil
     var fitsInsideSafeArea = false
     var subtitleViewport: VideoSubtitleViewport?
+    var needsPictureSubtitles = false
     var reflectionHeight: CGFloat = 0
     var topReflectionHeight: CGFloat = 0
     var leadingReflectionWidth: CGFloat = 0
@@ -155,7 +156,8 @@ struct VideoSurfaceContainer: UIViewRepresentable {
         root.subtitleViewport = subtitleViewport
         root.attach(engine)
         updateReflection(root)
-        root.update(zoom: zoom, aspectRatio: aspectRatio, fitsInsideSafeArea: fitsInsideSafeArea)
+        root.update(zoom: zoom, aspectRatio: aspectRatio, fitsInsideSafeArea: fitsInsideSafeArea,
+                    needsPictureSubtitles: needsPictureSubtitles)
         return root
     }
 
@@ -163,7 +165,8 @@ struct VideoSurfaceContainer: UIViewRepresentable {
         uiView.subtitleViewport = subtitleViewport
         uiView.attach(engine)
         updateReflection(uiView)
-        uiView.update(zoom: zoom, aspectRatio: aspectRatio, fitsInsideSafeArea: fitsInsideSafeArea)
+        uiView.update(zoom: zoom, aspectRatio: aspectRatio, fitsInsideSafeArea: fitsInsideSafeArea,
+                      needsPictureSubtitles: needsPictureSubtitles)
     }
 }
 
@@ -483,6 +486,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// Hosts the engine's bare video surface as the backmost, non-interactive
     /// layer. The engine keeps it fed across reloads, so we add it once.
     func attachVideoSurface() {
+        model.videoZoom.supportsActivePicture = engine.supportsActivePictureAnalysis
         videoPresentation.frame = view.bounds
         videoPresentation.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         videoPresentation.attach(engine)
@@ -510,12 +514,18 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     }
 
     private func updateSubtitleVideoRect() {
-        videoPresentation.update(zoom: model.videoZoom.settings, fitsInsideSafeArea: fitsInsideSafeArea)
+        videoPresentation.update(
+            zoom: model.videoZoom.settings, fitsInsideSafeArea: fitsInsideSafeArea,
+            needsPictureSubtitles: subtitleModel.map { $0.hasContent && $0.style.positionReference == .picture } ?? false
+        )
         videoPresentation.layoutIfNeeded()
         guard let subtitleModel else { return }
         let rect = videoPresentation.videoRect
         if subtitleModel.videoRect != rect {
             subtitleModel.videoRect = rect
+        }
+        if subtitleModel.activePictureRect != videoPresentation.activePictureRect {
+            subtitleModel.activePictureRect = videoPresentation.activePictureRect
         }
         let sourceAspect = model.videoZoom.settings.mode == .stretch ? videoPresentation.sourceAspectRatio : nil
         if subtitleModel.sourceVideoAspectRatio != sourceAspect {

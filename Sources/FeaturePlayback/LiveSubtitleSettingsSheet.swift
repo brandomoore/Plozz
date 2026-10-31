@@ -25,7 +25,7 @@ struct LiveSubtitleSettingsSheet: View {
                         Text(offset, format: .number.precision(.fractionLength(2))).monospacedDigit()
                     }
                 }
-                if controls.subtitleStyleAdjustable, controls.secondarySubtitleImagePrimaryFormat == nil {
+                if controls.subtitleStyleAdjustable {
                     Section("Appearance") {
                         NavigationLink("Style") {
                             MobileSubtitleStyleEditor(viewModel: SubtitleStyleEditingContext(

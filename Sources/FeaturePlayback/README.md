@@ -1012,9 +1012,9 @@ changes.
 
 The picker labels Normal as the default; concise names follow Infuse's Zoom Mode
 terminology. Crop enlarges proportionally, Stretch fills both axes without
-preserving proportions, and Custom scales relative to Normal. `VideoPresentationView`
-transforms and clips only the stable video surface, without restarting playback,
-changing the engine layer's gravity, or processing frames.
+preserving proportions, and Custom scales relative to Normal. For these manual
+modes, `VideoPresentationView` transforms and clips only the stable video surface,
+without restarting playback, changing the engine layer's gravity, or processing frames.
 The subtitle overlay uses the same displayed-video rectangle for source-positioned
 and bitmap cues, including both axes under Stretch; ordinary text size, screen
 position, and transport geometry stay independent. Plozzigen uses the software
@@ -1026,11 +1026,41 @@ artwork boundary through that same zoom/stretch geometry before moving a region.
 Zoom belongs to the current player session, not a global/profile preference.
 A new VOD player or a different live channel starts at Normal. PiP and AirPlay retain
 their system-owned presentation rather than inheriting this local viewport crop.
+Plozzigen also offers opt-in **Fit picture**. A shared, cancellable engine analysis
+measures encoded borders on supported SDR NV12/BGRA output, using existing frames
+and no additional decoder or stream. It scales and translates the original surface
+uniformly, including asymmetric borders, and caps automatic magnification at 2x.
+Unknown, stale, unsupported or invalid measurements use Normal. Sparse detection
+can miss changing edge content; fitting is best effort, not a guarantee against
+clipping tickers or burned-in captions. HDR/Dolby Vision analysis and rotated
+native output remain unsupported. The separate NativeVideoEngine does not offer
+encoded-border fitting. Multiview keeps its original slots and defaults; visible
+panes share the engine's bounded four-session analysis admission.
+Native SDR analysis requests CPU-readable NV12 from the existing AVPlayer item.
+AVFoundation may materialize/decompress that output; the 2 Hz analysis limit
+does not bound system-side output cost. Disabling analysis releases the tap.
+
+The hosted active-picture regression uses original `testsrc2` fixtures at
+320x180/24 fps for 18 seconds: 28-pixel top/bottom bars before 8 seconds and
+from 14 seconds onward, with full-frame content between. The MP4 uses libx264,
+CRF 28 and yuv420p; its WebM counterpart uses libvpx-vp9, CRF 32. Tests require
+real native/software detection, forward/backward seeks, pause, and retained
+surface identity. The performance lab separately uses the existing 1080p fixture.
 Hosted coverage includes synthetic 4:3 video and a 720x576 H.264 fixture with 64:45
 sample aspect (16:9 display), checking real native and software playback without
 changing the video layer, playback position, or subtitle text geometry.
 
 ## Subtitle appearance
+
+**Position relative to** selects Screen (the existing default) or Picture.
+This lives in the existing profile-scoped subtitle style, including the separate
+Live TV style. Picture uses measured active bounds when available and otherwise
+the displayed video, intersected with the visible viewport. It does not change
+source aspect ratio or resize authored subtitle canvases. Ordinary dialogue and
+dual lanes use that reference; eligible lower bitmap regions move together
+without scaling, while fixed artwork and independently source-positioned text
+retain their authored placement. Font/color controls do not apply to bitmap
+subtitles; their player editor exposes picture positioning instead.
 
 `Match Apple TV Subtitle Style` (`Match Device Subtitle Style` on mobile)
 reads this device's subtitle appearance through

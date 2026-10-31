@@ -96,7 +96,7 @@ final class PlayerOptionsPanelIntegrationTests: XCTestCase {
         model.secondarySubtitleImagePrimaryFormat = "PGS"
         XCTAssertEqual(
             PlayerOptionsPanel.preferredFocus(for: .subtitles, subtitleScreen: .style, model: model),
-            .subBack
+            .row(0)
         )
     }
 

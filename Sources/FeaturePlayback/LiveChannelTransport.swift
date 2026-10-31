@@ -575,12 +575,12 @@ struct LiveChannelOverlay: View {
         trackOptions.subtitleStyle = source.style
         trackOptions.subtitlesRenderHDR = source.isHDR
         trackOptions.engineCapabilities = source.capabilities
-        #if os(iOS)
-        trackOptions.subtitleDelayAdjustable = tracks.subtitles.supportsPrimaryTimingOffset
-        trackOptions.subtitleDelaySeconds = tracks.subtitles.offset
         trackOptions.secondarySubtitleImagePrimaryFormat = TrackMenuBuilder.imagePrimaryFormat(
             selectedPrimaryID: source.selectedSubtitle, engineTracks: source.subtitles, providerTracks: []
         )
+        #if os(iOS)
+        trackOptions.subtitleDelayAdjustable = tracks.subtitles.supportsPrimaryTimingOffset
+        trackOptions.subtitleDelaySeconds = tracks.subtitles.offset
         #endif
         // A live channel has nothing to search.
         trackOptions.subtitleDownload.canSearch = false
@@ -2600,7 +2600,7 @@ private struct LiveChannelTrackPanel: View {
     private var rows: [Row] {
         switch kind {
         case .playback:
-            return PlayerVideoZoom.Mode.allCases.map { mode in
+            return model.videoZoom.availableModes.map { mode in
                 Row(id: mode.rawValue, title: Text(mode.menuTitle), isSelected: model.videoZoom.settings.mode == mode) {
                     model.videoZoom.settings.mode = mode
                 }
@@ -2641,6 +2641,12 @@ private struct LiveChannelTrackPanel: View {
                 .padding(.horizontal, 18)
                 .padding(.top, 18)
             let rows = rows
+            if kind == .playback, model.videoZoom.supportsActivePicture {
+                Text("Detects borders when supported. Changing edge content may be cropped.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 18)
+            }
             #if os(tvOS)
             if rows.count > Self.rowsBeforeScrolling {
                 ScrollView { rowStack(rows) }

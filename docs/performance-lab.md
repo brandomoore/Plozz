@@ -95,6 +95,15 @@ case must complete new samples, capped at five per window; the disabled case
 must have no sampling task. These report app-process CPU and resident memory,
 not GPU/render-server cost or physical-device energy and frame pacing.
 
+The `active-picture-1-enabled`, `active-picture-1-disabled`,
+`active-picture-4-enabled`, and `active-picture-4-disabled` scenarios use the same
+1080p30 `glow-hd.mp4` with one or four visible Aether-backed players. Each window
+requires advancing playback; enabled windows require new presentation-timestamp
+samples at no more than 2 Hz per player, and disabling must detach native output
+taps. The four-player case checks aggregate admission stays at or below four.
+These are app-process CPU/resident-memory comparisons, not GPU, physical-device
+energy, HDR, or four simultaneous 4K decoder benchmarks.
+
 The glow fixtures in `Tests/SubtitlePresentationSupport/Fixtures` are synthetic:
 `live-continuity-dim.mp4` is the first 30 seconds of `live-continuity.mp4`,
 scaled by `colorchannelmixer=rr=0.18:gg=0.18:bb=0.18` and encoded with

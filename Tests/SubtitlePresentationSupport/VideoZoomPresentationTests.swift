@@ -1,6 +1,6 @@
 import AVFoundation
 import CoreModels
-import EnginePlozzigen
+@testable import EnginePlozzigen
 import SwiftUI
 import UIKit
 import XCTest
@@ -9,6 +9,219 @@ import XCTest
 
 @MainActor
 final class VideoZoomPresentationTests: XCTestCase {
+    func testPerformancePictureEnabled() async throws {
+        try await measurePicture(players: 1, enabled: true)
+    }
+
+    func testPerformancePictureDisabled() async throws {
+        try await measurePicture(players: 1, enabled: false)
+    }
+
+    func testPerformanceFourPicturesEnabled() async throws {
+        try await measurePicture(players: 4, enabled: true)
+    }
+
+    func testPerformanceFourPicturesDisabled() async throws {
+        try await measurePicture(players: 4, enabled: false)
+    }
+
+    private func measurePicture(players count: Int, enabled: Bool) async throws {
+        try PerformanceProbe.requireEnabled()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIViewController()
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        var engines: [PlozzigenVideoEngine] = []
+        var views: [VideoPresentationView] = []
+        defer {
+            for view in views { view.removeFromSuperview() }
+            for engine in engines { engine.stopActivePictureAnalysis(); engine.stop() }
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let folder = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
+        for index in 0..<count {
+            let engine = try PlozzigenVideoEngine()
+            engines.append(engine)
+            engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+            let columns = count == 1 ? 1 : 2
+            let size = CGSize(width: window.bounds.width / CGFloat(columns), height: window.bounds.height / CGFloat(columns))
+            let view = VideoPresentationView(frame: CGRect(
+                x: CGFloat(index % columns) * size.width, y: CGFloat(index / columns) * size.height,
+                width: size.width, height: size.height
+            ))
+            views.append(view)
+            host.view.addSubview(view)
+            view.attach(engine)
+            await engine.load(request: PlaybackRequest(
+                item: MediaItem(id: "picture-performance-\(index)", title: "Synthetic video", kind: .movie),
+                streamURL: folder.appendingPathComponent("glow-hd.mp4")
+            ), startPosition: 0)
+            try await waitUntil(timeout: 30) { engine.isPlaybackPositionReady }
+            view.update(zoom: PlayerVideoZoom(mode: enabled ? .picture : .fit))
+        }
+        try await Task.sleep(for: .seconds(2))
+        let scenario = "active-picture-\(count)-\(enabled ? "enabled" : "disabled")"
+        try await PerformanceProbe.measure(self, scenario: scenario) {
+            let positions = engines.map(\.currentTime)
+            let counts = engines.map(\.pictureSampleCountForTesting)
+            try await Task.sleep(for: .milliseconds(2300))
+            var completed = 0
+            for (index, engine) in engines.enumerated() {
+                XCTAssertGreaterThan(engine.currentTime - positions[index], 1.8)
+                let samples = engine.pictureSampleCountForTesting - counts[index]
+                completed += samples
+                if enabled {
+                    XCTAssertGreaterThan(samples, 0, "A cached result is not new frame analysis.")
+                    XCTAssertLessThanOrEqual(samples, 5)
+                } else {
+                    XCTAssertEqual(samples, 0)
+                    XCTAssertTrue(engine.nowPlayingPlayer?.currentItem?.outputs.isEmpty == true)
+                }
+                XCTAssertLessThanOrEqual(engine.picturePeakWorkersForTesting, 4)
+            }
+            return ["players": count, "samples": completed, "windowMilliseconds": 2300]
+        }
+        for view in views { view.update(zoom: PlayerVideoZoom()) }
+        try await waitUntil { engines.allSatisfy { $0.pictureWorkersForTesting == 0 } }
+        for engine in engines {
+            XCTAssertTrue(engine.nowPlayingPlayer?.currentItem?.outputs.isEmpty == true, "Disabled analysis must release its native output.")
+        }
+    }
+
+    private func presentationView(for surface: UIView) -> VideoPresentationView? {
+        var ancestor = surface.superview
+        while let view = ancestor {
+            if let presentation = view as? VideoPresentationView { return presentation }
+            ancestor = view.superview
+        }
+        return nil
+    }
+    func testLiveSubtitleViewportIsAttachedInFullscreenInlineAndMultiview() async throws {
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let folder = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
+        for (expanded, multiview) in [(true, false), (false, false), (true, true)] {
+            let previous = scene.windows.first(where: \.isKeyWindow)
+            let window = UIWindow(windowScene: scene)
+            let engine = try PlozzigenVideoEngine()
+            let host = UIHostingController(rootView: LiveChannelPlayerView(
+                channelID: "picture-viewport", title: "Synthetic channel",
+                input: .stream(url: folder.appendingPathComponent("active-picture.mp4"), httpHeaders: [:]), logoURL: nil,
+                makeEngine: { engine }, onPreviousChannel: {}, onNextChannel: {},
+                isFavorite: false, canToggleFavorite: false, onToggleFavorite: {},
+                isExpanded: expanded, onExpandPreview: {}, isAudible: false, isMultiview: multiview,
+                trackPreferences: LiveChannelTrackPreferences()
+            ).environment(\.scenePhase, .active))
+            host.safeAreaRegions = []
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+                engine.stop()
+                previous?.makeKeyAndVisible()
+            }
+            try await waitUntil {
+                window.layoutIfNeeded()
+                return self.presentationView(for: engine.makeVideoOutputView())?.subtitleViewport != nil
+            }
+        }
+    }
+
+    func testActivePictureDetectionAndSeekOnNativeAndSoftwareRoutes() async throws {
+        for fixture in ["active-picture.mp4", "active-picture.webm"] {
+            try await verifyActivePicture(fixture: fixture)
+        }
+    }
+
+    private func verifyActivePicture(fixture: String) async throws {
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let engine = try PlozzigenVideoEngine()
+        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let controls = PlayerControlsModel()
+        let subtitles = LiveSubtitleModel()
+        subtitles.style.followsSystemStyle = false
+        subtitles.style.positionReference = .picture
+        subtitles.loadPrimary(SubtitleCueParser.parse(
+            "WEBVTT\n\n00:00:00.000 --> 00:01:00.000\nPicture-relative caption.\n", id: 1
+        ))
+        let controller = PlayerInputViewController(engine: engine, model: controls, actions: PlayerActions())
+        controller.loadViewIfNeeded()
+        controller.attachVideoSurface()
+        controller.attachSubtitleOverlay(subtitles)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer {
+            engine.stopActivePictureAnalysis()
+            engine.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let folder = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
+        await engine.load(request: PlaybackRequest(
+            item: MediaItem(id: "active-picture", title: "Synthetic picture", kind: .movie, runtime: 18),
+            streamURL: folder.appendingPathComponent(fixture)
+        ), startPosition: 0)
+        try await waitUntil(timeout: 30) { engine.hasPresentedVideoFrame && engine.videoAspectRatio != nil }
+        XCTAssertEqual(engine.nowPlayingPlayer != nil, fixture.hasSuffix(".mp4"), "Exercise both engine routes.")
+        let initial = try await waitForPicture(engine: engine, cropped: true)
+        XCTAssertGreaterThan(initial.minY, 0.13)
+        XCTAssertLessThan(initial.maxY, 0.87)
+        let surface = engine.makeVideoOutputView()
+        let viewport = try XCTUnwrap(presentationView(for: surface))
+        let originalItem = engine.nowPlayingPlayer?.currentItem
+        controls.videoZoom.settings.mode = .picture
+        try await waitUntil {
+            guard let active = viewport.activePictureRect, let video = viewport.videoRect else { return false }
+            return active.height < video.height * 0.9 && subtitles.activePictureRect == active
+        }
+        try await waitUntil { !self.captionFrames(in: controller.view, relativeTo: window).isEmpty }
+        let caption = try XCTUnwrap(captionFrames(in: controller.view, relativeTo: window).first)
+        let picture = viewport.convert(try XCTUnwrap(viewport.activePictureRect), to: window)
+        XCTAssertGreaterThanOrEqual(caption.minY, picture.minY - 1)
+        XCTAssertLessThanOrEqual(caption.maxY, picture.maxY + 1)
+        XCTAssertTrue(engine.nowPlayingPlayer?.currentItem === originalItem)
+        XCTAssertTrue(engine.makeVideoOutputView() === surface)
+
+        await engine.seek(to: 10)
+        _ = try await waitForPicture(engine: engine, cropped: false)
+        await engine.seek(to: 2)
+        _ = try await waitForPicture(engine: engine, cropped: true)
+        engine.pause()
+        let paused = await engine.sampleActivePicture()
+        try await Task.sleep(for: .seconds(2.2))
+        let stillPaused = await engine.sampleActivePicture()
+        XCTAssertEqual(stillPaused, paused, "Pause must not age a valid observation.")
+        controls.videoZoom.settings.mode = .fit
+        subtitles.style.positionReference = .screen
+        try await waitUntil { surface.transform == .identity }
+    }
+
+    private func waitForPicture(engine: any VideoEngine, cropped: Bool) async throws -> CGRect {
+        let deadline = ContinuousClock.now + .seconds(7)
+        while ContinuousClock.now < deadline {
+            if case let .measured(rect, _) = await engine.sampleActivePicture(),
+               cropped ? rect.height < 0.9 : rect.height > 0.98 { return rect }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        XCTFail("No \(cropped ? "cropped" : "full-frame") measurement from actual playback")
+        throw CocoaError(.coderValueNotFound)
+    }
+
     func testNativeVideoZoomDoesNotReloadOrResizeTheSubtitleText() async throws {
         try await verify(engine: NativeVideoEngine())
     }
@@ -101,7 +314,7 @@ final class VideoZoomPresentationTests: XCTestCase {
             XCTAssertTrue(layers.contains { $0 is AVSampleBufferDisplayLayer },
                           "The software path must have its real display layer.")
         }
-        let viewport = try XCTUnwrap(surface.superview as? VideoPresentationView)
+        let viewport = try XCTUnwrap(presentationView(for: surface))
         try await waitUntil {
             window.layoutIfNeeded()
             return !self.captionFrames(in: controller.view, relativeTo: window).isEmpty

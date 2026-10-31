@@ -3,6 +3,13 @@ import XCTest
 
 @MainActor
 final class SubtitleStylePreferencesTests: XCTestCase {
+    func testPictureReferenceDecodesLegacyUnknownAndRoundTrips() throws {
+        XCTAssertEqual(try JSONDecoder().decode(SubtitleStyle.self, from: Data("{}".utf8)).positionReference, .screen)
+        XCTAssertEqual(try JSONDecoder().decode(SubtitleStyle.self, from: Data("{\"positionReference\":\"future\"}".utf8)).positionReference, .screen)
+        var style = SubtitleStyle.default
+        style.positionReference = .picture
+        XCTAssertEqual(try JSONDecoder().decode(SubtitleStyle.self, from: JSONEncoder().encode(style)), style)
+    }
     func testSystemStyleChoiceAndCustomStyleTransferOnlyToTheSameProfile() throws {
         let sourceName = "SubtitleProfileSource.\(UUID().uuidString)"
         let targetName = "SubtitleProfileTarget.\(UUID().uuidString)"
@@ -26,11 +33,13 @@ final class SubtitleStylePreferencesTests: XCTestCase {
         for followsSystem in [false, true] {
             model.style.followsSystemStyle = followsSystem
             model.style.fontScale = 1.25
+            model.style.positionReference = .picture
             let settings = ProfileSettingsTransfer.capture(namespace: "profile-a", defaults: source)
             ProfileSettingsTransfer.apply(settings, namespace: "profile-a", defaults: target)
             let received = SubtitleStyleStore(defaults: target, namespace: "profile-a").load()
             XCTAssertEqual(received.base.followsSystemStyle, followsSystem)
             XCTAssertEqual(received.base.fontScale, 1.25)
+            XCTAssertEqual(received.base.positionReference, .picture)
             XCTAssertEqual(sourceOther.load(), other)
             XCTAssertEqual(targetOther.load(), other)
             XCTAssertEqual(SubtitleStyleStore(defaults: source).load(), defaultBefore)
