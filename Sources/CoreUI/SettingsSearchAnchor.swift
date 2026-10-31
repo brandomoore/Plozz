@@ -27,6 +27,9 @@ public struct SettingsSearchLanding<Content: View>: View {
         ScrollViewReader { proxy in
             content()
                 .environment(request)
+                #if os(iOS)
+                .environment(\.settingsSearchRowOwnsHighlight, false)
+                #endif
                 .environment(\.settingsSearchScroll, { id in proxy.scrollTo(id, anchor: .center) })
                 .task {
                     await Task.yield()
@@ -143,7 +146,7 @@ private struct SettingsSearchAnchor: ViewModifier {
                 #endif
             }
             #if os(iOS)
-            .preference(key: SettingsSearchHighlightKey.self, value: highlighted)
+            .transformPreference(SettingsSearchHighlightKey.self) { $0 = $0 || highlighted }
             .listRowBackground(
                 highlighted && isNativeListRow && !rowOwnsHighlight
                     ? palette.accent.opacity(0.15) : nil
@@ -206,7 +209,7 @@ private struct SettingsSearchRowOwnsHighlightKey: EnvironmentKey {
     static let defaultValue = false
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     var settingsSearchRowOwnsHighlight: Bool {
         get { self[SettingsSearchRowOwnsHighlightKey.self] }
         set { self[SettingsSearchRowOwnsHighlightKey.self] = newValue }
@@ -229,7 +232,6 @@ struct SettingsSearchRowHighlight: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .environment(\.settingsSearchRowOwnsHighlight, true)
             .backgroundPreferenceValue(SettingsSearchHighlightKey.self) { highlighted in
                 if highlighted {
                     UnevenRoundedRectangle(

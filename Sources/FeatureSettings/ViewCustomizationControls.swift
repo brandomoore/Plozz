@@ -262,7 +262,7 @@ struct ViewCustomizationMenu<Selection: Hashable, Options: View>: View {
                 }
                 .pickerStyle(.inline)
             } label: {
-                ViewCustomizationMenuValue(value: value)
+                SettingsMenuValue(Text(value))
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
             }
@@ -315,24 +315,6 @@ private struct ViewCustomizationMenuLabel<Control: View>: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct ViewCustomizationMenuValue: View {
-    let value: LocalizedStringResource
-    @Environment(\.themePalette) private var palette
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(value)
-            Image(systemName: "chevron.up.chevron.down")
-                .font(.caption2.weight(.semibold))
-                .accessibilityHidden(true)
-        }
-        .font(.subheadline)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(palette.fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 #endif

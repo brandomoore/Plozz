@@ -51,6 +51,9 @@ On mobile, the brief landing highlight covers the complete padded row, not just
 its label or picker. Grouped rows own the highlight and their corner clipping;
 standalone native List/Form rows use the native row background. The highlight
 does not intercept touches or change the setting.
+Grouped ownership is set before resolving SwiftUI subviews, so ScrollView rows
+do not also paint a smaller control highlight. Nested anchors preserve a child's
+active highlight, and nested row owners consume it without lighting up their parents.
 Native lazy List cells register their contained targets with
 `settingsSearchGroup`; the selected control is then revealed within that cell.
 Every indexed entry needs an available route and a matching control anchor.
@@ -77,6 +80,10 @@ Hero page at **Show hero**, ahead of the incidental movie/show Background match.
 This remains available when Hero is off and does not enable it automatically.
 On TV with Showcase selected, search instead focuses the Hero layout choice;
 changing layout still requires an explicit selection.
+
+Mobile customization menus reuse `SettingsMenuValue`, the value/chevron rendering
+used by `SettingsMenuLabel`. Playback details, per-view labels, and item-tap actions
+retain their native menus and adaptive labels without separate value pills.
 
 Playback > **Ask to resume or start over** is per-profile and off by default, including
 for existing profiles. TV and mobile resume partially watched movies and episodes

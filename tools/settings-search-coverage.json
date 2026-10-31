@@ -410,7 +410,7 @@
       "kind": "input",
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
-        "Sources/FeatureSettings/ViewCustomizationControls.swift|ViewCustomizationMenu|body|Menu|ViewCustomizationMenuValue(value: value) .frame(minHeight: 44) .contentShape(Rectangle())": 1,
+        "Sources/FeatureSettings/ViewCustomizationControls.swift|ViewCustomizationMenu|body|Menu|SettingsMenuValue(Text(value)) .frame(minHeight: 44) .contentShape(Rectangle())": 1,
         "Sources/FeatureSettings/ViewCustomizationControls.swift|ViewCustomizationMenu|body|Picker|EmptyView()": 1
       }
     },

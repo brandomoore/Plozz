@@ -1510,11 +1510,12 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["On"].exists)
         XCTAssertTrue(app.buttons["Off"].exists)
         XCTAssertFalse(app.buttons["Use default"].exists)
-        try assertMenuKeepsRowTitle("Home rows", in: titleFrame)
+        try assertMenuKeepsRowTitle("Default", in: titleFrame)
         capture("label-choice-menu")
         app.buttons["Off"].tap()
         XCTAssertEqual(home.value as? String, "Off")
         selectCustomization(home, expecting: "Mixed")
+        selectCustomization(app.buttons["card-label-page"], expecting: "Browse")
         let browse = app.buttons["card-label-view-browse"]
         browse.tap()
         XCTAssertTrue(app.buttons["On"].waitForExistence(timeout: 3))
@@ -2115,7 +2116,8 @@ final class SettingsInteractionTests: XCTestCase {
     }
 
     func testContinueWatchingGroupedControlsKeepSelectionsIndependent() {
-        openSettingsPage("Customize Home")
+        openSettingsPage("Screens & Navigation")
+        app.buttons["screens-home"].tap()
         openHomeSections()
         app.buttons["home-section-home-continueWatching"].tap()
         XCTAssertTrue(app.navigationBars["Continue Watching"].waitForExistence(timeout: 3))
@@ -2546,7 +2548,7 @@ final class SettingsInteractionTests: XCTestCase {
         let heading = bar.staticTexts[title].firstMatch
         XCTAssertTrue(heading.waitForExistence(timeout: 3), app.debugDescription)
         var titleRegion = bar.frame
-        let sidebar = app.navigationBars["Settings"]
+        let sidebar = app.navigationBars.containing(.searchField, identifier: "Search settings").firstMatch
         // iPad reports a full-window bar, but centers its title in the detail column.
         if sidebar.exists, sidebar.frame.width < bar.frame.width {
             // Floating iPad sidebars have an outer inset and the same gap on their inner edge.

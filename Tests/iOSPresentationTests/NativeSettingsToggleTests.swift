@@ -17,6 +17,10 @@ final class NativeSettingsToggleTests: XCTestCase {
         var isOn = false
         var isDisabled = false
         var writes = 0
+        var groupBounds = CGRect.zero
+        var controlBounds = CGRect.zero
+        var selection = 0
+        var amount = 0.5
 
         var binding: Binding<Bool> {
             Binding(
@@ -73,23 +77,84 @@ final class NativeSettingsToggleTests: XCTestCase {
         }
 
         for width: CGFloat in [390, 834] {
-            for grouped in [true, false] {
+            for (layout, kind) in [
+                ("group-list", "toggle"), ("group-scroll", "toggle"),
+                ("group-scroll", "menu"), ("group-scroll", "stepper"),
+                ("group-scroll", "slider"), ("group-scroll", "button"),
+                ("nested-group-scroll", "toggle"), ("nested-anchor-scroll", "menu"),
+                ("native-list", "toggle"), ("native-form", "menu"),
+                ("native-nested-anchor", "toggle"), ("hero-scroll", "toggle"),
+                ("standalone-scroll", "button"), ("accessibility-scroll", "menu"),
+                ("disabled-scroll", "toggle")
+            ] {
+                let grouped = !layout.hasPrefix("native")
+                let scrolls = layout.hasSuffix("scroll")
                 let model = Model()
-                let request = SettingsSearchRequest(targetID: "target")
+                let suite = "SearchHighlight-\(UUID())"
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+                defer { defaults.removePersistentDomain(forName: suite) }
+                let hero = HeroSettingsModel(store: HeroSettingsStore(defaults: defaults))
+                hero.settings.isEnabled = false
+                let request = SettingsSearchRequest(targetID: layout == "hero-scroll" ? "hero-enabled" : "target")
                 window.frame = CGRect(x: 0, y: 0, width: width, height: 900)
+                let rawTarget = searchHighlightControl(kind, model: model)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                        model.controlBounds = $0
+                    }
+                let target = rawTarget.settingsSearchAnchor("target")
+                let anchoredTarget = Group {
+                    if layout.contains("nested-anchor") {
+                        target.settingsSearchAnchor("another-target")
+                    } else {
+                        target
+                    }
+                }
+                let group = SettingsSectionGroup {
+                    anchoredTarget
+                    Text("Neighbor")
+                }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    model.groupBounds = $0
+                }
+                let rows = Group {
+                    if layout == "hero-scroll" {
+                        HeroSettingsControls(libraries: [], accounts: [])
+                            .environment(hero)
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                                model.groupBounds = $0
+                            }
+                        Text("Neighbor")
+                    } else if layout == "standalone-scroll" {
+                        rawTarget
+                            .buttonStyle(.plain)
+                            .padding(16)
+                            .contentShape(Rectangle())
+                            .settingsSearchAnchor("target")
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                                model.groupBounds = $0
+                            }
+                        Text("Neighbor")
+                    } else if grouped {
+                        if layout == "nested-group-scroll" {
+                            SettingsSectionGroup { group }
+                        } else {
+                            group
+                        }
+                    } else {
+                        anchoredTarget
+                            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                        Text("Neighbor")
+                    }
+                }
                 window.rootViewController = UIHostingController(rootView:
                     NavigationStack {
-                        List {
-                            if grouped {
-                                SettingsSectionGroup {
-                                    Toggle("Target", isOn: model.binding).settingsSearchAnchor("target")
-                                    Text("Neighbor")
-                                }
+                        Group {
+                            if scrolls {
+                                ScrollView { rows }
+                            } else if layout == "native-form" {
+                                Form { rows }
                             } else {
-                                Toggle("Target", isOn: model.binding)
-                                    .settingsSearchAnchor("target")
-                                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-                                Text("Neighbor")
+                                List { rows }
                             }
                         }
                         .settingsPageSurface(horizontalInset: 0)
@@ -98,6 +163,8 @@ final class NativeSettingsToggleTests: XCTestCase {
                     .environment(\.themePalette, .dark)
                     .environment(\.colorScheme, .dark)
                     .environment(\.gradientBackgroundsEnabled, false)
+                    .environment(\.dynamicTypeSize, layout == "accessibility-scroll" ? .accessibility3 : .large)
+                    .disabled(layout == "disabled-scroll")
                 )
                 window.makeKeyAndVisible()
                 let deadline = ContinuousClock.now + .seconds(5)
@@ -106,14 +173,23 @@ final class NativeSettingsToggleTests: XCTestCase {
                 }
                 XCTAssertTrue(request.revealed)
                 try await settle(window)
-                let control = try XCTUnwrap(listedSwitches(in: window).first)
-                let controlBounds = control.convert(control.bounds, to: window)
-                var ancestor = control.superview
-                while ancestor != nil && !(ancestor is UICollectionViewCell) {
-                    ancestor = ancestor?.superview
+                let controlBounds: CGRect
+                if layout == "hero-scroll" {
+                    let control = try XCTUnwrap(switches(in: window).first)
+                    controlBounds = control.convert(control.bounds, to: window)
+                } else {
+                    controlBounds = model.controlBounds
                 }
-                let cell = try XCTUnwrap(ancestor)
-                let cellBounds = cell.convert(cell.bounds, to: window)
+                XCTAssertGreaterThan(controlBounds.width, 0)
+                let cellBounds: CGRect
+                if grouped {
+                    cellBounds = model.groupBounds
+                } else {
+                    let cell = try XCTUnwrap(searchHighlightCell(
+                        at: CGPoint(x: controlBounds.midX, y: controlBounds.midY), in: window
+                    ))
+                    cellBounds = cell.convert(cell.bounds, to: window)
+                }
                 let paddingPoints = [
                     CGPoint(x: cellBounds.minX + 8, y: controlBounds.midY),
                     CGPoint(x: cellBounds.maxX - 8, y: controlBounds.midY),
@@ -123,24 +199,90 @@ final class NativeSettingsToggleTests: XCTestCase {
                 let neighbor = CGPoint(x: cellBounds.midX, y: controlBounds.maxY + 32)
                 let highlighted = capture()
                 let attachment = XCTAttachment(image: highlighted)
-                attachment.name = "search-row-highlight-\(grouped ? "group" : "native")-\(Int(width))"
+                attachment.name = "search-row-highlight-\(layout)-\(kind)-\(Int(width))"
                 attachment.lifetime = .keepAlways
                 add(attachment)
                 try await Task.sleep(for: .milliseconds(2200))
                 try await settle(window)
                 let normal = capture()
+                let interior = CGPoint(
+                    x: cellBounds.minX + cellBounds.width * 0.6, y: controlBounds.minY + 2
+                )
+                let interiorDelta = try red(highlighted, at: interior) - red(normal, at: interior)
                 for point in paddingPoints {
+                    let delta = try red(highlighted, at: point) - red(normal, at: point)
                     XCTAssertGreaterThan(
-                        try red(highlighted, at: point) - red(normal, at: point), 10,
-                        "Highlight must cover row padding at \(point), grouped=\(grouped), width=\(width)."
+                        delta, 10,
+                        "Highlight must cover row padding at \(point), layout=\(layout), width=\(width)."
+                    )
+                    XCTAssertEqual(
+                        Double(delta), Double(interiorDelta), accuracy: 3,
+                        "One uniform highlight must cover content and padding, layout=\(layout), width=\(width)."
                     )
                 }
                 XCTAssertEqual(try red(highlighted, at: neighbor), try red(normal, at: neighbor), accuracy: 3)
-                XCTAssertEqual(control.convert(control.bounds, to: window), controlBounds)
+                if grouped && layout != "standalone-scroll" {
+                    let corner = CGPoint(x: cellBounds.minX + 1, y: controlBounds.minY - 11)
+                    XCTAssertEqual(try red(highlighted, at: corner), try red(normal, at: corner), accuracy: 3)
+                }
+                if layout == "nested-group-scroll" {
+                    let outerPadding = CGPoint(x: cellBounds.minX - 8, y: controlBounds.midY)
+                    XCTAssertEqual(
+                        try red(highlighted, at: outerPadding), try red(normal, at: outerPadding), accuracy: 3,
+                        "A nested row must consume its highlight instead of lighting up the outer group."
+                    )
+                }
+                if layout != "hero-scroll" { XCTAssertEqual(model.controlBounds, controlBounds) }
+                XCTAssertFalse(hero.settings.isEnabled)
                 XCTAssertFalse(model.isOn)
+                XCTAssertEqual(model.selection, 0)
+                XCTAssertEqual(model.amount, 0.5)
                 XCTAssertEqual(model.writes, 0, "Revealing a search result must not activate its control.")
             }
         }
+    }
+
+    @ViewBuilder
+    private func searchHighlightControl(_ kind: String, model: Model) -> some View {
+        switch kind {
+        case "menu":
+            ViewCustomizationMenu(
+                id: "target-menu", title: "Target", value: "First",
+                selection: Binding(
+                    get: { model.selection },
+                    set: { model.selection = $0; model.writes += 1 }
+                )
+            ) {
+                Text("First").tag(0)
+                Text("Second").tag(1)
+            }
+        case "stepper":
+            Stepper("Target", value: Binding(
+                get: { model.selection },
+                set: { model.selection = $0; model.writes += 1 }
+            ), in: 0...10)
+        case "slider":
+            Slider(value: Binding(
+                get: { model.amount },
+                set: { model.amount = $0; model.writes += 1 }
+            )) { Text("Target") }
+        case "button":
+            Button { model.writes += 1 } label: {
+                SettingsDisclosureLabel { Text("Target") }
+            }
+        default:
+            Toggle("Target", isOn: model.binding)
+        }
+    }
+
+    private func searchHighlightCell(at point: CGPoint, in view: UIView) -> UICollectionViewCell? {
+        if let list = view as? UICollectionView {
+            return list.visibleCells.first { $0.convert($0.bounds, to: view.window).contains(point) }
+        }
+        for child in view.subviews {
+            if let cell = searchHighlightCell(at: point, in: child) { return cell }
+        }
+        return nil
     }
 
     func testAdaptiveCardSettingsKeepLabelsAndIndicatorsInFirstViewport() async throws {

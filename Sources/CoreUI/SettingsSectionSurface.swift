@@ -1,6 +1,22 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+public struct SettingsMenuValue: View {
+    private let value: Text
+
+    public init(_ value: Text) { self.value = value }
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            value
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption.weight(.semibold))
+                .accessibilityHidden(true)
+        }
+        .foregroundStyle(.primary)
+    }
+}
+
 public struct SettingsMenuLabel: View {
     private let title: LocalizedStringResource
     private let value: Text
@@ -17,13 +33,7 @@ public struct SettingsMenuLabel: View {
 
     public var body: some View {
         LabeledContent {
-            HStack(spacing: 8) {
-                value
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .accessibilityHidden(true)
-            }
-            .foregroundStyle(.primary)
+            SettingsMenuValue(value)
         } label: {
             Text(title)
         }
@@ -159,6 +169,10 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                     }
                 }
             }
+            #if os(iOS)
+            // Subviews resolve their environment before the per-row modifiers are applied.
+            .environment(\.settingsSearchRowOwnsHighlight, true)
+            #endif
             .buttonStyle(SettingsSectionButtonStyle())
             .labelStyle(SettingsIconLabelStyle())
             #if os(tvOS)
