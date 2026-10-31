@@ -23,6 +23,8 @@ final class HeroShowcaseStageTests: XCTestCase {
             for key in keys {
                 let animation = try XCTUnwrap(host.view.layer.animation(forKey: key))
                 XCTAssertEqual(animation.beginTime, 0, "Cold UI work must not consume the animation before submission.")
+                XCTAssertEqual(animation.duration, HeroShowcaseScrollMotion.duration)
+                XCTAssertEqual(animation.timingFunction, HeroShowcaseScrollMotion.timingFunction)
             }
         }
     }
@@ -32,16 +34,18 @@ final class HeroShowcaseStageTests: XCTestCase {
         let featured = UIView()
         let backdrop = UIView()
         let showcase = UIView()
+        let showcaseBackdrop = UIView()
         let rows = UIView()
         motion.bind(featured, to: .featured)
         motion.bind(backdrop, to: .featuredBackdrop)
         motion.bind(showcase, to: .showcase)
+        motion.bind(showcaseBackdrop, to: .showcaseBackdrop)
         motion.bind(rows, to: .rows)
         let distance: CGFloat = 320.5
         motion.move(expanded: true, distance: distance, animated: false,
                     reduceMotion: false)
         XCTAssertEqual(featured.transform.ty, 0)
-        XCTAssertEqual(showcase.transform.ty, distance)
+        XCTAssertEqual(showcase.transform.ty + showcaseBackdrop.transform.ty, distance, accuracy: 0.0001)
         XCTAssertEqual(rows.transform.ty, distance)
         var oldKeys: [String] = []
         for expanded in [false, true, false] {
@@ -50,24 +54,29 @@ final class HeroShowcaseStageTests: XCTestCase {
             let key = try XCTUnwrap(rows.layer.animationKeys()?.last)
             XCTAssertEqual(featured.transform.ty + backdrop.transform.ty, expanded ? 0 : -distance, accuracy: 0.0001)
             XCTAssertEqual(backdrop.transform.ty, expanded ? 0 : -distance * HeroShowcaseScrollMotion.backdropTravelFraction)
-            XCTAssertEqual(showcase.transform.ty, rows.transform.ty)
+            XCTAssertEqual(backdrop.transform.ty, expanded ? 0 : -120.1875, accuracy: 0.0001)
+            XCTAssertEqual(showcaseBackdrop.transform.ty, expanded ? 120.1875 : 0, accuracy: 0.0001)
+            XCTAssertEqual(showcase.transform.ty + showcaseBackdrop.transform.ty, rows.transform.ty, accuracy: 0.0001)
             XCTAssertEqual(rows.transform.ty - featured.transform.ty - backdrop.transform.ty, distance, accuracy: 0.0001)
             for (view, fraction) in [(featured, 1 - HeroShowcaseScrollMotion.backdropTravelFraction),
                                      (backdrop, HeroShowcaseScrollMotion.backdropTravelFraction),
-                                     (showcase, CGFloat(1)), (rows, CGFloat(1))] {
-                let animation = try XCTUnwrap(view.layer.animation(forKey: key) as? CASpringAnimation)
+                                     (showcase, 1 - HeroShowcaseScrollMotion.backdropTravelFraction),
+                                     (showcaseBackdrop, HeroShowcaseScrollMotion.backdropTravelFraction),
+                                     (rows, CGFloat(1))] {
+                let animation = try XCTUnwrap(view.layer.animation(forKey: key) as? CABasicAnimation)
                 XCTAssertEqual(animation.beginTime, 0, "Start at submission, not before focus/layout work.")
                 XCTAssertEqual(try XCTUnwrap(animation.fromValue as? CGFloat),
                                (expanded ? -distance : distance) * fraction, accuracy: 0.0001)
                 XCTAssertEqual(animation.toValue as? CGFloat, 0)
                 XCTAssertTrue(animation.isAdditive)
-                XCTAssertEqual(animation.duration, FocusHeroLayout.rowSpring.settlingDuration)
+                XCTAssertEqual(animation.duration, HeroShowcaseScrollMotion.duration)
+                XCTAssertEqual(animation.timingFunction, HeroShowcaseScrollMotion.timingFunction)
                 for oldKey in oldKeys { XCTAssertNotNil(view.layer.animation(forKey: oldKey)) }
             }
             oldKeys.append(key)
         }
         motion.stopAnimations()
-        for view in [featured, backdrop, showcase, rows] { XCTAssertNil(view.layer.animationKeys()) }
+        for view in [featured, backdrop, showcase, showcaseBackdrop, rows] { XCTAssertNil(view.layer.animationKeys()) }
     }
 
     func testScrollMotionHandlesLateMountsAndReducedMotionWithoutForegroundTravel() {
@@ -77,21 +86,24 @@ final class HeroShowcaseStageTests: XCTestCase {
         let featured = UIView()
         let backdrop = UIView()
         let showcase = UIView()
+        let showcaseBackdrop = UIView()
         let rows = UIView()
         motion.bind(featured, to: .featured)
         motion.bind(backdrop, to: .featuredBackdrop)
         motion.bind(showcase, to: .showcase)
+        motion.bind(showcaseBackdrop, to: .showcaseBackdrop)
         motion.bind(rows, to: .rows)
         XCTAssertEqual(featured.transform.ty, 0)
-        XCTAssertEqual(showcase.transform.ty, 300)
+        XCTAssertEqual(showcase.transform.ty + showcaseBackdrop.transform.ty, 300, accuracy: 0.0001)
         for expanded in [false, true] {
             motion.move(expanded: expanded, distance: 300, animated: true,
                         reduceMotion: true)
             XCTAssertEqual(featured.transform.ty, 0)
             XCTAssertEqual(backdrop.transform.ty, 0)
             XCTAssertEqual(showcase.transform.ty, 0)
+            XCTAssertEqual(showcaseBackdrop.transform.ty, 0)
             XCTAssertEqual(rows.transform.ty, expanded ? 300 : 0)
-            for view in [featured, backdrop, showcase, rows] { XCTAssertNil(view.layer.animationKeys()) }
+            for view in [featured, backdrop, showcase, showcaseBackdrop, rows] { XCTAssertNil(view.layer.animationKeys()) }
         }
         motion.unbind(featured, from: .featured)
         motion.move(expanded: false, distance: 300, animated: false,
@@ -325,7 +337,7 @@ final class HeroShowcaseStageTests: XCTestCase {
         }
     }
 
-    func testRapidReversalRetainsTheInFlightAdditiveSpring() throws {
+    func testRapidReversalRetainsTheInFlightAdditiveMotion() throws {
         let stage = HeroShowcaseStage.Controller(
             state: HeroShowcaseState(), hero: AnyView(Color.clear),
             showcase: AnyView(Color.clear), rows: AnyView(Color.clear)
@@ -335,17 +347,17 @@ final class HeroShowcaseStageTests: XCTestCase {
         stage.present(expanded: false, focus: false)
         let layer = stage.rows.view.layer
         let firstKey = try XCTUnwrap(layer.animationKeys()?.first)
-        let first = try XCTUnwrap(layer.animation(forKey: firstKey) as? CASpringAnimation)
+        let first = try XCTUnwrap(layer.animation(forKey: firstKey) as? CABasicAnimation)
         stage.present(expanded: true, focus: false)
         XCTAssertNotNil(layer.animation(forKey: firstKey))
         let keys = try XCTUnwrap(layer.animationKeys())
         XCTAssertEqual(keys.count, 2)
         XCTAssertTrue(first.isAdditive)
         for key in keys {
-            let animation = try XCTUnwrap(layer.animation(forKey: key) as? CASpringAnimation)
+            let animation = try XCTUnwrap(layer.animation(forKey: key) as? CABasicAnimation)
             XCTAssertTrue(animation.isAdditive)
             XCTAssertEqual(animation.keyPath, "transform.translation.y")
-            XCTAssertEqual(animation.duration, FocusHeroLayout.rowSpring.settlingDuration)
+            XCTAssertEqual(animation.duration, HeroShowcaseScrollMotion.duration)
         }
         stage.stopAnimations()
         XCTAssertTrue(layer.animationKeys()?.isEmpty ?? true)

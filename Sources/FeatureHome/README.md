@@ -1084,15 +1084,24 @@ so first entry cannot collapse it. Boundary-only press and indirect-swipe
 recognizers request the other host even when its hidden content provides no
 geometric focus candidate; deeper-row and horizontal navigation remain native.
 The outgoing hero foreground, incoming Showcase details, and rows share one
-native scroll distance, spring, and start time. Their relative positions remain
+native scroll distance, easing, and start time. Their relative positions remain
 fixed throughout the move and rapid reversals; only their opacity changes as
-the old details give way to the new. The featured artwork travels at 15% of
-the foreground speed (about 48 points at the standard peek distance), reversing
-on return. Its nested foreground compensates for that parent movement so its
-total travel still matches the rows. Showcase artwork stays pinned, including
-when moving between Showcase rows; the return chevron stays stationary.
+the old details give way to the new. Both artwork planes travel at 37.5% of
+the foreground speed (about 120 points at the standard peek distance): the
+featured image rises out while the first Showcase image rises into place from
+below, reversing together on return. Their nested foregrounds compensate for
+that parent movement so their total travel still matches the rows. The
+transition uses a 0.6-second cubic easing `(0.32, 0, 0.2, 1)` with a gradual
+start and longer deceleration, shared by movement and crossfade. This timing
+is specific to the Hero boundary; ordinary Showcase row transitions are
+unchanged and keep their artwork pinned. The return chevron lives outside the
+moving hosts and stays stationary.
+The incoming image includes top overscan equal to its travel, keeping its upper
+edge offscreen throughout the transition. This adds a modest aspect-fill crop
+only to the hybrid's Showcase backdrop; standalone layouts and Reduce Motion
+retain the original image bounds.
 Two stable foreground hosts let the compositor move them without per-frame
-SwiftUI state updates; artwork drift reuses the existing featured host rather
+SwiftUI state updates; artwork drift reuses the existing scene hosts rather
 than adding another renderer or loading another image. The other Home layouts
 do not create these hosts. Scroll and crossfade animations use the shared
 transaction's default start time, not a wall-clock timestamp captured before
@@ -1103,7 +1112,7 @@ A shallow, text-free up chevron sits at the screen's horizontal
 center, below top navigation when present. It appears on first-row arrival,
 fades away after three seconds, and resets only after leaving and returning.
 It is informational, never an additional focus stop. Deeper rows retain ordinary navigation.
-Row translation uses additive compositor springs so reversing direction retains
+Row translation uses additive compositor animations so reversing direction retains
 the in-flight motion. Artwork planes crossfade; Reduce Motion uses the same
 destinations without animation. Carousel dwell and trailers suspend while rows
 are active. Disabling the featured hero leaves Showcase rows available. This

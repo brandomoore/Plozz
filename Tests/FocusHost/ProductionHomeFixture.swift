@@ -268,7 +268,19 @@ struct ProductionHomeFixture: View {
             foregroundViews.append(contentsOf: view.subviews)
         }
         let foregroundOrigin = foreground.map { $0.convert($0.bounds, to: stage.view) }
+        var cue: HeroShowcaseReturnCue.CueView?
+        var cueViews: [UIView] = window.map { [$0] } ?? []
+        while let view = cueViews.popLast() {
+            if let candidate = view as? HeroShowcaseReturnCue.CueView { cue = candidate; break }
+            cueViews.append(contentsOf: view.subviews)
+        }
+        func cueIsStationary() -> Bool {
+            guard let cue, let window else { return false }
+            let frame = cue.arrow.convert(cue.arrow.bounds, to: window)
+            return abs(frame.midX - window.bounds.midX) < 1 && abs(frame.midY - cue.top) < 1
+        }
         var showcaseForeground: UIView?
+        var showcaseArtwork: UIView?
         var showcaseControllers = stage.showcase.children
         while let controller = showcaseControllers.popLast() {
             if let surface = controller as? HeroShowcaseForegroundSurface.Controller,
@@ -294,8 +306,6 @@ struct ProductionHomeFixture: View {
                     while let view = views.popLast() {
                         if String(describing: type(of: view)) == "HeroWipeContainerView" {
                             let frame = view.convert(view.bounds, to: window)
-                            let reachesEdge = abs(frame.maxX - window.bounds.maxX) < 1
-                                && abs(frame.minY - window.bounds.minY) < 1
                             if host === stage.hero {
                                 let expectedY: CGFloat = expanded || UIAccessibility.isReduceMotionEnabled
                                     ? 0 : -stage.state.motion.distance * HeroShowcaseScrollMotion.backdropTravelFraction
@@ -304,6 +314,11 @@ struct ProductionHomeFixture: View {
                                     && abs(frame.minY - window.bounds.minY - expectedY) < 1
                                 print("HERO_STAGE_ART \(phase) frame=\(frame) fullWidth=\(artworkFillsScreen)")
                             } else {
+                                showcaseArtwork = view
+                                let expectedY: CGFloat = expanded || UIAccessibility.isReduceMotionEnabled
+                                    ? 0 : -stage.state.motion.distance * HeroShowcaseScrollMotion.backdropTravelFraction
+                                let reachesEdge = abs(frame.maxX - window.bounds.maxX) < 1
+                                    && abs(frame.minY - window.bounds.minY - expectedY) < 1
                                 showcaseReachesScreenEdge = reachesEdge
                                 print("HERO_STAGE_SHOWCASE_ART \(phase) frame=\(frame) reachesEdge=\(reachesEdge)")
                             }
@@ -315,8 +330,9 @@ struct ProductionHomeFixture: View {
             let correct = stage.state.isExpanded == expanded
                 && (geometryOnly || stage.contains(focused, in: expanded ? stage.hero : stage.rows))
                 && artworkFillsScreen
-                && (expanded || showcaseReachesScreenEdge)
+                && showcaseReachesScreenEdge
                 && foregroundInPlace
+                && cueIsStationary()
             print("HERO_STAGE_PROBE \(phase) expanded=\(stage.state.isExpanded) heroFocus=\(stage.contains(focused, in: stage.hero)) rowsFocus=\(stage.contains(focused, in: stage.rows)) focusedType=\(focused.map { String(describing: type(of: $0)) } ?? "nil") passed=\(correct)")
             return correct
         }
@@ -354,21 +370,36 @@ struct ProductionHomeFixture: View {
                     let rowLayer = stage.rows.view.layer.presentation() ?? stage.rows.view.layer
                     let rowY = rowLayer.transform.m42
                     let backdropY = (stage.hero.view.layer.presentation() ?? stage.hero.view.layer).transform.m42
+                    let showcaseBackdropY = (stage.showcase.view.layer.presentation() ?? stage.showcase.view.layer).transform.m42
                     let opacity = stage.hero.view.layer.presentation()?.opacity ?? stage.hero.view.layer.opacity
-                    let showcaseY = showcaseForeground.map { ($0.layer.presentation() ?? $0.layer).transform.m42 }
+                    let showcaseY = showcaseForeground.map {
+                        ($0.layer.presentation() ?? $0.layer).transform.m42 + showcaseBackdropY
+                    }
                     let error = abs(lift + rowY - stage.state.motion.distance)
                     let expectedBackdropY = -lift * HeroShowcaseScrollMotion.backdropTravelFraction
                     let synchronized = UIAccessibility.isReduceMotionEnabled
                         || (error < 1 && showcaseY.map { abs($0 - rowY) < 1 } == true
-                            && abs(backdropY - expectedBackdropY) < 1)
-                    passed = synchronized && passed
+                            && abs(backdropY - expectedBackdropY) < 1
+                            && abs(showcaseBackdropY - rowY * HeroShowcaseScrollMotion.backdropTravelFraction) < 1)
+                    var coversTop = false
+                    if let showcaseArtwork, let window {
+                        let frame: CGRect
+                        if let layer = showcaseArtwork.layer.presentation(), let parent = window.layer.presentation() {
+                            frame = layer.convert(layer.bounds, to: parent)
+                        } else {
+                            frame = showcaseArtwork.convert(showcaseArtwork.bounds, to: window)
+                        }
+                        coversTop = frame.minY <= window.bounds.minY + 1
+                            && abs(frame.maxX - window.bounds.maxX) < 1
+                    }
+                    passed = synchronized && cueIsStationary() && coversTop && passed
                     if delayThisMove && sample == 1 && !UIAccessibility.isReduceMotionEnabled {
                         let stillAnimating = rowY > 1 && rowY < stage.state.motion.distance - 1
                             && opacity > 0 && opacity < 1
                         passed = stillAnimating && passed
                         print("HERO_STAGE_COLD_COMMIT rowY=\(rowY) opacity=\(opacity) stillAnimating=\(stillAnimating)")
                     }
-                    print("HERO_STAGE_MOTION expanded=\(expanded) sample=\(sample) lift=\(lift) rowY=\(rowY) showcaseY=\(String(describing: showcaseY)) backdropY=\(backdropY) opacity=\(opacity) scrollError=\(error) synchronized=\(synchronized)")
+                    print("HERO_STAGE_MOTION expanded=\(expanded) sample=\(sample) lift=\(lift) rowY=\(rowY) showcaseY=\(String(describing: showcaseY)) backdropY=\(backdropY) showcaseBackdropY=\(showcaseBackdropY) opacity=\(opacity) scrollError=\(error) synchronized=\(synchronized) cueStationary=\(cueIsStationary()) coversTop=\(coversTop)")
                 }
             }
             passed = report(expanded ? "up" : "down", expanded: expanded) && passed

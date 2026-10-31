@@ -429,16 +429,19 @@ struct FocusHeroHomeView<RowContent: View>: View {
                     state: featuredState, model: model, rows: rows,
                     hero: AnyView(HeroShowcaseFeaturedContent(state: featuredState, content: featuredHero)),
                     showcase: AnyView(HeroShowcaseFeaturedContent(state: featuredState) { active in
-                        AnyView(ZStack(alignment: .topLeading) {
-                            showcaseDetails(active: active && isFrontmost)
-                            HeroShowcaseReturnCue(
-                                model: model, rows: rows, navigationStyle: navigationStyle,
-                                isActive: active && isFrontmost
-                            )
-                        })
+                        AnyView(showcaseDetails(active: active && isFrontmost))
                     }),
                     rowContent: AnyView(scrollingRows)
                 )
+                .overlay(alignment: .topLeading) {
+                    HeroShowcaseFeaturedContent(state: featuredState) { active in
+                        AnyView(HeroShowcaseReturnCue(
+                            model: model, rows: rows, navigationStyle: navigationStyle,
+                            isActive: active && isFrontmost
+                        ))
+                    }
+                    .allowsHitTesting(false)
+                }
             } else {
                 showcaseDetails(active: isFrontmost)
                 scrollingRows
@@ -1351,6 +1354,8 @@ private struct FocusHeroBackdropLayer: View {
     let isFrontmost: Bool
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
+    @Environment(\.heroShowcaseMotion) private var showcaseMotion
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // Two thirds of the screen, top right, at a backdrop's own shape: the
@@ -1358,6 +1363,8 @@ private struct FocusHeroBackdropLayer: View {
         // (under the title) and behind the rows at the bottom.
         let width = FocusHeroLayout.screenWidth * FocusHeroLayout.artWidthFraction
         let height = width / FocusHeroLayout.artAspectRatio
+        let topOverscan = reduceMotion ? 0
+            : (showcaseMotion?.distance ?? 0) * HeroShowcaseScrollMotion.backdropTravelFraction
         if let subject = model.subject {
             HomeHeroBackdrop(
                 references: references(for: subject),
@@ -1366,6 +1373,7 @@ private struct FocusHeroBackdropLayer: View {
                 forward: model.movingForward,
                 width: width,
                 height: height,
+                topOverscan: topOverscan,
                 scrimTone: colorScheme == .dark ? .black : .white,
                 scrimOpacity: isFrontmost ? 1 : 0,
                 transition: .crossfade,
