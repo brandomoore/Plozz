@@ -232,7 +232,7 @@ enum SettingsSearchGlowMotion {
     }
 
     static func arrivalBoost(at time: Double) -> Double {
-        1 - eased((time - 0.16) / 0.64)
+        1 - eased((time - 0.16) / 1.6)
     }
 
     private static func eased(_ value: Double) -> Double {

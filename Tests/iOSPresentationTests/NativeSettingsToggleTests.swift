@@ -162,16 +162,20 @@ final class NativeSettingsToggleTests: XCTestCase {
         XCTAssertEqual(SettingsSearchGlowMotion.duration, 3)
         XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0.16), 1)
         XCTAssertEqual(SettingsSearchGlowMotion.arrivalBoost(at: 0.16), 1)
-        XCTAssertEqual(SettingsSearchGlowMotion.arrivalBoost(at: 0.8), 0)
+        XCTAssertGreaterThan(SettingsSearchGlowMotion.arrivalBoost(at: 0.8), 0.6,
+                             "The pop must still be blending while the reflections move, not finish as a separate flash.")
+        XCTAssertGreaterThan(SettingsSearchGlowMotion.arrivalBoost(at: 1.2), 0.2)
+        XCTAssertEqual(SettingsSearchGlowMotion.arrivalBoost(at: 1.76), 0)
         XCTAssertEqual(SettingsSearchGlowMotion.arrivalBoost(at: 3), 0)
         XCTAssertGreaterThan(SettingsSearchGlowMotion.arrivalBoost(at: 0.1601), 0.999999)
-        XCTAssertLessThan(SettingsSearchGlowMotion.arrivalBoost(at: 0.7999), 0.000001,
+        XCTAssertLessThan(SettingsSearchGlowMotion.arrivalBoost(at: 1.7599), 0.000001,
                           "The brightness lift must join the existing reflections without a visible step.")
         for step in 1...300 {
             let before = SettingsSearchGlowMotion.arrivalBoost(at: Double(step - 1) / 100)
             let after = SettingsSearchGlowMotion.arrivalBoost(at: Double(step) / 100)
             XCTAssertLessThanOrEqual(after, before, "The initial pop must decay once, not pulse repeatedly.")
-            XCTAssertLessThan(before - after, 0.025)
+            XCTAssertLessThan(before - after, 0.01,
+                              "The longer blend must avoid the previous sharp mid-fade brightness drop.")
         }
     }
 
@@ -255,15 +259,17 @@ final class NativeSettingsToggleTests: XCTestCase {
                     .environment(\.plozzReduceTransparency, reducedEffects)
             )
             window.makeKeyAndVisible()
-            try await Task.sleep(for: .milliseconds(150))
+            try await Task.sleep(for: .milliseconds(250))
             window.layoutIfNeeded()
             let bounds = model.controlBounds
             XCTAssertEqual(bounds.width, width)
             let first = capture()
-            try await Task.sleep(for: .milliseconds(750))
+            try await Task.sleep(for: .milliseconds(650))
             let second = capture()
             try await Task.sleep(for: .milliseconds(650))
             let third = capture()
+            try await Task.sleep(for: .milliseconds(300))
+            let settled = capture()
             let edge: [CGPoint] = (1...9).flatMap { index -> [CGPoint] in
                 let x = bounds.minX + width * CGFloat(index) / 10
                 return [CGPoint(x: x, y: bounds.minY + 1), CGPoint(x: x, y: bounds.maxY - 2)]
@@ -281,17 +287,22 @@ final class NativeSettingsToggleTests: XCTestCase {
             if animates {
                 XCTAssertGreaterThan(movement, 40, "The arrival pop must visibly settle into the reflections.")
                 let background = light ? 255 : 0
-                var brightened = 0
-                var dimmed = 0
-                for point in edge {
-                    let change = abs(try pixel(third, point)[0] - background)
-                        - abs(try pixel(second, point)[0] - background)
-                    if change > 3 { brightened += 1 }
-                    if change < -3 { dimmed += 1 }
+                func brightestPosition(_ image: UIImage, y: CGFloat) throws -> CGFloat {
+                    let samples = try (1...39).map { index in
+                        let x = bounds.minX + width * CGFloat(index) / 40
+                        return (x: x, contrast: abs(try pixel(image, CGPoint(x: x, y: y))[0] - background))
+                    }
+                    return try XCTUnwrap(samples.max { $0.contrast < $1.contrast }).x
                 }
-                XCTAssertGreaterThanOrEqual(brightened, 3, "Reflections must move during the fully visible interval, not just fade.")
-                XCTAssertGreaterThanOrEqual(dimmed, 3, "Reflections must redistribute light, not pulse the whole row.")
-                let contrasts = try edge.map { abs(try pixel(second, $0)[0] - background) }
+                XCTAssertGreaterThan(
+                    try brightestPosition(third, y: bounds.minY + 1) - brightestPosition(second, y: bounds.minY + 1),
+                    width * 0.02, "The upper reflection must move while the arrival brightness is fading."
+                )
+                XCTAssertLessThan(
+                    try brightestPosition(third, y: bounds.maxY - 2) - brightestPosition(second, y: bounds.maxY - 2),
+                    -width * 0.01, "The lower reflection must continue drifting in the opposite direction."
+                )
+                let contrasts = try edge.map { abs(try pixel(settled, $0)[0] - background) }
                 let weakest = try XCTUnwrap(contrasts.min())
                 let strongest = try XCTUnwrap(contrasts.max())
                 XCTAssertLessThan(weakest, 20, "Unlit edges should blend into the surface, not form a continuous rim.")
@@ -300,17 +311,22 @@ final class NativeSettingsToggleTests: XCTestCase {
                 XCTAssertGreaterThan(Double(strongest) / Double(max(1, weakest)), 2.5,
                                      "Edge reflections must remain localized rather than evenly outlining the row.")
                 let surface = CGPoint(x: bounds.minX + width * 0.3, y: bounds.minY + bounds.height * 0.25)
-                XCTAssertGreaterThan(abs(try pixel(second, surface)[0] - background), 25,
+                XCTAssertGreaterThan(abs(try pixel(settled, surface)[0] - background), 25,
                                      "The broad surface reflection must be visible, not just its edge.")
                 let center = CGPoint(x: bounds.midX, y: bounds.midY)
                 XCTAssertGreaterThan(
                     abs(try pixel(first, center)[0] - background),
-                    abs(try pixel(second, center)[0] - background) + 12,
+                    abs(try pixel(settled, center)[0] - background) + 12,
                     "The initial brightness pop must be stronger than the settled reflection."
                 )
-                let above = try pixel(second, CGPoint(x: bounds.maxX - 2, y: bounds.midY - 1))[0]
-                let middle = try pixel(second, CGPoint(x: bounds.maxX - 2, y: bounds.midY))[0]
-                let below = try pixel(second, CGPoint(x: bounds.maxX - 2, y: bounds.midY + 1))[0]
+                XCTAssertGreaterThan(
+                    abs(try pixel(second, center)[0] - background),
+                    abs(try pixel(settled, center)[0] - background) + 6,
+                    "The intermediate frame must retain a visible brightness tail instead of dropping straight to the settled effect."
+                )
+                let above = try pixel(settled, CGPoint(x: bounds.maxX - 2, y: bounds.midY - 1))[0]
+                let middle = try pixel(settled, CGPoint(x: bounds.maxX - 2, y: bounds.midY))[0]
+                let below = try pixel(settled, CGPoint(x: bounds.maxX - 2, y: bounds.midY + 1))[0]
                 XCTAssertEqual(Double(middle), Double(above + below) / 2, accuracy: 3,
                                "Reflections may slope across the edge, but must not expose a brightness jump.")
             } else {
@@ -323,13 +339,15 @@ final class NativeSettingsToggleTests: XCTestCase {
                 XCTAssertEqual(try pixel(first, point)[0], light ? 255 : 0,
                                "The brighter arrival must also stay inside the row.")
             }
-            for (name, image) in [("arrival", first), ("reflection-first", second), ("reflection-later", third)] {
+            for (name, image) in [
+                ("arrival", first), ("blending-first", second), ("blending-later", third), ("settled", settled)
+            ] {
                 let attachment = XCTAttachment(image: image)
                 attachment.name = "Search glow \(name) width=\(Int(width)) light=\(light) motion=\(reducedMotion) effects=\(reducedEffects) active=\(active)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }
-            try await Task.sleep(for: .milliseconds(1650))
+            try await Task.sleep(for: .milliseconds(1350))
             if animates {
                 let expired = capture()
                 for point in edge {

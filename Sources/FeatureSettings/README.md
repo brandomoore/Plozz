@@ -56,7 +56,8 @@ retain an initially absent background during navigation even when the row's
 highlight state changes. Non-target rows retain their native background. The highlight
 does not intercept touches or change the setting.
 The three-second landing cue opens with a quick, soft brightness lift that blends
-into two broad neutral reflections within the first 0.8 seconds. Each reflection
+into two broad neutral reflections over the first 1.8 seconds. The brightness
+lift decays throughout their movement rather than ending as a separate flash. Each reflection
 drifts and changes strength independently, lighting the surface
 and fine portions of its edge rather than drawing a continuously illuminated rim.
 The light fields scale with the row, including wide tablet rows, and start at a
