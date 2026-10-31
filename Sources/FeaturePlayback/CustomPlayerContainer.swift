@@ -257,6 +257,9 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     private var skipHintTask: Task<Void, Never>?
     private var scanTask: Task<Void, Never>?
     private var remoteScanActive = false
+    private var swipePreviewCadence = ScrubPreviewCadence()
+    private var swipePreviewTask: Task<Void, Never>?
+    private var swipePreviewDeadline: TimeInterval?
     private var selectHoldRecognizer: UILongPressGestureRecognizer?
     /// Interprets Siri-Remote pan samples into scrub decisions (axis lock,
     /// pause-to-seek gate, velocity smoothing, flick-vs-land commit). Owns the
@@ -417,6 +420,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         refreshTask = nil
         stopRemoteScan()
         cancelScrubCommit()
+        resetSwipePreviewCadence()
         if ScrubDiagnostics.forceScrubRefresh { engine.setScrubRefreshBoost(false) }
         subtitleClock?.invalidate()
         subtitleClock = nil
@@ -443,6 +447,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
             (any AuthenticatedHTTPResourceResolving)?,
         generatedStills: (any ScrubStillExtracting)? = nil
     ) {
+        resetSwipePreviewCadence()
         scrubPreviewCoordinator?.clear()
         scrubPreviewCoordinator = nil
         model.previewImage = nil
@@ -1197,7 +1202,8 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
                 speedPointsPerSecond: smoothedSpeed,
                 tuning: scrubTuning,
                 duration: model.duration)
-            let cacheHit = updatePreviewThumbnail()
+            swipePreviewCadence.update(speed: smoothedSpeed, delta: deltaPoints)
+            let cacheHit = updateSwipePreviewThumbnail()
             if ScrubDiagnostics.enabled {
                 scrubDiag.recordSample(
                     handlerMs: (CACurrentMediaTime() - sampleStart) * 1000,
@@ -1208,6 +1214,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
 
     private func beginScrub() {
         cancelAutoHide()
+        resetSwipePreviewCadence()
         resumeAfterScrub = !model.isPaused
         model.isScrubbing = true
         model.scrubSeconds = model.pendingSeekTarget ?? model.currentSeconds
@@ -1223,6 +1230,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     private func commitScrub() {
         guard model.isScrubbing else { return }
         stopRemoteScan()
+        resetSwipePreviewCadence()
         // Any pending flick bridge is now resolved by this commit.
         cancelScrubCommit()
         let target = model.scrubSeconds
@@ -1273,6 +1281,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     private func cancelScrub() {
         guard model.isScrubbing else { return }
         stopRemoteScan()
+        resetSwipePreviewCadence()
         cancelScrubCommit()
         // Resolve playback intent before un-hiding the overlay (same ordering
         // rationale as commitScrub) so the pause glyph never flickers in.
@@ -1291,6 +1300,44 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
             return true
         }
         return scrubPreviewCoordinator.update(for: model.scrubSeconds)
+    }
+
+    private func resetSwipePreviewCadence() {
+        swipePreviewTask?.cancel()
+        swipePreviewTask = nil
+        swipePreviewDeadline = nil
+        swipePreviewCadence = ScrubPreviewCadence()
+    }
+
+    @discardableResult
+    private func updateSwipePreviewThumbnail() -> Bool? {
+        guard scrubPreviewCoordinator != nil else { return updatePreviewThumbnail() }
+        let now = CACurrentMediaTime()
+        let delay = swipePreviewCadence.remainingDelay(at: now)
+        if delay == 0 {
+            swipePreviewTask?.cancel()
+            swipePreviewTask = nil
+            swipePreviewDeadline = nil
+            swipePreviewCadence.didRequest(at: now)
+            return updatePreviewThumbnail()
+        }
+
+        let deadline = now + delay
+        // Keep a trailing update anchored to the last request, not the latest
+        // input. Slowing down can bring that deadline forward immediately.
+        if deadline < (swipePreviewDeadline ?? .infinity) - 0.001 {
+            swipePreviewTask?.cancel()
+            swipePreviewDeadline = deadline
+            swipePreviewTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled, let self else { return }
+                swipePreviewTask = nil
+                swipePreviewDeadline = nil
+                guard model.isScrubbing, !remoteScanActive else { return }
+                updateSwipePreviewThumbnail()
+            }
+        }
+        return nil
     }
 
     // MARK: Button handlers
@@ -1318,6 +1365,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
 
     func advanceRemoteScan(forward: Bool) {
         guard focusContext == .surface, canSeekFromPosition else { return }
+        resetSwipePreviewCadence()
         cancelScrubCommit()
         if !model.isScrubbing { beginScrub() }
         remoteScanActive = true
@@ -1497,6 +1545,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     private func skip(by seconds: TimeInterval) {
         guard canSeekFromPosition else { return }
         if model.isScrubbing {
+            resetSwipePreviewCadence()
             model.scrubSeconds = min(max(0, model.scrubSeconds + seconds), model.duration)
             updatePreviewThumbnail()
         } else {
@@ -1758,6 +1807,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         refreshTask?.cancel()
         skipHintTask?.cancel()
         scanTask?.cancel()
+        swipePreviewTask?.cancel()
     }
 }
 #endif

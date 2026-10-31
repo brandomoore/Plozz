@@ -70,8 +70,9 @@ final class ScrubDiagnostics {
     }
 
     /// Records one processed pan `.changed` sample: how long our handler took and
-    /// whether the preview thumbnail was already in memory.
-    func recordSample(handlerMs: Double, cacheHit: Bool) {
+    /// whether the preview thumbnail was already in memory. A nil cache result
+    /// means this sample deliberately deferred its thumbnail request.
+    func recordSample(handlerMs: Double, cacheHit: Bool?) {
         guard Self.enabled, link != nil else { return }
         let now = CACurrentMediaTime()
         if lastSampleTs != 0 {
@@ -83,7 +84,9 @@ final class ScrubDiagnostics {
         samples += 1
         totalHandlerMs += handlerMs
         worstHandlerMs = max(worstHandlerMs, handlerMs)
-        if cacheHit { cacheHits += 1 } else { cacheMisses += 1 }
+        if let cacheHit {
+            if cacheHit { cacheHits += 1 } else { cacheMisses += 1 }
+        }
     }
 
     /// Closes the window and emits the summary line.
@@ -97,9 +100,10 @@ final class ScrubDiagnostics {
         let minDt = minSampleDtMs == .greatestFiniteMagnitude ? 0 : minSampleDtMs
         let line = String(
             format: "scrub-diag: %@ dur=%.0fms frames=%d fps=%.1f hitches=%d worstFrame=%.1fms "
-                + "samples=%d sampleDt[min/max]=%.1f/%.1fms handler[avg/worst]=%.2f/%.2fms cache[hit/miss]=%d/%d",
+                + "samples=%d sampleDt[min/max]=%.1f/%.1fms handler[avg/worst]=%.2f/%.2fms cache[hit/miss]=%d/%d deferred=%d",
             reason, durMs, frames, fps, hitches, worstFrameMs,
-            samples, minDt, maxSampleDtMs, avgHandler, worstHandlerMs, cacheHits, cacheMisses)
+            samples, minDt, maxSampleDtMs, avgHandler, worstHandlerMs,
+            cacheHits, cacheMisses, samples - cacheHits - cacheMisses)
         // Unbuffered write so `devicectl --console` sees the line immediately.
         try? FileHandle.standardOutput.write(contentsOf: Data(("PLZSCRUB " + line + "\n").utf8))
     }

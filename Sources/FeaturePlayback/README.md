@@ -72,6 +72,13 @@ bounded language-match/accessibility flags without track titles or URLs.
   misses retain the last useful frame. Clearing a preview cancels generated
   extraction, and a replacement waits for cancelled work to finish rather than
   opening another decoder concurrently. Server index/tile warmups remain reusable.
+  TV touch swipes separately pace preview requests using the smoothed finger
+  speed: up to 30 requests/second for precision below 500 points/second, easing
+  down to four/second above 2,500 points/second. The playhead still follows every
+  input. Deferred requests use the latest position, remain anchored across
+  flick-bridged swipes, and catch up when motion slows; reversing requests a new
+  frame immediately. Commit, cancellation and teardown discard pending requests.
+  Held directional scanning, button skips, and mobile scrubbing are unchanged.
   Final settling may require finishing the current extraction and one latest
   extraction; this trades a bounded extra decode for continuous motion feedback.
   The opt-in `seek-generated-*` and `seek-plex-bif` workloads in
