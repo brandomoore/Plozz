@@ -674,8 +674,9 @@ struct PlayerControls: View {
             // undone from inside, so fading the block faded the open panel with it.
             // Each piece of chrome hides itself instead (see `chromeHidden`), leaving
             // the menu overlay, which hangs off the buttons, unaffected.
-            // The Info card is a PERMANENT member of the stack, never inserted or
-            // removed. That's the whole trick behind the reveal moving as one unit:
+            // The card's fixed-height stage is a permanent member of the stack.
+            // Its contents mount on first use and then stay mounted while parked.
+            // That's the whole trick behind the reveal moving as one unit:
             // the layout always holds the revealed arrangement (card at the bottom,
             // tab above it), and the resting look is produced purely by translating
             // the cluster down so the card sits just off the bottom edge. Opening it
@@ -1410,8 +1411,16 @@ struct PlayerControls: View {
     }
 
     private var infoCard: some View {
-        cardContent
-            .frame(maxWidth: .infinity, alignment: .leading)
+        Group {
+            #if os(tvOS)
+            PlayerControlsCardStage(isPresented: infoMode) {
+                cardContent
+            }
+            #else
+            cardContent
+            #endif
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Move between card tabs by *moving focus*, with no press needed — the
@@ -1667,6 +1676,31 @@ struct PlayerControls: View {
             : .easeOut(duration: 0.2).delay(0.45)
     }
 }
+
+#if os(tvOS)
+/// Reserve the card's layout without initializing its optional content on transport entry.
+struct PlayerControlsCardStage<Content: View>: View {
+    let isPresented: Bool
+    @ViewBuilder var content: () -> Content
+    @State private var hasPresented = false
+
+    var body: some View {
+        Group {
+            if hasPresented || isPresented {
+                content().transition(.identity)
+            } else {
+                Color.clear
+                    .frame(height: InfoPanelView.cardHeight)
+                    .accessibilityHidden(true)
+                    .transition(.identity)
+            }
+        }
+        .onChange(of: isPresented, initial: true) { _, presented in
+            if presented { hasPresented = true }
+        }
+    }
+}
+#endif
 
 extension PlayerControlsModel {
     var subtitleTrackListFocus: PlayerControls.FocusSlot {

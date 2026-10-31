@@ -187,6 +187,19 @@ URL comparisons. This isolates synchronous admission/URL work, without network
 requests, image decoding, UI layout, or a claim about the duration of a reported
 device hang.
 
+`player-controls-cold-reveal` creates a fresh production TV controls hierarchy
+for every sample, requests its first reveal without a settling delay, and
+completes three show/hide cycles. It includes local synopsis metadata and track
+options but no artwork requests or video decoding. First/last main-actor heartbeat
+gaps distinguish initial layout work from settled repeats; they are not rendered
+frame timings. The process and framework caches are warm after the discarded
+warmup, so this is cold view construction, not cold app launch.
+`player-controls-first-card` adds the first Info-card opening and verifies its
+visible bounds and focus readiness. Compare both when deferring optional content:
+less transport-entry work can increase first-card initialization cost without
+reducing total CPU. Hosted lifecycle, OCR, focus and fade tests separately
+protect the fixed card stage, first content, retained state and native materials.
+
 `player-controls-hidden-clock` advances the mounted TV transport's playback and
 buffered positions 32 times at the production 250 ms cadence after hiding it.
 `player-controls-hidden-static` observes the same settled hierarchy without

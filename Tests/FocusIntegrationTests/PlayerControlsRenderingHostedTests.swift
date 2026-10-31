@@ -8,6 +8,43 @@ import XCTest
 
 @MainActor
 final class PlayerControlsRenderingHostedTests: XCTestCase {
+    #if os(tvOS)
+    func testOptionalCardMountsOnDemandAndRemainsMountedWhileParked() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let driver = CardStageDriver()
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: CardStageFixture(driver: driver))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(driver.mounts, 0, "Transport entry must not initialize optional card content.")
+        let parked = driver.frame
+        XCTAssertEqual(parked.height, InfoPanelView.cardHeight, accuracy: 1)
+        for _ in 0..<3 {
+            driver.isPresented = true
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(driver.mounts, 1)
+            XCTAssertEqual(driver.frame, parked, "First use must not reflow the transport's fixed stage.")
+            driver.isPresented = false
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(driver.unmounts, 0, "Parking must preserve the card's content and state.")
+            XCTAssertEqual(driver.frame, parked)
+        }
+    }
+    #endif
+
     func testUnchangedLabelsFollowFractionalProgressAndHiddenUpdates() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -234,7 +271,8 @@ final class PlayerControlsRenderingHostedTests: XCTestCase {
             clockAttachment.lifetime = .keepAlways
             add(clockAttachment)
 
-            for _ in 0..<3 {
+            for opening in 0..<3 {
+                model.infoCard.headline = opening == 0 ? "First card opening" : "Updated card title"
                 model.controlBar.entry = .info
                 model.controlBar.focusArmed = false
                 model.controlBar.settled = false
@@ -246,6 +284,7 @@ final class PlayerControlsRenderingHostedTests: XCTestCase {
                 let card = try XCTUnwrap(model.subtitleLayout.frame(for: .card))
                 XCTAssertGreaterThan(card.minY, 0)
                 XCTAssertLessThanOrEqual(card.maxY, window.bounds.maxY + 1)
+                _ = try await captureTimeline(in: window, matching: model.infoCard.headline)
                 model.controlBarVisible = false
                 try await Task.sleep(for: .milliseconds(650))
                 XCTAssertFalse(model.controlBar.infoCardOpen)
@@ -282,6 +321,33 @@ final class PlayerControlsRenderingHostedTests: XCTestCase {
         }
     }
 }
+
+#if os(tvOS)
+@MainActor @Observable
+private final class CardStageDriver {
+    var isPresented = false
+    var mounts = 0
+    var unmounts = 0
+    var frame = CGRect.zero
+}
+
+private struct CardStageFixture: View {
+    let driver: CardStageDriver
+    var body: some View {
+        PlayerControlsCardStage(isPresented: driver.isPresented) {
+            Text("Optional card")
+                .frame(height: InfoPanelView.cardHeight)
+                .frame(maxWidth: .infinity)
+                .onAppear { driver.mounts += 1 }
+                .onDisappear { driver.unmounts += 1 }
+        }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+            driver.frame = $0
+        }
+        .frame(width: 1600)
+    }
+}
+#endif
 
 @MainActor
 private final class InfoFocusDriver {

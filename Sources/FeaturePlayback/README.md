@@ -215,6 +215,14 @@ services. Engine/load generation guards reject late results after replacement or
 stop. Files without chapters still have no tab. Title-relative DVD/Blu-ray chapters
 are not exposed by this container fallback.
 
+The tvOS transport reserves the bottom card's fixed-height stage immediately,
+but initializes its optional content only when a card is first requested.
+Timeline/title/buttons do not wait for off-screen Info layout or artwork.
+After first use, the selected card stays mounted while parked, preserving state
+and the existing single-transform reveal. First insertion has no extra fade.
+This shifts card initialization to first use; it does not eliminate that work
+or defer it with a timer. Mobile card presentation is unchanged.
+
 On tvOS, the shared Audio menu offers **Reduce Loud Sounds** and **Enhance
 Dialogue** when Apple TV reports support for the current output. These are
 Apple TV-wide settings, not profile preferences or engine capabilities; VOD and
