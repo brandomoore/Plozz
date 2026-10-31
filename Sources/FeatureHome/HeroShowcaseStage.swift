@@ -10,9 +10,182 @@ import UIKit
 final class HeroShowcaseState {
     private(set) var isExpanded = true
     @ObservationIgnored var returnToHero: (() -> Void)?
+    @ObservationIgnored let motion = HeroShowcaseScrollMotion()
 
     func setExpanded(_ expanded: Bool) {
         isExpanded = expanded
+    }
+}
+
+@MainActor
+final class HeroShowcaseScrollMotion {
+    enum Surface: Hashable { case featured, showcase, rows }
+
+    private final class Target {
+        weak var view: UIView?
+        var offset: CGFloat = 0
+        var keys: [String] = []
+        init(view: UIView) { self.view = view }
+    }
+
+    private var targets: [Surface: Target] = [:]
+    private var sequence = 0
+    private(set) var distance: CGFloat = 0
+    private var offset: CGFloat = 0
+    private var reduceMotion = false
+
+    func bind(_ view: UIView, to surface: Surface) {
+        let target = Target(view: view)
+        targets[surface] = target
+        target.offset = position(for: surface)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        view.layer.setValue(target.offset, forKeyPath: "transform.translation.y")
+        CATransaction.commit()
+    }
+
+    func unbind(_ view: UIView, from surface: Surface) {
+        guard let target = targets[surface], target.view === view else { return }
+        for key in target.keys { view.layer.removeAnimation(forKey: key) }
+        targets.removeValue(forKey: surface)
+    }
+
+    func move(expanded: Bool, distance: CGFloat, animated: Bool, reduceMotion: Bool, beginTime: CFTimeInterval) {
+        self.distance = distance
+        self.offset = expanded ? distance : 0
+        self.reduceMotion = reduceMotion
+        sequence += 1
+        let key = "plozz.hero-showcase.scroll.\(sequence)"
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (surface, target) in targets {
+            guard let layer = target.view?.layer else { continue }
+            target.keys.removeAll { layer.animation(forKey: $0) == nil }
+            let value = position(for: surface)
+            let delta = value - target.offset
+            target.offset = value
+            layer.setValue(value, forKeyPath: "transform.translation.y")
+            if animated, !reduceMotion, delta != 0 {
+                let spring = FocusHeroLayout.rowSpring
+                let animation = CASpringAnimation(keyPath: "transform.translation.y")
+                animation.mass = spring.mass
+                animation.stiffness = spring.stiffness
+                animation.damping = spring.damping
+                animation.fromValue = -delta
+                animation.toValue = 0
+                animation.isAdditive = true
+                animation.beginTime = layer.convertTime(beginTime, from: nil)
+                animation.duration = spring.settlingDuration
+                layer.add(animation, forKey: key)
+                target.keys.append(key)
+            } else if !animated || reduceMotion {
+                for key in target.keys { layer.removeAnimation(forKey: key) }
+                target.keys.removeAll()
+            }
+        }
+        CATransaction.commit()
+    }
+
+    private func position(for surface: Surface) -> CGFloat {
+        switch surface {
+        case .featured: reduceMotion ? 0 : offset - distance
+        case .showcase: reduceMotion ? 0 : offset
+        case .rows: offset
+        }
+    }
+
+    func stopAnimations() {
+        for target in targets.values {
+            for key in target.keys { target.view?.layer.removeAnimation(forKey: key) }
+            target.keys.removeAll()
+        }
+    }
+}
+
+private struct HeroShowcaseMotionKey: EnvironmentKey {
+    static let defaultValue: HeroShowcaseScrollMotion? = nil
+}
+
+extension EnvironmentValues {
+    var heroShowcaseMotion: HeroShowcaseScrollMotion? {
+        get { self[HeroShowcaseMotionKey.self] }
+        set { self[HeroShowcaseMotionKey.self] = newValue }
+    }
+}
+
+struct HeroShowcaseForeground: ViewModifier {
+    let surface: HeroShowcaseScrollMotion.Surface
+    @Environment(\.heroShowcaseMotion) private var motion
+
+    func body(content: Content) -> some View {
+        if let motion {
+            HeroShowcaseForegroundSurface(content: AnyView(content), motion: motion, surface: surface)
+        } else {
+            content
+        }
+    }
+}
+
+struct HeroShowcaseForegroundSurface: UIViewControllerRepresentable {
+    let content: AnyView
+    let motion: HeroShowcaseScrollMotion
+    let surface: HeroShowcaseScrollMotion.Surface
+
+    func makeUIViewController(context: Context) -> Controller {
+        Controller(content: hosted(context), motion: motion, surface: surface)
+    }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.host.rootView = hosted(context)
+    }
+
+    private func hosted(_ context: Context) -> AnyView {
+        AnyView(content.transformEnvironment(\.self) { target in
+            target.copyHostedPresentation(from: context.environment)
+        })
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiViewController: Controller, context: Context) -> CGSize? {
+        uiViewController.host.sizeThatFits(in: CGSize(
+            width: proposal.width ?? HomeHeroLayout.screenWidth,
+            height: proposal.height ?? HomeHeroLayout.screenHeight
+        ))
+    }
+
+    static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
+        controller.motion.unbind(controller.host.view, from: controller.surface)
+    }
+
+    final class Controller: UIViewController {
+        let host: UIHostingController<AnyView>
+        let motion: HeroShowcaseScrollMotion
+        let surface: HeroShowcaseScrollMotion.Surface
+
+        init(content: AnyView, motion: HeroShowcaseScrollMotion, surface: HeroShowcaseScrollMotion.Surface) {
+            host = UIHostingController(rootView: content)
+            host.safeAreaRegions = []
+            self.motion = motion
+            self.surface = surface
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func loadView() {
+            view = UIView()
+            view.backgroundColor = .clear
+            addChild(host)
+            host.view.backgroundColor = .clear
+            view.addSubview(host.view)
+            host.didMove(toParent: self)
+            motion.bind(host.view, to: surface)
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            host.view.bounds = CGRect(origin: .zero, size: view.bounds.size)
+            host.view.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+        }
     }
 }
 
@@ -108,7 +281,7 @@ struct HeroShowcaseReturnCue: UIViewRepresentable {
     }
 }
 
-/// Three stable hosts: only the row viewport moves; the two artwork planes dissolve.
+/// Stable scene hosts keep artwork pinned while foregrounds and rows share a scroll.
 /// Directional handoff happens before focus commits, not through an invisible target.
 struct HeroShowcaseStage: UIViewControllerRepresentable {
     let state: HeroShowcaseState
@@ -146,7 +319,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
     private func hosted(_ content: AnyView, _ context: Context) -> AnyView {
         AnyView(content.transformEnvironment(\.self) { target in
             target.copyHostedPresentation(from: context.environment)
-        })
+        }.environment(\.heroShowcaseMotion, state.motion))
     }
 
     @MainActor
@@ -161,9 +334,6 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         private weak var rowTarget: (any UIFocusItem)?
         private var requestingFocus = false
         private var peek: CGFloat = 0
-        private var translation: CGFloat = 0
-        private var sequence = 0
-        private var motionKeys: [String] = []
 
         init(state: HeroShowcaseState, hero: AnyView, showcase: AnyView, rows: AnyView) {
             self.state = state
@@ -200,6 +370,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             showcase.view.accessibilityElementsHidden = true
             rows.view.isUserInteractionEnabled = !state.isExpanded
             rows.view.accessibilityElementsHidden = state.isExpanded
+            state.motion.bind(rows.view, to: .rows)
             // A hidden destination produces no geometric focus update, and
             // SwiftUI can consume arrows before they reach pressesBegan.
             let press = BoundaryPressRecognizer()
@@ -351,7 +522,10 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
                            - (FocusHeroLayout.rowsBottom(rowSpacing: FocusHeroLayout.rowSpacing) - firstRowHeight))
             guard abs(next - peek) > 0.5 else { return }
             peek = next
-            if state.isExpanded { moveRows(to: peek, animated: false) }
+            state.motion.move(
+                expanded: state.isExpanded, distance: peek, animated: false,
+                reduceMotion: UIAccessibility.isReduceMotionEnabled, beginTime: CACurrentMediaTime()
+            )
         }
 
         func present(expanded: Bool, focus: Bool) {
@@ -363,9 +537,16 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             rows.view.accessibilityElementsHidden = expanded
             showcase.view.accessibilityElementsHidden = expanded
             let animate = changed && !UIAccessibility.isReduceMotionEnabled
-            moveRows(to: expanded ? peek : 0, animated: animate)
-            dissolve(hero.view, to: expanded ? 1 : 0, animated: animate)
-            dissolve(showcase.view, to: expanded ? 0 : 1, animated: animate)
+            let beginTime = CACurrentMediaTime()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            state.motion.move(
+                expanded: expanded, distance: peek, animated: animate,
+                reduceMotion: UIAccessibility.isReduceMotionEnabled, beginTime: beginTime
+            )
+            dissolve(hero.view, to: expanded ? 1 : 0, animated: animate, beginTime: beginTime)
+            dissolve(showcase.view, to: expanded ? 0 : 1, animated: animate, beginTime: beginTime)
+            CATransaction.commit()
             if focus {
                 view.layoutIfNeeded()
                 guard let system = UIFocusSystem.focusSystem(for: view) else {
@@ -385,36 +566,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             present(expanded: true, focus: false)
         }
 
-        private func moveRows(to value: CGFloat, animated: Bool) {
-            let layer = rows.view.layer
-            motionKeys.removeAll { layer.animation(forKey: $0) == nil }
-            let delta = value - translation
-            translation = value
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            layer.setValue(value, forKeyPath: "transform.translation.y")
-            if animated, delta != 0 {
-                let spring = FocusHeroLayout.rowSpring
-                let animation = CASpringAnimation(keyPath: "transform.translation.y")
-                animation.mass = spring.mass
-                animation.stiffness = spring.stiffness
-                animation.damping = spring.damping
-                animation.fromValue = -delta
-                animation.toValue = 0
-                animation.isAdditive = true
-                animation.duration = spring.settlingDuration
-                sequence += 1
-                let key = "plozz.hero-showcase.rows.\(sequence)"
-                layer.add(animation, forKey: key)
-                motionKeys.append(key)
-            } else if !animated {
-                for key in motionKeys { layer.removeAnimation(forKey: key) }
-                motionKeys.removeAll()
-            }
-            CATransaction.commit()
-        }
-
-        private func dissolve(_ view: UIView, to alpha: CGFloat, animated: Bool) {
+        private func dissolve(_ view: UIView, to alpha: CGFloat, animated: Bool, beginTime: CFTimeInterval) {
             let from = view.layer.presentation()?.opacity ?? view.layer.opacity
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -423,6 +575,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
                 let animation = CABasicAnimation(keyPath: "opacity")
                 animation.fromValue = from
                 animation.toValue = Float(alpha)
+                animation.beginTime = view.layer.convertTime(beginTime, from: nil)
                 animation.duration = FocusHeroLayout.rowSpringDuration
                 animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 view.layer.add(animation, forKey: "plozz.hero-showcase.opacity")
@@ -433,8 +586,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         }
 
         func stopAnimations() {
-            for key in motionKeys { rows.view.layer.removeAnimation(forKey: key) }
-            motionKeys.removeAll()
+            state.motion.stopAnimations()
             hero.view.layer.removeAnimation(forKey: "plozz.hero-showcase.opacity")
             showcase.view.layer.removeAnimation(forKey: "plozz.hero-showcase.opacity")
         }

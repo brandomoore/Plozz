@@ -125,7 +125,6 @@ struct HomeHeroView: View {
     @Environment(\.mediaItemActionContext) private var actionContext
     @Environment(\.plozzPinnedSidebarInteraction) private var pinnedSidebarInteraction
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.seasonRequestContextID) private var seasonRequestContextID
     @Environment(\.plozzArtworkPolicy) var artworkPolicy
 
@@ -495,8 +494,7 @@ struct HomeHeroView: View {
                 Color.clear
             }
         }
-        .modifier(HomeVerticalMotion(y: showcaseSuspended && !reduceMotion ? -Self.recedeContentLift : 0))
-        .animation(reduceMotion ? nil : FocusHeroLayout.rowAnimation, value: showcaseSuspended)
+        .modifier(HeroShowcaseForeground(surface: .featured))
         .frame(maxWidth: .infinity, minHeight: frameHeight, alignment: .bottomLeading)
         .background(alignment: .top) {
             // Laid out at the FULL hero height and anchored to the frame's TOP, so

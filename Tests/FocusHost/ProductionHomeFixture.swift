@@ -268,6 +268,13 @@ struct ProductionHomeFixture: View {
             foregroundViews.append(contentsOf: view.subviews)
         }
         let foregroundOrigin = foreground.map { $0.convert($0.bounds, to: stage.view) }
+        var showcaseForeground: UIView?
+        var showcaseControllers = stage.showcase.children
+        while let controller = showcaseControllers.popLast() {
+            if let surface = controller as? HeroShowcaseForegroundSurface.Controller,
+               surface.surface == .showcase { showcaseForeground = surface.host.view; break }
+            showcaseControllers.append(contentsOf: controller.children)
+        }
         func report(_ phase: String, expanded: Bool) -> Bool {
             let focused = system.focusedItem
             var artworkFillsScreen = false
@@ -276,7 +283,7 @@ struct ProductionHomeFixture: View {
             if let foreground, let foregroundOrigin {
                 let frame = foreground.convert(foreground.bounds, to: stage.view)
                 let lift = foregroundOrigin.minY - frame.minY
-                let expected: CGFloat = expanded || UIAccessibility.isReduceMotionEnabled ? 0 : 170
+                let expected: CGFloat = expanded || UIAccessibility.isReduceMotionEnabled ? 0 : stage.state.motion.distance
                 foregroundInPlace = abs(lift - expected) < 1
                 print("HERO_STAGE_FOREGROUND \(phase) frame=\(frame) lift=\(lift) passed=\(foregroundInPlace)")
             }
@@ -322,9 +329,22 @@ struct ProductionHomeFixture: View {
             for sample in 1...6 {
                 do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
                 if let foreground, let foregroundOrigin {
-                    let lift = foregroundOrigin.minY - foreground.convert(foreground.bounds, to: stage.view).minY
+                    let foregroundFrame: CGRect
+                    if let layer = foreground.layer.presentation(), let parent = stage.view.layer.presentation() {
+                        foregroundFrame = layer.convert(layer.bounds, to: parent)
+                    } else {
+                        foregroundFrame = foreground.convert(foreground.bounds, to: stage.view)
+                    }
+                    let lift = foregroundOrigin.minY - foregroundFrame.minY
+                    let rowLayer = stage.rows.view.layer.presentation() ?? stage.rows.view.layer
+                    let rowY = rowLayer.transform.m42
                     let opacity = stage.hero.view.layer.presentation()?.opacity ?? stage.hero.view.layer.opacity
-                    print("HERO_STAGE_MOTION expanded=\(expanded) sample=\(sample) lift=\(lift) opacity=\(opacity)")
+                    let showcaseY = showcaseForeground.map { ($0.layer.presentation() ?? $0.layer).transform.m42 }
+                    let error = abs(lift + rowY - stage.state.motion.distance)
+                    let synchronized = UIAccessibility.isReduceMotionEnabled
+                        || (error < 1 && showcaseY.map { abs($0 - rowY) < 1 } == true)
+                    passed = synchronized && passed
+                    print("HERO_STAGE_MOTION expanded=\(expanded) sample=\(sample) lift=\(lift) rowY=\(rowY) showcaseY=\(String(describing: showcaseY)) opacity=\(opacity) scrollError=\(error) synchronized=\(synchronized)")
                 }
             }
             passed = report(expanded ? "up" : "down", expanded: expanded) && passed

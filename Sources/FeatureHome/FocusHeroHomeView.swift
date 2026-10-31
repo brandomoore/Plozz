@@ -480,6 +480,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 rows: rows,
                 minimumDetailsTop: minimumDetailsTop
             )
+            .modifier(HeroShowcaseForeground(surface: .showcase))
             .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
         }
     }

@@ -7,6 +7,73 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testForegroundsAndRowsShareOneScrollIncludingRapidReversals() throws {
+        let motion = HeroShowcaseScrollMotion()
+        let featured = UIView()
+        let showcase = UIView()
+        let rows = UIView()
+        motion.bind(featured, to: .featured)
+        motion.bind(showcase, to: .showcase)
+        motion.bind(rows, to: .rows)
+        let distance: CGFloat = 320.5
+        motion.move(expanded: true, distance: distance, animated: false,
+                    reduceMotion: false, beginTime: CACurrentMediaTime())
+        XCTAssertEqual(featured.transform.ty, 0)
+        XCTAssertEqual(showcase.transform.ty, distance)
+        XCTAssertEqual(rows.transform.ty, distance)
+        var oldKeys: [String] = []
+        for expanded in [false, true, false] {
+            let start = CACurrentMediaTime()
+            motion.move(expanded: expanded, distance: distance, animated: true,
+                        reduceMotion: false, beginTime: start)
+            let key = try XCTUnwrap(rows.layer.animationKeys()?.last)
+            XCTAssertEqual(featured.transform.ty, expanded ? 0 : -distance)
+            XCTAssertEqual(showcase.transform.ty, rows.transform.ty)
+            XCTAssertEqual(rows.transform.ty - featured.transform.ty, distance)
+            for view in [featured, showcase, rows] {
+                let animation = try XCTUnwrap(view.layer.animation(forKey: key) as? CASpringAnimation)
+                XCTAssertEqual(animation.beginTime, start, accuracy: 0.000001)
+                XCTAssertEqual(animation.fromValue as? CGFloat, expanded ? -distance : distance)
+                XCTAssertEqual(animation.toValue as? CGFloat, 0)
+                XCTAssertTrue(animation.isAdditive)
+                XCTAssertEqual(animation.duration, FocusHeroLayout.rowSpring.settlingDuration)
+                for oldKey in oldKeys { XCTAssertNotNil(view.layer.animation(forKey: oldKey)) }
+            }
+            oldKeys.append(key)
+        }
+        motion.stopAnimations()
+        for view in [featured, showcase, rows] { XCTAssertNil(view.layer.animationKeys()) }
+    }
+
+    func testScrollMotionHandlesLateMountsAndReducedMotionWithoutForegroundTravel() {
+        let motion = HeroShowcaseScrollMotion()
+        motion.move(expanded: true, distance: 300, animated: false,
+                    reduceMotion: false, beginTime: CACurrentMediaTime())
+        let featured = UIView()
+        let showcase = UIView()
+        let rows = UIView()
+        motion.bind(featured, to: .featured)
+        motion.bind(showcase, to: .showcase)
+        motion.bind(rows, to: .rows)
+        XCTAssertEqual(featured.transform.ty, 0)
+        XCTAssertEqual(showcase.transform.ty, 300)
+        for expanded in [false, true] {
+            motion.move(expanded: expanded, distance: 300, animated: true,
+                        reduceMotion: true, beginTime: CACurrentMediaTime())
+            XCTAssertEqual(featured.transform.ty, 0)
+            XCTAssertEqual(showcase.transform.ty, 0)
+            XCTAssertEqual(rows.transform.ty, expanded ? 300 : 0)
+            for view in [featured, showcase, rows] { XCTAssertNil(view.layer.animationKeys()) }
+        }
+        motion.unbind(featured, from: .featured)
+        motion.move(expanded: false, distance: 300, animated: false,
+                    reduceMotion: false, beginTime: CACurrentMediaTime())
+        XCTAssertEqual(featured.transform.ty, 0)
+        let replacement = UIView()
+        motion.bind(replacement, to: .featured)
+        XCTAssertEqual(replacement.transform.ty, -300)
+    }
+
     func testReturnChevronCentersOnTheDisplayAndExpiresUntilTheNextArrival() async throws {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         let root = UIViewController()

@@ -1083,9 +1083,14 @@ The peeking rows are not eligible for focus while the featured hero is active,
 so first entry cannot collapse it. Boundary-only press and indirect-swipe
 recognizers request the other host even when its hidden content provides no
 geometric focus candidate; deeper-row and horizontal navigation remain native.
-The hero foreground lifts toward the Showcase details while fading out and
-reverses on return; the artwork remains pinned to the display. Reduce Motion
-omits that lift. A shallow, text-free up chevron sits at the screen's horizontal
+The outgoing hero foreground, incoming Showcase details, and rows share one
+native scroll distance, spring, and start time. Their relative positions remain
+fixed throughout the move and rapid reversals; only their opacity changes as
+the old details give way to the new. The artwork remains pinned to the display.
+Two stable foreground hosts let the compositor move them without per-frame
+SwiftUI state updates; the other Home layouts do not create these hosts.
+Reduce Motion omits foreground travel and snaps the rows.
+A shallow, text-free up chevron sits at the screen's horizontal
 center, below top navigation when present. It appears on first-row arrival,
 fades away after three seconds, and resets only after leaving and returning.
 It is informational, never an additional focus stop. Deeper rows retain ordinary navigation.
