@@ -61,6 +61,12 @@ public extension HeroStyle {
                 defaultValue: "Showcase",
                 comment: "Apple TV Home layout option: one row at a time, with the top of the screen showing whichever title is focused."
             )
+        case .heroShowcase:
+            LocalizedStringResource(
+                "homeLayout.heroShowcase",
+                defaultValue: "Hero + Showcase",
+                comment: "Apple TV Home layout: a featured hero that transitions directly into Showcase rows."
+            )
         }
     }
 }

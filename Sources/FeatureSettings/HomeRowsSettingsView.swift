@@ -87,6 +87,7 @@ public struct HomeRowsSettingsView: View {
 
     private var heroSummary: Text? {
         #if os(tvOS)
+        if hero.settings.style == .heroShowcase { return Text(hero.settings.style.layoutTitle) }
         if hero.settings.style == .followsFocus { return Text("Showcase") }
         return hero.settings.isEnabled ? Text("Hero") : Text("Off")
         #else

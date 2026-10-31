@@ -79,7 +79,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
 
     /// How Apple TV's Home is arranged. Other platforms always show the carousel.
     /// Lives with the hero's settings because Fullscreen Hero is the carousel, but it is
-    /// a layout choice, not a hero option: Showcase has no hero section at all.
+    /// a layout choice, not a hero option. Standalone Showcase has no featured section.
     public var style: HeroStyle
     public var logoSize: HeroLogoSize
     public var showcaseLogoSize: HeroLogoSize
@@ -318,12 +318,12 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         isEnabled && !sources.isEmpty
     }
 
-    /// Whether Apple TV's Home uses the Showcase layout. Independent of the
-    /// hero's switch and sources, which belong to the Fullscreen Hero: every title here
-    /// comes from the rows.
+    /// Whether Apple TV's rows use Showcase, independently of the featured hero.
     public var followsFocus: Bool {
-        style == .followsFocus
+        style == .followsFocus || style == .heroShowcase
     }
+
+    public var hasFeaturedHero: Bool { style != .followsFocus && isActive }
 
     public var usesDiscoveryWatchlistSeeds: Bool {
         isActive && isEnabled(.featured) && discoverySources.contains(where: \.usesTitleSeeds)
@@ -356,6 +356,8 @@ public enum HeroStyle: String, Codable, CaseIterable, Sendable {
     case carousel
     /// Whatever title is focused in the rows fills the screen; rows hold one position.
     case followsFocus
+    /// A featured carousel above the focus-driven Showcase rows.
+    case heroShowcase
 }
 
 private extension Comparable {

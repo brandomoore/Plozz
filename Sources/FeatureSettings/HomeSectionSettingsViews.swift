@@ -283,7 +283,7 @@ struct HomeSectionSettingsView: View {
 
     private var previewsShowcase: Bool {
         #if os(tvOS)
-        hero.settings.style == .followsFocus
+        hero.settings.followsFocus
         #else
         false
         #endif
@@ -461,27 +461,34 @@ struct HomeHeroSettingsView: View {
                 homeLogoSize: hero.settings.logoSize, showcaseLogoSize: hero.settings.showcaseLogoSize,
                 homeTextSize: hero.settings.textSize, showcaseTextSize: hero.settings.showcaseTextSize
             )
-            if hero.settings.style == .followsFocus {
+            if hero.settings.followsFocus {
+                if hero.settings.style == .heroShowcase {
+                    Text("Hero").font(.headline)
+                    HeroSettingsControls(libraries: availableLibraries, accounts: accounts)
+                    Text("Showcase").font(.headline)
+                }
                 SettingsControlGroup {
                     HeroLogoSizeControl(
                         size: $hero.settings.showcaseLogoSize, textSize: $hero.settings.showcaseTextSize, surface: .showcase
                     )
                 }
-                SettingsControlGroup {
-                    Toggle("Ratings", isOn: $hero.settings.showsRatings)
-                    if hero.settings.showsRatings {
-                        Toggle("Show Common Sense age", isOn: $hero.settings.ratingPreferences.showsHeaderFamilyGuidance)
-                        HeaderReviewScoreCountPicker(settings: $hero.settings.ratingPreferences)
+                if hero.settings.style == .followsFocus || !hero.settings.isEnabled {
+                    SettingsControlGroup {
+                        Toggle("Ratings", isOn: $hero.settings.showsRatings)
+                        if hero.settings.showsRatings {
+                            Toggle("Show Common Sense age", isOn: $hero.settings.ratingPreferences.showsHeaderFamilyGuidance)
+                            HeaderReviewScoreCountPicker(settings: $hero.settings.ratingPreferences)
+                        }
                     }
                 }
-                if hero.allowsDiscovery {
+                if hero.settings.style == .followsFocus && hero.allowsDiscovery {
                     SettingsControlGroup {
                         Toggle("Discovery row", isOn: $hero.settings.showsDiscoverRow)
                         if hero.settings.showsDiscoverRow {
                             HeroSettingsLink(page: .discovery, libraries: availableLibraries, accounts: accounts)
                         }
                     }
-                } else {
+                } else if hero.settings.style == .followsFocus {
                     Text("Discovery is unavailable in Kids profiles.")
                         .settingsHelperText()
                 }

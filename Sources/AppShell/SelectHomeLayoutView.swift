@@ -18,7 +18,7 @@ struct SelectHomeLayoutView: View {
         hero.settings.style
     }
 
-    private static let cardWidth: CGFloat = 600
+    private static let cardWidth: CGFloat = 480
 
     var body: some View {
         VStack(spacing: 40) {

@@ -4,6 +4,44 @@ import notify
 
 @MainActor
 final class ShowcaseNavigationTests: XCTestCase {
+    func testFeaturedHeroAndShowcaseRestoreTheSameSlideAndCard() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--production-home-fixture", "--pinned-home", "--hero-showcase-home",
+            "--cached-home-hero", "--home-performance-fixture", "--distinct-home-artwork"
+        ]
+        app.launch()
+        defer { app.terminate() }
+        let hero = app.buttons["home-hero-action-row"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 30))
+        let heroFocused = NSPredicate { _, _ in hero.hasFocus }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: heroFocused, object: nil)], timeout: 10
+        ), .completed)
+        let slide = hero.label
+        XCUIRemote.shared.press(.down)
+        waitForStableCard(in: app)
+        XCUIRemote.shared.press(.right)
+        waitForStableCard(in: app)
+        let card = focusedCard(in: app).label
+        for _ in 0..<3 {
+            XCUIRemote.shared.press(.up)
+            XCTAssertEqual(XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: heroFocused, object: nil)], timeout: 5
+            ), .completed)
+            XCTAssertEqual(hero.label, slide)
+            XCUIRemote.shared.press(.down)
+            waitForStableCard(in: app)
+            XCTAssertEqual(focusedCard(in: app).label, card)
+        }
+        XCUIRemote.shared.press(.down)
+        waitForStableCard(in: app)
+        XCTAssertNotEqual(focusedCard(in: app).label, card)
+        XCUIRemote.shared.press(.up)
+        waitForStableCard(in: app)
+        XCTAssertEqual(focusedCard(in: app).label, card)
+    }
+
     func testPartialServerFailureKeepsContinueWatchingFocusThroughReconciliation() throws {
         try checkPartialServerFailure(leavesResume: false)
     }

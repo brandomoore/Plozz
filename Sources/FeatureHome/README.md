@@ -12,7 +12,7 @@ fallback when the user's server has no attached trailer.
 Media rows have a title-chevron action on iPhone/iPad and a trailing **See all**
 card on Apple TV. The TV action is a separate native control, not a synthetic
 media item, and follows the rail's poster, landscape, or featured geometry.
-Both TV Home layouts retain the complete `HomePresentationRow` source when
+All TV Home layouts retain the complete `HomePresentationRow` source when
 opening the shared browser. Libraries and Live TV keep their existing navigation.
 Browse actions appear only when the feed confirms additional eligible titles
 beyond the Home preview, not merely because the preview reaches its limit.
@@ -1066,6 +1066,18 @@ resolved heroes use the same row-recede geometry. The `PLZBOOT` row-ready events
 data from completion of the entire Home load.
 
 ## Showcase
+
+The separate **Hero + Showcase** Home option keeps the featured carousel above
+the same Showcase rows. Its native stage preserves the three hosting trees:
+the featured hero, Showcase details/artwork, and the row viewport. Down admits
+the first row before animating its viewport into place; Up from that row restores
+the existing hero action and slide, without a separate arrow-button focus stop.
+The small Featured cue is informational. Deeper rows retain ordinary navigation.
+Row translation uses additive compositor springs so reversing direction retains
+the in-flight motion. Artwork planes crossfade; Reduce Motion uses the same
+destinations without animation. Carousel dwell and trailers suspend while rows
+are active. Disabling the featured hero leaves Showcase rows available. This
+option does not replace the two existing layouts or change their defaults.
 
 Episode-backed Home heroes use a separately scoped `MediaSeriesSynopsis` fetched
 from the authenticated parent-series record. The server's series tagline/synopsis

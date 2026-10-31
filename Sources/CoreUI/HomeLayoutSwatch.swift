@@ -53,6 +53,12 @@ public struct HomeLayoutSwatch: View {
                 switch style {
                 case .carousel: spotlight
                 case .followsFocus: immersive
+                case .heroShowcase:
+                    spotlight
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 64, weight: .medium))
+                        .foregroundStyle(.white)
+                        .offset(x: 1720, y: 850)
                 }
             }
             .frame(width: Self.screen.width, height: Self.screen.height, alignment: .topLeading)
@@ -175,7 +181,7 @@ struct HomePreviewBackdrop: View {
         ZStack(alignment: .topLeading) {
             HomeLayoutPreviewColors.page
             switch style {
-            case .carousel:
+            case .carousel, .heroShowcase:
                 HomePreviewArtwork()
                     .frame(width: size.width, height: size.height)
                     .mask(

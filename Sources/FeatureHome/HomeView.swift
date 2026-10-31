@@ -156,7 +156,7 @@ public struct HomeView: View {
     private var carouselSettings: HeroSettings? {
         guard let settings = heroSettings?.effectiveSettings else { return nil }
         #if os(tvOS)
-        if settings.followsFocus { return nil }
+        if settings.style == .followsFocus { return nil }
         #endif
         return settings
     }
@@ -171,7 +171,7 @@ public struct HomeView: View {
 
     static func curationSettings(for settings: HeroSettings?) -> HeroSettings? {
         #if os(tvOS)
-        if let settings, settings.followsFocus {
+        if let settings, settings.style == .followsFocus {
             guard settings.showsDiscoverRow else { return nil }
             var discover = settings
             discover.isEnabled = true
@@ -517,8 +517,9 @@ public struct HomeView: View {
                     focusHeroHome(
                         rows: rows, content: content, settings: focusHeroSettings,
                         discoverItems: displayHeroItems,
+                        showsFeaturedHero: heroSlotState != .hidden,
                         discoverState: HomeHeroSlotState.resolve(
-                            isConfigured: focusHeroSettings.showsDiscoverRow,
+                            isConfigured: focusHeroSettings.style == .followsFocus && focusHeroSettings.showsDiscoverRow,
                             hasItems: !displayHeroItems.isEmpty,
                             recomputeComplete: heroRuntime.completedKey == heroRecomputeKey
                         )
@@ -1061,7 +1062,7 @@ public struct HomeView: View {
                 content: content, randomLibraries: randomLibraries,
                 candidates: refreshed, supportingCandidates: heroRuntime.candidatePool
             )
-            let refreshedLineup = focusHeroSettings != nil ? HeroLiveMerge.merge(
+            let refreshedLineup = settings.style == .followsFocus ? HeroLiveMerge.merge(
                 showing: heroRuntime.items, fresh: refreshed, limit: settings.maxItems,
                 preservesLineup: true, sourceEligibility: sourceEligibility
             ).items : refreshed
@@ -1069,7 +1070,7 @@ public struct HomeView: View {
                 refreshedLineup,
                 settings: settings,
                 watchMutations: durable + heroRuntime.watchMutations,
-                preservesLineup: focusHeroSettings != nil,
+                preservesLineup: settings.style == .followsFocus,
                 sourceEligibility: sourceEligibility
             )
             heroRuntime.sourceEligibility = sourceEligibility
@@ -1241,7 +1242,7 @@ public struct HomeView: View {
             supportingCandidates: updatedPool
         )
         let current: [MediaItem]
-        if focusHeroSettings != nil, !onScreen.isEmpty {
+        if settings.style == .followsFocus, !onScreen.isEmpty {
             let refreshed = await heroWatchStateRefresher(onScreen)
             guard !Task.isCancelled else { return }
             current = HeroLiveMerge.merge(
@@ -1255,7 +1256,7 @@ public struct HomeView: View {
             current,
             settings: settings,
             watchMutations: durableWatchMutations + heroRuntime.watchMutations,
-            preservesLineup: focusHeroSettings != nil
+            preservesLineup: settings.style == .followsFocus
         )
         let merge = HeroLiveMerge.merge(
             showing: showing,
@@ -1265,7 +1266,7 @@ public struct HomeView: View {
             misses: foldsIntoLoadedSet ? heroRuntime.retainedMisses : [:],
             freshIsAuthoritative: freshIsAuthoritative,
             preservesPinnedItems: true,
-            preservesLineup: focusHeroSettings != nil,
+            preservesLineup: settings.style == .followsFocus,
             sourceEligibility: sourceEligibility
         )
         heroRuntime.sourceEligibility = sourceEligibility
@@ -1286,7 +1287,7 @@ public struct HomeView: View {
             viewModel.clearCachedHeroItems()
         } else {
             viewModel.cacheHeroCandidatePool(
-                durablePool, for: settings, preservingUnseen: focusHeroSettings != nil
+                durablePool, for: settings, preservingUnseen: settings.style == .followsFocus
             )
         }
         let elapsedMS = Int(Date().timeIntervalSince(started) * 1_000)
@@ -1559,7 +1560,9 @@ public struct HomeView: View {
                 settings: settings,
                 spoilerSettings: spoilerSettings,
                 navigationStyle: navigationStyle,
-                isFrontmost: heroIsFrontmost
+                isFrontmost: heroIsFrontmost,
+                featuredHero: settings.style == .heroShowcase && settings.hasFeaturedHero
+                    ? { _ in AnyView(HomeHeroSkeletonView()) } : nil
             ) { row, _ in
                 // Redacted rows draw their names as skeleton pills at a real
                 // title's exact height.
@@ -1599,6 +1602,7 @@ public struct HomeView: View {
         content: HomeViewModel.Content,
         settings: HeroSettings,
         discoverItems: [MediaItem],
+        showsFeaturedHero: Bool,
         discoverState: HomeHeroSlotState
     ) -> some View {
         #if os(tvOS)
@@ -1618,7 +1622,15 @@ public struct HomeView: View {
             spoilerSettings: spoilerSettings,
             navigationStyle: navigationStyle,
             isFrontmost: heroIsFrontmost,
-            enrich: heroMetadataEnricher
+            enrich: heroMetadataEnricher,
+            featuredHero: settings.style == .heroShowcase && settings.hasFeaturedHero
+                && showsFeaturedHero
+                ? { suspended in
+                    AnyView(showcaseFeaturedHero(
+                        items: discoverItems, settings: settings, suspended: suspended,
+                        content: content
+                    ))
+                } : nil
         ) { row, reporter in
             if let source = sources[row.id] {
                 focusHomeRowView(
@@ -1630,6 +1642,37 @@ public struct HomeView: View {
         .id(ObjectIdentifier(viewModel))
         #endif
     }
+
+    #if os(tvOS)
+    @ViewBuilder
+    private func showcaseFeaturedHero(
+        items: [MediaItem], settings: HeroSettings, suspended: Bool, content: HomeViewModel.Content
+    ) -> some View {
+        if items.isEmpty {
+            HomeHeroSkeletonView()
+        } else {
+            HomeHeroView(
+                items: items, settings: settings, backgroundSettings: heroBackground.settings,
+                trailerController: heroTrailerController, trailerResolver: heroTrailerResolver,
+                isFrontmost: heroIsFrontmost, spoilerSettings: spoilerSettings,
+                navigationStyle: navigationStyle,
+                watchlistedKeys: Set(content.watchlist.map {
+                    HomeHeroView.watchlistKey(accountID: $0.sourceAccountID, itemID: $0.id)
+                }),
+                focusScope: heroFocusScope, onSelect: onSelectItem, onPlay: onPlayItem,
+                seerConnected: heroSeerConnected, canRequestDiscoveryItem: heroRequestIdentity,
+                onRequest: onRequestItem, requestAvailability: onRequestAvailability,
+                onRequestSeasons: onRequestSeasonsItem,
+                onPinnedItemsChanged: { heroRuntime.pinnedItemIDs = $0 },
+                onTrailerReturnItemChanged: { heroRuntime.trailerReturnItemID = $0 },
+                onItemExposed: { viewModel.recordHeroExposure($0) },
+                exposureScopeID: ObjectIdentifier(viewModel),
+                recedeModel: heroRecedeModel, showcaseSuspended: suspended
+            )
+            .focusScope(heroFocusScope)
+        }
+    }
+    #endif
 
     /// The same rows as ``rowView(_:)``, reporting focus to the hero.
     @ViewBuilder
@@ -2098,7 +2141,7 @@ enum HomeHeroDisplayResolver {
                 runtime.items,
                 settings: settings,
                 watchMutations: watchMutations,
-                preservesLineup: settings?.followsFocus == true,
+                preservesLineup: settings?.style == .followsFocus,
                 sourceEligibility: sourceEligibility
             )
             if !reconciled.isEmpty { return reconciled }
@@ -2113,7 +2156,7 @@ enum HomeHeroDisplayResolver {
             runtime.cachedItems,
             settings: settings,
             watchMutations: watchMutations,
-            preservesLineup: settings.followsFocus,
+            preservesLineup: settings.style == .followsFocus,
             sourceEligibility: sourceEligibility
         )
     }

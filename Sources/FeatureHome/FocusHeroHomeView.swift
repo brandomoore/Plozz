@@ -388,6 +388,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
     let enrich: FocusHeroMetadata.Enrich?
     let minimumDetailsTop: CGFloat?
     let onReturnToTop: () -> Void
+    let featuredHero: ((Bool) -> AnyView)?
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
 
     init(
@@ -399,6 +400,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
         enrich: FocusHeroMetadata.Enrich? = nil,
         minimumDetailsTop: CGFloat? = nil,
         onReturnToTop: @escaping () -> Void = {},
+        featuredHero: ((Bool) -> AnyView)? = nil,
         @ViewBuilder rowContent: @escaping (FocusHeroRow, FocusHeroRowReporter) -> RowContent
     ) {
         self.rows = rows
@@ -409,38 +411,35 @@ struct FocusHeroHomeView<RowContent: View>: View {
         self.enrich = enrich
         self.minimumDetailsTop = minimumDetailsTop
         self.onReturnToTop = onReturnToTop
+        self.featuredHero = featuredHero
         self.rowContent = rowContent
     }
 
     @State private var model = FocusHeroModel()
     @State private var metadata = FocusHeroMetadata()
+    @State private var featuredState = HeroShowcaseState()
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     // Reads nothing from `model`: this body builds the rows, and must not run
     // again when the pinned row or the hero title changes.
     var body: some View {
         ZStack(alignment: .topLeading) {
-            FocusHeroBackdropLayer(
-                model: model,
-                navigationStyle: navigationStyle,
-                isFrontmost: isFrontmost
-            )
-            .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
-            FocusHeroColumn(
-                model: model,
-                metadata: metadata,
-                enrich: enrich,
-                settings: settings,
-                spoilerSettings: spoilerSettings,
-                navigationStyle: navigationStyle,
-                rows: rows,
-                minimumDetailsTop: minimumDetailsTop
-            )
-            .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
-            FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent, onReturnToTop: onReturnToTop)
-                .ignoresSafeArea(.container, edges: .trailing)
-                .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
-                .environment(\.plozzCardCaptionIsShowcase, true)
+            if let featuredHero {
+                HeroShowcaseStage(
+                    state: featuredState, model: model, rows: rows,
+                    hero: AnyView(HeroShowcaseFeaturedContent(state: featuredState, content: featuredHero)),
+                    showcase: AnyView(HeroShowcaseFeaturedContent(state: featuredState) { active in
+                        AnyView(ZStack(alignment: .topLeading) {
+                            showcaseDetails(active: active && isFrontmost)
+                            HeroShowcaseReturnCue(model: model, rows: rows, navigationStyle: navigationStyle)
+                        })
+                    }),
+                    rowContent: AnyView(scrollingRows)
+                )
+            } else {
+                showcaseDetails(active: isFrontmost)
+                scrollingRows
+            }
             FocusHeroArtworkPrefetch(rows: rows, model: model, metadata: metadata, isFrontmost: isFrontmost)
                 .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
         }
@@ -458,6 +457,38 @@ struct FocusHeroHomeView<RowContent: View>: View {
             guard let enrich else { return }
             await metadata.prefetch(rows.map { Array($0.items.prefix(16)) }, using: enrich)
         }
+    }
+
+    private func showcaseDetails(active: Bool) -> some View {
+        ZStack(alignment: .topLeading) {
+            FocusHeroBackdropLayer(
+                model: model,
+                navigationStyle: navigationStyle,
+                isFrontmost: active
+            )
+            .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
+            FocusHeroColumn(
+                model: model,
+                metadata: metadata,
+                enrich: enrich,
+                settings: settings,
+                spoilerSettings: spoilerSettings,
+                navigationStyle: navigationStyle,
+                rows: rows,
+                minimumDetailsTop: minimumDetailsTop
+            )
+            .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
+        }
+    }
+
+    private var scrollingRows: some View {
+        FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent, onReturnToTop: {
+            if featuredHero != nil { featuredState.returnToHero?() }
+            onReturnToTop()
+        })
+        .ignoresSafeArea(.container, edges: .trailing)
+        .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
+        .environment(\.plozzCardCaptionIsShowcase, true)
     }
 }
 

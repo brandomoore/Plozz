@@ -475,7 +475,9 @@ private final class ProductionHomeState {
         settings.autoAdvance = false
         settings.trailersEnabled = false
         // Settings persist between launches, so every launch picks its layout.
-        settings.style = ProcessInfo.processInfo.arguments.contains("--immersive-home") ? .followsFocus : .carousel
+        settings.style = ProcessInfo.processInfo.arguments.contains("--hero-showcase-home")
+            ? .heroShowcase
+            : ProcessInfo.processInfo.arguments.contains("--immersive-home") ? .followsFocus : .carousel
         settings.showsDiscoverRow = ProcessInfo.processInfo.arguments.contains("--showcase-discover-fixture")
         heroSettings.settings = settings
         background.settings.homeTrailerEnabled = false

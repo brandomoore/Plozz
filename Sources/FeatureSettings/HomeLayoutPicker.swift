@@ -19,7 +19,8 @@ struct HomeLayoutPicker: View {
     /// whatever width its card is given.
     private var swatchHeight: CGFloat {
         guard width > 0 else { return 200 }
-        let card = (width - Self.spacing) / 2
+        let count = CGFloat(HeroStyle.allCases.count)
+        let card = (width - Self.spacing * (count - 1)) / count
         return max(0, card - PlozzTheme.Metrics.Radius.inset * 2) * 9 / 16
     }
 
@@ -30,8 +31,8 @@ struct HomeLayoutPicker: View {
                     style: option,
                     isSelected: layout == option,
                     swatchHeight: swatchHeight,
-                    logoSize: option == .carousel ? homeLogoSize : showcaseLogoSize,
-                    textSize: option == .carousel ? homeTextSize : showcaseTextSize,
+                    logoSize: option == .followsFocus ? showcaseLogoSize : homeLogoSize,
+                    textSize: option == .followsFocus ? showcaseTextSize : homeTextSize,
                     action: { layout = option }
                 )
             }

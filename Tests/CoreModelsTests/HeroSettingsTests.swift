@@ -342,6 +342,25 @@ final class HeroSettingsTests: XCTestCase {
 
     // MARK: Hero style
 
+    func testHeroShowcaseIsProfileScopedAndKeepsRowsWhenHeroIsDisabled() {
+        let primary = HeroSettingsStore(defaults: defaults)
+        let secondary = HeroSettingsStore(defaults: defaults, namespace: "hero-showcase-test")
+        var settings = HeroSettings.default
+        settings.style = .heroShowcase
+        secondary.save(settings)
+        XCTAssertEqual(primary.load().style, .carousel)
+        XCTAssertEqual(secondary.load().style, .heroShowcase)
+        XCTAssertTrue(secondary.load().hasFeaturedHero)
+        XCTAssertTrue(secondary.load().followsFocus)
+        settings.isEnabled = false
+        secondary.save(settings)
+        XCTAssertFalse(secondary.load().hasFeaturedHero)
+        XCTAssertTrue(secondary.load().followsFocus)
+        settings.isEnabled = true
+        settings.sources = []
+        XCTAssertFalse(settings.hasFeaturedHero)
+    }
+
     func testExistingSettingsKeepTheCarousel() throws {
         let decoded = try JSONDecoder().decode(
             HeroSettings.self, from: Data(#"{"isEnabled":true,"maxItems":4}"#.utf8)
