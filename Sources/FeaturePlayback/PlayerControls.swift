@@ -430,7 +430,11 @@ struct PlayerControls: View {
             // the reveal. `entryFocusTarget` is non-nil for exactly that window.
             if case let .button(tab)? = slot, Self.usesBottomCard(tab),
                openPanel != tab, !isRestoringCastRow, entryFocusTarget == nil {
-                revealInfoCard(tab)
+                if Self.usesBottomCard(openPanel) {
+                    selectCardTab(focusedTo: slot)
+                } else {
+                    revealInfoCard(tab)
+                }
             }
             // Focus reached the strip above the tab, which only a deliberate Up from
             // the tab itself can do: that's the exit gesture. Acting on where focus
@@ -518,6 +522,9 @@ struct PlayerControls: View {
             // curve at the same time, which is exactly the kind of near-miss timing
             // that made the transport look like separate pieces.
             if !Self.usesBottomCard(panel) { titleVisible = false }
+            // Card tabs already own native focus. Re-queuing the old tab can
+            // pull focus backwards after the viewer has moved to its neighbour.
+            guard !Self.usesBottomCard(panel) else { return }
             // (The panel seeds its own height from `cachedPanelHeight`.)
             // Land initial focus on the active/selected row. This MUST be deferred to
             // the next runloop tick: opening a panel simultaneously inserts the panel's
@@ -1037,7 +1044,6 @@ struct PlayerControls: View {
             .focused($focus, equals: .button(.info))
             .accessibilityIdentifier("player-tab-info")
             .disabled(!tabFocusable(.info))
-            .onChange(of: focus) { _, slot in selectCardTab(focusedTo: slot) }
 
             if isTabVisible(.chapters) {
                 Button { toggle(.chapters) } label: {
@@ -1497,8 +1503,8 @@ struct PlayerControls: View {
     }
 
     /// The focus target a freshly-opened panel should land on: the active/selected
-    /// row for the track lists, the first available delay row for Sync, the tab
-    /// itself for Info, and the right control for each Subtitles sub-screen. Deferred
+    /// row for the track lists, the first available delay row for Sync,
+    /// and the right control for each Subtitles sub-screen. Deferred
     /// onto `focus` in `onChange(of: openPanel)` via `restoreFocus`.
     private var preferredPanelFocus: FocusSlot? {
         guard let panel = openPanel else { return nil }

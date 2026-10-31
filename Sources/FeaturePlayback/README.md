@@ -222,6 +222,10 @@ After first use, the selected card stays mounted while parked, preserving state
 and the existing single-transform reveal. First insertion has no extra fade.
 This shifts card initialization to first use; it does not eliminate that work
 or defer it with a timer. Mobile card presentation is unchanged.
+Native tvOS focus owns movement between Info, Chapters, Cast and the other card
+tabs. One focus observer switches their content without replaying the reveal or
+queuing a focus restoration; an older tab must never reclaim a newer native
+focus move. Deferred selected-row focus remains limited to floating track menus.
 
 On tvOS, the shared Audio menu offers **Reduce Loud Sounds** and **Enhance
 Dialogue** when Apple TV reports support for the current output. These are
