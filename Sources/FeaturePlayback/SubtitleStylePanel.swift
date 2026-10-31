@@ -123,12 +123,21 @@ struct SubtitleStylePanel: View {
         .frame(maxWidth: .infinity, alignment: .top)
     }
 
-    private func styleRow(_ row: StyleRowSpec) -> some View {
-        PlayerOptionsRow(
+    @ViewBuilder private func styleRow(_ row: StyleRowSpec) -> some View {
+        let content = PlayerOptionsRow(
             row: row, palette: palette, focus: $focus,
             titleLineLimit: screen == .style && row.slot == 0 ? 2 : 1
         )
+        if screen == .style, let id = Self.searchAnchors[row.slot] {
+            content.settingsSearchAnchor(id, focusAction: { focus = .row(row.slot) })
+        } else {
+            content
+        }
     }
+
+    private static let searchAnchors = [
+        1: "subtitle-font", 3: "subtitle-size", 4: "subtitle-position", 7: "subtitle-color"
+    ]
 
     private func legacyStyleRows(_ rows: [StyleRowSpec], dividerBefore: Int?) -> some View {
         VStack(alignment: .leading, spacing: 2) {

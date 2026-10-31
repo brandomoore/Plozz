@@ -66,6 +66,7 @@ private struct CircadianDetail: View {
     var body: some View {
         SettingsControlRows(nonTVSpacing: SettingsMetrics.sectionSpacing) {
             NightShiftScheduleControl(model: model)
+                .settingsSearchAnchor("circadian")
 
             if model.settings.isEnabled {
                 // Fade governs only the on/off transition, so it's irrelevant when

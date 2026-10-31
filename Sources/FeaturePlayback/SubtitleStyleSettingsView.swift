@@ -168,6 +168,7 @@ private struct TelevisionSubtitleStyleEditor: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focus: PlayerControls.FocusSlot?
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -184,6 +185,7 @@ private struct TelevisionSubtitleStyleEditor: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("subtitle-style-editor-card")
         .task(id: screen) {
+            guard screen != .style || searchRequest?.revealed != false else { return }
             focus = nil
             await Task.yield()
             guard !Task.isCancelled else { return }

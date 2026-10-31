@@ -3,6 +3,51 @@ import Vision
 
 @MainActor
 final class SettingsWorkspaceRemoteTests: XCTestCase {
+    func testSearchSuggestionLandsOnSubtitleSizeAndRestoresResultFocus() throws {
+        let app = try launchSettings(style: "tabBar", syncEnabled: false)
+        defer { app.terminate() }
+        let search = section("search", in: app)
+        try focus(search, in: app)
+        XCUIRemote.shared.press(.select)
+        let result = app.buttons["settings-search-result-subtitle-size"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5), app.debugDescription)
+        try focus(result, in: app)
+        XCUIRemote.shared.press(.select)
+        let size = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Text Size")).firstMatch
+        XCTAssertTrue(size.waitForExistence(timeout: 5), app.debugDescription)
+        let focused = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in self.hasFocus(size) }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [focused], timeout: 5), .completed, app.debugDescription)
+        capture("settings-search-subtitle-size", in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        XCTAssertTrue(hasFocus(result), "Back must restore the result's native focus.")
+        let autoplay = app.buttons["settings-search-result-autoplay-next-episode"]
+        try focus(autoplay, in: app)
+        XCUIRemote.shared.press(.select)
+        let toggle = app.switches["Autoplay next episode"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5), app.debugDescription)
+        let toggleFocused = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in self.hasFocus(toggle) }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [toggleFocused], timeout: 5), .completed, app.debugDescription)
+        capture("settings-search-playback-toggle", in: app)
+        XCUIRemote.shared.press(.menu)
+        let restored = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in self.hasFocus(autoplay) }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 5), .completed)
+        let theme = app.buttons["settings-search-result-theme"]
+        try focus(theme, in: app)
+        XCUIRemote.shared.press(.select)
+        let themeFocused = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            ["Light", "Dark", "Black", "System"].contains { self.hasFocus(app.buttons[$0]) }
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [themeFocused], timeout: 5), .completed, app.debugDescription)
+        capture("settings-search-theme", in: app)
+    }
+
     func testProfileHintAnimatesWithinStableSettingsHeader() throws {
         #if targetEnvironment(simulator)
         let app = try launchSettings(style: "tabBar")
@@ -2817,7 +2862,8 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
 
     private func launchSettings(
         style: String = "rail", profile: String = "Alex", kids: String = "off",
-        diagnostics: Bool = false, sources: Bool = false, settingsFromStartupPicker: Bool = false
+        diagnostics: Bool = false, sources: Bool = false, settingsFromStartupPicker: Bool = false,
+        syncEnabled: Bool = true
     ) throws -> XCUIApplication {
         try XCTSkipUnless(
             ProcessInfo.processInfo.environment["PLOZZ_SETTINGS_REVIEW"] == "1",
@@ -2836,6 +2882,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         }
         if diagnostics { app.launchEnvironment["PLZHFOCUS"] = "1" }
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        if !syncEnabled { app.launchArguments += ["-com.plozz.syncSetup.enabled", "NO"] }
         app.launch()
         let declineDiagnostics = app.buttons.matching(NSPredicate(format: "label == %@", "Don't Share")).firstMatch
         if declineDiagnostics.waitForExistence(timeout: 2) {

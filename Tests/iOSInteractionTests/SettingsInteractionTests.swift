@@ -25,6 +25,71 @@ final class SettingsInteractionTests: XCTestCase {
         verifyNavigationRetention(directPresentation: false)
     }
 
+    func testSettingsSearchFindsSynonymsAndReturnsToResults() throws {
+        launchNavigation(directPresentation: true)
+        app.buttons["fixture-open-settings"].tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
+        let field = app.searchFields.firstMatch
+        if !field.waitForExistence(timeout: 3) {
+            app.buttons["Search"].tap()
+        }
+        XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            XCTAssertGreaterThan(field.frame.midY, app.frame.midY, "Use the native bottom search field.")
+        }
+        field.tap()
+        field.typeText("resume playback")
+        let result = app.buttons["settings-search-result-ask-before-resuming"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5), app.debugDescription)
+        capture("settings-search-results")
+        result.tap()
+        let target = app.switches["playback-ask-before-resuming"]
+        XCTAssertTrue(target.waitForExistence(timeout: 5))
+        XCTAssertTrue(target.isHittable, "Search must reveal the control, not only open Playback.")
+        XCTAssertGreaterThanOrEqual(target.frame.minY, app.navigationBars["Playback"].frame.maxY,
+                                    "The complete control must clear the navigation header.")
+        capture("settings-search-landed")
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            app.buttons["BackButton"].tap()
+        } else {
+            XCTAssertEqual(field.value as? String, "resume playback")
+        }
+        XCTAssertTrue(result.waitForExistence(timeout: 5), "Back must keep the query and results.")
+    }
+
+    func testSettingsSearchRevealsNestedSubtitleAndCardControls() {
+        for (query, id) in [
+            ("make subtitles bigger", "subtitle-size"), ("show progress bars", "progress-bars"),
+            ("remember subtitles per series", "subtitle-remember")
+        ] {
+            launchNavigation(directPresentation: true)
+            app.buttons["fixture-open-settings"].tap()
+            XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
+            let field = app.searchFields.firstMatch
+            if !field.waitForExistence(timeout: 2) { app.buttons["Search"].tap() }
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.tap()
+            field.typeText(query)
+            let result = app.buttons["settings-search-result-\(id)"]
+            XCTAssertTrue(result.waitForExistence(timeout: 5), app.debugDescription)
+            result.tap()
+            let target: XCUIElement
+            switch id {
+            case "subtitle-size": target = app.staticTexts["Text Size"].firstMatch
+            case "subtitle-remember": target = app.switches["Remember subtitles per series"].firstMatch
+            default: target = app.switches["progress-bars-toggle"].firstMatch
+            }
+            XCTAssertTrue(target.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertTrue(target.isHittable, "Reveal \(id) without a manual scroll.")
+            if id == "subtitle-remember" {
+                XCTAssertGreaterThanOrEqual(target.frame.minY, app.navigationBars["Playback"].frame.maxY)
+                XCTAssertLessThanOrEqual(target.frame.maxY, app.frame.maxY)
+            }
+            capture("settings-search-\(id)")
+            app.terminate()
+        }
+    }
+
     func testPhoneBrowsingAndSettingsStayPortraitWithoutPlayback() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         XCUIDevice.shared.orientation = .portrait

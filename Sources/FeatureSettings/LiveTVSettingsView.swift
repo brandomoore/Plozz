@@ -60,6 +60,7 @@ private struct LiveTVBrowsingSettingsSections: View {
                 }
             }
             .accessibilityIdentifier("live-tv-start-view")
+            .settingsSearchAnchor("live-start")
             SettingsMenuRow(
                 title: "Channel order",
                 value: Text(settings.sortByName ? LocalizedStringResource("Name") : "Channel number")
@@ -70,6 +71,7 @@ private struct LiveTVBrowsingSettingsSections: View {
                 }
             }
             .accessibilityIdentifier("live-tv-channel-order")
+            .settingsSearchAnchor("channel-order")
             SettingsPageLink {
                 LiveTVPreferencesPage(title: "Guide preferences") {
                     LiveTVGuidePreferences(settings: $settings)
@@ -79,6 +81,7 @@ private struct LiveTVBrowsingSettingsSections: View {
             }
             .buttonStyle(SettingsFormButtonStyle())
             .accessibilityIdentifier("live-tv-guide-preferences")
+            .settingsSearchAnchor("guide-preferences")
             SettingsPageLink {
                 LiveTVPreferencesPage(title: "Channel visibility") {
                     LiveTVChannelVisibilitySettings(settings: $settings, hiddenChannels: hiddenChannels)
@@ -88,6 +91,7 @@ private struct LiveTVBrowsingSettingsSections: View {
             }
             .buttonStyle(SettingsFormButtonStyle())
             .accessibilityIdentifier("live-tv-channel-visibility")
+            .settingsSearchAnchor("channel-visibility")
         }
         #if os(iOS)
         SettingsSectionGroup("Playback") {

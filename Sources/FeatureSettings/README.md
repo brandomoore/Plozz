@@ -6,6 +6,39 @@ instead of inheriting the page's monochrome navigation tint.
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+## Settings search
+
+Settings search is local: queries are neither saved nor sent to a service or log.
+The shared `SettingsSearchCatalog` indexes individual profile preferences in
+Playback, Subtitles, Appearance, Screens & Navigation, Live TV, and Language.
+Results use the current platform's destination and retain their query on Back.
+Account management and household authorization are not search shortcuts.
+
+Matching prioritizes exact titles, then prefixes, related terms, and bounded
+spelling corrections. This is a curated synonym index, not a general-purpose
+language model. Do not promise arbitrary semantic understanding or add aliases
+for capabilities a control does not provide.
+
+The initial cross-player terminology comes from the
+[Infuse settings reference](https://support.firecore.com/hc/en-us/articles/360015608854-Settings-Overview)
+and Kodi's [video](https://kodi.wiki/view/Settings/Player/Videos) and
+[subtitle](https://kodi.wiki/view/Settings/Player/Subtitles) references:
+continuous playback, streaming cache, forward/backward skip, skip steps,
+background playback, landscape lock, gesture control, poster titles, external
+ratings, and subtitle position. These are discoverability terms, not claims of
+feature parity. In particular, audio passthrough is not an alias for lossless
+conversion; display refresh-rate matching is not an alias for transition fades;
+subtitle placement is distinct from audio/subtitle timing.
+
+iPhone on iOS 26 and later uses the system search toolbar item in the bottom
+bar; iPad keeps native search in the Settings sidebar. Earlier systems use
+SwiftUI's native search placement. TV uses the existing retained
+Settings page stack and native remote text entry. `SettingsSearchLanding` and
+`settingsSearchAnchor` reveal the existing control without changing its value.
+Native lazy List cells register their contained targets with
+`settingsSearchGroup`; the selected control is then revealed within that cell.
+Every indexed entry needs an available route and a matching control anchor.
+
 Playback > **Ask to resume or start over** is per-profile and off by default, including
 for existing profiles. TV and mobile resume partially watched movies and episodes
 directly unless it is enabled. Enabled profiles get the shared native Resume /

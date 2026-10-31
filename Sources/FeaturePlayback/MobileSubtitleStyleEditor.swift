@@ -37,6 +37,7 @@ public struct MobileSubtitleStyleEditor: View {
                         Text("Font")
                     }
                 }
+                .settingsSearchAnchor("subtitle-font")
 
                 Picker(
                     "Weight",
@@ -61,6 +62,7 @@ public struct MobileSubtitleStyleEditor: View {
                         $0.formatted(.percent.precision(.fractionLength(0...3)))
                     }
                 )
+                .settingsSearchAnchor("subtitle-size")
                 MobileSubtitleSliderRow(
                     title: "Position",
                     value: subtitleStyleBinding(viewModel, \.verticalPosition),
@@ -70,6 +72,7 @@ public struct MobileSubtitleStyleEditor: View {
                         $0.formatted(.percent.precision(.fractionLength(0...1)).locale(locale))
                     }
                 )
+                .settingsSearchAnchor("subtitle-position")
                 Picker(selection: subtitleStyleBinding(viewModel, \.verticalAnchor)) {
                     ForEach(SubtitleStyle.VerticalAnchor.allCases, id: \.self) { anchor in
                         Text(anchor.displayName).tag(anchor)
@@ -95,6 +98,7 @@ public struct MobileSubtitleStyleEditor: View {
                 subtitleColorPicker(
                     "Text Color", viewModel: viewModel, keyPath: \.textColor, options: SubtitleColor.presets
                 )
+                .settingsSearchAnchor("subtitle-color")
                 MobileSubtitleSliderRow(
                     title: "Text Opacity",
                     value: subtitleColorAlphaBinding(viewModel, \.textColor),

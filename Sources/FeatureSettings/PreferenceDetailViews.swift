@@ -22,6 +22,7 @@ struct AppearanceDetailView: View {
     /// Profile-scoped browsing protection, presented under All screens.
     @Bindable var spoilers: SpoilerSettingsModel
     var section: AppearanceSettingsSection = .appearance
+    var searchPageID: String? = nil
     #if os(tvOS)
     @Environment(\.settingsInWorkspace) private var inWorkspace
     #endif
@@ -43,7 +44,9 @@ struct AppearanceDetailView: View {
         @Bindable var settingsNavigation = settingsNavigation
         Group {
             #if os(tvOS)
-            if section == .artwork || section == .navigation,
+            if let searchPageID, let row = allRows.first(where: { $0.id == searchPageID }) {
+                SettingsFormRowPage(row: row, showsBack: false)
+            } else if section == .artwork || section == .navigation,
                let row = allRows.first(where: { $0.id == (section == .artwork ? "artwork" : "navigation") }) {
                 SettingsFormRowPage(row: row, route: section == .artwork ? .artwork : .navigationLayout)
             } else {
@@ -200,12 +203,15 @@ struct AppearanceDetailView: View {
                     detail: { $0.detail }
                 )
             }
+            .settingsSearchAnchor("liquid-glass")
         }
     }
 
     @ViewBuilder private var themeControls: some View {
         CompactThemePicker(selection: $theme.theme)
+            .settingsSearchAnchor("theme")
         Toggle("Gradient Backgrounds", isOn: $theme.gradientEnabled)
+            .settingsSearchAnchor("gradient-backgrounds")
     }
 
     private var metadataProviderLink: some View {
@@ -231,6 +237,7 @@ struct AppearanceDetailView: View {
                 #if os(tvOS)
                 SettingsControlGroup(illustrated: true) {
                     CompactNavigationPicker(selection: $navigation.style)
+                        .settingsSearchAnchor("navigation-layout")
                     Toggle("Prevent Accidental Exit", isOn: $navigation.preventsAccidentalExit)
                 }
                 #else
@@ -245,6 +252,7 @@ struct AppearanceDetailView: View {
                         navigation: navigation
                     )
                 }
+                .settingsSearchAnchor("navigation-order")
             }
         }
     }
@@ -265,6 +273,7 @@ struct AllScreensDetailView: View {
         SettingsSplitLayout(title: "All screens", rows: [
             SettingsSplitRow(id: "content-ratings", title: "Show content ratings") {
                 ContentRatingToggle(model: contentRatings)
+                    .settingsSearchAnchor("content-ratings")
             }.labeledControl()
         ] + SpoilerRowsBuilder(spoilers: spoilers).rows)
     }
@@ -304,9 +313,11 @@ struct SpoilerRowsBuilder {
                             SpoilerModePicker(mode: $spoilers.settings.mode)
                         }
                     }
+                    .settingsSearchAnchor("spoilers")
 
                     Toggle("Hide ratings until watched", isOn: $spoilers.settings.hideRatingsUntilWatched)
                         .toggleStyle(SettingsSwitchToggleStyle())
+                        .settingsSearchAnchor("hide-ratings")
                 }
             }
         ]
@@ -348,6 +359,7 @@ struct DetailPageDetailView: View {
                         title: { $0.displayName },
                         detail: { $0.detail }
                     )
+                    .settingsSearchAnchor("detail-background")
                     if heroBackground.settings.detailMode == .trailer {
                         Toggle("Start muted", isOn: $heroBackground.settings.detailTrailerMuted)
                     }
@@ -392,6 +404,7 @@ private struct DetailLogoSizeSettingsForm: View {
 
     var body: some View {
         HeroLogoSizeControl(size: $model.settings.logoSize, textSize: $model.settings.textSize, surface: .detail)
+            .settingsSearchAnchor("detail-size")
     }
 }
 
@@ -401,6 +414,7 @@ private struct DetailHeaderRatingsSettingsForm: View {
     var body: some View {
         SettingsControlRows(nonTVSpacing: SettingsMetrics.sectionSpacing) {
             Toggle("Show review scores", isOn: $model.settings.showsHeaderRatings)
+                .settingsSearchAnchor("detail-ratings")
             if model.settings.showsHeaderRatings {
                 HeaderReviewScoreCountPicker(settings: $model.settings)
             }
@@ -413,6 +427,7 @@ private struct DetailHeaderAgeSettingsForm: View {
 
     var body: some View {
         Toggle("Show Common Sense age", isOn: $model.settings.showsHeaderFamilyGuidance)
+            .settingsSearchAnchor("detail-age")
     }
 }
 
@@ -606,6 +621,7 @@ struct PlaybackDetailView: View {
                             playback.settings.versionSelectionMode = mode
                         }
                     }
+                    .settingsSearchAnchor("version-selection")
                 }
                 #else
                 PlaybackVersionPreferencePicker(model: playback)
@@ -617,6 +633,7 @@ struct PlaybackDetailView: View {
             ) {
                 Toggle("Remember per series", isOn: $playback.settings.rememberVersionPerSeries)
                     .accessibilityIdentifier("playback-remember-series-version")
+                    .settingsSearchAnchor("remember-series-version")
             }
         ]
     }
@@ -684,9 +701,11 @@ struct PlaybackDetailView: View {
         [
             SettingsSplitRow(id: "read-ahead", title: "Video buffer") {
                 PlaybackReadAheadControl()
+                    .settingsSearchAnchor("read-ahead")
             }.labeledControl(),
             SettingsSplitRow(id: "live-buffer", title: "Live TV buffer") {
                 LivePlaybackBufferControl()
+                    .settingsSearchAnchor("live-buffer")
             }.labeledControl()
         ]
     }
@@ -704,6 +723,7 @@ struct PlaybackDetailView: View {
                     categories: Self.policyCategories,
                     categoryMode: { modeBinding(for: $0) }
                 )
+                .settingsSearchAnchor("subtitle-default")
             },
             SettingsSplitRow(
                 id: "subtitle-language",
@@ -720,6 +740,7 @@ struct PlaybackDetailView: View {
                         }
                     }
                 }
+                .settingsSearchAnchor("subtitle-language")
             }.labeledControl(),
             SettingsSplitRow(
                 id: "subtitle-sdh",
@@ -736,6 +757,7 @@ struct PlaybackDetailView: View {
                         }
                     }
                 }
+                .settingsSearchAnchor("subtitle-sdh")
             }.labeledControl()
         ]
 
@@ -772,6 +794,7 @@ struct PlaybackDetailView: View {
             description: "Reuse the subtitle you pick for the rest of a series."
         ) {
             Toggle("Remember per series", isOn: $playback.settings.rememberSubtitleTrackPerSeries)
+                .settingsSearchAnchor("subtitle-remember")
         })
 
         #if os(tvOS)
@@ -798,6 +821,7 @@ struct PlaybackDetailView: View {
             ) {
                 SettingsControlRows {
                     Toggle("Use a separate style for Live TV", isOn: $subtitleStyle.usesSeparateLiveTVStyle)
+                        .settingsSearchAnchor("live-subtitle-style")
                     if subtitleStyle.usesSeparateLiveTVStyle {
                         SettingsRouteLink("Customize Live TV subtitles", value: SettingsRoute.subtitleStyle(liveTV: true))
                     }
@@ -819,6 +843,7 @@ struct PlaybackDetailView: View {
                         audioLanguageMenu(
                             $playback.settings.audioLanguagePreference, title: "Preferred audio language"
                         )
+                        .settingsSearchAnchor("audio-language")
                     }
 
                     SettingsRevealSection(
@@ -832,17 +857,21 @@ struct PlaybackDetailView: View {
                                     : audioPreferenceBinding(for: category),
                                 title: category.separateSettingTitle, subtitle: category.separateSettingHint
                             )
+                            .settingsSearchAnchor(category == .other ? "audio-language" : "audio-language-\(category)")
                         }
                     }
 
                     Toggle("Remember audio language per series", isOn: $playback.settings.rememberAudioTrackPerSeries)
+                        .settingsSearchAnchor("remember-audio")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             },
             SettingsSplitRow(id: "lossless-surround", title: "Audio") {
                 SettingsControlRows {
                     LosslessAudioControl()
+                        .settingsSearchAnchor("lossless-audio")
                     SpatialAudioControl(isOn: $playback.settings.trueHDAtmosEnabled)
+                        .settingsSearchAnchor("spatial-audio")
                 }
             }
         ]
@@ -856,6 +885,7 @@ struct PlaybackDetailView: View {
             ) {
                 #if os(tvOS)
                 SkipMarkerSettingsControl(model: playback)
+                    .settingsSearchAnchor("skip-intros")
                 #else
                 SkipMarkerSettingsControl(model: playback, onOpenSettings: { showsSkipMarkerSettings = true })
                 #endif
@@ -877,12 +907,14 @@ struct PlaybackDetailView: View {
                         label: "Backward",
                         verbatimTitle: { $0.title(locale: locale) }
                     )
+                    .settingsSearchAnchor("skip-backward")
                     SettingsStepper(
                         options: SkipInterval.allCases,
                         selection: $playback.settings.skipForwardInterval,
                         label: "Forward",
                         verbatimTitle: { $0.title(locale: locale) }
                     )
+                    .settingsSearchAnchor("skip-forward")
                 }
             }
         ]
@@ -893,6 +925,7 @@ struct PlaybackDetailView: View {
             SettingsSplitRow(id: "ask-before-resuming", title: "Ask to resume or start over") {
                 Toggle("Ask to resume or start over", isOn: $playback.settings.askBeforeResuming)
                     .accessibilityIdentifier("playback-ask-before-resuming")
+                    .settingsSearchAnchor("ask-before-resuming")
             },
             SettingsSplitRow(
                 id: "resume-rewind",
@@ -901,6 +934,7 @@ struct PlaybackDetailView: View {
             ) {
                 VStack(alignment: .leading, spacing: 20) {
                     resumeRewindStepper
+                        .settingsSearchAnchor("resume-rewind")
                     Text(playback.settings.resumeRewindInterval.effectDescription)
                         .settingsHelperText()
                         .fixedSize(horizontal: false, vertical: true)
@@ -937,6 +971,7 @@ struct PlaybackDetailView: View {
                     : "You must pause before you can scrub — a swipe while playing won't seek or pause. Pause (Play/Pause, or center-press the scrubber), scrub, then press Play to resume. Prevents accidental seeks.",
             ) {
                 Toggle("Seek without pausing", isOn: $playback.settings.seekWithoutPausing)
+                    .settingsSearchAnchor("seek-without-pausing")
             }
         ]
     }
@@ -962,6 +997,7 @@ struct PlaybackDetailView: View {
                     }
                     Toggle("Frame rate", isOn: $playback.settings.fadeOnFrameRateChange)
                 }
+                .settingsSearchAnchor("display-fades")
             }
         ]
     }
@@ -978,7 +1014,9 @@ struct PlaybackDetailView: View {
             ) {
                 SettingsControlRows(nonTVSpacing: 8) {
                     Toggle("Autoplay next episode", isOn: $playback.settings.autoPlayNextEpisode)
+                        .settingsSearchAnchor("autoplay-next-episode")
                     Toggle("Autoplay next playlist item", isOn: $playback.settings.autoPlayNextPlaylistItem)
+                        .settingsSearchAnchor("autoplay-next-playlist")
                 }
             },
             SettingsSplitRow(
@@ -988,6 +1026,7 @@ struct PlaybackDetailView: View {
             ) {
                 SettingsControlRows {
                     Toggle("Show Up Next card", isOn: $playback.settings.showUpNextCard)
+                        .settingsSearchAnchor("show-up-next-card")
                     if playback.settings.showUpNextCard {
                         SettingsStepper(
                             options: PlaybackSettings.upNextLeadSecondsOptions,

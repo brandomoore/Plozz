@@ -95,6 +95,8 @@ struct SettingsContext {
 /// this to drill from a server summary row into `ServerDetailView`, and a
 /// future per-account flow can do the same without re-plumbing closures.
 public enum SettingsRoute: Hashable {
+    case search
+    case searchResult(String)
     case language
     case screensNavigation
     case allScreens
@@ -153,8 +155,15 @@ enum SettingsRouteAccess: Equatable {
 }
 
 extension SettingsRoute {
+    var isSearchResult: Bool {
+        if case .searchResult = self { return true }
+        return false
+    }
+
     var usesFullScreenDetail: Bool {
         switch self {
+        case .searchResult(let id):
+            return SettingsSearchCatalog.entry(id: id)?.page == .subtitleStyle
         case .subtitleStyle, .profileAppearance, .profileLockSetup, .parentalPINSetup:
             return true
         default:
@@ -308,12 +317,13 @@ private struct SettingsWorkspaceEntryFocus: ViewModifier {
     let route: SettingsRoute?
     @Environment(SettingsNavigationModel.self) private var navigation: SettingsNavigationModel?
     @FocusState private var focused: Bool
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
 
     func body(content: Content) -> some View {
         content
             .focused($focused)
             .task(id: navigation?.detailFocusRequest) {
-                guard isEntry, let navigation, navigation.enteringDetail,
+                guard searchRequest == nil, isEntry, let navigation, navigation.enteringDetail,
                       navigation.path.last == route else { return }
                 focused = false
                 await Task.yield()

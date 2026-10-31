@@ -371,6 +371,9 @@ public struct SettingsView: View {
         SettingsWorkspace(navigation: navigation) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
+                    SettingsSectionButton(
+                        title: Text("Search settings"), icon: "magnifyingglass", route: .search
+                    )
                     // The active profile's own container comes FIRST. Almost
                     // everything anyone opens Settings to change is in here —
                     // playback, appearance, trackers — while the device-shared
@@ -884,14 +887,50 @@ public struct SettingsView: View {
     }
 
     @ViewBuilder
+    private func searchDestination(_ page: SettingsSearchPage) -> some View {
+        switch page {
+        case .theme, .cards:
+            AppearanceDetailView(
+                librariesScope: context.librariesScope, settingsNavigation: navigation,
+                theme: theme, nightShift: nightShift, spoilers: spoilers,
+                searchPageID: page == .theme ? "theme" : "cards"
+            )
+        case .playback: authorizedDestination(for: .playback)
+        case .subtitles: authorizedDestination(for: .subtitles)
+        case .subtitleStyle: authorizedDestination(for: .subtitleStyle(liveTV: false))
+        case .artwork: authorizedDestination(for: .artwork)
+        case .circadian: authorizedDestination(for: .nightShift)
+        case .allScreens: authorizedDestination(for: .allScreens)
+        case .navigation: authorizedDestination(for: .navigationLayout)
+        case .home: authorizedDestination(for: .customizeHome)
+        case .detail: authorizedDestination(for: .detailPage)
+        case .liveTV: authorizedDestination(for: .liveTV)
+        case .language: authorizedDestination(for: .language)
+        }
+    }
+
+    @ViewBuilder
     private func authorizedDestination(for route: SettingsRoute) -> some View {
         switch route {
+        case .search:
+            SettingsSearchTelevisionView()
+        case .searchResult(let id):
+            if let entry = SettingsSearchCatalog.entry(id: id), entry.isAvailable(on: .television) {
+                SettingsSearchLanding(targetID: id) {
+                    AnyView(searchDestination(entry.page))
+                }
+                .id(id)
+            } else {
+                ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
+            }
         case .language:
             ScrollView {
                 VStack(alignment: .leading, spacing: SettingsFormMetrics.controlSpacing) {
                     SettingsPageHeader("Language")
                     SettingsControlGroup { AppLanguagePicker(model: appLanguage) }
+                        .settingsSearchAnchor("language")
                 }
+
                 .padding(.horizontal, SettingsFormMetrics.pageInset)
                 .padding(.bottom, SettingsFormMetrics.pageBottomInset)
             }

@@ -288,13 +288,14 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
 private struct SettingsPageEntryFocus: ViewModifier {
     let enabled: Bool
     @Environment(\.settingsPageContext) private var context
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
     @FocusState private var focused: Bool
 
     func body(content: Content) -> some View {
         content
             .focused($focused)
             .task(id: context?.requestsEntryFocus) {
-                guard enabled, context?.requestsEntryFocus == true else { return }
+                guard enabled, searchRequest?.revealed != false, context?.requestsEntryFocus == true else { return }
                 await Task.yield()
                 guard !Task.isCancelled else { return }
                 focused = true
