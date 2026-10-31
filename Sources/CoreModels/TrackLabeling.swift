@@ -300,8 +300,8 @@ public enum TrackLabeling {
     }
 
     private static func audioTitleContainsFormat(
-        _ title: String, codec: String?, channels: Int?,
-        source: (name: String?, objectBased: Bool) // l10n:content - provider track title and format facts.
+        _ title: String, codec: String?, channels: Int?, // l10n:content - provider track title and format facts.
+        source: (name: String?, objectBased: Bool)
     ) -> Bool {
         func contains(_ token: String) -> Bool {
             guard !token.isEmpty else { return false }
@@ -325,8 +325,8 @@ public enum TrackLabeling {
     /// Match only titles completely described by known format facts; never
     /// erase commentary, edition, or custom names because they contain a codec.
     private static func isAudioFormatTitle(
-        _ title: String, languageName: String?, codec: String?, channels: Int?, format: String?,
-        profile: String? // l10n:content - provider track title and format facts.
+        _ title: String, languageName: String?, codec: String?, channels: Int?, format: String?, // l10n:content - provider track title and format facts.
+        profile: String?
     ) -> Bool {
         guard let format else { return false }
         func normalized(_ text: String) -> String {
