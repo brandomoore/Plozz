@@ -182,6 +182,11 @@ struct ProductionHomeFixture: View {
                         try await Task.sleep(for: .seconds(2))
                         selection = .home
                         try await Task.sleep(for: .seconds(3))
+                        if ProcessInfo.processInfo.arguments.contains("--pending-featured-hero"),
+                           !fixture.runtime.items.isEmpty || !fixture.runtime.cachedItems.isEmpty {
+                            print("HERO_STAGE_PROBE complete passed=false pendingHeroAlreadyLoaded")
+                            return
+                        }
                         await Self.probeHeroShowcaseFocus()
                     } catch {
                         print("HERO_STAGE_PROBE navigation cancelled: \(error)")
@@ -461,6 +466,9 @@ struct ProductionHomeFixture: View {
         guard let stage, let system = UIFocusSystem.focusSystem(for: stage.view) else {
             print("HERO_STAGE_PROBE missing stage or focus system")
             return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--pending-featured-hero") {
+            print("HERO_STAGE_PENDING rowsReady=\(stage.canEnterRows()) heroFocus=\(stage.contains(system.focusedItem, in: stage.hero))")
         }
         if ProcessInfo.processInfo.arguments.contains("--hero-showcase-navigation-probe") {
             let measuresNativeSidebar = ProcessInfo.processInfo.arguments.contains("--native-sidebar-home")
@@ -1040,6 +1048,10 @@ private final class ProductionHomeState {
         var settings = heroSettings.settings
         settings.isEnabled = !ProcessInfo.processInfo.arguments.contains("--hero-disabled-home")
         settings.sources = [.continueWatching, .recentlyAdded]
+        if ProcessInfo.processInfo.arguments.contains("--pending-featured-hero") {
+            settings.sources = [.featured]
+            settings.setEnabled(.featured, enabled: true)
+        }
         settings.autoAdvance = false
         settings.trailersEnabled = false
         // Settings persist between launches, so every launch picks its layout.
@@ -1060,7 +1072,8 @@ private final class ProductionHomeState {
     }
 
     func featuredContent(limit: Int) async -> [MediaItem] {
-        guard ProcessInfo.processInfo.arguments.contains("--showcase-discover-fixture") else { return [] }
+        guard ProcessInfo.processInfo.arguments.contains("--showcase-discover-fixture")
+                || ProcessInfo.processInfo.arguments.contains("--pending-featured-hero") else { return [] }
         let items = await provider.featuredContent(limit: limit)
         discoveryLoad.isReady = true
         return items
@@ -1249,7 +1262,12 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
     func waitForResumePublication() async { await resumePublicationGate.wait() }
 
     func featuredContent(limit: Int) async -> [MediaItem] {
-        await discoverGate.wait()
+        // A cancelled curation must not release the next pending-Hero request.
+        let gate = ProcessInfo.processInfo.arguments.contains("--pending-featured-hero")
+            ? ProductionHomeRowsGate(notificationKey: "PLOZZ_HOME_DISCOVER_RELEASE_NOTIFICATION")
+            : discoverGate
+        await gate.wait()
+        guard !Task.isCancelled else { return [] }
         return Array((rowCount..<(rowCount * 2)).prefix(limit).map(movie))
     }
 

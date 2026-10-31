@@ -1,5 +1,8 @@
 #if os(tvOS)
-import CoreUI
+import CoreModels
+import CoreNetworking
+@testable import CoreUI
+import HeroUI
 import SwiftUI
 import UIKit
 import XCTest
@@ -7,6 +10,159 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testScrollPositionRetainsRequestedMotionAcrossAttachmentAndRemount() {
+        let navigation = TopNavigationScroll()
+        let motion = HeroShowcaseScrollMotion()
+        let position = FocusHeroNativeScrollPosition.PositionView()
+        position.navigation = navigation
+        position.bindShowcaseMotion(motion)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let root = UIViewController()
+        window.rootViewController = root
+        window.isHidden = false
+        let rows = UIScrollView(frame: window.bounds)
+        root.view.addSubview(rows)
+        defer {
+            position.stop()
+            motion.stopAnimations()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        motion.move(expanded: false, distance: 320, animated: false, reduceMotion: false)
+        XCTAssertEqual(navigation.offset, 0)
+        rows.addSubview(position)
+        XCTAssertEqual(navigation.offset, 320)
+        XCTAssertFalse(rows.isScrollEnabled)
+        position.removeFromSuperview()
+        XCTAssertTrue(rows.isScrollEnabled)
+        XCTAssertFalse(navigation.scrollToTop())
+        motion.move(expanded: true, distance: 320, animated: false, reduceMotion: false)
+        rows.addSubview(position)
+        XCTAssertEqual(navigation.offset, 0)
+        motion.move(expanded: false, distance: 320, animated: false, reduceMotion: false)
+        XCTAssertEqual(navigation.offset, 320)
+        position.stop()
+        XCTAssertFalse(navigation.scrollToTop())
+        XCTAssertTrue(rows.isScrollEnabled)
+    }
+
+    func testFeaturedArtworkReturnsAfterShowcaseRelinquishesOwnership() async throws {
+        let url = try XCTUnwrap(URL(string: "https://stage.example.test/\(UUID()).png"))
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 180)).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 320, height: 180))
+        }
+        let bytes = try XCTUnwrap(image.pngData())
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        for variant in ArtworkImageVariant.allCases {
+            let requestURL = variant.requestURL(for: url)
+            let request = URLRequest(url: requestURL)
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: requestURL, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+            ))
+            cache.storeCachedResponse(CachedURLResponse(response: response, data: bytes), for: request)
+        }
+        let warmed = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop)
+        XCTAssertNotNil(warmed)
+        let featured = MediaItem(id: "featured", title: "Featured", kind: .movie, backdropURL: url)
+        let rowItem = MediaItem(id: "row", title: "Row", kind: .movie, backdropURL: url)
+        let rows = [FocusHeroRow(id: "first", itemIDs: [rowItem.id], leadItem: rowItem, items: [rowItem])]
+        let artwork = HeroArtworkDisplayState()
+        let host = UIHostingController(rootView: FocusHeroHomeView(
+            rows: rows, settings: .default, spoilerSettings: .default,
+            navigationStyle: .rail, isFrontmost: true,
+            featuredHero: { suspended in
+                AnyView(StageFeaturedArtwork(item: featured, suspended: suspended))
+            }
+        ) { _, _ in
+            Button("Row") {}.frame(width: 400, height: 300)
+        }
+        .environment(\.heroArtworkDisplayState, artwork)
+        .environment(\.plozzArtworkSettings, .init(preference: .library)))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true; window.rootViewController = nil }
+        host.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(500))
+        func findStage(_ controller: UIViewController) -> HeroShowcaseStage.Controller? {
+            if let stage = controller as? HeroShowcaseStage.Controller { return stage }
+            return controller.children.lazy.compactMap(findStage).first
+        }
+        let stage = try XCTUnwrap(findStage(host))
+        defer { stage.stopAnimations() }
+        for expanded in [true, false, true, false, true] {
+            stage.present(expanded: expanded, focus: false)
+            let expected = expanded ? featured.id : "item-\(rowItem.id)"
+            let deadline = ContinuousClock.now + .seconds(2)
+            while (artwork.displayed?.itemID != expected || artwork.sample(for: expected) == nil),
+                  ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(25))
+            }
+            XCTAssertEqual(artwork.displayed?.itemID, expected)
+            XCTAssertNotNil(artwork.sample(for: expected))
+        }
+    }
+
+    func testProductionNestedHostsPreserveNavigationAndArtworkOwnership() async throws {
+        let navigation = TopNavigationScroll()
+        let artwork = HeroArtworkDisplayState()
+        let ambient = AmbientBackdropModel()
+        var environments: [String: EnvironmentValues] = [:]
+        let rows = [FocusHeroRow(id: "first", itemIDs: [], leadItem: nil)]
+        let host = UIHostingController(rootView: FocusHeroHomeView(
+            rows: rows, settings: .default, spoilerSettings: .default,
+            navigationStyle: .tabBar, isFrontmost: true,
+            featuredHero: { suspended in
+                AnyView(
+                    Button("Featured") {}
+                        .background(StageEnvironmentReader { environments["foreground"] = $0 })
+                        .modifier(HeroShowcaseForeground(surface: .featured))
+                        .heroArtworkSource(id: "featured", isActive: !suspended)
+                )
+            }
+        ) { _, _ in
+            Button("First row") {}
+                .frame(width: 400, height: 300)
+                .background(StageEnvironmentReader { environments["row"] = $0 })
+        }
+        .environment(\.plozzTopNavigationScroll, navigation)
+        .environment(\.heroArtworkDisplayState, artwork)
+        .environment(\.ambientBackdropModel, ambient))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true; window.rootViewController = nil }
+        host.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(300))
+        func findStage(_ controller: UIViewController) -> HeroShowcaseStage.Controller? {
+            if let stage = controller as? HeroShowcaseStage.Controller { return stage }
+            return controller.children.lazy.compactMap(findStage).first
+        }
+        let stage = try XCTUnwrap(findStage(host))
+        defer { stage.stopAnimations() }
+        for key in ["foreground", "row"] {
+            let environment = try XCTUnwrap(environments[key], key)
+            XCTAssertTrue(environment.heroShowcaseMotion === stage.state.motion, key)
+            XCTAssertTrue(environment.plozzTopNavigationScroll === navigation, key)
+            XCTAssertTrue(environment.heroArtworkDisplayState === artwork, key)
+            XCTAssertTrue(environment.ambientBackdropModel === ambient, key)
+        }
+        XCTAssertEqual(
+            environments["foreground"]?.heroArtworkDisplayReporter?.identity.state,
+            ObjectIdentifier(artwork)
+        )
+        stage.present(expanded: false, focus: false)
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertGreaterThan(stage.state.motion.distance, 0)
+        XCTAssertEqual(navigation.offset, stage.state.motion.distance, accuracy: 1)
+        XCTAssertTrue(navigation.scrollToTop())
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertTrue(stage.state.isExpanded)
+        XCTAssertEqual(navigation.offset, 0, accuracy: 1)
+    }
+
     func testNativeSidebarCountsTheHeroWithoutMovingTheFirstRow() async throws {
         for usesNativeSidebar in [false, true] {
             let state = HeroShowcaseState()
@@ -753,6 +909,31 @@ private struct StageLayoutMarker: UIViewRepresentable {
         return view
     }
     func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
+private struct StageEnvironmentReader: UIViewRepresentable {
+    let read: (EnvironmentValues) -> Void
+
+    func makeUIView(context: Context) -> UIView { UIView() }
+    func updateUIView(_ uiView: UIView, context: Context) { read(context.environment) }
+}
+
+private struct StageFeaturedArtwork: View {
+    let item: MediaItem
+    let suspended: Bool
+    @Namespace private var focus
+    @State private var trailer = HeroTrailerController()
+    @State private var recede = HomeHeroRecedeModel()
+
+    var body: some View {
+        HomeHeroView(
+            items: [item], settings: .default, backgroundSettings: .default,
+            trailerController: trailer, trailerResolver: { _ in nil },
+            isFrontmost: true, spoilerSettings: .default, navigationStyle: .rail,
+            focusScope: focus, onSelect: { _ in }, onPlay: { _ in },
+            recedeModel: recede, showcaseSuspended: suspended
+        )
+    }
 }
 
 @MainActor

@@ -999,7 +999,8 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
             let picker = try XCTUnwrap(findPreviewCard(in: host.view, identifier: "logo-layout-picker-frame"))
             let frame = picker.convert(picker.bounds, to: fixture.window)
             let baseline = try layoutWordmarkBounds(style: style, pickerFrame: frame, in: fixture.window)
-            let classicFrame = CGRect(x: frame.minX, y: frame.minY, width: (frame.width - 16) / 2, height: frame.height).integral
+            let cardWidth = (frame.width - 16) / 2
+            let classicFrame = CGRect(x: frame.minX + cardWidth + 16, y: frame.minY, width: cardWidth, height: frame.height).integral
             let otherBaseline = try rgbaPixels(in: fixture.window, rect: classicFrame)
             for _ in HeroLogoSize.default.position..<(HeroLogoSize.allSizes.count - 1) {
                 input.beginPress(.right)
@@ -1043,7 +1044,7 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
         let inset = PlozzTheme.Metrics.Radius.inset
         let cardWidth = (pickerFrame.width - 16) / 2
         let scale = (cardWidth - inset * 2) / 1920
-        let x = pickerFrame.minX + inset + (style == .carousel ? 0 : cardWidth + 16)
+        let x = pickerFrame.minX + inset + (style == .carousel ? cardWidth + 16 : 0)
         let rect = CGRect(
             x: x + 120 * scale, y: pickerFrame.minY + inset + (style == .carousel ? 400 : 100) * scale,
             width: (style == .carousel ? 1200 : 800) * scale, height: (style == .carousel ? 270 : 165) * scale

@@ -59,6 +59,8 @@ public struct HomeRowsSettingsView: View {
                     value: hero.settings.immersiveRows ? Text("Showcase") : Text("Classic")
                 )
             }
+            .accessibilityLabel(Text("Row style"))
+            .accessibilityValue(hero.settings.immersiveRows ? Text("Showcase") : Text("Classic"))
             .accessibilityIdentifier("home-row-style")
             #endif
             HomeEditorLink {

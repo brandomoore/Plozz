@@ -1079,6 +1079,8 @@ viewport. The Showcase host extends to the physical right edge while preserving
 its leading details inset. The row host retains its original bounds.
 Focus ownership includes SwiftUI virtual items and nested native controls,
 not only UIView-backed controls.
+While featured content loads, its full-size skeleton remains a native focus
+target so Down can still enter already-loaded rows and Up can return.
 The peeking rows are not eligible for focus while the featured hero is active,
 so first entry cannot collapse it. Boundary-only press and indirect-swipe
 recognizers request the other host even when its hidden content provides no
@@ -1103,6 +1105,11 @@ Using the full stage distance would hide it early and reveal it late.
 Detach and reduced-motion updates clear owned animations. The return chevron sits 48 points from the top in all navigation styles,
 without reserving space for the now-hidden Top Bar.
 Back still reveals navigation immediately, cancelling its remaining translations.
+The row scroll bridge retains its requested stage motion across temporary detach
+and reattachment, rebinding only while mounted; it does not depend on a later
+SwiftUI update to restore navigation. Featured and Showcase artwork reporters
+take ownership only while their respective stage is active, so returning to
+the featured hero republishes its displayed-image palette.
 The navigation fixture samples the bar's rendered position against stage
 progress through full transitions and rapid reversals, as well as checking
 focus ownership, final visibility, and the chevron's screen position. It requires

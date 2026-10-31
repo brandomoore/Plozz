@@ -1281,7 +1281,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
                 showcaseMotion?.unbindNavigation(self)
                 showcaseMotion = motion
             }
-            if navigation != nil {
+            if navigation != nil, scroller != nil, window != nil {
                 motion?.bindNavigation(self)
             } else {
                 motion?.unbindNavigation(self)
@@ -1339,9 +1339,9 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
             reportNavigation(offset: y)
         }
 
-        func stop() {
+        func stop(preservingMotion: Bool = false) {
             showcaseMotion?.unbindNavigation(self)
-            showcaseMotion = nil
+            if !preservingMotion { showcaseMotion = nil }
             stopNavigationFrames()
             registeredNavigation?.unregister(source: navigationScrollID)
             registeredNavigation = nil
@@ -1367,14 +1367,14 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
 
         private func bindScrollView() {
             guard window != nil else {
-                stop()
+                stop(preservingMotion: true)
                 return
             }
             var ancestor = superview
             while let view = ancestor {
                 if let scrollView = view as? UIScrollView {
                     if scroller !== scrollView {
-                        stop()
+                        stop(preservingMotion: true)
                         scroller = scrollView
                         wasScrollEnabled = scrollView.isScrollEnabled
                         // The row owns its exact resting destination, while UIKit
@@ -1390,6 +1390,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
                         scrollView.isScrollEnabled = false
                     }
                     bindNavigation()
+                    bindShowcaseMotion(showcaseMotion)
                     return
                 }
                 ancestor = view.superview

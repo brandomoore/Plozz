@@ -1650,6 +1650,12 @@ public struct HomeView: View {
     ) -> some View {
         if items.isEmpty {
             HomeHeroSkeletonView()
+                .contentShape(Rectangle())
+                .focusable(true)
+                .prefersDefaultFocus(true, in: heroFocusScope)
+                .focusEffectDisabled()
+                .accessibilityLabel("Loading Home content")
+                .focusScope(heroFocusScope)
         } else {
             HomeHeroView(
                 items: items, settings: settings, backgroundSettings: heroBackground.settings,

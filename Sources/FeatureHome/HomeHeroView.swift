@@ -875,7 +875,7 @@ struct HomeHeroView: View {
             ))
             .heroArtworkSource(
                 id: item.id,
-                isActive: isFrontmost
+                isActive: isFrontmost && !showcaseSuspended
             )
         } else {
             Color.clear.frame(width: w, height: height)
