@@ -231,6 +231,18 @@ struct HeroShowcaseFeaturedContent: View {
     var body: some View { content(!state.isExpanded) }
 }
 
+struct HeroShowcaseNativeRows: View {
+    let state: HeroShowcaseState
+    let usesNativeSidebar: Bool
+    let content: (CGFloat) -> AnyView
+
+    var body: some View {
+        // Native sidebar chrome follows the real ScrollView offset, not the
+        // stage's compositor translation. Reserve the hidden hero above row one.
+        content(usesNativeSidebar && !state.isExpanded ? state.motion.distance : 0)
+    }
+}
+
 struct HeroShowcaseReturnCue: UIViewRepresentable {
     let model: FocusHeroModel
     let rows: [FocusHeroRow]

@@ -175,7 +175,7 @@ struct ProductionHomeFixture: View {
                 }
                 .task {
                     guard ProcessInfo.processInfo.arguments.contains("--hero-showcase-navigation-probe"),
-                          isPinned || ProcessInfo.processInfo.arguments.contains("--top-bar-home") else { return }
+                          isPinned || isNativeSidebar || ProcessInfo.processInfo.arguments.contains("--top-bar-home") else { return }
                     do {
                         try await Task.sleep(for: .seconds(3))
                         selection = .settings
@@ -463,8 +463,46 @@ struct ProductionHomeFixture: View {
             return
         }
         if ProcessInfo.processInfo.arguments.contains("--hero-showcase-navigation-probe") {
+            let measuresNativeSidebar = ProcessInfo.processInfo.arguments.contains("--native-sidebar-home")
+            if measuresNativeSidebar {
+                guard ProcessInfo.processInfo.arguments.contains("--held-home-artwork") else {
+                    print("HERO_STAGE_PROBE missing controlled backdrop for native visibility"); return
+                }
+                stage.present(expanded: true, focus: true)
+                do { try await Task.sleep(for: .milliseconds(700)) }
+                catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+            }
             var passed = stage.state.isExpanded && stage.contains(system.focusedItem, in: stage.hero)
             print("HERO_STAGE_PROBE navigation-entry heroFocus=\(passed)")
+            func nativeSidebarIsPainted() -> Bool? {
+                guard let window else { return nil }
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                guard let full = image.cgImage else { return nil }
+                let scale = CGFloat(full.width) / window.bounds.width
+                guard let crop = full.cropping(to: CGRect(
+                    x: 20 * scale, y: 20 * scale, width: 480 * scale, height: 140 * scale
+                )) else { return nil }
+                var bytes = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+                return bytes.withUnsafeMutableBytes { buffer -> Bool? in
+                    guard let context = CGContext(
+                        data: buffer.baseAddress, width: crop.width, height: crop.height,
+                        bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                        space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+                    ) else { return nil }
+                    context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+                    return stride(from: 0, to: buffer.count, by: 4).filter {
+                        min(buffer[$0], buffer[$0 + 1], buffer[$0 + 2]) > 160
+                    }.count > 100
+                }
+            }
+            if measuresNativeSidebar {
+                let visible = nativeSidebarIsPainted()
+                passed = passed && visible == true
+                print("HERO_STAGE_NATIVE initialVisible=\(String(describing: visible))")
+            }
             var rowViews = [stage.rows.view!]
             var navigation: TopNavigationScroll?
             while let view = rowViews.popLast() {
@@ -490,6 +528,8 @@ struct ProductionHomeFixture: View {
                 return layer.convert(CGPoint(x: layer.bounds.midX, y: layer.bounds.midY), to: nil).y
             }
             let visibleNavigationY = presentedNavigationY()
+            var firstRowFrame: CGRect?
+            var firstRowLabel: String?
             let moves: [(Bool, TimeInterval)] = [
                 (false, 0.7), (true, 0.7), (false, 0.7), (true, 0.7), (false, 0.7), (true, 0.7),
                 (false, 0.18), (true, 0.18), (false, 0.18), (true, 0.7)
@@ -541,6 +581,26 @@ struct ProductionHomeFixture: View {
                 }
                 let focused = stage.contains(system.focusedItem, in: expanded ? stage.hero : stage.rows)
                 passed = passed && blocked && focused && stage.state.isExpanded == expanded
+                if measuresNativeSidebar, duration >= 0.7 {
+                    if !expanded {
+                        print("HERO_STAGE_NATIVE settling painted=\(String(describing: nativeSidebarIsPainted()))")
+                        do { try await Task.sleep(for: .milliseconds(300)) }
+                        catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                    }
+                    let visible = nativeSidebarIsPainted()
+                    let correctVisibility = visible == expanded
+                    passed = passed && correctVisibility
+                    print("HERO_STAGE_NATIVE expanded=\(expanded) painted=\(String(describing: visible)) correctVisibility=\(correctVisibility)")
+                    if !expanded, let focused = system.focusedItem, let window,
+                       let frame = NavigationRowFocusRequester.frame(of: focused, relativeTo: window) {
+                        let label = (focused as? NSObject)?.accessibilityLabel
+                        let stableRow = firstRowFrame.map { abs($0.midY - frame.midY) < 1 } ?? true
+                        let sameCard = firstRowLabel.map { $0 == label } ?? true
+                        if firstRowFrame == nil { firstRowFrame = frame; firstRowLabel = label }
+                        passed = passed && stableRow && sameCard
+                        print("HERO_STAGE_NATIVE rowStable=\(stableRow) sameCard=\(sameCard) rowY=\(frame.midY)")
+                    }
+                }
                 if ProcessInfo.processInfo.arguments.contains("--top-bar-home") {
                     let offset = navigation?.offset ?? -1
                     let correctVisibility = expanded ? offset == 0 : offset >= TopBarNavigationMetrics.foregroundTop

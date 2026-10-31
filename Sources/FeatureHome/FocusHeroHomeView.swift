@@ -326,8 +326,8 @@ final class FocusHeroModel {
         return rows.indices.contains(index) ? rowHeights[rows[index].id] ?? 0 : 0
     }
 
-    /// The first row rests at offset zero so native navigation recognizes Home's
-    /// top edge. Subtract the same origin from the spacer and every destination.
+    /// Local row offset zero is the first row. The hybrid native-sidebar layout
+    /// adds its hidden hero above this origin in both spacing and destinations.
     func scrollOrigin(in rows: [FocusHeroRow]) -> CGFloat {
         guard let first = rows.first else { return 0 }
         return min(
@@ -431,7 +431,11 @@ struct FocusHeroHomeView<RowContent: View>: View {
                     showcase: AnyView(HeroShowcaseFeaturedContent(state: featuredState) { active in
                         AnyView(showcaseDetails(active: active && isFrontmost))
                     }),
-                    rowContent: AnyView(scrollingRows())
+                    rowContent: AnyView(HeroShowcaseNativeRows(
+                        state: featuredState, usesNativeSidebar: navigationStyle == .sidebar
+                    ) { inset in
+                        AnyView(scrollingRows(topInset: inset))
+                    })
                 )
                 .overlay(alignment: .topLeading) {
                     HeroShowcaseFeaturedContent(state: featuredState) { active in
@@ -488,8 +492,8 @@ struct FocusHeroHomeView<RowContent: View>: View {
         }
     }
 
-    private func scrollingRows() -> some View {
-        FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent, onReturnToTop: {
+    private func scrollingRows(topInset: CGFloat = 0) -> some View {
+        FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent, topInset: topInset, onReturnToTop: {
             if featuredHero != nil { featuredState.returnToHero?() }
             onReturnToTop()
         })
@@ -769,6 +773,7 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
     let rows: [FocusHeroRow]
     let model: FocusHeroModel
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
+    var topInset: CGFloat = 0
     var onReturnToTop: () -> Void = {}
     var body: some View {
         FocusHeroMotionSurface(
@@ -783,9 +788,9 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
         let bottom = FocusHeroLayout.rowsBottom(rowSpacing: FocusHeroLayout.rowSpacing)
         return ScrollView(.vertical) {
             FocusHeroRowStack(rows: rows, model: model, rowContent: rowContent)
-                .padding(.top, bottom - model.scrollOrigin(in: rows))
+                .padding(.top, bottom - model.scrollOrigin(in: rows) + topInset)
                 .padding(.bottom, FocusHeroLayout.screenHeight - bottom)
-                .background(FocusHeroScrollPosition(model: model, rows: rows, onReturnToTop: onReturnToTop))
+                .background(FocusHeroScrollPosition(model: model, rows: rows, topInset: topInset, onReturnToTop: onReturnToTop))
         }
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
@@ -798,6 +803,7 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
 private struct FocusHeroScrollPosition: View {
     let model: FocusHeroModel
     let rows: [FocusHeroRow]
+    let topInset: CGFloat
     let onReturnToTop: () -> Void
 
     var body: some View {
@@ -806,10 +812,12 @@ private struct FocusHeroScrollPosition: View {
         FocusHeroNativeScrollPosition(
             rowID: model.resolvedActiveRowID(in: rows),
             y: model.top(ofRowAt: index, in: rows, rowSpacing: spacing)
-                + model.activeHeight(in: rows) - model.scrollOrigin(in: rows),
+                + model.activeHeight(in: rows) - model.scrollOrigin(in: rows) + topInset,
             motion: model.motion,
             height: model.activeHeight(in: rows),
-            heightStops: model.heightStops(in: rows),
+            heightStops: model.heightStops(in: rows).map {
+                FocusHeroHeightStop(offset: $0.offset + topInset, height: $0.height)
+            },
             rowOffsets: model.tuckOffsets(in: rows),
             onReturnToTop: {
                 model.returnToTop(in: rows)

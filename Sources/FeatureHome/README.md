@@ -1089,8 +1089,13 @@ navigation before the deferred request can restore the hero or enter the rows.
 With Top Bar navigation, the featured stage contributes to the navigation scroll
 offset: entering even the first Showcase row moves the bar offscreen and removes
 it from focus, and returning to Spotlight reveals it. Back's return-to-top resets
-both the rows and featured stage. Standalone Showcase keeps its existing behavior,
-and this does not hide either sidebar.
+both the rows and featured stage. With the native Sidebar, the first Showcase row
+also includes the hidden hero's distance in its real scroll offset, balanced by
+matching content padding so card placement does not change. Native Home chrome
+therefore disappears on the first Down, not the second row, and reappears only
+when returning to the hero. The boundary handoff keeps Up directed at the hero
+instead of the native Home control. Standalone Showcase keeps its existing
+first-row behavior, and the Pinned Sidebar is unchanged.
 The bar travels only far enough to clear the screen and receives an additive
 native translation in the stage's own animation transaction, including reversals.
 There is no display-link-to-SwiftUI follower or independent SwiftUI animation.
@@ -1104,6 +1109,10 @@ focus ownership, final visibility, and the chevron's screen position. It require
 less than one point of phase error and at most one navigation-state target change
 per transition, so a frame-following implementation cannot pass merely by reaching
 the correct final position.
+The same probe supports native Sidebar with `--native-sidebar-home` and
+`--held-home-artwork`: a controlled dark backdrop lets it check painted Home
+chrome, not just accessibility presence. It verifies repeated first-row/hero
+returns, rapid reversals, actual native focus and stable card placement.
 The outgoing hero foreground, incoming Showcase details, and rows share one
 native scroll distance, easing, and start time. Their relative positions remain
 fixed throughout the move and rapid reversals; only their opacity changes as

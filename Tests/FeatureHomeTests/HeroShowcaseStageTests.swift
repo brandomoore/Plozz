@@ -7,6 +7,47 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testNativeSidebarCountsTheHeroWithoutMovingTheFirstRow() async throws {
+        for usesNativeSidebar in [false, true] {
+            let state = HeroShowcaseState()
+            state.motion.move(expanded: true, distance: 320.5, animated: false, reduceMotion: false)
+            let model = FocusHeroModel()
+            let rows = [FocusHeroRow(id: "first", itemIDs: [], leadItem: nil)]
+            let marker = UIView()
+            let host = UIHostingController(rootView: HeroShowcaseNativeRows(
+                state: state, usesNativeSidebar: usesNativeSidebar
+            ) { inset in
+                AnyView(FocusHeroScrollingRows(
+                    rows: rows, model: model,
+                    rowContent: { _, _ in
+                        StageLayoutMarker(view: marker, onMount: {})
+                            .frame(width: 400, height: 320)
+                    },
+                    topInset: inset
+                ))
+            })
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+            window.rootViewController = host
+            window.isHidden = false
+            defer { window.isHidden = true; window.rootViewController = nil }
+            func findScroller(_ view: UIView) -> UIScrollView? {
+                if let scroller = view as? UIScrollView { return scroller }
+                return view.subviews.lazy.compactMap(findScroller).first
+            }
+            host.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(150))
+            let scroller = try XCTUnwrap(findScroller(host.view))
+            let initialY = marker.convert(marker.bounds, to: window).midY
+            for expanded in [false, true, false, true] {
+                state.setExpanded(expanded)
+                try await Task.sleep(for: .milliseconds(150))
+                host.view.layoutIfNeeded()
+                XCTAssertEqual(scroller.contentOffset.y, usesNativeSidebar && !expanded ? 320.5 : 0, accuracy: 0.5)
+                XCTAssertEqual(marker.convert(marker.bounds, to: window).midY, initialY, accuracy: 0.5)
+            }
+        }
+    }
+
     func testTopNavigationSharesNativeStageAnimationsWithoutFrameUpdates() throws {
         let navigation = TopNavigationScroll()
         let motion = HeroShowcaseScrollMotion()
