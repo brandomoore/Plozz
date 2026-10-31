@@ -31,13 +31,13 @@ public struct SettingsSearchResults: View {
         if results.isEmpty {
             ContentUnavailableView.search(text: query)
         } else {
+            #if os(tvOS)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if isEmptyQuery {
                         Text("Suggestions").font(.headline).foregroundStyle(.secondary)
                     }
                     ForEach(results) { entry in
-                        #if os(tvOS)
                         SettingsPageActionLink { source in
                             onSelect(entry, source)
                         } label: {
@@ -45,19 +45,33 @@ public struct SettingsSearchResults: View {
                         }
                         .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                         .accessibilityIdentifier("settings-search-result-\(entry.id)")
-                        #else
-                        Button { onSelect(entry, nil) } label: {
-                            resultLabel(entry)
-                        }
-
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("settings-search-result-\(entry.id)")
-                        #endif
                     }
                 }
                 .padding(20)
             }
             .accessibilityIdentifier("settings-search-results")
+            #else
+            List {
+                if isEmptyQuery {
+                    Text("Suggestions").font(.headline).foregroundStyle(.secondary)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
+                ForEach(results) { entry in
+                    Button { onSelect(entry, nil) } label: {
+                        resultLabel(entry)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .accessibilityIdentifier("settings-search-result-\(entry.id)")
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .contentMargins(.vertical, 0, for: .scrollContent)
+            .accessibilityIdentifier("settings-search-results")
+            #endif
         }
     }
 
@@ -70,14 +84,21 @@ public struct SettingsSearchResults: View {
                     resource.locale = locale
                     return String(localized: resource)
                 }.joined(separator: " › "))
-                .font(.caption).foregroundStyle(.secondary)
+                #if os(tvOS)
+                .font(.caption)
+                #else
+                .font(.subheadline)
+                #endif
+                .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .multilineTextAlignment(.leading)
         } icon: {
             Image(systemName: entry.page.symbol)
         }
+        #if os(tvOS)
         .padding(.vertical, 10)
+        #endif
         .contentShape(Rectangle())
     }
 }

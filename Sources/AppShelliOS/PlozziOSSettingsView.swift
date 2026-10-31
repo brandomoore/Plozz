@@ -646,7 +646,7 @@ private struct PlozziOSSettingsSplitView: View {
             .navigationTitle("Settings")
             .modifier(PlozziOSSettingsSearch(appModel: appModel) { selection = .search($0.id) })
             .toolbar(removing: .sidebarToggle)
-            .settingsPageSurface(titleDisplayMode: .inlineLarge, horizontalInset: 16)
+            .settingsPageSurface(titleDisplayMode: .inline, horizontalInset: 16)
         } detail: {
             NavigationStack {
                 ZStack {
@@ -1000,6 +1000,7 @@ private struct PlozziOSSettingsCompactMenu: View {
     @State private var showMetadata = false
     @State private var searchSelection: SettingsSearchEntry?
     @State private var isHeaderCollapsed = false
+    @State private var expandedTitleHeight: CGFloat = 0
     private var developerMode: DeveloperModeModel { .shared }
     /// Whether the Parental PIN has been entered for the Kids Profile currently
     /// open. View state, cleared when the profile changes.
@@ -1028,6 +1029,15 @@ private struct PlozziOSSettingsCompactMenu: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
+                Text("Settings")
+                    .font(.largeTitle.bold())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("settings-expanded-title")
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        expandedTitleHeight = height
+                    }
+
                 // Live media-share scan/enrich progress. Renders nothing when idle.
                 ShareScanStatusHeader(
                     status: appModel.shareScanStatus,
@@ -1257,10 +1267,10 @@ private struct PlozziOSSettingsCompactMenu: View {
         }
         .contentMargins(.top, 8, for: .scrollContent)
         .settingsPageSurface(
-            titleDisplayMode: isHeaderCollapsed ? .inline : .inlineLarge,
+            titleDisplayMode: .inline,
             horizontalInset: 16
         )
-        .navigationTitle("Settings")
+        .navigationTitle(isHeaderCollapsed ? "Settings" : "")
         .modifier(PlozziOSSettingsSearch(appModel: appModel) { searchSelection = $0 })
         .navigationDestination(item: $searchSelection) { entry in
             PlozziOSSettingsSearchDestination(
@@ -1269,11 +1279,10 @@ private struct PlozziOSSettingsCompactMenu: View {
         }
         .onChange(of: appModel.profiles.activeProfileID) { _, _ in searchSelection = nil }
         .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y + geometry.contentInsets.top > 12
+            geometry.contentOffset.y + geometry.contentInsets.top > expandedTitleHeight
         } action: { _, collapsed in
             isHeaderCollapsed = collapsed
         }
-
         .onChange(of: appModel.profiles.activeProfileID) { _, _ in isParentalUnlocked = false }
         .onChange(of: appModel.profiles.parentalPIN) { _, _ in isParentalUnlocked = false }
         .navigationDestination(isPresented: $showMetadata) {
@@ -1303,7 +1312,7 @@ private struct PlozziOSSettingsSearch: ViewModifier {
 
     func body(content: Content) -> some View {
         Group {
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom == .phone {
                 searchableContent(content)
                     .toolbar { DefaultToolbarItem(kind: .search, placement: .bottomBar) }
             } else {
@@ -1335,7 +1344,12 @@ private struct PlozziOSSettingsSearch: ViewModifier {
                     .background { SettingsPageBackground() }
                 }
             }
-            .searchable(text: $query, isPresented: $isPresented, prompt: "Search settings")
+            .searchable(
+                text: $query, isPresented: $isPresented,
+                placement: UIDevice.current.userInterfaceIdiom == .phone
+                    ? .automatic : .navigationBarDrawer(displayMode: .always),
+                prompt: "Search settings"
+            )
         if UIDevice.current.userInterfaceIdiom == .phone {
             searchable
         } else {

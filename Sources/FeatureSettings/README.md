@@ -31,8 +31,13 @@ conversion; display refresh-rate matching is not an alias for transition fades;
 subtitle placement is distinct from audio/subtitle timing.
 
 iPhone on iOS 26 and later uses the system search toolbar item in the bottom
-bar; iPad keeps native search in the Settings sidebar. Earlier systems use
-SwiftUI's native search placement. TV uses the existing retained
+bar; iPad keeps the native search field visible in the Settings sidebar, with a
+compact navigation title. Earlier iPhone systems use SwiftUI's native search
+placement. Mobile results use plain native List rows,
+with shared title/breadcrumb keylines and no additional result-container inset.
+The compact Settings root places its large heading inside the scrolling content,
+below the toolbar. Scrolling past the heading shows the inline navigation title.
+TV uses the existing retained
 Settings page stack and native remote text entry. `SettingsSearchLanding` and
 `settingsSearchAnchor` reveal the existing control without changing its value.
 Native lazy List cells register their contained targets with

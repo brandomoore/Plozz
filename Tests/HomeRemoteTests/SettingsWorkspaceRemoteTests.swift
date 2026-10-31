@@ -12,6 +12,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         let result = app.buttons["settings-search-result-subtitle-size"]
         XCTAssertTrue(result.waitForExistence(timeout: 5), app.debugDescription)
         try focus(result, in: app)
+        capture("settings-search-suggestions", in: app)
         XCUIRemote.shared.press(.select)
         let size = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Text Size")).firstMatch
         XCTAssertTrue(size.waitForExistence(timeout: 5), app.debugDescription)
