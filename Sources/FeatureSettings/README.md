@@ -459,7 +459,9 @@ watch history and planning-list behavior are documented in
   credentials, and the loaded Home settings; catalog discovery is not treated
   as evidence that the actual Home content request succeeded.
   Continue Watching owns its merge and artwork controls. TV Hero owns its
-  enabled state, sources, sizing, rotation, ratings, and trailers. Row style has
+  enabled state, sources, sizing, rotation, ratings, and trailers. Its On/Off
+  preview cards use the shared settings selection style; Off previews the current
+  Classic or Showcase rows without changing that preference. Row style has
   Classic and Showcase preview cards independent of Hero, with Showcase
   sizing and ratings below. Standalone Showcase also exposes Discovery and its
   providers, respecting Kids policy. These controls map to existing persisted

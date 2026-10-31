@@ -15,6 +15,12 @@ struct ViewCustomizationFixture: View {
         if ProcessInfo.processInfo.arguments.contains("--preview-showcase") {
             models.heroSettingsModel.settings.style = .followsFocus
         }
+        if ProcessInfo.processInfo.arguments.contains("--preview-hero") {
+            models.heroSettingsModel.settings.immersiveRows =
+                !ProcessInfo.processInfo.arguments.contains("--preview-classic")
+            models.heroSettingsModel.settings.spotlightEnabled =
+                !ProcessInfo.processInfo.arguments.contains("--preview-hero-off")
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-episode-stills") {
             models.homeLibraryVisibilityModel.setContinueWatchingShowsSeriesArtwork(false)
         }
@@ -26,20 +32,26 @@ struct ViewCustomizationFixture: View {
 
     var body: some View {
         NavigationStack {
-            AppearanceDetailView(
-                librariesScope: ProfileLibrariesScope(
-                    accounts: [], activeProfile: .init(id: "fixture", name: "Viewer"),
-                    discoveredLibraries: .empty, refreshingLibraryAccountIDs: [],
-                    unreachableLibraryAccountIDs: [], reloadLibraries: {},
-                    homeVisibility: models.homeLibraryVisibilityModel,
-                    isAccountIncludedInActiveProfile: { _ in false },
-                    onSetAccountIncluded: { _, _ in }, onAddAccount: {},
-                    plexHomeUsersFetcher: { _ in [] }, onSelectPlexHomeUser: { _, _ in }
-                ),
-                settingsNavigation: navigation,
-                theme: models.themeModel, nightShift: models.nightShiftModel,
-                spoilers: models.spoilerModel
-            )
+            if ProcessInfo.processInfo.arguments.contains("--preview-hero") {
+                HomeHeroSettingsView(
+                    libraries: [], accounts: [], visibility: models.homeLibraryVisibilityModel
+                )
+            } else {
+                AppearanceDetailView(
+                    librariesScope: ProfileLibrariesScope(
+                        accounts: [], activeProfile: .init(id: "fixture", name: "Viewer"),
+                        discoveredLibraries: .empty, refreshingLibraryAccountIDs: [],
+                        unreachableLibraryAccountIDs: [], reloadLibraries: {},
+                        homeVisibility: models.homeLibraryVisibilityModel,
+                        isAccountIncludedInActiveProfile: { _ in false },
+                        onSetAccountIncluded: { _, _ in }, onAddAccount: {},
+                        plexHomeUsersFetcher: { _ in [] }, onSelectPlexHomeUser: { _, _ in }
+                    ),
+                    settingsNavigation: navigation,
+                    theme: models.themeModel, nightShift: models.nightShiftModel,
+                    spoilers: models.spoilerModel
+                )
+            }
         }
         .environment(models.musicPlayerModel)
         .environment(models.uiDensityModel)
@@ -50,6 +62,7 @@ struct ViewCustomizationFixture: View {
         .environment(models.appLanguageModel)
         .environment(models.contentRatingModel)
         .environment(models.heroSettingsModel)
+        .environment(models.heroBackgroundModel)
         .environment(\.plozzNavigationStyle, previewNavigationStyle)
         .environment(\.themePalette, .dark)
         .environment(\.colorScheme, .dark)

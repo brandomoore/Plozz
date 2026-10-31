@@ -1488,10 +1488,16 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         try focus(hero, in: app)
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(app.staticTexts["Hero"].waitForExistence(timeout: 5))
-        let enabledHero = app.switches["hero-enabled"]
-        XCTAssertEqual(enabledHero.label, "Show hero")
-        try focus(enabledHero, in: app)
-        if enabledHero.value as? String != "0" { XCUIRemote.shared.press(.select) }
+        let heroOn = app.buttons["home-hero-on"]
+        let heroOff = app.buttons["home-hero-off"]
+        XCTAssertTrue(heroOn.waitForExistence(timeout: 5))
+        XCTAssertTrue(heroOff.exists)
+        XCTAssertEqual(heroOn.label, "On")
+        XCTAssertEqual(heroOff.label, "Off")
+        try focus(heroOff, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(heroOff.isSelected)
+        XCTAssertFalse(heroOn.isSelected)
         XCUIRemote.shared.press(.menu)
         waitForEnabled(hero)
         XCTAssertEqual(hero.label, "Hero")
@@ -1508,8 +1514,11 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Pinned at top"].exists)
         try focus(hero, in: app)
         XCUIRemote.shared.press(.select)
-        try focus(enabledHero, in: app)
-        if enabledHero.value as? String != "1" { XCUIRemote.shared.press(.select) }
+        XCTAssertTrue(heroOff.isSelected)
+        try focus(heroOn, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(heroOn.isSelected)
+        XCTAssertFalse(heroOff.isSelected)
         XCUIRemote.shared.press(.menu)
         waitForEnabled(hero)
         XCTAssertEqual(hero.label, "Hero")

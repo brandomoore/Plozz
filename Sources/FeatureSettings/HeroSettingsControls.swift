@@ -56,15 +56,14 @@ public struct HeroSettingsControls: View {
 
     public var body: some View {
         @Bindable var hero = hero
+        #if os(tvOS)
+        HomeHeroEnabledPicker(settings: $hero.settings)
+        #else
         HeroSettingsGroup {
-            #if os(tvOS)
-            Toggle("Show hero", isOn: $hero.settings.spotlightEnabled)
-                .accessibilityIdentifier("hero-enabled")
-            #else
             Toggle("Show hero", isOn: $hero.settings.isEnabled)
                 .accessibilityIdentifier("hero-enabled")
-            #endif
         }
+        #endif
         if showsControls {
             HeroSettingsGroup {
                 HeroLogoSizeControl(size: $hero.settings.logoSize, textSize: $hero.settings.textSize, surface: .home)
