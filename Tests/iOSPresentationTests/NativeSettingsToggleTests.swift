@@ -136,16 +136,28 @@ final class NativeSettingsToggleTests: XCTestCase {
     }
 
     func testSearchGlowWavesHaveSmoothJoinsAndGradualEndpoints() {
-        for phase in stride(from: 0.0, through: 2 * .pi, by: .pi / 4) {
-            for time in stride(from: 0.0, through: SettingsSearchGlowMotion.duration, by: 0.1) {
-                let start = SettingsSearchGlowMotion.intensity(at: 0, time: time, phase: phase)
-                let end = SettingsSearchGlowMotion.intensity(at: 1, time: time, phase: phase)
-                XCTAssertEqual(start, end, accuracy: 0.000001)
-                let before = SettingsSearchGlowMotion.intensity(at: 1 - 0.0001, time: time, phase: phase)
-                let after = SettingsSearchGlowMotion.intensity(at: 0.0001, time: time, phase: phase)
-                XCTAssertEqual(start - before, after - end, accuracy: 0.000001,
-                               "Changing the starting phase must not expose a slope discontinuity.")
+        for size in [CGSize(width: 300, height: 100), CGSize(width: 744, height: 100)] {
+            let waves = SettingsSearchGlowMotion.waveCount(for: size)
+            for phase in stride(from: 0.0, through: 2 * .pi, by: .pi / 4) {
+                for time in stride(from: 0.0, through: SettingsSearchGlowMotion.duration, by: 0.1) {
+                    let start = SettingsSearchGlowMotion.intensity(at: 0, time: time, phase: phase, waves: waves)
+                    let end = SettingsSearchGlowMotion.intensity(at: 1, time: time, phase: phase, waves: waves)
+                    XCTAssertEqual(start, end, accuracy: 0.000001)
+                    let before = SettingsSearchGlowMotion.intensity(at: 1 - 0.00001, time: time, phase: phase, waves: waves)
+                    let after = SettingsSearchGlowMotion.intensity(at: 0.00001, time: time, phase: phase, waves: waves)
+                    XCTAssertEqual(start - before, after - end, accuracy: 0.000001,
+                                   "Changing the starting phase must not expose a slope discontinuity.")
+                }
             }
+            let samples = (0..<192).map {
+                SettingsSearchGlowMotion.intensity(at: Double($0) / 192, time: 0.7, phase: 0, waves: waves)
+            }
+            let peaks = samples.indices.filter {
+                samples[$0] > 0.5 && samples[$0] > samples[($0 + 191) % 192]
+                    && samples[$0] > samples[($0 + 1) % 192]
+            }
+            XCTAssertGreaterThanOrEqual(peaks.count, waves,
+                                        "Phone and tablet rows need multiple distinct, shorter waves.")
         }
         XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0), 0)
         XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration), 0)
@@ -249,19 +261,20 @@ final class NativeSettingsToggleTests: XCTestCase {
                 let contrasts = try edge.map { abs(try pixel(second, $0)[0] - background) }
                 let weakest = try XCTUnwrap(contrasts.min())
                 let strongest = try XCTUnwrap(contrasts.max())
-                XCTAssertGreaterThan(weakest, 12, "The entire halo must stay connected, not split into bright segments.")
-                XCTAssertLessThan(Double(strongest) / Double(max(1, weakest)), 2.6,
-                                  "The broad wave must not have a bright head and dim tail.")
+                XCTAssertGreaterThan(weakest, 8, "Dim troughs must fade smoothly rather than cut off.")
+                XCTAssertGreaterThan(Double(strongest) / Double(max(1, weakest)), 2.5,
+                                     "Smaller wave crests must stand out from the troughs, not form a uniform border.")
                 let center = CGPoint(x: bounds.midX, y: bounds.midY)
                 XCTAssertGreaterThan(
                     abs(try pixel(second, center)[0] - background),
                     abs(try pixel(first, center)[0] - background) + 3,
                     "The entire cue must ease in instead of appearing at full brightness."
                 )
-                let aboveSeam = CGPoint(x: bounds.maxX - 2, y: bounds.midY - 1)
-                let belowSeam = CGPoint(x: bounds.maxX - 2, y: bounds.midY + 1)
-                XCTAssertEqual(try pixel(second, aboveSeam)[0], try pixel(second, belowSeam)[0], accuracy: 3,
-                               "The circular gradient must not expose a join.")
+                let above = try pixel(second, CGPoint(x: bounds.maxX - 2, y: bounds.midY - 1))[0]
+                let middle = try pixel(second, CGPoint(x: bounds.maxX - 2, y: bounds.midY))[0]
+                let below = try pixel(second, CGPoint(x: bounds.maxX - 2, y: bounds.midY + 1))[0]
+                XCTAssertEqual(Double(middle), Double(above + below) / 2, accuracy: 3,
+                               "Traveling waves may slope across the edge, but must not expose a brightness jump.")
             } else {
                 XCTAssertEqual(movement, 0, "Reduced effects and inactive scenes must use a steady outline.")
             }

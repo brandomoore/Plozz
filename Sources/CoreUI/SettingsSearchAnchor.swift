@@ -233,10 +233,14 @@ enum SettingsSearchGlowMotion {
         return eased(time / 0.55) * eased((duration - time) / 0.9)
     }
 
-    static func intensity(at position: Double, time: Double, phase: Double) -> Double {
-        let swell = 0.5 + 0.5 * cos(2 * .pi * (position - time * 0.29) + phase)
-        let ripple = 0.5 + 0.5 * sin(2 * .pi * (2 * position - time * 0.63) + phase * 1.7)
-        return 0.20 + 0.34 * swell + 0.16 * ripple
+    static func waveCount(for size: CGSize) -> Int {
+        min(12, max(3, Int((2 * (size.width + size.height) / 180).rounded())))
+    }
+
+    static func intensity(at position: Double, time: Double, phase: Double, waves: Int) -> Double {
+        let swell = 0.5 + 0.5 * sin(2 * .pi * (Double(waves) * position - time * 0.85) + phase)
+        let ripple = 0.5 + 0.5 * sin(2 * .pi * (Double(waves + 3) * position + time * 0.57) + phase * 1.7)
+        return 0.035 + 0.64 * swell * swell + 0.20 * ripple * ripple
     }
 }
 
@@ -267,9 +271,16 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
                 GeometryReader { geometry in
                     let bounds = CGRect(origin: .zero, size: geometry.size)
                     let outline = shape.inset(by: 2).path(in: bounds)
+                    let waves = SettingsSearchGlowMotion.waveCount(for: geometry.size)
                     // Cache equal-distance contour pieces outside the frame-driven closure.
-                    let segments = (0..<192).map { index in
-                        outline.trimmedPath(from: CGFloat(index) / 192, to: CGFloat(index + 1) / 192)
+                    let segments = (0..<192).compactMap { index -> (path: Path, start: CGPoint, end: CGPoint, position: Double)? in
+                        let path = outline.trimmedPath(from: CGFloat(index) / 192, to: CGFloat(index + 1) / 192)
+                        var start: CGPoint?
+                        path.forEach { element in
+                            if case .move(to: let point) = element, start == nil { start = point }
+                        }
+                        guard let start, let end = path.currentPoint else { return nil }
+                        return (path, start, end, Double(index) / 192)
                     }
                     TimelineView(.animation(minimumInterval: 1.0 / 30, paused: finished)) { timeline in
                         let time = finished ? SettingsSearchGlowMotion.duration
@@ -281,12 +292,18 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
                             for (width, blur) in passes {
                                 context.drawLayer { layer in
                                     layer.addFilter(.blur(radius: blur))
-                                    for (index, segment) in segments.enumerated() {
-                                        let light = SettingsSearchGlowMotion.intensity(
-                                            at: (Double(index) + 0.5) / 192, time: time, phase: phase
+                                    for segment in segments {
+                                        let startLight = SettingsSearchGlowMotion.intensity(
+                                            at: segment.position, time: time, phase: phase, waves: waves
+                                        )
+                                        let endLight = SettingsSearchGlowMotion.intensity(
+                                            at: segment.position + 1.0 / 192, time: time, phase: phase, waves: waves
                                         )
                                         layer.stroke(
-                                            segment, with: .color(neutral.opacity(light)),
+                                            segment.path, with: .linearGradient(
+                                                Gradient(colors: [neutral.opacity(startLight), neutral.opacity(endLight)]),
+                                                startPoint: segment.start, endPoint: segment.end
+                                            ),
                                             style: StrokeStyle(lineWidth: width, lineCap: .butt)
                                         )
                                     }
