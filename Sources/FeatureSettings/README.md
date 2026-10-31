@@ -1,8 +1,9 @@
 # FeatureSettings
 
-Mobile customization lists apply the shared native switch style to both standard
-sections and grouped cards. Enabled switches keep the system green appearance
-instead of inheriting the page's monochrome navigation tint.
+Mobile customization choice groups use the same Settings cards and content
+insets, including contained groups such as Hero content sources. TV row sizing
+does not select a different mobile section style. Enabled switches keep the
+system green appearance instead of inheriting the page's monochrome navigation tint.
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
@@ -49,14 +50,19 @@ Settings page stack and native remote text entry. `SettingsSearchLanding` and
 `settingsSearchAnchor` reveal the existing control without changing its value.
 On mobile, the brief landing highlight covers the complete padded row, not just
 its label or picker. Grouped rows own the highlight and their corner clipping;
-standalone native List/Form rows use the native row background. The highlight
+standalone native List/Form rows use the native row background. The searched
+row installs a stable, binding-driven background before reveal: native List can
+retain an initially absent background during navigation even when the row's
+highlight state changes. Non-target rows retain their native background. The highlight
 does not intercept touches or change the setting.
-The three-second landing cue softly illuminates the row with two broad neutral
-reflections. Each drifts and changes strength independently, lighting the surface
+The three-second landing cue opens with a quick, soft brightness lift that blends
+into two broad neutral reflections within the first 0.8 seconds. Each reflection
+drifts and changes strength independently, lighting the surface
 and fine portions of its edge rather than drawing a continuously illuminated rim.
 The light fields scale with the row, including wide tablet rows, and start at a
 varied phase on each landing; nothing picks new random values between frames.
-A gradual shared envelope fades the cue in and out. Its inset drawing stays within
+A shared envelope eases the arrival in and gradually fades the entire cue out,
+without extending its duration. Its inset drawing stays within
 the row's corner shape, and its 30-fps timeline stops when the cue ends.
 Reduce Motion, reduced transparency/effects, and inactive scenes use a steady
 outline instead; TV continues to use native focus without this mobile effect.
@@ -65,7 +71,7 @@ do not also paint a smaller control highlight. Nested anchors preserve a child's
 active highlight, and nested row owners consume it without lighting up their parents.
 Native lazy List cells and sections register their contained targets with
 `settingsSearchGroup`; the selected control is then revealed within that container.
-Hero source sections register both their toggle and dependent targets, so offscreen
+Hero source groups register both their toggle and dependent targets, so offscreen
 Collections and other sources can be created before their landing cue starts.
 Every indexed entry needs an available route and a matching control anchor.
 Disabled prerequisite controls can register dependent targets with `fallbackFor`;

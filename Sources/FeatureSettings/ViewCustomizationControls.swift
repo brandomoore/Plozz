@@ -14,11 +14,7 @@ struct ViewPreferenceChoiceGroup<Content: View>: View {
         }
         .environment(\.settingsFormRowsFlushLeading, false)
         #else
-        if rowSize == .contained {
-            Section(content: content)
-        } else {
-            SettingsSectionGroup(content: content)
-        }
+        SettingsSectionGroup(content: content)
         #endif
     }
 }

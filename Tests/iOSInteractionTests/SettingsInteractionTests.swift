@@ -160,6 +160,85 @@ final class SettingsInteractionTests: XCTestCase {
                       "Search must open the real Hero page, including its nested settings.")
     }
 
+    func testSettingsSearchHighlightsGroupedRowsInSheet() throws {
+        for (query, id, target) in [
+            ("collections", "hero-source-collection", app.switches["Collections"]),
+            ("watchlist", "hero-watchlist-rotation", app.switches["Prefer less recently shown Watchlist items"]),
+            ("collections", "artwork-view-collections", app.buttons["artwork-view-collections"]),
+            ("resume playback", "ask-before-resuming", app.switches["playback-ask-before-resuming"])
+        ] {
+            try verifySheetSearchHighlight(query: query, id: id, target: target)
+            if id == "hero-source-collection" {
+                XCTAssertEqual(target.value as? String, "0", "Search must not enable Collections.")
+                let random = app.switches["Random from Library"]
+                let libraries = app.buttons["hero-settings-libraries"]
+                XCTAssertTrue(libraries.exists)
+                random.switches.firstMatch.tap()
+                XCTAssertFalse(libraries.exists, "Tapping the native switch must not activate its neighboring navigation row.")
+                XCTAssertTrue(app.navigationBars["Hero content sources"].exists)
+                random.switches.firstMatch.tap()
+                libraries.tap()
+                XCTAssertTrue(app.navigationBars["Random libraries"].waitForExistence(timeout: 5))
+            }
+            app.terminate()
+        }
+    }
+
+    func testSettingsSearchHighlightsNativeRowInSheet() throws {
+        try verifySheetSearchHighlight(query: "language", id: "language", target: app.buttons["settings-category-language"])
+    }
+
+    private func verifySheetSearchHighlight(query: String, id: String, target: XCUIElement) throws {
+        launchNavigation(directPresentation: true)
+        app.buttons["fixture-open-settings"].tap()
+        let field = app.searchFields.firstMatch
+        if !field.waitForExistence(timeout: 2) { app.buttons["Search"].tap() }
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(query)
+        let result = app.buttons["settings-search-result-\(id)"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5), app.debugDescription)
+        result.tap()
+        // A polling wait adds at least a second after XCTest's tap-idle wait,
+        // which can consume the complete three-second cue on iPad.
+        XCTAssertTrue(target.exists, app.debugDescription)
+        let frame = target.frame.insetBy(dx: 0, dy: -8)
+        XCTAssertFalse(frame.isEmpty)
+        let arrival = app.screenshot().image
+        Thread.sleep(forTimeInterval: 3.2)
+        let settled = app.screenshot().image
+        XCTAssertEqual(target.frame.insetBy(dx: 0, dy: -8), frame,
+                       "Compare the same stationary row, not navigation or keyboard movement.")
+        for (name, image) in [("arrival", arrival), ("settled", settled)] {
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "settings-search-sheet-\(id)-\(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        func pixels(_ image: UIImage) throws -> [UInt8] {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let cropped = UIGraphicsImageRenderer(size: frame.size, format: format).image { _ in
+                image.draw(at: CGPoint(x: -frame.minX, y: -frame.minY))
+            }
+            let cgImage = try XCTUnwrap(cropped.cgImage)
+            var bytes = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &bytes, width: cgImage.width, height: cgImage.height, bitsPerComponent: 8,
+                bytesPerRow: cgImage.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+            return bytes
+        }
+        let before = try pixels(arrival)
+        let after = try pixels(settled)
+        let brighter = stride(from: 0, to: before.count, by: 4).filter {
+            Int(before[$0]) - Int(after[$0]) > 10
+        }.count
+        XCTAssertGreaterThan(brighter, 500, "Search must visibly light the target in the real sheet, not merely reveal it.")
+    }
+
     func testProtectedSearchResultOpensAfterPINWithoutLosingTheDestination() {
         launch(settingsRoot: true, arguments: ["--kids-settings", "--parental-pin"])
         let field = app.searchFields.firstMatch

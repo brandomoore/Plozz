@@ -151,11 +151,28 @@ final class NativeSettingsToggleTests: XCTestCase {
         }
         XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0), 0)
         XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration), 0)
-        XCTAssertLessThan(SettingsSearchGlowMotion.opacity(at: 0.01), 0.002)
+        XCTAssertLessThan(SettingsSearchGlowMotion.opacity(at: 0.01), 0.015)
         XCTAssertLessThan(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration - 0.01), 0.002)
-        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0.7), 1)
-        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 1.35), 1,
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0.9), 1)
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 1.55), 1,
                        "Spatial movement comparisons must not mistake a global fade for moving reflections.")
+    }
+
+    func testSearchArrivalPopBlendsIntoReflectionsWithoutExtendingCue() {
+        XCTAssertEqual(SettingsSearchGlowMotion.duration, 3)
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0.16), 1)
+        XCTAssertEqual(SettingsSearchGlowMotion.arrivalBoost(at: 0.16), 1)
+        XCTAssertEqual(SettingsSearchGlowMotion.arrivalBoost(at: 0.8), 0)
+        XCTAssertEqual(SettingsSearchGlowMotion.arrivalBoost(at: 3), 0)
+        XCTAssertGreaterThan(SettingsSearchGlowMotion.arrivalBoost(at: 0.1601), 0.999999)
+        XCTAssertLessThan(SettingsSearchGlowMotion.arrivalBoost(at: 0.7999), 0.000001,
+                          "The brightness lift must join the existing reflections without a visible step.")
+        for step in 1...300 {
+            let before = SettingsSearchGlowMotion.arrivalBoost(at: Double(step - 1) / 100)
+            let after = SettingsSearchGlowMotion.arrivalBoost(at: Double(step) / 100)
+            XCTAssertLessThanOrEqual(after, before, "The initial pop must decay once, not pulse repeatedly.")
+            XCTAssertLessThan(before - after, 0.025)
+        }
     }
 
     func testSearchReflectionsDriftGentlyAndIndependently() {
@@ -243,7 +260,7 @@ final class NativeSettingsToggleTests: XCTestCase {
             let bounds = model.controlBounds
             XCTAssertEqual(bounds.width, width)
             let first = capture()
-            try await Task.sleep(for: .milliseconds(550))
+            try await Task.sleep(for: .milliseconds(750))
             let second = capture()
             try await Task.sleep(for: .milliseconds(650))
             let third = capture()
@@ -256,11 +273,13 @@ final class NativeSettingsToggleTests: XCTestCase {
                 let before = try pixel(first, point)
                 let after = try pixel(second, point)
                 movement += abs(before[0] - after[0])
+                XCTAssertLessThanOrEqual((before.max() ?? 0) - (before.min() ?? 0), 2,
+                                         "The arrival pop must remain neutral in both appearances.")
                 XCTAssertLessThanOrEqual((after.max() ?? 0) - (after.min() ?? 0), 2,
                                          "The search glow must remain neutral in both appearances.")
             }
             if animates {
-                XCTAssertGreaterThan(movement, 40, "The reflection must gently appear across the row.")
+                XCTAssertGreaterThan(movement, 40, "The arrival pop must visibly settle into the reflections.")
                 let background = light ? 255 : 0
                 var brightened = 0
                 var dimmed = 0
@@ -285,9 +304,9 @@ final class NativeSettingsToggleTests: XCTestCase {
                                      "The broad surface reflection must be visible, not just its edge.")
                 let center = CGPoint(x: bounds.midX, y: bounds.midY)
                 XCTAssertGreaterThan(
-                    abs(try pixel(second, center)[0] - background),
-                    abs(try pixel(first, center)[0] - background) + 3,
-                    "The entire cue must ease in instead of appearing at full brightness."
+                    abs(try pixel(first, center)[0] - background),
+                    abs(try pixel(second, center)[0] - background) + 12,
+                    "The initial brightness pop must be stronger than the settled reflection."
                 )
                 let above = try pixel(second, CGPoint(x: bounds.maxX - 2, y: bounds.midY - 1))[0]
                 let middle = try pixel(second, CGPoint(x: bounds.maxX - 2, y: bounds.midY))[0]
@@ -301,6 +320,8 @@ final class NativeSettingsToggleTests: XCTestCase {
                           CGPoint(x: bounds.minX + 1, y: bounds.minY + 1)] {
                 XCTAssertEqual(try pixel(second, point)[0], light ? 255 : 0,
                                "Glow must stay inside the row, including its rounded corners.")
+                XCTAssertEqual(try pixel(first, point)[0], light ? 255 : 0,
+                               "The brighter arrival must also stay inside the row.")
             }
             for (name, image) in [("arrival", first), ("reflection-first", second), ("reflection-later", third)] {
                 let attachment = XCTAttachment(image: image)
@@ -308,7 +329,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }
-            try await Task.sleep(for: .milliseconds(1850))
+            try await Task.sleep(for: .milliseconds(1650))
             if animates {
                 let expired = capture()
                 for point in edge {
@@ -1382,7 +1403,7 @@ final class NativeSettingsToggleTests: XCTestCase {
         }
     }
 
-    func testHeroSourceSearchRevealsAndHighlightsOffscreenNativeRows() async throws {
+    func testHeroSourceSearchRevealsAndHighlightsOffscreenGroups() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -1441,7 +1462,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                     try await settle(window)
                 }
                 XCTAssertEqual(model.searchRequest?.revealed, true,
-                               "\(target) must reveal even when its native section starts below the viewport.")
+                               "\(target) must reveal even when its group starts below the viewport.")
                 try await Task.sleep(for: .milliseconds(700))
                 let highlighted = capture()
                 let attachment = XCTAttachment(image: highlighted)
@@ -1460,7 +1481,7 @@ final class NativeSettingsToggleTests: XCTestCase {
         }
     }
 
-    func testHeroSourceGroupsKeepNativeSwitchesSeparateFromNavigationRows() async throws {
+    func testHeroSourceGroupsUseSharedInsetsAndKeepControlsIndependent() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -1498,10 +1519,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                 try assertGreenOnState(control, in: window)
             }
             let random = try XCTUnwrap(switches.indices.contains(2) ? switches[2] : nil)
-            var ancestor = random.superview
-            while ancestor != nil && !(ancestor is UICollectionViewCell) { ancestor = ancestor?.superview }
-            let cell = try XCTUnwrap(ancestor as? UICollectionViewCell)
-            XCTAssertLessThan(cell.bounds.height, 90, "The source and its navigation link must be separate native rows.")
+            let sourceTrailing = random.convert(random.bounds, to: window).maxX
             random.setOn(false, animated: false)
             random.sendActions(for: .valueChanged)
             try await settle(window)
@@ -1512,6 +1530,19 @@ final class NativeSettingsToggleTests: XCTestCase {
             XCTAssertFalse(collapsed.contains("Choose libraries"), collapsed)
             XCTAssertTrue(collapsed.contains("Choose collections"), collapsed)
             XCTAssertTrue(collapsed.contains("Discovery providers"), collapsed)
+
+            window.rootViewController = UIHostingController(rootView: NavigationStack {
+                SettingsPageList {
+                    SettingsSectionGroup {
+                        Toggle("Random from Library", isOn: .constant(true))
+                    }
+                }
+            }
+            .environment(\.colorScheme, .dark))
+            try await settle(window)
+            let reference = try XCTUnwrap(listedSwitches(in: window).first)
+            XCTAssertEqual(sourceTrailing, reference.convert(reference.bounds, to: window).maxX, accuracy: 1,
+                           "Hero sources must use the same content inset as a standard Settings group.")
         }
     }
 

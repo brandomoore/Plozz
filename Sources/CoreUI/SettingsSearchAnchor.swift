@@ -144,9 +144,11 @@ private struct SettingsSearchAnchor: ViewModifier {
             }
             #if os(iOS)
             .transformPreference(SettingsSearchHighlightKey.self) { $0 = $0 || highlighted }
+            // Native List can retain its initial background across a navigation push.
+            // Install the target's background once, then update its bindings in place.
             .listRowBackground(
-                highlighted && isNativeListRow && !rowOwnsHighlight
-                    ? SettingsSearchGlow(shape: Rectangle()) : nil
+                request?.targetID == id && !rowOwnsHighlight && (request?.revealed == false || highlighted)
+                    ? SettingsSearchNativeRowHighlight(highlighted: $highlighted, isNativeListRow: $isNativeListRow) : nil
             )
             #endif
             .task(id: canReveal) {
@@ -226,11 +228,16 @@ enum SettingsSearchGlowMotion {
     static let duration = 3.0
 
     static func opacity(at time: Double) -> Double {
-        func eased(_ value: Double) -> Double {
-            let t = min(1, max(0, value))
-            return t * t * (3 - 2 * t)
-        }
-        return eased(time / 0.55) * eased((duration - time) / 0.9)
+        eased(time / 0.16) * eased((duration - time) / 0.9)
+    }
+
+    static func arrivalBoost(at time: Double) -> Double {
+        1 - eased((time - 0.16) / 0.64)
+    }
+
+    private static func eased(_ value: Double) -> Double {
+        let t = min(1, max(0, value))
+        return t * t * (3 - 2 * t)
     }
 
     struct Reflection {
@@ -297,8 +304,9 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
                         let time = finished ? SettingsSearchGlowMotion.duration
                             : timeline.date.timeIntervalSince(startedAt)
                         Canvas { context, _ in
+                            let arrival = SettingsSearchGlowMotion.arrivalBoost(at: time)
                             context.opacity = SettingsSearchGlowMotion.opacity(at: time)
-                            context.fill(surface, with: .color(neutral.opacity(0.045)))
+                            context.fill(surface, with: .color(neutral.opacity(0.045 + 0.11 * arrival)))
                             let lights = SettingsSearchGlowMotion.reflections(at: time, phase: phase).map { reflection in
                                 let gradient = Gradient(stops: (0...24).map { index in
                                     let distance = Double(index) / 24
@@ -311,7 +319,7 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
                             }
                             for pass in passes {
                                 context.drawLayer { layer in
-                                    layer.opacity = pass.opacity
+                                    layer.opacity = pass.opacity * (1 + 0.35 * arrival)
                                     if pass.blur > 0 { layer.addFilter(.blur(radius: pass.blur)) }
                                     layer.clip(to: pass.mask)
                                     // Paint the same broad light field through the surface and its fine edge.
@@ -340,6 +348,17 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
                 do { try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.duration)) } catch { return }
                 finished = true
             }
+    }
+}
+
+private struct SettingsSearchNativeRowHighlight: View {
+    @Binding var highlighted: Bool
+    @Binding var isNativeListRow: Bool
+
+    var body: some View {
+        if highlighted && isNativeListRow {
+            SettingsSearchGlow(shape: Rectangle())
+        }
     }
 }
 
