@@ -168,6 +168,20 @@ struct ProductionHomeFixture: View {
                 }
                 .environment(\.openWatchlist, { selection = .watchlist })
                 .task {
+                    guard ProcessInfo.processInfo.arguments.contains("--hero-showcase-navigation-probe"),
+                          isPinned || ProcessInfo.processInfo.arguments.contains("--top-bar-home") else { return }
+                    do {
+                        try await Task.sleep(for: .seconds(3))
+                        selection = .settings
+                        try await Task.sleep(for: .seconds(2))
+                        selection = .home
+                        try await Task.sleep(for: .seconds(3))
+                        await Self.probeHeroShowcaseFocus()
+                    } catch {
+                        print("HERO_STAGE_PROBE navigation cancelled: \(error)")
+                    }
+                }
+                .task {
                     guard ProcessInfo.processInfo.arguments.contains("--watchlist-entry-probe"),
                           isPinned || ProcessInfo.processInfo.arguments.contains("--top-bar-home") else { return }
                     do {
@@ -305,6 +319,31 @@ struct ProductionHomeFixture: View {
         }
         guard let stage, let system = UIFocusSystem.focusSystem(for: stage.view) else {
             print("HERO_STAGE_PROBE missing stage or focus system")
+            return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--hero-showcase-navigation-probe") {
+            var passed = stage.state.isExpanded && stage.contains(system.focusedItem, in: stage.hero)
+            print("HERO_STAGE_PROBE navigation-entry heroFocus=\(passed)")
+            for expanded in [false, true, false, true, false, true] {
+                let press = HeroBoundaryProbePress(expanded ? .upArrow : .downArrow)
+                guard let recognizer = stage.view.gestureRecognizers?.first(where: {
+                    $0.allowedPressTypes.contains(NSNumber(value: press.type.rawValue))
+                }), stage.gestureRecognizer(recognizer, shouldReceive: press) else {
+                    print("HERO_STAGE_PROBE missing eligible boundary recognizer")
+                    return
+                }
+                recognizer.pressesBegan([press], with: UIPressesEvent())
+                let source = system.focusedItem
+                let heading: UIFocusHeading = expanded ? .up : .down
+                let blocked = !stage.allowsFocusUpdate(from: source, to: nil, heading: heading)
+                recognizer.pressesEnded([press], with: UIPressesEvent())
+                do { try await Task.sleep(for: .milliseconds(700)) }
+                catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                let focused = stage.contains(system.focusedItem, in: expanded ? stage.hero : stage.rows)
+                passed = passed && blocked && focused && stage.state.isExpanded == expanded
+                print("HERO_STAGE_BOUNDARY expanded=\(expanded) blocksPendingEscape=\(blocked) correctFocus=\(focused)")
+            }
+            print("HERO_STAGE_PROBE complete passed=\(passed)")
             return
         }
         var foreground: UIView?
@@ -455,6 +494,15 @@ struct ProductionHomeFixture: View {
         }
         print("HERO_STAGE_PROBE complete passed=\(passed)")
     }
+}
+
+private final class HeroBoundaryProbePress: UIPress {
+    private let pressedType: UIPress.PressType
+    init(_ type: UIPress.PressType) {
+        pressedType = type
+        super.init()
+    }
+    override var type: UIPress.PressType { pressedType }
 }
 
 private struct ProductionHomeContent: View {

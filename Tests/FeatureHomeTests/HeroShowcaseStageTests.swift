@@ -7,6 +7,53 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testPendingBoundaryHandoffCannotReleaseDirectionalFocusToNavigation() {
+        for expanded in [false, true] {
+            let stage = HeroShowcaseStage.Controller(
+                state: HeroShowcaseState(), hero: AnyView(Color.clear),
+                showcase: AnyView(Color.clear), rows: AnyView(Color.clear)
+            )
+            stage.loadViewIfNeeded()
+            stage.present(expanded: expanded, focus: false)
+            defer { stage.stopAnimations() }
+            let source = StageVirtualFocusItem(parent: expanded ? stage.hero.view : stage.rows.view)
+            let navigation = StageVirtualFocusItem(parent: UIView())
+            let heading: UIFocusHeading = expanded ? .down : .up
+            XCTAssertFalse(stage.allowsFocusUpdate(from: source, to: navigation, heading: heading))
+            XCTAssertFalse(
+                stage.allowsFocusUpdate(from: source, to: navigation, heading: heading),
+                "A second focus proposal before the deferred handoff must not escape to navigation."
+            )
+            XCTAssertTrue(stage.allowsFocusUpdate(
+                from: source, to: navigation, heading: .left
+            ), "Unrelated navigation must remain available.")
+            XCTAssertTrue(stage.allowsFocusUpdate(
+                from: source, to: source, heading: []
+            ), "The explicit destination request must not be blocked.")
+        }
+    }
+
+    func testBoundaryGatePreservesNavigationAndDeeperRowMovement() {
+        let stage = HeroShowcaseStage.Controller(
+            state: HeroShowcaseState(), hero: AnyView(Color.clear),
+            showcase: AnyView(Color.clear), rows: AnyView(Color.clear)
+        )
+        stage.loadViewIfNeeded()
+        defer { stage.stopAnimations() }
+        let hero = StageVirtualFocusItem(parent: stage.hero.view)
+        let row = StageVirtualFocusItem(parent: stage.rows.view)
+        let navigation = StageVirtualFocusItem(parent: UIView())
+        XCTAssertTrue(stage.allowsFocusUpdate(from: navigation, to: hero, heading: .down))
+        XCTAssertTrue(stage.allowsFocusUpdate(from: hero, to: navigation, heading: .up))
+        XCTAssertTrue(stage.allowsFocusUpdate(from: hero, to: hero, heading: .down))
+        stage.canEnterRows = { false }
+        XCTAssertTrue(stage.allowsFocusUpdate(from: hero, to: navigation, heading: .down))
+        stage.present(expanded: false, focus: false)
+        stage.canReturn = { false }
+        XCTAssertTrue(stage.allowsFocusUpdate(from: row, to: row, heading: .up))
+        XCTAssertTrue(stage.allowsFocusUpdate(from: row, to: navigation, heading: .left))
+    }
+
     func testScrollAndCrossfadeStartWhenTheTransactionIsSubmitted() throws {
         let stage = HeroShowcaseStage.Controller(
             state: HeroShowcaseState(), hero: AnyView(Color.clear),

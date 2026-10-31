@@ -432,21 +432,30 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         }
 
         override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
-            guard !requestingFocus else { return true }
-            let fromHero = contains(context.previouslyFocusedItem, in: hero)
-            let fromRows = contains(context.previouslyFocusedItem, in: rows)
-            if state.isExpanded, fromHero, context.focusHeading.contains(.down),
-               !contains(context.nextFocusedItem, in: hero), canEnterRows() {
-                heroTarget = context.previouslyFocusedItem
+            allowsFocusUpdate(
+                from: context.previouslyFocusedItem, to: context.nextFocusedItem, heading: context.focusHeading
+            ) && super.shouldUpdateFocus(in: context)
+        }
+
+        func allowsFocusUpdate(
+            from previous: (any UIFocusItem)?, to next: (any UIFocusItem)?, heading: UIFocusHeading
+        ) -> Bool {
+            // A queued handoff still owns this boundary. Only its eventual
+            // non-directional focus request may bypass geometric navigation.
+            let fromHero = contains(previous, in: hero)
+            let fromRows = contains(previous, in: rows)
+            if state.isExpanded, fromHero, heading.contains(.down),
+               !contains(next, in: hero), canEnterRows() {
+                heroTarget = previous
                 scheduleHandoff(expanded: false)
                 return false
             }
-            if !state.isExpanded, fromRows, context.focusHeading.contains(.up), canReturn() {
-                rowTarget = context.previouslyFocusedItem
+            if !state.isExpanded, fromRows, heading.contains(.up), canReturn() {
+                rowTarget = previous
                 scheduleHandoff(expanded: true)
                 return false
             }
-            return super.shouldUpdateFocus(in: context)
+            return true
         }
 
         override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {

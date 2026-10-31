@@ -1083,6 +1083,9 @@ The peeking rows are not eligible for focus while the featured hero is active,
 so first entry cannot collapse it. Boundary-only press and indirect-swipe
 recognizers request the other host even when its hidden content provides no
 geometric focus candidate; deeper-row and horizontal navigation remain native.
+While a boundary handoff waits for the current focus transaction to finish,
+further proposals in that direction remain blocked. They must not focus
+navigation before the deferred request can restore the hero or enter the rows.
 The outgoing hero foreground, incoming Showcase details, and rows share one
 native scroll distance, easing, and start time. Their relative positions remain
 fixed throughout the move and rapid reversals; only their opacity changes as
@@ -1125,6 +1128,10 @@ native focus and invokes the same boundary handoff used by remote input. It
 checks the actual `UIFocusSystem.focusedItem` in the running app scene, not only
 the requested destination. This is separate from physical press/swipe delivery
 and presented-frame measurements in the remote test suite.
+`--hero-showcase-navigation-probe` first changes destinations and returns Home
+through pinned or top-bar navigation, then supplies presses to the boundary
+recognizer and checks actual focus while rejecting escape during each queued
+handoff. It covers focus ordering, not physical remote delivery or geometry.
 The separate `--hero-showcase-geometry-probe` directly changes presentation
 without requesting focus and verifies the artwork's physical screen edges.
 Use it with `--pinned-home`, `--native-sidebar-home`, and `--top-bar-home` to
