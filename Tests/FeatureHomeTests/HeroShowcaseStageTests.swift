@@ -7,6 +7,32 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testRowsCannotTakeInitialFocusAndBoundaryInputOnlyChangesTheTopEdge() {
+        let stage = HeroShowcaseStage.Controller(
+            state: HeroShowcaseState(), hero: AnyView(Color.clear),
+            showcase: AnyView(Color.clear), rows: AnyView(Color.clear)
+        )
+        stage.loadViewIfNeeded()
+        let hero = StageVirtualFocusItem(parent: stage.hero.view)
+        let row = StageVirtualFocusItem(parent: stage.rows.view)
+        XCTAssertFalse(stage.rows.view.isUserInteractionEnabled)
+        XCTAssertTrue(stage.rows.view.accessibilityElementsHidden)
+        XCTAssertEqual(stage.boundaryDestination(for: .down, from: hero), false)
+        XCTAssertNil(stage.boundaryDestination(for: .up, from: hero))
+        XCTAssertNil(stage.boundaryDestination(for: .down, from: row))
+        stage.canEnterRows = { false }
+        XCTAssertNil(stage.boundaryDestination(for: .down, from: hero))
+        stage.present(expanded: false, focus: false)
+        XCTAssertTrue(stage.rows.view.isUserInteractionEnabled)
+        XCTAssertFalse(stage.rows.view.accessibilityElementsHidden)
+        XCTAssertEqual(stage.boundaryDestination(for: .up, from: row), true)
+        XCTAssertNil(stage.boundaryDestination(for: .down, from: row))
+        XCTAssertNil(stage.boundaryDestination(for: .left, from: row))
+        stage.canReturn = { false }
+        XCTAssertNil(stage.boundaryDestination(for: .up, from: row))
+        stage.stopAnimations()
+    }
+
     func testEveryLayerFillsTheViewportBeforeAndAfterContentUpdates() {
         let content = AnyView(Color.clear.frame(width: 80, height: 40))
         let stage = HeroShowcaseStage.Controller(

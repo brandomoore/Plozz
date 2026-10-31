@@ -1,5 +1,6 @@
 #if os(tvOS)
 import CoreModels
+import CoreNetworking
 import CoreUI
 import Observation
 import SwiftUI
@@ -60,7 +61,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             hero: hosted(hero, context), showcase: hosted(showcase, context), rows: hosted(rowContent, context)
         )
         controller.canReturn = { model.activeIndex(in: rows) == 0 }
-        controller.canEnterRows = { !rows.isEmpty }
+        controller.canEnterRows = { rows.first.map { !$0.isPlaceholder } ?? false }
         controller.updatePeek(firstRowHeight: model.scrollOrigin(in: rows))
         state.returnToHero = { [weak controller] in controller?.resetToFeatured() }
     }
@@ -82,7 +83,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
     }
 
     @MainActor
-    final class Controller: UIViewController {
+    final class Controller: UIViewController, UIGestureRecognizerDelegate {
         let state: HeroShowcaseState
         let hero: UIHostingController<AnyView>
         let showcase: UIHostingController<AnyView>
@@ -130,6 +131,22 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             showcase.view.alpha = 0
             showcase.view.isUserInteractionEnabled = false
             showcase.view.accessibilityElementsHidden = true
+            rows.view.isUserInteractionEnabled = !state.isExpanded
+            rows.view.accessibilityElementsHidden = state.isExpanded
+            // A hidden destination produces no geometric focus update, and
+            // SwiftUI can consume arrows before they reach pressesBegan.
+            let press = BoundaryPressRecognizer()
+            press.delegate = self
+            press.onMove = { [weak self] heading in self?.beginBoundaryMove(heading) }
+            view.addGestureRecognizer(press)
+            for direction: UISwipeGestureRecognizer.Direction in [.up, .down] {
+                let swipe = UISwipeGestureRecognizer(target: self, action: #selector(swiped(_:)))
+                swipe.direction = direction
+                swipe.allowedPressTypes = []
+                swipe.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
+                swipe.delegate = self
+                view.addGestureRecognizer(swipe)
+            }
         }
 
         override func viewDidLayoutSubviews() {
@@ -180,15 +197,39 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             }
         }
 
-        override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        func boundaryDestination(for heading: UIFocusHeading, from focused: (any UIFocusItem)?) -> Bool? {
+            if state.isExpanded, heading == .down, canEnterRows(), contains(focused, in: hero) { return false }
+            if !state.isExpanded, heading == .up, canReturn(), contains(focused, in: rows) { return true }
+            return nil
+        }
+
+        func beginBoundaryMove(_ heading: UIFocusHeading) {
             let focused = UIFocusSystem.focusSystem(for: view)?.focusedItem
-            if !state.isExpanded, canReturn(), contains(focused, in: rows),
-               presses.contains(where: { $0.type == .upArrow }) {
-                rowTarget = focused
-                scheduleHandoff(expanded: true)
-                return
-            }
-            super.pressesBegan(presses, with: event)
+            guard let expanded = boundaryDestination(for: heading, from: focused) else { return }
+            if expanded { rowTarget = focused } else { heroTarget = focused }
+            scheduleHandoff(expanded: expanded)
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive press: UIPress) -> Bool {
+            guard gestureRecognizer is BoundaryPressRecognizer,
+                  press.type == .upArrow || press.type == .downArrow else { return false }
+            let heading: UIFocusHeading = press.type == .upArrow ? .up : .down
+            return boundaryDestination(
+                for: heading, from: UIFocusSystem.focusSystem(for: view)?.focusedItem
+            ) != nil
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let swipe = gestureRecognizer as? UISwipeGestureRecognizer else { return true }
+            return boundaryDestination(
+                for: swipe.direction == .up ? .up : .down,
+                from: UIFocusSystem.focusSystem(for: view)?.focusedItem
+            ) != nil
+        }
+
+        @objc private func swiped(_ recognizer: UISwipeGestureRecognizer) {
+            guard recognizer.state == .ended else { return }
+            beginBoundaryMove(recognizer.direction == .up ? .up : .down)
         }
 
         func contains(_ target: (any UIFocusItem)?, in host: UIViewController) -> Bool {
@@ -231,7 +272,9 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             let changed = state.isExpanded != expanded
             state.setExpanded(expanded)
             hero.view.isUserInteractionEnabled = expanded
+            rows.view.isUserInteractionEnabled = !expanded
             hero.view.accessibilityElementsHidden = !expanded
+            rows.view.accessibilityElementsHidden = expanded
             showcase.view.accessibilityElementsHidden = expanded
             let animate = changed && !UIAccessibility.isReduceMotionEnabled
             moveRows(to: expanded ? peek : 0, animated: animate)
@@ -239,9 +282,15 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             dissolve(showcase.view, to: expanded ? 0 : 1, animated: animate)
             if focus {
                 view.layoutIfNeeded()
-                let system = UIFocusSystem.focusSystem(for: view)
-                system?.requestFocusUpdate(to: self)
-                system?.updateFocusIfNeeded()
+                guard let system = UIFocusSystem.focusSystem(for: view) else {
+                    PlozzLog.app.debug("Hero Showcase focus system is unavailable")
+                    return
+                }
+                system.requestFocusUpdate(to: self)
+                system.updateFocusIfNeeded()
+                if !contains(system.focusedItem, in: expanded ? hero : rows) {
+                    PlozzLog.app.debug("Hero Showcase boundary focus request was not accepted")
+                }
             }
         }
 
@@ -303,6 +352,27 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             hero.view.layer.removeAnimation(forKey: "plozz.hero-showcase.opacity")
             showcase.view.layer.removeAnimation(forKey: "plozz.hero-showcase.opacity")
         }
+    }
+
+    private final class BoundaryPressRecognizer: UIGestureRecognizer {
+        var onMove: ((UIFocusHeading) -> Void)?
+
+        init() {
+            super.init(target: nil, action: nil)
+            allowedPressTypes = [UIPress.PressType.upArrow, .downArrow].map { NSNumber(value: $0.rawValue) }
+            allowedTouchTypes = []
+        }
+
+        override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+            guard let press = presses.first else { state = .failed; return }
+            state = .began
+            onMove?(press.type == .upArrow ? .up : .down)
+        }
+
+        override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent) {}
+        override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent) { state = .ended }
+        override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent) { state = .cancelled }
+        override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
     }
 }
 #endif

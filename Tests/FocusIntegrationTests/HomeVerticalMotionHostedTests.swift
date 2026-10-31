@@ -33,8 +33,9 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
         }
         try await Task.sleep(for: .milliseconds(400))
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: stage.view))
-        for expanded in [true, false, true, false, true] {
-            stage.present(expanded: expanded, focus: true)
+        XCTAssertTrue(stage.contains(system.focusedItem, in: stage.hero))
+        for expanded in [false, true, false, true] {
+            stage.beginBoundaryMove(expanded ? .up : .down)
             let host = expanded ? stage.hero : stage.rows
             let focused = XCTNSPredicateExpectation(
                 predicate: NSPredicate { _, _ in

@@ -1075,12 +1075,22 @@ the existing hero action and slide, without a separate arrow-button focus stop.
 Each hosted root fills the viewport and anchors its content at the top leading
 edge. Focus ownership includes SwiftUI virtual items and nested native controls,
 not only UIView-backed controls.
+The peeking rows are not eligible for focus while the featured hero is active,
+so first entry cannot collapse it. Boundary-only press and indirect-swipe
+recognizers request the other host even when its hidden content provides no
+geometric focus candidate; deeper-row and horizontal navigation remain native.
 The small Featured cue is informational. Deeper rows retain ordinary navigation.
 Row translation uses additive compositor springs so reversing direction retains
 the in-flight motion. Artwork planes crossfade; Reduce Motion uses the same
 destinations without animation. Carousel dwell and trailers suspend while rows
 are active. Disabling the featured hero leaves Showcase rows available. This
 option does not replace the two existing layouts or change their defaults.
+
+The production Home fixture's `--hero-showcase-focus-probe` records initial
+native focus and invokes the same boundary handoff used by remote input. It
+checks the actual `UIFocusSystem.focusedItem` in the running app scene, not only
+the requested destination. This is separate from physical press/swipe delivery
+and presented-frame measurements in the remote test suite.
 
 Episode-backed Home heroes use a separately scoped `MediaSeriesSynopsis` fetched
 from the authenticated parent-series record. The server's series tagline/synopsis

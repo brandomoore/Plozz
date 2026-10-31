@@ -2,7 +2,7 @@ import CoreModels
 import CoreUI
 import AVFoundation
 import notify
-import FeatureHome
+@testable import FeatureHome
 import FeatureHomeCore
 import FeatureSearch
 import MetadataKit
@@ -220,6 +220,15 @@ struct ProductionHomeFixture: View {
             fixture = await ProductionHomeState.load()
         }
         .task {
+            guard ProcessInfo.processInfo.arguments.contains("--hero-showcase-focus-probe") else { return }
+            do {
+                try await Task.sleep(for: .seconds(3))
+                await Self.probeHeroShowcaseFocus()
+            } catch {
+                print("HERO_STAGE_PROBE cancelled: \(error)")
+            }
+        }
+        .task {
             guard ProcessInfo.processInfo.arguments.contains("--home-hitch-positive-control") else { return }
             for _ in 0..<200 {
                 do { try await Task.sleep(for: .milliseconds(450)) }
@@ -233,6 +242,36 @@ struct ProductionHomeFixture: View {
     @MainActor
     private static func blockForHitchControl() {
         Thread.sleep(forTimeInterval: 0.12)
+    }
+
+    @MainActor
+    private static func probeHeroShowcaseFocus() async {
+        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows).first(where: \.isKeyWindow)
+        var controllers = window?.rootViewController.map { [$0] } ?? []
+        var stage: HeroShowcaseStage.Controller?
+        while let controller = controllers.popLast() {
+            if let candidate = controller as? HeroShowcaseStage.Controller { stage = candidate; break }
+            controllers.append(contentsOf: controller.children)
+        }
+        guard let stage, let system = UIFocusSystem.focusSystem(for: stage.view) else {
+            print("HERO_STAGE_PROBE missing stage or focus system")
+            return
+        }
+        func report(_ phase: String, expanded: Bool) -> Bool {
+            let focused = system.focusedItem
+            let correct = stage.state.isExpanded == expanded
+                && stage.contains(focused, in: expanded ? stage.hero : stage.rows)
+            print("HERO_STAGE_PROBE \(phase) expanded=\(stage.state.isExpanded) heroFocus=\(stage.contains(focused, in: stage.hero)) rowsFocus=\(stage.contains(focused, in: stage.rows)) focusedType=\(focused.map { String(describing: type(of: $0)) } ?? "nil") passed=\(correct)")
+            return correct
+        }
+        var passed = report("initial", expanded: true)
+        for expanded in [false, true, false, true, false, true] {
+            stage.beginBoundaryMove(expanded ? .up : .down)
+            do { try await Task.sleep(for: .milliseconds(600)) } catch { return }
+            passed = report(expanded ? "up" : "down", expanded: expanded) && passed
+        }
+        print("HERO_STAGE_PROBE complete passed=\(passed)")
     }
 }
 
