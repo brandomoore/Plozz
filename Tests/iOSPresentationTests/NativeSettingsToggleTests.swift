@@ -275,9 +275,13 @@ final class NativeSettingsToggleTests: XCTestCase {
                 let weakest = try XCTUnwrap(contrasts.min())
                 let strongest = try XCTUnwrap(contrasts.max())
                 XCTAssertLessThan(weakest, 20, "Unlit edges should blend into the surface, not form a continuous rim.")
+                XCTAssertGreaterThan(strongest, 65, "The localized reflection must clearly identify the searched row.")
                 XCTAssertLessThan(strongest, 140, "Fine edge reflections must not become a bright illuminated border.")
                 XCTAssertGreaterThan(Double(strongest) / Double(max(1, weakest)), 2.5,
                                      "Edge reflections must remain localized rather than evenly outlining the row.")
+                let surface = CGPoint(x: bounds.minX + width * 0.3, y: bounds.minY + bounds.height * 0.25)
+                XCTAssertGreaterThan(abs(try pixel(second, surface)[0] - background), 25,
+                                     "The broad surface reflection must be visible, not just its edge.")
                 let center = CGPoint(x: bounds.midX, y: bounds.midY)
                 XCTAssertGreaterThan(
                     abs(try pixel(second, center)[0] - background),

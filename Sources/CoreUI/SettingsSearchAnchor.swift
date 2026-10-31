@@ -289,9 +289,9 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
                     let surface = shape.path(in: bounds)
                     let outline = shape.inset(by: 1.5).path(in: bounds)
                     let passes: [(mask: Path, opacity: Double, blur: CGFloat)] = [
-                        (surface, 0.13, 0),
-                        (outline.strokedPath(StrokeStyle(lineWidth: 6)), 0.20, 3),
-                        (outline.strokedPath(StrokeStyle(lineWidth: 1)), 0.38, 0.35)
+                        (surface, 0.20, 0),
+                        (outline.strokedPath(StrokeStyle(lineWidth: 6)), 0.28, 3),
+                        (outline.strokedPath(StrokeStyle(lineWidth: 1)), 0.50, 0.35)
                     ]
                     TimelineView(.animation(minimumInterval: 1.0 / 30, paused: finished)) { timeline in
                         let time = finished ? SettingsSearchGlowMotion.duration
