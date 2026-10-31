@@ -19,7 +19,9 @@ final class HeroShowcaseState {
 
 @MainActor
 final class HeroShowcaseScrollMotion {
-    enum Surface: Hashable { case featured, showcase, rows }
+    enum Surface: Hashable { case featured, featuredBackdrop, showcase, rows }
+
+    static let backdropTravelFraction: CGFloat = 0.15
 
     private final class Target {
         weak var view: UIView?
@@ -50,7 +52,7 @@ final class HeroShowcaseScrollMotion {
         targets.removeValue(forKey: surface)
     }
 
-    func move(expanded: Bool, distance: CGFloat, animated: Bool, reduceMotion: Bool, beginTime: CFTimeInterval) {
+    func move(expanded: Bool, distance: CGFloat, animated: Bool, reduceMotion: Bool) {
         self.distance = distance
         self.offset = expanded ? distance : 0
         self.reduceMotion = reduceMotion
@@ -74,7 +76,7 @@ final class HeroShowcaseScrollMotion {
                 animation.fromValue = -delta
                 animation.toValue = 0
                 animation.isAdditive = true
-                animation.beginTime = layer.convertTime(beginTime, from: nil)
+                // Default start time is the shared transaction's commit, not before cold UI work.
                 animation.duration = spring.settlingDuration
                 layer.add(animation, forKey: key)
                 target.keys.append(key)
@@ -88,7 +90,9 @@ final class HeroShowcaseScrollMotion {
 
     private func position(for surface: Surface) -> CGFloat {
         switch surface {
-        case .featured: reduceMotion ? 0 : offset - distance
+        // The nested foreground supplies the travel not already applied by its parent.
+        case .featured: reduceMotion ? 0 : (offset - distance) * (1 - Self.backdropTravelFraction)
+        case .featuredBackdrop: reduceMotion ? 0 : (offset - distance) * Self.backdropTravelFraction
         case .showcase: reduceMotion ? 0 : offset
         case .rows: offset
         }
@@ -281,7 +285,7 @@ struct HeroShowcaseReturnCue: UIViewRepresentable {
     }
 }
 
-/// Stable scene hosts keep artwork pinned while foregrounds and rows share a scroll.
+/// Stable scene hosts scroll foregrounds together, with a slower featured backdrop.
 /// Directional handoff happens before focus commits, not through an invisible target.
 struct HeroShowcaseStage: UIViewControllerRepresentable {
     let state: HeroShowcaseState
@@ -371,6 +375,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             rows.view.isUserInteractionEnabled = !state.isExpanded
             rows.view.accessibilityElementsHidden = state.isExpanded
             state.motion.bind(rows.view, to: .rows)
+            state.motion.bind(hero.view, to: .featuredBackdrop)
             // A hidden destination produces no geometric focus update, and
             // SwiftUI can consume arrows before they reach pressesBegan.
             let press = BoundaryPressRecognizer()
@@ -524,7 +529,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             peek = next
             state.motion.move(
                 expanded: state.isExpanded, distance: peek, animated: false,
-                reduceMotion: UIAccessibility.isReduceMotionEnabled, beginTime: CACurrentMediaTime()
+                reduceMotion: UIAccessibility.isReduceMotionEnabled
             )
         }
 
@@ -537,15 +542,14 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             rows.view.accessibilityElementsHidden = expanded
             showcase.view.accessibilityElementsHidden = expanded
             let animate = changed && !UIAccessibility.isReduceMotionEnabled
-            let beginTime = CACurrentMediaTime()
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             state.motion.move(
                 expanded: expanded, distance: peek, animated: animate,
-                reduceMotion: UIAccessibility.isReduceMotionEnabled, beginTime: beginTime
+                reduceMotion: UIAccessibility.isReduceMotionEnabled
             )
-            dissolve(hero.view, to: expanded ? 1 : 0, animated: animate, beginTime: beginTime)
-            dissolve(showcase.view, to: expanded ? 0 : 1, animated: animate, beginTime: beginTime)
+            dissolve(hero.view, to: expanded ? 1 : 0, animated: animate)
+            dissolve(showcase.view, to: expanded ? 0 : 1, animated: animate)
             CATransaction.commit()
             if focus {
                 view.layoutIfNeeded()
@@ -566,7 +570,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             present(expanded: true, focus: false)
         }
 
-        private func dissolve(_ view: UIView, to alpha: CGFloat, animated: Bool, beginTime: CFTimeInterval) {
+        private func dissolve(_ view: UIView, to alpha: CGFloat, animated: Bool) {
             let from = view.layer.presentation()?.opacity ?? view.layer.opacity
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -575,7 +579,6 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
                 let animation = CABasicAnimation(keyPath: "opacity")
                 animation.fromValue = from
                 animation.toValue = Float(alpha)
-                animation.beginTime = view.layer.convertTime(beginTime, from: nil)
                 animation.duration = FocusHeroLayout.rowSpringDuration
                 animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 view.layer.add(animation, forKey: "plozz.hero-showcase.opacity")

@@ -1086,10 +1086,19 @@ geometric focus candidate; deeper-row and horizontal navigation remain native.
 The outgoing hero foreground, incoming Showcase details, and rows share one
 native scroll distance, spring, and start time. Their relative positions remain
 fixed throughout the move and rapid reversals; only their opacity changes as
-the old details give way to the new. The artwork remains pinned to the display.
+the old details give way to the new. The featured artwork travels at 15% of
+the foreground speed (about 48 points at the standard peek distance), reversing
+on return. Its nested foreground compensates for that parent movement so its
+total travel still matches the rows. Showcase artwork stays pinned, including
+when moving between Showcase rows; the return chevron stays stationary.
 Two stable foreground hosts let the compositor move them without per-frame
-SwiftUI state updates; the other Home layouts do not create these hosts.
-Reduce Motion omits foreground travel and snaps the rows.
+SwiftUI state updates; artwork drift reuses the existing featured host rather
+than adding another renderer or loading another image. The other Home layouts
+do not create these hosts. Scroll and crossfade animations use the shared
+transaction's default start time, not a wall-clock timestamp captured before
+layout and focus work. Cold first-entry work therefore cannot use up their
+duration before that transaction is submitted.
+Reduce Motion omits foreground and artwork travel and snaps the rows.
 A shallow, text-free up chevron sits at the screen's horizontal
 center, below top navigation when present. It appears on first-row arrival,
 fades away after three seconds, and resets only after leaving and returning.
@@ -1110,6 +1119,11 @@ without requesting focus and verifies the artwork's physical screen edges.
 Use it with `--pinned-home`, `--native-sidebar-home`, and `--top-bar-home` to
 capture initial hero, Showcase, and returned hero geometry. Its pass is not a
 remote-input or focus pass.
+Add `--hero-showcase-delayed-commit` to either probe to hold the first
+transition's outer transaction for half a second, then require intermediate
+scroll and opacity values after submission. This controlled regression
+reproduces the early-clock skip; it does not measure the cause or duration of
+physical-device first-entry work.
 
 Episode-backed Home heroes use a separately scoped `MediaSeriesSynopsis` fetched
 from the authenticated parent-series record. The server's series tagline/synopsis

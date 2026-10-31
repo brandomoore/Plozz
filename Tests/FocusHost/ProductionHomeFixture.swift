@@ -297,7 +297,11 @@ struct ProductionHomeFixture: View {
                             let reachesEdge = abs(frame.maxX - window.bounds.maxX) < 1
                                 && abs(frame.minY - window.bounds.minY) < 1
                             if host === stage.hero {
-                                artworkFillsScreen = reachesEdge && abs(frame.minX - window.bounds.minX) < 1
+                                let expectedY: CGFloat = expanded || UIAccessibility.isReduceMotionEnabled
+                                    ? 0 : -stage.state.motion.distance * HeroShowcaseScrollMotion.backdropTravelFraction
+                                artworkFillsScreen = abs(frame.maxX - window.bounds.maxX) < 1
+                                    && abs(frame.minX - window.bounds.minX) < 1
+                                    && abs(frame.minY - window.bounds.minY - expectedY) < 1
                                 print("HERO_STAGE_ART \(phase) frame=\(frame) fullWidth=\(artworkFillsScreen)")
                             } else {
                                 showcaseReachesScreenEdge = reachesEdge
@@ -317,11 +321,22 @@ struct ProductionHomeFixture: View {
             return correct
         }
         var passed = report("initial", expanded: true)
+        let delayedCommit = ProcessInfo.processInfo.arguments.contains("--hero-showcase-delayed-commit")
+        var firstMove = true
         if geometryOnly {
             do { try await Task.sleep(for: .seconds(2)) } catch { return }
         }
         for expanded in geometryOnly ? [false, true] : [false, true, false, true, false, true] {
-            if geometryOnly {
+            let delayThisMove = delayedCommit && firstMove
+            firstMove = false
+            if delayThisMove {
+                // Model cold layout/focus work before the run loop submits its transaction.
+                CATransaction.begin()
+                stage.present(expanded: expanded, focus: !geometryOnly)
+                Thread.sleep(forTimeInterval: 0.5)
+                CATransaction.commit()
+                print("HERO_STAGE_COLD_COMMIT injectedDelay=0.5")
+            } else if geometryOnly {
                 stage.present(expanded: expanded, focus: false)
             } else {
                 stage.beginBoundaryMove(expanded ? .up : .down)
@@ -338,13 +353,22 @@ struct ProductionHomeFixture: View {
                     let lift = foregroundOrigin.minY - foregroundFrame.minY
                     let rowLayer = stage.rows.view.layer.presentation() ?? stage.rows.view.layer
                     let rowY = rowLayer.transform.m42
+                    let backdropY = (stage.hero.view.layer.presentation() ?? stage.hero.view.layer).transform.m42
                     let opacity = stage.hero.view.layer.presentation()?.opacity ?? stage.hero.view.layer.opacity
                     let showcaseY = showcaseForeground.map { ($0.layer.presentation() ?? $0.layer).transform.m42 }
                     let error = abs(lift + rowY - stage.state.motion.distance)
+                    let expectedBackdropY = -lift * HeroShowcaseScrollMotion.backdropTravelFraction
                     let synchronized = UIAccessibility.isReduceMotionEnabled
-                        || (error < 1 && showcaseY.map { abs($0 - rowY) < 1 } == true)
+                        || (error < 1 && showcaseY.map { abs($0 - rowY) < 1 } == true
+                            && abs(backdropY - expectedBackdropY) < 1)
                     passed = synchronized && passed
-                    print("HERO_STAGE_MOTION expanded=\(expanded) sample=\(sample) lift=\(lift) rowY=\(rowY) showcaseY=\(String(describing: showcaseY)) opacity=\(opacity) scrollError=\(error) synchronized=\(synchronized)")
+                    if delayThisMove && sample == 1 && !UIAccessibility.isReduceMotionEnabled {
+                        let stillAnimating = rowY > 1 && rowY < stage.state.motion.distance - 1
+                            && opacity > 0 && opacity < 1
+                        passed = stillAnimating && passed
+                        print("HERO_STAGE_COLD_COMMIT rowY=\(rowY) opacity=\(opacity) stillAnimating=\(stillAnimating)")
+                    }
+                    print("HERO_STAGE_MOTION expanded=\(expanded) sample=\(sample) lift=\(lift) rowY=\(rowY) showcaseY=\(String(describing: showcaseY)) backdropY=\(backdropY) opacity=\(opacity) scrollError=\(error) synchronized=\(synchronized)")
                 }
             }
             passed = report(expanded ? "up" : "down", expanded: expanded) && passed
