@@ -91,11 +91,7 @@ public struct HomeRowsSettingsView: View {
     }
 
     private var heroTitle: Text {
-        #if os(tvOS)
-        Text("Spotlight")
-        #else
         Text("Hero")
-        #endif
     }
 
     private var heroSummary: Text? {

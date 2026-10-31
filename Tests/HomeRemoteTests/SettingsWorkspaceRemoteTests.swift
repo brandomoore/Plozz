@@ -1487,13 +1487,14 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         XCTAssertTrue(hero.waitForExistence(timeout: 5), app.debugDescription)
         try focus(hero, in: app)
         XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.staticTexts["Spotlight"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Hero"].waitForExistence(timeout: 5))
         let enabledHero = app.switches["hero-enabled"]
+        XCTAssertEqual(enabledHero.label, "Show hero")
         try focus(enabledHero, in: app)
         if enabledHero.value as? String != "0" { XCUIRemote.shared.press(.select) }
         XCUIRemote.shared.press(.menu)
         waitForEnabled(hero)
-        XCTAssertEqual(hero.label, "Spotlight")
+        XCTAssertEqual(hero.label, "Hero")
         XCTAssertEqual(hero.value as? String, "Off")
         let rows = app.buttons["home-row-style"]
         try focus(rows, in: app)
@@ -1511,7 +1512,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         if enabledHero.value as? String != "1" { XCUIRemote.shared.press(.select) }
         XCUIRemote.shared.press(.menu)
         waitForEnabled(hero)
-        XCTAssertEqual(hero.label, "Spotlight")
+        XCTAssertEqual(hero.label, "Hero")
         XCTAssertEqual(hero.value as? String, "On")
         XCTAssertEqual(rows.value as? String, "Classic")
         XCTAssertFalse(app.staticTexts["Pinned at top"].exists)

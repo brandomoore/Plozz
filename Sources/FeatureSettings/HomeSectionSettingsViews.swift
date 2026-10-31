@@ -459,11 +459,7 @@ struct HomeHeroSettingsView: View {
     }
 
     private var pageTitle: Text {
-        #if os(tvOS)
-        Text("Spotlight")
-        #else
         Text("Hero")
-        #endif
     }
 }
 

@@ -174,8 +174,8 @@ or Menu on Navigation completes appearance setup, including the durable profile
 resume marker and Plex identity reconciliation. There is no Home layout setup
 step or upgrade introduction. Existing navigation introductions remain available.
 
-Fresh profiles use Spotlight above Showcase rows. Settings > Home exposes
-Spotlight and Row style independently, backed by the existing profile-scoped
+Fresh profiles use the hero above Showcase rows. Settings > Home exposes
+Hero and Row style independently, backed by the existing profile-scoped
 hero settings. Existing saved layouts are preserved, including older blobs with
 no style field, which still decode as Classic rows with their saved hero choice.
 iPhone and iPad retain their existing carousel presentation.

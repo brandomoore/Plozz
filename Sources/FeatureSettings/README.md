@@ -426,7 +426,7 @@ watch history and planning-list behavior are documented in
   One full-width Add row action appears below Preset and above the editable rows.
   A centered plus-and-label, native capsule style, and vertical spacing distinguish
   the action from the editable rows. Edit/Done switches to native movement controls
-  with no Hidden drop zone. Spotlight and Row style remain separate Home settings.
+  with no Hidden drop zone. Hero and Row style remain separate Home settings.
   Mobile uses the shared page inset without extra gutters.
   Add row separates **From a collection** from **Available rows** not already
   shown. Empty results omit the empty heading; discovery failures show source
@@ -458,14 +458,14 @@ watch history and planning-list behavior are documented in
   These are transient results fenced by profile, account, effective viewer,
   credentials, and the loaded Home settings; catalog discovery is not treated
   as evidence that the actual Home content request succeeded.
-  Continue Watching owns its merge and artwork controls. TV Spotlight owns its
+  Continue Watching owns its merge and artwork controls. TV Hero owns its
   enabled state, sources, sizing, rotation, ratings, and trailers. Row style has
-  Classic and Showcase preview cards independent of Spotlight, with Showcase
+  Classic and Showcase preview cards independent of Hero, with Showcase
   sizing and ratings below. Standalone Showcase also exposes Discovery and its
   providers, respecting Kids policy. These controls map to existing persisted
   hero style/enabled fields without resetting content preferences. Mobile keeps
   its Hero controls and carousel presentation. Fresh TV profiles default to
-  Spotlight + Showcase; existing saved choices remain unchanged.
+  Hero + Showcase; existing saved choices remain unchanged.
   Continue Watching groups artwork, playback details and labels before their shared
   Recommended-page scope note; Include Next Up and selection behavior follow.
   Showcase groups Ratings and Discovery with their dependent controls.

@@ -58,7 +58,7 @@ public struct HeroSettingsControls: View {
         @Bindable var hero = hero
         HeroSettingsGroup {
             #if os(tvOS)
-            Toggle("Spotlight", isOn: $hero.settings.spotlightEnabled)
+            Toggle("Show hero", isOn: $hero.settings.spotlightEnabled)
                 .accessibilityIdentifier("hero-enabled")
             #else
             Toggle("Show hero", isOn: $hero.settings.isEnabled)

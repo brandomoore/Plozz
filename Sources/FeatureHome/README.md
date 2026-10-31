@@ -1067,7 +1067,7 @@ data from completion of the entire Home load.
 
 ## Showcase
 
-The default **Spotlight + Showcase** Home presentation keeps the featured carousel above
+The default **Hero + Showcase** Home presentation keeps the featured carousel above
 the same Showcase rows. Its native stage preserves the three hosting trees:
 the featured hero, Showcase details/artwork, and the row viewport. Down admits
 the first row before animating its viewport into place; Up from that row restores
@@ -1088,7 +1088,7 @@ further proposals in that direction remain blocked. They must not focus
 navigation before the deferred request can restore the hero or enter the rows.
 With Top Bar navigation, the featured stage contributes to the navigation scroll
 offset: entering even the first Showcase row moves the bar offscreen and removes
-it from focus, and returning to Spotlight reveals it. Back's return-to-top resets
+it from focus, and returning to the hero reveals it. Back's return-to-top resets
 both the rows and featured stage. With the native Sidebar, the first Showcase row
 also includes the hidden hero's distance in its real scroll offset, balanced by
 matching content padding so card placement does not change. Native Home chrome
@@ -1148,8 +1148,8 @@ It is informational, never an additional focus stop. Deeper rows retain ordinary
 Row translation uses additive compositor animations so reversing direction retains
 the in-flight motion. Artwork planes crossfade; Reduce Motion uses the same
 destinations without animation. Carousel dwell and trailers suspend while rows
-are active. Settings exposes Spotlight independently from Classic/Showcase row
-style. Fresh profiles use both Spotlight and Showcase; saved styles and disabled
+are active. Settings exposes Hero independently from Classic/Showcase row
+style. Fresh profiles use both Hero and Showcase; saved styles and disabled
 heroes retain their previous behavior. Blobs without a style field keep the old
 carousel layout rather than adopting the new-profile default.
 
