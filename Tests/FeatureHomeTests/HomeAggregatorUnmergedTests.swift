@@ -100,8 +100,38 @@ final class HomeAggregatorUnmergedTests: XCTestCase {
         visibility.hideWatchedRecentlyAdded = false
         XCTAssertEqual(visibleItems().count, 20)
         await model.loadIfNeeded(for: visibility)
-        XCTAssertEqual(provider.latestRequestedLimits.last, 20)
-        XCTAssertNil(model.state.value?.recentlyAddedCandidates)
+        XCTAssertEqual(provider.latestRequestedLimits.last, 21)
+        XCTAssertEqual(model.state.value?.recentlyAddedCandidates?.count, 21)
+    }
+
+    func testLibraryPreviewsOnlyOfferBrowseForEligibleOverflow() async throws {
+        for (count, hideWatched) in [(1, false), (20, false), (21, false), (40, true), (41, true)] {
+            let items = (0..<count).map {
+                MediaItem(id: "movie-\($0)", title: "Movie \($0)", kind: .movie,
+                          isPlayed: hideWatched && $0 < 20, libraryID: "L1")
+            }
+            let provider = UnmergedStub(
+                libraries: [lib("L1", "Movies", .movie)], itemsByContainer: ["L1": items],
+                hubsByLibrary: ["L1": [.init(id: "genre", title: "Drama", items: items)]]
+            )
+            var visibility = vis([("acct:L1", .recentlyAdded), ("acct:L1", .hubs)])
+            visibility.hideWatchedRecentlyAdded = hideWatched
+            let content = await HomeAggregator().unmergedContent(
+                from: [resolved("acct", provider: provider)], visibility: visibility
+            )
+            let rows = HomePresentationRow.resolve(
+                rows: [], content: .init(mergeLibraries: false, librarySections: content.librarySections),
+                visibility: visibility
+            )
+            let recent = try XCTUnwrap(rows.first { $0.id.libraryKind == .recentlyAdded })
+            let hub = try XCTUnwrap(rows.first { $0.id.libraryKind == .hubs })
+            XCTAssertEqual(recent.canBrowse, count - (hideWatched ? 20 : 0) > 20)
+            XCTAssertEqual(hub.canBrowse, count > 20, "Recently Added preferences do not change recommendation membership")
+            for entry in [recent, hub] {
+                guard case let .library(row) = entry.source else { return XCTFail("Expected a library row") }
+                XCTAssertLessThanOrEqual(row.section.items.count, 20)
+            }
+        }
     }
 
     func testCollectionDirectoryStaysInLibrariesButNeverWidensScopedMediaFeeds() async {
@@ -836,11 +866,16 @@ private final class UnmergedStub: MediaProvider, @unchecked Sendable {
         itemsRequested = true
         if let itemsError { throw itemsError }
         let items = itemsByContainer[containerID] ?? []
-        return MediaPage(items: items, startIndex: 0, totalCount: items.count)
+        return MediaPage(items: Array(items.dropFirst(page.startIndex).prefix(page.limit)),
+                         startIndex: page.startIndex, totalCount: items.count)
     }
     func libraryHubs(libraryID: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {
         hubCalls.withLock { $0 += 1 }
-        return hubsByLibrary[libraryID] ?? []
+        return (hubsByLibrary[libraryID] ?? []).map {
+            var section = $0
+            section.items = Array(section.items.prefix(limit))
+            return section
+        }
     }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }

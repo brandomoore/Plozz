@@ -240,7 +240,8 @@ public final class HomeViewModel {
                                            localizedTitle: $0.localizedTitle, localizedTitleSuffix: $0.localizedTitleSuffix,
                                            style: $0.style,
                                            items: Array($0.items.prefix(perRow)), isHomeDefault: $0.isHomeDefault,
-                                           isLegacyHomeDefault: $0.isLegacyHomeDefault)
+                                           isLegacyHomeDefault: $0.isLegacyHomeDefault, browseID: $0.browseID,
+                                           hasMore: $0.hasMore || $0.items.count > perRow)
                         }
                     )
                 },
@@ -1466,6 +1467,7 @@ public final class HomeViewModel {
                   let cached = previous.first(where: { $0.definition == row.definition }) else { return row }
             var row = row
             row.items = cached.items
+            row.hasMore = cached.hasMore
             return row
         }
     }
@@ -1854,6 +1856,27 @@ public final class HomeViewModel {
         return scoped
     }
 
+    public func browseRow(_ row: HomePresentationRow) -> HomeRowBrowseModel {
+        let visibility = currentVisibility()
+        let snapshot: (@MainActor () -> [MediaItem]?)?
+        if case let .home(home) = row.source, [.watchlist, .continueWatching].contains(home.kind) {
+            snapshot = { [weak self] in
+                guard case let .loaded(content) = self?.state else { return nil }
+                return home.kind == .watchlist ? content.watchlist : content.continueWatching
+            }
+        } else {
+            snapshot = nil
+        }
+        let libraries: [AggregatedLibrary]
+        if case let .loaded(content) = state { libraries = content.libraries } else { libraries = [] }
+        return HomeRowBrowseFactory.make(
+            row, accounts: accounts, visibility: visibility, libraries: libraries,
+            identitySources: identitySources, snapshotProvider: snapshot
+        ) { [weak self] in
+            self?.currentVisibility() == visibility
+        }
+    }
+
     public func heroCollectionContent(
         _ selection: HeroCollectionSelection, limit: Int, hideWatched: Bool
     ) async throws -> MediaPage {
@@ -2217,13 +2240,16 @@ public final class HomeViewModel {
                         continue
                     }
                     guard let work = self?.collectionRefreshWork(for: request) else { continue }
-                    let result: Result<[MediaItem], AppError>
+                    let result: Result<HomeRowPreview, AppError>
                     do {
                         let page = try await CollectionPreviewLoader.load(
-                            selection: request.source, limit: HomeCollectionRefreshQueue.previewLimit,
+                            selection: request.source, limit: HomeCollectionRefreshQueue.previewLimit + 1,
                             provider: work.provider, visibility: work.visibility
                         )
-                        result = .success(page.items.filter { $0.kind == .movie || $0.kind == .series })
+                        result = .success(HomeRowPreview(
+                            page.items.filter { $0.kind == .movie || $0.kind == .series },
+                            limit: HomeCollectionRefreshQueue.previewLimit
+                        ))
                     } catch {
                         if Task.isCancelled || error is CancellationError || error as? AppError == .cancelled { return }
                         PlozzLog.app.error("Watchlist-triggered collection refresh failed")
@@ -2246,7 +2272,7 @@ public final class HomeViewModel {
 
     private func finishCollectionRefresh(
         _ request: HomeCollectionRefreshQueue.Request, work: CollectionRefreshWork,
-        result: Result<[MediaItem], AppError>
+        result: Result<HomeRowPreview, AppError>
     ) {
         guard collectionRefreshQueue.contains(request) else { return }
         guard !isLoading, work.loadGeneration == loadGeneration, work.visibility == currentVisibility(),
@@ -2259,8 +2285,9 @@ public final class HomeViewModel {
         for index in content.collectionRows.indices where content.collectionRows[index].definition.source.id == request.source.id {
             let previous = content.collectionRows[index]
             switch result {
-            case let .success(items):
-                content.collectionRows[index].items = items
+            case let .success(preview):
+                content.collectionRows[index].items = preview.items
+                content.collectionRows[index].hasMore = preview.hasMore
                 content.collectionRows[index].failure = nil
             case let .failure(error):
                 content.collectionRows[index].failure = error

@@ -141691,6 +141691,7 @@
       }
     },
     "Apple supplies the edge style, including Uniform Outline, but not its color or thickness. Those are Plozz rendering values." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -141911,6 +141912,7 @@
       }
     },
     "Apple supplies the text edge style, including Uniform Outline, but not its color or thickness. Those are Plozz rendering values." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {

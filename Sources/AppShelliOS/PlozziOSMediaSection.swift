@@ -34,18 +34,22 @@ struct PlozziOSMediaSection<Content: View>: View {
     var horizontalInset: CGFloat?
     var artworkInset: CGFloat = 0
     var onSeeAll: (() -> Void)? = nil
+    var onBrowse: (() -> Void)? = nil
     @ViewBuilder var content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.headingSpacing) {
             HStack {
-                title
+                Group {
+                    if let onBrowse { BrowseRowHeading(title: title, action: onBrowse) }
+                    else { title }
+                }
                     .font(.title3.weight(.semibold))
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                if let onSeeAll {
+                if onBrowse == nil, let onSeeAll {
                     Spacer()
                     Button("See all", action: onSeeAll)
                         .font(.subheadline)

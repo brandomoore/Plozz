@@ -19,6 +19,100 @@ import XCTest
 #if os(tvOS)
 @MainActor
 extension HomeRowArrangementHostedTests {
+    func testHomeBrowseActionMatchesMediaCardAndOwnsNativeFocus() async throws {
+        for cardStyle in CardStyle.allCases {
+            for style: PosterCardView.Style in [.poster, .landscape] {
+                let width = PlozzMetrics.standard.cardSlotWidth(for: style, cardStyle: cardStyle)
+                var mediaFrame = CGRect.zero
+                var browseFrame = CGRect.zero
+                var activated = 0
+                var entered = 0
+                try await withWindow {
+                    HStack(alignment: .top, spacing: 40) {
+                        PosterCardView(item: MediaItem(id: "one", title: "First title", kind: .movie), style: style) {}
+                            .frame(width: width)
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { mediaFrame = $0 }
+                        MediaRowBrowseCard(width: width, style: style, onFocus: { entered += 1 }, action: { activated += 1 })
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { browseFrame = $0 }
+                    }
+                    .environment(\.plozzCardStyle, cardStyle)
+                    .environment(\.plozzMetrics, .standard)
+                    .environment(\.plozzCardFocusStyle, .system)
+                } inspect: { window in
+                    _ = try await self.snapshot(window, name: "Home browse \(cardStyle) \(style)")
+                    XCTAssertEqual(mediaFrame.width, browseFrame.width, accuracy: 1)
+                    XCTAssertEqual(mediaFrame.height, browseFrame.height, accuracy: 1)
+                    let point = CGPoint(x: browseFrame.midX, y: browseFrame.minY + 40)
+                    let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+                    try await self.focus(target, in: window)
+                    XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
+                    XCTAssertGreaterThan(entered, 0)
+                    let control = try XCTUnwrap(target as? UIControl)
+                    control.sendActions(for: .primaryActionTriggered)
+                    XCTAssertEqual(activated, 1)
+                }
+            }
+        }
+    }
+
+    func testHomeBrowseFeaturedActionMatchesFeaturedDimensions() async throws {
+        let size = FeaturedCardLayout.size(viewportWidth: 1776, television: true)
+        var frame = CGRect.zero
+        try await withWindow {
+            MediaRowBrowseCard(width: size.width, featuredSize: size, action: {})
+                .environment(\.plozzCardFocusStyle, .system)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+        } inspect: { window in
+            _ = try await self.snapshot(window, name: "Featured browse action")
+            XCTAssertEqual(frame.size, size)
+            let target = try XCTUnwrap(self.focusableItem(at: CGPoint(x: frame.midX, y: frame.midY), in: window))
+            try await self.focus(target, in: window)
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
+        }
+    }
+
+    func testHomeBrowseNavigationReturnsFocusToAction() async throws {
+        let route = HomeBrowseNavigationProbe()
+        var actionFrame = CGRect.zero
+        let model = HomeRowBrowseModel(
+            title: "Complete shelf", snapshot: [MediaItem(id: "one", title: "One", kind: .movie)]
+        )
+        try await withWindow {
+            NavigationStack {
+                MediaRowBrowseCard(width: 240, action: { route.browser = model })
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { actionFrame = $0 }
+                    .navigationDestination(item: Binding(
+                        get: { route.browser }, set: { route.browser = $0 }
+                    )) { browser in
+                        HomeRowBrowseView(model: browser, columns: [GridItem(.flexible())]) { item in
+                            Button(item.title) {}
+                        }
+                    }
+            }
+            .environment(\.plozzCardFocusStyle, .system)
+        } inspect: { window in
+            _ = try await self.snapshot(window, name: "Home browse before navigation")
+            let point = CGPoint(x: actionFrame.midX, y: actionFrame.minY + 40)
+            let action = try XCTUnwrap(self.focusableItem(at: point, in: window))
+            try await self.focus(action, in: window)
+            let host = try XCTUnwrap(window.rootViewController as? HomeRowsFocusHost)
+            host.target = nil
+            try XCTUnwrap(action as? UIControl).sendActions(for: .primaryActionTriggered)
+            let destination = try await self.capture(window, name: "Home browse destination")
+            XCTAssertTrue(destination.contains { $0.0.contains("Complete shelf") })
+            route.browser = nil
+            _ = try await self.snapshot(window, name: "Home browse returned")
+            let restored = try XCTUnwrap(self.focusableItem(at: point, in: window))
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let returned = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in system.focusedItem === restored }, object: nil
+            )
+            await fulfillment(of: [returned], timeout: 3)
+            XCTAssertTrue(system.focusedItem === restored,
+                          "Expected \(restored); focused \(String(describing: system.focusedItem))")
+        }
+    }
+
     func testFeaturedTVLayoutKeepsWholePointFourByFiveGeometry() {
         for width: CGFloat in [390, 1024, 1696, 1760.25, 1776, 1920] {
             let size = FeaturedCardLayout.size(viewportWidth: width, television: true)
@@ -171,6 +265,12 @@ extension HomeRowArrangementHostedTests {
 }
 #endif
 
+@MainActor
+@Observable
+private final class HomeBrowseNavigationProbe {
+    var browser: HomeRowBrowseModel?
+}
+
 final class HomeRowsFocusHost: UIHostingController<AnyView> {
     weak var target: (any UIFocusEnvironment)?
     override var preferredFocusEnvironments: [any UIFocusEnvironment] {
@@ -179,6 +279,138 @@ final class HomeRowsFocusHost: UIHostingController<AnyView> {
 }
 @MainActor
 final class HomeRowArrangementHostedTests: XCTestCase {
+    func testHomeRowBrowserShowsSourceTitleAndFullFixedShelf() async throws {
+        let items = (0..<35).map {
+            MediaItem(id: "\($0)", title: String(format: "Shelf title %02d", $0), kind: .movie)
+        }
+        let model = HomeRowBrowseModel(title: "Library picks", snapshot: items)
+        try await withWindow {
+            NavigationStack {
+                HomeRowBrowseView(model: model, columns: [GridItem(.flexible())]) { item in
+                    Text(verbatim: item.title).frame(maxWidth: .infinity, minHeight: 65)
+                }
+            }
+        } inspect: { window in
+            let headings = try await self.capture(window, name: "Full Home shelf", scale: 2)
+            XCTAssertTrue(headings.contains { $0.0.contains("Library picks") })
+            #if os(tvOS)
+            XCTAssertTrue(headings.contains { $0.0.contains("Default") })
+            let title = try XCTUnwrap(headings.first { $0.0.contains("Library picks") }).1
+            let sort = try XCTUnwrap(headings.first { $0.0.contains("Default") }).1
+            let filter = try XCTUnwrap(headings.first { $0.0.hasSuffix("All") }, "\(headings.map(\.0))").1
+            for control in [sort, filter] {
+                XCTAssertGreaterThan(control.minX, title.maxX)
+                XCTAssertGreaterThan(control.midX, 0.5)
+                XCTAssertEqual(control.midY, title.midY, accuracy: 0.02)
+            }
+            #endif
+            try self.scrollToBottom(window)
+            let bottom = try await self.capture(window, name: "Full Home shelf final item")
+            XCTAssertTrue(bottom.contains { $0.0.contains("Shelf title 34") }, bottom.map(\.0).joined(separator: " | "))
+            XCTAssertEqual(model.items.count, 35)
+        }
+    }
+
+    #if os(iOS)
+    func testHomeBrowseControlsUseTrailingToolbar() async throws {
+        let model = HomeRowBrowseModel(
+            title: "Library picks", snapshot: (0..<40).map {
+                MediaItem(id: "\($0)", title: "Shelf title \($0)", kind: .movie)
+            }
+        )
+        for (width, textSize): (CGFloat, DynamicTypeSize) in [(320, .accessibility3), (1024, .large)] {
+            try await withWindow(size: CGSize(width: width, height: 900)) {
+                NavigationStack {
+                    HomeRowBrowseView(model: model, columns: [GridItem(.flexible())]) {
+                        Text($0.title).frame(height: 80)
+                    }
+                }
+                .environment(\.dynamicTypeSize, textSize)
+            } inspect: { window in
+                _ = try await self.snapshot(window, name: "Home browse trailing toolbar \(width)")
+                func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
+                let bar = try XCTUnwrap(views(window).compactMap { $0 as? UINavigationBar }.first)
+                let controls = views(bar).compactMap { $0 as? UIButton }
+                XCTAssertEqual(controls.count, 2, "Both menus must be navigation-bar actions")
+                for control in controls {
+                    let frame = control.convert(control.bounds, to: window)
+                    XCTAssertGreaterThan(frame.midX, window.bounds.midX)
+                    XCTAssertGreaterThan(frame.width, 0)
+                    XCTAssertGreaterThan(frame.height, 0)
+                    XCTAssertLessThanOrEqual(frame.maxX, window.bounds.maxX)
+                    XCTAssertLessThanOrEqual(frame.maxY, bar.convert(bar.bounds, to: window).maxY)
+                }
+                let before = controls.map { $0.convert($0.bounds, to: window) }
+                try self.scrollToBottom(window)
+                _ = try await self.snapshot(window, name: "Home browse toolbar after scrolling \(width)")
+                let after = views(bar).compactMap { $0 as? UIButton }.map { $0.convert($0.bounds, to: window) }
+                XCTAssertEqual(after.count, before.count)
+                for (initial, scrolled) in zip(before, after) {
+                    XCTAssertEqual(scrolled.midX, initial.midX, accuracy: 1)
+                    XCTAssertEqual(scrolled.midY, initial.midY, accuracy: 1)
+                }
+            }
+        }
+    }
+
+    func testHomeBrowseHeadingHasSingleAccessibleTouchTarget() async throws {
+        var headingFrame = CGRect.zero
+        try await withWindow(size: CGSize(width: 390, height: 844)) {
+            VStack(alignment: .leading) {
+                PlozziOSMediaSection(title: Text("Library picks"), onBrowse: {}) {
+                    Text(verbatim: "Shelf content")
+                }
+                BrowseRowHeading(title: Text("Recently Added in a library with a long title")) {}
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { headingFrame = $0 }
+            }
+            .environment(\.dynamicTypeSize, .accessibility3)
+            .padding(20)
+        } inspect: { window in
+            let labels = try await self.capture(window, name: "Home browse title chevron")
+            XCTAssertTrue(labels.contains { $0.0.contains("Library picks") })
+            XCTAssertFalse(labels.contains { $0.0.contains("See all") })
+            XCTAssertGreaterThanOrEqual(headingFrame.height, 44)
+            XCTAssertLessThanOrEqual(headingFrame.width, 350)
+        }
+    }
+    #endif
+
+    func testExhaustedRowsHideBothBrowseAndLegacyActions() async throws {
+        let controller = HeroTrailerController()
+        let coordinator = FeaturedTrailerCoordinator()
+        defer { coordinator.stop() }
+        for featured in [false, true] {
+            for count in [0, 1] {
+                let items = (0..<count).map { MediaItem(id: "\($0)", title: "Only title", kind: .movie) }
+                try await withWindow {
+                    ScrollView {
+                        if featured {
+                            FeaturedMediaRow(
+                                title: Text("Complete collection"), items: items, scope: ObjectIdentifier(controller),
+                                coordinator: coordinator, controller: controller, settings: .default,
+                                resolver: { _ in nil }, isActive: false, onSeeAll: {}, onSelect: { _ in }
+                            )
+                            .browsingRow(nil)
+                        } else {
+                            MediaRowView(
+                                title: Text("Complete collection"), items: items, onSeeAll: {}, onSelect: { _ in }
+                            )
+                            .browsingRow(nil)
+                        }
+                    }
+                } inspect: { window in
+                    let lines = try await self.capture(window, name: "Exhausted collection \(featured)-\(count)")
+                    XCTAssertTrue(lines.contains { $0.0.contains("Complete collection") })
+                    XCTAssertFalse(lines.contains { $0.0.localizedCaseInsensitiveContains("See all") })
+                    if count == 0 {
+                        XCTAssertTrue(lines.contains { $0.0.localizedCaseInsensitiveContains("No titles in this collection") },
+                                      "Keep the empty-collection explanation: \(lines.map(\.0))")
+                    }
+                }
+            }
+        }
+    }
+
     func testEveryCardLabelIllustrationRendersAcrossStylesVisibilityAndDirection() throws {
         #if os(tvOS)
         let width: CGFloat = CardLabelScopePreview.illustrationWidth

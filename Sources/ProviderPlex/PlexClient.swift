@@ -432,17 +432,19 @@ public struct PlexClient: Sendable {
     private func decodeStreamEnriched<T: Decodable>(
         _ type: T.Type,
         path: String,
-        query: [URLQueryItem]
+        query: [URLQueryItem],
+        preservingContainers: Bool = false
     ) async throws -> T {
+        let streamParameter = preservingContainers ? "includeOptionalElements" : "includeElements"
         let enriched = Endpoint(
             path: path,
-            queryItems: query + [URLQueryItem(name: "includeElements", value: "Stream")],
+            queryItems: query + [URLQueryItem(name: streamParameter, value: "Stream")],
             headers: headers
         )
         do {
             return try await decode(T.self, enriched)
         } catch AppError.invalidResponse {
-            PlozzLog.networking.error("Plex rejected includeElements=Stream on \(path); retrying lean")
+            PlozzLog.networking.error("Plex rejected \(streamParameter)=Stream on \(path); retrying lean")
             let lean = Endpoint(path: path, queryItems: query, headers: headers)
             return try await decode(T.self, lean)
         }
@@ -715,18 +717,21 @@ public struct PlexClient: Sendable {
         size: Int,
         sort: CoreModels.SortDescriptor,
         filters: LibraryFilters = .all,
-        genreID: String? = nil
+        genreID: String? = nil,
+        includeCollections: Bool = false
     ) async throws -> PlexMediaContainer {
         var query = containerQuery(start: start, size: size)
         if let type {
             query.append(URLQueryItem(name: "type", value: String(type)))
         }
         query.append(URLQueryItem(name: "sort", value: try Self.sortQuery(for: sort)))
+        query.append(URLQueryItem(name: "includeCollections", value: includeCollections ? "1" : "0"))
         query += try Self.libraryFilterQuery(filters, genreID: genreID)
         return try await decodeStreamEnriched(
             PlexMediaContainerResponse.self,
             path: "/library/sections/\(sectionID)/all",
-            query: query
+            query: query,
+            preservingContainers: includeCollections
         ).MediaContainer
     }
 
@@ -773,6 +778,64 @@ public struct PlexClient: Sendable {
                 query: query
             ).MediaContainer.Hub ?? []
         }
+    }
+
+    static func homeShelfKey(_ key: String?) -> String? {
+        guard let key else { return nil }
+        guard var parts = URLComponents(string: key),
+              parts.scheme == nil, parts.host == nil, parts.user == nil,
+              parts.fragment == nil, !parts.path.hasPrefix("//"),
+              !parts.path.split(separator: "/").contains(".."),
+              ["/hubs/", "/library/"].contains(where: parts.path.hasPrefix) else {
+            PlozzLog.networking.error("Plex Home shelf supplied an invalid continuation path")
+            return nil
+        }
+        parts.queryItems = parts.queryItems?.filter {
+            let name = $0.name.lowercased()
+            return !name.hasPrefix("x-plex-")
+                && !["token", "password", "authorization", "apikey", "api_key"].contains(name)
+        }
+        if parts.queryItems?.isEmpty == true { parts.queryItems = nil }
+        return parts.string
+    }
+
+    func homeShelfPage(key: String, startIndex: Int, limit: Int) async throws
+        -> (items: [PlexMetadata], nextOffset: Int?) {
+        guard startIndex >= 0, limit > 0, limit <= PageRequest.defaultLimit,
+              startIndex < Int.max - limit,
+              let safeKey = Self.homeShelfKey(key), let parts = URLComponents(string: safeKey) else {
+            throw AppError.invalidResponse
+        }
+        var query = (parts.queryItems ?? []).filter {
+            !["count", "includeguids", "includeelements"].contains($0.name.lowercased())
+        }
+        query += [
+            .init(name: "X-Plex-Container-Start", value: String(startIndex)),
+            .init(name: "X-Plex-Container-Size", value: String(limit)),
+            .init(name: "includeGuids", value: "1")
+        ]
+        let container = try await decodeStreamEnriched(
+            PlexMediaContainerResponse.self, path: parts.path, query: query
+        ).MediaContainer
+        guard container.Metadata != nil || (container.Hub?.count ?? 0) <= 1 else {
+            throw AppError.invalidResponse
+        }
+        let hub = container.Metadata == nil ? container.Hub?.first : nil
+        guard container.Metadata != nil || hub?.Metadata != nil
+                || (hub == nil ? container.size == 0 : hub?.size == 0) else {
+            throw AppError.invalidResponse
+        }
+        let items = container.Metadata ?? hub?.Metadata ?? []
+        let offset = hub == nil ? container.offset ?? startIndex : hub?.offset ?? startIndex
+        let total = hub == nil ? container.totalSize : hub?.totalSize
+        guard offset == startIndex, items.count <= limit,
+              total.map({ $0 >= startIndex + items.count }) ?? true,
+              !items.isEmpty || total.map({ startIndex >= $0 }) ?? true else {
+            throw AppError.invalidResponse
+        }
+        let more = total.map { startIndex + items.count < $0 } ?? (hub?.more ?? (items.count == limit))
+        guard !more || !items.isEmpty else { throw AppError.invalidResponse }
+        return (items, more ? startIndex + items.count : nil)
     }
 
     func promotedHubs(sectionID: String, count: Int) async throws -> [PlexHub] {
@@ -1035,6 +1098,7 @@ public struct PlexClient: Sendable {
         if let type {
             query.append(URLQueryItem(name: "type", value: String(type)))
         }
+        query.append(URLQueryItem(name: "includeCollections", value: "0"))
         let endpoint = Endpoint(
             path: "/library/sections/\(sectionID)/firstCharacter",
             queryItems: query,

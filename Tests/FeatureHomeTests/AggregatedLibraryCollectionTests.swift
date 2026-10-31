@@ -4,6 +4,50 @@ import XCTest
 @testable import FeatureHome
 
 final class AggregatedLibraryCollectionTests: XCTestCase {
+    func testMixedBrowsePagesKeepServerCollectionsAndOtherSourcesMovies() async throws {
+        let first = CollectionSourceFixture(collections: [], groupedItems: [
+            collection("12", title: "A cuts"),
+            MediaItem(id: "last", title: "Zebra", kind: .movie)
+        ])
+        let second = CollectionSourceFixture(collections: [], groupedItems: [
+            collection("12", title: "A cuts"),
+            MediaItem(id: "member", title: "B movie", kind: .movie)
+        ])
+        let info = SourceServerInfo(providerKind: .plex, serverName: "Server", serverID: "same-server")
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "first", containerID: "first-library", provider: first, kind: .movie),
+            .init(accountID: "second", containerID: "second-library", provider: second, kind: .movie)
+        ], serverInfo: ["first": info, "second": info])
+        var items: [MediaItem] = []
+        for offset in 0..<4 {
+            let page = try await provider.items(
+                in: "all", kind: .unknown,
+                page: .init(startIndex: offset, limit: 1, collectionPresentation: .serverDefault)
+            )
+            items += page.items
+            XCTAssertEqual(page.totalCount, 4)
+        }
+        XCTAssertEqual(items.map(\.title), ["A cuts", "A cuts", "B movie", "Zebra"])
+        XCTAssertEqual(Set(items.filter { $0.kind == .collection }.map(\.sourceAccountID)), ["first", "second"])
+        XCTAssertEqual(items.first { $0.id == "member" }?.sourceAccountID, "second")
+        let firstRequests = await first.titlePageRequests
+        let secondRequests = await second.titlePageRequests
+        XCTAssertEqual(firstRequests.count, 1)
+        XCTAssertEqual(secondRequests.count, 1)
+        XCTAssertTrue((firstRequests + secondRequests).allSatisfy {
+            $0.collectionPresentation == .serverDefault && $0.limit == 20
+        })
+        let collectionRequests = await first.collectionRequests + second.collectionRequests
+        XCTAssertTrue(collectionRequests.isEmpty, "Do not splice the global collection directory into libraries.")
+
+        let ungrouped = try await provider.items(in: "all", kind: .unknown, page: .init())
+        XCTAssertEqual(ungrouped.items.map(\.kind), [.movie])
+        let position = try await provider.libraryQueryLetterPosition(
+            in: "all", kind: .unknown, letter: "Z", page: .init(collectionPresentation: .serverDefault)
+        )
+        XCTAssertEqual(position, 3, "A query-mode change cannot reuse individual-movie offsets.")
+    }
+
     func testCollectionsKeepOwnersAndEachLibraryScope() async throws {
         let first = CollectionSourceFixture(collections: [collection("12", title: "Bond")])
         let second = CollectionSourceFixture(collections: [collection("12", title: "Bond")])
@@ -164,13 +208,17 @@ private actor CollectionSourceFixture: MediaProvider, CapabilityReporting {
     )
     private var collectionItems: [MediaItem]
     private let playlistItems: [MediaItem]
+    private let groupedItems: [MediaItem]?
     private var failure: AppError?
     private(set) var collectionRequests: [(libraryID: String, page: PageRequest)] = []
     private(set) var playlistRequests: [(libraryID: String, page: PageRequest)] = []
     private(set) var titleRequests = 0
+    private(set) var titlePageRequests: [PageRequest] = []
 
-    init(collections: [MediaItem], supportsCollections: Bool = true, playlists: [MediaItem]? = nil) {
+    init(collections: [MediaItem], supportsCollections: Bool = true, playlists: [MediaItem]? = nil,
+         groupedItems: [MediaItem]? = nil) {
         collectionItems = collections
+        self.groupedItems = groupedItems
         playlistItems = playlists ?? []
         let collectionCapability: ProviderCapability = supportsCollections ? [.libraryCollections] : []
         capabilities = playlists == nil ? collectionCapability : collectionCapability.union(.videoPlaylists)
@@ -199,9 +247,13 @@ private actor CollectionSourceFixture: MediaProvider, CapabilityReporting {
 
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         titleRequests += 1
+        titlePageRequests.append(page)
+        let items = page.usesServerCollections(for: kind)
+            ? groupedItems ?? [MediaItem(id: "movie", title: "Movie", kind: .movie)]
+            : [MediaItem(id: "movie", title: "Movie", kind: .movie)]
         return MediaPage(
-            items: [MediaItem(id: "movie", title: "Movie", kind: .movie)],
-            startIndex: page.startIndex, totalCount: 1
+            items: Array(items.dropFirst(page.startIndex).prefix(page.limit)),
+            startIndex: page.startIndex, totalCount: items.count
         )
     }
     func libraries() async throws -> [MediaLibrary] { [] }

@@ -12,6 +12,18 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
     public let source: Source
     public var id: HomeRowID { choice.id }
 
+    public var canBrowse: Bool {
+        switch source {
+        case let .home(row):
+            return row.hasMore && !row.items.isEmpty && row.loadingPlaceholderCount == 0 && row.failure == nil
+        case let .library(row):
+            return row.section.hasMore && !row.section.items.isEmpty && !row.isLoading
+                && row.failure == nil && row.issue == nil
+        case .liveTV:
+            return false
+        }
+    }
+
     public static func hasLiveTVRows(
         _ liveTV: HomeLiveTVSnapshot, visibility: HomeLibraryVisibility
     ) -> Bool {
@@ -37,12 +49,15 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
         func entry(_ row: HomeRow) -> Self? {
             var row = row
             if row.kind == .recentlyAdded, row.loadingPlaceholderCount == 0 {
-                let candidates = visibility.hideWatchedRecentlyAdded
-                    ? content.recentlyAddedCandidates ?? row.items : row.items
-                row.items = HomeRecentlyAddedPolicy.items(
-                    candidates.filter { $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled) },
-                    hideWatched: visibility.hideWatchedRecentlyAdded
+                let candidates = (content.recentlyAddedCandidates ?? row.items).filter {
+                    $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled)
+                        && (!visibility.hideWatchedRecentlyAdded || !HomeRecentlyAddedPolicy.isWatched($0))
+                }
+                let preview = HomeRowPreview(
+                    candidates, limit: HomeRecentlyAddedPolicy.rowLimit
                 )
+                row.items = preview.items
+                row.hasMore = preview.hasMore
                 guard !row.isEmptyOnHome else { return nil }
             }
             let id: HomeRowID
@@ -69,6 +84,12 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
                 for var row in group.rows {
                     if row.id == LibraryHomeRowKind.recentlyAdded.rawValue {
                         var section = row.section
+                        if visibility.hideWatchedRecentlyAdded {
+                            section.hasMore = HomeRowPreview(
+                                section.items.filter { !HomeRecentlyAddedPolicy.isWatched($0) },
+                                limit: HomeRecentlyAddedPolicy.rowLimit
+                            ).hasMore
+                        }
                         section.items = HomeRecentlyAddedPolicy.items(
                             section.items, hideWatched: visibility.hideWatchedRecentlyAdded
                         )
@@ -108,6 +129,12 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
                     row.items = row.items.filter { $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled) }
                 }
                 if row.definition.section.kind == .recentlyAdded {
+                    if visibility.hideWatchedRecentlyAdded {
+                        row.hasMore = HomeRowPreview(
+                            row.items.filter { !HomeRecentlyAddedPolicy.isWatched($0) },
+                            limit: HomeRecentlyAddedPolicy.rowLimit
+                        ).hasMore
+                    }
                     row.items = HomeRecentlyAddedPolicy.items(
                         row.items, hideWatched: visibility.hideWatchedRecentlyAdded
                     )

@@ -237,7 +237,9 @@ struct PlozziOSLibraryGridView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    browseControls
+                    if viewModel.availableContentModes.count > 1 {
+                        PlozziOSLibraryContentModeControl(viewModel: viewModel)
+                    }
                     Group {
                         if viewModel.contentMode == .recommended {
                             recommendedContent
@@ -310,6 +312,9 @@ struct PlozziOSLibraryGridView: View {
             }
         }
         .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                queryControls.labelStyle(.iconOnly)
+            }
             if let library = viewModel.fileBrowserLibrary {
                 ToolbarItem(placement: .primaryAction) {
                     NavigationLink(
@@ -462,19 +467,6 @@ struct PlozziOSLibraryGridView: View {
                 ContentFailureActions(report: viewModel.browseDiagnostic.map(PlaybackDiagnosticReport.library)) {
                     Task { await viewModel.loadFirstPage() }
                 }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var browseControls: some View {
-        VStack(spacing: 8) {
-            if viewModel.availableContentModes.count > 1 {
-                PlozziOSLibraryContentModeControl(viewModel: viewModel)
-            }
-            if viewModel.showsFilterMenu || !viewModel.availableSortFields.isEmpty {
-                BrowseQueryControls { queryControls }
-                .padding(.horizontal, horizontalInset)
             }
         }
     }

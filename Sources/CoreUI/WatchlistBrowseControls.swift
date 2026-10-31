@@ -3,7 +3,6 @@ import CoreModels
 
 public struct WatchlistBrowseControls: View {
     @Binding private var preferences: WatchlistBrowsePreferences
-    @Environment(\.locale) private var locale
 
     public init(preferences: Binding<WatchlistBrowsePreferences>) {
         _preferences = preferences
@@ -12,31 +11,48 @@ public struct WatchlistBrowseControls: View {
     public var body: some View {
         BrowseQueryControls {
             #if os(tvOS)
-            filterMenu
-            sortMenu
+            WatchlistFilterMenu(filter: $preferences.filter)
+            WatchlistSortMenu(sort: $preferences.sort)
             #else
-            sortMenu
-            filterMenu
+            WatchlistSortMenu(sort: $preferences.sort)
+            WatchlistFilterMenu(filter: $preferences.filter)
             #endif
         }
     }
+}
 
-    private var sortMenu: some View {
-        BrowseSortMenu(sort: preferences.sort, fields: WatchlistBrowsePreferences.sortFields) {
-            preferences.sort = $0
+public struct WatchlistSortMenu: View {
+    @Binding private var sort: CoreModels.SortDescriptor
+
+    public init(sort: Binding<CoreModels.SortDescriptor>) {
+        _sort = sort
+    }
+
+    public var body: some View {
+        BrowseSortMenu(sort: sort, fields: WatchlistBrowsePreferences.sortFields) {
+            sort = $0
         }
         .accessibilityIdentifier("watchlist-sort-menu")
     }
+}
 
-    private var filterMenu: some View {
-        BrowseFilterMenu(activeCount: preferences.filter == .all ? 0 : 1, summary: filterSummary) {
-            Picker("Filter", selection: $preferences.filter) {
+public struct WatchlistFilterMenu: View {
+    @Binding private var filter: WatchlistMediaFilter
+    @Environment(\.locale) private var locale
+
+    public init(filter: Binding<WatchlistMediaFilter>) {
+        _filter = filter
+    }
+
+    public var body: some View {
+        BrowseFilterMenu(activeCount: filter == .all ? 0 : 1, summary: filterSummary) {
+            Picker("Filter", selection: $filter) {
                 ForEach(WatchlistMediaFilter.allCases, id: \.self) {
                     Text($0.displayName).tag($0)
                 }
             }
-            if preferences.filter != .all {
-                Button("Clear Filters") { preferences.filter = .all }
+            if filter != .all {
+                Button("Clear Filters") { filter = .all }
             }
         }
         #if os(iOS)
@@ -46,7 +62,7 @@ public struct WatchlistBrowseControls: View {
     }
 
     private var filterSummary: String {
-        var name = preferences.filter.displayName
+        var name = filter.displayName
         name.locale = locale
         return String(localized: name) // l10n:content — resolves the existing filter label
     }

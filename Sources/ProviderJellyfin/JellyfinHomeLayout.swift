@@ -27,6 +27,31 @@ struct EmbyHomeQueryDto: Decodable {
 }
 
 extension JellyfinProvider {
+    public func homeRowPage(_ feed: HomeRowFeed, startIndex: Int, limit: Int) async throws -> HomeRowPage {
+        guard startIndex >= 0, limit > 0, limit <= PageRequest.defaultLimit,
+              startIndex < Int.max - limit else { throw AppError.invalidResponse }
+        if case let .latest(libraries?) = feed {
+            var items: [MediaItem] = []
+            var seen = Set<String>()
+            for library in libraries where library != collectionDirectoryID {
+                try Task.checkCancellation()
+                let latest = try await client.latestItems(
+                    userID: session.userID, limit: startIndex + limit + 1, parentID: library
+                )
+                items += latest.filter { seen.insert($0.Id).inserted }.map { map(item: $0).taggingLibrary(library) }
+            }
+            return .prefix(items, startIndex: startIndex, limit: limit)
+        }
+        guard case let .server(section, excluded, _) = feed else {
+            return try await homeRowPrefixPage(feed, startIndex: startIndex, limit: limit)
+        }
+        let items = try await loadServerHomeItems(
+            section: section, limit: startIndex + limit + 1, excludingLibraryIDs: excluded,
+            allowedParents: nil, isPreview: false
+        )
+        return .prefix(items, startIndex: startIndex, limit: limit)
+    }
+
     public func serverHomeLayout() async throws -> ServerHomeLayout? {
         if kind == .emby {
             let native: [EmbyHomeSectionDto]?
@@ -92,11 +117,11 @@ extension JellyfinProvider {
 
     private func loadServerHomeItems(
         section: ServerHomeSection, limit: Int, excludingLibraryIDs: Set<String>,
-        allowedParents: Result<[String?], AppError>?
+        allowedParents: Result<[String?], AppError>?, isPreview: Bool = true
     ) async throws -> [MediaItem] {
         guard limit > 0, section.kind != .libraries, section.kind != .liveTV,
               section.libraryID.map({ !excludingLibraryIDs.contains($0) }) ?? true else { return [] }
-        let boundedLimit = section.kind == .continueWatching ? limit : min(limit, 100)
+        let boundedLimit = section.kind == .continueWatching || !isPreview ? limit : min(limit, 100)
         if section.id.hasPrefix("emby:") {
             guard kind == .emby else { throw AppError.invalidResponse }
             let nativeID = String(section.id.dropFirst("emby:".count))

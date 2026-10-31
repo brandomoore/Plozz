@@ -8,6 +8,109 @@ import CoreNetworking
 /// base rows already cover (Recently Added, On Deck) and hubs with no playable
 /// items. The fixture mirrors the shape a real Plex Media Server returns.
 final class PlexHubsTests: XCTestCase {
+    func testExactShelfContinuationLoadsPastPreviewAndHundredItemCap() async throws {
+        let stub = StubHTTPClient()
+        func payload(_ start: Int, _ end: Int) -> String {
+            let items = (start..<end).map {
+                #"{"ratingKey":"\#($0)","type":"movie","title":"Title \#($0)","librarySectionID":1}"#
+            }.joined(separator: ",")
+            return #"{"MediaContainer":{"offset":\#(start),"totalSize":135,"Metadata":[\#(items)]}}"#
+        }
+        stub.stubSequence(pathSuffix: "/library/sections/1/all", jsons: [
+            payload(0, 60), payload(60, 120), payload(120, 135)
+        ])
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        let feed = HomeRowFeed.recommendation(
+            libraryID: "1", kind: .movie,
+            browseID: "/library/sections/1/all?genre=123&X-Plex-Token=UNTRUSTED"
+        )
+        let first = try await provider.homeRowPage(feed, startIndex: 0, limit: 60)
+        let second = try await provider.homeRowPage(feed, startIndex: 60, limit: 60)
+        let last = try await provider.homeRowPage(feed, startIndex: 120, limit: 60)
+        XCTAssertEqual(first.items.count, 60)
+        XCTAssertEqual(first.nextOffset, 60)
+        XCTAssertEqual(second.nextOffset, 120)
+        XCTAssertEqual(last.items.map(\.id), (120..<135).map(String.init))
+        XCTAssertNil(last.nextOffset)
+        XCTAssertTrue(last.items.allSatisfy { $0.libraryID == "1" })
+        let query = try XCTUnwrap(stub.queryItems(forPathSuffix: "/library/sections/1/all"))
+        XCTAssertTrue(query.contains(.init(name: "genre", value: "123")))
+        XCTAssertTrue(query.contains(.init(name: "X-Plex-Container-Size", value: "60")))
+        XCTAssertFalse(query.contains { $0.name.lowercased() == "x-plex-token" })
+    }
+
+    func testShelfContinuationRejectsForeignOriginAndNonAdvancingPage() async throws {
+        for key in ["https://other.invalid/library/sections/1/all", "//other.invalid/library/sections/1/all"] {
+            let stub = StubHTTPClient()
+            let provider = PlexProvider(session: makeSession(), http: stub)
+            do {
+                _ = try await provider.homeRowPage(
+                    .recommendation(libraryID: "1", kind: .movie, browseID: key),
+                    startIndex: 0, limit: 60
+                )
+                XCTFail("Foreign shelf paths must not receive server credentials")
+            } catch { XCTAssertEqual(error as? AppError, .invalidResponse) }
+            XCTAssertTrue(stub.sentPaths.isEmpty)
+        }
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/library/1/genre", json: """
+        {"MediaContainer":{"Hub":[{"offset":60,"more":true,"Metadata":[]}]}}
+        """)
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        do {
+            _ = try await provider.homeRowPage(
+                .recommendation(libraryID: "1", kind: .movie, browseID: "/hubs/library/1/genre"),
+                startIndex: 60, limit: 60
+            )
+            XCTFail("An unfinished empty page is not exhaustion")
+        } catch { XCTAssertEqual(error as? AppError, .invalidResponse) }
+    }
+
+    func testStableShelfIdentityIsSeparateFromRecommendationSlot() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/promoted", json: """
+        {"MediaContainer":{"Hub":[{
+          "hubIdentifier":"movie.similar.abc","title":"Similar","key":"/library/metadata/abc/similar?X-Plex-Token=SECRET",
+          "Metadata":[{"ratingKey":"7","type":"movie","title":"Title","librarySectionID":1}]
+        }]}}
+        """)
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        let shelves = try await provider.homeHubs(libraryID: "1", kind: .movie, limit: 20, includeUnpromoted: false)
+        XCTAssertEqual(shelves.first?.id, "recommendation:similar:0")
+        XCTAssertEqual(shelves.first?.browseID, "/library/metadata/abc/similar")
+    }
+
+    func testWrappedShelfUsesItemPaginationRatherThanOuterHubCount() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/library/1/genre", json: """
+        {"MediaContainer":{"size":1,"totalSize":1,"Hub":[{
+          "offset":60,"totalSize":62,"more":true,"Metadata":[
+            {"ratingKey":"60","type":"movie","title":"One","librarySectionID":1}
+          ]
+        }]}}
+        """)
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        let page = try await provider.homeRowPage(
+            .recommendation(libraryID: "1", kind: .movie, browseID: "/hubs/library/1/genre"),
+            startIndex: 60, limit: 60
+        )
+        XCTAssertEqual(page.items.map(\.id), ["60"])
+        XCTAssertEqual(page.nextOffset, 61)
+    }
+
+    func testShelfWithoutItemsOrExplicitEmptySizeIsNotSuccessfulExhaustion() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/library/1/genre", json: #"{"MediaContainer":{}}"#)
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        do {
+            _ = try await provider.homeRowPage(
+                .recommendation(libraryID: "1", kind: .movie, browseID: "/hubs/library/1/genre"),
+                startIndex: 0, limit: 60
+            )
+            XCTFail("An unrelated or incomplete container is not an empty shelf")
+        } catch { XCTAssertEqual(error as? AppError, .invalidResponse) }
+    }
+
     private func makeSession() -> UserSession {
         UserSession(
             server: MediaServer(id: "srv", name: "Home", baseURL: URL(string: "https://plex.host:32400")!, provider: .plex),

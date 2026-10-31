@@ -153,9 +153,6 @@ struct SubtitleStylePanel: View {
         if screen == .styleBackground {
             Text("Window padding is set by Plozz. Apple does not expose subtitle padding or line spacing.")
                 .font(.footnote).playerMenuRowSecondary().padding(16)
-        } else if screen == .styleOutline {
-            Text("Apple supplies the text edge style, including Uniform Outline, but not its color or thickness. Those are Plozz rendering values.")
-                .font(.footnote).playerMenuRowSecondary().padding(16)
         }
     }
 

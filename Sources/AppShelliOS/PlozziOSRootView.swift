@@ -867,6 +867,7 @@ struct PlozziOSTabShell: View {
     @State private var lastContentDestination: PlozziOSDestination = .home
     @State private var retainsExplicitLiveTVEntry = false
     @State private var retainsExplicitHomeEntry = false
+    @State private var retainsExplicitWatchlistEntry = false
     @State private var retainsExplicitDownloadEntry = false
     @State private var downloadNavigationID: UUID?
     @State private var hasChosenNavigationDestination = false
@@ -993,6 +994,9 @@ struct PlozziOSTabShell: View {
         if retainsExplicitDownloadEntry, !configured.contains(.downloads) {
             configured.append(.downloads)
         }
+        if retainsExplicitWatchlistEntry, !configured.contains(.watchlist) {
+            configured.append(.watchlist)
+        }
         return AppAdmissionNavigation.destinations(
             configured,
             liveTV: .liveTV,
@@ -1083,6 +1087,10 @@ struct PlozziOSTabShell: View {
                 \.plozziOSHomeIsFrontmost,
                 effectiveSelectedDestination == .home && !isShowingMorePage && !showingSettings
             )
+            .environment(\.openWatchlist, {
+                retainsExplicitWatchlistEntry = true
+                openDestination(.watchlist)
+            })
             .plozziOSLibraryDestination(appModel: appModel)
             .plozziOSItemNavigation(appModel: appModel, registersScreenshotRouting: true)
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -1384,6 +1392,7 @@ struct PlozziOSTabShell: View {
                 retainsExplicitLiveTVEntry = false
             }
             if destination != .home { retainsExplicitHomeEntry = false }
+            if destination != .watchlist { retainsExplicitWatchlistEntry = false }
             if destination != .downloads { retainsExplicitDownloadEntry = false }
         }
         .background { AppBackground(palette: palette) }
@@ -1981,7 +1990,7 @@ private struct PlozziOSDestinationView: View {
     }
 }
 
-private struct PlozziOSWatchlistLandingView: View {
+struct PlozziOSWatchlistLandingView: View {
     @Environment(\.mediaItemNavigator) private var navigateToItem
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
@@ -1994,8 +2003,6 @@ private struct PlozziOSWatchlistLandingView: View {
         @Bindable var browse = viewModel.watchlistBrowse
         ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: 16) {
-                WatchlistBrowseControls(preferences: $browse.preferences)
-                    .padding(.horizontal)
                 ContentStateView(
                     state: viewModel.state,
                     emptyMessage: "Your Watchlist is empty.",
@@ -2063,6 +2070,12 @@ private struct PlozziOSWatchlistLandingView: View {
         .environment(\.plozzCardCaptionView, .watchlist)
         .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
         .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                WatchlistSortMenu(sort: $browse.preferences.sort)
+                    .labelStyle(.iconOnly)
+                WatchlistFilterMenu(filter: $browse.preferences.filter)
+                    .labelStyle(.iconOnly)
+            }
             PlozziOSSettingsToolbarItem(action: onShowSettings)
         }
     }

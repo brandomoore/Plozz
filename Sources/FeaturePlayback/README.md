@@ -50,6 +50,10 @@ bounded language-match/accessibility flags without track titles or URLs.
   does not replace the glyph paths for the accepted view size. Zero-width
   probes do not shape text; unchanged measurements and control-only repositioning
   reuse cached paths. Configuration changes clear the cache.
+  Shadow and outline exclusion subtracts the winding-rule glyph silhouette,
+  preserving real letter counters without exposing overlapping font contours.
+  The exclusion path shares the layout cache; translucent text joins receive
+  only their normal fill, including with raised or depressed edges.
   These updates do not depend on pausing or revealing controls, and do not
   change saved positioning, subtitle offsets, or cue end times.
 - **Native-only video assets** — when that engine is selected, tvOS feeds the resolved URL directly to
@@ -168,6 +172,15 @@ engine/OS-owned. Actual background entry (Home, sleep, or switching apps) still
 checkpoints and suspends VOD and tears down live playback. Foreground recovery
 keeps its existing play/pause policy. iOS/iPadOS inactivity, PiP, AirPlay, and
 background-audio behavior are unchanged.
+
+Movie/episode loads explicitly select non-mixing `.playback` / `.moviePlayback`
+audio on tvOS and iOS/iPadOS, including when an engine instance is reused.
+Browsing trailers and theme music retain their non-interrupting mixing policy,
+but that process-wide setting must not carry into primary video playback.
+Plozzigen declares the category off-main before loading, preserves an existing
+playback route-sharing policy, and leaves activation to the engine. Muted or
+shared-session channel players do not claim this policy; live multiview keeps
+its existing ownership.
 
 Live source-reset recovery retains its three-attempt cap and 20-second minimum
 spacing. `LiveChannelRetuneBudget` replenishes attempts only after five minutes
@@ -298,6 +311,12 @@ Native and tvOS track menus share `TrackLabeling` and `TrackMenuBuilder`.
 Bare language titles no longer suppress known codec/channel facts, for example
 `English (Opus 5.1)`. Custom names and commentary are retained, existing format
 facts are not duplicated, and unknown formats are not invented.
+Audio labels retain per-track codec profiles and confirmed spatial-format flags:
+for example `Dolby TrueHD Atmos`, `Dolby Digital+ Atmos`, or
+`DTS-HD MA + DTS:X IMAX`. These identify the encoded source independently of
+device capabilities, spatial-rendering preferences, and the active output path.
+Plain channel audio keeps its codec and channel layout; unavailable profiles
+fall back to the known codec rather than inferring a richer format.
 The Aether adapter's native-bypass track list also retains observed media subtype
 and channel information from the already-playing asset, rather than manufacturing
 language-only tracks. Single tracks are exposed as metadata without offering a
@@ -889,6 +908,12 @@ presentation state and detaches the old player.
 Plozzigen's Audio **Processing** row samples Aether's active audio pipeline
 label, independently of source-video probe availability. `TRUEHD → FLAC
 bridge` or `TRUEHD → EAC3 bridge` identifies ordinary channel processing.
+For on-demand original-source playback, source audio diagnostics sample the
+confirmed active engine track on every tick, not the initial provider snapshot
+or a pending menu selection. Codec, profile, channels/layout, sample rate, and
+bitrate are replaced together; unavailable properties clear the previous track's
+values. Server-transcoded renditions and live-stream sampling retain their own
+metadata paths. Source-track refresh does not change Processing or Encoding.
 Both TV and mobile also show **Encoding**: **Lossless encoding** for an active
 FLAC bridge, **Lossy encoding** for EAC3 or APAC, **No re-encoding** for stream-copy,
 and **Decoded to PCM** for the software decoder. These display-only descriptions

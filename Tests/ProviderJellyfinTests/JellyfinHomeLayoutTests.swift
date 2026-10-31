@@ -3,6 +3,93 @@ import CoreModels
 @testable import ProviderJellyfin
 
 final class JellyfinHomeLayoutTests: XCTestCase {
+    func testHomeFeedRequestsIncludeDateAddedMetadata() async throws {
+        for kind: ProviderKind in [.jellyfin, .emby] {
+            let stub = StubHTTPClient()
+            let bare = """
+            [{"Id":"old","Name":"Z old","Type":"Movie","DateCreated":"2026-01-01T00:00:00Z"},
+             {"Id":"new","Name":"A new","Type":"Movie","DateCreated":"2026-02-01T00:00:00Z"}]
+            """
+            let envelope = #"{"Items":\#(bare),"TotalRecordCount":2,"StartIndex":0}"#
+            let paths = [
+                "/Users/selected-user/Items/Latest", "/Users/selected-user/Items/Resume", "/Shows/NextUp",
+                "/Users/selected-user/Sections/native/Items", "/LiveTv/Recordings",
+                "/Users/selected-user/Items", "/Movies/Recommendations"
+            ]
+            for path in paths {
+                let json = path.hasSuffix("/Latest") ? bare : path.hasSuffix("/Recommendations")
+                    ? #"[{"Items":\#(bare),"RecommendationType":"SimilarToRecentlyPlayed","CategoryId":"category"}]"#
+                    : envelope
+                stub.stub(pathSuffix: path, json: json)
+            }
+            let provider = JellyfinProvider(session: session(kind), http: stub)
+            let latest = try await provider.homeRowPage(.latest(libraryIDs: ["movies"]), startIndex: 0, limit: 60)
+            XCTAssertEqual(latest.items.count, 2)
+            XCTAssertTrue(latest.items.allSatisfy { $0.librarySortValues?.dateAdded != nil })
+            let chronological = latest.items.sorted {
+                MediaItemSortOrder.isOrderedBefore($0, $1, sort: .init(field: .dateAdded, direction: .descending))
+            }
+            XCTAssertEqual(chronological.map(\.id), ["new", "old"])
+            let client = JellyfinClient(
+                baseURL: session(kind).server.baseURL, deviceProfile: .init(deviceID: "device"),
+                providerKind: kind, http: stub
+            )
+            _ = try await client.resumeItems(userID: "selected-user", limit: 60)
+            _ = try await client.nextUpItems(userID: "selected-user", limit: 60)
+            _ = try await client.nativeHomeItems(userID: "selected-user", sectionID: "native", limit: 60, parentID: nil)
+            _ = try await client.activeHomeRecordings(userID: "selected-user", limit: 60)
+            _ = try await client.collectionMembers(userID: "selected-user", collectionID: "collection", page: .init())
+            _ = try await client.movieRecommendations(userID: "selected-user", parentID: "movies", limit: 60)
+            for path in paths {
+                let query = try XCTUnwrap(stub.queryItems(forPathSuffix: path))
+                let fields = query.first { $0.name.lowercased() == "fields" }?.value?.split(separator: ",") ?? []
+                XCTAssertTrue(fields.contains("DateCreated"), "\(kind): \(path)")
+            }
+        }
+    }
+
+    func testFullLatestShelfPropagatesSourceFailureRatherThanPublishingEmpty() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/selected-user/Items/Latest", json: "[]", status: 503)
+        let provider = JellyfinProvider(session: session(), http: stub)
+        do {
+            _ = try await provider.homeRowPage(.latest(libraryIDs: ["movies"]), startIndex: 0, limit: 60)
+            XCTFail("An unavailable source is not an exhausted shelf")
+        } catch {
+            XCTAssertNotNil(error as? AppError)
+        }
+    }
+
+    func testFullServerShelfExtendsPastPreviewCapForJellyfinAndEmby() async throws {
+        for kind: ProviderKind in [.jellyfin, .emby] {
+            let stub = StubHTTPClient()
+            let items = (0..<135).map { #"{"Id":"\#($0)","Type":"Movie","Name":"Title \#($0)"}"# }
+                .joined(separator: ",")
+            let section: ServerHomeSection
+            let path: String
+            if kind == .emby {
+                section = .init(id: "emby:native", kind: .recommendations, libraryID: "movies")
+                path = "/Users/selected-user/Sections/native/Items"
+                stub.stub(pathSuffix: path, json: #"{"Items":[\#(items)],"TotalRecordCount":135}"#)
+            } else {
+                section = .init(id: "web:recentlyadded:movies", kind: .recentlyAdded, libraryID: "movies")
+                path = "/Users/selected-user/Items/Latest"
+                stub.stub(pathSuffix: path, json: "[\(items)]")
+            }
+            let provider = JellyfinProvider(session: session(kind), http: stub)
+            let feed = HomeRowFeed.server(section, excludedLibraryIDs: [], anchorIDs: ["0"])
+            let second = try await provider.homeRowPage(feed, startIndex: 60, limit: 60)
+            XCTAssertEqual(second.items.map(\.id), (60..<120).map(String.init))
+            XCTAssertEqual(second.nextOffset, 120)
+            let last = try await provider.homeRowPage(feed, startIndex: 120, limit: 60)
+            XCTAssertEqual(last.items.count, 15)
+            XCTAssertNil(last.nextOffset)
+            XCTAssertTrue(last.items.allSatisfy { $0.libraryID == "movies" })
+            let query = try XCTUnwrap(stub.queryItems(forPathSuffix: path))
+            XCTAssertEqual(query.first { $0.name == "Limit" }?.value, "181")
+        }
+    }
+
     private func session(_ kind: ProviderKind = .jellyfin) -> UserSession {
         UserSession(
             server: MediaServer(
