@@ -220,7 +220,8 @@ struct ProductionHomeFixture: View {
             fixture = await ProductionHomeState.load()
         }
         .task {
-            guard ProcessInfo.processInfo.arguments.contains("--hero-showcase-focus-probe") else { return }
+            guard ProcessInfo.processInfo.arguments.contains("--hero-showcase-focus-probe")
+                || ProcessInfo.processInfo.arguments.contains("--hero-showcase-geometry-probe") else { return }
             do {
                 try await Task.sleep(for: .seconds(3))
                 await Self.probeHeroShowcaseFocus()
@@ -246,6 +247,8 @@ struct ProductionHomeFixture: View {
 
     @MainActor
     private static func probeHeroShowcaseFocus() async {
+        let geometryOnly = ProcessInfo.processInfo.arguments.contains("--hero-showcase-geometry-probe")
+        print("HERO_STAGE_PROBE mode=\(geometryOnly ? "geometry-only" : "native-focus")")
         let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows).first(where: \.isKeyWindow)
         var controllers = window?.rootViewController.map { [$0] } ?? []
@@ -258,18 +261,76 @@ struct ProductionHomeFixture: View {
             print("HERO_STAGE_PROBE missing stage or focus system")
             return
         }
+        var foreground: UIView?
+        var foregroundViews = [stage.hero.view!]
+        while let view = foregroundViews.popLast() {
+            if view is HeroDirectionalPressMonitor.InstallerView { foreground = view; break }
+            foregroundViews.append(contentsOf: view.subviews)
+        }
+        let foregroundOrigin = foreground.map { $0.convert($0.bounds, to: stage.view) }
         func report(_ phase: String, expanded: Bool) -> Bool {
             let focused = system.focusedItem
+            var artworkFillsScreen = false
+            var showcaseReachesScreenEdge = false
+            var foregroundInPlace = false
+            if let foreground, let foregroundOrigin {
+                let frame = foreground.convert(foreground.bounds, to: stage.view)
+                let lift = foregroundOrigin.minY - frame.minY
+                let expected: CGFloat = expanded || UIAccessibility.isReduceMotionEnabled ? 0 : 170
+                foregroundInPlace = abs(lift - expected) < 1
+                print("HERO_STAGE_FOREGROUND \(phase) frame=\(frame) lift=\(lift) passed=\(foregroundInPlace)")
+            }
+            if let window {
+                print("HERO_STAGE_GEOMETRY \(phase) window=\(window.bounds) stage=\(stage.view.convert(stage.view.bounds, to: window)) hero=\(stage.hero.view.convert(stage.hero.view.bounds, to: window)) safe=\(stage.hero.view.safeAreaInsets)")
+                for host in [stage.hero, stage.showcase] {
+                    var views = [host.view!]
+                    while let view = views.popLast() {
+                        if String(describing: type(of: view)) == "HeroWipeContainerView" {
+                            let frame = view.convert(view.bounds, to: window)
+                            let reachesEdge = abs(frame.maxX - window.bounds.maxX) < 1
+                                && abs(frame.minY - window.bounds.minY) < 1
+                            if host === stage.hero {
+                                artworkFillsScreen = reachesEdge && abs(frame.minX - window.bounds.minX) < 1
+                                print("HERO_STAGE_ART \(phase) frame=\(frame) fullWidth=\(artworkFillsScreen)")
+                            } else {
+                                showcaseReachesScreenEdge = reachesEdge
+                                print("HERO_STAGE_SHOWCASE_ART \(phase) frame=\(frame) reachesEdge=\(reachesEdge)")
+                            }
+                        }
+                        views.append(contentsOf: view.subviews)
+                    }
+                }
+            }
             let correct = stage.state.isExpanded == expanded
-                && stage.contains(focused, in: expanded ? stage.hero : stage.rows)
+                && (geometryOnly || stage.contains(focused, in: expanded ? stage.hero : stage.rows))
+                && artworkFillsScreen
+                && (expanded || showcaseReachesScreenEdge)
+                && foregroundInPlace
             print("HERO_STAGE_PROBE \(phase) expanded=\(stage.state.isExpanded) heroFocus=\(stage.contains(focused, in: stage.hero)) rowsFocus=\(stage.contains(focused, in: stage.rows)) focusedType=\(focused.map { String(describing: type(of: $0)) } ?? "nil") passed=\(correct)")
             return correct
         }
         var passed = report("initial", expanded: true)
-        for expanded in [false, true, false, true, false, true] {
-            stage.beginBoundaryMove(expanded ? .up : .down)
-            do { try await Task.sleep(for: .milliseconds(600)) } catch { return }
+        if geometryOnly {
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+        }
+        for expanded in geometryOnly ? [false, true] : [false, true, false, true, false, true] {
+            if geometryOnly {
+                stage.present(expanded: expanded, focus: false)
+            } else {
+                stage.beginBoundaryMove(expanded ? .up : .down)
+            }
+            for sample in 1...6 {
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+                if let foreground, let foregroundOrigin {
+                    let lift = foregroundOrigin.minY - foreground.convert(foreground.bounds, to: stage.view).minY
+                    let opacity = stage.hero.view.layer.presentation()?.opacity ?? stage.hero.view.layer.opacity
+                    print("HERO_STAGE_MOTION expanded=\(expanded) sample=\(sample) lift=\(lift) opacity=\(opacity)")
+                }
+            }
             passed = report(expanded ? "up" : "down", expanded: expanded) && passed
+            if geometryOnly {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            }
         }
         print("HERO_STAGE_PROBE complete passed=\(passed)")
     }

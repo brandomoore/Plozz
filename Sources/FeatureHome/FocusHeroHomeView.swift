@@ -431,7 +431,10 @@ struct FocusHeroHomeView<RowContent: View>: View {
                     showcase: AnyView(HeroShowcaseFeaturedContent(state: featuredState) { active in
                         AnyView(ZStack(alignment: .topLeading) {
                             showcaseDetails(active: active && isFrontmost)
-                            HeroShowcaseReturnCue(model: model, rows: rows, navigationStyle: navigationStyle)
+                            HeroShowcaseReturnCue(
+                                model: model, rows: rows, navigationStyle: navigationStyle,
+                                isActive: active && isFrontmost
+                            )
                         })
                     }),
                     rowContent: AnyView(scrollingRows)

@@ -7,6 +7,60 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testReturnChevronCentersOnTheDisplayAndExpiresUntilTheNextArrival() async throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let root = UIViewController()
+        window.rootViewController = root
+        window.isHidden = false
+        let cue = HeroShowcaseReturnCue.CueView()
+        root.view.addSubview(cue)
+        defer { cue.setActive(false); window.isHidden = true; window.rootViewController = nil }
+        cue.frame = CGRect(x: 80, y: 0, width: 1840, height: 1080)
+        cue.layoutIfNeeded()
+        let frame = cue.arrow.convert(cue.arrow.bounds, to: window)
+        XCTAssertEqual(frame.midX, window.bounds.midX, accuracy: 0.5)
+        XCTAssertEqual(frame.midY, 72, accuracy: 0.5)
+        XCTAssertFalse(cue.isUserInteractionEnabled)
+        XCTAssertTrue(cue.accessibilityElementsHidden)
+        XCTAssertEqual(cue.arrow.alpha, 0)
+        cue.setActive(true)
+        XCTAssertEqual(cue.arrow.alpha, 1)
+        try await Task.sleep(for: .milliseconds(3400))
+        XCTAssertEqual(cue.arrow.alpha, 0)
+        cue.setActive(true)
+        XCTAssertEqual(cue.arrow.alpha, 0, "Ordinary updates on the same row must not restart the hint")
+        cue.setActive(false)
+        cue.setActive(true)
+        XCTAssertEqual(cue.arrow.alpha, 1)
+        cue.top = 132
+        cue.layoutIfNeeded()
+        XCTAssertEqual(cue.arrow.convert(cue.arrow.bounds, to: window).midY, 132, accuracy: 0.5)
+        cue.removeFromSuperview()
+        XCTAssertEqual(cue.arrow.alpha, 0)
+    }
+
+    func testFeaturedViewportStaysCenteredWithoutChangingTheRowsBreakout() {
+        let cases: [(CGRect, CGRect, CGRect)] = [
+            (CGRect(x: 0, y: 0, width: 1840, height: 1080),
+             CGRect(x: -80, y: 0, width: 1920, height: 1080),
+             CGRect(x: 0, y: 0, width: 1760, height: 1080)),
+            (CGRect(x: 0, y: 0, width: 1760, height: 1080),
+             CGRect(x: -80, y: 0, width: 1920, height: 1080),
+             CGRect(x: 0, y: 0, width: 1760, height: 1080)),
+            (CGRect(x: 0, y: 0, width: 1840, height: 1080),
+             CGRect(x: 0, y: 0, width: 1920, height: 1080),
+             CGRect(x: 80, y: 0, width: 1760, height: 1080)),
+            (CGRect(x: 0, y: 0, width: 1920, height: 1080),
+             CGRect(x: 0, y: 0, width: 1920, height: 1080),
+             CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        ]
+        for (bounds, window, expected) in cases {
+            let frame = HeroShowcaseStage.Controller.featuredFrame(in: bounds, window: window)
+            XCTAssertEqual(frame, expected)
+            XCTAssertEqual(frame.midX, window.midX)
+        }
+    }
+
     func testRowsCannotTakeInitialFocusAndBoundaryInputOnlyChangesTheTopEdge() {
         let stage = HeroShowcaseStage.Controller(
             state: HeroShowcaseState(), hero: AnyView(Color.clear),
@@ -31,6 +85,37 @@ final class HeroShowcaseStageTests: XCTestCase {
         stage.canReturn = { false }
         XCTAssertNil(stage.boundaryDestination(for: .up, from: row))
         stage.stopAnimations()
+    }
+
+    func testMountedPinnedViewportKeepsLeadingContentAndRowBoundsDuringTransitions() {
+        let stage = HeroShowcaseStage.Controller(
+            state: HeroShowcaseState(), hero: AnyView(Color.clear),
+            showcase: AnyView(Color.clear), rows: AnyView(Color.clear)
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let root = UIViewController()
+        window.rootViewController = root
+        window.isHidden = false
+        defer { stage.stopAnimations(); window.isHidden = true; window.rootViewController = nil }
+        root.addChild(stage)
+        root.view.addSubview(stage.view)
+        stage.didMove(toParent: root)
+        for width: CGFloat in [1840, 1760] {
+            stage.view.frame = CGRect(x: 80, y: 0, width: width, height: 1080)
+            for expanded in [true, false, true] {
+                stage.present(expanded: expanded, focus: false)
+                stage.viewDidLayoutSubviews()
+                let hero = stage.hero.view.convert(stage.hero.view.bounds, to: window)
+                XCTAssertEqual(hero.minX, 80, accuracy: 0.5)
+                XCTAssertEqual(hero.midX, window.bounds.midX, accuracy: 0.5)
+                XCTAssertEqual(hero.width, 1760, accuracy: 0.5)
+                let showcase = stage.showcase.view.convert(stage.showcase.view.bounds, to: window)
+                XCTAssertEqual(showcase.minX, 80, accuracy: 0.5)
+                XCTAssertEqual(showcase.maxX, window.bounds.maxX, accuracy: 0.5)
+                XCTAssertEqual(stage.rows.view.bounds, stage.view.bounds)
+                XCTAssertEqual(stage.rows.view.center.x, stage.view.bounds.midX, accuracy: 0.5)
+            }
+        }
     }
 
     func testEveryLayerFillsTheViewportBeforeAndAfterContentUpdates() {

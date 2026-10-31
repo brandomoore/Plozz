@@ -1072,14 +1072,23 @@ the same Showcase rows. Its native stage preserves the three hosting trees:
 the featured hero, Showcase details/artwork, and the row viewport. Down admits
 the first row before animating its viewport into place; Up from that row restores
 the existing hero action and slide, without a separate arrow-button focus stop.
-Each hosted root fills the viewport and anchors its content at the top leading
-edge. Focus ownership includes SwiftUI virtual items and nested native controls,
+Each hosted root anchors its content at the top leading edge. The featured host
+uses symmetric horizontal viewport insets so its screen-wide backdrop stays
+centered on the display, including under pinned navigation's asymmetric row
+viewport. The Showcase host extends to the physical right edge while preserving
+its leading details inset. The row host retains its original bounds.
+Focus ownership includes SwiftUI virtual items and nested native controls,
 not only UIView-backed controls.
 The peeking rows are not eligible for focus while the featured hero is active,
 so first entry cannot collapse it. Boundary-only press and indirect-swipe
 recognizers request the other host even when its hidden content provides no
 geometric focus candidate; deeper-row and horizontal navigation remain native.
-The small Featured cue is informational. Deeper rows retain ordinary navigation.
+The hero foreground lifts toward the Showcase details while fading out and
+reverses on return; the artwork remains pinned to the display. Reduce Motion
+omits that lift. A shallow, text-free up chevron sits at the screen's horizontal
+center, below top navigation when present. It appears on first-row arrival,
+fades away after three seconds, and resets only after leaving and returning.
+It is informational, never an additional focus stop. Deeper rows retain ordinary navigation.
 Row translation uses additive compositor springs so reversing direction retains
 the in-flight motion. Artwork planes crossfade; Reduce Motion uses the same
 destinations without animation. Carousel dwell and trailers suspend while rows
@@ -1091,6 +1100,11 @@ native focus and invokes the same boundary handoff used by remote input. It
 checks the actual `UIFocusSystem.focusedItem` in the running app scene, not only
 the requested destination. This is separate from physical press/swipe delivery
 and presented-frame measurements in the remote test suite.
+The separate `--hero-showcase-geometry-probe` directly changes presentation
+without requesting focus and verifies the artwork's physical screen edges.
+Use it with `--pinned-home`, `--native-sidebar-home`, and `--top-bar-home` to
+capture initial hero, Showcase, and returned hero geometry. Its pass is not a
+remote-input or focus pass.
 
 Episode-backed Home heroes use a separately scoped `MediaSeriesSynopsis` fetched
 from the authenticated parent-series record. The server's series tagline/synopsis

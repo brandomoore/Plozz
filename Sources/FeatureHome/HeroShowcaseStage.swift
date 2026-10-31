@@ -23,21 +23,88 @@ struct HeroShowcaseFeaturedContent: View {
     var body: some View { content(!state.isExpanded) }
 }
 
-struct HeroShowcaseReturnCue: View {
+struct HeroShowcaseReturnCue: UIViewRepresentable {
     let model: FocusHeroModel
     let rows: [FocusHeroRow]
     let navigationStyle: NavigationStyle
+    let isActive: Bool
 
-    var body: some View {
-        Label("Featured", systemImage: "chevron.up")
-            .font(.system(size: 20, weight: .medium))
-            .plozzForeground(.secondary)
-            .padding(.leading, PlozzTheme.Metrics.heroLeadingPadding)
-            .padding(.top, max(16, FocusHeroLayout.columnTop(for: navigationStyle) - 38))
-            .opacity(model.activeIndex(in: rows) == 0 ? 1 : 0)
-            .allowsHitTesting(false)
-            .accessibilityHidden(model.activeIndex(in: rows) != 0)
-            .accessibilityIdentifier("hero-showcase-return-cue")
+    func makeUIView(context: Context) -> CueView { CueView() }
+
+    func updateUIView(_ view: CueView, context: Context) {
+        view.top = max(72, FocusHeroLayout.columnTop(for: navigationStyle) - 18)
+        view.setActive(isActive && model.activeIndex(in: rows) == 0)
+    }
+
+    static func dismantleUIView(_ view: CueView, coordinator: ()) { view.setActive(false) }
+
+    final class CueView: UIView {
+        let arrow = UIView()
+        var top: CGFloat = 72 {
+            didSet { if oldValue != top { setNeedsLayout() } }
+        }
+        private(set) var isActive = false
+        private var dismissal: Task<Void, Never>?
+
+        init() {
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+            accessibilityElementsHidden = true
+            accessibilityIdentifier = "hero-showcase-return-cue"
+            let stroke = CAShapeLayer()
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: 2, y: 11))
+            path.addLine(to: CGPoint(x: 22, y: 3))
+            path.addLine(to: CGPoint(x: 42, y: 11))
+            stroke.path = path.cgPath
+            stroke.strokeColor = UIColor.white.withAlphaComponent(0.6).cgColor
+            stroke.fillColor = UIColor.clear.cgColor
+            stroke.lineWidth = 5
+            stroke.lineCap = .round
+            stroke.lineJoin = .round
+            arrow.layer.addSublayer(stroke)
+            arrow.alpha = 0
+            addSubview(arrow)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            let viewport = window.map { convert($0.bounds, from: $0) } ?? bounds
+            arrow.bounds = CGRect(x: 0, y: 0, width: 44, height: 14)
+            arrow.center = CGPoint(x: viewport.midX, y: viewport.minY + top)
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            refreshVisibility()
+        }
+
+        func setActive(_ active: Bool) {
+            guard isActive != active else { return }
+            isActive = active
+            refreshVisibility()
+        }
+
+        private func refreshVisibility() {
+            dismissal?.cancel()
+            dismissal = nil
+            arrow.layer.removeAllAnimations()
+            guard isActive, window != nil else { arrow.alpha = 0; return }
+            UIView.animate(withDuration: 0.25) { self.arrow.alpha = 1 }
+            dismissal = Task { @MainActor [weak self] in
+                do { try await Task.sleep(for: .seconds(3)) }
+                catch is CancellationError { return }
+                catch {
+                    PlozzLog.app.debug("Hero return cue delay failed: \(error.localizedDescription)")
+                    return
+                }
+                guard let self, self.isActive, self.window != nil else { return }
+                UIView.animate(withDuration: 0.35) { self.arrow.alpha = 0 }
+                self.dismissal = nil
+            }
+        }
     }
 }
 
@@ -151,10 +218,29 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
 
         override func viewDidLayoutSubviews() {
             super.viewDidLayoutSubviews()
+            let windowFrame = view.window.map { view.convert($0.bounds, from: $0) }
             for host in [hero, showcase, rows] {
-                host.view.bounds = view.bounds
-                host.view.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+                var frame = view.bounds
+                if let windowFrame {
+                    if host === hero {
+                        frame = Self.featuredFrame(in: view.bounds, window: windowFrame)
+                    } else if host === showcase {
+                        // Browse artwork is right-aligned; keep its edge on the
+                        // display without moving the leading details column.
+                        frame.size.width = max(frame.width, windowFrame.maxX - frame.minX)
+                    }
+                }
+                host.view.bounds = CGRect(origin: .zero, size: frame.size)
+                host.view.center = CGPoint(x: frame.midX, y: frame.midY)
             }
+        }
+
+        static func featuredFrame(in bounds: CGRect, window: CGRect) -> CGRect {
+            // Rows break out at the trailing edge. The full-screen hero backdrop
+            // instead needs a symmetric slot to stay centered on the physical panel.
+            let inset = max(0, bounds.minX - window.minX, window.maxX - bounds.maxX)
+            return CGRect(x: window.minX + inset, y: bounds.minY,
+                          width: max(0, window.width - 2 * inset), height: bounds.height)
         }
 
         override var preferredFocusEnvironments: [UIFocusEnvironment] {
