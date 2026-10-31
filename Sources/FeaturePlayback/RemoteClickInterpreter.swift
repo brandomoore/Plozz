@@ -14,7 +14,7 @@ struct RemoteClickInterpreter {
 
     var edgeThreshold: Float = 0.7
     private(set) var suppressesPan = false
-    private var pendingAction: Action = .select
+    private(set) var pendingAction: Action = .select
 
     init(edgeThreshold: Float = 0.7) {
         self.edgeThreshold = edgeThreshold

@@ -1653,6 +1653,23 @@ position while leaving UIKit in charge of input and menu focus. The tvOS app
 declares both remote profiles and separate micro gamepads in `project.yml`;
 newer directional remotes keep their native press behavior.
 
+On-demand tvOS playback distinguishes short directional clicks from a 0.4-second
+hold. Short clicks retain the profile's skip intervals; holding Left/Right (or a
+first-generation touchpad edge) starts continuous preview scanning. Releasing
+does not stop it. Further same-direction clicks increase the scan level through
+8, 24, 48, 96, 192, 384, 768 and 1536 content-seconds per second. Opposite clicks
+reduce the level, then reverse at level 1 without discarding the preview position.
+The timeline shows a directional circle beside the timestamp, with levels 2–8
+outside it; rewind feedback sits on the left and forward feedback on the right.
+
+Scanning moves only the existing scrub timeline and thumbnail preview, not the
+engine's playback rate or seek queue. Select commits once and preserves the
+pre-scrub play/pause intent; Play/Pause commits and resumes. Back cancels without
+seeking. At either endpoint the preview stops and waits for confirmation or a
+direction change. A deliberate horizontal swipe takes over from scanning using
+the normal swipe-commit behavior. Cancelled holds, app inactivity, focus handoff,
+and player teardown stop the scan task. Live TV and mobile gestures are unchanged.
+
 `RemoteClickInterpreter` resolves left/right edges to the configured skip
 intervals and keeps center clicks as Select. UIKit press timestamps use uptime,
 while GameController snapshots use Unix time, so event matching converts clocks

@@ -203,13 +203,18 @@ struct PlayerTimelineTimes: View {
             let midY = geo.size.height / 2
             let knobX = width * CGFloat(model.progressFraction)
             let halfCur = curW / 2
-            let centerX = min(max(knobX, halfCur), max(halfCur, width - halfCur))
+            let scanLevel = model.isScrubbing ? model.skipGesture.scanLevel : 0
+            let scanBackward = scanLevel < 0
+            let glyphWidth: CGFloat = abs(scanLevel) >= 2 ? 60 : 30
+            let glyphShown = scanLevel != 0 || (!model.isScrubbing
+                && (model.skipGesture.hintVisible || (model.isPaused && model.intendsPause) || model.isSeeking))
+            let glyphReach: CGFloat = glyphShown ? glyphWidth + 10 : 0
+            let leftInset = halfCur + (scanBackward ? glyphReach : 0)
+            let rightInset = halfCur + (scanLevel > 0 ? glyphReach : 0)
+            let centerX = min(max(knobX, leftInset), max(leftInset, width - rightInset))
             let currentRightEdge = centerX + halfCur
             let remainingLeftEdge = width - remW
-            let glyphShown = !model.isScrubbing
-                && (model.skipGesture.hintVisible || (model.isPaused && model.intendsPause) || model.isSeeking)
-            let glyphReach: CGFloat = glyphShown ? 40 : 0
-            let remainingHidden = currentRightEdge + glyphReach + fadeGap >= remainingLeftEdge
+            let remainingHidden = currentRightEdge + (scanBackward ? 0 : glyphReach) + fadeGap >= remainingLeftEdge
 
             Text(curLabel)
                 .accessibilityIdentifier("player-timeline-current-time")
@@ -220,16 +225,17 @@ struct PlayerTimelineTimes: View {
                 .foregroundStyle(.white)
                 .fixedSize()
                 .shadow(radius: 3)
-                .overlay(alignment: .trailing) {
+                .overlay(alignment: scanBackward ? .leading : .trailing) {
                     statusGlyph
-                        .frame(width: 30, height: 30)
-                        .offset(x: 40)
-                        .opacity(model.isScrubbing ? 0 : 1)
+                        .frame(width: glyphWidth, height: 30)
+                        .offset(x: scanBackward ? -glyphReach : glyphReach)
+                        .opacity(model.isScrubbing && scanLevel == 0 ? 0 : 1)
                         .animation(
                             PlayerControls.transportFadeAnimation(scrubbing: model.isScrubbing),
                             value: model.isScrubbing
                         )
                 }
+                .environment(\.layoutDirection, .leftToRight)
                 .position(x: centerX, y: midY)
 
             Text(remLabel)
@@ -249,7 +255,21 @@ struct PlayerTimelineTimes: View {
     }
 
     @ViewBuilder private var statusGlyph: some View {
-        if model.skipGesture.hintVisible {
+        if model.isScrubbing, model.skipGesture.scanLevel != 0 {
+            let level = model.skipGesture.scanLevel
+            HStack(spacing: 8) {
+                if level <= -2 { Text(verbatim: String(abs(level))) }
+                Image(systemName: level < 0 ? "backward.circle" : "forward.circle")
+                if level >= 2 { Text(verbatim: String(level)) }
+            }
+            .font(.system(size: 24, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(.white)
+            .fixedSize()
+            .environment(\.layoutDirection, .leftToRight)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("player-remote-scan-level")
+        } else if model.skipGesture.hintVisible {
             Image(systemName: model.skipGesture.hintForward
                 ? model.skipGesture.forwardInterval.forwardSymbol
                 : model.skipGesture.backwardInterval.backwardSymbol)

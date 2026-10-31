@@ -315,6 +315,8 @@ public final class SkipGestureModel {
     public var hintForward: Bool = true
     /// True while the transient skip indicator is on screen.
     public var hintVisible: Bool = false
+    /// Signed remote scan level; zero means the preview is not advancing.
+    public var scanLevel: Int = 0
     /// Bumped on every skip so the indicator's pop-in transition replays even when
     /// it's already visible (rapid repeated skips).
     public var hintToken: Int = 0

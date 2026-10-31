@@ -8,6 +8,50 @@ import XCTest
 
 @MainActor
 final class PlayerControlsRenderingHostedTests: XCTestCase {
+    func testRemoteScanLevelRendersOnTheDirectionSideOfTheTimestamp() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let model = PlayerControlsModel()
+        model.controlsVisible = true
+        model.duration = 3600
+        model.isScrubbing = true
+        model.scrubSeconds = 600
+        window.rootViewController = UIHostingController(rootView:
+            PlayerTimelineTimes(model: model)
+                .frame(width: 1400, height: 60)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .background(.black)
+        )
+        window.makeKeyAndVisible()
+        for level in [-2, 2] {
+            model.skipGesture.scanLevel = level
+            let image = try await captureTimeline(in: window, matching: level < 0 ? "2.*10:00" : "10:00.*2")
+            let attachment = XCTAttachment(image: image)
+            attachment.name = level < 0 ? "Rewind level 2 left of timestamp" : "Forward level 2 right of timestamp"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        model.scrubSeconds = 0
+        model.skipGesture.scanLevel = -8
+        _ = try await captureTimeline(in: window, matching: "8.*0:00")
+        model.scrubSeconds = 3600
+        model.skipGesture.scanLevel = 8
+        _ = try await captureTimeline(in: window, matching: "1:00:00.*8")
+    }
+
     func testOutgoingTimelineKeepsClockLabelsUntilNextReveal() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
