@@ -1,0 +1,2927 @@
+{
+  "schema": 1,
+  "roots": [
+    "AllScreensDetailView",
+    "AppLanguagePicker",
+    "AppearanceDetailView",
+    "ArtworkAreaChoices",
+    "ArtworkCustomizationView",
+    "ArtworkPresetPicker",
+    "ArtworkSettingsControls",
+    "AutomaticSignInToggle",
+    "CardAppearanceControls",
+    "CardCaptionCustomizationContent",
+    "CardCaptionPicker",
+    "CardCaptionViewChoices",
+    "CardLabelControls",
+    "CircadianDetail",
+    "CollectionSectionSettingsView",
+    "ContinueWatchingActionControl",
+    "ContinueWatchingArtworkPicker",
+    "ContinueWatchingNextUpControl",
+    "ContinueWatchingPlaybackDetailsControl",
+    "CustomExternalPlayerControls",
+    "DetailHeaderRatingsSettingsForm",
+    "DetailPageDetailView",
+    "DolbyVisionFELControl",
+    "ExternalPlayerChoices",
+    "HelpDiagnosticsDetailView",
+    "HeroAutomaticChangeControls",
+    "HeroCollectionChoice",
+    "HeroCollectionListView",
+    "HeroCollectionPickerView",
+    "HeroRatingControls",
+    "HeroSettingsControls",
+    "HeroSettingsScreen",
+    "HeroTitleControls",
+    "HeroTitleSources",
+    "HeroTrailerControls",
+    "HomeFilteringSettingsView",
+    "HomeHeroSettingsView",
+    "HomeLayoutPicker",
+    "HomeRowPresetPicker",
+    "HomeSectionSettingsView",
+    "HomeSectionsSettingsView",
+    "IOSProfileAvatarModePicker",
+    "IOSProfileAvatarPicker",
+    "IOSProfileColorSection",
+    "IntegrationsDetailView",
+    "LibraryChannelManagementContent",
+    "LibraryDisplaySettingsView",
+    "LibraryNavigationSettingsView",
+    "LibraryPresentationSettingsView",
+    "LiveTVAutomaticChannelsOverview",
+    "LiveTVAutomaticChannelsSection",
+    "LiveTVAutomaticChannelsToggle",
+    "LiveTVBrowsingSettingsSections",
+    "LiveTVChannelVisibilitySettings",
+    "LiveTVGuidePreferences",
+    "LiveTVPlaylistGuideSettings",
+    "LiveTVPlaylistSourceDetails",
+    "LiveTVServerSourceDetails",
+    "MetadataDiagnosticsCachePanel",
+    "MetadataSettingsDetailView",
+    "MobileSubtitleBackgroundView",
+    "MobileSubtitleDualView",
+    "MobileSubtitleFileFormattingView",
+    "MobileSubtitleShadowOutlineView",
+    "MobileSubtitleStyleEditor",
+    "MusicPlayerStyleDetail",
+    "MyLibrariesDetailView",
+    "NavigationAppearanceDetail",
+    "NavigationLibrariesDetailView",
+    "NightShiftScheduleControl",
+    "PlaybackAdvancedSettingsView",
+    "PlaybackDetailView",
+    "PlexLinkedUserDetailView",
+    "PlozziOSAdvancedStreamingSettings",
+    "PlozziOSAllScreensSettingsView",
+    "PlozziOSDetailPageSettingsView",
+    "PlozziOSDetailRatingPriorityView",
+    "PlozziOSDiagnosticsSettingsView",
+    "PlozziOSDownloadSettingsView",
+    "PlozziOSMetadataDiagnosticsView",
+    "PlozziOSMetadataSettingsView",
+    "PlozziOSMyLibrariesSettingsView",
+    "PlozziOSNightShiftSettingsView",
+    "PlozziOSPlaybackSettingsView",
+    "PlozziOSPlexHomeUserSettingsView",
+    "PlozziOSProfilesView",
+    "PlozziOSSeerrSettingsView",
+    "PlozziOSSettingsLanguagePicker",
+    "PlozziOSSpoilerSettingsControls",
+    "PlozziOSStreamingSettings",
+    "PlozziOSSubtitleSettingsView",
+    "PlozziOSSyncSetupSettingsView",
+    "PlozziOSThemeSettingsView",
+    "PlozziOSTrackerSettingsView",
+    "ProfileActionsList",
+    "ProfileDetailView",
+    "ProfileEditorView",
+    "ProfileNameField",
+    "SeerDetailView",
+    "SeerUserPickerView",
+    "ServerUserDetailView",
+    "SettingsView",
+    "SkipMarkerCommunityControl",
+    "SkipMarkerContentControls",
+    "SkipMarkerEnableControl",
+    "SkipMarkerRuleControls",
+    "SkipMarkerSettingsView",
+    "SpatialAudioLayoutControl",
+    "SpoilerRowsBuilder",
+    "StreamingCustomQualityEditor",
+    "StreamingQualityPicker",
+    "SubtitleModeControl",
+    "SubtitleStylePanel",
+    "TopShelfSettingsView",
+    "TopShelfStylePicker"
+  ],
+  "directories": [
+    "Sources/FeatureSettings/"
+  ],
+  "traversable_directories": [
+    "Sources/FeatureSettings/",
+    "Sources/FeatureProfiles/"
+  ],
+  "files": [
+    "Sources/AppShelliOS/AddServerView.swift",
+    "Sources/AppShelliOS/PlozziOSDiagnosticsSettingsView.swift",
+    "Sources/AppShelliOS/PlozziOSDownloadsView.swift",
+    "Sources/AppShelliOS/PlozziOSMetadataDiagnosticsView.swift",
+    "Sources/AppShelliOS/PlozziOSMetadataSettingsView.swift",
+    "Sources/AppShelliOS/PlozziOSParentalPINSettingsView.swift",
+    "Sources/AppShelliOS/PlozziOSPlexHomeUserSettingsView.swift",
+    "Sources/AppShelliOS/PlozziOSProfileSettingsView.swift",
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift",
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift",
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift",
+    "Sources/AppShelliOS/PlozziOSStreamingQuality.swift",
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift",
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift",
+    "Sources/CoreModels/ArtworkSettings.swift",
+    "Sources/CoreModels/CardCaptionSettings.swift",
+    "Sources/CoreModels/HeroDiscovery.swift",
+    "Sources/CoreModels/HeroSourceKind.swift",
+    "Sources/CoreModels/LibraryPresentationSettings.swift",
+    "Sources/CoreModels/MediaSegment.swift",
+    "Sources/CoreModels/SettingsSearch.swift",
+    "Sources/CoreModels/SubtitlePolicy.swift",
+    "Sources/CoreUI/CollectionCoverLayoutPicker.swift",
+    "Sources/CoreUI/DetailHeaderMetadataRow.swift",
+    "Sources/CoreUI/LiveTVPortableSyncSettings.swift",
+    "Sources/CoreUI/PlaybackVersionPreferencePicker.swift",
+    "Sources/CoreUI/ProfileSettingsCategory.swift",
+    "Sources/FeatureAuth/ServerAddressesView.swift",
+    "Sources/FeatureLiveTV/LibraryChannelEditorView.swift",
+    "Sources/FeatureLiveTV/LiveTVAutomaticChannelsState.swift",
+    "Sources/FeatureLiveTV/LiveTVChannelOrganizationView.swift",
+    "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift",
+    "Sources/FeatureLiveTV/LiveTVChannelScanViews.swift",
+    "Sources/FeatureLiveTV/LiveTVGuideMappingView.swift",
+    "Sources/FeatureLiveTV/LiveTVImportedPlaylistEditor.swift",
+    "Sources/FeatureLiveTV/LiveTVPlaylistEditor.swift",
+    "Sources/FeatureLiveTV/LiveTVPrototypeControls.swift",
+    "Sources/FeatureLiveTV/LiveTVSettingsPage.swift",
+    "Sources/FeatureLiveTV/LiveTVSourceAccessGate.swift",
+    "Sources/FeatureLiveTV/LiveTVSourceApprovalControl.swift",
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift",
+    "Sources/FeaturePlayback/MobileSubtitleStyleEditor.swift",
+    "Sources/FeaturePlayback/PlayerControls.swift",
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift",
+    "Sources/FeaturePlayback/SubtitleStylePreview.swift",
+    "Sources/FeaturePlayback/SubtitleStyleSettingsView.swift",
+    "Sources/FeatureProfiles/AutomaticSignInSettings.swift",
+    "Sources/FeatureProfiles/ProfileActionsList.swift",
+    "Sources/FeatureProfiles/ProfileEditorView.swift",
+    "Sources/FeatureSettings/AppLanguagePicker.swift",
+    "Sources/FeatureSettings/ArtworkSettingsControls.swift",
+    "Sources/FeatureSettings/CardAppearanceControls.swift",
+    "Sources/FeatureSettings/CardCaptionCustomizationContent.swift",
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift",
+    "Sources/FeatureSettings/CompactMusicStylePicker.swift",
+    "Sources/FeatureSettings/ContinueWatchingArtworkPicker.swift",
+    "Sources/FeatureSettings/ContinueWatchingNextUpControl.swift",
+    "Sources/FeatureSettings/CrashReportingConsentView.swift",
+    "Sources/FeatureSettings/DiagnosticsSendButton.swift",
+    "Sources/FeatureSettings/ExternalPlayerSettingsView.swift",
+    "Sources/FeatureSettings/HelpDiagnosticsDetailView.swift",
+    "Sources/FeatureSettings/HeroCollectionPickerView.swift",
+    "Sources/FeatureSettings/HeroLogoSizeControl.swift",
+    "Sources/FeatureSettings/HeroSettingsControls.swift",
+    "Sources/FeatureSettings/HomeLayoutPicker.swift",
+    "Sources/FeatureSettings/HomeRowsSettingsView.swift",
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift",
+    "Sources/FeatureSettings/IntegrationsDetailView.swift",
+    "Sources/FeatureSettings/LibraryPresentationSettingsView.swift",
+    "Sources/FeatureSettings/LiveTVSettingsView.swift",
+    "Sources/FeatureSettings/LosslessAudioControl.swift",
+    "Sources/FeatureSettings/MetadataSettingsDetailView.swift",
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift",
+    "Sources/FeatureSettings/NavigationLibrariesDetailView.swift",
+    "Sources/FeatureSettings/NightShiftDetailView.swift",
+    "Sources/FeatureSettings/ParentalPINDetailView.swift",
+    "Sources/FeatureSettings/PlaybackReadAheadControl.swift",
+    "Sources/FeatureSettings/PlexLinkedUserDetailView.swift",
+    "Sources/FeatureSettings/PreferenceDetailViews.swift",
+    "Sources/FeatureSettings/ProfileDetailView.swift",
+    "Sources/FeatureSettings/ProfileLockSetupPage.swift",
+    "Sources/FeatureSettings/ProfileSeerrSetupView.swift",
+    "Sources/FeatureSettings/SeerDetailView.swift",
+    "Sources/FeatureSettings/SendDiagnosticsCard.swift",
+    "Sources/FeatureSettings/ServerUserDetailView.swift",
+    "Sources/FeatureSettings/SettingsContext.swift",
+    "Sources/FeatureSettings/SettingsSplitLayout.swift",
+    "Sources/FeatureSettings/SettingsView.swift",
+    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift",
+    "Sources/FeatureSettings/SpatialAudioControl.swift",
+    "Sources/FeatureSettings/SpatialAudioLayoutControl.swift",
+    "Sources/FeatureSettings/ThemeMusicVolumeControl.swift",
+    "Sources/FeatureSettings/TopShelfSettingsView.swift",
+    "Sources/FeatureSettings/TopShelfStylePicker.swift",
+    "Sources/FeatureSettings/WatchIndicatorColorPicker.swift"
+  ],
+  "input_types": [
+    "CardCaptionPicker",
+    "CollectionCoverLayoutPicker",
+    "CompactWatchIndicatorPicker",
+    "ContentRatingToggle",
+    "ContinueWatchingNextUpControl",
+    "CrashReportingConsentChoices",
+    "DescribedSegmentedPicker",
+    "FocusGatedSwitch",
+    "HeaderReviewScoreCountPicker",
+    "LivePlaybackBufferControl",
+    "LiveTVGuideDaysPicker",
+    "LosslessAudioControl",
+    "MobileSubtitleSliderRow",
+    "PlaybackReadAheadControl",
+    "PlaybackVersionPreferencePicker",
+    "PlozziOSSettingsLanguagePicker",
+    "SeparateSettingRow",
+    "SettingsCheckList",
+    "SettingsCheckableRow",
+    "SettingsMenuRow",
+    "SettingsOptionList",
+    "SettingsOptionPicker",
+    "SettingsRevealSection",
+    "SettingsSegmentedPicker",
+    "SettingsStepper",
+    "SettingsSwitchButton",
+    "SpatialAudioControl",
+    "StreamingQualityPicker",
+    "ViewCustomizationMenu",
+    "ViewCustomizationRow",
+    "ViewPreferenceChoiceRow",
+    "audioLanguageMenu",
+    "budgetControl",
+    "slider"
+  ],
+  "boundaries": {
+    "subtitleColorPicker": {
+      "kind": "input",
+      "reason": "Reusable subtitle color picker; every configured call site is independently inventoried.",
+      "controls": {
+        "Sources/FeaturePlayback/MobileSubtitleStyleEditor.swift|subtitleColorPicker|subtitleColorPicker|Picker|title": 1
+      }
+    },
+    "PlozziOSSettingsLanguagePicker": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsLanguagePicker|body|Menu|if dynamicTypeSize.isAccessibilitySize { VStack(alignment: .leading, spacing: 8) { Label(\"Language\", systemImage: \"globe\") currentLanguage } } else { LabeledContent { currentLanguage } label: { Label(\"Language\", systemImage: \"globe\") } }": 1,
+        "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsLanguagePicker|body|Picker|\"Language\"": 1
+      }
+    },
+    "CardCaptionPicker": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/CardAppearanceControls.swift|CardCaptionPicker|compactPicker|Picker|\"Labels\"": 1
+      }
+    },
+    "CompactWatchIndicatorPicker": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/CompactWatchIndicatorPicker.swift|CompactWatchIndicatorPicker|compactPicker|Picker|\"Watch indicators\"": 1
+      }
+    },
+    "ContentRatingToggle": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/ContentRatingToggle.swift|ContentRatingToggle|body|Toggle|<dynamic>": 1
+      }
+    },
+    "CrashReportingConsentChoices": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/CrashReportingConsentView.swift|CrashReportingConsentChoices|shareButton|Button|Text(SettingsCopy.shareDiagnostics)": 1,
+        "Sources/FeatureSettings/CrashReportingConsentView.swift|CrashReportingConsentChoices|declineButton|Button|\"Don't Share\"": 1
+      }
+    },
+    "LivePlaybackBufferControl": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|LivePlaybackBufferControl|body|SettingsMenuRow|\"Live TV buffer\"": 1,
+        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|LivePlaybackBufferControl|body|Picker|\"Live TV buffer\"": 2
+      }
+    },
+    "PlaybackReadAheadControl": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|PlaybackReadAheadControl|body|SettingsMenuRow|\"Video buffer\"": 1,
+        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|PlaybackReadAheadControl|body|Picker|\"Video buffer\"": 2
+      }
+    },
+    "DescribedSegmentedPicker": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/PreferenceDetailViews.swift|DescribedSegmentedPicker|body|SettingsSegmentedPicker|title": 1
+      }
+    },
+    "SeparateSettingRow": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/PreferenceDetailViews.swift|SeparateSettingRow|picker|SettingsSegmentedPicker|optionTitle": 1
+      }
+    },
+    "LosslessAudioControl": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/LosslessAudioControl.swift|LosslessAudioControl|body|Toggle|<dynamic>": 1
+      }
+    },
+    "SpatialAudioControl": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/SpatialAudioControl.swift|SpatialAudioControl|body|Toggle|\"Spatial audio (height channel support)\"": 1
+      }
+    },
+    "StreamingQualityPicker": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/AppShelliOS/PlozziOSStreamingQuality.swift|StreamingQualityPicker|body|Menu|SettingsMenuLabel(title, value: selection.title)": 1,
+        "Sources/AppShelliOS/PlozziOSStreamingQuality.swift|StreamingQualityPicker|body|Picker|Text(title)": 1,
+        "Sources/AppShelliOS/PlozziOSStreamingQuality.swift|StreamingQualityPicker|body|Button|\"Custom…\"": 1
+      }
+    },
+    "ContinueWatchingNextUpControl": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/ContinueWatchingNextUpControl.swift|ContinueWatchingNextUpControl|body|Toggle|<dynamic>": 1
+      }
+    },
+    "SettingsMenuRow": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsMenuRow.swift|SettingsMenuRow|body|Menu|SettingsSectionLabel( title: Text(title), icon: icon, assetIcon: nil, value: value, subtitle: subtitle.map(Text.init), accessorySymbol: \"chevron.up.chevron.down\" )": 1,
+        "Sources/FeatureSettings/SettingsMenuRow.swift|SettingsMenuRow|body|Menu|HStack { if let icon { Image(systemName: icon) } value }": 1
+      }
+    },
+    "SettingsOptionList": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsOptionList.swift|SettingsOptionList|list|SettingsCheckableRow|title(option)": 1
+      }
+    },
+    "SettingsCheckList": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsOptionList.swift|SettingsCheckList|list|SettingsCheckableRow|title(option)": 1
+      }
+    },
+    "SettingsSegmentedPicker": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsSegmentedPicker.swift|SettingsSegmentedPicker|body|Button|SegmentLabel( text: title(option), isSelected: option == selection )": 1
+      }
+    },
+    "ViewPreferenceChoiceRow": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/ViewCustomizationControls.swift|ViewPreferenceChoiceRow|body|SettingsCheckableRow|Text(title)": 1,
+        "Sources/FeatureSettings/ViewCustomizationControls.swift|ViewPreferenceChoiceRow|body|Button|<dynamic>": 1
+      }
+    },
+    "ViewCustomizationRow": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/ViewCustomizationControls.swift|ViewCustomizationRow|body|Button|<dynamic>": 1
+      }
+    },
+    "ViewCustomizationMenu": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/ViewCustomizationControls.swift|ViewCustomizationMenu|body|Menu|ViewCustomizationMenuValue(value: value) .frame(minHeight: 44) .contentShape(Rectangle())": 1,
+        "Sources/FeatureSettings/ViewCustomizationControls.swift|ViewCustomizationMenu|body|Picker|EmptyView()": 1
+      }
+    },
+    "SettingsSearchResults": {
+      "kind": "presentation",
+      "reason": "Search query results navigate to registered settings; they are not preference controls.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsSearchResults.swift|SettingsSearchResults|body|Button|resultLabel(entry)": 1
+      }
+    },
+    "SettingsSearchTelevisionView": {
+      "kind": "presentation",
+      "reason": "The transient search query is not a persisted preference.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsSearchResults.swift|SettingsSearchTelevisionView|body|TextField|\"Search settings\"": 1
+      }
+    },
+    "SettingsSplitLayout": {
+      "kind": "presentation",
+      "reason": "Generic navigation host; configured controls are discovered in their declaring components.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsSplitLayout.swift|SettingsSplitLayout|masterRow|Button|SettingsMasterRowLabel(row: row, isSelected: selectedRowID == row.id)": 1
+      }
+    },
+    "SettingsFormRow": {
+      "kind": "presentation",
+      "reason": "Generic row presenter; configured controls are discovered in their declaring components.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsFormLayout.swift|SettingsFormRow|content|SettingsPageLink|SettingsFormLinkLabel(row: row)": 1
+      }
+    },
+    "HomeEditorLink": {
+      "kind": "presentation",
+      "reason": "Generic navigation adapter, not a preference input.",
+      "controls": {
+        "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeEditorLink|body|SettingsPageLink|<dynamic>": 1,
+        "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeEditorLink|body|Button|label().padding(14) .settingsGroupSurface(cornerRadius: 12) .contentShape(Rectangle())": 1
+      }
+    },
+    "SettingsDetailLink": {
+      "kind": "presentation",
+      "reason": "Generic navigation adapter, not a preference input.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsDetailNavigation.swift|SettingsDetailLink|body|Button|label()": 1,
+        "Sources/FeatureSettings/SettingsDetailNavigation.swift|SettingsDetailLink|body|SettingsPageLink|label": 1
+      }
+    },
+    "SettingsRouteLink": {
+      "kind": "presentation",
+      "reason": "Generic navigation adapter, not a preference input.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsDetailNavigation.swift|SettingsRouteLink|body|NavigationLink|<dynamic>": 2
+      }
+    },
+    "SettingsRevealSection": {
+      "kind": "input",
+      "reason": "Persistent per-content-type enablement. Each call must register its master toggle and disabled-category fallbacks.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsSplitLayout.swift|SettingsRevealSection|masterToggle.toggle|Toggle|<dynamic>": 1
+      }
+    },
+    "SettingsWorkspaceProfileHeader": {
+      "kind": "presentation",
+      "reason": "Profile-switch navigation, not a preference editor.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsWorkspace.swift|SettingsWorkspaceProfileHeader|body|Button|<dynamic>": 1
+      }
+    },
+    "PlozziOSProfileIdentityHeader": {
+      "kind": "presentation",
+      "reason": "Profile-switch navigation, not a preference editor.",
+      "controls": {
+        "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSProfileIdentityHeader|body|Button|<dynamic>": 1
+      }
+    },
+    "ReleaseNotesStartupView": {
+      "kind": "presentation",
+      "reason": "Contextual release-note reading and acknowledgment; not a root Settings editor.",
+      "controls": {
+        "Sources/FeatureSettings/ReleaseNotesViews.swift|ReleaseNotesStartupView|body|Button|\"Done\"": 2,
+        "Sources/FeatureSettings/ReleaseNotesViews.swift|ReleaseNotesStartupView|body|Button|\"Don’t Show Again\"": 4,
+        "Sources/FeatureSettings/ReleaseNotesViews.swift|ReleaseNotesStartupView|body|Button|\"Cancel\"": 2
+      }
+    },
+    "RecentActivityFilterChip": {
+      "kind": "presentation",
+      "reason": "Filters a diagnostics activity display without changing persistent settings.",
+      "controls": {
+        "Sources/FeatureSettings/RecentActivityDetailView.swift|RecentActivityFilterChip|body|Button|<dynamic>": 1
+      }
+    },
+    "SendDiagnosticsCard": {
+      "kind": "presentation",
+      "reason": "Explicit diagnostic submission, not a preference; opening search must not send a report.",
+      "controls": {
+        "Sources/FeatureSettings/SendDiagnosticsCard.swift|SendDiagnosticsCard|body|TextField|<dynamic>": 1
+      }
+    },
+    "DiagnosticsSendButton": {
+      "kind": "presentation",
+      "reason": "Explicit diagnostic submission, not a preference; opening search must not send a report.",
+      "controls": {
+        "Sources/FeatureSettings/DiagnosticsSendButton.swift|DiagnosticsSendButton|body|Button|Label { if isSubmitted { Text(\"Submitted\") } else if isConfigured && !sharingEnabled { Text(SettingsCopy.enableDiagnosticSharing) } else { Text(\"Send to Developer\") } } icon: { Image(systemName: isSubmitted ? \"checkmark.circle.fill\" : \"paperplane\") }": 1
+      }
+    },
+    "DiagnosticsInfoButton": {
+      "kind": "presentation",
+      "reason": "Opens explanatory content, not a preference.",
+      "controls": {
+        "Sources/FeatureSettings/DiagnosticsInfoButton.swift|DiagnosticsInfoButton|body|Button|Label(\"About Diagnostic Sharing\", systemImage: \"info.circle\") .labelStyle(.iconOnly) .font(.body) .frame(minWidth: 44, minHeight: 44)": 1
+      }
+    },
+    "DiagnosticsInformationView": {
+      "kind": "presentation",
+      "reason": "Explanatory diagnostic content, not a preference editor.",
+      "controls": {
+        "Sources/FeatureSettings/DiagnosticsInfoButton.swift|DiagnosticsInformationView|body|Button|\"Done\"": 1
+      }
+    },
+    "SettingsAboutSection": {
+      "kind": "presentation",
+      "reason": "About links, acknowledgments and application information; no preference controls.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsAboutSection.swift|SettingsAboutSection|compactContent|Button|<dynamic>": 1,
+        "Sources/FeatureSettings/SettingsAboutSection.swift|SettingsAboutSection|expandedContent|Button|<dynamic>": 1
+      }
+    },
+    "PrivacyPolicyLink": {
+      "kind": "presentation",
+      "reason": "Opens the privacy policy; no persisted preference.",
+      "controls": {
+        "Sources/FeatureSettings/PrivacyPolicyLink.swift|PrivacyPolicyLink|body|Button|policyLabel": 1
+      }
+    },
+    "PrivacyPolicyQRCodeView": {
+      "kind": "presentation",
+      "reason": "Privacy-policy link presentation; no persisted preference.",
+      "controls": {
+        "Sources/FeatureSettings/PrivacyPolicyLink.swift|PrivacyPolicyQRCodeView|body|Button|\"Done\"": 1
+      }
+    },
+    "CrashReportingConsentFooter": {
+      "kind": "presentation",
+      "reason": "Consent explanation and repository link; the consent choices are independently indexed.",
+      "controls": {
+        "Sources/FeatureSettings/CrashReportingConsentView.swift|CrashReportingConsentFooter|body|Button|repositoryLabel": 1
+      }
+    },
+    "CrashReportingConsentRepositoryView": {
+      "kind": "presentation",
+      "reason": "Repository link presentation; the consent choices are independently indexed.",
+      "controls": {
+        "Sources/FeatureSettings/CrashReportingConsentView.swift|CrashReportingConsentRepositoryView|body|Button|\"Done\"": 1
+      }
+    },
+    "HomeCatalogStatus": {
+      "kind": "presentation",
+      "reason": "Loading, errors and retry actions; no preference values.",
+      "controls": {
+        "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeCatalogStatus|body|Button|\"Retry\"": 1
+      }
+    },
+    "LiveTVHiddenChannelsFailureSection": {
+      "kind": "presentation",
+      "reason": "Loading failure and retry actions; no preference values.",
+      "controls": {
+        "Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVHiddenChannelsFailureSection|body|Button|\"Retry\"": 1
+      }
+    },
+    "MetadataDiagnosticsOverviewPanel": {
+      "kind": "presentation",
+      "reason": "Read-only metrics and explicit refresh; cache-budget inputs are separate.",
+      "controls": {
+        "Sources/FeatureSettings/MetadataSettingsDetailView.swift|MetadataDiagnosticsOverviewPanel|body|Button|<dynamic>": 1
+      }
+    },
+    "DeviceCodeConnectingView": {
+      "kind": "presentation",
+      "reason": "Account authentication status and cancellation, not preference editing.",
+      "controls": {
+        "Sources/FeatureSettings/IntegrationsDetailView.swift|DeviceCodeConnectingView|body|Button|<dynamic>": 1
+      }
+    },
+    "LastFmConnectingView": {
+      "kind": "presentation",
+      "reason": "Account authentication status and cancellation, not preference editing.",
+      "controls": {
+        "Sources/FeatureSettings/IntegrationsDetailView.swift|LastFmConnectingView|body|Button|<dynamic>": 1
+      }
+    },
+    "AniListTokenEntryView": {
+      "kind": "presentation",
+      "reason": "Credential entry and authorization, not a searchable preference.",
+      "controls": {
+        "Sources/FeatureSettings/IntegrationsDetailView.swift|AniListTokenEntryView|body|TextField|\"Enter code\"": 1,
+        "Sources/FeatureSettings/IntegrationsDetailView.swift|AniListTokenEntryView|body|Button|\"Connect\"": 1,
+        "Sources/FeatureSettings/IntegrationsDetailView.swift|AniListTokenEntryView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "MALAuthorizationCodeEntryView": {
+      "kind": "presentation",
+      "reason": "Credential entry and authorization, not a searchable preference.",
+      "controls": {
+        "Sources/FeatureSettings/IntegrationsDetailView.swift|MALAuthorizationCodeEntryView|body|TextField|\"Enter code\"": 1,
+        "Sources/FeatureSettings/IntegrationsDetailView.swift|MALAuthorizationCodeEntryView|body|Button|\"Connect\"": 1,
+        "Sources/FeatureSettings/IntegrationsDetailView.swift|MALAuthorizationCodeEntryView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "SyncTroubleshootingView": {
+      "kind": "presentation",
+      "reason": "Explicit troubleshooting and recovery operations, not preference editing.",
+      "controls": {
+        "Sources/FeatureSettings/SettingsView.swift|SyncTroubleshootingView|body|Button|<dynamic>": 2,
+        "Sources/FeatureSettings/SettingsView.swift|SyncTroubleshootingView|body|Button|SettingsRowLabel( icon: \"arrow.clockwise\", title: \"Reset Sync\", secondary: { Text(\"Replace iCloud data with this Apple TV’s copy.\") .font(.footnote) .settingsRowSecondary() } )": 1,
+        "Sources/FeatureSettings/SettingsView.swift|SyncTroubleshootingView|body|Button|\"Reset\"": 1,
+        "Sources/FeatureSettings/SettingsView.swift|SyncTroubleshootingView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "SyncDataBreakdown": {
+      "kind": "presentation",
+      "reason": "Read-only sync data inspection with transient expansion controls.",
+      "controls": {
+        "Sources/FeatureSettings/SyncDataBreakdown.swift|SyncDataBreakdown|body|Button|\"Refresh Breakdown\"": 2
+      }
+    },
+    "SyncEraseDataView": {
+      "kind": "presentation",
+      "reason": "Destructive sync-data erasure flow, not a preference.",
+      "controls": {
+        "Sources/FeatureSettings/SyncEraseDataView.swift|SyncEraseDataView|body|Button|\"Cancel\"": 1,
+        "Sources/FeatureSettings/SyncEraseDataView.swift|SyncEraseDataView|body|Button|\"Erase Data\"": 1,
+        "Sources/FeatureSettings/SyncEraseDataView.swift|SyncEraseDataView|reviewContent|Button|\"Erase Sync Data…\"": 1,
+        "Sources/FeatureSettings/SyncEraseDataView.swift|SyncEraseDataView|reviewContent|Button|\"Cancel\"": 1
+      }
+    },
+    "ParentalPINDetailView": {
+      "kind": "presentation",
+      "reason": "Credential setup/change flow; search uses the existing protected profile-management entry.",
+      "controls": {
+        "Sources/FeatureSettings/ParentalPINDetailView.swift|ParentalPINDetailView|body|Button|SettingsRowLabel( icon: hasPIN ? \"lock.fill\" : \"lock.open\", title: hasPIN ? KidsProfileCopy.parentalPINChange : KidsProfileCopy.parentalPINCreate ) { Text(hasPIN ? ProfileLockCopy.on : ProfileLockCopy.off) .settingsRowSecondary() }": 1,
+        "Sources/FeatureSettings/ParentalPINDetailView.swift|ParentalPINDetailView|body|Button|Label { Text(KidsProfileCopy.parentalPINRemove) } icon: { Image(systemName: \"lock.slash\") } .frame(maxWidth: .infinity, alignment: .leading)": 1,
+        "Sources/FeatureSettings/ParentalPINDetailView.swift|ParentalPINDetailView|body|Button|Text(KidsProfileCopy.parentalPINRemove)": 1,
+        "Sources/FeatureSettings/ParentalPINDetailView.swift|ParentalPINDetailView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "SettingsStepper": {
+      "kind": "input",
+      "reason": "Reusable input renderer; configured call sites must carry coverage. The renderer's exact internal controls are separately checked.",
+      "controls": {
+        "Sources/CoreUI/SettingsStepper.swift|SettingsStepper|televisionButton|Button|if let label { if compact && rangeLabels != nil && !inlineRange { VStack(alignment: .leading, spacing: 8) { Text(label).font(SettingsRowMetrics.titleFont) if let subtitle { Text(subtitle).font(SettingsRowMetrics.helperFont).settingsRowSecondary() } adjustmentValue } .padding(.horizontal, SettingsRowMetrics.verticalPadding(.primary) - SettingsRowMetrics.horizontalPadding) } else { LabeledSettingRow( label, subtitle: subtitle, labelWidth: labelWidth, trailingAlignment: .trailing ) { adjustmentValue } } } else { adjustmentValue }": 1,
+        "Sources/CoreUI/SettingsStepper.swift|SettingsStepper|stepButton|Button|<dynamic>": 1
+      }
+    },
+    "SettingsCheckableRow": {
+      "kind": "input",
+      "reason": "Reusable input renderer; configured call sites must carry coverage. The renderer's exact internal controls are separately checked.",
+      "controls": {
+        "Sources/CoreUI/SettingsCheckableRow.swift|SettingsCheckableRow|body|Button|<dynamic>": 1
+      }
+    },
+    "SettingsOptionPicker": {
+      "kind": "input",
+      "reason": "Reusable input renderer; configured call sites must carry coverage. The renderer's exact internal controls are separately checked.",
+      "controls": {
+        "Sources/CoreUI/SettingsOptionPicker.swift|SettingsOptionPicker|body|Button|HStack(spacing: 10) { if let symbol = icon(option) { Image(systemName: symbol) } Text(title(option)) if selection == option { Image(systemName: \"checkmark.circle.fill\") } } .font(titleFont) .padding(.horizontal, 4)": 1
+      }
+    },
+    "FocusGatedSwitch": {
+      "kind": "input",
+      "reason": "Reusable input renderer; configured call sites must carry coverage. The renderer's exact internal controls are separately checked.",
+      "controls": {
+        "Sources/CoreUI/SettingsSwitchToggle.swift|FocusGatedSwitch|body|Button|HStack(spacing: SettingsRowMetrics.spacing(.primary)) { Text(title) .font(SettingsRowMetrics.titleFont) .lineLimit(2) .minimumScaleFactor(0.82) .fixedSize(horizontal: false, vertical: true) .layoutPriority(1) Spacer(minLength: SettingsRowMetrics.spacing(.primary)) SettingsToggleValue(isOn: isOn) } .frame(minHeight: SettingsRowMetrics.minHeight(.primary)) .padding(.vertical, SettingsRowMetrics.verticalPadding(.primary)) .padding(.horizontal, hInset) .contentShape(Rectangle())": 1
+      }
+    },
+    "SettingsSwitchButton": {
+      "kind": "input",
+      "reason": "Reusable input renderer; configured call sites must carry coverage. The renderer's exact internal controls are separately checked.",
+      "controls": {
+        "Sources/CoreUI/SettingsSwitchToggle.swift|SettingsSwitchButton|body|Button|<dynamic>": 1
+      }
+    },
+    "CollectionCoverLayoutPicker": {
+      "kind": "input",
+      "reason": "Reusable input renderer; configured call sites must carry coverage. The renderer's exact internal controls are separately checked.",
+      "controls": {
+        "Sources/CoreUI/CollectionCoverLayoutPicker.swift|CollectionCoverLayoutPicker|body|Picker|Text(title)": 1
+      }
+    },
+    "HeaderReviewScoreCountPicker": {
+      "kind": "input",
+      "reason": "Reusable input renderer; configured call sites must carry coverage. The renderer's exact internal controls are separately checked.",
+      "controls": {
+        "Sources/CoreUI/DetailHeaderMetadataRow.swift|HeaderReviewScoreCountPicker|body|SettingsStepper|\"Maximum ratings shown\"": 1,
+        "Sources/CoreUI/DetailHeaderMetadataRow.swift|HeaderReviewScoreCountPicker|body|Picker|\"Maximum ratings shown\"": 1
+      }
+    },
+    "PlaybackVersionPreferencePicker": {
+      "kind": "input",
+      "reason": "Reusable input renderer; configured call sites must carry coverage. The renderer's exact internal controls are separately checked.",
+      "controls": {
+        "Sources/CoreUI/PlaybackVersionPreferencePicker.swift|PlaybackVersionPreferencePicker|body|Picker|\"Version selection\"": 1
+      }
+    },
+    "LiveTVGuideDaysPicker": {
+      "kind": "input",
+      "reason": "Reusable input renderer; configured call sites must carry coverage. The renderer's exact internal controls are separately checked.",
+      "controls": {
+        "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVGuideDaysPicker|body|Menu|Text(\"\\(selection) days\")": 1,
+        "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVGuideDaysPicker|body|Picker|Text(title)": 1,
+        "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVGuideDaysPicker|body|SettingsOptionPicker|<dynamic>": 1
+      }
+    },
+    "MobileSubtitleSliderRow": {
+      "kind": "input",
+      "reason": "Reusable input renderer; configured call sites must carry coverage. The renderer's exact internal controls are separately checked.",
+      "controls": {
+        "Sources/FeaturePlayback/MobileSubtitleStyleEditor.swift|MobileSubtitleSliderRow|body|Slider|<dynamic>": 1
+      }
+    },
+    "SettingsSwitchToggleStyle": {
+      "kind": "presentation",
+      "reason": "Native toggle-style implementation, not a separate preference; configured Toggle calls are independently checked.",
+      "controls": {
+        "Sources/CoreUI/SettingsSwitchToggle.swift|SettingsSwitchToggleStyle|makeBody|Toggle|configuration": 2
+      }
+    },
+    "SettingsBackButton": {
+      "kind": "presentation",
+      "reason": "Back navigation only.",
+      "controls": {
+        "Sources/CoreUI/SettingsPageHeader.swift|SettingsBackButton|button|Button|<dynamic>": 1
+      }
+    },
+    "SettingsPageActionLink": {
+      "kind": "presentation",
+      "reason": "Navigation adapter whose configured destinations are discovered independently.",
+      "controls": {
+        "Sources/CoreUI/SettingsPageNavigation.swift|SettingsPageActionLink|body|Button|label()": 1
+      }
+    },
+    "LiveAudioSyncSheet": {
+      "kind": "presentation",
+      "reason": "Active-playback audio timing adjustment, not a Settings destination.",
+      "controls": {
+        "Sources/FeaturePlayback/LiveSubtitleSettingsSheet.swift|LiveAudioSyncSheet|body|Slider|<dynamic>": 1,
+        "Sources/FeaturePlayback/LiveSubtitleSettingsSheet.swift|LiveAudioSyncSheet|body|Button|\"Done\"": 1
+      }
+    },
+    "LiveSubtitleSettingsSheet": {
+      "kind": "presentation",
+      "reason": "Active-playback subtitle timing and style access, not a Settings destination.",
+      "controls": {
+        "Sources/FeaturePlayback/LiveSubtitleSettingsSheet.swift|LiveSubtitleSettingsSheet|body|Slider|<dynamic>": 1,
+        "Sources/FeaturePlayback/LiveSubtitleSettingsSheet.swift|LiveSubtitleSettingsSheet|body|NavigationLink|\"Style\"": 1,
+        "Sources/FeaturePlayback/LiveSubtitleSettingsSheet.swift|LiveSubtitleSettingsSheet|body|Button|\"Done\"": 1
+      }
+    },
+    "PlayerZoomSettingsRows": {
+      "kind": "presentation",
+      "reason": "Contextual active-player zoom controls, not a Settings destination.",
+      "controls": {
+        "Sources/FeaturePlayback/PlayerZoomSettings.swift|PlayerZoomSettingsRows|body|Picker|\"Zoom Mode\"": 1,
+        "Sources/FeaturePlayback/PlayerZoomSettings.swift|PlayerZoomSettingsRows|body|Stepper|<dynamic>": 1
+      }
+    },
+    "LiveTVChannelPreferencesView": {
+      "kind": "presentation",
+      "reason": "Individual channel metadata editing, not an app/profile setting; do not invent a current channel for search.",
+      "controls": {
+        "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVChannelPreferencesView|body|TextField|\"Name\"": 1,
+        "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVChannelPreferencesView|body|TextField|\"Category\"": 1,
+        "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVChannelPreferencesView|body|TextField|\"Language\"": 1,
+        "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVChannelPreferencesView|body|TextField|\"Country\"": 1,
+        "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVChannelPreferencesView|body|Button|\"Save metadata\"": 1,
+        "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVChannelPreferencesView|body|Button|\"Use source metadata\"": 1,
+        "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVChannelPreferencesView|body|Button|\"Move earlier\"": 1,
+        "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVChannelPreferencesView|body|Button|\"Move later\"": 1
+      }
+    },
+    "LiveTVFavoriteRecoveryPicker": {
+      "kind": "presentation",
+      "reason": "Explicit repair of a selected unavailable favorite, not a preference.",
+      "controls": {
+        "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVFavoriteRecoveryPicker|body|TextField|\"Find the same channel\"": 1,
+        "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVFavoriteRecoveryPicker|body|Button|VStack(alignment: .leading, spacing: 8) { Text(channel.name) if let country = channel.country { Text(country).font(.caption).settingsRowSecondary() } }": 1,
+        "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVFavoriteRecoveryPicker|body|Button|\"Restore favorite\"": 1
+      }
+    },
+    "LibraryChannelLibraryFields": {
+      "kind": "presentation",
+      "reason": "Inputs for a specific custom-channel recipe draft, not app/profile preferences.",
+      "controls": {
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelLibraryFields|body|SettingsCheckableRow|Text(verbatim: choice.name)": 1
+      }
+    },
+    "LibraryChannelRecipeFields": {
+      "kind": "presentation",
+      "reason": "Custom-channel creation/editing draft, not app/profile preferences.",
+      "controls": {
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRecipeFields|body|TextField|\"Channel name\"": 1,
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRecipeFields|body|Menu|SettingsMenuLabel(\"Icon\", value: iconTitle)": 1,
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRecipeFields|body|Picker|\"Icon\"": 1,
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRecipeFields|body|Menu|SettingsMenuLabel(\"Order\", value: recipe.ordering.title)": 1,
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRecipeFields|body|Picker|\"Order\"": 1,
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRecipeFields|body|Toggle|\"Movies\"": 1,
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRecipeFields|body|Toggle|\"Episodes\"": 1
+      }
+    },
+    "LibraryChannelRuleFields": {
+      "kind": "presentation",
+      "reason": "Custom-channel scheduling/filter recipe draft, not app/profile preferences.",
+      "controls": {
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRuleFields|body|TextField|\"Include movie or show titles\"": 1,
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRuleFields|body|TextField|\"Exclude movie or show titles\"": 1,
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRuleFields|body|TextField|\"Genres\"": 1,
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRuleFields|body|TextField|\"Allowed ratings\"": 1,
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRuleFields|body|Toggle|\"Include unrated titles\"": 1,
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRuleFields|body|TextField|\"Scheduling timezone\"": 1,
+        "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelRuleFields|body|TextField|\"Schedule seed\"": 1
+      }
+    },
+    "LiveTVSetupField": {
+      "kind": "presentation",
+      "reason": "Connection-setup field wrapper; search must not select or populate credentials.",
+      "controls": {
+        "Sources/FeatureLiveTV/LiveTVSettingsPage.swift|LiveTVSetupField|body|TextField|<dynamic>": 1
+      }
+    },
+    "PasswordServerSignInView": {
+      "kind": "presentation",
+      "reason": "Explicit username/password authentication flow, not preferences.",
+      "controls": {
+        "Sources/AppShelliOS/AddServerView.swift|PasswordServerSignInView|body|TextField|\"Username\"": 1,
+        "Sources/AppShelliOS/AddServerView.swift|PasswordServerSignInView|body|SecureField|\"Password\"": 1,
+        "Sources/AppShelliOS/AddServerView.swift|PasswordServerSignInView|body|Button|if case .submitting = viewModel.phase { ProgressView() .frame(maxWidth: .infinity) } else { Text(\"Sign In\") .frame(maxWidth: .infinity) }": 1,
+        "Sources/AppShelliOS/AddServerView.swift|PasswordServerSignInView|body|Button|\"Use Quick Connect\"": 1
+      }
+    },
+    "ServerAddAddressForm": {
+      "kind": "presentation",
+      "reason": "Explicit server connection setup, not preferences.",
+      "controls": {
+        "Sources/FeatureAuth/ServerAddressesView.swift|ServerAddAddressForm|body|TextField|\"Server address\"": 1,
+        "Sources/FeatureAuth/ServerAddressesView.swift|ServerAddAddressForm|body|Button|\"Verify and add address\"": 1
+      }
+    },
+    "ProfileLockSetupView": {
+      "kind": "presentation",
+      "reason": "Credential setup/confirmation; the existing protected Profile Lock entry owns access.",
+      "controls": {
+        "Sources/FeatureProfiles/ProfileLockSetupView.swift|ProfileLockSetupView|body|Button|Text(ProfileLockCopy.usePlexPINYes)": 1,
+        "Sources/FeatureProfiles/ProfileLockSetupView.swift|ProfileLockSetupView|body|Button|Text(ProfileLockCopy.usePlexPINNo)": 1,
+        "Sources/FeatureProfiles/ProfileLockSetupView.swift|ProfileLockSetupView|body|Button|\"Start Over\"": 2,
+        "Sources/FeatureProfiles/ProfileLockSetupView.swift|ProfileLockSetupView|body|Button|\"Try Again\"": 1,
+        "Sources/FeatureProfiles/ProfileLockSetupView.swift|ProfileLockSetupView|body|Button|\"Keep Separate\"": 1
+      }
+    },
+    "PlozziOSParentalPINSettingsView": {
+      "kind": "presentation",
+      "reason": "Household credential creation/change/removal with existing authorization; no direct search shortcut into PIN operations.",
+      "controls": {
+        "Sources/AppShelliOS/PlozziOSParentalPINSettingsView.swift|PlozziOSParentalPINSettingsView|body|Button|HStack { Label { Text(hasPIN ? KidsProfileCopy.parentalPINChange : KidsProfileCopy.parentalPINCreate) } icon: { Image(systemName: hasPIN ? \"lock.fill\" : \"lock.open\") } Spacer() Text(hasPIN ? ProfileLockCopy.on : ProfileLockCopy.off) .foregroundStyle(.secondary) } .contentShape(Rectangle())": 1,
+        "Sources/AppShelliOS/PlozziOSParentalPINSettingsView.swift|PlozziOSParentalPINSettingsView|body|Button|Label { Text(KidsProfileCopy.parentalPINRemove) } icon: { Image(systemName: \"lock.slash\") }": 1,
+        "Sources/AppShelliOS/PlozziOSParentalPINSettingsView.swift|PlozziOSParentalPINSettingsView|body|Button|Text(KidsProfileCopy.parentalPINRemove)": 1,
+        "Sources/AppShelliOS/PlozziOSParentalPINSettingsView.swift|PlozziOSParentalPINSettingsView|body|Button|\"Cancel\"": 1
+      }
+    }
+  },
+  "derived_anchors": {
+    "entry.anchorID": "Live TV subtitle variants reuse the ordinary style anchors; exhaustive CoreModels tests verify the mapping and exclude dual subtitles."
+  },
+  "exclusions": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsSearchDestination|authorizationPrompt|Button|Text(KidsProfileCopy.parentalPIN)": {
+      "count": 1,
+      "reason": "Reopens the normal parental-PIN authorization sheet after cancellation; not a preference input."
+    },
+    "Sources/AppShelliOS/AddServerView.swift|AddServerView|body|TextField|\"Server address\"": {
+      "count": 1,
+      "reason": "sensitive_connection_field: Setup flow."
+    },
+    "Sources/AppShelliOS/AddServerView.swift|AddServerView|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|\"Try Again\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|QuickConnectServerSignInView|phaseContent|Button|\"Try Again\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSDiagnosticsSettingsView.swift|PlozziOSDiagnosticsSettingsView|body|NavigationLink|Label(\"Recent Activity\", systemImage: \"clock.arrow.circlepath\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSDiagnosticsSettingsView.swift|PlozziOSRecentActivityView|body|Menu|BrowseFilterLabel( activeCount: selectedCategory == nil ? 0 : 1, summary: selectedCategory?.capitalized ?? \"\" )": {
+      "reason": "Transient diagnostics display filter and clipboard action.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSDiagnosticsSettingsView.swift|PlozziOSRecentActivityView|body|Button|\"Refresh\"": {
+      "reason": "Transient diagnostics display filter and clipboard action.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSDownloadsView.swift|PlozziOSDownloadManagementSettings|body|Button|\"Pause All\"": {
+      "count": 1,
+      "reason": "download_operation: Not a preference."
+    },
+    "Sources/AppShelliOS/PlozziOSDownloadsView.swift|PlozziOSDownloadManagementSettings|body|Button|\"Resume All\"": {
+      "count": 1,
+      "reason": "download_operation: Not a preference."
+    },
+    "Sources/AppShelliOS/PlozziOSDownloadsView.swift|PlozziOSDownloadManagementSettings|body|Button|\"Cancel Active Downloads\"": {
+      "count": 1,
+      "reason": "destructive_action: No executable search shortcut."
+    },
+    "Sources/AppShelliOS/PlozziOSDownloadsView.swift|PlozziOSDownloadManagementSettings|body|Button|\"Delete All Downloads\"": {
+      "count": 1,
+      "reason": "destructive_action: No executable search shortcut."
+    },
+    "Sources/AppShelliOS/PlozziOSDownloadsView.swift|PlozziOSDownloadSettingsView|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSMetadataDiagnosticsView.swift|PlozziOSMetadataDiagnosticsView|body|Button|\"Clear Cache\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/AppShelliOS/PlozziOSMetadataDiagnosticsView.swift|PlozziOSMetadataDiagnosticsView|body|Button|\"Cancel\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/AppShelliOS/PlozziOSMetadataDiagnosticsView.swift|PlozziOSMetadataDiagnosticsView|cacheSection|Button|Label(\"Clear Cache\", systemImage: \"trash\")": {
+      "count": 1,
+      "reason": "destructive_cache_action: Budget controls remain included."
+    },
+    "Sources/AppShelliOS/PlozziOSMetadataSettingsView.swift|PlozziOSMetadataSettingsView|body|NavigationLink|\"Artwork\"": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSMetadataSettingsView.swift|PlozziOSMetadataSettingsView|tmdbSection|SecureField|\"TMDB v4 API Read Access Token\"": {
+      "count": 1,
+      "reason": "credential: Same credential boundary."
+    },
+    "Sources/AppShelliOS/PlozziOSPlexHomeUserSettingsView.swift|PlozziOSPlexHomeUserSettingsView|userList|Button|\"Sign In Again\"": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "watcher-plex-user"
+      ],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSPlexHomeUserSettingsView.swift|PlozziOSPlexHomeUserSettingsView|userList|Button|\"Retry\"": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "watcher-plex-user"
+      ],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSPlexHomeUserSettingsView.swift|PlozziOSPlexHomeUserSettingsView|userList|Button|\"Cancel\"": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "watcher-plex-user"
+      ],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|connectionContent|Button|\"Test Connection\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|connectionContent|Button|\"Disconnect\"": {
+      "count": 2,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|connectionContent|Button|\"Try Again\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|connectionFields|SecureField|\"API key\"": {
+      "count": 1,
+      "reason": "credential: Never index key."
+    },
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|connectionFields|Button|\"Connect\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|profileMappings|Button|\"Try Again\"": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "seerr-profile-user"
+      ],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|body|Button|\"Add Server\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|serverGroup|Button|\"Sign In Again\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSArtworkSettingsView|body|NavigationLink|\"Metadata Providers (TMDB, TheTVDB…)\"": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSDetailPageSettingsView|body|NavigationLink|Text(\"Rating sources & order\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSNightShiftSettingsView|body|Toggle|\"Preview at Full Strength\"": {
+      "count": 1,
+      "reason": "preview_state: model.isPreviewing is temporary and cleared on exit."
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSNightShiftSettingsView|body|Button|\"Preview a Day\"": {
+      "count": 1,
+      "reason": "preview_action: Does not configure schedule."
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|NavigationLink|\"Customize subtitle style\"": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|NavigationLink|\"Customize Live TV subtitles\"": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSStreamingQuality.swift|StreamingCustomQualityEditor|body|Button|\"Cancel\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/AppShelliOS/PlozziOSStreamingQuality.swift|StreamingCustomQualityEditor|body|Button|\"Apply\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|body|Button|\"Try Again\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|\"Sync Now\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|NavigationLink|Label( \"Troubleshooting\", systemImage: \"wrench.and.screwdriver\" )": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncTroubleshootingView|body|Button|\"Reset & Re-upload From This Device\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncTroubleshootingView|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|AniListSettingsContent|body|Button|\"Disconnect\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|AniListSettingsContent|authorizationForm|TextField|\"Authorization code\"": {
+      "count": 1,
+      "reason": "credential: OAuth exchange."
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|AniListSettingsContent|authorizationForm|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|TextField|\"Authorization code\"": {
+      "count": 1,
+      "reason": "credential: OAuth exchange."
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|Button|\"Disconnect\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|SimklSettingsContent|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|SimklSettingsContent|body|Button|\"Disconnect\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|TraktSettingsContent|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|TraktSettingsContent|content|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 2
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|TraktSettingsContent|content|Button|\"Disconnect\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|TraktSettingsContent|content|Button|\"Retry\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|WetrakrSettingsContent|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|WetrakrSettingsContent|content|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 2
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|WetrakrSettingsContent|content|Button|\"Disconnect\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|WetrakrSettingsContent|content|Button|\"Retry\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/CoreUI/ServerAddressSettingsLink.swift|ServerAddressSettingsLink|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/CoreUI/SettingsPageNavigation.swift|SettingsPageLink|body|NavigationLink|label": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 2
+    },
+    "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelCustomSection|body|SettingsPageLink|SettingsDisclosureLabel { Label(\"Create custom channel\", systemImage: \"plus\") }": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelCustomSection|body|SettingsPageLink|SettingsDisclosureLabel { Text(verbatim: channel.revisions.last?.recipe.name ?? \"\") }": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVChannelScanViews.swift|LiveTVScanSourceActions|body|SettingsPageLink|SettingsRowLabel(icon: \"checklist\", title: \"Scan results\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVChannelScanViews.swift|LiveTVScanSourceActions|body|SettingsPageLink|SettingsRowLabel(icon: \"eye.slash\", title: \"Show hidden\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVGuideMappingView.swift|LiveTVChannelGuideMappingView|body|SettingsPageLink|SettingsRowLabel(icon: \"list.bullet\", title: Text(guide.source.name))": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVGuideMappingView.swift|LiveTVGuideMappingView|body|TextField|\"Find channel\"": {
+      "count": 1,
+      "reason": "transient_filter: Search text in mapping editor."
+    },
+    "Sources/FeatureLiveTV/LiveTVGuideMappingView.swift|LiveTVGuideMappingView|body|SettingsPageLink|SettingsRowLabel(icon: \"calendar\", title: Text(channel.name), trailing: { if imports.mappingOverrides[channel.id] != nil { Text(\"Manual\").settingsRowSecondary() } else { Text(\"Automatic\").settingsRowSecondary() } })": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVGuideMappingView.swift|LiveTVGuideStationPicker|body|TextField|\"Find guide station\"": {
+      "count": 1,
+      "reason": "transient_filter: Search text in mapping editor."
+    },
+    "Sources/FeatureLiveTV/LiveTVSettingsPage.swift|LiveTVGuideFields|body|Button|\"Move guide earlier\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSettingsPage.swift|LiveTVGuideFields|body|Button|\"Move guide later\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourceApprovalControl.swift|LiveTVProfileSourceApprovalControl|body|Button|SettingsRowLabel(icon: \"lock.open\", title: \"Revoke source approval\")": {
+      "count": 1,
+      "reason": "authorization_action: Existing Kids source authorization workflow only."
+    },
+    "Sources/FeatureLiveTV/LiveTVSourceApprovalControl.swift|LiveTVProfileSourceApprovalControl|body|Button|SettingsRowLabel(icon: \"lock\", title: \"Approve this source\")": {
+      "count": 1,
+      "reason": "authorization_action: Requires existing parental approval flow; never direct enablement."
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVPlaylistGuideSettings|body|SettingsPageLink|SettingsRowLabel(icon: \"link\", title: \"Correct guide mapping\", trailing: { LiveTVSourceChevron() })": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVPlaylistGuideSettings|body|SettingsPageLink|SettingsRowLabel( icon: \"person.crop.rectangle.badge.questionmark\", title: \"Review channel identities\", trailing: { Text(reviews.count, format: .number).settingsRowSecondary() } )": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVPlaylistSourceDetails|body|SettingsPageLink|SettingsRowLabel(icon: \"list.bullet.rectangle\", title: \"Playlist and guides\", trailing: { LiveTVSourceChevron() })": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVPlaylistSourceDetails|body|SettingsPageLink|SettingsRowLabel(icon: \"checkmark.circle\", title: \"Check channel availability\", trailing: { LiveTVSourceChevron() })": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVPlaylistSourceDetails|body|SettingsPageLink|SettingsRowLabel(icon: \"calendar\", title: \"Guide options\", trailing: { LiveTVSourceChevron() })": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVPlaylistSourceDetails|body|SettingsPageLink|SettingsRowLabel(icon: \"info.circle\", title: \"Source details\", trailing: { LiveTVSourceChevron() })": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVPlaylistSourceDetails|body|Button|SettingsRowLabel(icon: \"trash\", title: \"Remove source\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVPlaylistSourceDetails|body|Button|\"Remove source\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVServerSourceDetails|body|SettingsPageLink|SettingsRowLabel(icon: \"pencil\", title: \"Rename source\", trailing: { LiveTVSourceChevron() })": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVServerSourceDetails|body|Button|SettingsRowLabel(icon: \"trash\", title: \"Remove source\")": {
+      "count": 1,
+      "reason": "destructive_action: Keep confirmation and authorization."
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVServerSourceDetails|body|Button|\"Remove source\"": {
+      "count": 1,
+      "reason": "destructive_action: Keep confirmation and authorization."
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVServerSourceRename|body|TextField|\"Source name\"": {
+      "count": 1,
+      "reason": "connection_metadata: Runtime source identity; may be reached through source editor, not indexed by value."
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVSourceErrors|messages|Button|\"Retry\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeaturePlayback/MobileSubtitleStyleEditor.swift|MobileSubtitleFontView|body|NavigationLink|\"System Fonts\"": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/MobileSubtitleStyleEditor.swift|MobileSubtitleStyleEditor|appearance|NavigationLink|\"Shadow & Outline\"": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/MobileSubtitleStyleEditor.swift|MobileSubtitleStyleEditor|appearance|NavigationLink|LabeledContent( \"Background\", value: viewModel.effectiveStyle.background.isEnabled || viewModel.effectiveStyle.glyphBackground.alpha > 0 ? \"On\" : \"Off\" )": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/MobileSubtitleStyleEditor.swift|MobileSubtitleStyleEditor|appearance|NavigationLink|LabeledContent( \"Dual Subtitles\", value: viewModel.hasSecondarySubtitle ? \"On\" : \"Off\" )": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/MobileSubtitleStyleEditor.swift|MobileSubtitleStyleEditor|appearance|NavigationLink|\"Subtitle file formatting\"": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/MobileSubtitleStyleEditor.swift|MobileSubtitleStyleEditor|appearance|Button|\"Reset to App Default\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift|SubtitleStylePanel|styleMainRows|StyleRowSpec|\"Reset to App Default\"": {
+      "reason": "Subsection navigation or temporary preview-track selection, not a separate stored style field.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileActionsList.swift|ProfileActionsList|actions|Button|\"Cancel\"": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-kids",
+        "profile-lock-entry"
+      ],
+      "count": 3
+    },
+    "Sources/FeatureProfiles/ProfileActionsList.swift|ProfileActionsList|actions|Button|\"Delete Profile\"": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-kids",
+        "profile-lock-entry"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileActionsList.swift|ProfileActionsList|deleteButton|Button|SettingsRowLabel(icon: \"trash\", title: \"Delete Profile\")": {
+      "count": 1,
+      "reason": "destructive_action: No direct search execution."
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|IOSProfilePickerSheet|body|Button|\"Done\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|tvOSBody|Button|\"Delete Profile\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|tvOSBody|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|headerRow|Button|\"Done\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|headerRow|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|iOSBody|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 2
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|iOSBody|Button|\"Delete Profile\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/CardAppearanceControls.swift|CardCaptionSettingsLink|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize labels\") } .settingsFormRowLayout()": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/CardCaptionCustomizationContent.swift|CardCaptionCustomizationContent|body|Picker|\"Page\"": {
+      "reason": "Transient page selection within the independently indexed caption-view family.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|Button|let choice = HomeRowChoice(collectionSection: draft) HomeEditorRowLabel( title: Text(\"Content\"), subtitle: choice.homeEditorSource(in: accounts), subtitleProvider: choice.homeEditorProvider(in: accounts) )": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "home-row-arrangement"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|TextField|\"Row name\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "home-row-arrangement"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|Button|\"Remove from Home\"": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "home-row-arrangement"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|previewContent|Button|\"Retry\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeatureSettings/ExternalPlayerSettingsView.swift|CustomExternalPlayerControls|body|Button|\"Save and use custom player\"": {
+      "count": 1,
+      "reason": "validated_commit_action: Template field is included; activation must not implicitly select or save a player."
+    },
+    "Sources/FeatureSettings/HeroCollectionPickerView.swift|HeroCollectionListView|body|Button|\"Retry\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeatureSettings/HeroCollectionPickerView.swift|HeroCollectionListView|body|Button|\"Load more\"": {
+      "count": 1,
+      "reason": "pagination_action: No preference."
+    },
+    "Sources/FeatureSettings/HeroCollectionPickerView.swift|HeroCollectionPickerView|body|Button|\"Clear selection\"": {
+      "count": 1,
+      "reason": "reset_action: Mutates collection selection; do not expose an executable search action."
+    },
+    "Sources/FeatureSettings/HeroCollectionPickerView.swift|HeroCollectionPickerView|body|Button|\"Done\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeatureSettings/HomeRowsSettingsView.swift|HomeSectionsSettingsView|addSectionButton|SettingsPageLink|Label(\"Add row\", systemImage: \"plus\") .font(.body.weight(.semibold)) .frame(maxWidth: .infinity, minHeight: 44)": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeRowPresetPicker|body|Button|\"Cancel\"": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "home-row-preset"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeSectionSettingsView|body|Button|\"Remove from Home\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "library-covers"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/IntegrationsDetailView.swift|IntegrationsDetailView|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 2
+    },
+    "Sources/FeatureSettings/IntegrationsDetailView.swift|IntegrationsDetailView|rows.trackers|Button|\"Retry\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 2
+    },
+    "Sources/FeatureSettings/LibraryPresentationSettingsView.swift|LibraryDisplaySettingsView|rowEditor|Button|\"Reset Rows\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeatureSettings/LibraryPresentationSettingsView.swift|LibraryNavigationSettingsView|body|Button|\"Reset Navigation\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeatureSettings/LibraryPresentationSettingsView.swift|LibraryPresentationSettingsView|libraryChoices|Button|\"Try Again\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVChannelVisibilitySettings|body|SettingsPageLink|HiddenChannelsNavigationLabel(count: hiddenChannels.hiddenChannels.count)": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVHiddenChannelsListContent|body|Button|\"Retry\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVHiddenChannelsListContent|body|Button|\"Reset category and region visibility\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVHiddenChannelsListContent|body|Button|\"Restore\"": {
+      "count": 1,
+      "reason": "content_management_action: Runtime channel operation."
+    },
+    "Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVHiddenChannelsListContent|body|Button|\"Restore all\"": {
+      "count": 1,
+      "reason": "content_management_action: Runtime channel operation."
+    },
+    "Sources/FeatureSettings/MetadataSettingsDetailView.swift|MetadataDiagnosticsCachePanel|body|Button|Label(\"Clear Cache\", systemImage: \"trash\") .frame(maxWidth: .infinity)": {
+      "count": 1,
+      "reason": "destructive_cache_action: Budget controls remain included."
+    },
+    "Sources/FeatureSettings/MetadataSettingsDetailView.swift|MetadataDiagnosticsCachePanel|body|Button|\"Clear Cache\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeatureSettings/MetadataSettingsDetailView.swift|MetadataDiagnosticsCachePanel|body|Button|\"Cancel\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
+    },
+    "Sources/FeatureSettings/MetadataSettingsDetailView.swift|MetadataSettingsDetailView|providersSection|Button|Label(\"Reset to Recommended\", systemImage: \"arrow.uturn.backward\") .frame(maxWidth: .infinity)": {
+      "count": 1,
+      "reason": "reset_action: Provider order/enabled state remains included."
+    },
+    "Sources/FeatureSettings/MetadataSettingsDetailView.swift|MetadataSettingsDetailView|tmdbKeySection|SecureField|\"TMDB v4 API Read Access Token\"": {
+      "count": 1,
+      "reason": "credential: Generic TMDB-key setup page only; never key values."
+    },
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|libraryStatusMessage|Button|\"Sign In Again\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/NightShiftDetailView.swift|CircadianDetail|previewButton|Button|HStack(spacing: 10) { Image(systemName: \"moon.stars.fill\") Text(model.previewProgress == nil ? \"Preview a day\" : model.previewClockText) .monospacedDigit() } .font(SettingsRowMetrics.titleFont) .padding(.horizontal, 4)": {
+      "count": 1,
+      "reason": "preview_action: Preview timeline is not a preference."
+    },
+    "Sources/FeatureSettings/ProfileSeerrSetupView.swift|ProfileSeerrSetupView|connectionContent|TextField|\"Server address (e.g. https://requests.example.com)\"": {
+      "count": 1,
+      "reason": "sensitive_connection_field: Shared Seerr setup component."
+    },
+    "Sources/FeatureSettings/ProfileSeerrSetupView.swift|ProfileSeerrSetupView|connectionContent|SecureField|\"Admin API key\"": {
+      "count": 1,
+      "reason": "credential: Shared Seerr setup component."
+    },
+    "Sources/FeatureSettings/SeerDetailView.swift|SeerDetailView|connectPanel|SecureField|\"Admin API key\"": {
+      "count": 1,
+      "reason": "credential: Never index key."
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ServerDetailView|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ServerDetailView|accountRow|Button|\"Sign In Again\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ServerDetailView|removeServerPanel|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|developerModeRow|Button|HStack(spacing: 16) { Image(systemName: \"hammer\") .font(.system(size: 22, weight: .regular)) .frame(width: 30, height: 30) Text(\"Turn Off Developer Mode\").font(.callout.weight(.medium)) Spacer() } .foregroundStyle(.orange) .padding(.vertical, 12) .padding(.horizontal, 12) .contentShape(Rectangle())": {
+      "count": 1,
+      "reason": "developer_control: Hidden tool mode, not a normal indexed preference."
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|debugHeroForegroundRow|Button|HStack(spacing: 16) { Image(systemName: \"rectangle.on.rectangle.angled\") .font(.system(size: 22, weight: .regular)) .frame(width: 30, height: 30) Text(\"Hero Foreground (Debug)\").font(.callout.weight(.medium)) Spacer() Text(heroForegroundModeLabel) .font(.callout) .plozzForeground(.secondary) } .foregroundStyle(.orange) .padding(.vertical, 12) .padding(.horizontal, 12) .contentShape(Rectangle())": {
+      "count": 1,
+      "reason": "debug_override: DEBUG-only renderer override, gated by Developer Mode and adult profile."
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|signOutAllRow|Button|HStack(spacing: 16) { Image(systemName: \"rectangle.portrait.and.arrow.right\") .font(.system(size: 22, weight: .regular)) .frame(width: 30, height: 30) Text(\"Sign Out of All Accounts\").font(.callout.weight(.medium)) Spacer() } .foregroundStyle(.red) .padding(.vertical, 12) .padding(.horizontal, 12) .contentShape(Rectangle())": {
+      "count": 1,
+      "reason": "destructive_account_action: Keep confirmation and adult boundary."
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|syncSetupDetail|Button|\"Sync Now\"": {
+      "count": 1,
+      "reason": "sync_operation: Not opt-in preference."
+    },
+    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsControl|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize\") } .settingsFormRowLayout()": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsView|rows|SettingsPageLink|SettingsDisclosureLabel { Text(kind.settingsTitle) } .settingsFormRowLayout()": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|AddServerView|body|Button|if isValidating { ProgressView(\"Checking server…\") } else { Text(provider == .plex ? \"Link Plex account\" : \"Continue\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|ManagedServerDiscoverySection|body|Button|\"Scan Again\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|ManagedServerDiscoverySection|body|Button|HStack(spacing: 12) { ProviderBrandMark( provider: server.provider, size: 30 ) VStack(alignment: .leading, spacing: 2) { Text(server.name) .foregroundStyle(.primary) Text(server.baseURL.absoluteString) .font(.caption) .plozzForeground(.secondary) .lineLimit(1) } Spacer() Image(systemName: server.provider == .silo ? \"chevron.forward\" : \"arrow.up.backward\") .plozzForeground(.tertiary) }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|\"Open Plex to link\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|VStack(alignment: .leading) { Text(server.name) Text(server.baseURL.host() ?? server.baseURL.absoluteString) .font(.caption) .plozzForeground(.secondary) }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|QuickConnectServerSignInView|body|Button|\"Sign in with username and password\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|QuickConnectServerSignInView|phaseContent|Button|\"Use Password\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSDiagnosticsSettingsView.swift|PlozziOSDiagnosticsSettingsView|body|TextField|<dynamic>": {
+      "reason": "Optional diagnostic submission text, not a saved preference.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSDiagnosticsSettingsView.swift|PlozziOSRecentActivityView|body|Picker|\"Category\"": {
+      "reason": "Transient diagnostics display filter and clipboard action.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSDiagnosticsSettingsView.swift|PlozziOSRecentActivityView|body|Button|Label(justCopied ? \"Copied\" : \"Copy\", systemImage: justCopied ? \"checkmark\" : \"doc.on.doc\")": {
+      "reason": "Transient diagnostics display filter and clipboard action.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSDownloadsView.swift|PlozziOSDownloadSettingsView|body|Button|deletion.confirmLabel": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSMetadataDiagnosticsView.swift|PlozziOSMetadataDiagnosticsView|overviewSection|Button|Label(\"Refresh\", systemImage: \"arrow.clockwise\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSMetadataSettingsView.swift|PlozziOSMetadataSettingsView|body|Button|HStack { Text(\"Artwork\") Spacer() Image(systemName: \"chevron.forward\") .font(.footnote) .foregroundStyle(.secondary) }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSMetadataSettingsView.swift|PlozziOSMetadataSettingsView|tmdbSection|Button|Label(tmdbKey.isConfigured ? \"Replace Key\" : \"Save Key\", systemImage: \"square.and.arrow.down\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSMetadataSettingsView.swift|PlozziOSMetadataSettingsView|tmdbSection|Button|Label(\"Verify Key\", systemImage: \"checkmark.shield\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSMetadataSettingsView.swift|PlozziOSMetadataSettingsView|tmdbSection|Button|Label(\"Remove Key\", systemImage: \"trash\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSMetadataSettingsView.swift|PlozziOSMetadataSettingsView|diagnosticsSection|Button|HStack { Label(\"Diagnostics\", systemImage: \"chart.bar.xaxis\") Spacer() Text(\"Cache and provider health\") .font(.subheadline) .plozzForeground(.secondary) Image(systemName: \"chevron.forward\") .font(.caption.weight(.semibold)) .plozzForeground(.tertiary) } .contentShape(Rectangle())": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSPlexHomeUserSettingsView.swift|PlozziOSPlexHomeUserSettingsView|userList|Button|<dynamic>": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "watcher-plex-user"
+      ],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSPlexHomeUserSettingsView.swift|PlozziOSPlexHomeUserSettingsView|userButton|Button|HStack(spacing: 12) { AsyncImage(url: user.avatarURL) { image in image.resizable().scaledToFill() } placeholder: { Image(systemName: \"person.crop.circle.fill\") .resizable() .plozzForeground(.secondary) } .frame(width: 40, height: 40) .clipShape(Circle()) Text(verbatim: user.name) .foregroundStyle(.primary) if user.requiresPIN { Image(systemName: \"lock.fill\") .font(.caption) .plozzForeground(.secondary) } Spacer() if pendingSelection?.homeUserID == user.id { if appModel.plexHomeUsers.plexPINEntryAvailability == .checking { ProgressView().accessibilityHidden(true) } } else if isSelected(user) { Image(systemName: \"checkmark\").foregroundStyle(.tint).accessibilityHidden(true) } } .frame(maxWidth: .infinity) .contentShape(Rectangle())": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "watcher-plex-user"
+      ],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|connectionFields|Button|HStack { Label( server.baseURL.host ?? server.baseURL.absoluteString, systemImage: \"server.rack\" ) Spacer() if let version = server.version { Text(\"v\\(version)\") .font(.footnote) .plozzForeground(.secondary) } }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|connectionFields|Button|isScanning ? \"Scanning…\" : \"Scan Local Network\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|profileMappings|Button|Label( \"Admin — unrestricted\", systemImage: profile.seerrRequestIdentity == .admin ? \"checkmark\" : \"person.crop.circle.badge.checkmark\" )": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "seerr-profile-user"
+      ],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|profileMappings|Button|Label { Text(verbatim: user.name) } icon: { Image( systemName: isSelected(user, for: profile) ? \"checkmark\" : \"person\" ) }": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "seerr-profile-user"
+      ],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|serverGroup|Button|\"Edit connection\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|serverGroup|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|addUserButton|Button|Label( group.providerKind == .plex ? \"Add Another Plex Account\" : \"Add Another User\", systemImage: \"person.badge.plus\" )": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSServersSettingsView|body|NavigationLink|HStack(spacing: 12) { ProviderBrandMark( provider: .mediaShare, size: 24 ) Text(\"Add Network Share\") }": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSAccountDetailView|body|NavigationLink|Label(\"Plex User\", systemImage: \"person.crop.circle\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSArtworkSettingsView|body|Button|HStack { Text(\"Metadata Providers (TMDB, TheTVDB…)\") Spacer() Image(systemName: \"chevron.forward\") .font(.footnote) .foregroundStyle(.secondary) }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Button|SettingsDisclosureLabel { Text(\"Advanced\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSProfilesView|body|Button|HStack { PlozziOSProfileAvatar( profile: profile, size: 34 ) Text(profile.name) Spacer() // Glance the access state so the list answers // \"who's locked?\" without opening each one. if profile.isKids { Image(systemName: \"figure.and.child.holdinghands\") .plozzForeground(.secondary) } if profile.isLocked { Image(systemName: \"lock.fill\") .plozzForeground(.secondary) } if isEditingProfiles { Image(systemName: \"chevron.right\") .font(.caption.weight(.semibold)) .plozzForeground(.tertiary) } } .frame(maxWidth: .infinity, alignment: .leading) .contentShape(Rectangle())": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSProfilesView|body|Button|\"Edit Profile\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSProfilesView|body|Button|\"Add Profile\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSProfilesView|body|Button|Label( isEditingProfiles ? \"Done Editing\" : \"Edit Profiles\", systemImage: isEditingProfiles ? \"checkmark.circle\" : \"pencil\" )": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|PlozziOSSettingsCategoryLabel( category: category, accounts: appModel.accounts, isAccountIncluded: { appModel.activeAccountIDs( for: appModel.profiles.activeProfileID ).contains($0) } )": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(KidsProfileCopy.nameAndAvatar, systemImage: \"person.crop.circle\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(KidsProfileCopy.manageProfile, systemImage: \"person.crop.circle\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|PlozziOSSettingsCategoryLabel( category: .libraries, accounts: appModel.accounts, isAccountIncluded: { appModel.activeAccountIDs( for: appModel.profiles.activeProfileID ).contains($0) }, isSealed: isParentalSealed )": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label( KidsProfileCopy.manageProfile, systemImage: isParentalSealed ? \"lock.fill\" : \"person.crop.circle\" )": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(\"Servers\", systemImage: \"externaldrive.connected.to.line.below\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(\"Profiles\", systemImage: \"person.2\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label( KidsProfileCopy.parentalPIN, systemImage: \"figure.and.child.holdinghands\" )": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label { Text(verbatim: \"Seerr\") } icon: { Image(systemName: \"sparkles.tv\") }": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(\"iCloud Sync\", systemImage: \"icloud\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(\"Downloads\", systemImage: \"arrow.down.circle\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(\"Release Notes\", systemImage: \"doc.text\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(\"Help & Diagnostics\", systemImage: \"ladybug\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(SettingsCopy.attributions, systemImage: \"doc.text.magnifyingglass\")": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSStreamingQuality.swift|PlozziOSAdvancedStreamingSettings|body|Button|if settings.codec == codec { Label { Text(codec.title) } icon: { Image(systemName: \"checkmark\") } } else { Text(codec.title) }": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "quality-codec"
+      ],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSStreamingQuality.swift|PlozziOSStreamingSettings|body|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|HStack { Image(systemName: \"tv\").font(.title3) VStack(alignment: .leading) { Text(device.displayName).fontWeight(.semibold) Text(\"Code \\(SyncPairingCode.grouped(device.serviceName))\") .font(.footnote).plozzForeground(.secondary) } Spacer() Image(systemName: \"chevron.forward\").plozzForeground(.secondary) } .contentShape(Rectangle())": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|Label(\"Scan QR Code\", systemImage: \"qrcode.viewfinder\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|Label(\"Enter Code\", systemImage: \"keyboard\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|Label(\"Set Up From Another Device\", systemImage: \"qrcode\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|HStack(spacing: 12) { ProviderBrandMark( provider: server.provider, size: 32, mediaShareTransport: server.mediaShareTransportKind ) VStack(alignment: .leading, spacing: 2) { Text(server.serverName).fontWeight(.medium) Text(\"Needs sign-in\") .font(.footnote) .plozzForeground(.secondary) } Spacer(minLength: 0) Image(systemName: \"chevron.forward\") .font(.footnote.weight(.semibold)) .plozzForeground(.tertiary) } .contentShape(Rectangle())": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|\"Ignore\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncTroubleshootingView|body|Button|Label(\"Reload From iCloud\", systemImage: \"arrow.down.circle\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncTroubleshootingView|body|Button|Label(\"Reset Sync\", systemImage: \"arrow.counterclockwise.icloud\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncTroubleshootingView|body|Button|Label(\"Erase Sync Data\", systemImage: \"trash\") .foregroundStyle(.red)": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|AniListSettingsContent|connectButton|Button|\"Connect AniList\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|AniListSettingsContent|authorizationForm|Button|openButtonTitle": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|AniListSettingsContent|authorizationForm|Button|submitButtonTitle": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|Button|\"Open MyAnimeList\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|Button|\"Redeem Code\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|connectButton|Button|\"Connect MyAnimeList\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|SimklSettingsContent|body|Button|\"Open Simkl\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|SimklSettingsContent|connectButton|Button|\"Connect Simkl\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|TraktSettingsContent|body|Button|\"Reconnect Trakt\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|TraktSettingsContent|content|Button|\"Open Trakt\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|TraktSettingsContent|content|Button|\"Reconnect Trakt\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|TraktSettingsContent|connectButton|Button|\"Connect Trakt\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|WetrakrSettingsContent|body|Button|\"Reconnect WeTrakr\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|WetrakrSettingsContent|content|Button|\"Connect WeTrakr\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 2
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|WetrakrSettingsContent|content|Button|\"Open WeTrakr\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|WetrakrSettingsContent|content|Button|\"Reconnect WeTrakr\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/CoreUI/ServerAddressSettingsLink.swift|ServerAddressSettingsLink|body|Button|SettingsDisclosureLabel { VStack(alignment: .leading, spacing: 4) { Text(\"Add or manage addresses\") Text(\"Use a local or remote address to reach this server.\") .font(.caption) .plozzForeground(.secondary) } }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/CoreUI/ServerAddressSettingsLink.swift|ServerAddressSettingsLink|body|Button|if account.userName.isEmpty { Text(\"Guest\") } else { Text(verbatim: account.userName) }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelCustomSection|body|Button|\"Delete channel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelEditorContent|body|Button|if model.currentPreview == nil { Label(\"Preview schedule\", systemImage: \"calendar\") } else { Label(\"Save channel\", systemImage: \"checkmark\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVAutomaticChannelsState.swift|LiveTVAutomaticChannelsOverview|body|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVAutomaticChannelsState.swift|LiveTVAutomaticChannelsSection|body|Button|if state.status == .ready { SettingsRowLabel(icon: nil, title: \"Refresh Plozz channels\") } else { SettingsRowLabel(icon: nil, title: \"Retry Plozz channels\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVUnavailableFavoritesView|body|NavigationLink|\"Link to an imported channel\"": {
+      "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVChannelScanViews.swift|LiveTVScanIssueContent|body|Button|\"Retry saving\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVChannelScanViews.swift|LiveTVScanProgressContent|body|Button|\"Cancel scan\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVChannelScanViews.swift|LiveTVScanResultRow|body|Button|\"Restore channel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVChannelScanViews.swift|LiveTVScanResultsView|body|Toggle|\"Show hidden only\"": {
+      "reason": "Transient scan-result filter and explicit repair actions.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVChannelScanViews.swift|LiveTVScanResultsView|body|Button|\"Restore hidden channels\"": {
+      "reason": "Transient scan-result filter and explicit repair actions.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVChannelScanViews.swift|LiveTVScanResultsView|body|Button|\"Rescan channels\"": {
+      "reason": "Transient scan-result filter and explicit repair actions.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVChannelScanViews.swift|LiveTVScanSourceActions|body|Button|if coordinator.hasResults(sourceID: sourceID) { SettingsRowLabel(icon: \"arrow.clockwise\", title: \"Rescan channels\") } else { SettingsRowLabel(icon: \"checkmark.magnifyingglass\", title: \"Scan channels\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVGuideMappingView.swift|LiveTVChannelGuideMappingView|body|Button|\"Use automatic matching\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVGuideMappingView.swift|LiveTVGuideStationPicker|body|Button|VStack(alignment: .leading) { Text(channel.name) if let identifier = channel.displayID { Text(identifier).font(.caption).settingsRowSecondary() } }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVImportedPlaylistEditor.swift|LiveTVImportedPlaylistEditor|body|Button|LiveTVSetupActionLabel( title: fileURL == nil ? \"Choose M3U file\" : \"Choose another file\", symbol: \"doc\" )": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVImportedPlaylistEditor.swift|LiveTVImportedPlaylistEditor|body|Button|Text(original == nil ? LocalizedStringResource(\"Import playlist\") : LocalizedStringResource(\"Save source\")) .frame(maxWidth: .infinity)": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVPlaylistEditor.swift|LiveTVPlaylistEditor|body|Button|Group { if model.isChecking { Text(\"Cancel check\") } else if model.currentReview != nil { Text(\"Save source\") } else if isEditing { Text(\"Save changes\") } else { Text(\"Add source\") } } .frame(maxWidth: .infinity)": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSettingsPage.swift|LiveTVGuideAddressEditor|body|Button|\"Remove guide\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSettingsPage.swift|LiveTVGuideAddressEditor|removeButton|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSettingsPage.swift|LiveTVGuideFields|body|Button|LiveTVSetupActionLabel( title: guides.isEmpty ? \"Add guide\" : \"Add another guide\", symbol: \"plus\" )": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVPlaylistSourceDetails|body|Button|LiveTVSetupActionLabel(title: \"Connect as IPTV account\", symbol: \"person.crop.circle.badge.plus\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVServerSourceRename|body|Button|\"Save name\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/MobileSubtitleStyleEditor.swift|MobileSubtitleDualView|body|Button|HStack { option.title Spacer() if option.isSelected { Image(systemName: \"checkmark\") } }": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "dual-placement"
+      ],
+      "count": 1
+    },
+    "Sources/FeaturePlayback/MobileSubtitleStyleEditor.swift|MobileSubtitleFontView|body|Button|HStack { Text(family.displayName) .font(subtitlePreviewFont(for: family)) Spacer() if viewModel.effectiveStyle.fontDescriptor == nil, viewModel.effectiveStyle.systemFont == nil, family == viewModel.effectiveStyle.fontFamily { Image(systemName: \"checkmark\") } }": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "subtitle-font"
+      ],
+      "count": 1
+    },
+    "Sources/FeaturePlayback/MobileSubtitleStyleEditor.swift|MobileSubtitleFontView|systemFontRows|Button|HStack { entry.name.font(entry.preview) Spacer() if viewModel.effectiveStyle.systemFont == entry.id { Image(systemName: \"checkmark\") } }": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "subtitle-font"
+      ],
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift|SubtitleStylePanel|styleMainRows|StyleRowSpec|\"Shadow & Outline\"": {
+      "reason": "Subsection navigation or temporary preview-track selection, not a separate stored style field.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift|SubtitleStylePanel|styleMainRows|StyleRowSpec|\"Background\"": {
+      "reason": "Subsection navigation or temporary preview-track selection, not a separate stored style field.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift|SubtitleStylePanel|styleMainRows|StyleRowSpec|\"Dual Subtitles\"": {
+      "reason": "Subsection navigation or temporary preview-track selection, not a separate stored style field.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift|SubtitleStylePanel|styleMainRows|StyleRowSpec|\"Subtitle file formatting\"": {
+      "reason": "Subsection navigation or temporary preview-track selection, not a separate stored style field.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift|SubtitleStylePanel|systemFontRow|StyleRowSpec|\"System Fonts\"": {
+      "reason": "Subsection navigation or temporary preview-track selection, not a separate stored style field.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift|SubtitleStylePanel|fontChoiceRow|Button|HStack(spacing: 10) { Text(family.displayName) .font(Self.fontPreviewFont(for: family)) .lineLimit(1) .minimumScaleFactor(0.5) Spacer(minLength: 8) Image(systemName: isSelected ? \"checkmark.circle.fill\" : \"circle\") .font(.body) .playerMenuRowMark(isSelected: isSelected, accent: palette.accent) } .padding(.horizontal, 16) .padding(.vertical, 10) .contentShape(Rectangle())": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "subtitle-font"
+      ],
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift|SubtitleStylePanel|systemFontScreen|Button|HStack(spacing: 10) { entry.name.font(entry.preview).lineLimit(1).minimumScaleFactor(0.5) Spacer(minLength: 8) Image(systemName: effectiveStyle.systemFont == entry.id ? \"checkmark.circle.fill\" : \"circle\") .font(.body) .playerMenuRowMark(isSelected: effectiveStyle.systemFont == entry.id, accent: palette.accent) } .padding(.horizontal, 16) .padding(.vertical, 10) .contentShape(Rectangle())": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "subtitle-font"
+      ],
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift|SubtitleStylePanel|styleDualRows|StyleRowSpec|\"Second Track\"": {
+      "reason": "Subsection navigation or temporary preview-track selection, not a separate stored style field.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift|SubtitleStylePanel|numberRow|StyleRowSpec|title": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "subtitle-size"
+      ],
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift|SubtitleStylePanel|choiceRow|StyleRowSpec|title": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "subtitle-font"
+      ],
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePanel.swift|SubtitleStylePanel|colorRow|StyleRowSpec|title": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "subtitle-color"
+      ],
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePreview.swift|SubtitleStylePreview|body|Menu|\"Preview options\"": {
+      "reason": "Preview-only sample animation, file formatting and HDR simulation; does not change subtitle preferences.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePreview.swift|SubtitleStylePreview|body|Toggle|\"Preview file formatting\"": {
+      "reason": "Preview-only sample animation, file formatting and HDR simulation; does not change subtitle preferences.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePreview.swift|SubtitleStylePreview|body|Toggle|\"HDR preview\"": {
+      "reason": "Preview-only sample animation, file formatting and HDR simulation; does not change subtitle preferences.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/SubtitleStylePreview.swift|SubtitleStylePreview|body|Button|Label(options.animatesBackground ? \"Pause background\" : \"Animate background\", systemImage: options.animatesBackground ? \"pause.fill\" : \"play.fill\")": {
+      "reason": "Preview-only sample animation, file formatting and HDR simulation; does not change subtitle preferences.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileActionsList.swift|ProfileActionsList|actions|Button|Text(ProfileLockCopy.editPIN)": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-kids",
+        "profile-lock-entry"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileActionsList.swift|ProfileActionsList|actions|Button|Text(ProfileLockCopy.delete)": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-kids",
+        "profile-lock-entry"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileActionsList.swift|ProfileActionsList|actions|Button|Text(KidsProfileCopy.parentalPINCreate)": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-kids",
+        "profile-lock-entry"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileActionsList.swift|ProfileActionsList|actions|Button|Text(KidsProfileCopy.turnOff)": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-kids",
+        "profile-lock-entry"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileActionsList.swift|ProfileActionsList|actions|Button|Text(KidsProfileCopy.turnOn)": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-kids",
+        "profile-lock-entry"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileActionsList.swift|ProfileActionsList|nativeDeleteButton|Button|if groupsActions { LabeledContent { EmptyView() } label: { deleteLabel } } else { deleteLabel }": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-lock-entry"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileActionsList.swift|ProfileActionsList|actionRow|Button|<dynamic>": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-kids",
+        "profile-lock-entry"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileActionsList.swift|ProfileActionsList|focusedActionRow|Button|<dynamic>": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-kids",
+        "profile-lock-entry"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|IOSProfileCompactPhotoTile|body|Button|ZStack { Circle().fill(palette.cardSurface) FallbackAsyncImage(urls: [candidate.imageURL], variant: .musicThumbnail) { Image(systemName: \"person.fill\") .font(.system(size: 24)) .foregroundStyle(palette.secondaryText) } .frame(width: diameter, height: diameter) .clipShape(Circle()) } .frame(width: diameter, height: diameter) .overlay(IOSProfileSelectionRing(isSelected: isSelected)) .frame(maxWidth: .infinity, minHeight: 44)": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-photo"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|IOSProfileDeleteSection|body|Button|Label(\"Delete Profile\", systemImage: \"trash\") .frame(maxWidth: .infinity, minHeight: 44)": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|IOSProfileEmojiTile|body|Button|ZStack { Circle().fill(palette.cardSurface) Text(emoji).font(.system(size: 30)) } .frame(width: diameter, height: diameter) .overlay(IOSProfileSelectionRing(isSelected: isSelected)) .frame(maxWidth: .infinity, minHeight: 44)": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-emoji"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|IOSProfileMoreCell|body|Button|<dynamic>": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-symbol",
+        "profile-emoji",
+        "profile-photo"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|IOSProfilePhotoTile|body|Button|ZStack { Circle().fill(palette.cardSurface) FallbackAsyncImage(urls: [candidate.imageURL], variant: .musicThumbnail) { Image(systemName: \"person.fill\") .font(.system(size: 30)) .foregroundStyle(palette.secondaryText) } .frame(width: diameter, height: diameter) .clipShape(Circle()) } .frame(width: diameter, height: diameter) .overlay(IOSProfileSelectionRing(isSelected: isSelected))": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-photo"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|IOSProfileSymbolTile|body|Button|ZStack { Circle().fill(isSelected ? AnyShapeStyle(ProfileTileColor.color(forIndex: colorIndex)) : AnyShapeStyle(palette.cardSurface)) Image(systemName: symbol) .font(.system(size: 27, weight: .semibold)) .foregroundStyle(isSelected ? ProfileTileColor.legibleForeground(forIndex: colorIndex) : palette.primaryText) } .frame(width: diameter, height: diameter) .overlay(IOSProfileSelectionRing(isSelected: isSelected)) .frame(maxWidth: .infinity, minHeight: 44)": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-symbol"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|tvOSBody|Button|\"Discard\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|tvOSBody|Button|\"Keep Editing\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|headerRow|Button|\"Revert All Changes\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|headerRow|Button|isEditing ? \"Save\" : \"Create\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|deleteButton|Button|Label(\"Delete Profile\", systemImage: \"trash\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|symbolTile|Button|ZStack { // Theme-aware resting surface (never a stray white material): // the selected tile fills with the chosen avatar colour exactly // as it will render, otherwise a subtle themed card circle. Circle().fill(isSelected ? AnyShapeStyle(ProfileTileColor.color(forIndex: colorIndex)) : AnyShapeStyle(palette.cardSurface)) Image(systemName: symbol) .font(.system(size: 46, weight: .semibold)) // On the selected coloured disc the glyph adapts to the // colour (dark on white/yellow, white on dark) so it stays // legible; unselected uses the theme's primary text. .foregroundStyle(isSelected ? ProfileTileColor.legibleForeground(forIndex: colorIndex) : palette.primaryText) } .frame(width: diameter, height: diameter) .overlay { Circle().strokeBorder(palette.cardBorder, lineWidth: 1) } .overlay(alignment: .bottomTrailing) { selectionBadge(isSelected) }": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-symbol"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|emojiTile|Button|ZStack { // The picker keeps a calm neutral disc; the actual background // (neutral or a chosen colour) is set in the Colour section and // shown live in the preview. Circle().fill(palette.cardSurface) Text(emoji) .font(.system(size: 44)) } .frame(width: diameter, height: diameter) .overlay { Circle().strokeBorder(palette.cardBorder, lineWidth: 1) } .overlay(alignment: .bottomTrailing) { selectionBadge(isSelected) }": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-emoji"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|photoSection|Button|Label(\"Use a symbol instead\", systemImage: \"face.smiling\") .font(.headline)": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-avatar-mode"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|photoTile|Button|ZStack { Circle().fill(palette.cardSurface) FallbackAsyncImage(urls: [candidate.imageURL], variant: .posterCard) { Image(systemName: \"person.fill\") .font(.system(size: 40)) .foregroundStyle(palette.secondaryText) } .frame(width: diameter, height: diameter) .clipShape(Circle()) } .frame(width: diameter, height: diameter) .overlay { Circle().strokeBorder(palette.cardBorder, lineWidth: 1) } .overlay(alignment: .bottomTrailing) { selectionBadge(isSelected) }": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "profile-photo"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|iOSBody|Button|isEditing ? \"Save\" : \"Create\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|iOSBody|Button|\"Discard\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureProfiles/ProfileEditorView.swift|ProfileEditorView|iOSBody|Button|\"Keep Editing\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/CardAppearanceControls.swift|CardAppearanceControls|episodeCountStyleMenu|SettingsMenuRow|title": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "episode-count-style"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/CardAppearanceControls.swift|CardCaptionSettingsLink|body|Button|SettingsDisclosureLabel { Text(\"Customize labels\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/CardAppearanceControls.swift|CardLabelControls|body|CardCaptionPicker|<dynamic>": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "card-labels"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/CardCaptionCustomizationContent.swift|CardCaptionCustomizationContent|body|SettingsMenuRow|\"Page\"": {
+      "reason": "Transient page selection within the independently indexed caption-view family.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/CardCaptionCustomizationContent.swift|CardCaptionCustomizationContent|body|ViewCustomizationMenu|\"Page\"": {
+      "reason": "Transient page selection within the independently indexed caption-view family.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|Picker|\"Layout\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "home-row-arrangement"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|Button|if isNew { Text(\"Add to Home\") } else { Text(\"Save changes\") }": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "home-row-arrangement"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/ContinueWatchingArtworkPicker.swift|ContinueWatchingArtworkPicker|body|Button|optionLabel(option) .padding(.horizontal, 12) .padding(.vertical, usesRows ? 8 : 12) .contentShape(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.Radius.panel)) .accessibilityElement(children: .ignore) .accessibilityLabel(Text(option.displayName))": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "continue-artwork-layout"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/CrashReportingConsentView.swift|CrashReportingConsentPrompt|body|CrashReportingConsentChoices|<dynamic>": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "diagnostic-sharing"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/ExternalPlayerSettingsView.swift|ExternalPlayerChoices|body|SettingsCheckableRow|title(player)": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "external-player"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/ExternalPlayerSettingsView.swift|ExternalPlayerSettingsView|root|Button|SettingsDisclosureLabel { Text(\"About external playback\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ExternalPlayerSettingsView.swift|ExternalPlayerSettingsView|root|Button|SettingsDisclosureLabel { Text(\"Custom player\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ExternalPlayerSettingsView.swift|PlaybackAdvancedSettingsView|body|Button|SettingsDisclosureLabel { Text(\"External player\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/HeroCollectionPickerView.swift|HeroCollectionChoice|body|Button|HStack { VStack(alignment: .leading, spacing: 6) { Text(verbatim: choice.title).multilineTextAlignment(.leading) if isSummary { if let source { if let libraryTitle = source.libraryTitle { Text(verbatim: \"\\(libraryTitle) / \\(source.serverName) / \\(source.accountName)\") .font(.caption) } else { Text(\"Personal collections\").font(.caption) Text(verbatim: \"\\(source.serverName) / \\(source.accountName)\").font(.caption) } } else { Text(\"Unavailable source\").font(.caption) } } } Spacer() if selected { Image(systemName: \"checkmark\") } } .frame(maxWidth: .infinity, alignment: .leading) #if os(tvOS) .padding(.horizontal, 16) .padding(.vertical, 12) #endif": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "hero-choose-collections"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HeroCollectionPickerView.swift|HeroCollectionSources|body|SettingsCheckableRow|source.libraryTitle.map { Text(verbatim: $0) } ?? Text(\"Personal collections\")": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "hero-choose-collections"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HeroSettingsControls.swift|HeroSettingsLink|body|Button|label": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/HeroSettingsControls.swift|HeroSettingsScreen|randomLibraries|Toggle|<dynamic>": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "hero-choose-libraries"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeRowsSettingsView.swift|HomeSectionsSettingsView|editor|Button|\"Reorder\"": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "home-row-arrangement"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeRowsSettingsView.swift|HomeSectionsSettingsView|editor|Button|\"Remove from Home\"": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "home-row-arrangement"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|ContinueWatchingActionControl|body|ViewCustomizationMenu|\"When tapping an item\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "continue-action"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|ContinueWatchingActionControl|body|ViewCustomizationRow|\"Center button action\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "continue-action"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|ContinueWatchingPlaybackDetailsControl|body|ViewCustomizationMenu|\"Playback details\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "continue-playback-details"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|ContinueWatchingPlaybackDetailsControl|body|ViewCustomizationRow|\"Playback details\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "continue-playback-details"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeAddSectionView|body|Button|HomeSectionChoiceLabel(choice: choice, accessory: \"plus\", accounts: accounts)": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "home-row-arrangement"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeRowPresetPicker|body|Button|if preset == .matchServer { Text(\"Match server\") } else { Text(\"Combined rows\") }": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "home-row-preset"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeRowPresetPicker|selectionPicker|Picker|\"Preset\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "home-row-preset"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeSectionSettingsView|body|CollectionCoverLayoutPicker|<dynamic>": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "library-covers"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/IntegrationsDetailView.swift|IntegrationsDetailView|body|Button|\"Reconnect Trakt\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/IntegrationsDetailView.swift|IntegrationsDetailView|body|Button|\"Reconnect WeTrakr\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/IntegrationsDetailView.swift|IntegrationsDetailView|rows.trackers|Button|\"Reconnect Trakt\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/IntegrationsDetailView.swift|IntegrationsDetailView|rows.trackers|Button|\"Reconnect WeTrakr\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/IntegrationsDetailView.swift|IntegrationsDetailView|trackerActionBar|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 4
+    },
+    "Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVBrowsingSettingsSections|body|Picker|\"Live TV opens to\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "live-start",
+        "channel-order"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVBrowsingSettingsSections|body|Picker|\"Channel order\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "live-start",
+        "channel-order"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/MetadataSettingsDetailView.swift|MetadataSettingsDetailView|tmdbKeySection|Button|Label(tmdbKey.isConfigured ? \"Replace Key\" : \"Save Key\", systemImage: \"square.and.arrow.down\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/MetadataSettingsDetailView.swift|MetadataSettingsDetailView|tmdbKeySection|Button|Label(\"Verify Key\", systemImage: \"checkmark.shield\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/MetadataSettingsDetailView.swift|MetadataSettingsDetailView|tmdbKeySection|Button|Label(\"Remove Key\", systemImage: \"trash\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/MetadataSettingsDetailView.swift|MetadataSettingsDetailView|artworkLink|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|addServerSection|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|librarySection|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|libraryStatusMessage|Button|\"Edit connection\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|libraryStatusMessage|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/NavigationLibrariesDetailView.swift|NavigationLibrariesDetailView|content|Button|Label { Text(Self.resetTitle) } icon: { Image(systemName: \"arrow.uturn.backward\") } .frame(maxWidth: .infinity)": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/NightShiftDetailView.swift|NightShiftScheduleControl|locationMenu|SettingsMenuRow|\"Location\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "circadian-region"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/NightShiftDetailView.swift|NightShiftScheduleControl|timeStepper|SettingsStepper|label": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "circadian-on",
+        "circadian-off"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PlexLinkedUserDetailView.swift|PlexLinkedUserDetailView|addAccountPanel|Button|Label(\"Add Another Plex Account\", systemImage: \"person.badge.plus\") .frame(maxWidth: .infinity, alignment: .leading) .padding(.vertical, 14) .padding(.horizontal, 14) .contentShape(Rectangle())": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/PlexLinkedUserDetailView.swift|PlexLinkedUserDetailView|body|Button|Label(\"No Plex account\", systemImage: \"person.crop.circle.badge.xmark\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/PlexLinkedUserDetailView.swift|PlexLinkedUserDetailView|ownerRow|Button|if let admin { // Same shared row as the managed users, flagged as the owner. PlexHomeUserRow( user: admin, showsOwnerBadge: true, accessory: isOwnerSelected(admin) ? .selected : .none ) } else { HStack(spacing: 16) { ZStack { Circle().fill(ProviderIcon.tint(.plex).opacity(0.18)) Image(systemName: \"person.crop.circle.fill\") .font(.title2) .foregroundStyle(ProviderIcon.tint(.plex)) } .frame(width: 52, height: 52) .overlay(Circle().strokeBorder(ProviderIcon.tint(.plex).opacity(0.45), lineWidth: 1.5)) VStack(alignment: .leading, spacing: 2) { HStack(spacing: 6) { Text(\"Account owner\").font(.headline) Text(\"Account owner\") .font(.caption2.weight(.semibold)) .padding(.horizontal, 6) .padding(.vertical, 2) .background(Capsule().fill(ProviderIcon.tint(.plex).opacity(0.18))) .foregroundStyle(ProviderIcon.tint(.plex)) } } Spacer() if isOwnerSelected(admin) { Image(systemName: \"checkmark.circle.fill\") .font(.title3) .settingsRowGreenIndicator() } } .padding(.vertical, 12) .padding(.horizontal, 14) .contentShape(Rectangle()) }": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "watcher-plex-user"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PlexLinkedUserDetailView.swift|PlexLinkedUserDetailView|userRow|Button|PlexHomeUserRow(user: user, accessory: isSelected ? .selected : .none)": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "watcher-plex-user"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|AppearanceDetailView|themeAndTransparency|DescribedSegmentedPicker|{ $0.displayName }": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "theme"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|AppearanceDetailView|metadataProviderLink|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|versionSelectionRows|SettingsCheckableRow|Text(mode.title)": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "version-selection"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|subtitleRows.rows|Picker|\"Subtitle language\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "subtitle-language",
+        "subtitle-sdh"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|subtitleRows.rows|Picker|\"SDH subtitles\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "subtitle-language",
+        "subtitle-sdh"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|subtitleRows|Picker|\"Forced subtitles\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "subtitle-forced-search"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|resumeRewindStepper|SettingsStepper|resumeRewindLabel": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "resume-rewind"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/ProfileDetailView.swift|ProfilesSettingsList|body|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ProfileSeerrSetupView.swift|ProfileSeerrSetupView|connectionContent|Button|Label(\"Connect\", systemImage: \"link\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ProfileSeerrSetupView.swift|ProfileSeerrSetupView|connectedContent|Button|Label(\"Retry loading users\", systemImage: \"arrow.clockwise\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ProfileSeerrSetupView.swift|ProfileSeerrSetupView|actionBar|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ProfileSeerrSetupView.swift|ProfileSeerrSetupView|actionBar|Button|actionLabel(\"Continue\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ProfileSeerrSetupView.swift|ProfileSeerrSetupView|selectionRow|Button|<dynamic>": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "seerr-profile-user"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/ProfileSetupLibrariesView.swift|ProfileSetupLibrariesView|doneBar|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SeerDetailView.swift|SeerDetailView|connectPanel|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SeerDetailView.swift|SeerDetailView|discoveredSection|Button|HStack { Label(server.baseURL.host ?? server.baseURL.absoluteString, systemImage: \"server.rack\") Spacer() if let version = server.version { Text(\"v\\(version)\") .font(.footnote) .plozzForeground(.secondary) } }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SeerDetailView.swift|SeerDetailView|connectionPanel|Button|Label(\"Disconnect\", systemImage: \"xmark.circle\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SeerDetailView.swift|SeerDetailView|requestsAsPanel|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SeerDetailView.swift|SeerUserPickerView|body|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SeerDetailView.swift|SeerUserPickerView|row|Button|<dynamic>": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "seerr-profile-user"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ServerDetailView|body|Button|\"Remove Everywhere\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ServerDetailView|body|Button|\"Remove from This Apple TV\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ServerDetailView|body|Button|signOutPrimaryLabel(pending)": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ServerDetailView|accountRow|Button|\"Edit connection\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ServerDetailView|accountRow|Button|Label(removeButtonTitle(isCredentialFree: isCredentialFree, isLast: isLast), systemImage: isCredentialFree ? \"trash\" : \"rectangle.portrait.and.arrow.right\") .labelStyle(.titleAndIcon) .font(.callout.weight(.semibold))": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ServerDetailView|removeServerPanel|Button|Label(\"Remove Server\", systemImage: \"trash\") .font(.callout.weight(.semibold))": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ServerDetailView|removeServerPanel|Button|\"Remove Everywhere\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ServerDetailView|removeServerPanel|Button|\"Remove from This Apple TV\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ServerDetailView|removeServerPanel|Button|\"Remove Server\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerDetailView.swift|ShareLibraryStatusPanel|body|Button|Label(\"Scan now\", systemImage: \"arrow.clockwise\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerUserDetailView.swift|ServerUserDetailView|usersPanel|Button|HStack(spacing: 16) { AccountAvatar( name: account.userName, imageURL: resolvedAvatarURL(for: account), size: 52 ) Text(verbatim: account.userName) .font(.callout.weight(.medium)) Spacer(minLength: 12) if account.id == selectedAccountID(in: group) { SettingsSelectionIndicator() } } .padding(.vertical, 12) .padding(.horizontal, 12) .contentShape(Rectangle())": {
+      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
+      "covered_by": [
+        "watcher-server-user"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServerUserDetailView.swift|ServerUserDetailView|addUserPanel|Button|Label(\"Add Another User\", systemImage: \"person.badge.plus\") .frame(maxWidth: .infinity, alignment: .leading) .padding(.vertical, 14) .padding(.horizontal, 14) .contentShape(Rectangle())": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/ServersAndLibrariesDetailView.swift|ServersAndLibrariesDetailView|body|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|body|Button|\"Sign Out\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|aboutAndSignOut|Button|Label { Text(verbatim: \"Player marker examples\") } icon: { Image(systemName: \"play.rectangle\") } .frame(maxWidth: .infinity, alignment: .leading) .padding(14)": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|aboutAndSignOut|Button|\"OK\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|debugResetFirstRunRow|Button|HStack(spacing: 16) { Image(systemName: \"arrow.counterclockwise.circle\") .font(.system(size: 22, weight: .regular)) .frame(width: 30, height: 30) Text(\"Reset to First Run\").font(.callout.weight(.medium)) Spacer() } .foregroundStyle(.orange) .padding(.vertical, 12) .padding(.horizontal, 12) .contentShape(Rectangle())": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|destination|Button|\"Switch Profile\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|pendingServerRow|Button|\"Set Up\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|pendingServerRow|Button|\"Ignore\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SettingsView.swift|SettingsView|setUpAnotherDeviceRow|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipBehaviorMenuContent|body|Toggle|<dynamic>": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "skip-default"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsControl|body|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsView|content|Button|SettingsDisclosureLabel { Text(kind.settingsTitle) }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/SpatialAudioLayoutControl.swift|SpatialAudioLayoutControl|body|Picker|\"Rendering layout\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "spatial-layout"
+      ],
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|PlozziOSAccountReauthenticationView|recoveryContent|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSServerSettingsDetailView|body|Button|HStack(spacing: 12) { VStack(alignment: .leading, spacing: 2) { Text(account.userName.isEmpty ? \"Guest\" : account.userName) Text(account.server.baseURL.host() ?? account.server.baseURL.absoluteString) .font(.caption) .plozzForeground(.secondary) } Spacer(minLength: 0) Image(systemName: \"chevron.forward\") .font(.footnote.weight(.semibold)) .plozzForeground(.tertiary) } .contentShape(Rectangle())": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSServerSettingsDetailView|body|Button|\"Edit connection\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSServerSettingsDetailView|body|Button|\"Remove Server\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 2
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSServerSettingsDetailView|body|Button|\"Remove Everywhere\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 2
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSServerSettingsDetailView|body|Button|\"Remove from This \\(deviceName)\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSServerSettingsDetailView|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 2
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSServersSettingsView|body|Button|serverRowLabel(group)": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSServersSettingsView|body|Button|\"Add Server\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSAccountDetailView|body|Button|\"Sign In Again\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSAccountDetailView|body|Button|\"Remove Server\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSAccountDetailView|body|Button|\"Remove Everywhere\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 2
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSAccountDetailView|body|Button|\"Remove from This \\(deviceName)\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSAccountDetailView|body|Button|\"Remove\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSAccountDetailView|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 2
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSAppearanceSettingsView|body|Button|SettingsDisclosureLabel { Text(page.title) }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSDeveloperInfoSection|body|Button|Label(\"Copy Info\", systemImage: \"doc.on.doc\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSScreensNavigationSettingsView|body|Button|SettingsDisclosureLabel { Text(Page.navigation.title) }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSScreensNavigationSettingsView|body|Button|SettingsDisclosureLabel { Text(Page.allScreens.title) }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSScreensNavigationSettingsView|body|Button|SettingsDisclosureLabel { Text(page.title) }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|Button|Label(\"Metadata Providers\", systemImage: \"sparkles.rectangle.stack\") .frame(maxWidth: .infinity, alignment: .leading) .contentShape(Rectangle())": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|Button|\"Sign Out of All Accounts\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|Button|\"Reset to First Run\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|Button|\"Turn Off Developer Mode\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|Button|\"Sign Out\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsSplitView|body|Button|PlozziOSSettingsCategoryLabel( category: category, accounts: appModel.accounts, isAccountIncluded: { appModel.activeAccountIDs( for: appModel.profiles.activeProfileID ).contains($0) } )": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsSplitView|body|Button|Label(\"Profiles\", systemImage: \"person.2\") .frame( maxWidth: .infinity, alignment: .leading ) .contentShape(Rectangle())": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsSplitView|body|Button|\"Sign Out of All Accounts\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsSplitView|body|Button|\"Reset to First Run\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsSplitView|body|Button|\"Turn Off Developer Mode\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsSplitView|body|Button|\"Close\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsSplitView|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsSplitView|body|Button|\"Sign Out\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsSplitView|sealableRow|Button|if destination == .myLibraries { PlozziOSSettingsCategoryLabel( category: .libraries, accounts: appModel.accounts, isAccountIncluded: { appModel.activeAccountIDs( for: appModel.profiles.activeProfileID ).contains($0) }, isSealed: isParentalSealed ) } else { Label { Text(title) } icon: { Image(systemName: isParentalSealed ? \"lock.fill\" : systemImage) } .frame(maxWidth: .infinity, alignment: .leading) .contentShape(Rectangle()) }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsSplitView|settingsRow|Button|Label { title } icon: { Image(systemName: systemImage) } .frame(maxWidth: .infinity, alignment: .leading) .contentShape(Rectangle())": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsVersionSection|body|Button|\"OK\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsView|body|Button|\"Close\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSShareScanSection|body|Button|\"Scan Now\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureAuth/ServerAddressesView.swift|ServerAddressRow|body|Button|if copied { Label(\"Copied\", systemImage: \"checkmark\") } else { Label(\"Copy address\", systemImage: \"doc.on.doc\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureAuth/ServerAddressesView.swift|ServerAddressesHeader|body|Button|\"Close\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureAuth/ServerAddressesView.swift|ServerSavedAddresses|body|Button|\"Remove\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 2
+    },
+    "Sources/FeatureAuth/ServerAddressesView.swift|ServerSavedAddresses|body|Button|\"Cancel\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVUnavailableFavoritesView|body|Button|\"Remove favorite\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVChannelPreferencesView.swift|LiveTVUnavailableFavoritesView|body|Button|\"Review sources\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSettingsSourceList.swift|LiveTVSettingsSourceList|body|Button|\"Add source\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/PlayerZoomSettings.swift|PlayerZoomSettingsSheet|body|Button|\"Reset to Normal\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeaturePlayback/PlayerZoomSettings.swift|PlayerZoomSettingsSheet|body|Button|\"Done\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/AppLanguagePicker.swift|AppLanguagePicker|languageOptions|Picker|\"Language\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "language"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/AppLanguagePicker.swift|AppLanguagePicker|languageOptions|Button|\"Send Feedback\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/AppLanguagePicker.swift|AppLanguagePicker|body|Button|\"Close\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/HeroLogoSizeControl.swift|HeroLogoSizeControl|slider|Slider|<dynamic>": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "hero-logo-size",
+        "hero-text-size",
+        "detail-logo-size",
+        "detail-text-size"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/MetadataSettingsDetailView.swift|MetadataDiagnosticsCachePanel|budgetControl|SettingsStepper|title": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "artwork-cache-budget",
+        "lookup-cache-budget"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/MetadataSettingsDetailView.swift|MetadataDiagnosticsCachePanel|budgetControl|SettingsStepper|<dynamic>": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "artwork-cache-budget",
+        "lookup-cache-budget"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|audioLanguageMenu|SettingsMenuRow|title": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "audio-language"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|audioLanguageMenu|Picker|\"Audio language\"": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "audio-language"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|versionSelectionRows|PlaybackVersionPreferencePicker|<dynamic>": {
+      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+      "covered_by": [
+        "version-selection"
+      ],
+      "count": 1
+    },
+    "Sources/FeatureSettings/ThemeMusicVolumeControl.swift|ThemeMusicVolumeControl|body|Button|if ownsPreview { Label(\"Stop preview\", systemImage: \"stop.fill\") } else { Label(\"Play preview\", systemImage: \"play.fill\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    }
+  }
+}

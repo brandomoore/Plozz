@@ -22,6 +22,9 @@ struct TopShelfStylePicker: View {
                     TopShelfStylePreview(usesFullScreen: fullScreen)
                 }
                 .accessibilityIdentifier(fullScreen ? "top-shelf-style-fullscreen" : "top-shelf-style-posters")
+                .settingsSearchAnchor(
+                    usesFullScreen == fullScreen ? "top-shelf-style" : "top-shelf-option-\(fullScreen)"
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

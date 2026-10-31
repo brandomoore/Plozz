@@ -214,6 +214,7 @@ private struct ReleaseNotesPreferenceToggle: View {
                 set: { model.setShowsOnStartup($0) }
             )
         )
+        .settingsSearchAnchor("release-notes-startup")
     }
 }
 

@@ -5,21 +5,23 @@ import SwiftUI
 public struct SettingsSearchResults: View {
     let query: String
     let platform: SettingsSearchEntry.Platform
+    let isKids: Bool
     let onSelect: (SettingsSearchEntry, UUID?) -> Void
     @Environment(\.locale) private var locale
 
     public init(
-        query: String, platform: SettingsSearchEntry.Platform,
+        query: String, platform: SettingsSearchEntry.Platform, isKids: Bool = false,
         onSelect: @escaping (SettingsSearchEntry, UUID?) -> Void
     ) {
         self.query = query
         self.platform = platform
+        self.isKids = isKids
         self.onSelect = onSelect
     }
     private var isEmptyQuery: Bool { query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     private var results: [SettingsSearchEntry] {
-        let available = SettingsSearchCatalog.entries(on: platform)
+        let available = SettingsSearchCatalog.entries(on: platform, isKids: isKids)
         if isEmptyQuery {
             let suggestions = ["subtitle-size", "theme", "autoplay-next-episode", "resume-rewind", "display-size"]
             return suggestions.compactMap { id in available.first { $0.id == id } }
@@ -79,7 +81,7 @@ public struct SettingsSearchResults: View {
         Label {
             VStack(alignment: .leading, spacing: 4) {
                 Text(entry.title).font(.body)
-                Text(verbatim: entry.destinationPage(on: platform).path.map {
+                Text(verbatim: entry.destinationPath(on: platform).map {
                     var resource = $0
                     resource.locale = locale
                     return String(localized: resource)
@@ -105,6 +107,7 @@ public struct SettingsSearchResults: View {
 
 #if os(tvOS)
 struct SettingsSearchTelevisionView: View {
+    var isKids = false
     @State private var query = ""
     @Environment(SettingsNavigationModel.self) private var navigation
 
@@ -114,7 +117,7 @@ struct SettingsSearchTelevisionView: View {
             TextField("Search settings", text: $query)
                 .autocorrectionDisabled()
                 .accessibilityIdentifier("settings-search-field")
-            SettingsSearchResults(query: query, platform: .television) { entry, source in
+            SettingsSearchResults(query: query, platform: .television, isKids: isKids) { entry, source in
                 navigation.pages.push(.searchResult(entry.id), sourceID: source)
             }
         }

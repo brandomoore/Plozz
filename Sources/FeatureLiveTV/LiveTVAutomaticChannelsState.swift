@@ -186,7 +186,7 @@ private struct LiveTVAutomaticChannelsToggle: View {
         }
         .disabled(action.isUpdating || (state.isWorking && !state.enabled))
         .accessibilityIdentifier("live-tv-automatic-enabled")
-        .onDisappear { update?.cancel(); update = nil }
+        .onDisappear { update?.cancel(); update = nil }.settingsSearchAnchor("live-automatic-lineup")
     }
 }
 

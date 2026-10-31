@@ -887,7 +887,8 @@ public struct SettingsView: View {
     }
 
     @ViewBuilder
-    private func searchDestination(_ page: SettingsSearchPage) -> some View {
+    private func searchDestination(_ entry: SettingsSearchEntry) -> some View {
+        let page = entry.destinationPage(on: .television)
         switch page {
         case .theme, .cards:
             AppearanceDetailView(
@@ -896,16 +897,67 @@ public struct SettingsView: View {
                 searchPageID: page == .theme ? "theme" : "cards"
             )
         case .playback: authorizedDestination(for: .playback)
+        case .playbackAdvanced: PlaybackAdvancedSettingsView(playback: playback)
+        case .externalPlayer: ExternalPlayerSettingsView(custom: entry.id == "external-template")
+        case .skipMarkers:
+            SkipMarkerSettingsView(model: playback, initialKind: entry.skipKind, initialCategory: entry.contentCategory)
         case .subtitles: authorizedDestination(for: .subtitles)
         case .subtitleStyle: authorizedDestination(for: .subtitleStyle(liveTV: false))
-        case .artwork: authorizedDestination(for: .artwork)
+        case .liveSubtitleStyle:
+            authorizedDestination(for: subtitleStyle.usesSeparateLiveTVStyle ? .subtitleStyle(liveTV: true) : .subtitles)
+        case .cardLabels:
+            CardCaptionCustomizationView(
+                cards: cardStyle, visibility: homeVisibility, initialView: entry.cardCaptionView
+            )
+        case .musicPlayer:
+            AppearanceDetailView(
+                librariesScope: context.librariesScope, settingsNavigation: navigation,
+                theme: theme, nightShift: nightShift, spoilers: spoilers, searchPageID: "music-player"
+            )
+        case .artwork:
+            if entry.anchorID.hasPrefix("artwork-view-") {
+                ArtworkCustomizationView(
+                    cards: cardStyle,
+                    continueWatchingShowsSeriesArtwork: homeVisibility.continueWatchingShowsSeriesArtwork,
+                    continueWatchingLayout: homeVisibility.continueWatchingLayout
+                )
+            } else {
+                authorizedDestination(for: .artwork)
+            }
         case .circadian: authorizedDestination(for: .nightShift)
         case .allScreens: authorizedDestination(for: .allScreens)
         case .navigation: authorizedDestination(for: .navigationLayout)
-        case .home: authorizedDestination(for: .customizeHome)
+        case .home, .hero, .heroContent, .heroRatings, .heroTrailers, .heroDiscovery,
+             .heroLibraries, .heroCollections, .homeRows, .homeFiltering, .homeLabels, .continueWatching:
+            HomeRowsSettingsView(
+                libraries: librariesStore.state.value ?? [], accounts: homeRowAccounts, visibility: homeVisibility,
+                spoilerSettings: spoilers.settings, searchPage: page
+            )
+            .id(ObjectIdentifier(homeVisibility))
         case .detail: authorizedDestination(for: .detailPage)
-        case .liveTV: authorizedDestination(for: .liveTV)
+        case .libraries: authorizedDestination(for: .customizeLibraries)
+        case .liveTV, .liveTVSources: authorizedDestination(for: .liveTV)
+        case .liveTVGuide, .liveTVVisibility:
+            LiveTVSettingsView(
+                store: LiveTVViewSettingsStore(namespace: liveTVPreferencesNamespace),
+                preferencesStore: LiveTVPreferencesStore(namespace: liveTVPreferencesNamespace),
+                searchPage: page
+            )
         case .language: authorizedDestination(for: .language)
+        case .trackers: authorizedDestination(for: .integrations)
+        case .topShelf: authorizedDestination(for: .topShelf)
+        case .profiles: authorizedDestination(for: .profile)
+        case .profileAppearance: authorizedDestination(for: .profileAppearance(profileID: activeProfile.id))
+        case .profileSettings: authorizedDestination(for: .profileSettings(profileID: activeProfile.id))
+        case .accountLibraries: authorizedDestination(for: .myLibraries)
+        case .seerr: authorizedDestination(for: .seerr)
+        case .sync: authorizedDestination(for: .syncSetup)
+        case .metadata: authorizedDestination(for: .metadata)
+        case .metadataDiagnostics: authorizedDestination(for: .metadataDiagnostics)
+        case .diagnostics: authorizedDestination(for: .help)
+        case .releaseNotes: authorizedDestination(for: .releaseNotes)
+        case .downloads, .streamingAdvanced, .detailRatingSources:
+            ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
         }
     }
 
@@ -913,13 +965,16 @@ public struct SettingsView: View {
     private func authorizedDestination(for route: SettingsRoute) -> some View {
         switch route {
         case .search:
-            SettingsSearchTelevisionView()
+            SettingsSearchTelevisionView(isKids: activeProfile.isKids)
         case .searchResult(let id):
-            if let entry = SettingsSearchCatalog.entry(id: id), entry.isAvailable(on: .television) {
-                SettingsSearchLanding(targetID: id) {
-                    AnyView(searchDestination(entry.page))
+            if let entry = SettingsSearchCatalog.entry(id: id),
+               entry.isAvailable(on: .television, isKids: activeProfile.isKids) {
+                let targetID = entry.page == .liveSubtitleStyle && !subtitleStyle.usesSeparateLiveTVStyle
+                    ? "live-subtitle-style" : entry.anchorID
+                SettingsSearchLanding(targetID: targetID) {
+                    AnyView(searchDestination(entry))
                 }
-                .id(id)
+                .id("\(id)-\(targetID)")
             } else {
                 ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
             }
@@ -1150,7 +1205,7 @@ public struct SettingsView: View {
                         ))
                         .toggleStyle(SettingsSwitchToggleStyle())
                         .settingsWorkspaceEntry()
-                        .modifier(SyncRecoveryDisabled(provider: syncStatusSummary))
+                        .modifier(SyncRecoveryDisabled(provider: syncStatusSummary)).settingsSearchAnchor("icloud-sync")
 
                         if syncEnabled, let syncStatusSummary {
                             HStack(spacing: 24) {

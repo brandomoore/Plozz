@@ -270,6 +270,11 @@ public struct MetadataSettingsDetailView: View {
                     title: orderModeTitle
                 )
                 .settingsWorkspaceEntry()
+                .settingsSearchAnchor(
+                    "metadata-order-mode",
+                    fallbackFor: providers.settings.orderMode == .custom
+                        ? [] : ["metadata-provider-priority-enabled"]
+                )
 
                 Text("Shared by all profiles.")
                     .font(.caption)
@@ -284,6 +289,7 @@ public struct MetadataSettingsDetailView: View {
                         row: { LiftableReorderList.Row(title: Text(displayName($0))) },
                         onChange: { persist($0) }
                     )
+                    .settingsSearchAnchor("metadata-provider-priority-enabled")
 
                     #if os(tvOS)
                     Button(role: .destructive) {
@@ -707,9 +713,11 @@ private struct MetadataDiagnosticsCachePanel: View {
         budgetControl(
             title: "Artwork", options: Self.artworkBudgetOptions, selection: artworkBudgetBinding
         )
+        .settingsSearchAnchor("artwork-cache-budget")
         budgetControl(
             title: "Lookups", options: Self.metadataBudgetOptions, selection: metadataBudgetBinding
         )
+        .settingsSearchAnchor("lookup-cache-budget")
     }
 
     private func budgetControl(

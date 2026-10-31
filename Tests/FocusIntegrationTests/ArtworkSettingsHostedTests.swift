@@ -10,6 +10,118 @@ import XCTest
 
 @MainActor
 final class ArtworkSettingsHostedTests: XCTestCase {
+    func testSubtitleSearchFocusesVisibleMenuOrAvailabilityWithoutChangingValues() async throws {
+        let suite = "SubtitleSearchHosted.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let playback = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+        let behavior = SubtitleBehaviorModel(store: SubtitleBehaviorStore(defaults: defaults))
+        let original = behavior.settings
+        for supported in [true, false] {
+            try await withScreen(content:
+                SettingsSearchLanding(targetID: "subtitle-forced-search") {
+                    PlaybackDetailView(
+                        playback: playback, subtitleBehavior: behavior,
+                        subtitleStyle: SubtitleStyleModel(store: SubtitleStyleStore(defaults: defaults)),
+                        subtitlePolicy: SubtitlePolicyModel(store: SubtitlePolicyStore(defaults: defaults)),
+                        audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults)),
+                        canDownloadSubtitles: supported, section: .subtitles
+                    )
+                    .environment(\.settingsInWorkspace, true)
+                }
+                .frame(width: SettingsFormMetrics.pageWidth)
+            ) { window in
+                let title = supported ? "Forced" : "Subtitle downloads are unavailable"
+                let labels = try self.collectionLabelFrames(
+                    in: window, attachmentName: "subtitle-search-supported-\(supported)", matchingText: title
+                )
+                let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                let focused = try self.nativeFocusedFrame(system, in: window)
+                XCTAssertTrue(labels.contains { focused.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) },
+                              "\(title): focused \(focused), labels \(labels)")
+                XCTAssertEqual(behavior.settings, original)
+            }
+        }
+    }
+
+    func testMusicSearchReachesTheRequestedNativeControlWithoutChangingValues() async throws {
+        var appearance = MusicPlayerAppearance.dark
+        var showsDetails = false
+        for target in ["music-style", "music-track-details"] {
+            try await withScreen(content:
+                SettingsSearchLanding(targetID: target) {
+                    MusicPlayerStyleDetail(
+                        appearance: Binding(get: { appearance }, set: { appearance = $0 }),
+                        showTrackDetails: Binding(get: { showsDetails }, set: { showsDetails = $0 })
+                    )
+                }
+                .frame(width: SettingsFormMetrics.pageWidth)
+            ) { window in
+                let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                let title = target == "music-style" ? "Dark" : "Show album, quality & lyrics source"
+                let label = try XCTUnwrap(self.collectionLabelFrames(in: window, matchingText: title).first)
+                let focused = try self.nativeFocusedFrame(system, in: window)
+                XCTAssertTrue(focused.contains(CGPoint(x: label.frame.midX, y: label.frame.midY)), target)
+                XCTAssertEqual(appearance, .dark)
+                XCTAssertFalse(showsDetails)
+            }
+        }
+    }
+
+    func testDisabledTopShelfSearchFocusesEnablementWithoutEnablingIt() async throws {
+        let suite = "TopShelfSearchHosted.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = TopShelfSettingsModel(defaults: defaults)
+        model.settings.isEnabled = false
+        let initial = model.settings
+        try await withScreen(content:
+            SettingsSearchLanding(targetID: "top-shelf-recent") {
+                TopShelfSettingsView(model: model)
+            }
+            .frame(width: SettingsFormMetrics.pageWidth)
+        ) { window in
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let label = try XCTUnwrap(self.collectionLabelFrames(in: window, matchingText: "Show Top Shelf").first)
+            let focused = try self.nativeFocusedFrame(system, in: window)
+            XCTAssertTrue(focused.contains(CGPoint(x: label.frame.midX, y: label.frame.midY)))
+            XCTAssertEqual(model.settings, initial)
+        }
+    }
+
+    func testHeroSearchFocusesTheCurrentLayoutPrerequisiteWithoutChangingSettings() async throws {
+        let suite = "HeroSearchHosted.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        for style in HeroStyle.allCases {
+            for enabled in [false, true] {
+                var settings = HeroSettings.default
+                settings.style = style
+                settings.isEnabled = enabled
+                let hero = HeroSettingsModel(store: InMemoryHeroSettingsStore(settings))
+                let background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore())
+                try await withScreen(content:
+                    SettingsSearchLanding(targetID: "hero-enabled") {
+                        HomeHeroSettingsView(libraries: [], accounts: [], visibility: visibility)
+                    }
+                    .environment(hero)
+                    .environment(background)
+                    .frame(width: SettingsFormMetrics.pageWidth)
+                ) { window in
+                    let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                    let title = style == .carousel ? "Show hero" : "Fullscreen Hero"
+                    let label = try XCTUnwrap(self.collectionLabelFrames(in: window, matchingText: title).first)
+                    let focused = try self.nativeFocusedFrame(system, in: window)
+                    XCTAssertTrue(focused.contains(CGPoint(x: label.frame.midX, y: label.frame.midY)),
+                                  "Search must focus \(title), not Back or an unrelated setting.")
+                    XCTAssertEqual(hero.settings, settings, "Search must not enable Hero or change the layout.")
+                    _ = try await self.capture(window, name: "hero-search-\(style.rawValue)-\(enabled)", includeMaster: true)
+                }
+            }
+        }
+    }
+
     func testTVLabelPreviewHeadingsAreReadableAtTheDisplayedSize() async throws {
         for page in [CardCaptionSettingsPage.home, .detail] {
             let preview = CardLabelScopePreview.snapshot(

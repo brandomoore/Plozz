@@ -22,6 +22,7 @@ struct MusicPlayerStyleDetail: View {
     @Binding var appearance: MusicPlayerAppearance
     @Binding var showTrackDetails: Bool
     @Environment(\.themePalette) private var palette
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
     @FocusState private var focused: FocusTarget?
     /// Whether a style card has been focused this entry — gates the toggle into
     /// the focus order so it can't steal the initial right-press.
@@ -46,12 +47,20 @@ struct MusicPlayerStyleDetail: View {
                         MusicStyleSwatch(appearance: style, cornerRadius: PlozzTheme.Metrics.Radius.content)
                     }
                     .focused($focused, equals: .style(style))
+                    .settingsSearchAnchor(
+                        appearance == style ? "music-style" : "music-style-option-\(style.rawValue)",
+                        focusAction: { focused = .style(style) }
+                    )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            FocusGatedSwitch("Show album, quality & lyrics source", isOn: $showTrackDetails, canFocus: cardFocused)
-                .focused($focused, equals: .toggle)
+            FocusGatedSwitch(
+                "Show album, quality & lyrics source", isOn: $showTrackDetails,
+                canFocus: cardFocused || searchRequest?.targetID == "music-track-details"
+            )
+            .focused($focused, equals: .toggle)
+            .settingsSearchAnchor("music-track-details", focusAction: { focused = .toggle })
         }
         .tvOSFocusSection()
         .onChange(of: focused) { _, new in

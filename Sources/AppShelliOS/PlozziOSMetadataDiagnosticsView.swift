@@ -109,10 +109,10 @@ struct PlozziOSMetadataDiagnosticsView: View {
         SettingsSectionGroup("Cache") {
             Stepper(value: artworkBudgetBinding, in: 1 ... Self.artworkBudgetOptions.count) {
                 LabeledContent("Artwork limit", value: "\(currentArtworkMiB) MB")
-            }
+            }.settingsSearchAnchor("artwork-cache-budget")
             Stepper(value: metadataBudgetBinding, in: 1 ... Self.metadataBudgetOptions.count) {
                 LabeledContent("Lookups limit", value: "\(currentMetadataMiB) MB")
-            }
+            }.settingsSearchAnchor("lookup-cache-budget")
             Button(role: .destructive) {
                 confirmClear = true
             } label: {
@@ -121,6 +121,7 @@ struct PlozziOSMetadataDiagnosticsView: View {
         } footer: {
             Text("Budgets cap on-disk caches; lowering a budget evicts immediately.")
         }
+        .settingsSearchGroup(["artwork-cache-budget", "lookup-cache-budget"])
     }
 
     // MARK: Rows

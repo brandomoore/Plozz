@@ -66,7 +66,6 @@ private struct CircadianDetail: View {
     var body: some View {
         SettingsControlRows(nonTVSpacing: SettingsMetrics.sectionSpacing) {
             NightShiftScheduleControl(model: model)
-                .settingsSearchAnchor("circadian")
 
             if model.settings.isEnabled {
                 // Fade governs only the on/off transition, so it's irrelevant when
@@ -83,7 +82,7 @@ private struct CircadianDetail: View {
                             NightShiftSettingsModel.fadeLabel(minutes: $0, locale: locale)
                         }
                     )
-                    .tvOSFocusSection()
+                    .tvOSFocusSection().settingsSearchAnchor("circadian-fade")
                 }
 
                 SettingsStepper(
@@ -93,7 +92,7 @@ private struct CircadianDetail: View {
                     label: "Darkness", labelWidth: circadianRowLabelWidth,
                     title: { $0.displayName }
                 )
-                .tvOSFocusSection()
+                .tvOSFocusSection().settingsSearchAnchor("circadian-dimness")
 
                 SettingsStepper(
                     options: NightShiftWarmth.allCases,
@@ -102,7 +101,7 @@ private struct CircadianDetail: View {
                     label: "Warmth", labelWidth: circadianRowLabelWidth,
                     title: { $0.displayName }
                 )
-                .tvOSFocusSection()
+                .tvOSFocusSection().settingsSearchAnchor("circadian-warmth")
 
                 LabeledSettingRow("Preview", labelWidth: circadianRowLabelWidth) {
                     HStack(spacing: 28) {
@@ -175,6 +174,12 @@ private struct NightShiftScheduleControl: View {
                 onFocusedOptionChange: { focusedMode = $0 }
             )
             .tvOSFocusSection()
+            .settingsSearchAnchor(
+                "circadian-mode-tv",
+                fallbackFor: ["circadian"] + SettingsSearchCatalog.circadianScheduleFallbacks(
+                    isEnabled: model.settings.isEnabled, mode: model.settings.scheduleMode
+                )
+            )
 
             Text(describedMode.detail)
                 .settingsHelperText()
@@ -207,11 +212,11 @@ private struct NightShiftScheduleControl: View {
                 timeStepper("Turns on", minutes: model.settings.manualOnMinutes) {
                     model.settings.manualOnMinutes = $0
                 }
-                .tvOSFocusSection()
+                .tvOSFocusSection().settingsSearchAnchor("circadian-on")
                 timeStepper("Turns off", minutes: model.settings.manualOffMinutes) {
                     model.settings.manualOffMinutes = $0
                 }
-                .tvOSFocusSection()
+                .tvOSFocusSection().settingsSearchAnchor("circadian-off")
             }
         }
     }
@@ -261,7 +266,7 @@ private struct NightShiftScheduleControl: View {
                     Text(region.name).tag(region.id)
                 }
             }
-            .pickerStyle(.inline)
+            .pickerStyle(.inline).settingsSearchAnchor("circadian-region")
         }
     }
 

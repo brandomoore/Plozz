@@ -238,7 +238,7 @@ struct AppearanceDetailView: View {
                 SettingsControlGroup(illustrated: true) {
                     CompactNavigationPicker(selection: $navigation.style)
                         .settingsSearchAnchor("navigation-layout")
-                    Toggle("Prevent Accidental Exit", isOn: $navigation.preventsAccidentalExit)
+                    Toggle("Prevent Accidental Exit", isOn: $navigation.preventsAccidentalExit).settingsSearchAnchor("prevent-exit")
                 }
                 #else
                 CompactNavigationPicker(selection: $navigation.style)
@@ -359,9 +359,13 @@ struct DetailPageDetailView: View {
                         title: { $0.displayName },
                         detail: { $0.detail }
                     )
-                    .settingsSearchAnchor("detail-background")
+                    .settingsSearchAnchor(
+                        "detail-background",
+                        fallbackFor: (heroBackground.settings.detailMode == .trailer ? [] : ["detail-trailer-muted"])
+                            + (heroBackground.settings.detailMode == .themeMusic ? [] : ["theme-music-volume"])
+                    )
                     if heroBackground.settings.detailMode == .trailer {
-                        Toggle("Start muted", isOn: $heroBackground.settings.detailTrailerMuted)
+                        Toggle("Start muted", isOn: $heroBackground.settings.detailTrailerMuted).settingsSearchAnchor("detail-trailer-muted")
                     }
                     if heroBackground.settings.detailMode == .themeMusic {
                         ThemeMusicVolumeControl(model: themeMusic)
@@ -414,9 +418,11 @@ private struct DetailHeaderRatingsSettingsForm: View {
     var body: some View {
         SettingsControlRows(nonTVSpacing: SettingsMetrics.sectionSpacing) {
             Toggle("Show review scores", isOn: $model.settings.showsHeaderRatings)
-                .settingsSearchAnchor("detail-ratings")
+                .settingsSearchAnchor(
+                    "detail-ratings", fallbackFor: model.settings.showsHeaderRatings ? [] : ["detail-rating-count"]
+                )
             if model.settings.showsHeaderRatings {
-                HeaderReviewScoreCountPicker(settings: $model.settings)
+                HeaderReviewScoreCountPicker(settings: $model.settings).settingsSearchAnchor("detail-rating-count")
             }
         }
     }
@@ -437,6 +443,7 @@ enum PlaybackSettingsSection {
 
 struct PlaybackDetailView: View {
     @Environment(\.locale) private var locale
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
     #if os(tvOS)
     @Environment(\.settingsInWorkspace) private var inWorkspace
     #else
@@ -723,7 +730,6 @@ struct PlaybackDetailView: View {
                     categories: Self.policyCategories,
                     categoryMode: { modeBinding(for: $0) }
                 )
-                .settingsSearchAnchor("subtitle-default")
             },
             SettingsSplitRow(
                 id: "subtitle-language",
@@ -761,10 +767,7 @@ struct PlaybackDetailView: View {
             }.labeledControl()
         ]
 
-        // "Downloading subtitles" only makes sense with a server that can actually
-        // fetch them (Jellyfin/Plex). A share-only profile can't download — it can
-        // only use sidecar files already on the share — so hide the row entirely
-        // rather than imply downloading works.
+        // Unsupported profiles see the prerequisite only when searching for it.
         if canDownloadSubtitles {
             rows.append(SettingsSplitRow(
                 id: "subtitle-downloading",
@@ -772,7 +775,7 @@ struct PlaybackDetailView: View {
                 description: "Download subtitles you don't already have."
             ) {
                 SettingsControlRows(nonTVSpacing: 28) {
-                    Toggle("Automatically download", isOn: $subtitleBehavior.settings.autoDownloadSubtitles)
+                    Toggle("Automatically download", isOn: $subtitleBehavior.settings.autoDownloadSubtitles).settingsSearchAnchor("subtitle-download")
                     SettingsMenuRow(
                         title: "Forced",
                         value: Text(subtitleBehavior.settings.forcedSearchPreference.displayName)
@@ -783,8 +786,19 @@ struct PlaybackDetailView: View {
                             }
                         }
                     }
+                    .settingsSearchAnchor("subtitle-forced-search")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            })
+        } else if searchRequest.map({ ["subtitle-download", "subtitle-forced-search"].contains($0.targetID) }) == true {
+            rows.append(SettingsSplitRow(
+                id: "subtitle-downloading-unavailable",
+                title: "Downloading subtitles",
+                description: "Connect a Plex, Jellyfin, or Emby server to download subtitles."
+            ) {
+                Text("Subtitle downloads are unavailable for this profile.")
+                    .focusable()
+                    .settingsSearchAnchor("subtitle-download", fallbackFor: ["subtitle-forced-search"])
             })
         }
 
@@ -848,7 +862,10 @@ struct PlaybackDetailView: View {
 
                     SettingsRevealSection(
                         isOn: audioPerContentTypeBinding,
-                        masterLabel: "Set separately for movies, TV shows & anime"
+                        masterLabel: "Set separately for movies, TV shows & anime",
+                        searchAnchorID: "audio-separate",
+                        searchFallbacks: audioPerContentTypeEnabled
+                            ? [] : Self.policyCategories.map { "audio-language-\($0.rawValue)" }
                     ) {
                         ForEach(Self.policyCategories + [.other], id: \.self) { category in
                             audioLanguageMenu(
@@ -857,7 +874,7 @@ struct PlaybackDetailView: View {
                                     : audioPreferenceBinding(for: category),
                                 title: category.separateSettingTitle, subtitle: category.separateSettingHint
                             )
-                            .settingsSearchAnchor(category == .other ? "audio-language" : "audio-language-\(category)")
+                            .settingsSearchAnchor(category == .other ? "audio-language" : "audio-language-\(category.rawValue)")
                         }
                     }
 
@@ -994,8 +1011,8 @@ struct PlaybackDetailView: View {
                     // catalog where a translator would have no way to know that.
                     Toggle(isOn: $playback.settings.fadeOnDynamicRangeChange) {
                         Text(verbatim: "HDR & Dolby Vision")
-                    }
-                    Toggle("Frame rate", isOn: $playback.settings.fadeOnFrameRateChange)
+                    }.settingsSearchAnchor("fade-hdr")
+                    Toggle("Frame rate", isOn: $playback.settings.fadeOnFrameRateChange).settingsSearchAnchor("fade-frame-rate")
                 }
                 .settingsSearchAnchor("display-fades")
             }
@@ -1026,14 +1043,17 @@ struct PlaybackDetailView: View {
             ) {
                 SettingsControlRows {
                     Toggle("Show Up Next card", isOn: $playback.settings.showUpNextCard)
-                        .settingsSearchAnchor("show-up-next-card")
+                        .settingsSearchAnchor(
+                            "show-up-next-card",
+                            fallbackFor: playback.settings.showUpNextCard ? [] : ["up-next-lead"]
+                        )
                     if playback.settings.showUpNextCard {
                         SettingsStepper(
                             options: PlaybackSettings.upNextLeadSecondsOptions,
                             selection: $playback.settings.upNextLeadSeconds,
                             label: "Time before the end", subtitle: "When credits can't be detected",
                             verbatimTitle: { Duration.seconds($0).formatted(.units(allowed: [.seconds], width: .narrow)) }
-                        )
+                        ).settingsSearchAnchor("up-next-lead")
                     }
                 }
             }
@@ -1095,11 +1115,15 @@ private struct SubtitleModeControl: View {
                     detail: { $0.detail }
                 )
                 .transition(.opacity)
+                .settingsSearchAnchor("subtitle-default")
             }
 
             SettingsRevealSection(
                 isOn: $perTypeEnabled,
-                masterLabel: "Set separately for movies, TV shows & anime"
+                masterLabel: "Set separately for movies, TV shows & anime",
+                searchAnchorID: "subtitle-separate",
+                searchFallbacks: perTypeEnabled
+                    ? [] : categories.map { "subtitle-default-\($0.rawValue)" }
             ) {
                 ForEach(categories + [.other], id: \.self) { category in
                     SeparateSettingRow(
@@ -1114,6 +1138,9 @@ private struct SubtitleModeControl: View {
                         selection: category == .other ? $baseMode : categoryMode(category),
                         optionTitle: { $0.displayName },
                         detail: { $0.detail }
+                    )
+                    .settingsSearchAnchor(
+                        category == .other ? "subtitle-default" : "subtitle-default-\(category.rawValue)"
                     )
                 }
             }

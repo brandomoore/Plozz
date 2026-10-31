@@ -9,10 +9,15 @@ The Settings screen and its detail pages. Profile-aware and integration-aware.
 ## Settings search
 
 Settings search is local: queries are neither saved nor sent to a service or log.
-The shared `SettingsSearchCatalog` indexes individual profile preferences in
-Playback, Subtitles, Appearance, Screens & Navigation, Live TV, and Language.
+The shared `SettingsSearchCatalog` indexes profile and device preferences,
+including Home/Hero, artwork and labels, playback and subtitles, libraries,
+Live TV, downloads, profile appearance, sync, metadata, diagnostics and startup.
 Results use the current platform's destination and retain their query on Back.
-Account management and household authorization are not search shortcuts.
+Protected destinations retain their normal profile/PIN checks; search never
+selects a server, library or user, enables a prerequisite, or submits an editor.
+Unavailable controls lead to their existing prerequisite or availability message.
+On mobile, custom quality keeps its normal modal editor: Cancel discards the draft, Apply
+updates only the selected network, and either action returns to the search.
 
 Matching prioritizes exact titles, then prefixes, related terms, and bounded
 spelling corrections. This is a curated synonym index, not a general-purpose
@@ -31,10 +36,12 @@ conversion; display refresh-rate matching is not an alias for transition fades;
 subtitle placement is distinct from audio/subtitle timing.
 
 iPhone on iOS 26 and later uses the system search toolbar item in the bottom
-bar; iPad keeps the native search field visible in the Settings sidebar, with a
-compact navigation title. Earlier iPhone systems use SwiftUI's native search
-placement. Mobile results use plain native List rows,
+bar; iPad keeps the native search field visible in the Settings sidebar without a
+redundant Settings heading. Detail pages retain their titles. Earlier iPhone
+systems use SwiftUI's native search placement. Mobile results use plain native List rows,
 with shared title/breadcrumb keylines and no additional result-container inset.
+On iPhone, returning from a result restores the query and keyboard. Dismissing
+the keyboard leaves the query visible and clearable; it does not end search.
 The compact Settings root places its large heading inside the scrolling content,
 below the toolbar. Scrolling past the heading shows the inline navigation title.
 TV uses the existing retained
@@ -47,6 +54,29 @@ does not intercept touches or change the setting.
 Native lazy List cells register their contained targets with
 `settingsSearchGroup`; the selected control is then revealed within that cell.
 Every indexed entry needs an available route and a matching control anchor.
+Disabled prerequisite controls can register dependent targets with `fallbackFor`;
+do not register the same target on a still-mounted disabled child.
+TV controls with their own focus binding pass `focusAction` to use that owner.
+Search waits for native layout before requesting focus, including native menus
+whose focusable view is not ready when the initial SwiftUI task begins.
+
+Run `tools/check-settings-search.sh` when changing Settings. Its SwiftSyntax
+inventory independently discovers controls in Settings/Preferences files and
+reachable components, including custom input call sites and nested menus.
+The checked-in `tools/settings-search-coverage.json` records individually reviewed
+navigation, credential, contextual-content and preview exclusions. Exclusions
+have exact control keys/counts; reusable renderer and presentation boundaries
+also retain their control structure. A new control, arbitrary uncatalogued
+anchor, missing destination anchor, stale exclusion or changed boundary fails.
+Review a failure rather than accepting the current inventory as a new baseline.
+Runtime navigation, provider access, lazy reveal and native focus still require
+behavioral tests; static coverage is not proof that a screen works.
+
+Searching for Hero, a Home banner, carousel, or spotlight opens the full Home
+Hero page at **Show hero**, ahead of the incidental movie/show Background match.
+This remains available when Hero is off and does not enable it automatically.
+On TV with Showcase selected, search instead focuses the Hero layout choice;
+changing layout still requires an explicit selection.
 
 Playback > **Ask to resume or start over** is per-profile and off by default, including
 for existing profiles. TV and mobile resume partially watched movies and episodes

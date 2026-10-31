@@ -74,14 +74,16 @@ struct CardCaptionCustomizationContent: View {
 
     init(
         settings: Binding<CardCaptionSettings>, style: CardStyle = .borderless,
-        scope: CardCaptionSettingsScope = .all, visibility: HomeLibraryVisibilityModel? = nil
+        scope: CardCaptionSettingsScope = .all, visibility: HomeLibraryVisibilityModel? = nil,
+        initialView: CardCaptionView? = nil
     ) {
         _settings = settings
         self.style = style
         self.scope = scope
         self.visibility = visibility
-        _selectedPage = State(initialValue: scope.pages[0])
-        _previewView = State(initialValue: scope.pages[0].firstControl)
+        let page = initialView.flatMap { view in scope.pages.first { $0.controls.contains(view) } } ?? scope.pages[0]
+        _selectedPage = State(initialValue: page)
+        _previewView = State(initialValue: initialView.flatMap { page.controls.contains($0) ? $0 : nil } ?? page.firstControl)
     }
 
     private var views: [CardCaptionView] { selectedPage.controls }

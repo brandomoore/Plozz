@@ -6,6 +6,8 @@ import SwiftUI
 public struct SubtitleStyleSettingsView: View {
     @Binding private var style: SubtitleStyle
     private let isLiveTV: Bool
+    private let initialPage: SettingsSearchSubtitlePage
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
     @State private var controls = PlayerControlsModel()
     @State private var secondaryVisible = false
     @State private var prepared = false
@@ -17,9 +19,16 @@ public struct SubtitleStyleSettingsView: View {
     @State private var returningToParent = false
     #endif
 
-    public init(style: Binding<SubtitleStyle>, isLiveTV: Bool = false) {
+    public init(
+        style: Binding<SubtitleStyle>, isLiveTV: Bool = false,
+        initialPage: SettingsSearchSubtitlePage = .appearance
+    ) {
         _style = style
         self.isLiveTV = isLiveTV
+        self.initialPage = isLiveTV && initialPage == .dual ? .appearance : initialPage
+        #if os(tvOS)
+        _screen = State(initialValue: Self.screen(for: self.initialPage))
+        #endif
     }
 
     public var body: some View {
@@ -65,7 +74,7 @@ public struct SubtitleStyleSettingsView: View {
                 )
                 .frame(maxWidth: .infinity)
                 NavigationStack {
-                    MobileSubtitleStyleEditor(viewModel: context)
+                    MobileSubtitleStyleEditor(viewModel: context, initialPage: initialPage)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -97,6 +106,11 @@ public struct SubtitleStyleSettingsView: View {
         .onAppear {
             guard !prepared else { return }
             prepared = true
+            #if os(tvOS)
+            if let searchRequest, let entry = SettingsSearchCatalog.entry(id: searchRequest.targetID) {
+                screen = Self.screen(for: entry.subtitlePage)
+            }
+            #endif
             secondaryVisible = !isLiveTV && style.secondary != nil
         }
     }
@@ -106,6 +120,16 @@ public struct SubtitleStyleSettingsView: View {
     }
 
     #if os(tvOS)
+    fileprivate static func screen(for page: SettingsSearchSubtitlePage) -> PlayerControls.SubtitleScreen {
+        switch page {
+        case .appearance: .style
+        case .outline: .styleOutline
+        case .background: .styleBackground
+        case .formatting: .styleFileFormatting
+        case .dual: .styleDual
+        }
+    }
+
     private func openScreen(_ next: PlayerControls.SubtitleScreen) {
         returningToParent = next == screen.parent
         withAnimation(reduceMotion ? nil : SettingsPageMotion.animation) {
@@ -185,7 +209,8 @@ private struct TelevisionSubtitleStyleEditor: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("subtitle-style-editor-card")
         .task(id: screen) {
-            guard screen != .style || searchRequest?.revealed != false else { return }
+            if let searchRequest, let entry = SettingsSearchCatalog.entry(id: searchRequest.targetID),
+               screen == SubtitleStyleSettingsView.screen(for: entry.subtitlePage) { return }
             focus = nil
             await Task.yield()
             guard !Task.isCancelled else { return }

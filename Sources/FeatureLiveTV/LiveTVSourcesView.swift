@@ -740,7 +740,7 @@ private struct LiveTVPlaylistSourceDetails: View {
                     )) {
                         Label("Use this source", systemImage: "antenna.radiowaves.left.and.right")
                     }
-                    .accessibilityIdentifier("live-tv-source-enabled-\(source.id)")
+                    .accessibilityIdentifier("live-tv-source-enabled-\(source.id)").settingsSearchAnchor("live-source-enabled")
                     LiveTVSourceApprovalControl(
                         source: source, sourceStore: model.sourceStoreForApproval,
                         onChange: {
@@ -898,6 +898,7 @@ private struct LiveTVPlaylistGuideSettings: View {
                             set: { model.setGuidePolicy(sourceID, lookbackDays: $0) }
                         ), identifier: "live-tv-guide-lookback"
                     )
+                    .settingsSearchAnchor("guide-lookback")
                     LiveTVGuideDaysPicker(
                         title: "Look ahead", symbol: "calendar",
                         options: [1, 3, 7, 14, 28], selection: Binding(
@@ -905,6 +906,7 @@ private struct LiveTVPlaylistGuideSettings: View {
                             set: { model.setGuidePolicy(sourceID, lookaheadDays: $0) }
                         ), identifier: "live-tv-guide-lookahead"
                     )
+                    .settingsSearchAnchor("guide-lookahead")
                 } footer: {
                     Text("Keeps the listings provided within this range. A guide may supply fewer days.")
                 }
@@ -997,7 +999,7 @@ private struct LiveTVServerSourceDetails: View {
                     )) {
                         Label("Use this source", systemImage: "server.rack")
                     }
-                    .accessibilityIdentifier("live-tv-source-enabled-\(source.id)")
+                    .accessibilityIdentifier("live-tv-source-enabled-\(source.id)").settingsSearchAnchor("live-source-enabled")
                     SettingsPageLink {
                         LiveTVServerSourceRename(model: model, source: source)
                     } label: {

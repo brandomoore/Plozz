@@ -38,6 +38,7 @@ struct PlozziOSSeerrSettingsView: View {
             SettingsSectionGroup("Connection") {
                 connectionContent
             }
+            .settingsSearchGroup(appModel.seerService.isConfigured ? [] : ["seerr-profile-user"])
 
             if appModel.seerService.isConfigured {
                 SettingsSectionGroup("Requests are made as") {
@@ -50,6 +51,7 @@ struct PlozziOSSeerrSettingsView: View {
                         """
                     )
                 }
+                .settingsSearchGroup(["seerr-profile-user"])
             }
         }
         .settingsPageSurface()
@@ -158,6 +160,7 @@ struct PlozziOSSeerrSettingsView: View {
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .keyboardType(.URL)
+            .settingsSearchAnchor("seerr-profile-user")
         SecureField("API key", text: $apiKey)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
@@ -227,6 +230,10 @@ struct PlozziOSSeerrSettingsView: View {
                 } label: {
                     profileMappingLabel(profile)
                 }
+                .settingsSearchAnchor(
+                    profile.id == appModel.profiles.profiles.first?.id
+                        ? "seerr-profile-user" : "seerr-profile-\(profile.id)"
+                )
             }
         }
     }

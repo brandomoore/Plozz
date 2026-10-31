@@ -376,7 +376,7 @@ private struct LibraryChannelManagementContent: View {
                     Text("Update watch history")
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
-                }
+                }.settingsSearchAnchor("live-watch-history")
             } footer: {
                 Text(
                     "Mark watched after you view \(0.9, format: .percent.precision(.fractionLength(0))) of a program. No resume progress. Original files only.",

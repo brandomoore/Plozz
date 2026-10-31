@@ -163,7 +163,9 @@ extension SettingsRoute {
     var usesFullScreenDetail: Bool {
         switch self {
         case .searchResult(let id):
-            return SettingsSearchCatalog.entry(id: id)?.page == .subtitleStyle
+            return SettingsSearchCatalog.entry(id: id).map {
+                $0.page == .subtitleStyle || $0.page == .liveSubtitleStyle
+            } == true
         case .subtitleStyle, .profileAppearance, .profileLockSetup, .parentalPINSetup:
             return true
         default:
@@ -174,6 +176,10 @@ extension SettingsRoute {
     func access(activeProfileID: String, isKids: Bool, isParentalSealed: Bool) -> SettingsRouteAccess {
         guard isKids else { return .allowed }
         switch self {
+        case .searchResult(let id):
+            guard let entry = SettingsSearchCatalog.entry(id: id) else { return .allowed }
+            if entry.requiresAdultProfile { return .adultProfile }
+            return entry.page.requiresParentalAuthorization && isParentalSealed ? .parentalPIN : .allowed
         case .profile, .servers, .server, .parentalPIN, .topShelf,
              .metadata, .metadataDiagnostics, .seerr, .seerUserPicker,
              .syncSetup, .syncTroubleshooting:

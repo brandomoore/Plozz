@@ -208,7 +208,7 @@ struct IntegrationsDetailView: View {
                     : "Add another server to sync watch status across servers.",
             ) {
                 Toggle("Sync across all my servers", isOn: $playback.settings.syncWatchAcrossServers)
-                    .disabled(!canSyncAcrossServers)
+                    .disabled(!canSyncAcrossServers).settingsSearchAnchor("cross-server-watch-sync")
             }
         ]
 

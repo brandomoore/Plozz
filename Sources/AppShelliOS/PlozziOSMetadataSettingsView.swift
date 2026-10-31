@@ -99,6 +99,11 @@ struct PlozziOSMetadataSettingsView: View {
                     Text(orderModeTitle(mode)).tag(mode)
                 }
             }
+            .settingsSearchAnchor(
+                "metadata-order-mode",
+                fallbackFor: providers.settings.orderMode == .custom
+                    ? [] : ["metadata-provider-priority-enabled"]
+            )
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(providers.settings.orderMode == .recommended
@@ -106,6 +111,10 @@ struct PlozziOSMetadataSettingsView: View {
                     : "Drag providers to set priority. Anything below the line is turned off.")
             }
         }
+        .settingsSearchGroup(
+            providers.settings.orderMode == .custom
+                ? ["metadata-order-mode"] : ["metadata-order-mode", "metadata-provider-priority-enabled"]
+        )
     }
 
     @ViewBuilder
@@ -138,9 +147,11 @@ struct PlozziOSMetadataSettingsView: View {
             .scrollDisabled(true)
             .environment(\.editMode, .constant(.active))
             .frame(height: rowStackHeight(items))
+            .settingsSearchAnchor("metadata-provider-priority-enabled")
         } footer: {
             Text("Drag to reorder. Sources below the Disabled line are turned off.")
         }
+        .settingsSearchGroup(["metadata-provider-priority-enabled"])
     }
 
     /// Total height for the fixed (non-scrolling) reorder list: standard rows plus

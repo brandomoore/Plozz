@@ -12,6 +12,7 @@ public struct LibraryPresentationSettingsView: View {
     @State private var discovery: LibraryPresentationDiscovery?
     @State private var discoveryScope: HomeSectionCatalogModel.RequestID?
     @State private var reloadRevision = 0
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
 
     private struct DiscoveryRequest: Equatable {
         let scope: HomeSectionCatalogModel.RequestID
@@ -34,6 +35,14 @@ public struct LibraryPresentationSettingsView: View {
     }
 
     public var body: some View {
+        if searchRequest?.targetID == "library-tab-layout" {
+            LibraryNavigationSettingsView(model: model)
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         HomeEditorPage(title: Text("Libraries"), showsHeader: true) {
             HomeEditorLink {
                 LibraryNavigationSettingsView(model: model)
@@ -141,6 +150,7 @@ struct LibraryNavigationSettingsView: View {
                 },
                 onChange: { model.settings.navigation.apply($0, available: available) }
             )
+            .settingsSearchAnchor("library-tab-layout")
             Text("Each library shows only the tabs it supports. Browse stays available if all its other tabs are hidden.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -197,7 +207,7 @@ struct LibraryDisplaySettingsView: View {
         HomeEditorPage(title: library.library.displayName, showsHeader: true) {
             if showsCollectionCovers {
                 SettingsSectionGroup {
-                    CollectionCoverLayoutPicker(selection: collectionCoverSelection, title: "Collection covers")
+                    CollectionCoverLayoutPicker(selection: collectionCoverSelection, title: "Collection covers").settingsSearchAnchor("library-covers")
                 }
                 .accessibilityIdentifier("library-collection-covers")
             }
@@ -256,6 +266,7 @@ struct LibraryDisplaySettingsView: View {
                     model.settings.recommendedRows[address] = updated
                 }
             )
+            .settingsSearchAnchor("recommended-row-layout")
             ForEach(choices.filter { CollectionCoverLayout.isCollectionGroup($0.items) }) { row in
                 let coverAddress = LibraryPresentationSettings.collectionCoverAddress(
                     accountID: library.accountID, libraryID: library.library.id, rowID: row.id
@@ -265,7 +276,7 @@ struct LibraryDisplaySettingsView: View {
                     CollectionCoverLayoutPicker(selection: Binding(
                         get: { model.settings.collectionCoverLayout(at: coverAddress) },
                         set: { model.settings.collectionCoverLayouts[coverAddress] = $0 }
-                    ))
+                    )).settingsSearchAnchor("recommended-row-covers")
                 }
                 .disabled(isLifting)
             }

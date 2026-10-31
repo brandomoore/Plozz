@@ -123,6 +123,7 @@ struct ViewCustomizationList<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @SettingsPageDismiss private var dismiss
     @Environment(SettingsDetailNavigation.self) private var detailNavigation: SettingsDetailNavigation?
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.themePalette) private var palette
     @FocusState private var focusedRow: String?
@@ -146,7 +147,7 @@ struct ViewCustomizationList<Content: View>: View {
                                 }
                             }
                             .accessibilityIdentifier("view-customization-back")
-                            .disabled(!hasEnteredList && initialRowID != "view-customization-back")
+                            .disabled(!hasEnteredList && searchRequest == nil && initialRowID != "view-customization-back")
                             .modifier(ViewCustomizationRowFocus(id: "view-customization-back"))
                         ))
                     VStack(alignment: .leading, spacing: SettingsFormMetrics.controlSpacing) {
@@ -179,7 +180,16 @@ struct ViewCustomizationList<Content: View>: View {
                 .environment(\.viewCustomizationFocus, $focusedRow)
                 .focusScope(focusScope)
                 .defaultFocus($focusedRow, initialRowID)
-                .task(id: initialRowID) { focusedRow = initialRowID }
+                .task(id: initialRowID) {
+                    guard searchRequest == nil else { return }
+                    focusedRow = initialRowID
+                }
+                .onChange(of: searchRequest?.revealed) { _, revealed in
+                    if revealed == true {
+                        hasEnteredList = true
+                        detailNavigation?.focusArrived()
+                    }
+                }
                 .onChange(of: focusedRow) { _, row in
                     if row != nil {
                         hasEnteredList = true
