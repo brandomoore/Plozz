@@ -174,10 +174,11 @@ final class NativeSettingsToggleTests: XCTestCase {
         ] {
             let model = Model()
             let animates = !reducedMotion && !reducedEffects && active
-            window.frame = CGRect(x: 0, y: 0, width: 390, height: 400)
+            let width: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 744 : 300
+            window.frame = CGRect(x: 0, y: 0, width: width + 90, height: 400)
             window.rootViewController = UIHostingController(rootView:
                 SettingsSearchGlow(shape: RoundedRectangle(cornerRadius: 18))
-                    .frame(width: 300, height: 100)
+                    .frame(width: width, height: 100)
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
                         model.controlBounds = $0
                     }
@@ -193,13 +194,13 @@ final class NativeSettingsToggleTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(150))
             window.layoutIfNeeded()
             let bounds = model.controlBounds
-            XCTAssertEqual(bounds.width, 300)
+            XCTAssertEqual(bounds.width, width)
             let first = capture()
             try await Task.sleep(for: .milliseconds(550))
             let second = capture()
-            let edge = stride(from: 30.0, through: 270.0, by: 30).flatMap { x in
-                [CGPoint(x: bounds.minX + x, y: bounds.minY + 1),
-                 CGPoint(x: bounds.minX + x, y: bounds.maxY - 2)]
+            let edge: [CGPoint] = (1...9).flatMap { index -> [CGPoint] in
+                let x = bounds.minX + width * CGFloat(index) / 10
+                return [CGPoint(x: x, y: bounds.minY + 1), CGPoint(x: x, y: bounds.maxY - 2)]
             }
             var movement = 0
             for point in edge {
@@ -211,6 +212,23 @@ final class NativeSettingsToggleTests: XCTestCase {
             }
             if animates {
                 XCTAssertGreaterThan(movement, 40, "The light must visibly travel along the edge.")
+                let background = light ? 255 : 0
+                let contrasts = try edge.map { abs(try pixel(second, $0)[0] - background) }
+                let weakest = try XCTUnwrap(contrasts.min())
+                let strongest = try XCTUnwrap(contrasts.max())
+                XCTAssertGreaterThan(weakest, 12, "The entire halo must stay connected, not split into bright segments.")
+                XCTAssertLessThan(Double(strongest) / Double(max(1, weakest)), 2.6,
+                                  "The broad wave must not have a bright head and dim tail.")
+                let center = CGPoint(x: bounds.midX, y: bounds.midY)
+                XCTAssertGreaterThan(
+                    abs(try pixel(second, center)[0] - background),
+                    abs(try pixel(first, center)[0] - background) + 3,
+                    "The entire cue must ease in instead of appearing at full brightness."
+                )
+                let aboveSeam = CGPoint(x: bounds.maxX - 2, y: bounds.midY - 1)
+                let belowSeam = CGPoint(x: bounds.maxX - 2, y: bounds.midY + 1)
+                XCTAssertEqual(try pixel(second, aboveSeam)[0], try pixel(second, belowSeam)[0], accuracy: 3,
+                               "The circular gradient must not expose a join.")
             } else {
                 XCTAssertEqual(movement, 0, "Reduced effects and inactive scenes must use a steady outline.")
             }
@@ -221,7 +239,7 @@ final class NativeSettingsToggleTests: XCTestCase {
             }
             for (name, image) in [("arrival", first), ("sweep", second)] {
                 let attachment = XCTAttachment(image: image)
-                attachment.name = "Search glow \(name) light=\(light) motion=\(reducedMotion) effects=\(reducedEffects) active=\(active)"
+                attachment.name = "Search glow \(name) width=\(Int(width)) light=\(light) motion=\(reducedMotion) effects=\(reducedEffects) active=\(active)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }

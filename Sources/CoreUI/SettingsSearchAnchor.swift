@@ -228,7 +228,7 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.scenePhase) private var scenePhase
     @State private var angle = 0.0
-    @State private var opacity = 1.0
+    @State private var opacity = 0.0
 
     private var animates: Bool {
         !reduceMotion && !reduceTransparency && scenePhase == .active
@@ -236,36 +236,40 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
 
     var body: some View {
         let neutral = palette.primaryText
-        let sweep = AngularGradient(
-            stops: [
-                .init(color: neutral.opacity(0.12), location: 0),
-                .init(color: neutral.opacity(0.12), location: 0.55),
-                .init(color: neutral.opacity(0.75), location: 0.78),
-                .init(color: neutral.opacity(0.12), location: 1)
-            ],
+        // A periodic wave joins with matching brightness and slope, rather than a head and tail.
+        let halo = AngularGradient(
+            stops: (0...32).map { index in
+                let position = Double(index) / 32
+                return .init(
+                    color: neutral.opacity(0.45 + 0.18 * cos(position * 2 * .pi)),
+                    location: position
+                )
+            },
             center: .center, angle: .degrees(angle)
         )
         shape.fill(neutral.opacity(0.10))
             .overlay {
                 if animates {
-                    shape.strokeBorder(sweep, lineWidth: 5)
-                        .blur(radius: 3)
-                    shape.strokeBorder(sweep, lineWidth: 1.5)
+                    shape.strokeBorder(halo, lineWidth: 6)
+                        .blur(radius: 4)
+                    shape.strokeBorder(halo, lineWidth: 2)
+                        .blur(radius: 0.75)
                 } else {
                     shape.strokeBorder(neutral.opacity(0.5), lineWidth: 1.5)
                 }
             }
             .clipShape(shape)
-            .opacity(opacity)
+            .opacity(animates ? opacity : 1)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .task(id: animates) {
                 angle = 0
-                opacity = 1
+                opacity = 0
                 guard animates else { return }
-                withAnimation(.linear(duration: 1.65)) { angle = 360 }
-                do { try await Task.sleep(for: .milliseconds(1650)) } catch { return }
-                withAnimation(.easeOut(duration: 0.3)) { opacity = 0 }
+                withAnimation(.easeInOut(duration: 0.35)) { opacity = 1 }
+                withAnimation(.linear(duration: 1.95)) { angle = 150 }
+                do { try await Task.sleep(for: .milliseconds(1500)) } catch { return }
+                withAnimation(.easeInOut(duration: 0.45)) { opacity = 0 }
             }
     }
 }
