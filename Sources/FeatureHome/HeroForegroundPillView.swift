@@ -222,6 +222,9 @@ final class HeroForegroundPillView: UIView {
         } else {
             apply()
         }
+        if selectionChanged, selected {
+            HeroFocusDiagnostics.entry("hero-highlight-applied")
+        }
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {

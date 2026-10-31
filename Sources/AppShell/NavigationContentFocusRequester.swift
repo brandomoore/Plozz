@@ -93,6 +93,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         var request: UInt64? {
             didSet {
                 guard request != oldValue else { return }
+                if request != nil { HeroFocusDiagnostics.entry("request-installed") }
                 stop()
                 updateObservation()
                 schedule()
@@ -132,6 +133,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
                   let source = system.focusedItem else { return }
             let token = UUID()
             pendingDirectionalEntry = token
+            HeroFocusDiagnostics.entry("directional-down-queued")
             // Leave UIKit's focus-validation stack before changing the shell gate.
             DispatchQueue.main.async { [weak self, weak window, weak source] in
                 guard let self, self.pendingDirectionalEntry == token else { return }
@@ -141,6 +143,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
                       self.directionalEntryOwner?.isNavigationFocused == true,
                       self.request == nil else { return }
                 HeroFocusDiagnostics.emit("topbar.entry directional-down")
+                HeroFocusDiagnostics.entry("directional-down")
                 self.onDirectionalEntry?()
             }
         }
@@ -184,8 +187,10 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
                 return
             }
             HeroFocusDiagnostics.emit("sidebar.content frame-ready")
+            HeroFocusDiagnostics.entry("frame-ready")
             window.layoutIfNeeded()
             HeroFocusDiagnostics.emit("sidebar.content layout-ready")
+            HeroFocusDiagnostics.entry("layout-ready")
             guard self.request == request, self.window === window else { return }
             let previous = returnFocus?.target(relativeTo: self)
             let selection = previous.map { EntrySelection(target: $0, isPending: false) }
@@ -193,20 +198,25 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
                     in: window, relativeTo: self, isRightToLeft: isRightToLeft
                 )
             HeroFocusDiagnostics.emit("sidebar.content selection-ready pending=\(selection.isPending)")
+            HeroFocusDiagnostics.entry(selection.isPending ? "selection-pending" : "selection-ready")
             // A loading page will wake this request when its entry regions change.
             // Do not focus its toolbar first and then visibly redirect into content.
             guard !selection.isPending else { return }
             guard let target = selection.target else {
+                HeroFocusDiagnostics.entry("target-missing")
                 PlozzLog.app.debug("New navigation page has no visible focus target yet")
                 complete(request, didFocus: false)
                 return
             }
             guard let owner = NavigationRailFocusHostController.containing(self) else {
+                HeroFocusDiagnostics.entry("owner-missing")
                 PlozzLog.app.error("Navigation content has no shared native focus owner")
                 complete(request, didFocus: false)
                 return
             }
+            HeroFocusDiagnostics.entry("native-request")
             let didFocus = owner.requestFocus(to: target, using: system)
+            HeroFocusDiagnostics.entry(didFocus ? "native-accepted" : "native-rejected")
             HeroFocusDiagnostics.emit("sidebar.content request=\(request) previous=\(String(describing: previous)) target=\(String(describing: target)) focused=\(String(describing: system.focusedItem)) success=\(didFocus)")
             if !didFocus {
                 PlozzLog.app.debug("New navigation page rejected its first-content focus request")

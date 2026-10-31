@@ -266,7 +266,11 @@ private struct TopBarNavigationContent: View {
     }
 
     private func enterContent(_ destination: NavigationRailDestination) {
-        guard isShellActive, isNavigating, !chrome.transitionSuppressesFocus else { return }
+        HeroFocusDiagnostics.entry("topbar-intent")
+        guard isShellActive, isNavigating, !chrome.transitionSuppressesFocus else {
+            HeroFocusDiagnostics.entry("topbar-intent-rejected")
+            return
+        }
         HeroFocusDiagnostics.emit("topbar.entry begin")
         navigationRequest = nil
         if destination == current, !destinationFocus.isWaiting {
@@ -285,6 +289,7 @@ private struct TopBarNavigationContent: View {
     }
 
     private func requestContentFocus() {
+        HeroFocusDiagnostics.entry("content-requested")
         isNavigating = false
         contentGeneration &+= 1
         contentRequest = contentGeneration
@@ -438,6 +443,7 @@ final class TopBarDownPressRecognizer: UIGestureRecognizer {
         }
         state = .began
         HeroFocusDiagnostics.emit("topbar.entry native-down")
+        HeroFocusDiagnostics.entry("native-down")
         onDown?()
     }
 
@@ -553,6 +559,7 @@ private struct TopBarNavigationBar: View {
         .focusSection()
         .onMoveCommand { direction in
             if direction == .down, focused != nil {
+                HeroFocusDiagnostics.entry("move-down")
                 onEnter(current)
             }
         }

@@ -325,6 +325,20 @@ struct ProductionHomeFixture: View {
         guard let stage, let owner, let target = system.focusedItem else {
             print("TOP_BAR_ENTRY complete passed=false missingHeroOrNavigation"); return
         }
+        let diagnosticsWereEnabled = HeroFocusDiagnostics.isEnabled
+        HeroFocusDiagnostics.setEnabled(false)
+        defer { HeroFocusDiagnostics.setEnabled(diagnosticsWereEnabled) }
+        func hasPresentedHeroHighlight() -> Bool {
+            guard let heroView = stage.hero.viewIfLoaded else { return false }
+            var views = [heroView]
+            while let view = views.popLast() {
+                guard !view.isHidden, (view.layer.presentation()?.opacity ?? view.layer.opacity) > 0.9 else { continue }
+                if view is HeroForegroundPillView,
+                   let layer = view.layer.presentation(), layer.transform.m11 > 1.04 { return true }
+                views.append(contentsOf: view.subviews)
+            }
+            return false
+        }
         var views = [window as UIView]
         var entry: TopBarEntryProbe.Marker?
         var down: TopBarDownPressRecognizer?
@@ -376,6 +390,10 @@ struct ProductionHomeFixture: View {
             }
             do { try await Task.sleep(for: .milliseconds(500)) }
             catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+            guard !hasPresentedHeroHighlight() else {
+                print("TOP_BAR_ENTRY complete passed=false staleHeroHighlight"); return
+            }
+            let journalStarted = ProcessInfo.processInfo.systemUptime
             let started = CACurrentMediaTime()
             if input == "directional-focus" {
                 guard !owner.allowsFocusUpdate(heading: .down) else {
@@ -396,8 +414,27 @@ struct ProductionHomeFixture: View {
             }
             let elapsed = (CACurrentMediaTime() - started) * 1000
             let focused = stage.contains(system.focusedItem, in: stage.hero)
-            print("TOP_BAR_ENTRY cycle=\(cycle) input=\(input) elapsedMS=\(elapsed) heroFocus=\(focused)")
-            guard focused, elapsed < 200, !down.canEnter() else {
+            while !hasPresentedHeroHighlight(), CACurrentMediaTime() - started < 5 {
+                do { try await Task.sleep(for: .milliseconds(10)) }
+                catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+            }
+            let highlightElapsed = (CACurrentMediaTime() - started) * 1000
+            let journalStages = Set(HandoffDiagnostics.persistentPlaybackLogText().split(separator: "\n").compactMap { line -> String? in
+                guard line.contains(" navigation.entry ") else { return nil }
+                let fields = line.split(separator: " ")
+                guard let timeField = fields.first(where: { $0.hasPrefix("uptime=") }),
+                      let uptime = Double(timeField.dropFirst("uptime=".count)), uptime >= journalStarted,
+                      let stageField = fields.first(where: { $0.hasPrefix("stage=") }) else { return nil }
+                return String(stageField.dropFirst("stage=".count))
+            })
+            let expectedStages: Set<String> = [
+                "content-requested", "request-installed", "frame-ready", "layout-ready",
+                "selection-ready", "native-request", "native-accepted",
+                "hero-focusstate", "hero-highlight-applied"
+            ]
+            let journalComplete = expectedStages.isSubset(of: journalStages)
+            print("TOP_BAR_ENTRY cycle=\(cycle) input=\(input) elapsedMS=\(elapsed) highlightMS=\(highlightElapsed) heroFocus=\(focused) journalComplete=\(journalComplete)")
+            guard focused, elapsed < 200, highlightElapsed < 350, journalComplete, !down.canEnter() else {
                 print("TOP_BAR_ENTRY complete passed=false focusOrLatency"); return
             }
         }

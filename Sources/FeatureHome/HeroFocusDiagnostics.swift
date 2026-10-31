@@ -1,3 +1,4 @@
+import CoreModels
 import Foundation
 #if canImport(OSLog)
 import OSLog
@@ -24,10 +25,12 @@ import OSLog
 ///    view state or touches `@FocusState`.
 ///  - **Secret-safe.** Only item titles, ids, indices and focus-target names are
 ///    logged — never tokens/PINs/auth headers.
-///  - **Toggleable + silent by default.** Gated by ``isEnabled`` so shipped runs
-///    stay silent. Auto-enabled when the process is launched with
+///  - **Verbose events are toggleable + silent by default.** Gated by ``isEnabled``
+///    so shipped runs stay silent. Auto-enabled when the process is launched with
 ///    `PLZHFOCUS_STDOUT=1` (also turns on the stdout mirror for live `--console`
 ///    streaming) or `PLZHFOCUS=1` (Console-only, no stdout mirror).
+///    Separately, ``entry(_:)`` retains static, low-frequency milestones in the
+///    existing bounded journal in debug builds, without enabling verbose events.
 ///  - **Linux-safe.** `OSLog` is guarded so the pure logic modules still compile
 ///    on non-Apple toolchains.
 ///
@@ -97,6 +100,19 @@ public enum HeroFocusDiagnostics {
             // Unbuffered write so `devicectl --console` sees each line immediately.
             try? FileHandle.standardOutput.write(contentsOf: Data(("PLZHFOCUS " + stamped + "\n").utf8))
         }
+    }
+
+    /// Low-frequency entry milestones survive ordinary debug launches. Static
+    /// labels exclude content/user data; the timestamp is captured before queuing.
+    public static func entry(_ stage: StaticString) {
+        #if DEBUG
+        if HandoffDiagnostics.isEnabled {
+            HandoffDiagnostics.emit(
+                "navigation.entry stage=\(stage) uptime=\(ProcessInfo.processInfo.systemUptime)"
+            )
+        }
+        #endif
+        emit("entry stage=\(stage)")
     }
 
     /// A thread-safe boolean holder (the module targets strict concurrency, so a

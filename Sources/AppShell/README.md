@@ -261,10 +261,21 @@ closes entry or focus leaves its source. Other directions remain native, and
 SwiftUI move commands remain a fallback.
 The debug production Home fixture's `--top-bar-entry-probe` exercises the native
 directional gate, press-began delivery and shared entry action over six visits,
-requiring actual hero focus within 200 ms. It also checks repeated-proposal
+requiring actual hero focus within 200 ms and the visible pill's presentation-layer
+selection scale above 1.04 within 350 ms (the final scale is 1.06). It first
+checks that no stale selected pill remains after returning to navigation.
+It also checks repeated-proposal
 coalescing, cancellation and unrelated directions. The first visit exercises cold
 directional entry. This covers the gate/handler-to-focus path, not physical remote
 transport or device frame pacing.
+Debug builds also retain low-frequency `navigation.entry` milestones in the
+existing bounded playback journal. Static stage names and event-time monotonic
+uptime distinguish input delivery, render admission, layout, target selection,
+native focus acceptance, SwiftUI focus-state delivery and highlight application
+without requiring a diagnostic relaunch. Highlight application is a view update,
+not proof that the compositor has presented it; the fixture measures that separately.
+Release builds do not persist these milestones.
+The entry probe verifies the journal milestones with verbose focus logging disabled.
 Full-bleed Live TV surfaces read the shared top-content inset for guide controls
 and loading placeholders without shrinking expanded playback.
 The common UIKit host propagates a real top safe area through nested stacks.

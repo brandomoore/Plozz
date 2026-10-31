@@ -1574,6 +1574,7 @@ struct HomeHeroView: View {
                 // the `receded` state (see `.onChange(of: receded)` below), which is
                 // the reliable "focus moved DOWN to Continue Watching" signal.
                 if old == nil {
+                    HeroFocusDiagnostics.entry("hero-focusstate")
                     HeroFocusDiagnostics.emit("focus ENTER hero (row, from outside) | \(hfState())")
                     if let item = current {
                         selectedButton = min(selectedButton, max(0, buttons(for: item).count - 1))
