@@ -11,6 +11,40 @@ import XCTest
 
 @MainActor
 final class HomeVerticalMotionHostedTests: XCTestCase {
+    func testHeroShowcaseRestoresActualNativeFocusBetweenItsHosts() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        defer { previous?.makeKeyAndVisible() }
+        let stage = HeroShowcaseStage.Controller(
+            state: HeroShowcaseState(),
+            hero: AnyView(Button("Play") {}.frame(width: 300, height: 80).padding(.top, 300)),
+            showcase: AnyView(Text("Showcase")),
+            rows: AnyView(Button("First card") {}.frame(width: 300, height: 160).padding(.top, 650))
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = stage
+        window.makeKeyAndVisible()
+        defer {
+            stage.stopAnimations()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        try await Task.sleep(for: .milliseconds(400))
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: stage.view))
+        for expanded in [true, false, true, false, true] {
+            stage.present(expanded: expanded, focus: true)
+            let host = expanded ? stage.hero : stage.rows
+            let focused = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in
+                    MainActor.assumeIsolated { stage.contains(system.focusedItem, in: host) }
+                }, object: nil
+            )
+            await fulfillment(of: [focused], timeout: 2)
+        }
+    }
+
     func testHorizontalRowsKeepPartlyVisibleCardsThroughTheScreenEdge() async throws {
         let art = UIGraphicsImageRenderer(size: CGSize(width: 120, height: 180)).image { context in
             UIColor.white.setFill()

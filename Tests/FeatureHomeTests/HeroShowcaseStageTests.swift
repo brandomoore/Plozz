@@ -7,6 +7,70 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testEveryLayerFillsTheViewportBeforeAndAfterContentUpdates() {
+        let content = AnyView(Color.clear.frame(width: 80, height: 40))
+        let stage = HeroShowcaseStage.Controller(
+            state: HeroShowcaseState(), hero: content, showcase: content, rows: content
+        )
+        let viewport = CGSize(width: 1920, height: 1080)
+        for _ in 0..<2 {
+            for host in [stage.hero, stage.showcase, stage.rows] {
+                XCTAssertEqual(host.sizeThatFits(in: viewport), viewport)
+            }
+            stage.updateContent(hero: content, showcase: content, rows: content)
+        }
+    }
+
+    func testSmallHostedContentStaysAtTheTopLeadingOrigin() async {
+        let marker = UIView()
+        let mounted = expectation(description: "Showcase content mounted")
+        let stage = HeroShowcaseStage.Controller(
+            state: HeroShowcaseState(), hero: AnyView(Color.clear),
+            showcase: AnyView(StageLayoutMarker(view: marker, onMount: { mounted.fulfill() })
+                .frame(width: 80, height: 40)),
+            rows: AnyView(Color.clear)
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        window.rootViewController = stage
+        window.isHidden = false
+        defer { window.isHidden = true; window.rootViewController = nil }
+        stage.present(expanded: false, focus: false)
+        stage.view.frame = window.bounds
+        stage.viewDidLayoutSubviews()
+        await fulfillment(of: [mounted], timeout: 2)
+        stage.showcase.view.layoutIfNeeded()
+        XCTAssertNotNil(marker.superview)
+        let frame = marker.convert(marker.bounds, to: stage.showcase.view)
+        XCTAssertEqual(frame.origin.x, 0, accuracy: 0.5)
+        XCTAssertEqual(frame.origin.y, 0, accuracy: 0.5)
+        XCTAssertEqual(frame.size, CGSize(width: 80, height: 40))
+    }
+
+    func testFocusOwnershipIncludesVirtualItemsAndNestedNativeControllers() {
+        let stage = HeroShowcaseStage.Controller(
+            state: HeroShowcaseState(), hero: AnyView(Color.clear),
+            showcase: AnyView(Color.clear), rows: AnyView(Color.clear)
+        )
+        stage.loadViewIfNeeded()
+        let heroItem = StageVirtualFocusItem(parent: stage.hero.view)
+        let rowItem = StageVirtualFocusItem(parent: stage.rows.view)
+        let nested = UIViewController()
+        stage.rows.addChild(nested)
+        stage.rows.view.addSubview(nested.view)
+        nested.didMove(toParent: stage.rows)
+        let nativeButton = UIButton()
+        nested.view.addSubview(nativeButton)
+        let nestedItem = StageVirtualFocusItem(parent: nested.view)
+        XCTAssertTrue(stage.contains(heroItem, in: stage.hero))
+        XCTAssertFalse(stage.contains(heroItem, in: stage.rows))
+        XCTAssertTrue(stage.contains(rowItem, in: stage.rows))
+        XCTAssertFalse(stage.contains(rowItem, in: stage.hero))
+        XCTAssertTrue(stage.contains(nestedItem, in: stage.rows))
+        XCTAssertTrue(stage.contains(nativeButton, in: stage.rows))
+        XCTAssertFalse(stage.contains(StageVirtualFocusItem(parent: UIView()), in: stage.hero))
+        XCTAssertFalse(stage.contains(nil, in: stage.hero))
+    }
+
     func testTransitionKeepsTheSameNativeHostsAndFocusDestinations() {
         let state = HeroShowcaseState()
         let stage = HeroShowcaseStage.Controller(
@@ -80,5 +144,30 @@ final class HeroShowcaseStageTests: XCTestCase {
         stage.stopAnimations()
         XCTAssertTrue(layer.animationKeys()?.isEmpty ?? true)
     }
+}
+
+private struct StageLayoutMarker: UIViewRepresentable {
+    let view: UIView
+    let onMount: () -> Void
+    func makeUIView(context: Context) -> UIView {
+        onMount()
+        return view
+    }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
+@MainActor
+private final class StageVirtualFocusItem: NSObject, UIFocusItem {
+    weak var parentFocusEnvironment: (any UIFocusEnvironment)?
+    var frame: CGRect { CGRect(x: 80, y: 200, width: 160, height: 50) }
+    var preferredFocusEnvironments: [any UIFocusEnvironment] { [] }
+    var focusItemContainer: (any UIFocusItemContainer)? { nil }
+    var canBecomeFocused: Bool { true }
+
+    init(parent: any UIFocusEnvironment) { parentFocusEnvironment = parent }
+    func setNeedsFocusUpdate() {}
+    func updateFocusIfNeeded() {}
+    func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool { true }
+    func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {}
 }
 #endif

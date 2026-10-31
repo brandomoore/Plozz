@@ -1072,6 +1072,9 @@ the same Showcase rows. Its native stage preserves the three hosting trees:
 the featured hero, Showcase details/artwork, and the row viewport. Down admits
 the first row before animating its viewport into place; Up from that row restores
 the existing hero action and slide, without a separate arrow-button focus stop.
+Each hosted root fills the viewport and anchors its content at the top leading
+edge. Focus ownership includes SwiftUI virtual items and nested native controls,
+not only UIView-backed controls.
 The small Featured cue is informational. Deeper rows retain ordinary navigation.
 Row translation uses additive compositor springs so reversing direction retains
 the in-flight motion. Artwork planes crossfade; Reduce Motion uses the same

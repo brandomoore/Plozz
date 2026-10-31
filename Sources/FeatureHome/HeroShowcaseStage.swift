@@ -56,9 +56,9 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: Controller, context: Context) {
-        controller.hero.rootView = hosted(hero, context)
-        controller.showcase.rootView = hosted(showcase, context)
-        controller.rows.rootView = hosted(rowContent, context)
+        controller.updateContent(
+            hero: hosted(hero, context), showcase: hosted(showcase, context), rows: hosted(rowContent, context)
+        )
         controller.canReturn = { model.activeIndex(in: rows) == 0 }
         controller.canEnterRows = { !rows.isEmpty }
         controller.updatePeek(firstRowHeight: model.scrollOrigin(in: rows))
@@ -68,6 +68,11 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
     static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
         controller.state.returnToHero = nil
         controller.stopAnimations()
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiViewController: Controller, context: Context) -> CGSize? {
+        guard let width = proposal.width, let height = proposal.height else { return nil }
+        return CGSize(width: width, height: height)
     }
 
     private func hosted(_ content: AnyView, _ context: Context) -> AnyView {
@@ -84,8 +89,8 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         let rows: UIHostingController<AnyView>
         var canReturn: () -> Bool = { true }
         var canEnterRows: () -> Bool = { true }
-        private weak var heroTarget: UIView?
-        private weak var rowTarget: UIView?
+        private weak var heroTarget: (any UIFocusItem)?
+        private weak var rowTarget: (any UIFocusItem)?
         private var requestingFocus = false
         private var peek: CGFloat = 0
         private var translation: CGFloat = 0
@@ -94,14 +99,24 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
 
         init(state: HeroShowcaseState, hero: AnyView, showcase: AnyView, rows: AnyView) {
             self.state = state
-            self.hero = UIHostingController(rootView: hero)
-            self.showcase = UIHostingController(rootView: showcase)
-            self.rows = UIHostingController(rootView: rows)
+            self.hero = UIHostingController(rootView: Self.viewport(hero))
+            self.showcase = UIHostingController(rootView: Self.viewport(showcase))
+            self.rows = UIHostingController(rootView: Self.viewport(rows))
             super.init(nibName: nil, bundle: nil)
             for host in [self.hero, self.showcase, self.rows] { host.safeAreaRegions = [] }
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        private static func viewport(_ content: AnyView) -> AnyView {
+            AnyView(content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading))
+        }
+
+        func updateContent(hero: AnyView, showcase: AnyView, rows: AnyView) {
+            self.hero.rootView = Self.viewport(hero)
+            self.showcase.rootView = Self.viewport(showcase)
+            self.rows.rootView = Self.viewport(rows)
+        }
 
         override func loadView() {
             view = UIView()
@@ -127,25 +142,27 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
 
         override var preferredFocusEnvironments: [UIFocusEnvironment] {
             if state.isExpanded {
-                if let heroTarget, heroTarget.window != nil { return [heroTarget] }
+                if let heroTarget, heroTarget.canBecomeFocused, hero.view.window != nil,
+                   contains(heroTarget, in: hero) { return [heroTarget] }
                 return [hero]
             }
-            if let rowTarget, rowTarget.window != nil { return [rowTarget] }
+            if let rowTarget, rowTarget.canBecomeFocused, rows.view.window != nil,
+               contains(rowTarget, in: rows) { return [rowTarget] }
             return [rows]
         }
 
         override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
             guard !requestingFocus else { return true }
-            let fromHero = contains(context.previouslyFocusedView, in: hero)
-            let fromRows = contains(context.previouslyFocusedView, in: rows)
+            let fromHero = contains(context.previouslyFocusedItem, in: hero)
+            let fromRows = contains(context.previouslyFocusedItem, in: rows)
             if state.isExpanded, fromHero, context.focusHeading.contains(.down),
-               !contains(context.nextFocusedView, in: hero), canEnterRows() {
-                heroTarget = context.previouslyFocusedView
+               !contains(context.nextFocusedItem, in: hero), canEnterRows() {
+                heroTarget = context.previouslyFocusedItem
                 scheduleHandoff(expanded: false)
                 return false
             }
             if !state.isExpanded, fromRows, context.focusHeading.contains(.up), canReturn() {
-                rowTarget = context.previouslyFocusedView
+                rowTarget = context.previouslyFocusedItem
                 scheduleHandoff(expanded: true)
                 return false
             }
@@ -154,17 +171,17 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
 
         override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
             super.didUpdateFocus(in: context, with: coordinator)
-            if contains(context.nextFocusedView, in: hero) {
-                heroTarget = context.nextFocusedView
+            if contains(context.nextFocusedItem, in: hero) {
+                heroTarget = context.nextFocusedItem
                 if !state.isExpanded { present(expanded: true, focus: false) }
-            } else if contains(context.nextFocusedView, in: rows) {
-                rowTarget = context.nextFocusedView
+            } else if contains(context.nextFocusedItem, in: rows) {
+                rowTarget = context.nextFocusedItem
                 if state.isExpanded { present(expanded: false, focus: false) }
             }
         }
 
         override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-            let focused = UIFocusSystem.focusSystem(for: view)?.focusedItem as? UIView
+            let focused = UIFocusSystem.focusSystem(for: view)?.focusedItem
             if !state.isExpanded, canReturn(), contains(focused, in: rows),
                presses.contains(where: { $0.type == .upArrow }) {
                 rowTarget = focused
@@ -174,8 +191,14 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             super.pressesBegan(presses, with: event)
         }
 
-        private func contains(_ target: UIView?, in host: UIViewController) -> Bool {
-            target.map { $0.isDescendant(of: host.view) } ?? false
+        func contains(_ target: (any UIFocusItem)?, in host: UIViewController) -> Bool {
+            guard let target else { return false }
+            var controller = NativeFocusRegion.owningController(of: target)
+            while let current = controller {
+                if current === host { return true }
+                controller = current.parent
+            }
+            return false
         }
 
         private func scheduleHandoff(expanded: Bool) {
@@ -186,7 +209,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 guard self.view.window != nil else { self.requestingFocus = false; return }
-                let focused = UIFocusSystem.focusSystem(for: self.view)?.focusedItem as? UIView
+                let focused = UIFocusSystem.focusSystem(for: self.view)?.focusedItem
                 guard self.contains(focused, in: expanded ? self.rows : self.hero) else {
                     self.requestingFocus = false
                     return
