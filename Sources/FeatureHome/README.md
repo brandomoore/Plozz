@@ -1086,6 +1086,11 @@ geometric focus candidate; deeper-row and horizontal navigation remain native.
 While a boundary handoff waits for the current focus transaction to finish,
 further proposals in that direction remain blocked. They must not focus
 navigation before the deferred request can restore the hero or enter the rows.
+With Top Bar navigation, the featured stage contributes to the navigation scroll
+offset: entering even the first Showcase row moves the bar offscreen and removes
+it from focus, and returning to Spotlight reveals it. Back's return-to-top resets
+both the rows and featured stage. Standalone Showcase keeps its existing behavior,
+and this does not hide either sidebar.
 The outgoing hero foreground, incoming Showcase details, and rows share one
 native scroll distance, easing, and start time. Their relative positions remain
 fixed throughout the move and rapid reversals; only their opacity changes as

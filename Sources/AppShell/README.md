@@ -237,8 +237,12 @@ highlighted destination. There are no delayed page previews or native tab transi
 Only the selected page and the visited Live TV guide
 are mounted; walking twenty libraries must not retain twenty inactive grids.
 The guide retains its filters while inactive playback is stopped. Account-qualified
-destination IDs keep same-named libraries distinct. Content entry waits for
-presentation through the existing shared focus owner; Back returns to the
+destination IDs keep same-named libraries distinct. A changed destination waits for
+presentation through the existing shared focus owner. Entering the page already
+on screen skips that redundant presentation fence, but still crosses the
+focus-eligibility render commit. After successful entry, moving back to the
+bar does not disable and rebuild the page's controls; new destinations and
+profiles reset that admission. Back returns to the
 selected navigation item. Detail pages hide the strip through `NavigationChromeModel`.
 While Settings owns the shell, hidden navigation cancels focus handoffs and
 cannot overwrite the selected Settings destination.
@@ -247,6 +251,10 @@ is Down for the horizontal strip; Left/Right never trigger a page handoff there.
 Initial focus resolves the selected destination, including a scrolled-off library,
 before allowing neighboring controls. Live TV's first-use preview choice waits
 for explicit content entry; its presentation owns focus until the choice finishes.
+The debug production Home fixture's `--top-bar-entry-probe` invokes the same
+entry action as Down and records time to actual hero focus over three visits,
+requiring each to finish within 500 ms. This isolates the handoff after command
+delivery; it does not measure remote-input latency on a physical Apple TV.
 Full-bleed Live TV surfaces read the shared top-content inset for guide controls
 and loading placeholders without shrinking expanded playback.
 The common UIKit host propagates a real top safe area through nested stacks.

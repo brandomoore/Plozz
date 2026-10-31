@@ -24,6 +24,7 @@ final class HeroShowcaseScrollMotion {
     static let backdropTravelFraction: CGFloat = 0.375
     static let duration: TimeInterval = 0.6
     static let timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0, 0.2, 1)
+    static let navigationAnimation = Animation.timingCurve(0.32, 0, 0.2, 1, duration: duration)
 
     private final class Target {
         weak var view: UIView?

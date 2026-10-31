@@ -7,6 +7,46 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testTopNavigationIncludesTheFeaturedStageWithoutMovingRowContent() {
+        for rowOffset: CGFloat in [0, 180] {
+            let navigation = TopNavigationScroll()
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+            let root = UIViewController()
+            window.rootViewController = root
+            window.isHidden = false
+            let scroll = UIScrollView(frame: window.bounds)
+            scroll.contentSize = CGSize(width: 1920, height: 3000)
+            root.view.addSubview(scroll)
+            let position = FocusHeroNativeScrollPosition.PositionView(frame: window.bounds)
+            position.navigation = navigation
+            var returns = 0
+            position.onReturnToTop = {
+                returns += 1
+                position.updateNavigationOffset(0)
+            }
+            scroll.addSubview(position)
+            defer {
+                position.onReturnToTop = nil
+                position.stop()
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+            position.move(to: rowOffset, rowID: "row")
+            XCTAssertEqual(navigation.offset, rowOffset)
+            position.updateNavigationOffset(320)
+            XCTAssertEqual(navigation.offset, rowOffset + 320)
+            XCTAssertEqual(scroll.contentOffset.y, rowOffset)
+            XCTAssertTrue(navigation.scrollToTop())
+            XCTAssertEqual(returns, 1)
+            XCTAssertEqual(navigation.offset, 0)
+            XCTAssertEqual(scroll.contentOffset.y, 0)
+            XCTAssertFalse(navigation.scrollToTop())
+            position.updateNavigationOffset(320)
+            position.removeFromSuperview()
+            XCTAssertEqual(navigation.offset, 0, "A departing page must not hide another destination's navigation.")
+        }
+    }
+
     func testPendingBoundaryHandoffCannotReleaseDirectionalFocusToNavigation() {
         for expanded in [false, true] {
             let stage = HeroShowcaseStage.Controller(

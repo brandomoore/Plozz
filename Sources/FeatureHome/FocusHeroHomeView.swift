@@ -431,7 +431,9 @@ struct FocusHeroHomeView<RowContent: View>: View {
                     showcase: AnyView(HeroShowcaseFeaturedContent(state: featuredState) { active in
                         AnyView(showcaseDetails(active: active && isFrontmost))
                     }),
-                    rowContent: AnyView(scrollingRows)
+                    rowContent: AnyView(HeroShowcaseFeaturedContent(state: featuredState) { active in
+                        AnyView(scrollingRows(navigationOffset: active ? featuredState.motion.distance : 0))
+                    })
                 )
                 .overlay(alignment: .topLeading) {
                     HeroShowcaseFeaturedContent(state: featuredState) { active in
@@ -444,7 +446,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 }
             } else {
                 showcaseDetails(active: isFrontmost)
-                scrollingRows
+                scrollingRows()
             }
             FocusHeroArtworkPrefetch(rows: rows, model: model, metadata: metadata, isFrontmost: isFrontmost)
                 .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
@@ -488,8 +490,8 @@ struct FocusHeroHomeView<RowContent: View>: View {
         }
     }
 
-    private var scrollingRows: some View {
-        FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent, onReturnToTop: {
+    private func scrollingRows(navigationOffset: CGFloat = 0) -> some View {
+        FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent, navigationOffset: navigationOffset, onReturnToTop: {
             if featuredHero != nil { featuredState.returnToHero?() }
             onReturnToTop()
         })
@@ -769,6 +771,7 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
     let rows: [FocusHeroRow]
     let model: FocusHeroModel
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
+    var navigationOffset: CGFloat = 0
     var onReturnToTop: () -> Void = {}
     var body: some View {
         FocusHeroMotionSurface(
@@ -785,7 +788,9 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
             FocusHeroRowStack(rows: rows, model: model, rowContent: rowContent)
                 .padding(.top, bottom - model.scrollOrigin(in: rows))
                 .padding(.bottom, FocusHeroLayout.screenHeight - bottom)
-                .background(FocusHeroScrollPosition(model: model, rows: rows, onReturnToTop: onReturnToTop))
+                .background(FocusHeroScrollPosition(
+                    model: model, rows: rows, navigationOffset: navigationOffset, onReturnToTop: onReturnToTop
+                ))
         }
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
@@ -798,6 +803,7 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
 private struct FocusHeroScrollPosition: View {
     let model: FocusHeroModel
     let rows: [FocusHeroRow]
+    let navigationOffset: CGFloat
     let onReturnToTop: () -> Void
 
     var body: some View {
@@ -811,6 +817,7 @@ private struct FocusHeroScrollPosition: View {
             height: model.activeHeight(in: rows),
             heightStops: model.heightStops(in: rows),
             rowOffsets: model.tuckOffsets(in: rows),
+            navigationOffset: navigationOffset,
             onReturnToTop: {
                 model.returnToTop(in: rows)
                 onReturnToTop()
@@ -1110,6 +1117,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
     var height: CGFloat? = nil
     var heightStops: [FocusHeroHeightStop] = []
     var rowOffsets: [String: CGFloat] = [:]
+    var navigationOffset: CGFloat = 0
     var onReturnToTop: (() -> Void)?
 
     func makeUIView(context: Context) -> PositionView {
@@ -1127,6 +1135,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
         view.navigation = context.environment.plozzTopNavigationScroll
         view.onReturnToTop = onReturnToTop
         view.move(to: y, rowID: rowID, heightChanged: heightChanged)
+        view.updateNavigationOffset(navigationOffset)
     }
 
     static func dismantleUIView(_ view: PositionView, coordinator: ()) {
@@ -1152,6 +1161,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
         private var wasScrollEnabled = true
         private var rowID: String?
         private var y: CGFloat = 0
+        private var navigationOffset: CGFloat = 0
         private var offsetObservation: NSKeyValueObservation?
         private var isStepping = false
 
@@ -1245,7 +1255,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
                 }
             } else {
                 stopNavigationFrames()
-                navigation?.update(offset: y, source: navigationScrollID)
+                navigation?.update(offset: y + navigationOffset, source: navigationScrollID)
             }
         }
 
@@ -1256,7 +1266,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
             }
             let finished = !isMoving || CACurrentMediaTime() >= navigationDeadline
             navigation?.update(
-                offset: finished ? y : scroller.layer.presentation()?.bounds.origin.y ?? y,
+                offset: (finished ? y : scroller.layer.presentation()?.bounds.origin.y ?? y) + navigationOffset,
                 source: navigationScrollID
             )
             if finished { stopNavigationFrames() }
@@ -1265,6 +1275,16 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
         private func stopNavigationFrames() {
             navigationFrames?.invalidate()
             navigationFrames = nil
+        }
+
+        func updateNavigationOffset(_ offset: CGFloat) {
+            guard navigationOffset != offset else { return }
+            navigationOffset = offset
+            // Spotlight is above the first Showcase row, even when that row's
+            // own scroll offset is zero.
+            withAnimation(UIAccessibility.isReduceMotionEnabled ? nil : HeroShowcaseScrollMotion.navigationAnimation) {
+                navigation?.update(offset: y + navigationOffset, source: navigationScrollID)
+            }
         }
 
         private func returnToTop() {
@@ -1284,7 +1304,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
             guard registeredNavigation !== navigation else { return }
             registeredNavigation?.unregister(source: navigationScrollID)
             registeredNavigation = navigation
-            navigation?.register(source: navigationScrollID, offset: y) { [weak self] in
+            navigation?.register(source: navigationScrollID, offset: y + navigationOffset) { [weak self] in
                 self?.returnToTop()
             }
         }

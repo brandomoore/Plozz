@@ -168,6 +168,12 @@ struct ProductionHomeFixture: View {
                 }
                 .environment(\.openWatchlist, { selection = .watchlist })
                 .task {
+                    guard ProcessInfo.processInfo.arguments.contains("--top-bar-entry-probe") else { return }
+                    do { try await Task.sleep(for: .seconds(3)) }
+                    catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+                    await Self.probeTopBarEntry()
+                }
+                .task {
                     guard ProcessInfo.processInfo.arguments.contains("--hero-showcase-navigation-probe"),
                           isPinned || ProcessInfo.processInfo.arguments.contains("--top-bar-home") else { return }
                     do {
@@ -301,6 +307,56 @@ struct ProductionHomeFixture: View {
     }
 
     @MainActor
+    private static func probeTopBarEntry() async {
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .flatMap(\.windows).first(where: \.isKeyWindow),
+              let system = UIFocusSystem.focusSystem(for: window) else {
+            print("TOP_BAR_ENTRY complete passed=false missingWindow")
+            return
+        }
+        var controllers = window.rootViewController.map { [$0] } ?? []
+        var owner: NavigationRailFocusHostController?
+        var stage: HeroShowcaseStage.Controller?
+        while let controller = controllers.popLast() {
+            if let found = controller as? NavigationRailFocusHostController { owner = found }
+            if let found = controller as? HeroShowcaseStage.Controller { stage = found }
+            controllers.append(contentsOf: controller.children)
+        }
+        guard let stage, let owner, let target = system.focusedItem else {
+            print("TOP_BAR_ENTRY complete passed=false missingHeroOrNavigation"); return
+        }
+        var views = [window as UIView]
+        var entry: TopBarEntryProbe.Marker?
+        while let view = views.popLast() {
+            if let found = view as? TopBarEntryProbe.Marker { entry = found; break }
+            views.append(contentsOf: view.subviews)
+        }
+        guard let entry, let enter = entry.enter else {
+            print("TOP_BAR_ENTRY complete passed=false missingAction"); return
+        }
+        for cycle in 0..<3 {
+            guard owner.requestFocus(to: target, using: system) else {
+                print("TOP_BAR_ENTRY complete passed=false navigationFocus")
+                return
+            }
+            do { try await Task.sleep(for: .milliseconds(500)) }
+            catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+            let started = CACurrentMediaTime()
+            enter()
+            while !stage.contains(system.focusedItem, in: stage.hero),
+                  CACurrentMediaTime() - started < 5 {
+                do { try await Task.sleep(for: .milliseconds(10)) }
+                catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+            }
+            let elapsed = (CACurrentMediaTime() - started) * 1000
+            let focused = stage.contains(system.focusedItem, in: stage.hero)
+            print("TOP_BAR_ENTRY cycle=\(cycle) elapsedMS=\(elapsed) heroFocus=\(focused)")
+            guard focused, elapsed < 500 else { print("TOP_BAR_ENTRY complete passed=false focusOrLatency"); return }
+        }
+        print("TOP_BAR_ENTRY complete passed=true")
+    }
+
+    @MainActor
     private static func blockForHitchControl() {
         Thread.sleep(forTimeInterval: 0.12)
     }
@@ -324,6 +380,15 @@ struct ProductionHomeFixture: View {
         if ProcessInfo.processInfo.arguments.contains("--hero-showcase-navigation-probe") {
             var passed = stage.state.isExpanded && stage.contains(system.focusedItem, in: stage.hero)
             print("HERO_STAGE_PROBE navigation-entry heroFocus=\(passed)")
+            var rowViews = [stage.rows.view!]
+            var navigation: TopNavigationScroll?
+            while let view = rowViews.popLast() {
+                if let position = view as? FocusHeroNativeScrollPosition.PositionView {
+                    navigation = position.navigation
+                    break
+                }
+                rowViews.append(contentsOf: view.subviews)
+            }
             for expanded in [false, true, false, true, false, true] {
                 let press = HeroBoundaryProbePress(expanded ? .upArrow : .downArrow)
                 guard let recognizer = stage.view.gestureRecognizers?.first(where: {
@@ -341,6 +406,16 @@ struct ProductionHomeFixture: View {
                 catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
                 let focused = stage.contains(system.focusedItem, in: expanded ? stage.hero : stage.rows)
                 passed = passed && blocked && focused && stage.state.isExpanded == expanded
+                if ProcessInfo.processInfo.arguments.contains("--top-bar-home") {
+                    let offset = navigation?.offset ?? -1
+                    let correctVisibility = expanded ? offset == 0 : offset >= TopBarNavigationMetrics.foregroundTop
+                    passed = passed && correctVisibility
+                    print("HERO_STAGE_NAV expanded=\(expanded) offset=\(offset) correctVisibility=\(correctVisibility)")
+                    if !expanded {
+                        do { try await Task.sleep(for: .seconds(1)) }
+                        catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                    }
+                }
                 print("HERO_STAGE_BOUNDARY expanded=\(expanded) blocksPendingEscape=\(blocked) correctFocus=\(focused)")
             }
             print("HERO_STAGE_PROBE complete passed=\(passed)")

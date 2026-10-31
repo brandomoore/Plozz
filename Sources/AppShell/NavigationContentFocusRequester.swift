@@ -142,13 +142,16 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
                 complete(request, didFocus: false)
                 return
             }
+            HeroFocusDiagnostics.emit("sidebar.content frame-ready")
             window.layoutIfNeeded()
+            HeroFocusDiagnostics.emit("sidebar.content layout-ready")
             guard self.request == request, self.window === window else { return }
             let previous = returnFocus?.target(relativeTo: self)
             let selection = previous.map { EntrySelection(target: $0, isPending: false) }
                 ?? NavigationContentFocusRequester.entrySelection(
                     in: window, relativeTo: self, isRightToLeft: isRightToLeft
                 )
+            HeroFocusDiagnostics.emit("sidebar.content selection-ready pending=\(selection.isPending)")
             // A loading page will wake this request when its entry regions change.
             // Do not focus its toolbar first and then visibly redirect into content.
             guard !selection.isPending else { return }

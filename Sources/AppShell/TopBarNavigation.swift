@@ -1,8 +1,10 @@
 #if os(tvOS)
 import CoreModels
 import CoreUI
+import FeatureHome
 import FeatureProfiles
 import SwiftUI
+import UIKit
 
 enum NavigationChromeMotion {
     static let distance: CGFloat = 12
@@ -76,6 +78,7 @@ private struct TopBarNavigationContent: View {
     @Namespace private var focusScope
     @State private var isNavigating = true
     @State private var navigationHasFocus = false
+    @State private var hasEnteredContent = false
     @State private var navigationRequest: Int? = 0
     @State private var navigationGeneration = 0
     @State private var contentRequest: UInt64?
@@ -119,7 +122,7 @@ private struct TopBarNavigationContent: View {
                         onPresented: destinationPresented
                     )
                 }
-                .disabled(isNavigating && contentRequest == nil)
+                .disabled(destinationFocus.isWaiting || (isNavigating && contentRequest == nil && !hasEnteredContent))
                 .environment(\.plozzTopNavigationContentInsets, contentInsets)
                 .environment(\.plozzTopNavigationScroll, scroll)
             TopBarNavigationBar(
@@ -150,6 +153,13 @@ private struct TopBarNavigationContent: View {
         .ignoresSafeArea()
         .focusScope(focusScope)
         .background { NavigationChromeTransitionAnchor(chrome: chrome) }
+        #if DEBUG
+        .background {
+            if ProcessInfo.processInfo.arguments.contains("--top-bar-entry-probe") {
+                TopBarEntryProbe { enterContent(current) }
+            }
+        }
+        #endif
         .tvNavigationExitProtection(
             isEnabled: preventsAccidentalExit,
             navigationHasFocus: isNavigating && !chrome.isChromeHidden
@@ -176,6 +186,7 @@ private struct TopBarNavigationContent: View {
         }
         .onChange(of: current) { _, _ in
             chrome.resetForDestinationChange()
+            hasEnteredContent = false
             if destinationFocus.request?.destination != current { destinationFocus.cancel() }
             contentRequest = nil
             returnFocus.clear()
@@ -186,6 +197,7 @@ private struct TopBarNavigationContent: View {
             }
         }
         .onChange(of: profile?.id) { _, _ in
+            hasEnteredContent = false
             returnFocus.clear()
             destinationFocus.cancel()
             contentRequest = nil
@@ -250,14 +262,24 @@ private struct TopBarNavigationContent: View {
 
     private func enterContent(_ destination: NavigationRailDestination) {
         guard isShellActive, isNavigating, !chrome.transitionSuppressesFocus else { return }
+        HeroFocusDiagnostics.emit("topbar.entry begin")
         navigationRequest = nil
-        if destination != current { selection = destination }
-        destinationFocus.begin(destination)
+        if destination == current, !destinationFocus.isWaiting {
+            requestContentFocus()
+        } else {
+            if destination != current { selection = destination }
+            destinationFocus.begin(destination)
+        }
     }
 
     private func destinationPresented(_ request: NavigationDestinationFocusHandoff.Request) {
         guard isShellActive, destinationFocus.complete(request), request.destination == current,
               isNavigating, !chrome.isChromeHidden else { return }
+        HeroFocusDiagnostics.emit("topbar.entry presented")
+        requestContentFocus()
+    }
+
+    private func requestContentFocus() {
         isNavigating = false
         contentGeneration &+= 1
         contentRequest = contentGeneration
@@ -265,10 +287,26 @@ private struct TopBarNavigationContent: View {
 
     private func contentFocused(_ request: UInt64, didFocus: Bool) {
         guard isShellActive, contentRequest == request else { return }
+        if didFocus { hasEnteredContent = true }
         contentRequest = nil
         if !didFocus, navigationHasFocus { openNavigation() }
     }
 }
+
+#if DEBUG
+struct TopBarEntryProbe: UIViewRepresentable {
+    let enter: () -> Void
+    func makeUIView(context: Context) -> Marker {
+        let view = Marker()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+    func updateUIView(_ uiView: Marker, context: Context) { uiView.enter = enter }
+    final class Marker: UIView {
+        var enter: (() -> Void)?
+    }
+}
+#endif
 
 private struct TopBarScrollPosition: ViewModifier {
     let scroll: TopNavigationScroll
