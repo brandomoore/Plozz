@@ -346,14 +346,14 @@ final class HeroShowcaseStageTests: XCTestCase {
         XCTAssertEqual(replacement.transform.ty + backdrop.transform.ty, -300, accuracy: 0.0001)
     }
 
-    func testReturnChevronCentersOnTheDisplayAndExpiresUntilTheNextArrival() async throws {
+    func testReturnChevronCentersOnTheDisplayAndStaysHiddenAfterEnteringFromHero() async throws {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         let root = UIViewController()
         window.rootViewController = root
         window.isHidden = false
         let cue = HeroShowcaseReturnCue.CueView()
         root.view.addSubview(cue)
-        defer { cue.setActive(false); window.isHidden = true; window.rootViewController = nil }
+        defer { cue.update(rowID: nil, index: nil); window.isHidden = true; window.rootViewController = nil }
         cue.frame = CGRect(x: 80, y: 0, width: 1840, height: 1080)
         cue.layoutIfNeeded()
         let frame = cue.arrow.convert(cue.arrow.bounds, to: window)
@@ -362,20 +362,128 @@ final class HeroShowcaseStageTests: XCTestCase {
         XCTAssertFalse(cue.isUserInteractionEnabled)
         XCTAssertTrue(cue.accessibilityElementsHidden)
         XCTAssertEqual(cue.arrow.alpha, 0)
-        cue.setActive(true)
-        XCTAssertEqual(cue.arrow.alpha, 1)
-        try await Task.sleep(for: .milliseconds(3400))
+        cue.update(rowID: "first", index: 0)
+        XCTAssertFalse(cue.isEligible)
+        try await Task.sleep(for: .milliseconds(2200))
         XCTAssertEqual(cue.arrow.alpha, 0)
-        cue.setActive(true)
-        XCTAssertEqual(cue.arrow.alpha, 0, "Ordinary updates on the same row must not restart the hint")
-        cue.setActive(false)
-        cue.setActive(true)
-        XCTAssertEqual(cue.arrow.alpha, 1)
         cue.top = 132
         cue.layoutIfNeeded()
         XCTAssertEqual(cue.arrow.convert(cue.arrow.bounds, to: window).midY, 132, accuracy: 0.5)
-        cue.removeFromSuperview()
+    }
+
+    func testReturnChevronWaitsTwoSecondsAfterUpwardArrivalAndDoesNotRestartWithinRow() async throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let root = UIViewController()
+        window.rootViewController = root
+        window.isHidden = false
+        let cue = HeroShowcaseReturnCue.CueView()
+        root.view.addSubview(cue)
+        defer { cue.update(rowID: nil, index: nil); window.isHidden = true; window.rootViewController = nil }
+        cue.update(rowID: "lower", index: 2)
+        cue.update(rowID: "first", index: 0)
+        XCTAssertTrue(cue.isEligible)
         XCTAssertEqual(cue.arrow.alpha, 0)
+        try await Task.sleep(for: .milliseconds(1700))
+        XCTAssertEqual(cue.arrow.alpha, 0, "The hint must not appear during quick upward navigation")
+        cue.update(rowID: "first", index: 0)
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual(cue.arrow.alpha, 1, "Same-row updates must not reset the two-second delay")
+        try await Task.sleep(for: .milliseconds(3200))
+        XCTAssertEqual(cue.arrow.alpha, 0)
+        cue.update(rowID: "first", index: 0)
+        XCTAssertEqual(cue.arrow.alpha, 0, "An expired hint stays hidden until a new upward arrival")
+    }
+
+    func testReturnChevronCancelsFastUpwardPassAndNeverReplaysOnDownwardReturn() async throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let root = UIViewController()
+        window.rootViewController = root
+        window.isHidden = false
+        let cue = HeroShowcaseReturnCue.CueView()
+        root.view.addSubview(cue)
+        defer { cue.update(rowID: nil, index: nil); window.isHidden = true; window.rootViewController = nil }
+        cue.update(rowID: "lower", index: 1)
+        cue.update(rowID: "first", index: 0)
+        try await Task.sleep(for: .milliseconds(200))
+        cue.update(rowID: nil, index: nil)
+        cue.update(rowID: "first", index: 0)
+        XCTAssertFalse(cue.isEligible)
+        try await Task.sleep(for: .milliseconds(2200))
+        XCTAssertEqual(cue.arrow.alpha, 0, "Returning down from the hero must not revive the cancelled hint")
+        cue.update(rowID: "lower", index: 1)
+        cue.update(rowID: "first", index: 0)
+        cue.update(rowID: "lower", index: 1)
+        XCTAssertFalse(cue.isEligible)
+        try await Task.sleep(for: .milliseconds(2200))
+        XCTAssertEqual(cue.arrow.alpha, 0, "Leaving the first row downward also cancels the hint")
+    }
+
+    func testReturnChevronClearsArrivalOnDetachAndIgnoresRowReordering() async throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let root = UIViewController()
+        window.rootViewController = root
+        window.isHidden = false
+        let cue = HeroShowcaseReturnCue.CueView()
+        root.view.addSubview(cue)
+        defer { cue.update(rowID: nil, index: nil); window.isHidden = true; window.rootViewController = nil }
+        cue.update(rowID: "same", index: 1)
+        cue.update(rowID: "same", index: 0)
+        XCTAssertFalse(cue.isEligible, "A row moving in the list is not upward navigation")
+        cue.update(rowID: "lower", index: 1)
+        cue.update(rowID: "missing", index: nil)
+        cue.update(rowID: "first", index: 0)
+        XCTAssertFalse(cue.isEligible, "Removing the active row cannot count as returning upward")
+        cue.update(rowID: "lower", index: 1)
+        cue.update(rowID: "first", index: 0)
+        XCTAssertTrue(cue.isEligible)
+        cue.removeFromSuperview()
+        XCTAssertFalse(cue.isEligible)
+        root.view.addSubview(cue)
+        cue.update(rowID: "first", index: 0)
+        try await Task.sleep(for: .milliseconds(2200))
+        XCTAssertEqual(cue.arrow.alpha, 0)
+    }
+
+    func testReturnChevronObservesHostedRowArrivalAndResetsWhenHeroReturns() async throws {
+        let model = FocusHeroModel()
+        let state = HeroShowcaseState()
+        let rows = [
+            FocusHeroRow(id: "first", itemIDs: [], leadItem: nil),
+            FocusHeroRow(id: "lower", itemIDs: [], leadItem: nil)
+        ]
+        let host = UIHostingController(rootView: HeroShowcaseFeaturedContent(state: state) { active in
+            AnyView(HeroShowcaseReturnCue(model: model, rows: rows, isActive: active))
+        })
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true; window.rootViewController = nil }
+        func findCue(in view: UIView) -> HeroShowcaseReturnCue.CueView? {
+            if let cue = view as? HeroShowcaseReturnCue.CueView { return cue }
+            return view.subviews.lazy.compactMap { findCue(in: $0) }.first
+        }
+        host.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        let cue = try XCTUnwrap(findCue(in: host.view))
+        model.activate(rows[0], in: rows)
+        state.setExpanded(false)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(cue.isEligible)
+        model.activate(rows[1], in: rows)
+        try await Task.sleep(for: .milliseconds(100))
+        model.activate(rows[0], in: rows)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(cue.isEligible)
+        XCTAssertEqual(cue.arrow.alpha, 0)
+        try await Task.sleep(for: .milliseconds(2100))
+        XCTAssertEqual(cue.arrow.alpha, 1)
+        state.setExpanded(true)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(cue.isEligible)
+        XCTAssertEqual(cue.arrow.alpha, 0)
+        state.setExpanded(false)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(cue.isEligible, "Down from the hero cannot reuse an earlier upward arrival")
     }
 
     func testFeaturedViewportStaysCenteredWithoutChangingTheRowsBreakout() {

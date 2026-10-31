@@ -239,18 +239,22 @@ struct HeroShowcaseReturnCue: UIViewRepresentable {
     func makeUIView(context: Context) -> CueView { CueView() }
 
     func updateUIView(_ view: CueView, context: Context) {
-        view.setActive(isActive && model.activeIndex(in: rows) == 0)
+        view.update(
+            rowID: isActive ? model.activeRowID : nil,
+            index: rows.firstIndex { $0.id == model.activeRowID }
+        )
     }
 
-    static func dismantleUIView(_ view: CueView, coordinator: ()) { view.setActive(false) }
+    static func dismantleUIView(_ view: CueView, coordinator: ()) { view.update(rowID: nil, index: nil) }
 
     final class CueView: UIView {
         let arrow = UIView()
         var top: CGFloat = 72 {
             didSet { if oldValue != top { setNeedsLayout() } }
         }
-        private(set) var isActive = false
-        private var dismissal: Task<Void, Never>?
+        private(set) var isEligible = false
+        private var position: (id: String, index: Int)?
+        private var visibilityTask: Task<Void, Never>?
 
         init() {
             super.init(frame: .zero)
@@ -284,31 +288,53 @@ struct HeroShowcaseReturnCue: UIViewRepresentable {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
+            if window == nil { update(rowID: nil, index: nil) }
             refreshVisibility()
         }
 
-        func setActive(_ active: Bool) {
-            guard isActive != active else { return }
-            isActive = active
+        func update(rowID: String?, index: Int?) {
+            guard let rowID, let index else {
+                position = nil
+                setEligible(false)
+                return
+            }
+            let previous = position
+            position = (rowID, index)
+            // Reordering the same row is not an upward focus arrival.
+            guard previous?.id != rowID else {
+                if index != 0 { setEligible(false) }
+                return
+            }
+            setEligible(index == 0 && (previous?.index ?? 0) > 0)
+        }
+
+        private func setEligible(_ eligible: Bool) {
+            guard isEligible != eligible else { return }
+            isEligible = eligible
             refreshVisibility()
         }
 
         private func refreshVisibility() {
-            dismissal?.cancel()
-            dismissal = nil
+            visibilityTask?.cancel()
+            visibilityTask = nil
             arrow.layer.removeAllAnimations()
-            guard isActive, window != nil else { arrow.alpha = 0; return }
-            UIView.animate(withDuration: 0.25) { self.arrow.alpha = 1 }
-            dismissal = Task { @MainActor [weak self] in
-                do { try await Task.sleep(for: .seconds(3)) }
+            arrow.alpha = 0
+            guard isEligible, window != nil else { return }
+            visibilityTask = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(for: .seconds(2))
+                    guard self?.isEligible == true, self?.window != nil else { return }
+                    UIView.animate(withDuration: 0.25) { self?.arrow.alpha = 1 }
+                    try await Task.sleep(for: .seconds(3))
+                }
                 catch is CancellationError { return }
                 catch {
                     PlozzLog.app.debug("Hero return cue delay failed: \(error.localizedDescription)")
                     return
                 }
-                guard let self, self.isActive, self.window != nil else { return }
+                guard let self, self.isEligible, self.window != nil else { return }
                 UIView.animate(withDuration: 0.35) { self.arrow.alpha = 0 }
-                self.dismissal = nil
+                self.visibilityTask = nil
             }
         }
     }

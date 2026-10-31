@@ -1129,9 +1129,12 @@ transaction's default start time, not a wall-clock timestamp captured before
 layout and focus work. Cold first-entry work therefore cannot use up their
 duration before that transaction is submitted.
 Reduce Motion omits foreground and artwork travel and snaps the rows.
-A shallow, text-free up chevron sits at the screen's horizontal
-center, below top navigation when present. It appears on first-row arrival,
-fades away after three seconds, and resets only after leaving and returning.
+A shallow, text-free up chevron sits at the screen's horizontal center, 72 points
+from the top. It fades in only after two seconds on the first row when arriving
+upward from a deeper row. Coming down from the hero never shows it, and leaving
+before the delay ends cancels it. It fades away after three seconds of visibility;
+ordinary updates within the row do not restart it. Leaving Home, returning to the
+hero, or detaching the cue clears its arrival history.
 It is informational, never an additional focus stop. Deeper rows retain ordinary navigation.
 Row translation uses additive compositor animations so reversing direction retains
 the in-flight motion. Artwork planes crossfade; Reduce Motion uses the same
