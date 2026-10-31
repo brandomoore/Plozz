@@ -14,6 +14,174 @@ import XCTest
 final class LibraryPresentationTests: XCTestCase {
     private var capturedImage: CGImage?
 
+    func testLibraryQueryMenusStayInTrailingToolbarWhileScrollingAndChangingModes() async throws {
+        let appModel = PlozziOSAppModel()
+        for (width, textSize) in [(390.0, DynamicTypeSize.large), (320.0, .accessibility3), (1024.0, .large)] {
+            try await withLibrary(
+                provider: LibraryPresentationProvider(artwork: nil), appModel: appModel,
+                size: CGSize(width: width, height: 768),
+                sizeClass: width > 500 ? .regular : .compact, dynamicTypeSize: textSize
+            ) { window, model in
+                await model.setContentMode(.titles)
+                try await waitForHostedLayout(window)
+                try self.assertTrailingToolbarControls(window, count: 2)
+                try await self.scrollPastHeading(window)
+                try self.assertTrailingToolbarControls(window, count: 2)
+                _ = try self.captureImage(window, name: "library-toolbar-scrolled-\(width)-\(textSize)")
+                for (mode, count) in [(LibraryContentMode.collections, 1), (.playlists, 1), (.recommended, 0), (.titles, 2)] {
+                    await model.setContentMode(mode)
+                    try await waitForHostedLayout(window)
+                    try self.assertTrailingToolbarControls(window, count: count)
+                }
+            }
+        }
+    }
+
+    func testWatchlistQueryMenusStayInTrailingToolbarBesideSettingsWhileScrolling() async throws {
+        let appModel = PlozziOSAppModel()
+        let provider = LibraryPresentationProvider(
+            artwork: nil, watchlistItems: (0..<40).map {
+                MediaItem(id: "saved-\($0)", title: "Saved title \($0)", kind: .movie,
+                          allowsTitleBasedMetadataMatching: false)
+            }
+        )
+        let model = HomeViewModel(
+            accounts: [ResolvedAccount(account: Account(id: "fixture", from: provider.session), provider: provider)],
+            profileNamespace: "watchlist-toolbar-\(UUID())",
+            layoutStore: InMemoryHomeLayoutStore()
+        )
+        await model.load()
+        XCTAssertEqual(model.state.value?.watchlist.count, 40)
+        let preferences = model.watchlistBrowse.preferences
+        for (width, textSize) in [(390.0, DynamicTypeSize.large), (320.0, .accessibility3), (1024.0, .large)] {
+            try await withPresentation(
+                PlozziOSWatchlistLandingView(appModel: appModel, viewModel: model, onShowSettings: {}),
+                appModel: appModel, size: CGSize(width: width, height: 768),
+                sizeClass: width > 500 ? .regular : .compact, dynamicTypeSize: textSize
+            ) { window in
+                try await waitForHostedLayout(window)
+                try self.assertTrailingToolbarControls(window, count: 3)
+                try await self.scrollPastHeading(window)
+                try self.assertTrailingToolbarControls(window, count: 3)
+                _ = try self.captureImage(window, name: "watchlist-toolbar-scrolled-\(width)-\(textSize)")
+                XCTAssertEqual(model.watchlistBrowse.preferences, preferences)
+                XCTAssertEqual(model.state.value?.watchlist.count, 40)
+            }
+        }
+    }
+
+    func testActiveFilterHasVisibleIndicatorInIconOnlyToolbar() async throws {
+        let appModel = PlozziOSAppModel()
+        var unfilteredPixels: Data?
+        for count in [0, 1] {
+            try await withPresentation(
+                Color.clear
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            BrowseFilterMenu(activeCount: count, summary: count == 0 ? "" : "Movies") {
+                                Text("All")
+                            }
+                            .labelStyle(.iconOnly)
+                        }
+                    },
+                appModel: appModel, size: CGSize(width: 390, height: 844), sizeClass: .compact
+            ) { window in
+                try await waitForHostedLayout(window)
+                let bar = try XCTUnwrap(self.navigationBar(in: window))
+                let button = try XCTUnwrap(self.descendants(bar).compactMap { $0 as? UIButton }.first)
+                _ = try self.captureImage(window, name: "toolbar-filter-active-\(count)")
+                let pixels = try self.imagePixels(in: button.convert(button.bounds, to: window).integral)
+                if count == 0 {
+                    unfilteredPixels = pixels
+                } else {
+                    XCTAssertNotEqual(pixels, unfilteredPixels, "An active filter must remain visible without its text label.")
+                }
+            }
+        }
+    }
+
+    func testWatchlistQueryControlsFitPhoneTabletAndAccessibilityLayouts() async throws {
+        let appModel = PlozziOSAppModel()
+        let cases: [(WatchlistMediaFilter, SortField, String, String)] = [
+            (.all, .dateAdded, "All", "Date Added"),
+            (.movies, .name, "Movies", "Name"),
+            (.shows, .releaseDate, "TV Shows", "Release Date")
+        ]
+        for (width, textSize) in [(390.0, DynamicTypeSize.large), (320.0, .accessibility3), (1024.0, .large)] {
+            for (filter, sort, filterLabel, sortLabel) in cases {
+                let preferences = WatchlistBrowsePreferences(
+                    filter: filter, sort: .init(field: sort, direction: sort.defaultDirection)
+                )
+                try await withPresentation(
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 16) {
+                            WatchlistBrowseControls(preferences: .constant(preferences))
+                                .padding(.horizontal)
+                            WatchlistEmptyStateView(isFiltered: filter != .all, clearFilters: {})
+                        }
+                        .padding(.vertical)
+                    }
+                    .navigationTitle("Watchlist"),
+                    appModel: appModel, size: CGSize(width: width, height: 1100),
+                    sizeClass: width > 500 ? .regular : .compact, dynamicTypeSize: textSize
+                ) { window in
+                    try await waitForHostedLayout(window)
+                    let text = try self.capture(window, name: "watchlist-\(width)-\(textSize)-\(filter.rawValue)", scale: 2)
+                        .compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                    XCTAssertTrue(text.contains(filterLabel), text)
+                    XCTAssertTrue(text.contains(sortLabel), text)
+                    XCTAssertFalse(text.contains("Filter:"), text)
+                    XCTAssertFalse(text.contains("Sort:"), text)
+                    if filter != .all { XCTAssertTrue(text.contains("Clear Filters"), text) }
+                    let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+                    XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+                }
+            }
+        }
+    }
+
+    func testSharedFilterLabelsShowSelectionsAndCompactCompoundFilters() async throws {
+        let appModel = PlozziOSAppModel()
+        let compound = LibraryFilters(filter: .unwatched, genre: "Drama", year: 2024)
+        let summary = compound.summary(in: Locale(identifier: "en_US"))
+        let cases: [(CGFloat, Int, String, String)] = [
+            (600, 0, "", "All"),
+            (600, compound.activeCount, summary, "Unwatched"),
+            (120, compound.activeCount, summary, "3"),
+            (600, 1, "Playback", "Playback")
+        ]
+        for (width, count, summary, expected) in cases {
+            try await withPresentation(
+                BrowseFilterMenu(activeCount: count, summary: summary) {
+                    Text("All")
+                }
+                .font(.title2)
+                .frame(width: width)
+                .frame(maxWidth: .infinity, maxHeight: .infinity),
+                appModel: appModel, size: CGSize(width: 768, height: 1024), sizeClass: .regular
+            ) { window in
+                try await waitForHostedLayout(window)
+                let image = try self.captureImage(window, name: "filter-label-\(width)-\(count)-\(expected)", scale: 2)
+                // A lone digit is too small for reliable OCR of the full tablet canvas.
+                let labelRegion = try XCTUnwrap(image.cropping(to: CGRect(
+                    x: 0, y: CGFloat(image.height) / 2 - 120, width: CGFloat(image.width), height: 240
+                )))
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                request.usesLanguageCorrection = false
+                try VNImageRequestHandler(cgImage: labelRegion).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                XCTAssertTrue(text.contains(expected), "Expected \(expected), recognized: \(text)")
+                if width == 600, count == 3 {
+                    XCTAssertTrue(text.contains("Drama"), text)
+                    XCTAssertTrue(text.contains("2024"), text)
+                }
+                XCTAssertFalse(text.contains("Filter"), text)
+            }
+        }
+    }
+
     func testDedicatedCollectionDirectoryOpensTheGridWithoutLibrarySubtabs() async throws {
         let appModel = PlozziOSAppModel()
         let artwork = try await seedArtwork(size: CGSize(width: 400, height: 225))
@@ -185,7 +353,7 @@ final class LibraryPresentationTests: XCTestCase {
                     XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
                     let text = try self.capture(window, name: "\(name)-\(mode.rawValue)")
                     try self.assertSelectedTab(mode, observations: text, window: window)
-                    try self.assertArtworkKeyline(sizeClass: sizeClass, isGrid: mode != .recommended)
+                    try self.assertArtworkKeyline(sizeClass: sizeClass, isGrid: mode != .recommended, window: window)
                     if mode == .recommended {
                         let heading = try XCTUnwrap(text.first {
                             $0.topCandidates(1).first?.string == "Continue Watching"
@@ -233,9 +401,9 @@ final class LibraryPresentationTests: XCTestCase {
                         try self.assertSelectedTab(mode, observations: text, window: window)
                         if mode == .titles {
                             let strings = text.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-                            XCTAssertTrue(strings.contains("Sort: Name"), strings)
-                            XCTAssertTrue(strings.contains("Filter"), strings)
-                            XCTAssertFalse(strings.contains("Fil-"), strings)
+                            try self.assertTrailingToolbarControls(window, count: 2)
+                            XCTAssertFalse(strings.contains("Sort:"), strings)
+                            XCTAssertFalse(strings.contains("Filter:"), strings)
                         }
                     }
                 }
@@ -392,6 +560,46 @@ final class LibraryPresentationTests: XCTestCase {
         (view as? UINavigationBar) ?? view.subviews.lazy.compactMap { self.navigationBar(in: $0) }.first
     }
 
+    private func descendants(_ view: UIView) -> [UIView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+
+    private func assertTrailingToolbarControls(_ window: UIWindow, count: Int) throws {
+        let bar = try XCTUnwrap(navigationBar(in: window))
+        let buttons = descendants(bar).compactMap { $0 as? UIButton }
+        let customActions = descendants(bar).filter {
+            String(describing: type(of: $0)).hasPrefix("UIKitBarItemHost<")
+        }.filter { host in !buttons.contains { $0.isDescendant(of: host) } }
+        let controls: [UIView] = buttons + customActions
+        XCTAssertEqual(controls.count, count)
+        if !controls.isEmpty {
+            let group = controls.reduce(CGRect.null) { $0.union($1.convert($1.bounds, to: window)) }
+            XCTAssertGreaterThan(group.midX, window.bounds.midX)
+        }
+        for control in controls {
+            let frame = control.convert(control.bounds, to: window)
+            XCTAssertGreaterThanOrEqual(frame.minX, window.bounds.minX)
+            XCTAssertGreaterThan(frame.width, 0)
+            XCTAssertGreaterThan(frame.height, 0)
+            XCTAssertLessThanOrEqual(frame.maxX, window.bounds.maxX)
+            XCTAssertLessThanOrEqual(frame.maxY, bar.convert(bar.bounds, to: window).maxY)
+            let hit = try XCTUnwrap(window.hitTest(CGPoint(x: frame.midX, y: frame.midY), with: nil))
+            XCTAssertTrue(hit.isDescendant(of: bar), "Toolbar actions must remain reachable after scrolling.")
+            if let button = control as? UIButton { XCTAssertTrue(button.isEnabled) }
+        }
+    }
+
+    private func scrollPastHeading(_ window: UIWindow) async throws {
+        let scroll = try XCTUnwrap(scrollViews(in: window).first {
+            $0.contentSize.height > $0.bounds.height + 200
+        })
+        let before = scroll.contentOffset.y
+        let bottom = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+        scroll.setContentOffset(CGPoint(x: 0, y: min(before + 600, bottom)), animated: false)
+        try await waitForHostedLayout(window)
+        XCTAssertGreaterThan(scroll.contentOffset.y, before + 100)
+    }
+
     private func headerPixels(y: CGFloat) throws -> Data {
         let image = try XCTUnwrap(capturedImage)
         let rect = CGRect(x: 0, y: y - 2, width: CGFloat(image.width), height: 4).integral
@@ -463,8 +671,8 @@ final class LibraryPresentationTests: XCTestCase {
                     let text = try self.capture(window, name: "\(scope)-\(sizeClass)")
                         .compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
                     XCTAssertFalse(text.contains("Recommended"), text)
-                    XCTAssertFalse(text.contains("Sort:"), text)
-                    try self.assertArtworkKeyline(sizeClass: sizeClass, isGrid: true)
+                    XCTAssertFalse(text.contains("Name"), text)
+                    try self.assertArtworkKeyline(sizeClass: sizeClass, isGrid: true, window: window)
                     if scope == .playlistMembers {
                         XCTAssertEqual(model.playlistOrigin(at: 0)?.index, 0)
                     }
@@ -498,7 +706,7 @@ final class LibraryPresentationTests: XCTestCase {
         return try XCTUnwrap(matches.first, "Selected \(label) must be fully visible.")
     }
 
-    private func assertArtworkKeyline(sizeClass: UserInterfaceSizeClass, isGrid: Bool) throws {
+    private func assertArtworkKeyline(sizeClass: UserInterfaceSizeClass, isGrid: Bool, window: UIWindow) throws {
         let image = try XCTUnwrap(capturedImage)
         var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
         try bytes.withUnsafeMutableBytes {
@@ -511,7 +719,9 @@ final class LibraryPresentationTests: XCTestCase {
         }
         var minX = image.width
         var maxX = 0
-        for y in 0..<image.height {
+        let bar = try XCTUnwrap(navigationBar(in: window))
+        let contentTop = Int(ceil(bar.convert(bar.bounds, to: window).maxY))
+        for y in max(0, contentTop)..<image.height {
             for x in 0..<image.width {
                 let index = (y * image.width + x) * 4
                 let r = Int(bytes[index]), g = Int(bytes[index + 1]), b = Int(bytes[index + 2])
@@ -730,13 +940,14 @@ private struct ContentTabsFixture: View {
     }
 }
 
-private struct LibraryPresentationProvider: MediaProvider, CapabilityReporting, MediaLibraryQueryProviding {
+private struct LibraryPresentationProvider: MediaProvider, CapabilityReporting, MediaLibraryQueryProviding, WatchlistProviding {
     enum Outcome: Sendable { case loaded, empty, failed, loading }
     let artwork: URL?
     var outcome = Outcome.loaded
     var hubError: AppError?
     var collectionGate: LibraryPresentationCollectionGate?
     var kind: ProviderKind = .jellyfin
+    var watchlistItems: [MediaItem] = []
     let capabilities: ProviderCapability = [.video, .libraryCollections, .videoPlaylists]
     var session: UserSession {
         UserSession(
@@ -792,6 +1003,8 @@ private struct LibraryPresentationProvider: MediaProvider, CapabilityReporting, 
         try await self.page(kind: .movie, request: page)
     }
     func libraries() async throws -> [MediaLibrary] { [] }
+    func watchlist() async throws -> [MediaItem] { watchlistItems }
+    func setWatchlisted(_ on: Bool, item: MediaItem) async throws { throw AppError.notFound }
     func continueWatching(limit: Int) async throws -> [MediaItem] {
         try await prepare()
         return Array(titles(kind: .movie).prefix(6))

@@ -9,6 +9,17 @@ import XCTest
 
 @MainActor
 final class MusicNavigationEntryHostedTests: XCTestCase {
+    func testHorizontalNavigationClearsMusicForeground() async throws {
+        let fixture = try await makeFixture(style: .system, recents: true, horizontal: true)
+        defer { fixture.close() }
+        try await Task.sleep(for: .milliseconds(400))
+        for region in regions(in: fixture.window) {
+            let frame = region.convert(region.bounds, to: fixture.window)
+            XCTAssertGreaterThanOrEqual(frame.minY, TopBarNavigationMetrics.foregroundTop,
+                                        "Music controls and cards must clear the whole top bar.")
+        }
+    }
+
     func testRecentlyPlayedWinsOverBrowseForEveryCardStyle() async throws {
         for style in CardFocusStyle.allCases {
             let fixture = try await makeFixture(style: style, recents: true)
@@ -54,7 +65,7 @@ final class MusicNavigationEntryHostedTests: XCTestCase {
     }
 
     private func makeFixture(
-        style: CardFocusStyle, recents: Bool, pending: Bool = false
+        style: CardFocusStyle, recents: Bool, pending: Bool = false, horizontal: Bool = false
     ) async throws -> Fixture {
         let cacheDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("music-entry-\(UUID().uuidString)", isDirectory: true)
@@ -80,7 +91,7 @@ final class MusicNavigationEntryHostedTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = scene.screen.bounds
         let host = UIHostingController(rootView: EntryRoot(
-            model: model, controller: AudioPlaybackController(), state: state
+            model: model, controller: AudioPlaybackController(), state: state, horizontal: horizontal
         ).environment(\.plozzCardFocusStyle, style))
         window.rootViewController = host
         window.makeKeyAndVisible()
@@ -148,8 +159,33 @@ final class MusicNavigationEntryHostedTests: XCTestCase {
         let model: MusicLandingViewModel
         let controller: AudioPlaybackController
         let state: EntryState
+        var horizontal = false
+
+        @State private var selection = NavigationRailDestination.music
 
         var body: some View {
+            if horizontal {
+                TopBarNavigation(
+                    destinations: [.home, .watchlist, .music, .search],
+                    selection: $selection,
+                    preventsAccidentalExit: true,
+                    content: { _, _ in
+                        AnyView(NavigationStack {
+                            MusicLandingView(
+                                viewModel: model, controller: controller,
+                                onSelectRoute: { _ in }, onPlayTrack: { _ in }
+                            )
+                        })
+                    },
+                    label: { AnyView(Label($0.storageValue, systemImage: "square")) }
+                )
+                .environment(\.plozzNavigationStyle, .tabBar)
+            } else {
+                entryRoot
+            }
+        }
+
+        private var entryRoot: some View {
             NavigationRailFocusHost { _ in
                 NavigationStack {
                     MusicLandingView(

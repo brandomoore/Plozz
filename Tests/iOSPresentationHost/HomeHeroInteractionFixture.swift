@@ -68,6 +68,7 @@ struct FeaturedCardInteractionFixture: View {
 }
 
 struct HomeHeroInteractionFixture: View {
+    @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     private var colorScheme: ColorScheme {
         ProcessInfo.processInfo.arguments.contains("--hero-light") ? .light : .dark
     }
@@ -82,9 +83,35 @@ struct HomeHeroInteractionFixture: View {
     private var testsAutoAdvance: Bool {
         ProcessInfo.processInfo.arguments.contains("--hero-auto-advance")
     }
+    private var usesNativeChrome: Bool {
+        ProcessInfo.processInfo.arguments.contains("--hero-native-chrome")
+    }
 
     init() {
         SyncSetupFeatureFlag().isEnabled = false
+        if ProcessInfo.processInfo.arguments.contains("--hero-native-chrome") {
+            let size = CGSize(width: 900, height: 1200)
+            let image = UIGraphicsImageRenderer(size: size).image { context in
+                UIColor(red: 0.15, green: 0.75, blue: 0.95, alpha: 1).setFill()
+                context.fill(CGRect(origin: .zero, size: size))
+                UIColor(red: 0.25, green: 0.85, blue: 0.95, alpha: 1).setFill()
+                for x in stride(from: 0, to: 900, by: 100) {
+                    context.fill(CGRect(x: x, y: 0, width: 20, height: 1200))
+                }
+            }
+            guard let data = image.pngData(),
+                  let cache = ArtworkSession.shared.configuration.urlCache,
+                  let response = HTTPURLResponse(
+                    url: HeroInteractionProvider.artworkURL, statusCode: 200, httpVersion: nil,
+                    headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=86400"]
+                  ) else {
+                fatalError("Unable to prepare full-width hero artwork")
+            }
+            cache.storeCachedResponse(
+                CachedURLResponse(response: response, data: data),
+                for: URLRequest(url: HeroInteractionProvider.artworkURL)
+            )
+        }
         if ProcessInfo.processInfo.arguments.contains("--hero-logo") {
             let image = UIGraphicsImageRenderer(size: CGSize(width: 560, height: 100)).image { _ in
                 ("HERO MOVIE" as NSString).draw(
@@ -124,7 +151,7 @@ struct HomeHeroInteractionFixture: View {
         _appModel = State(initialValue: model)
     }
 
-    var body: some View {
+    private var home: some View {
         NavigationStack {
             PlozziOSHomeScrollView(heroActive: true) {
                 PlozziOSHomeHeroCarousel(
@@ -156,8 +183,21 @@ struct HomeHeroInteractionFixture: View {
                     Text(verbatim: pinnedIDs).accessibilityIdentifier("sheet-hero-selection")
                 }
             }
-            .navigationTitle("Home fixture")
+            .navigationTitle(usesNativeChrome ? "" : "Home fixture")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar(usesVerticalToolbar ? .visible : .automatic, for: .navigationBar)
+            .toolbar {
+                if usesNativeChrome {
+                    PlozziOSSettingsToolbarItem {}
+                }
+            }
+        }
+    }
+
+    var body: some View {
+        HeroInteractionNavigationChrome(enabled: usesNativeChrome, sidebar: sidebar) {
+            home
         }
         .overlay(alignment: .bottomTrailing) {
             VStack {
@@ -179,6 +219,31 @@ struct HomeHeroInteractionFixture: View {
     }
 }
 
+private struct HeroInteractionNavigationChrome<Content: View>: View {
+    let enabled: Bool
+    let sidebar: PlozziOSSidebarGeometryModel
+    @ViewBuilder let content: Content
+    @State private var selection = 0
+
+    var body: some View {
+        if enabled {
+            TabView(selection: $selection) {
+                Tab("Home", systemImage: "house", value: 0) { content }
+                Tab("Live TV", systemImage: "antenna.radiowaves.left.and.right", value: 1) { Text("Live TV fixture") }
+                Tab("Downloads", systemImage: "arrow.down.circle", value: 2) { Text("Downloads fixture") }
+                Tab("Search", systemImage: "magnifyingglass", value: 3, role: .search) { Text("Search fixture") }
+            }
+            .tabViewStyle(.sidebarAdaptable)
+            .background {
+                PlozziOSHomeSidebarOverlapProbe(enabled: selection == 0, geometryModel: sidebar)
+                    .frame(width: 0, height: 0)
+            }
+        } else {
+            content
+        }
+    }
+}
+
 @MainActor
 @Observable
 private final class HeroInteractionActions: MediaItemActionHandling {
@@ -196,6 +261,7 @@ private final class HeroInteractionActions: MediaItemActionHandling {
 private struct HeroInteractionProvider: MediaProvider {
     let kind: ProviderKind
     static let logoURL = URL(string: "https://hero.invalid/logo.png")!
+    static let artworkURL = URL(string: "https://hero.invalid/full-width.png")!
 
     var account: Account {
         Account(
@@ -214,6 +280,7 @@ private struct HeroInteractionProvider: MediaProvider {
             MediaItem(
                 id: "movie", title: "Hero Movie", kind: .movie,
                 overview: "A movie description in the Home hero.",
+                backdropURL: ProcessInfo.processInfo.arguments.contains("--hero-native-chrome") ? artworkURL : nil,
                 logoURL: ProcessInfo.processInfo.arguments.contains("--hero-logo") ? logoURL : nil
             ).taggingSource(ProviderKind.jellyfin.rawValue),
             MediaItem(

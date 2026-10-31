@@ -1624,7 +1624,6 @@ struct DetailHeroView: View, Equatable {
     private var showsMoreMenu: Bool {
         (serverChoices.count > 1 && onSelectSource != nil)
             || (versions.count > 1 && onSelectVersion != nil)
-            || loadVersions != nil
             || heroMenuActions.contains(.browseFiles)
     }
 
@@ -1719,7 +1718,7 @@ struct DetailHeroView: View, Equatable {
                 .pickerStyle(.menu)
             }
         }
-        if (versions.count > 1 || loadVersions != nil), onSelectVersion != nil {
+        if versions.count > 1, onSelectVersion != nil {
             Button("Version", systemImage: "film.stack") {
                 cancelPendingPrimaryAction()
                 isVersionPickerPresented = true

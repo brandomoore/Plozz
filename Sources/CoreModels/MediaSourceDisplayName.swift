@@ -55,7 +55,7 @@ public enum MediaSourceDisplayName {
             // unrelated values or display a nested locator as a filename.
             guard let value = nonempty(item.value),
                   !value.hasPrefix("//"), !value.contains("?"),
-                  !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+                  value.rangeOfCharacter(from: .controlCharacters) == nil,
                   let fileName = basename(value) else { return nil }
             let windowsPath = value.range(of: #"^[A-Za-z]:[\\/]"#, options: .regularExpression) != nil
             guard URLComponents(string: value)?.scheme == nil || windowsPath else { return nil }

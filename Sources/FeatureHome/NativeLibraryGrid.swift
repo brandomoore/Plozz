@@ -213,6 +213,8 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     private var measuredHeaderHeight: CGFloat = 0
     private var hidesScrollIndicator = false
     private var viewportReport: Task<Void, Never>?
+    private let navigationScrollID = UUID()
+    private weak var navigationScroll: TopNavigationScroll?
     private var traversalRecorder: LibraryTraversalRecorder? =
         ProcessInfo.processInfo.environment["PLOZZ_LIBRARY_TRAVERSAL_RECORDING"] == "1" ? .init() : nil
 
@@ -328,6 +330,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         layoutViewport()
+        bindNavigationScroll()
         scrollTarget?.moveHeader(with: collection.contentOffset.y + collection.adjustedContentInset.top)
         guard view.bounds.width > 0 else { return }
         let metrics = environment.plozzMetrics
@@ -389,6 +392,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         let offset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
         scrollTarget?.moveHeader(with: offset)
+        navigationScroll?.update(offset: offset, source: navigationScrollID)
         onScroll?(offset)
         scheduleViewportReport()
     }
@@ -419,6 +423,24 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
               cell.onRequestFocus?() == true else {
             PlozzLog.app.error("Library alphabet destination did not accept focus at index \(index)")
             return
+        }
+    }
+
+    private func bindNavigationScroll() {
+        let navigation = environment.plozzTopNavigationScroll
+        guard navigationScroll !== navigation else { return }
+        navigationScroll?.unregister(source: navigationScrollID)
+        navigationScroll = navigation
+        navigation?.register(
+            source: navigationScrollID,
+            offset: collection.contentOffset.y + collection.adjustedContentInset.top
+        ) { [weak self] in
+            guard let self else { return }
+            self.requestedFocusIndex = nil
+            self.lastFocusedIndex = nil
+            self.collection.setContentOffset(
+                CGPoint(x: 0, y: -self.collection.adjustedContentInset.top), animated: false
+            )
         }
     }
 
@@ -512,6 +534,8 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     }
 
     func stopObserving() {
+        navigationScroll?.unregister(source: navigationScrollID)
+        navigationScroll = nil
         viewportReport?.cancel()
         viewportReport = nil
         for binding in bindings.values {
@@ -533,6 +557,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        bindNavigationScroll()
         updateScrollIndicators()
         for cell in collection.visibleCells {
             guard let indexPath = collection.indexPath(for: cell) else { continue }

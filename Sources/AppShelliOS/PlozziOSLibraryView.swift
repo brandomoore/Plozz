@@ -119,23 +119,27 @@ private struct PlozziOSLibraryList: View {
     }
 }
 
-private struct PlozziOSLibraryCard: View {
+struct PlozziOSLibraryCard: View {
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzCardCaptionSettings) private var captions
     let library: MediaLibrary
 
-    @ViewBuilder
     var body: some View {
-        if cardStyle == .framed {
-            content
-                .plozzFramedMediaCard(
-                    innerCornerRadius: metrics.landscapeArtworkCornerRadius
-                )
-                .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
-        } else {
-            content
+        Group {
+            if cardStyle == .framed {
+                content
+                    .plozzFramedMediaCard(
+                        innerCornerRadius: metrics.landscapeArtworkCornerRadius
+                    )
+                    .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+            } else {
+                content
+            }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(library.displayName)
     }
 
     private var content: some View {
@@ -168,14 +172,16 @@ private struct PlozziOSLibraryCard: View {
                 cornerRadius: metrics.landscapeArtworkCornerRadius
             )
 
-            library.displayName
-                .font(.headline)
-                .lineLimit(2)
-                .padding(.horizontal, metrics.landscapeCaptionHorizontalInset)
-                .padding(
-                    .bottom,
-                    cardStyle == .framed ? metrics.landscapeCaptionInset : 0
-                )
+            if captions.showsLabels {
+                library.displayName
+                    .font(.headline)
+                    .lineLimit(2)
+                    .padding(.horizontal, metrics.landscapeCaptionHorizontalInset)
+                    .padding(
+                        .bottom,
+                        cardStyle == .framed ? metrics.landscapeCaptionInset : 0
+                    )
+            }
         }
         .contentShape(Rectangle())
     }
@@ -208,19 +214,22 @@ struct PlozziOSLibraryGridView: View {
     /// Passed rather than read from the environment so the pushed destination
     /// carries it explicitly, like every other dependency on this route.
     private let scanStatus: ShareScanStatusModel?
+    private let isCombinedLibrary: Bool
 
     init(
         viewModel: LibraryBrowseViewModel,
         title: String,   // l10n:content — library name from the server
         provider: any MediaProvider,
         settings: PlozziOSSettingsModel,
-        scanStatus: ShareScanStatusModel? = nil
+        scanStatus: ShareScanStatusModel? = nil,
+        isCombinedLibrary: Bool = false
     ) {
         _viewModel = State(initialValue: viewModel)
         self.title = title
         self.provider = provider
         self.settings = settings
         self.scanStatus = scanStatus
+        self.isCombinedLibrary = isCombinedLibrary
     }
 
     var body: some View {
@@ -228,7 +237,9 @@ struct PlozziOSLibraryGridView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    browseControls
+                    if viewModel.availableContentModes.count > 1 {
+                        PlozziOSLibraryContentModeControl(viewModel: viewModel)
+                    }
                     Group {
                         if viewModel.contentMode == .recommended {
                             recommendedContent
@@ -301,6 +312,9 @@ struct PlozziOSLibraryGridView: View {
             }
         }
         .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                queryControls.labelStyle(.iconOnly)
+            }
             if let library = viewModel.fileBrowserLibrary {
                 ToolbarItem(placement: .primaryAction) {
                     NavigationLink(
@@ -430,6 +444,7 @@ struct PlozziOSLibraryGridView: View {
                             generation: generation,
                             style: viewModel.gridStyle == .landscape ? .landscape : .poster,
                             provider: provider,
+                            isCombinedLibrary: isCombinedLibrary,
                             playlistOrigin: { viewModel.playlistOrigin(at: index) },
                             onAppear: { await viewModel.itemAppeared(at: index, generation: generation) },
                             onDisappear: { viewModel.itemDisappeared(at: index, generation: generation) }
@@ -452,29 +467,6 @@ struct PlozziOSLibraryGridView: View {
                 ContentFailureActions(report: viewModel.browseDiagnostic.map(PlaybackDiagnosticReport.library)) {
                     Task { await viewModel.loadFirstPage() }
                 }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var browseControls: some View {
-        VStack(spacing: 8) {
-            if viewModel.availableContentModes.count > 1 {
-                PlozziOSLibraryContentModeControl(viewModel: viewModel)
-            }
-            if viewModel.showsFilterMenu || !viewModel.availableSortFields.isEmpty {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 24) {
-                        queryControls.fixedSize()
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        queryControls
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .font(.subheadline)
-                .tint(palette.primaryText)
-                .padding(.horizontal, horizontalInset)
             }
         }
     }
@@ -539,58 +531,12 @@ struct PlozziOSLibraryGridView: View {
     }
 
     private var sortControl: some View {
-        Menu {
-            Picker("Sort By", selection: sortFieldBinding) {
-                ForEach(viewModel.availableSortFields, id: \.self) { field in
-                    Text(field.displayName).tag(field)
-                }
-            }
-            Picker("Order", selection: sortDirectionBinding) {
-                ForEach(SortDirection.allCases, id: \.self) { direction in
-                    Text(direction.displayName).tag(direction)
-                }
-            }
-        } label: {
-            Label(
-                "Sort: \(viewModel.sort.field.displayName)",
-                systemImage: "arrow.up.arrow.down"
-            )
-            .frame(minWidth: 44, minHeight: 44)
+        BrowseSortMenu(sort: viewModel.sort, fields: viewModel.availableSortFields) { sort in
+            Task { await viewModel.setSort(sort) }
         }
         .accessibilityIdentifier("library-sort")
     }
 
-    private var sortFieldBinding: Binding<SortField> {
-        Binding(
-            get: { viewModel.sort.field },
-            set: { field in
-                Task {
-                    await viewModel.setSort(
-                        CoreModels.SortDescriptor(
-                            field: field,
-                            direction: field.defaultDirection
-                        )
-                    )
-                }
-            }
-        )
-    }
-
-    private var sortDirectionBinding: Binding<SortDirection> {
-        Binding(
-            get: { viewModel.sort.direction },
-            set: { direction in
-                Task {
-                    await viewModel.setSort(
-                        CoreModels.SortDescriptor(
-                            field: viewModel.sort.field,
-                            direction: direction
-                        )
-                    )
-                }
-            }
-        )
-    }
 }
 
 private struct PlozziOSLibraryContentModeControl: View {
@@ -674,6 +620,7 @@ private struct PlozziOSLibraryItemCell: View {
     let generation: Int
     var style: PosterCardView.Style = .poster
     let provider: any MediaProvider
+    var isCombinedLibrary = false
     let playlistOrigin: () -> VideoPlaylistPlaybackOrigin?
     let onAppear: () async -> Void
     let onDisappear: () -> Void
@@ -698,6 +645,13 @@ private struct PlozziOSLibraryItemCell: View {
                             accountID: library.sourceAccountID ?? provider.session.server.id
                         )
                     ) {
+                        card
+                    }
+                    .buttonStyle(.plain)
+                } else if isCombinedLibrary {
+                    NavigationLink {
+                        PlozziOSItemPage(appModel: appModel, item: item)
+                    } label: {
                         card
                     }
                     .buttonStyle(.plain)

@@ -42,6 +42,9 @@ and every provider/feature that talks to a remote server.
   parsing the free-form log. Attempt identifiers become fresh report-local aliases.
 - `ServerURLNormalizer`: turns user-typed addresses (with/without scheme,
   trailing slash, port) into a well-formed `URL` for both Jellyfin and Plex.
+  Manual media-server discovery uses its separate candidate builder; legacy
+  normalization of persisted/service URLs is unchanged. Discovery opts into
+  typed TLS trust failures so an invalid certificate cannot select HTTP instead.
 - `ProviderIconLoader`: best-effort, origin-only `/favicon.ico` requests for
   provider marks. It strips user information, paths, query strings and fragments,
   uses no credential/cookie storage, rejects redirects and authentication,

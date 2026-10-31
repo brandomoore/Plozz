@@ -6,24 +6,75 @@ import UIKit
 import Vision
 import XCTest
 @testable import AppShell
+@testable import FeatureSettings
 
 @MainActor
 final class NativeSidebarPresentationHostedTests: XCTestCase {
-    func testSettingsDefersSidebarConstructionFromPinnedAndTopBarNavigation() async throws {
-        for initialStyle in [NavigationStyle.rail, .tabBar] {
+    func testNativeSidebarHidesOnSettingsSubpages() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let navigation = SettingsNavigationModel()
+        fixture.window.rootViewController = UIHostingController(rootView:
+            TabView {
+                Tab("Settings", systemImage: "gearshape") {
+                    SettingsWorkspace(navigation: navigation) {
+                        SettingsSectionButton(title: Text("Playback"), icon: "play", route: .playback)
+                    } detail: { _ in
+                        Button("Return") { navigation.returnToSidebar() }
+                    }
+                }
+            }
+            .tabViewStyle(.sidebarAdaptable)
+            .environment(\.plozzNavigationStyle, .sidebar)
+        )
+        try await waitUntil { navigation.sidebarFocusRequest > 0 }
+        navigation.enterDetail()
+        try await waitUntil {
+            let presented = fixture.window.rootViewController?.presentedViewController
+            return presented?.viewIfLoaded?.window != nil
+                && presented?.isBeingPresented == false && !navigation.pages.isTransitioning
+        }
+        fixture.window.layoutIfNeeded()
+        let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+            XCTAssertTrue(fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true))
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Native Settings subpage"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        let labels = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        XCTAssertTrue(labels.contains("Return"), "\(labels)")
+        XCTAssertFalse(labels.contains("Settings"), "\(labels)")
+        navigation.returnToSidebar()
+        try await waitUntil { fixture.window.rootViewController?.presentedViewController == nil }
+        XCTAssertFalse(navigation.isCategoryOpen)
+    }
+
+    func testSettingsRetainsRootNavigationAndDefersStyleChangesUntilExit() async throws {
+        for initialStyle in [NavigationStyle.rail, .tabBar, .sidebar] {
             let fixture = try await makeFixture()
             defer { fixture.close() }
             let model = ShellModel(style: initialStyle)
-            fixture.window.rootViewController = UIHostingController(rootView: SettingsShell(model: model))
+            fixture.window.rootViewController = UIHostingController(rootView:
+                NavigationRailFocusHost { _ in SettingsShell(model: model) }
+            )
             try await waitUntil { model.pages[initialStyle]?.window != nil }
             let original = try XCTUnwrap(model.pages[initialStyle])
 
             model.showsSettings = true
             try await waitUntil { model.settingsButton?.window != nil }
             let settings = try XCTUnwrap(model.settingsButton)
+            XCTAssertTrue(original.isEnabled, "Root Settings must retain usable navigation.")
+            model.settingsNavigation.enterDetail()
+            try await waitUntil { !original.isEnabled }
+            fixture.window.layoutIfNeeded()
             let focusSystem = try XCTUnwrap(UIFocusSystem.focusSystem(for: fixture.window))
-            focusSystem.requestFocusUpdate(to: settings)
-            focusSystem.updateFocusIfNeeded()
+            let owner = try XCTUnwrap(NavigationRailFocusHostController.containing(settings))
+            XCTAssertTrue(owner.requestFocus(to: settings, using: focusSystem))
             try await waitUntil { settings.isFocused }
 
             for style in [NavigationStyle.sidebar, .rail, .tabBar, .sidebar] {
@@ -37,28 +88,34 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
                 XCTAssertNotNil(original.window)
             }
 
+            let finalStyle: NavigationStyle = initialStyle == .sidebar ? .rail : .sidebar
+            model.style = finalStyle
+            model.settingsNavigation.returnToSidebar()
+            try await waitUntil { original.isEnabled }
+            XCTAssertTrue(model.pages[initialStyle] === original)
+            XCTAssertNotNil(original.window, "Returning to Settings root must not reparent its content.")
             model.showsSettings = false
-            try await waitUntil { model.pages[.sidebar]?.window != nil }
-            XCTAssertEqual(model.creations[.sidebar], 1)
+            try await waitUntil { model.pages[finalStyle]?.window != nil }
+            XCTAssertEqual(model.creations[finalStyle], 1)
             XCTAssertNil(original.window)
-            let sidebar = try XCTUnwrap(model.pages[.sidebar])
+            let sidebar = try XCTUnwrap(model.pages[finalStyle])
+            try await waitUntil { model.settingsButton?.window == nil }
             model.showsSettings = true
             try await waitUntil { model.settingsButton?.window != nil }
-            model.showsSettings = false
-            try await waitUntil { model.settingsButton?.window == nil }
-            XCTAssertTrue(model.pages[.sidebar] === sidebar)
-            XCTAssertEqual(model.creations[.sidebar], 1, "Ordinary Settings visits must retain the active tab.")
+            XCTAssertTrue(model.pages[finalStyle] === sidebar)
+            XCTAssertEqual(model.creations[finalStyle], 1, "Ordinary Settings visits must retain the active tab.")
         }
     }
 
-    func testSettingsFirstLaunchDoesNotConstructHiddenSidebar() async throws {
+    func testSettingsFirstLaunchConstructsUsableNavigation() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
         let model = ShellModel(style: .sidebar)
         model.showsSettings = true
         fixture.window.rootViewController = UIHostingController(rootView: SettingsShell(model: model))
         try await waitUntil { model.settingsButton?.window != nil }
-        XCTAssertTrue(model.creations.isEmpty)
+        XCTAssertEqual(model.creations, [.sidebar: 1])
+        XCTAssertTrue(try XCTUnwrap(model.pages[.sidebar]).isEnabled)
         model.showsSettings = false
         try await waitUntil { model.pages[.sidebar]?.window != nil }
         XCTAssertEqual(model.creations, [.sidebar: 1])
@@ -242,6 +299,7 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
     fileprivate final class ShellModel {
         var style: NavigationStyle
         var showsSettings = false
+        let settingsNavigation = SettingsNavigationModel()
         @ObservationIgnored var creations: [NavigationStyle: Int] = [:]
         @ObservationIgnored var pages: [NavigationStyle: UIButton] = [:]
         @ObservationIgnored weak var settingsButton: UIButton?
@@ -253,11 +311,19 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
         let model: ShellModel
 
         var body: some View {
-            SettingsNavigationShell(style: model.style, showsSettings: model.showsSettings) { style in
-                ShellButton(model: model, style: style)
-                    .id(style)
-            } settings: {
-                ShellButton(model: model, style: nil)
+            SettingsNavigationShell(
+                style: model.style, showsSettings: model.showsSettings
+            ) { style in
+                VStack {
+                    ShellButton(model: model, style: style)
+                        .frame(width: 480, height: 80)
+                        .disabled(model.settingsNavigation.isCategoryOpen)
+                    if model.showsSettings {
+                        ShellButton(model: model, style: nil)
+                            .frame(width: 480, height: 80)
+                    }
+                }
+                .id(style)
             }
         }
     }

@@ -10,7 +10,6 @@ final class NavigationRailPresentationTests: XCTestCase {
         XCTAssertFalse(presentation.isRailVisible)
         XCTAssertFalse(presentation.isRailEnabled)
         XCTAssertEqual(presentation.contentInset, 0)
-        XCTAssertEqual(presentation.headerHeight, NavigationRailMetrics.searchHeaderHeight)
         XCTAssertTrue(presentation.shouldEnterSearchContent)
         XCTAssertFalse(presentation.opensExpanded)
     }
@@ -25,7 +24,6 @@ final class NavigationRailPresentationTests: XCTestCase {
         XCTAssertTrue(expanded.isRailEnabled)
         XCTAssertTrue(expanded.isRailVisible)
         XCTAssertEqual(expanded.contentInset, 0)
-        XCTAssertEqual(expanded.headerHeight, opening.headerHeight)
         XCTAssertFalse(expanded.shouldEnterSearchContent)
         XCTAssertFalse(expanded.opensExpanded)
     }
@@ -65,7 +63,6 @@ final class NavigationRailPresentationTests: XCTestCase {
             XCTAssertTrue(presentation.isRailEnabled)
             XCTAssertTrue(presentation.isEdgeNavigationEnabled())
             XCTAssertEqual(presentation.contentInset, NavigationRailMetrics.contentInset)
-            XCTAssertEqual(presentation.headerHeight, 0)
             XCTAssertFalse(presentation.shouldEnterSearchContent)
             XCTAssertFalse(make(destination, opening: true).opensExpanded)
         }
@@ -108,7 +105,6 @@ final class NavigationRailPresentationTests: XCTestCase {
         XCTAssertFalse(presentation.isEdgeNavigationEnabled(searchResultsHaveFocus: true))
         XCTAssertEqual(presentation.contentInset, 0)
         XCTAssertFalse(presentation.showsPageButton)
-        XCTAssertEqual(presentation.headerHeight, 0)
         XCTAssertFalse(presentation.shouldEnterSearchContent)
         XCTAssertFalse(presentation.opensExpanded)
     }

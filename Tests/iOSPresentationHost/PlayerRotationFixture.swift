@@ -64,6 +64,9 @@ struct PlayerRotationFixture: View {
         model.settings.playback.settings.useCommunityMarkers = false
         model.settings.playback.settings.syncWatchAcrossServers = false
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--force-transcoding") {
+            model.settings.playback.settings.streaming.forceTranscoding = true
+        }
         if arguments.contains("--gesture-player-fixture") {
             model.settings.playback.settings.skipForwardInterval = .five
             model.settings.playback.settings.skipBackwardInterval = .thirty
@@ -214,6 +217,7 @@ struct PlayerRotationFixture: View {
 private struct RotationProvider: MediaProvider, StreamingQualityProviding {
     private static var failsPlayback: Bool {
         ProcessInfo.processInfo.arguments.contains("--failed-player-fixture")
+            || ProcessInfo.processInfo.arguments.contains("--failed-conversion-fixture")
     }
     private static var embyStreaming: Bool {
         ProcessInfo.processInfo.arguments.contains("--emby-streaming-fixture")
@@ -266,6 +270,9 @@ private struct RotationProvider: MediaProvider, StreamingQualityProviding {
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest {
         await MainActor.run { probe.count += 1 }
+        if ProcessInfo.processInfo.arguments.contains("--failed-conversion-fixture") {
+            throw StreamingQualityError.unavailable
+        }
         if Self.failsPlayback {
             throw StreamingQualityError.serverRefusal("Synthetic playback preparation failure.")
         }

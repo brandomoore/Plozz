@@ -51,6 +51,7 @@ struct StubRedirect {
 private enum StubbedOutcome {
     case response(StubResponse)
     case redirect(StubRedirect)
+    case failure(URLError)
 }
 
 /// Deterministic, in-process `URLProtocol` stub used to test the transport
@@ -76,6 +77,10 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
 
     static func queue(redirect: StubRedirect, for url: URL) {
         lock.lock(); queues[url, default: []].append(.redirect(redirect)); lock.unlock()
+    }
+
+    static func queue(error: URLError, for url: URL) {
+        lock.lock(); queues[url, default: []].append(.failure(error)); lock.unlock()
     }
 
     static func requests(for url: URL) -> [URLRequest] {
@@ -108,7 +113,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         let index = queue.firstIndex {
             switch $0 {
             case .response(let response): return response.matchesRequest?(request) ?? true
-            case .redirect: return true
+            case .redirect, .failure: return true
             }
         }
         let outcome = index.map { queue.remove(at: $0) }
@@ -123,6 +128,8 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         }
 
         switch outcome {
+        case .failure(let error):
+            client?.urlProtocol(self, didFailWithError: error)
         case .response(let stub):
             stub.onRequest?(request)
             if stub.delay == .zero {

@@ -12,6 +12,7 @@ struct LiveTVPreviewIntroductionFixture: View {
     @State private var playbackID: UUID?
     @State private var nativeSelection = NavigationRailDestination.liveTV
     @State private var nativeHandoff = NavigationDestinationFocusHandoff()
+    @State private var chrome = NavigationChromeModel()
     @State private var settings: LiveTVViewSettings
     @State private var refreshProvider = PreviewRefreshProvider()
     @State private var profiles: ProfilesModel
@@ -71,8 +72,25 @@ struct LiveTVPreviewIntroductionFixture: View {
     }
 
     @ViewBuilder private var nativeNavigation: some View {
-        if usesNativeTopBar { nativeTabs.tabViewStyle(.tabBarOnly) }
-        else { nativeTabs.tabViewStyle(.sidebarAdaptable) }
+        if usesNativeTopBar {
+            TopBarNavigation(
+                destinations: [.home, .liveTV, .search],
+                selection: $nativeSelection, preventsAccidentalExit: true,
+                content: { destination, _ in AnyView(nativeContent(for: destination)) },
+                label: { destination in
+                    switch destination {
+                    case .home: AnyView(Label("Home", systemImage: "house"))
+                    case .liveTV: AnyView(Label("Live TV", systemImage: "tv"))
+                    default: AnyView(Label("Search", systemImage: "magnifyingglass"))
+                    }
+                },
+                profile: Profile(id: profileID, name: "Fixture"),
+                onOpenProfileSwitcher: {},
+                chrome: chrome
+            )
+        } else {
+            nativeTabs.tabViewStyle(.sidebarAdaptable)
+        }
     }
 
     private var nativeTabs: some View {
@@ -127,13 +145,21 @@ struct LiveTVPreviewIntroductionFixture: View {
             usesNativeFullscreen: usesNativeNavigation,
             preferencesStore: preferences,
             viewSettingsStore: store,
-            sourceStore: PreviewIntroductionSources(refreshCatalog: refreshCatalog),
+            sourceStore: PreviewIntroductionSources(
+                refreshCatalog: refreshCatalog,
+                empty: ProcessInfo.processInfo.arguments.contains("--preview-empty-sources")
+            ),
             serverProviderResolver: { account in
                 guard refreshCatalog, account == "refresh-account" else { return nil }
                 return LiveTVAuthorizedServerProvider(
                     accountID: account, authorizationID: "refresh-authorization",
                     kind: .iptv, provider: refreshProvider
                 )
+            },
+            onExpandedChange: { expanded in
+                if usesNativeTopBar && nativeSelection == .liveTV {
+                    chrome.setStackDepth(expanded ? 1 : 0)
+                }
             },
             sourceLoader: PreviewIntroductionLoader(),
             profileID: profileID,
@@ -213,8 +239,10 @@ private final class PreviewIntroductionPreferences: LiveTVPreferencesStoring, @u
 
 private struct PreviewIntroductionSources: LiveTVSourcesStoring {
     var refreshCatalog = false
+    var empty = false
 
     func load() throws -> LiveTVSourcesConfiguration {
+        if empty { return LiveTVSourcesConfiguration() }
         if refreshCatalog {
             return LiveTVSourcesConfiguration(servers: [
                 LiveTVServerSource(id: "refresh-server", name: "Refresh fixture", accountID: "refresh-account")

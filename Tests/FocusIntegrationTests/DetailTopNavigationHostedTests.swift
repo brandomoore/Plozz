@@ -1,8 +1,10 @@
+import CoreModels
 import CoreUI
 import Observation
 import SwiftUI
 import UIKit
 import XCTest
+@testable import AppShell
 
 @MainActor
 final class DetailTopNavigationHostedTests: XCTestCase {
@@ -210,11 +212,21 @@ private struct DetailNavigationRoot: View {
     @Bindable var model: DetailNavigationFixture
     let metrics: DetailNavigationMeasurements
     @State private var selectedTab = 0
+    @State private var horizontalSelection = NavigationRailDestination.home
+    @State private var chrome = NavigationChromeModel()
 
     var body: some View {
         switch mode {
         case .top:
-            tabs.tabViewStyle(.tabBarOnly)
+            TopBarNavigation(
+                destinations: [.home, .search], selection: $horizontalSelection,
+                preventsAccidentalExit: true,
+                content: { destination, _ in
+                    destination == .home ? AnyView(navigation) : AnyView(Button("Search") {})
+                },
+                label: { AnyView(Text(verbatim: $0.storageValue)) },
+                chrome: chrome
+            )
         case .sidebar:
             tabs.tabViewStyle(.sidebarAdaptable)
         case .contentOnly:
@@ -239,6 +251,7 @@ private struct DetailNavigationRoot: View {
                 .navigationDestination(for: Int.self) { _ in
                     DetailNavigationPage(model: model, metrics: metrics)
                 }
+                .reportsNavigationDepth(model.path.count, to: mode == .top ? chrome : nil)
         }
     }
 }

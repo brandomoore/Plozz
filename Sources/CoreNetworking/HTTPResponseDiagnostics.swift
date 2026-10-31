@@ -25,15 +25,21 @@ public enum HTTPResponseDiagnostics {
     @TaskLocal private static var recorder: Recorder?
     @TaskLocal public static var route: ResponseDecodingDiagnostic.Route = .other
 
+    public static var effectiveRoute: ResponseDecodingDiagnostic.Route {
+        route == .other && SearchDiagnosticJournal.currentSource != nil ? .search : route
+    }
+
     public static func capture<Value: Sendable>(
+        retainingSuccessfulRequests: Bool = false,
         _ operation: @Sendable () async throws -> Value
     ) async -> CapturedResult<Value> {
         let recorder = Recorder()
         return await $recorder.withValue(recorder) {
             do {
+                let value = try await operation()
                 return CapturedResult(
-                    result: .success(try await operation()), responses: [], paging: [], transport: [], http: [],
-                    requests: [], validation: []
+                    result: .success(value), responses: [], paging: [], transport: [], http: [],
+                    requests: retainingSuccessfulRequests ? recorder.snapshot().requests : [], validation: []
                 )
             } catch {
                 let evidence = recorder.snapshot()
@@ -50,10 +56,11 @@ public enum HTTPResponseDiagnostics {
         recorder?.append(diagnostic)
     }
 
-    public static var isCapturing: Bool { recorder != nil }
+    public static var isCapturing: Bool { recorder != nil || SearchDiagnosticJournal.currentSource != nil }
 
     public static func recordRequest(_ diagnostic: ResponseRequestDiagnostic) {
         recorder?.append(diagnostic)
+        SearchDiagnosticJournal.currentSource?.request(diagnostic)
     }
 
     public static func recordValidationFailure(
@@ -65,27 +72,36 @@ public enum HTTPResponseDiagnostics {
 
     public static func recordHTTPFailure(status: Int) {
         guard !(200...299).contains(status) else { return }
-        recorder?.append(ResponseStatusDiagnostic(route: route, httpStatus: status))
+        let diagnostic = ResponseStatusDiagnostic(route: effectiveRoute, httpStatus: status)
+        recorder?.append(diagnostic)
+        SearchDiagnosticJournal.currentSource?.http(diagnostic)
     }
 
     public static func recordTransportFailure(_ error: URLError) {
-        guard error.code != .cancelled else { return }
-        recorder?.append(ResponseTransportDiagnostic(route: route, urlErrorCode: error.errorCode))
+        guard isCapturing, error.code != .cancelled else { return }
+        let diagnostic = ResponseTransportDiagnostic(
+            route: effectiveRoute, urlErrorCode: error.errorCode,
+            underlying: Array(PlaybackFailureEvidence.ErrorCode.chain(error as NSError).dropFirst())
+        )
+        recorder?.append(diagnostic)
+        SearchDiagnosticJournal.currentSource?.transport(diagnostic)
     }
 
     public static func recordDecodeFailure(
         _ error: Error, data: Data, response: HTTPURLResponse
     ) {
-        guard let recorder else { return }
+        guard isCapturing else { return }
         let payload: ResponseDecodingDiagnostic.Payload
         if data.isEmpty { payload = .empty }
         else if let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) {
             payload = json is [Any] ? .array : json is [String: Any] ? .object : .scalar
         } else { payload = .nonJSON }
-        recorder.append(ResponseDecodingDiagnostic(
-            route: route, httpStatus: response.statusCode, bytes: data.count,
+        let diagnostic = ResponseDecodingDiagnostic(
+            route: effectiveRoute, httpStatus: response.statusCode, bytes: data.count,
             payload: payload, error: error
-        ))
+        )
+        recorder?.append(diagnostic)
+        SearchDiagnosticJournal.currentSource?.decoding(diagnostic)
     }
 
     private final class Recorder: @unchecked Sendable {

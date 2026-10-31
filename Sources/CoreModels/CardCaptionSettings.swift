@@ -6,13 +6,16 @@ public enum CardCaptionView: String, CaseIterable, Codable, Sendable {
     case related, episodes, extras, filmography
     // Retain the override originally introduced for portrait cards.
     case continueWatching = "continueWatchingPortrait"
+    case homeLibraries
+
+    public var isRowOverride: Bool { self == .continueWatching || self == .homeLibraries }
 
     public static var customizableCases: [Self] {
         allCases
     }
 
     public var customizationChoices: [CardCaptionOverride] {
-        if self == .continueWatching { return [.automatic, .show, .hide] }
+        if isRowOverride { return [.automatic, .show, .hide] }
         return self == .home || self == .recommended ? [.show, .hide, .mixed] : [.show, .hide]
     }
 
@@ -30,6 +33,7 @@ public enum CardCaptionView: String, CaseIterable, Codable, Sendable {
         case .extras: "Extras"
         case .filmography: "Filmography"
         case .continueWatching: "Continue Watching"
+        case .homeLibraries: "Libraries"
         }
     }
 }
@@ -92,7 +96,7 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
     }
 
     public func customization(in view: CardCaptionView) -> CardCaptionOverride {
-        if view == .continueWatching { return override(for: view) }
+        if view.isRowOverride { return override(for: view) }
         if view.customizationChoices.contains(.mixed),
            mixedOverrides.contains(view) || (preference == .recommended && overrides[view] == nil) {
             return .mixed
@@ -128,6 +132,11 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
         in view: CardCaptionView, isShowcase: Bool = false, hasArtworkTitle: Bool = false,
         isContinueWatching: Bool = false
     ) -> Bool {
+        if view == .homeLibraries {
+            return overrides[view] ?? showsLabels(
+                in: .home, isShowcase: isShowcase, hasArtworkTitle: hasArtworkTitle
+            )
+        }
         if isContinueWatching, let override = overrides[.continueWatching] {
             return override
         }

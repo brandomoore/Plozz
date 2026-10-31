@@ -676,6 +676,9 @@ final class JellyfinStreamingQualityTests: XCTestCase {
         XCTAssertEqual(limited.transcodingProfiles.first?.videoCodec, "h264")
         XCTAssertEqual(original.maxStreamingBitrate, JellyfinCapabilityProfile.defaultMaxBitrate)
         XCTAssertEqual(original, JellyfinCapabilityProfile.appleTV())
+        let restored = limited.applying(.init(quality: .original))
+        XCTAssertNil(restored.maxStreamingBitrate)
+        XCTAssertNil(restored.maxStaticBitrate)
     }
 
     func testOptionalTranscodeURLDoesNotOverrideAProvenDirectPlayFit() async throws {

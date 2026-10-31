@@ -15,6 +15,7 @@ public struct WatchlistUnionEntry: Identifiable, Hashable, Sendable {
     /// See `NativeWatchlistEntry.ownedSource`.
     public let ownedSource: MediaSourceRef?
     public let attributions: [MetadataAttribution]
+    public let addedAt: Date?
 
     public init(
         aliasID: MediaAliasID,
@@ -23,7 +24,8 @@ public struct WatchlistUnionEntry: Identifiable, Hashable, Sendable {
         isExplicit: Bool,
         ownedSource: MediaSourceRef? = nil,
         artworkSourceAccountID: String? = nil,
-        attributions: [MetadataAttribution] = []
+        attributions: [MetadataAttribution] = [],
+        addedAt: Date? = nil
     ) {
         self.aliasID = aliasID
         self.kind = kind
@@ -32,6 +34,7 @@ public struct WatchlistUnionEntry: Identifiable, Hashable, Sendable {
         self.isExplicit = isExplicit
         self.ownedSource = ownedSource
         self.attributions = attributions
+        self.addedAt = addedAt
     }
 }
 
@@ -107,11 +110,19 @@ public struct WatchlistUnion: Sendable, Equatable {
         // Canonical identity controls both deduplication and ownership. Keep the
         // chosen source and its presentation together, in stable destination order.
         var ownedByAlias: [MediaAliasID: NativeWatchlistEntry] = [:]
+        var addedAtByAlias: [MediaAliasID: Date] = [:]
+        var releaseDateByAlias: [MediaAliasID: Date] = [:]
         var attributionsByAlias: [MediaAliasID: [MetadataAttribution]] = [:]
         for (_, entry) in native {
-            guard let attribution = entry.attribution else { continue }
             let aliasID = aliasSnapshot.resolvedAliasID(for: entry.aliasID)
                 ?? snapshot.resolvedAliasID(for: entry.aliasID)
+            if let addedAt = entry.addedAt {
+                addedAtByAlias[aliasID] = min(addedAtByAlias[aliasID] ?? addedAt, addedAt)
+            }
+            if releaseDateByAlias[aliasID] == nil {
+                releaseDateByAlias[aliasID] = entry.presentation?.releaseDate
+            }
+            guard let attribution = entry.attribution else { continue }
             if !attributionsByAlias[aliasID, default: []].contains(attribution) {
                 attributionsByAlias[aliasID, default: []].append(attribution)
             }
@@ -140,13 +151,17 @@ public struct WatchlistUnion: Sendable, Equatable {
                 // poster is best. When a server has proved the owned copy, keep
                 // its presentation with the source so the badge and artwork
                 // upgrade together.
-                presentation:
-                    owned?.ownedPresentation ?? intent.presentation,
+                presentation: Self.presentation(
+                    owned?.ownedPresentation, fallback: intent.presentation,
+                    releaseDate: releaseDateByAlias[aliasID]
+                ),
                 isExplicit: true,
                 ownedSource: owned?.ownedSource,
                 artworkSourceAccountID: owned?.ownedPresentation != nil
                     ? owned?.ownedSource?.accountID : nil,
-                attributions: attributionsByAlias[aliasID, default: []]
+                attributions: attributionsByAlias[aliasID, default: []],
+                addedAt: intent.origin == .legacyHomeSeed
+                    ? addedAtByAlias[aliasID] : intent.changedAt
             ))
         }
 
@@ -169,8 +184,10 @@ public struct WatchlistUnion: Sendable, Equatable {
             entries.append(WatchlistUnionEntry(
                 aliasID: aliasID,
                 kind: entry.kind,
-                presentation:
-                    owned?.ownedPresentation ?? entry.presentation,
+                presentation: Self.presentation(
+                    owned?.ownedPresentation, fallback: entry.presentation,
+                    releaseDate: releaseDateByAlias[aliasID]
+                ),
                 isExplicit: false,
                 ownedSource: owned?.ownedSource,
                 artworkSourceAccountID: owned?.ownedPresentation != nil
@@ -179,7 +196,8 @@ public struct WatchlistUnion: Sendable, Equatable {
                         ?? Self.presentationAccountID(
                             from: destinationID
                         ),
-                attributions: attributionsByAlias[aliasID, default: []]
+                attributions: attributionsByAlias[aliasID, default: []],
+                addedAt: addedAtByAlias[aliasID]
             ))
         }
 
@@ -201,6 +219,16 @@ public struct WatchlistUnion: Sendable, Equatable {
             return accountID.isEmpty ? nil : accountID
         }
         return nil
+    }
+
+    private static func presentation(
+        _ owned: MediaAliasPresentation?,
+        fallback: MediaAliasPresentation?,
+        releaseDate: Date?
+    ) -> MediaAliasPresentation? {
+        var result = owned ?? fallback
+        if result?.releaseDate == nil { result?.releaseDate = fallback?.releaseDate ?? releaseDate }
+        return result
     }
 
     public func contains(aliasID: MediaAliasID) -> Bool {

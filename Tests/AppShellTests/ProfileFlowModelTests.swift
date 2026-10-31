@@ -58,6 +58,114 @@ final class ProfileFlowModelTests: XCTestCase {
         XCTAssertFalse(model.isChoosingProfile)
     }
 
+    func testPickerSettingsReturnsToCurrentProfileWithoutReactivatingIt() {
+        let (model, profiles) = makeModel()
+        let selection = profiles.selectionGeneration
+        model.requestProfileSelection()
+        model.requestSettingsFromProfileSelection()
+        XCTAssertFalse(model.isChoosingProfile)
+        XCTAssertEqual(model.pendingSettingsProfileID, profiles.activeProfileID)
+        XCTAssertEqual(profiles.selectionGeneration, selection)
+        model.consumeSettingsEntry(for: profiles.activeProfileID)
+        XCTAssertNil(model.pendingSettingsProfileID)
+    }
+
+    func testStartupSettingsRequiresProfilePINAndCancellationDropsIntent() async {
+        let (model, profiles) = makeModel()
+        var active = profiles.activeProfile
+        active.replaceLock(with: ProfileLock.make(pin: "2468", iterations: 1))
+        profiles.update(active)
+        model.prepareLaunchPicker()
+        model.requestSettingsFromProfileSelection()
+        XCTAssertTrue(model.isChoosingProfile)
+        XCTAssertEqual(model.pendingLockedProfile?.id, active.id)
+        XCTAssertNil(model.pendingSettingsProfileID)
+        let rejected = await model.submitProfileLockPIN("1111")
+        XCTAssertFalse(rejected)
+        XCTAssertNil(model.pendingSettingsProfileID)
+        model.cancelProfileLockPrompt()
+        model.switchProfile(to: active.id)
+        let accepted = await model.submitProfileLockPIN("2468")
+        XCTAssertTrue(accepted)
+        XCTAssertNil(model.pendingSettingsProfileID, "Cancelling Settings must not reroute a later ordinary profile selection.")
+
+        model.forgetUnlock(for: active.id)
+        model.prepareLaunchPicker()
+        model.requestSettingsFromProfileSelection()
+        let settingsAccepted = await model.submitProfileLockPIN("2468")
+        XCTAssertTrue(settingsAccepted)
+        XCTAssertFalse(model.isChoosingProfile)
+        XCTAssertEqual(model.pendingSettingsProfileID, active.id)
+    }
+
+    func testForegroundSettingsRequiresFreshPINAndPreservesCurrentProfile() async throws {
+        let env = try makeEnv()
+        var profile = env.profiles.activeProfile
+        profile.lock = Self.lock(pin: "4821")
+        env.profiles.update(profile)
+        env.profiles.noteProfileUnlocked(profile.id)
+        let generation = env.profiles.selectionGeneration
+        env.flow.lockForForegroundIfNeeded()
+        env.flow.requestSettingsFromProfileSelection()
+        XCTAssertEqual(env.flow.pendingLockedProfile?.id, profile.id)
+        XCTAssertNil(env.flow.pendingSettingsProfileID)
+        env.flow.cancelProfileSelection()
+        XCTAssertTrue(env.flow.isChoosingProfile)
+        XCTAssertTrue(env.flow.isForegroundLocked)
+        XCTAssertFalse(env.flow.canFinishForegroundUnlock)
+
+        let accepted = await env.flow.submitProfileLockPIN("4821")
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(env.flow.pendingSettingsProfileID, profile.id)
+        XCTAssertTrue(env.flow.canFinishForegroundUnlock)
+        env.flow.finishForegroundUnlockIfReady()
+        XCTAssertFalse(env.flow.isForegroundLocked)
+        XCTAssertEqual(env.profiles.selectionGeneration, generation)
+        env.flow.consumeSettingsEntry(for: profile.id)
+        XCTAssertNil(env.flow.pendingSettingsProfileID)
+    }
+
+    func testForegroundSettingsIntentExpiresOnAnotherDeparture() async throws {
+        let env = try makeEnv()
+        var profile = env.profiles.activeProfile
+        profile.lock = Self.lock(pin: "4821")
+        env.profiles.update(profile)
+        env.profiles.noteProfileUnlocked(profile.id)
+        env.flow.lockForForegroundIfNeeded()
+        env.flow.requestSettingsFromProfileSelection()
+        let accepted = await env.flow.submitProfileLockPIN("4821")
+        XCTAssertTrue(accepted)
+        env.flow.finishForegroundUnlockIfReady()
+        XCTAssertEqual(env.flow.pendingSettingsProfileID, profile.id)
+
+        env.flow.lockForForegroundIfNeeded()
+        XCTAssertNil(env.flow.pendingSettingsProfileID)
+        env.flow.switchProfile(to: profile.id)
+        let acceptedAgain = await env.flow.submitProfileLockPIN("4821")
+        XCTAssertTrue(acceptedAgain)
+        XCTAssertTrue(env.flow.canFinishForegroundUnlock)
+        XCTAssertNil(env.flow.pendingSettingsProfileID, "An ordinary return must not reopen an expired Settings request.")
+    }
+
+    func testSettingsIntentCannotCrossProfileSwitchOrParentalFallThrough() {
+        let (model, profiles) = makeModel()
+        let parent = profiles.activeProfile
+        var child = profiles.add(name: "Child")
+        child.replaceKidsProfile(with: true)
+        profiles.update(child)
+        profiles.setParentalPIN(ParentalPIN.make(pin: "1357", iterations: 1))
+        XCTAssertTrue(model.enforceLockOnActiveProfile(leaving: child))
+        model.requestSettingsFromProfileSelection()
+        XCTAssertEqual(model.pendingParentalSwitch?.id, parent.id)
+        XCTAssertNil(model.pendingSettingsProfileID)
+        XCTAssertFalse(model.submitParentalPIN("0000"))
+        XCTAssertTrue(model.isChoosingProfile)
+        XCTAssertTrue(model.submitParentalPIN("1357"))
+        XCTAssertEqual(model.pendingSettingsProfileID, parent.id)
+        model.switchProfile(to: child.id)
+        XCTAssertNil(model.pendingSettingsProfileID)
+    }
+
     func testImportedOnboardingSelectionKeepsExistingLocksAndCompletesOnlyAfterActivation() async {
         let (model, profiles) = makeModel()
         let original = profiles.activeProfileID
@@ -220,6 +328,21 @@ final class ProfileFlowModelTests: XCTestCase {
         let store: AccountStore
     }
 
+    @MainActor
+    private final class ForegroundPINProbe {
+        var submitted: [String?] = []
+        var started: XCTestExpectation?
+        var continuation: CheckedContinuation<String, Never>?
+
+        func authenticate(_ pin: String?) async throws -> String {
+            submitted.append(pin)
+            guard pin == "4821" else { throw AppError.unauthorized }
+            guard let started else { return "parent-cloud" }
+            started.fulfill()
+            return await withCheckedContinuation { continuation = $0 }
+        }
+    }
+
     private func account(id: String, provider: ProviderKind) -> Account {
         Account(
             id: id,
@@ -272,6 +395,236 @@ final class ProfileFlowModelTests: XCTestCase {
 
     private func drainMainActor(_ iterations: Int = 200) async {
         for _ in 0..<iterations { await Task.yield() }
+    }
+
+    func testForegroundLocalUnlockRetainsProfileAndDoesNotRescopeServices() async throws {
+        var trackerUpdates = 0
+        var watchlistActivations = 0
+        let env = try makeEnv(
+            updateTrackers: { trackerUpdates += 1 },
+            activateWatchlist: { watchlistActivations += 1 }
+        )
+        var profile = env.profiles.activeProfile
+        profile.lock = Self.lock(pin: "4821")
+        env.profiles.update(profile)
+        env.profiles.noteProfileUnlocked(profile.id)
+        let generation = env.profiles.selectionGeneration
+
+        env.flow.requestProfileSelection()
+        XCTAssertTrue(env.flow.isProfileSelectionCancelable)
+        env.flow.lockForForegroundIfNeeded()
+        XCTAssertTrue(env.flow.isForegroundLocked)
+        XCTAssertTrue(env.flow.isChoosingProfile)
+        XCTAssertFalse(env.flow.isProfileSelectionCancelable)
+        XCTAssertTrue(env.flow.activeProfileAwaitsUnlock)
+        env.flow.requestProfileSelection()
+        env.flow.cancelProfileSelection()
+        env.flow.finishForegroundUnlockIfReady()
+        XCTAssertTrue(env.flow.isForegroundLocked)
+        XCTAssertTrue(env.flow.isChoosingProfile)
+
+        env.flow.switchProfile(to: profile.id)
+        XCTAssertEqual(env.flow.pendingLockedProfile?.id, profile.id)
+        let rejected = await env.flow.submitProfileLockPIN("0000")
+        XCTAssertFalse(rejected)
+        XCTAssertNotNil(env.flow.profileLockError)
+        XCTAssertFalse(env.flow.canFinishForegroundUnlock)
+        let accepted = await env.flow.submitProfileLockPIN("4821")
+        XCTAssertTrue(accepted)
+        XCTAssertTrue(env.flow.canFinishForegroundUnlock)
+        env.flow.finishForegroundUnlockIfReady()
+        await drainMainActor()
+        XCTAssertFalse(env.flow.isForegroundLocked)
+        XCTAssertEqual(env.profiles.activeProfileID, profile.id)
+        XCTAssertEqual(env.profiles.selectionGeneration, generation)
+        XCTAssertEqual(trackerUpdates, 0)
+        XCTAssertEqual(watchlistActivations, 0)
+    }
+
+    func testForegroundCancelAndAnotherBackgroundRequireFreshLocalProof() async throws {
+        let env = try makeEnv()
+        var profile = env.profiles.activeProfile
+        profile.lock = Self.lock(pin: "4821")
+        env.profiles.update(profile)
+        env.profiles.noteProfileUnlocked(profile.id)
+        env.flow.lockForForegroundIfNeeded()
+        env.flow.switchProfile(to: profile.id)
+        env.flow.cancelForegroundProfileSelection()
+        XCTAssertTrue(env.flow.isChoosingProfile)
+        XCTAssertTrue(env.flow.isForegroundLocked)
+        XCTAssertNil(env.flow.pendingLockedProfile)
+
+        env.flow.switchProfile(to: profile.id)
+        let accepted = await env.flow.submitProfileLockPIN("4821")
+        XCTAssertTrue(accepted)
+        env.flow.lockForForegroundIfNeeded()
+        XCTAssertFalse(env.flow.canFinishForegroundUnlock)
+        XCTAssertTrue(env.flow.isChoosingProfile)
+        XCTAssertFalse(env.profiles.isProfileUnlocked(profile.id))
+        env.flow.switchProfile(to: profile.id)
+        XCTAssertNotNil(env.flow.pendingLockedProfile)
+    }
+
+    func testForegroundDifferentProfileUsesNormalRescope() async throws {
+        var trackerUpdates = 0
+        let env = try makeEnv(updateTrackers: { trackerUpdates += 1 })
+        var profile = env.profiles.activeProfile
+        profile.lock = Self.lock(pin: "4821")
+        env.profiles.update(profile)
+        env.profiles.noteProfileUnlocked(profile.id)
+        let other = env.profiles.add(name: "Other viewer")
+        env.flow.lockForForegroundIfNeeded()
+        env.flow.switchProfile(to: other.id)
+        env.flow.finishForegroundUnlockIfReady()
+        await drainMainActor()
+        XCTAssertFalse(env.flow.isForegroundLocked)
+        XCTAssertEqual(env.profiles.activeProfileID, other.id)
+        XCTAssertFalse(env.profiles.isProfileUnlocked(profile.id))
+        XCTAssertEqual(trackerUpdates, 1)
+    }
+
+    func testReturnDefaultUsesConfiguredPINButDisabledPlexSourceDoesNotAskForItsPIN() throws {
+        let env = try makeEnv(accounts: [("plex", .plex), ("jellyfin", .jellyfin)])
+        env.flow.lockForForegroundIfNeeded()
+        XCTAssertFalse(env.flow.isForegroundLocked)
+        let profile = env.profiles.activeProfile.settingHomeUserBinding(
+            .init(homeUserID: "parent", name: "Parent", requiresPIN: true), forPlexAccount: "plex"
+        )
+        env.profiles.update(profile)
+        env.profiles.setActiveAccountIDs(["jellyfin"], for: profile.id)
+        env.hub.reloadAccounts()
+        env.flow.lockForForegroundIfNeeded()
+        XCTAssertTrue(env.flow.isForegroundLocked, "Any configured profile PIN requires selection on every return.")
+        env.flow.switchProfile(to: profile.id)
+        XCTAssertNil(env.plex.pendingPlexPINRequest, "Disabled sources still do not participate in authentication.")
+        XCTAssertTrue(env.flow.canFinishForegroundUnlock)
+    }
+
+    func testUnprotectedHouseholdUsesPickerAfterDelayWithoutRescopingSameProfile() throws {
+        var updates = 0
+        let env = try makeEnv(updateTrackers: { updates += 1 })
+        let profileID = env.profiles.activeProfileID
+        _ = env.profiles.add(name: "Other viewer")
+        XCTAssertEqual(env.flow.foregroundReturnDelay, 300)
+        let generation = env.profiles.selectionGeneration
+        env.flow.lockForForegroundIfNeeded()
+        XCTAssertTrue(env.flow.isForegroundLocked)
+        XCTAssertTrue(env.flow.isChoosingProfile)
+        env.flow.cancelProfileSelection()
+        XCTAssertTrue(env.flow.isChoosingProfile)
+        env.flow.switchProfile(to: profileID)
+        XCTAssertNil(env.flow.pendingLockedProfile)
+        XCTAssertTrue(env.flow.canFinishForegroundUnlock)
+        env.flow.finishForegroundUnlockIfReady()
+        XCTAssertFalse(env.flow.isForegroundLocked)
+        XCTAssertEqual(env.profiles.selectionGeneration, generation)
+        XCTAssertEqual(updates, 0)
+    }
+
+    func testReturnDefaultsUpdateWhenProfilesAndPINsChange() throws {
+        let env = try makeEnv()
+        XCTAssertNil(env.flow.foregroundReturnDelay)
+        let other = env.profiles.add(name: "Other viewer")
+        XCTAssertEqual(env.flow.foregroundReturnDelay, 300)
+        var profile = env.profiles.activeProfile
+        profile.lock = Self.lock(pin: "4821")
+        env.profiles.update(profile)
+        XCTAssertEqual(env.flow.foregroundReturnDelay, 0)
+        env.flow.switchProfile(to: other.id)
+        XCTAssertEqual(env.flow.foregroundReturnDelay, 0, "A different profile's PIN still requires selection on return.")
+        env.flow.switchProfile(to: profile.id)
+        XCTAssertEqual(env.flow.pendingLockedProfile?.id, profile.id)
+        XCTAssertEqual(env.profiles.activeProfileID, other.id)
+        profile.lock = nil
+        env.profiles.update(profile)
+        XCTAssertEqual(env.flow.foregroundReturnDelay, 300)
+    }
+
+    func testForegroundPlexRechecksPINWithoutDiscardingSameViewerIdentity() async throws {
+        let env = try makeEnv(accounts: [("plex", .plex)])
+        env.hub.reloadAccounts()
+        let probe = ForegroundPINProbe()
+        env.plex.plexHomeUsersFetch = { _, _ in
+            [PlexHomeUser(id: "parent", name: "Parent", requiresPIN: true)]
+        }
+        env.plex.plexHomeUserSwitch = { _, pin, _, _ in
+            try await probe.authenticate(pin)
+        }
+        env.plex.plexServerTokenResolve = { _, _, _ in "parent-server" }
+        env.profiles.update(env.profiles.activeProfile.settingHomeUserBinding(
+            .init(homeUserID: "parent", name: "Parent", requiresPIN: true), forPlexAccount: "plex"
+        ))
+        env.plex.ensurePlexIdentityForActiveProfile()
+        await env.plex.waitForPlexPINRequirementCheck()
+        env.plex.submitPlexPIN("4821")
+        await env.plex.waitForPlexPINRequirementCheck()
+        XCTAssertNil(env.plex.pendingPlexPINRequest)
+        let generation = env.plex.plexIdentityGeneration
+        let profileID = env.profiles.activeProfileID
+
+        env.flow.lockForForegroundIfNeeded()
+        XCTAssertTrue(env.flow.isForegroundLocked)
+        env.flow.switchProfile(to: profileID)
+        await env.plex.waitForPlexPINRequirementCheck()
+        XCTAssertNotNil(env.plex.pendingPlexPINRequest)
+        XCTAssertFalse(env.flow.canFinishForegroundUnlock)
+        XCTAssertEqual(env.plex.resolvedToken(for: "plex"), "parent-server")
+        XCTAssertEqual(env.plex.plexIdentityGeneration, generation)
+        XCTAssertEqual(probe.submitted.count, 1, "Old credentials must not re-prove PIN access.")
+
+        env.flow.cancelForegroundProfileSelection()
+        XCTAssertTrue(env.flow.isChoosingProfile)
+        XCTAssertNil(env.plex.pendingPlexPINRequest)
+        env.flow.switchProfile(to: profileID)
+        await env.plex.waitForPlexPINRequirementCheck()
+        env.plex.submitPlexPIN("0000")
+        await env.plex.waitForPlexPINRequirementCheck()
+        XCTAssertNotNil(env.plex.pendingPlexPINRequest)
+        XCTAssertFalse(env.flow.canFinishForegroundUnlock)
+        env.plex.submitPlexPIN("4821")
+        await env.plex.waitForPlexPINRequirementCheck()
+        XCTAssertTrue(env.flow.canFinishForegroundUnlock)
+        env.flow.finishForegroundUnlockIfReady()
+        XCTAssertFalse(env.flow.isForegroundLocked)
+        XCTAssertEqual(env.plex.plexIdentityGeneration, generation)
+        XCTAssertEqual(env.profiles.activeProfileID, profileID)
+    }
+
+    func testForegroundLinkedPINIsSpentOnceAndCanceledPlexResultCannotUnlock() async throws {
+        let env = try makeEnv(accounts: [("plex", .plex)])
+        env.hub.reloadAccounts()
+        var profile = env.profiles.activeProfile.settingHomeUserBinding(
+            .init(homeUserID: "parent", name: "Parent", requiresPIN: true), forPlexAccount: "plex"
+        )
+        profile.lock = ProfileLock.make(pin: "4821", matchesPlexPIN: true, iterations: 1)
+        env.profiles.update(profile)
+        env.profiles.noteProfileUnlocked(profile.id)
+        env.plex.plexHomeUsersFetch = { _, _ in
+            [PlexHomeUser(id: "parent", name: "Parent", requiresPIN: true)]
+        }
+        let probe = ForegroundPINProbe()
+        let started = expectation(description: "Plex verification started")
+        probe.started = started
+        env.plex.plexHomeUserSwitch = { _, pin, _, _ in
+            try await probe.authenticate(pin)
+        }
+        env.plex.plexServerTokenResolve = { _, _, _ in "parent-server" }
+        env.flow.lockForForegroundIfNeeded()
+        env.flow.switchProfile(to: profile.id)
+        let accepted = await env.flow.submitProfileLockPIN("4821")
+        XCTAssertTrue(accepted)
+        await fulfillment(of: [started], timeout: 2)
+        XCTAssertFalse(env.flow.canFinishForegroundUnlock)
+        env.flow.cancelForegroundProfileSelection()
+        probe.continuation?.resume(returning: "parent-cloud")
+        await drainMainActor()
+        XCTAssertEqual(probe.submitted, ["4821"])
+        XCTAssertTrue(env.flow.isForegroundLocked)
+        XCTAssertTrue(env.flow.isChoosingProfile)
+        XCTAssertFalse(env.profiles.isProfileUnlocked(profile.id))
+        XCTAssertNil(env.plex.resolvedToken(for: "plex"))
+        env.flow.switchProfile(to: profile.id)
+        XCTAssertNotNil(env.flow.pendingLockedProfile)
     }
 
     /// Installs a live unprotected Plex Home-user override for the ACTIVE profile on

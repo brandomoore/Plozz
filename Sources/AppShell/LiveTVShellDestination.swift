@@ -189,6 +189,10 @@ struct LiveTVShellDestination: View {
                 onTuneChannel: playback.tuneChannel,
                 guideOverlay: playback.guideOverlay
             )
+            .background(
+                TVProfilePlaybackPresence(isActive: isActive && playback.isAuthorized)
+                    .frame(width: 0, height: 0)
+            )
         }
         .id(profileID)
         .onChange(of: isActive, initial: true) { _, active in

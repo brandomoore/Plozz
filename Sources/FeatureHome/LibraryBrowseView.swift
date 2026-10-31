@@ -100,6 +100,7 @@ public struct LibraryBrowseView: View {
     /// Pre-built so a synthesized library name ("Movies" on a file share) is
     /// our translated copy while a server's own name stays verbatim.
     private let title: Text
+    private let isNavigationRoot: Bool
     private let spoilerSettings: SpoilerSettings
     private let continueWatchingShowsSeriesArtwork: Bool
     private let continueWatchingLayout: ContinueWatchingCardLayout
@@ -111,6 +112,7 @@ public struct LibraryBrowseView: View {
     /// Custom pinned-sidebar clearance. Native top/sidebar styles publish zero.
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzNavigationStyle) private var navigationStyle
+    @Environment(\.plozzTopNavigationScroll) private var topNavigationScroll
     /// Align the visible card surface, not its invisible layout margins.
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.plozzCardFocusStyle) private var focusStyle
@@ -142,6 +144,7 @@ public struct LibraryBrowseView: View {
     public init(
         viewModel: LibraryBrowseViewModel,
         title: Text,
+        isNavigationRoot: Bool = false,
         spoilerSettings: SpoilerSettings = .default,
         continueWatchingShowsSeriesArtwork: Bool = true,
         continueWatchingLayout: ContinueWatchingCardLayout = .landscape,
@@ -150,6 +153,7 @@ public struct LibraryBrowseView: View {
     ) {
         _viewModel = State(initialValue: viewModel)
         self.title = title
+        self.isNavigationRoot = isNavigationRoot
         self.spoilerSettings = spoilerSettings
         self.continueWatchingShowsSeriesArtwork = continueWatchingShowsSeriesArtwork
         self.continueWatchingLayout = continueWatchingLayout
@@ -160,8 +164,9 @@ public struct LibraryBrowseView: View {
     public var body: some View {
         #if os(tvOS)
         NativeLibraryFocusHost(scrollTarget: nativeScrollTarget, content: libraryContent)
+            .environment(\.plozzTopNavigationScroll, isNavigationRoot ? topNavigationScroll : nil)
             .ignoresSafeArea(.container, edges: [.vertical, .trailing])
-            .toolbar(.hidden, for: .tabBar)
+            .toolbar(isNavigationRoot ? .automatic : .hidden, for: .tabBar)
         #else
         libraryContent
         #endif
@@ -215,11 +220,10 @@ public struct LibraryBrowseView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationEntryFocus(isEntryContentPending ? .pending : nil)
-        // Browse is a full-screen sub-page: hide the top tab bar so it reads as a
-        // dedicated destination with no navigation chrome pinned at the top.
         .environment(\.plozzCardCaptionView, viewModel.browseScope.cardCaptionView(for: viewModel.contentMode))
         .environment(\.plozzArtworkArea, nil)
-        .toolbar(.hidden, for: .tabBar)
+        // Root libraries must not remove the focused tab during native navigation.
+        .toolbar(isNavigationRoot ? .automatic : .hidden, for: .tabBar)
         .safeAreaInset(edge: .top, spacing: 0) {
             #if os(tvOS)
             NativeLibraryScrollingHeader(
@@ -363,9 +367,9 @@ public struct LibraryBrowseView: View {
             .compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows)
             .first(where: \.isKeyWindow)?.safeAreaInsets.top ?? 60
-        // The native sidebar's compact page button remains visible above content.
-        let pageButtonHeight: CGFloat = navigationStyle == .sidebar ? 60 : 0
-        return overscan + pageButtonHeight
+        // Keep the scrolling header below native root navigation, not behind its controls.
+        let hasNativeHeader = navigationStyle == .sidebar || (isNavigationRoot && navigationStyle == .tabBar)
+        return overscan + (hasNativeHeader ? 60 : 0)
     }
     #endif
 
@@ -448,7 +452,8 @@ public struct LibraryBrowseView: View {
             spoilerSettings: spoilerSettings,
             navigationStyle: .tabBar,
             isFrontmost: isFrontmost,
-            minimumDetailsTop: showcaseHeaderBottom
+            minimumDetailsTop: showcaseHeaderBottom,
+            onReturnToTop: { showcaseNavigation.focusedRowID = nil }
         ) { row, reporter in
             if let section = sectionsByID[row.id] {
                 MediaRowView(
@@ -584,6 +589,7 @@ public struct LibraryBrowseView: View {
             }
             // Never clip a focused card's lift, shadow or border.
             .scrollClipDisabled()
+            .scrollsTopNavigation()
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
             } action: { _, offset in
@@ -659,7 +665,7 @@ public struct LibraryBrowseView: View {
                 }
             }
             if !viewModel.availableSortFields.isEmpty {
-                HStack(spacing: PlozzTheme.Spacing.medium) {
+                BrowseQueryControls {
                     if viewModel.showsFilterMenu {
                         LibraryFilterMenu(
                             filters: viewModel.filters, capabilities: viewModel.queryCapabilities, facets: viewModel.queryFacets,
@@ -709,46 +715,10 @@ public struct LibraryBrowseView: View {
 
     /// A focusable native sort menu.
     private var sortControl: some View {
-        Menu {
-            Picker("Sort By", selection: sortFieldBinding) {
-                ForEach(viewModel.availableSortFields, id: \.self) { field in
-                    Text(field.displayName).tag(field)
-                }
-            }
-            Picker("Order", selection: sortDirectionBinding) {
-                ForEach(SortDirection.allCases, id: \.self) { direction in
-                    Text(direction.displayName).tag(direction)
-                }
-            }
-        } label: {
-            Label("Sort: \(viewModel.sort.field.displayName)", systemImage: "arrow.up.arrow.down")
+        BrowseSortMenu(sort: viewModel.sort, fields: viewModel.availableSortFields) { sort in
+            Task { await viewModel.setSort(sort) }
         }
         .accessibilityIdentifier("library-sort-menu")
-    }
-
-    private var sortFieldBinding: Binding<SortField> {
-        Binding(
-            get: { viewModel.sort.field },
-            set: { field in
-                Task {
-                    await viewModel.setSort(
-                        CoreModels.SortDescriptor(
-                            field: field,
-                            direction: field.defaultDirection
-                        )
-                    )
-                }
-            }
-        )
-    }
-
-    private var sortDirectionBinding: Binding<SortDirection> {
-        Binding(
-            get: { viewModel.sort.direction },
-            set: { direction in
-                Task { await viewModel.setSort(CoreModels.SortDescriptor(field: viewModel.sort.field, direction: direction)) }
-            }
-        )
     }
 
     /// Warms decoded poster art in the viewport's direction once a cell loads.

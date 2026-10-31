@@ -32,7 +32,30 @@ struct PresentationHostApp: App {
         if ProcessInfo.processInfo.arguments.contains("--sync-breakdown-fixture") {
             Self.seedSyncBreakdown()
         }
-        let model = PlozziOSAppModel()
+        let model: PlozziOSAppModel
+        if ProcessInfo.processInfo.arguments.contains("--libraries-in-more") {
+            let accounts = AccountStore(secureStore: InMemorySecureStore())
+            let provider = CollectionSettingsProvider(
+                includesAllLibrariesFixture: ProcessInfo.processInfo.arguments.contains("--all-libraries-fixture")
+            )
+            let account = Account(id: "navigation-library", from: provider.session)
+            let defaults = UserDefaults(suiteName: "MoreNavigationFixture.\(UUID().uuidString)")!
+            model = PlozziOSAppModel(accountStore: accounts, profileStore: ProfileStore(defaults: defaults))
+            let profile = model.profiles.add(name: "Navigation", isAwaitingSetup: false)
+            model.profiles.select(profile.id)
+            model.refreshActiveProfileSettings()
+            model.accountsProviders.registry.register(.plex) { _ in provider }
+            do {
+                try accounts.add(account, token: "fixture")
+            } catch {
+                fatalError("Could not prepare the library navigation fixture: \(error)")
+            }
+            model.profiles.setActiveAccountIDs([account.id], for: model.profiles.activeProfileID)
+            model.accountsProviders.tokenResolver = { _ in "fixture" }
+            model.accountsProviders.reloadAccounts()
+        } else {
+            model = PlozziOSAppModel()
+        }
         if ProcessInfo.processInfo.arguments.contains("--settings-interaction-fixture") {
             var profile = model.profiles.activeProfile
             profile.isKids = ProcessInfo.processInfo.arguments.contains("--kids-settings")
@@ -72,9 +95,33 @@ struct PresentationHostApp: App {
         model.settings.subtitleStyle.usesSeparateLiveTVStyle = false
         model.settings.nightShift.settings = .default
         if ProcessInfo.processInfo.arguments.contains("--navigation-interaction-fixture") {
-            let available = NavigationDestinationDefaults.iOS
+            var available = NavigationDestinationDefaults.iOS
             let enabled: [String]
-            if ProcessInfo.processInfo.arguments.contains("--settings-in-more") {
+            if ProcessInfo.processInfo.arguments.contains("--libraries-in-more") {
+                let libraryKey = "navigation-library:movies"
+                available.append(libraryKey)
+                if ProcessInfo.processInfo.arguments.contains("--all-libraries-fixture") {
+                    available.append(contentsOf: [NavigationLibraryLayout.allLibrariesKey, "navigation-library:shows"])
+                }
+                enabled = [
+                    NavigationLibraryLayout.homeKey, NavigationLibraryLayout.downloadsKey,
+                    NavigationLibraryLayout.watchlistKey, NavigationLibraryLayout.liveTVKey,
+                    NavigationLibraryLayout.searchKey
+                ] + (ProcessInfo.processInfo.arguments.contains("--all-libraries-fixture")
+                     ? [NavigationLibraryLayout.allLibrariesKey] : [libraryKey])
+            } else if ProcessInfo.processInfo.arguments.contains("--content-in-more") {
+                enabled = [
+                    NavigationLibraryLayout.homeKey, NavigationLibraryLayout.liveTVKey,
+                    NavigationLibraryLayout.settingsKey, NavigationLibraryLayout.watchlistKey,
+                    NavigationLibraryLayout.searchKey, NavigationLibraryLayout.downloadsKey
+                ]
+            } else if ProcessInfo.processInfo.arguments.contains("--profile-rail-fixture") {
+                enabled = [
+                    NavigationLibraryLayout.homeKey, NavigationLibraryLayout.watchlistKey,
+                    NavigationLibraryLayout.liveTVKey, NavigationLibraryLayout.downloadsKey,
+                    NavigationLibraryLayout.searchKey
+                ]
+            } else if ProcessInfo.processInfo.arguments.contains("--settings-in-more") {
                 enabled = available
             } else if ProcessInfo.processInfo.arguments.contains("--settings-first") {
                 enabled = [
@@ -92,19 +139,30 @@ struct PresentationHostApp: App {
                 .init(enabled: [NavigationLibraryLayout.settingsKey],
                       disabled: available.filter { $0 != NavigationLibraryLayout.settingsKey }),
                 available: available,
-                automaticallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys
+                automaticallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(available: available)
             )
             model.settings.navigation.applyLibrarySections(
                 .init(enabled: [NavigationLibraryLayout.homeKey],
                       disabled: available.filter { $0 != NavigationLibraryLayout.homeKey }),
                 available: available,
-                automaticallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys
+                automaticallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(available: available)
             )
             model.settings.navigation.applyLibrarySections(
                 .init(enabled: enabled, disabled: available.filter { !enabled.contains($0) }),
                 available: available,
-                automaticallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys
+                automaticallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(available: available)
             )
+            if ProcessInfo.processInfo.arguments.contains("--default-navigation") {
+                model.settings.navigation.resetLibraryLayout()
+            } else if ProcessInfo.processInfo.arguments.contains("--five-navigation-pages") {
+                let five = NavigationDestinationDefaults.iOSDefaultVisibleKeys
+                    + [NavigationLibraryLayout.allLibrariesKey, "navigation-library:movies"]
+                model.settings.navigation.applyLibrarySections(
+                    .init(enabled: five, disabled: available.filter { !five.contains($0) }),
+                    available: available,
+                    automaticallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(available: available)
+                )
+            }
         }
         interactionModel = model
     }
@@ -159,6 +217,8 @@ struct PresentationHostApp: App {
         WindowGroup {
             if ProcessInfo.processInfo.arguments.contains("--tracker-history-import-fixture") {
                 TrackerHistoryImportFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--diagnostics-sharing-fixture") {
+                DiagnosticsSharingFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--source-settings") {
                 SourceOnboardingFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--featured-card-fixture") {
@@ -325,6 +385,7 @@ private struct CollectionSettingsInteractionFixture: View {
 }
 
 private struct CollectionSettingsProvider: MediaProvider, CapabilityReporting {
+    var includesAllLibrariesFixture = false
     let kind: ProviderKind = .plex
     let capabilities: ProviderCapability = [.libraryCollections]
     let session = UserSession(
@@ -337,6 +398,7 @@ private struct CollectionSettingsProvider: MediaProvider, CapabilityReporting {
 
     func libraries() async throws -> [MediaLibrary] {
         [.init(id: "movies", title: "Movies", kind: .movie)]
+            + (includesAllLibrariesFixture ? [.init(id: "shows", title: "Shows", kind: .series)] : [])
     }
     func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
         .init(items: [
@@ -350,7 +412,15 @@ private struct CollectionSettingsProvider: MediaProvider, CapabilityReporting {
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
-        .init(items: [], startIndex: page.startIndex, totalCount: 0)
+        guard includesAllLibrariesFixture else {
+            return .init(items: [], startIndex: page.startIndex, totalCount: 0)
+        }
+        let item = MediaItem(
+            id: containerID == "movies" ? "orbit" : "harbor",
+            title: containerID == "movies" ? "Orbit" : "Harbor",
+            kind: kind
+        )
+        return .init(items: page.startIndex == 0 ? [item] : [], startIndex: page.startIndex, totalCount: 1)
     }
     func item(id: String) async throws -> MediaItem { throw AppError.notFound }
     func children(of itemID: String) async throws -> [MediaItem] { [] }
@@ -525,6 +595,7 @@ private struct SettingsInteractionFixture: View {
     @State private var sidebarGeometry = PlozziOSSidebarGeometryModel()
     @State private var heroTrailers = HeroTrailerController()
     @State private var homeViewModelBox = LazyViewState<HomeViewModel>()
+    @State private var resumePreviewItem: MediaItem?
 
     var body: some View {
         Group {
@@ -540,6 +611,33 @@ private struct SettingsInteractionFixture: View {
                 )
                 .environment(sidebarGeometry)
                 .environment(heroTrailers)
+                .task {
+                    let arguments = ProcessInfo.processInfo.arguments
+                    if arguments.contains("--libraries-in-more") {
+                        await appModel.refreshNavigationLibraries()
+                        precondition(!appModel.visibleNavigationLibraries.isEmpty, "The library fixture must discover Movies")
+                    }
+                    if let index = arguments.firstIndex(of: "--navigation-more-row"),
+                       arguments.indices.contains(index + 1) {
+                        do {
+                            try await OverflowNavigationCapture.openRow(named: arguments[index + 1])
+                        } catch {
+                            fatalError("Could not open the native More row: \(error)")
+                        }
+                    } else if arguments.contains("--capture-navigation") {
+                        let title = arguments.firstIndex(of: "--navigation-tab").flatMap {
+                            arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+                        }
+                        do {
+                            try await OverflowNavigationCapture.captureTabs(selecting: title)
+                        } catch {
+                            fatalError("Could not capture native navigation: \(error)")
+                        }
+                    } else if let index = arguments.firstIndex(of: "--navigation-destination"),
+                       arguments.indices.contains(index + 1) {
+                        appModel.screenshotDirector.tab = arguments[index + 1]
+                    }
+                }
                 .overlay(alignment: .topTrailing) {
                     if ProcessInfo.processInfo.arguments.contains("--settings-direct-presentation") {
                         Button("Fixture Settings") { showingSettings = true }
@@ -558,6 +656,43 @@ private struct SettingsInteractionFixture: View {
                 }
                 .dynamicTypeSize(ProcessInfo.processInfo.arguments.contains("--large-text") ? .accessibility2 : .large)
                 .tint(ThemePalette.dark.primaryText)
+                .resumePrompt(item: $resumePreviewItem) { _, _ in resumePreviewItem = nil }
+                .task {
+                    let arguments = ProcessInfo.processInfo.arguments
+                    do {
+                        if let index = arguments.firstIndex(of: "--playback-scroll-offset"),
+                           arguments.indices.contains(index + 1),
+                           let offset = Double(arguments[index + 1]) {
+                            try await Task.sleep(for: .milliseconds(700))
+                            let window = UIApplication.shared.connectedScenes
+                                .compactMap { $0 as? UIWindowScene }
+                                .flatMap(\.windows).first(where: \.isKeyWindow)
+                            func scrollView(in view: UIView) -> UIScrollView? {
+                                if let scroll = view as? UIScrollView,
+                                   scroll.contentSize.height > scroll.bounds.height { return scroll }
+                                return view.subviews.lazy.compactMap { scrollView(in: $0) }.first
+                            }
+                            guard let window, let scroll = scrollView(in: window) else {
+                                preconditionFailure("Playback fixture could not locate its settings list")
+                            }
+                            let maximum = max(0, scroll.contentSize.height - scroll.bounds.height
+                                + scroll.adjustedContentInset.bottom)
+                            scroll.setContentOffset(CGPoint(x: 0, y: min(offset, maximum)), animated: false)
+                        }
+                        if arguments.contains("--resume-prompt-fixture") {
+                            appModel.settings.playback.settings.askBeforeResuming = true
+                            try await Task.sleep(for: .milliseconds(700))
+                            resumePreviewItem = MediaItem(
+                                id: "resume-preview", title: "Big Buck Bunny", kind: .movie,
+                                runtime: 600, resumePosition: 240
+                            )
+                        }
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        preconditionFailure("Playback fixture setup failed: \(error)")
+                    }
+                }
             } else if ProcessInfo.processInfo.arguments.contains("--settings-interaction-fixture") {
                 PlozziOSSettingsView(appModel: appModel, onClose: {}, systemColorScheme: .dark)
                     .transformEnvironment(\.horizontalSizeClass) { sizeClass in
@@ -600,5 +735,20 @@ private struct SettingsInteractionFixture: View {
         ))
         .environment(\.plozzMetrics, .touch(density: .standard))
         .preferredColorScheme(appModel.settings.theme.theme.preferredColorScheme ?? .dark)
+        .overlay(alignment: .bottomLeading) {
+            if ProcessInfo.processInfo.arguments.contains("--profile-rail-fixture") {
+                ProfileToolbarLayoutIndicator()
+            }
+        }
+    }
+}
+
+private struct ProfileToolbarLayoutIndicator: View {
+    @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
+
+    var body: some View {
+        Text(verbatim: usesVerticalToolbar ? "vertical" : "horizontal")
+            .accessibilityIdentifier("profile-toolbar-layout")
+            .allowsHitTesting(false)
     }
 }

@@ -33,25 +33,45 @@ public final class DiscoveredLibrariesStore {
     /// misleading "No libraries found on this server".
     public var unreachableAccountIDs: Set<String> = []
     public var failures: [String: AppError] = [:]
+    @ObservationIgnored private var refreshes: [UUID: Set<String>] = [:]
+    @ObservationIgnored private var stateBeforeRefresh: LoadState<[AggregatedLibrary]> = .idle
 
     public init() {}
 
-    public func beginRefresh(accountIDs: Set<String>) {
+    @discardableResult
+    public func beginRefresh(accountIDs: Set<String>) -> UUID {
+        let request = UUID()
+        if refreshes.isEmpty { stateBeforeRefresh = state }
+        refreshes[request] = accountIDs
         refreshingAccountIDs.formUnion(accountIDs)
         if state.value == nil {
             state = .loading
         }
+        return request
+    }
+
+    public func cancelRefresh(_ request: UUID) {
+        guard refreshes.removeValue(forKey: request) != nil else { return }
+        refreshingAccountIDs = refreshes.values.reduce(into: Set<String>()) { $0.formUnion($1) }
+        if refreshes.isEmpty, state.isLoading { state = stateBeforeRefresh }
     }
 
     public func finishRefresh(
         with libraries: [AggregatedLibrary],
         unreachableAccountIDs: Set<String> = [],
-        failures: [String: AppError] = [:]
+        failures: [String: AppError] = [:],
+        request: UUID? = nil
     ) {
         state = libraries.isEmpty ? .empty : .loaded(libraries)
+        stateBeforeRefresh = state
         self.unreachableAccountIDs = unreachableAccountIDs
         self.failures = failures
-        refreshingAccountIDs.removeAll()
+        if let request {
+            cancelRefresh(request)
+        } else {
+            refreshes.removeAll()
+            refreshingAccountIDs.removeAll()
+        }
     }
 }
 #endif

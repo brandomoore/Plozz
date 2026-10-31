@@ -324,7 +324,7 @@ public struct SettingsStepper<Value: Hashable>: View {
                 valueLabel(title(options[i])).hidden().accessibilityHidden(true)
             }
             valueLabel(title(selection))
-                .contentTransition(.numericText())
+                .transaction { $0.animation = nil }
         }
         .frame(minWidth: valueMinWidth)
     }

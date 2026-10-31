@@ -14,12 +14,24 @@ import Sentry
 /// SDK is actually running). Otherwise it sends nothing and returns `false`, and
 /// the caller should tell the user to turn crash reporting on first.
 public enum CrashDiagnostics {
+    /// Trims the submitted message; missing or whitespace-only messages are invalid.
+    public static func normalizedNote(_ note: String?) -> String? {
+        guard let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty else {
+            return nil
+        }
+        return note
+    }
+
     /// Send a filtered diagnostic attachment and explicitly submitted feedback.
     /// Returns `true` for SDK handoff, not confirmation of server delivery;
-    /// `false` when reporting is inactive or either event was rejected.
+    /// `false` when the message is blank, reporting is inactive, or either event was rejected.
     @MainActor
     @discardableResult
     public static func send(note: String? = nil) async -> Bool {
+        guard let note = normalizedNote(note) else {
+            PlozzLog.app.error("A message is required to submit diagnostics; nothing submitted.")
+            return false
+        }
         #if canImport(Sentry)
         guard SentrySDK.isEnabled else { return false }
         let scope = DiagnosticExportScope()
@@ -31,6 +43,8 @@ public enum CrashDiagnostics {
             sourceDiagnostics: { LiveTVSourceDiagnostics.captureExport(scope: scope) },
             preparationDiagnostics: { PlaybackPreparationDiagnostics.export(scope: scope) },
             libraryDiagnostics: { LibraryDiagnosticJournal.shared.export(scope: scope) },
+            searchDiagnostics: { SearchDiagnosticJournal.shared.export(scope: scope) },
+            connectionDiagnostics: { ServerConnectionDiagnostics.shared.export(scope: scope) },
             playbackDiagnostics: playbackJournal,
             captureEvent: { event, attachment in
                 SentrySDK.capture(event: event) { scope in
@@ -59,17 +73,28 @@ public enum CrashDiagnostics {
         libraryDiagnostics: @MainActor () -> LibraryDiagnosticJournal.Export = {
             LibraryDiagnosticJournal.shared.export(scope: DiagnosticExportScope())
         },
+        searchDiagnostics: @MainActor () -> SearchDiagnosticJournal.Export = {
+            SearchDiagnosticJournal.shared.export(scope: DiagnosticExportScope())
+        },
+        connectionDiagnostics: @MainActor () -> ServerConnectionDiagnostics.Export = {
+            ServerConnectionDiagnostics.shared.export(scope: DiagnosticExportScope())
+        },
         playbackDiagnostics: PlaybackDiagnosticJournal.Export? = nil,
         operations: PerformanceDiagnostics = .shared,
         captureEvent: (Event, Attachment) -> SentryId,
         captureFeedback: (Event) -> SentryId
     ) -> Bool {
+        guard let message = normalizedNote(note) else {
+            PlozzLog.app.error("A message is required to submit diagnostics; nothing submitted.")
+            return false
+        }
         guard isEnabled else { return false }
 
         let report = TechnicalReport(
             activity: activity(), sources: sourceDiagnostics(), preparation: preparationDiagnostics(),
-            library: libraryDiagnostics(),
+            library: libraryDiagnostics(), connections: connectionDiagnostics(),
             playback: playbackDiagnostics,
+            search: searchDiagnostics(),
             operations: operations.snapshot()
         )
         let body: Data
@@ -85,8 +110,6 @@ public enum CrashDiagnostics {
             PlozzLog.app.error("Privacy-filtered diagnostic report exceeded its size limit; nothing submitted.")
             return false
         }
-        let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let message = trimmedNote.isEmpty ? "User diagnostics report" : trimmedNote
         let attachment = Attachment(
             data: body,
             filename: "plozz-diagnostics.json",
@@ -120,7 +143,9 @@ public enum CrashDiagnostics {
         let sources: LiveTVSourceDiagnostics.Export
         let preparation: PlaybackPreparationDiagnostics.Export
         let library: LibraryDiagnosticJournal.Export
+        let connections: ServerConnectionDiagnostics.Export
         let playback: PlaybackDiagnosticJournal.Export?
+        let search: SearchDiagnosticJournal.Export
         let operations: PerformanceDiagnostics.Snapshot?
     }
     #endif

@@ -938,7 +938,29 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
                 && model.observedFocus == .button(.episodes) && focusSystem.focusedItem != nil
                 && !(focusSystem.focusedItem is PlayerEpisodeNativeCell)
         }
-        try await body(model, window)
+        do {
+            try await body(model, window)
+        } catch {
+            let image = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+            image.name = "Episode panel failure"
+            image.lifetime = .keepAlways
+            add(image)
+            let focused = focusSystem.focusedItem as? NSObject
+            let scroll = scrollView(in: window)
+            let coordinator = (scroll as? UICollectionView)?.delegate as? PlayerEpisodeNativeRow.Coordinator
+            let state = XCTAttachment(string: """
+                Requested episode: \(String(describing: model.target))
+                Observed focus: \(String(describing: model.observedFocus))
+                Native focus label: \(focused?.accessibilityLabel ?? "nil")
+                Focus animations: \(String(describing: coordinator?.focusAnimations))
+                Scroll offset: \(String(describing: scroll?.contentOffset))
+                Cells: \(nativePosters(in: window).map { "\($0.accessibilityLabel ?? "nil"): focusable=\($0.canBecomeFocused), focused=\($0.isFocused)" })
+                """)
+            state.name = "Episode panel focus state"
+            state.lifetime = .keepAlways
+            add(state)
+            throw error
+        }
     }
 
     private func waitUntil(

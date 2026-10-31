@@ -9,6 +9,131 @@ import Synchronization
 /// a block — Home stays lean by default.
 @MainActor
 final class HomeAggregatorUnmergedTests: XCTestCase {
+    func testRecentlyAddedKeepsSiloRewatchAfterIdentityMergeAndReenrichment() async throws {
+        let movie = MediaItem(
+            id: "rewatch", title: "Rewatch", kind: .movie,
+            resumePosition: 300, isPlayed: true, libraryID: "L1"
+        )
+        let source = MediaSourceRef(
+            accountID: "acct", itemID: movie.id, kind: .movie, providerKind: .silo,
+            resumePosition: 300, isPlayed: true
+        )
+        let visibility = HomeLibraryVisibility(hideWatchedRecentlyAdded: true)
+        let model = HomeViewModel(
+            accounts: [resolved("acct", provider: UnmergedStub(
+                libraries: [lib("L1", "Movies", .movie)], latest: [movie]
+            ))],
+            layoutStore: InMemoryHomeLayoutStore(), contentStore: InMemoryHomeContentStore(),
+            identitySources: { _ in [source] }, currentVisibility: { visibility }
+        )
+        await model.load()
+        let initial = try XCTUnwrap(model.state.value?.recentlyAddedCandidates?.first)
+        XCTAssertNil(initial.resumePosition, "Exercise the merger's completion normalization.")
+        XCTAssertFalse(HomeRecentlyAddedPolicy.isWatched(initial))
+        await model.reenrich()
+        let refreshed = try XCTUnwrap(model.state.value?.recentlyAddedCandidates?.first)
+        XCTAssertFalse(HomeRecentlyAddedPolicy.isWatched(refreshed))
+        XCTAssertEqual(refreshed.sources.first?.resumePosition, 300)
+    }
+
+    func testRecentlyAddedEnrichmentDoesNotChangeHeroWatchState() async throws {
+        let series = MediaItem(id: "series", title: "Series", kind: .series, libraryID: "L1")
+        let provider = UnmergedStub(
+            libraries: [lib("L1", "TV", .series)], latest: [series], enrichRecentlyAdded: true
+        )
+        var visibility = vis([], merge: true)
+        visibility.hideWatchedRecentlyAdded = true
+        let model = HomeViewModel(
+            accounts: [resolved("acct", provider: provider)],
+            layoutStore: InMemoryHomeLayoutStore(), contentStore: InMemoryHomeContentStore(),
+            currentVisibility: { visibility }
+        )
+        await model.load()
+        let content = try XCTUnwrap(model.state.value)
+        let heroItem = try XCTUnwrap(content.latest.first)
+        XCTAssertFalse(heroItem.isPlayed)
+        XCTAssertFalse(heroItem.hasBeenPlayed)
+        XCTAssertNil(heroItem.unwatchedEpisodeCount)
+        let candidate = try XCTUnwrap(content.recentlyAddedCandidates?.first)
+        XCTAssertTrue(candidate.isPlayed)
+        XCTAssertTrue(candidate.hasBeenPlayed)
+        XCTAssertEqual(candidate.unwatchedEpisodeCount, 0)
+    }
+
+    func testRecentlyAddedFetchesOverflowAndUpdatesWatchStateWithoutChangingOtherFeeds() async throws {
+        let items = (0..<140).map {
+            MediaItem(id: "movie-\($0)", title: "Movie \($0)", kind: .movie,
+                      isPlayed: $0 < 40, libraryID: "L1")
+        }
+        let provider = UnmergedStub(
+            libraries: [lib("L1", "Movies", .movie)], latest: items,
+            itemsByContainer: ["L1": items]
+        )
+        var visibility = vis([("acct:L1", .recentlyAdded)], merge: true)
+        visibility.hideWatchedRecentlyAdded = true
+        let model = HomeViewModel(
+            accounts: [resolved("acct", provider: provider)],
+            layoutStore: InMemoryHomeLayoutStore(), contentStore: InMemoryHomeContentStore(),
+            currentVisibility: { visibility }
+        )
+        await model.load()
+        let content = try XCTUnwrap(model.state.value)
+        XCTAssertEqual(content.latest.count, 20, "Hero and Top Shelf retain their existing window.")
+        XCTAssertEqual(content.recentlyAddedCandidates?.count, 100)
+        XCTAssertEqual(provider.latestRequestedLimits, [100])
+        func visibleItems() -> [MediaItem] {
+            guard let content = model.state.value else { return [] }
+            let raw = HomeRow.rows(for: content, isLibraryVisible: { _ in true })
+            let rows = HomePresentationRow.resolve(rows: raw, content: content, visibility: visibility)
+            guard case let .home(row) = rows.first(where: { $0.id == .global(.recentlyAdded) })?.source else { return [] }
+            return row.items
+        }
+        XCTAssertEqual(visibleItems().map(\.id), (40..<60).map { "movie-\($0)" })
+        model.applyWatchedState(.init(
+            itemIDs: ["movie-40"], scopedItemIDs: ["acct:movie-40"], played: true
+        ))
+        XCTAssertEqual(visibleItems().map(\.id), (41..<61).map { "movie-\($0)" })
+        model.applyWatchedState(.init(
+            itemIDs: ["movie-0"], scopedItemIDs: ["acct:movie-0"], played: false
+        ))
+        XCTAssertEqual(visibleItems().first?.id, "movie-0")
+        visibility.hideWatchedRecentlyAdded = false
+        XCTAssertEqual(visibleItems().count, 20)
+        await model.loadIfNeeded(for: visibility)
+        XCTAssertEqual(provider.latestRequestedLimits.last, 21)
+        XCTAssertEqual(model.state.value?.recentlyAddedCandidates?.count, 21)
+    }
+
+    func testLibraryPreviewsOnlyOfferBrowseForEligibleOverflow() async throws {
+        for (count, hideWatched) in [(1, false), (20, false), (21, false), (40, true), (41, true)] {
+            let items = (0..<count).map {
+                MediaItem(id: "movie-\($0)", title: "Movie \($0)", kind: .movie,
+                          isPlayed: hideWatched && $0 < 20, libraryID: "L1")
+            }
+            let provider = UnmergedStub(
+                libraries: [lib("L1", "Movies", .movie)], itemsByContainer: ["L1": items],
+                hubsByLibrary: ["L1": [.init(id: "genre", title: "Drama", items: items)]]
+            )
+            var visibility = vis([("acct:L1", .recentlyAdded), ("acct:L1", .hubs)])
+            visibility.hideWatchedRecentlyAdded = hideWatched
+            let content = await HomeAggregator().unmergedContent(
+                from: [resolved("acct", provider: provider)], visibility: visibility
+            )
+            let rows = HomePresentationRow.resolve(
+                rows: [], content: .init(mergeLibraries: false, librarySections: content.librarySections),
+                visibility: visibility
+            )
+            let recent = try XCTUnwrap(rows.first { $0.id.libraryKind == .recentlyAdded })
+            let hub = try XCTUnwrap(rows.first { $0.id.libraryKind == .hubs })
+            XCTAssertEqual(recent.canBrowse, count - (hideWatched ? 20 : 0) > 20)
+            XCTAssertEqual(hub.canBrowse, count > 20, "Recently Added preferences do not change recommendation membership")
+            for entry in [recent, hub] {
+                guard case let .library(row) = entry.source else { return XCTFail("Expected a library row") }
+                XCTAssertLessThanOrEqual(row.section.items.count, 20)
+            }
+        }
+    }
+
     func testCollectionDirectoryStaysInLibrariesButNeverWidensScopedMediaFeeds() async {
         let directory = MediaLibrary(
             id: "jellyfin:collections", title: "Collections", kind: .collection, synthesizedName: .collections
@@ -627,6 +752,7 @@ private final class UnmergedStub: MediaProvider, @unchecked Sendable {
     private let itemsError: AppError?
     private let nativeItems: [String: [MediaItem]]
     private let nativeError: AppError?
+    private let enrichRecentlyAdded: Bool
     private let nativeCalls = Mutex<[String]>([])
     private let nativeExclusions = Mutex<[String: Set<String>]>([:])
     var nativeLibraryExclusions: [String: Set<String>] { nativeExclusions.withLock { $0 } }
@@ -644,6 +770,8 @@ private final class UnmergedStub: MediaProvider, @unchecked Sendable {
     private(set) var itemsRequested = false
     private let hubCalls = Mutex(0)
     var hubsRequested: Bool { hubCalls.withLock { $0 > 0 } }
+    private let latestLimits = Mutex<[Int]>([])
+    var latestRequestedLimits: [Int] { latestLimits.withLock { $0 } }
 
     init(
         libraries: [MediaLibrary] = [],
@@ -654,7 +782,8 @@ private final class UnmergedStub: MediaProvider, @unchecked Sendable {
         libraryError: AppError? = nil,
         itemsError: AppError? = nil,
         nativeItems: [String: [MediaItem]] = [:],
-        nativeError: AppError? = nil
+        nativeError: AppError? = nil,
+        enrichRecentlyAdded: Bool = false
     ) {
         self.stubbedLibraries = libraries
         self.stubbedContinueWatching = continueWatching
@@ -665,6 +794,7 @@ private final class UnmergedStub: MediaProvider, @unchecked Sendable {
         self.itemsError = itemsError
         self.nativeItems = nativeItems
         self.nativeError = nativeError
+        self.enrichRecentlyAdded = enrichRecentlyAdded
         self.session = UserSession(
             server: MediaServer(id: "s", name: "Home", baseURL: URL(string: "http://host")!, provider: .jellyfin),
             userID: "u", userName: "User", deviceID: "d", accessToken: "TOKEN"
@@ -686,7 +816,18 @@ private final class UnmergedStub: MediaProvider, @unchecked Sendable {
     }
     func latest(limit: Int, inLibraries libraryIDs: [String]?) async throws -> [MediaItem] {
         if let libraryIDs { scopedFeedCalls.withLock { $0.append(libraryIDs) } }
-        return stubbedLatest
+        latestLimits.withLock { $0.append(limit) }
+        return Array(stubbedLatest.prefix(limit))
+    }
+    func recentlyAddedWatchState(_ items: [MediaItem]) async throws -> [MediaItem] {
+        guard enrichRecentlyAdded else { return items }
+        return items.map {
+            var item = $0
+            item.isPlayed = true
+            item.hasBeenPlayed = true
+            item.unwatchedEpisodeCount = 0
+            return item
+        }
     }
     func homeNextUp(libraryID: String, limit: Int) async throws -> [MediaItem] {
         nextUpCalls.withLock { $0.append(libraryID) }
@@ -725,11 +866,16 @@ private final class UnmergedStub: MediaProvider, @unchecked Sendable {
         itemsRequested = true
         if let itemsError { throw itemsError }
         let items = itemsByContainer[containerID] ?? []
-        return MediaPage(items: items, startIndex: 0, totalCount: items.count)
+        return MediaPage(items: Array(items.dropFirst(page.startIndex).prefix(page.limit)),
+                         startIndex: page.startIndex, totalCount: items.count)
     }
     func libraryHubs(libraryID: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {
         hubCalls.withLock { $0 += 1 }
-        return hubsByLibrary[libraryID] ?? []
+        return (hubsByLibrary[libraryID] ?? []).map {
+            var section = $0
+            section.items = Array(section.items.prefix(limit))
+            return section
+        }
     }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }

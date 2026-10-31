@@ -31,9 +31,11 @@ final class CollectionSectionLoadingTests: XCTestCase {
             XCTAssertTrue(row.items.allSatisfy { $0.sourceAccountID == "account" })
             XCTAssertNil(row.failure)
             XCTAssertFalse(row.isLoading)
+            XCTAssertTrue(row.hasMore)
+            XCTAssertTrue(row.row.section.hasMore)
             let requests = await provider.requests
             XCTAssertEqual(requests.map(\.startIndex), [0, 2, 4])
-            XCTAssertEqual(requests.map(\.limit), [5, 3, 1])
+            XCTAssertEqual(requests.map(\.limit), [6, 4, 2])
             XCTAssertEqual(row.row.browseItem?.id, "collection")
             XCTAssertEqual(row.row.browseItem?.sourceAccountID, "account")
             XCTAssertEqual(row.row.collectionCardStyle, .featured)

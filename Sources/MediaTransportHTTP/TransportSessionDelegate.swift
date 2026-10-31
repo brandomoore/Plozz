@@ -265,7 +265,7 @@ final class TransportSessionDelegate: NSObject, URLSessionDataDelegate, @uncheck
             return .reject(.authenticationFailed(reason: "credential rejected for \(scheme.rawValue) challenge"))
         }
         return .useCredential(
-            URLCredential(user: username, password: password, persistence: .none)
+            URLCredential(user: username, password: password, persistence: .forSession)
         )
     }
 

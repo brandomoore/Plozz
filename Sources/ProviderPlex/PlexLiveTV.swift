@@ -82,9 +82,9 @@ extension PlexProvider: ServerLiveTVProviding {
         guard await !liveTVLeases.isRetired else { throw CancellationError() }
         let references = try await liveTVReferences(providers: liveTVEPGs())
         guard let reference = references.first(where: { $0.channel.id == id }),
-              let number = reference.channel.number,
-              !number.isEmpty, number.utf8.count <= 64,
-              number.utf8.allSatisfy({
+              !reference.nativeID.isEmpty, reference.nativeID.utf8.count <= 256,
+              reference.nativeID != ".", reference.nativeID != "..",
+              reference.nativeID.utf8.allSatisfy({
                   (48...57).contains($0) || (65...90).contains($0)
                       || (97...122).contains($0) || [45, 46, 95].contains($0)
               }) else {
@@ -98,21 +98,32 @@ extension PlexProvider: ServerLiveTVProviding {
         let resources = PlexLiveTVResources(
             client: openingClient, playbackID: playbackID, store: liveTVLeases
         )
+        let tuneDiagnostic = playbackFailureDiagnostics.begin(layer: .plexLiveTune, content: .live)
         do {
             // Keep observing a successful allocation even when the caller is
             // cancelled. Losing its response would lose the owned tuner handle.
             let data = try await Task.detached {
                 try await openingClient.liveTVSessionRequest(
-                    path: "/livetv/dvrs/\(dvrID)/channels/\(number)/tune",
-                    method: .post, playbackID: playbackID
+                    path: "/livetv/dvrs/\(dvrID)/channels/\(reference.nativeID)/tune",
+                    method: .post, playbackID: playbackID, diagnostic: tuneDiagnostic
                 )
             }.value
-            let tuned = try PlexLiveTVPlaybackDocument(data: data)
+            let tuned: PlexLiveTVPlaybackDocument
+            do {
+                tuned = try PlexLiveTVPlaybackDocument(data: data)
+            } catch {
+                tuneDiagnostic?.fail(stage: .response, reason: .invalidResponse)
+                throw error
+            }
             await resources.adopt(sessionPath: tuned.sessionPath, ratingKey: tuned.ratingKey)
             guard tuned.status == nil || tuned.status == 0 || tuned.status == 200 else {
+                tuneDiagnostic?.fail(stage: .response, code: tuned.status, format: .json)
                 throw ServerLiveTVError.tunerUnavailable
             }
-            guard let sessionPath = tuned.sessionPath else { throw AppError.invalidResponse }
+            guard let sessionPath = tuned.sessionPath else {
+                tuneDiagnostic?.fail(stage: .response, reason: .invalidResponse, format: .json)
+                throw AppError.invalidResponse
+            }
             try Task.checkCancellation()
             guard await !liveTVLeases.isRetired else { throw CancellationError() }
             let query = Self.liveTVDecisionQuery(sessionPath: sessionPath, playbackID: playbackID)

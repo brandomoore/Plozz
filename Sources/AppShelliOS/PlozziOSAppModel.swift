@@ -117,6 +117,45 @@ final class PlozziOSAppModel {
     }
 
     let accountsProviders: AccountsProvidersModel
+    private let navigationLibraryDiscovery = NavigationLibraryDiscovery()
+
+    var navigationLibrariesScopeKey: String {
+        let credentials = accounts.map(\.connectionScopeKey).sorted().joined(separator: "|")
+        let active = accountsProviders.activeAccountIDs.sorted().joined(separator: ",")
+        return "\(profiles.activeProfileID)#\(credentials)#\(active)#\(plexHomeUsers.plexIdentityGeneration)"
+    }
+
+    var visibleNavigationLibraries: [AggregatedLibrary] {
+        let accountIDs = Set(accountsProviders.navigationAccounts.map(\.id))
+        return NavigationRailPlan.browsableLibraries(settings.navigation.contentLibraries).filter {
+            accountIDs.contains($0.accountID)
+                && settings.homeVisibility.isEnabled($0.key)
+                && !$0.isRetiredCollectionShortcut
+        }
+    }
+
+    @discardableResult
+    func refreshNavigationLibraries() async -> Bool {
+        let scope = navigationLibrariesScopeKey
+        let currentSettings = settings
+        let accountIDs = Set(accountsProviders.navigationAccounts.map(\.id))
+        let request = currentSettings.discoveredLibraries.beginRefresh(accountIDs: accountIDs)
+        defer { currentSettings.discoveredLibraries.cancelRefresh(request) }
+        guard let discovered = await navigationLibraryDiscovery.refresh(
+            from: accountsProviders.homeAccounts,
+            expectedAccountIDs: accountIDs,
+            navigation: currentSettings.navigation,
+            isCurrent: { self.settings === currentSettings && self.navigationLibrariesScopeKey == scope }
+        ) else { return false }
+        currentSettings.discoveredLibraries.finishRefresh(
+            with: discovered.libraries,
+            unreachableAccountIDs: discovered.unreachableAccountIDs,
+            failures: discovered.failures,
+            request: request
+        )
+        return true
+    }
+
     let profiles: ProfilesModel
     @ObservationIgnored
     private(set) lazy var familyGuidance = FamilyGuidanceService(

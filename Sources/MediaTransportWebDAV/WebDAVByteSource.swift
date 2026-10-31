@@ -5,7 +5,7 @@ import MediaTransportHTTP
 
 /// A random-access byte source over WebDAV/HTTP `Range` reads.
 ///
-/// Every read is a bounded `Range` GET gated on the probe's strong ETag
+/// Reads outside the validated opening prefix use bounded GETs gated on its ETag
 /// (`If-Match`) or Last-Modified (`If-Unmodified-Since`). Changed or missing
 /// validators fail closed; date-based detection has one-second precision.
 /// The delivery URL and validator remain fixed for this lease, even on expiry.
@@ -56,6 +56,10 @@ final class WebDAVByteSource: MediaTransportByteSource, @unchecked Sendable {
         let end = requestedEnd.overflow ? lastByte : min(requestedEnd.partialValue, lastByte)
 
         do {
+            try Task.checkCancellation()
+            if end < representation.initialData.count {
+                return representation.initialData.subdata(in: Int(offset)..<(Int(end) + 1))
+            }
             return try await client.readRange(
                 url: resourceURL, start: offset, end: end, representation: representation,
                 sessionKey: sessionKey, credential: credential, trustPolicy: trustPolicy

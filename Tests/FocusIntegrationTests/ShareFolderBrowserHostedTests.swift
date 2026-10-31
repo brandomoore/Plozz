@@ -43,8 +43,15 @@ final class ShareFolderBrowserHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
             model.stopScan()
         }
-        try await Task.sleep(for: .milliseconds(250))
-        window.layoutIfNeeded()
+        // Exclude the root table's asynchronous self-sizing from folder-navigation timing.
+        try await wait {
+            window.layoutIfNeeded()
+            guard let table = self.scrollViews(in: window).compactMap({ $0 as? UITableView }).first else {
+                return false
+            }
+            return table.visibleCells.count == model.locations.count
+                && table.bounds.height > 0 && table.bounds.height < 250
+        }
         let rootTable = try XCTUnwrap(scrollViews(in: window).compactMap { $0 as? UITableView }.first)
         XCTAssertLessThan(rootTable.bounds.height, 250, "Short lists must retain their natural height.")
 

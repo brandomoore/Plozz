@@ -1,5 +1,6 @@
 #if os(iOS)
 import CoreModels
+import FeatureSettings
 import Foundation
 
 @MainActor
@@ -11,6 +12,7 @@ final class PlozziOSSettingsModel {
     let density: UIDensitySettingsModel
     let watchIndicator: WatchStatusIndicatorSettingsModel
     let navigation: NavigationStyleSettingsModel
+    let discoveredLibraries = DiscoveredLibrariesStore()
     let playback: PlaybackSettingsModel
     let subtitleBehavior: SubtitleBehaviorModel
     let subtitlePolicy: SubtitlePolicyModel

@@ -365,6 +365,12 @@ public final class HomeLibraryVisibilityModel {
         store.save(visibility)
     }
 
+    public func setHideWatchedRecentlyAdded(_ hide: Bool) {
+        guard visibility.hideWatchedRecentlyAdded != hide else { return }
+        visibility.hideWatchedRecentlyAdded = hide
+        store.save(visibility)
+    }
+
     // MARK: - Per-library Home rows (unmerged, opt-in)
 
     /// Whether a per-library row is opted in to Home (default off).

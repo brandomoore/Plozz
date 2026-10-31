@@ -16,6 +16,54 @@ final class ResumeRewindSettingsTests: XCTestCase {
 
     // MARK: - ResumeRewindInterval enum
 
+    func testResumeConfirmationDefaultsOffForNewAndExistingProfiles() throws {
+        XCTAssertFalse(PlaybackSettings.default.askBeforeResuming)
+        let legacy = try JSONSerialization.data(withJSONObject: [
+            "resumeRewindInterval": 10,
+            "autoPlayNextEpisode": false
+        ])
+        let settings = try JSONDecoder().decode(PlaybackSettings.self, from: legacy)
+        XCTAssertFalse(settings.askBeforeResuming)
+        XCTAssertFalse(settings.autoPlayNextEpisode)
+        XCTAssertEqual(settings.resumeRewindInterval, .ten)
+    }
+
+    func testResumeConfirmationRequiresOptInAndProgressWithoutExplicitRestart() {
+        for enabled in [false, true] {
+            let settings = PlaybackSettings(askBeforeResuming: enabled)
+            let positions: [TimeInterval?] = [nil, -1, 0, 1, 1.01, 120]
+            for position in positions {
+                XCTAssertEqual(
+                    settings.shouldAskBeforeResuming(at: position),
+                    enabled && (position ?? 0) > 1
+                )
+                XCTAssertFalse(settings.shouldAskBeforeResuming(at: position, fromBeginning: true))
+            }
+        }
+    }
+
+    func testResumeConfirmationRoundTripsWithoutChangingRewind() throws {
+        let settings = PlaybackSettings(resumeRewindInterval: .thirty, askBeforeResuming: true)
+        let decoded = try JSONDecoder().decode(PlaybackSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(decoded, settings)
+        XCTAssertTrue(decoded.askBeforeResuming)
+        XCTAssertEqual(decoded.resumeRewindInterval, .thirty)
+    }
+
+    @MainActor
+    func testResumeConfirmationPersistsAndRemainsProfileScoped() {
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let primary = PlaybackSettingsStore(defaults: defaults)
+        let guest = PlaybackSettingsStore(defaults: defaults, namespace: "guest")
+        let model = PlaybackSettingsModel(store: guest)
+        model.settings.askBeforeResuming = true
+        XCTAssertTrue(PlaybackSettingsModel(store: guest).settings.askBeforeResuming)
+        XCTAssertFalse(PlaybackSettingsModel(store: primary).settings.askBeforeResuming)
+        model.settings.askBeforeResuming = false
+        XCTAssertFalse(PlaybackSettingsModel(store: guest).settings.askBeforeResuming)
+    }
+
     func testAllCasesHaveDistinctRawValues() {
         let raws = ResumeRewindInterval.allCases.map(\.rawValue)
         XCTAssertEqual(raws.count, Set(raws).count, "Every case must have a unique raw value")

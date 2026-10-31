@@ -12,6 +12,8 @@ public protocol WatchStatusIndicatorSettingsStoring: Sendable {
     func save(_ indicator: WatchStatusIndicator)
     func loadShowsUnwatchedEpisodeCount() -> Bool
     func saveShowsUnwatchedEpisodeCount(_ enabled: Bool)
+    func loadShowsProgressBars() -> Bool
+    func saveShowsProgressBars(_ enabled: Bool)
     func loadEpisodeCountStyle() -> EpisodeCountBadgeStyle
     func saveEpisodeCountStyle(_ style: EpisodeCountBadgeStyle)
     func loadColor() -> WatchIndicatorColor
@@ -22,12 +24,15 @@ public final class WatchStatusIndicatorSettingsStore: WatchStatusIndicatorSettin
     private let defaults: UserDefaults
     private let key: String
     private let episodeCountKey: String
+    private let progressBarsKey: String
     private let episodeCountStyleKey: String
     private let colorKey: String
     public static let episodeCountStorageKey = "com.plozz.showsUnwatchedEpisodeCount"
+    public static let progressBarsStorageKey = "com.plozz.showsProgressBars"
     public static let episodeCountStyleStorageKey = "com.plozz.episodeCountBadgeStyle"
     public static let colorStorageKey = "com.plozz.watchIndicatorColor"
     public static let defaultShowsUnwatchedEpisodeCount = true
+    public static let defaultShowsProgressBars = true
 
     /// - Parameter namespace: per-profile scope. `nil` (the default/primary
     ///   profile) uses the legacy un-suffixed key; other profiles pass their
@@ -36,6 +41,7 @@ public final class WatchStatusIndicatorSettingsStore: WatchStatusIndicatorSettin
         self.defaults = defaults
         self.key = SettingsKey.scoped("com.plozz.watchStatusIndicator", namespace: namespace)
         self.episodeCountKey = SettingsKey.scoped(Self.episodeCountStorageKey, namespace: namespace)
+        self.progressBarsKey = SettingsKey.scoped(Self.progressBarsStorageKey, namespace: namespace)
         self.episodeCountStyleKey = SettingsKey.scoped(Self.episodeCountStyleStorageKey, namespace: namespace)
         self.colorKey = SettingsKey.scoped(Self.colorStorageKey, namespace: namespace)
     }
@@ -64,6 +70,7 @@ public final class WatchStatusIndicatorSettingsStore: WatchStatusIndicatorSettin
         if let raw = defaults.string(forKey: episodeCountStyleKey) {
             return EpisodeCountBadgeStyle(rawValue: raw) ?? .default
         }
+
         // Preserve the old appearance once, then keep it independent of watch marks.
         let migrated: EpisodeCountBadgeStyle = load() == .watched ? .floating : .attached
         saveEpisodeCountStyle(migrated)
@@ -72,6 +79,14 @@ public final class WatchStatusIndicatorSettingsStore: WatchStatusIndicatorSettin
 
     public func saveEpisodeCountStyle(_ style: EpisodeCountBadgeStyle) {
         defaults.set(style.rawValue, forKey: episodeCountStyleKey)
+    }
+
+    public func loadShowsProgressBars() -> Bool {
+        defaults.object(forKey: progressBarsKey) as? Bool ?? Self.defaultShowsProgressBars
+    }
+
+    public func saveShowsProgressBars(_ enabled: Bool) {
+        defaults.set(enabled, forKey: progressBarsKey)
     }
 
     public func loadColor() -> WatchIndicatorColor {
@@ -95,6 +110,9 @@ public final class WatchStatusIndicatorSettingsModel {
     public var showsUnwatchedEpisodeCount: Bool {
         didSet { store.saveShowsUnwatchedEpisodeCount(showsUnwatchedEpisodeCount) }
     }
+    public var showsProgressBars: Bool {
+        didSet { store.saveShowsProgressBars(showsProgressBars) }
+    }
     public var color: WatchIndicatorColor {
         didSet { store.saveColor(color) }
     }
@@ -108,6 +126,7 @@ public final class WatchStatusIndicatorSettingsModel {
         self.store = store
         self.indicator = store.load()
         self.showsUnwatchedEpisodeCount = store.loadShowsUnwatchedEpisodeCount()
+        self.showsProgressBars = store.loadShowsProgressBars()
         self.color = store.loadColor()
         self.episodeCountStyle = store.loadEpisodeCountStyle()
     }

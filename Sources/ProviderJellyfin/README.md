@@ -25,6 +25,25 @@ supported capability remains at parity.
   Aether-enabled profiles use `PlozzigenMediaFormats` for linked container,
   video and audio families rather than native hardware-only restrictions.
   Native-only profiles and server conversion limits remain independent.
+  On-demand Original quality sends explicit null bitrate limits to Jellyfin;
+  omitting those profile keys would restore its 8 Mbps defaults. Emby requires
+  numeric limits: Original sends its signed-64-bit protocol ceiling in both the
+  request and device profile. Null/omitted limits cause unnecessary conversion
+  on Emby 4.10.2.0, even for compatible low-bitrate originals. This does not restore
+  the old 120 Mbps client cap. User-selected lower qualities retain their exact
+  limits. Server/user policy, codec compatibility, Live TV and music negotiation
+  remain independent.
+  If Emby copies the unlimited ceiling into a required conversion's video target,
+  bound that saturated target to the original video bitrate (or container bitrate
+  when the video rate is unavailable). Preserve smaller server targets and all
+  other rendition restrictions. Missing source bitrate fails explicitly rather
+  than starting an effectively unbounded encode. Direct files are not capped.
+  Optional playback diagnostics retain bounded server-decision facts: source
+  bitrate, selected quality limit (nil for Original), direct-play/stream/transcode
+  flags, subtitle burn-in, and allowlisted reasons from the response or its
+  transcode URL. Addresses, tokens, paths, and unknown reason text are never
+  included. These facts explain why conversion was selected; they do not prove
+  why the resulting stream failed.
 - `JellyfinMusicProvider` — music-library queries (artists, albums, tracks)
   surfaced through the shared provider abstraction.
 
@@ -44,6 +63,12 @@ supported capability remains at parity.
   implementation; provider-specific branches are limited to API differences.
 - **Co-equal with `ProviderPlex`.** Any new `MediaProvider` capability must be
   implemented here whenever it's implemented for Plex (and vice versa).
+
+## Home browsing
+
+Home browse feeds and collection membership request `DateCreated` so client-side
+Date added sorting uses library dates on both Jellyfin and Emby, without changing
+the server-authored feed membership or default order.
 
 ## Format badges
 
@@ -357,7 +382,7 @@ native-only remux path, and required conversions.
 This ownership was cross-checked against
 [Sodalite's stream selection](https://github.com/superuser404notfound/Sodalite/blob/31799bde53e2d93384216b3f9b2523600896ef2b/Sodalite/Player/PlaybackStreamSelection.swift),
 [Swiftfin's playback builder](https://github.com/jellyfin/Swiftfin/blob/b0cb3127b1cef57b6508581be1cfe9addd5539a2/Shared/Objects/MediaPlayerManager/MediaPlayerItem/MediaPlayerItem%2BBuild.swift),
-and the [linked engine's pipeline contract](https://github.com/brandomoore/AetherEngine/blob/c5eeb230b9cd78a64f57448aee5d553bd3368ad3/docs/architecture.md).
+and the [linked engine's pipeline contract](https://github.com/brandomoore/AetherEngine/blob/c1ce4cf48bad416e6be5230032a2b7f332e833d8/docs/architecture.md).
 These are protocol/design references, not copied implementations. Client
 differences do not establish the cause of an individual playback failure.
 

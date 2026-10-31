@@ -4,10 +4,78 @@ import CoreModels
 import Observation
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 
 @MainActor
 final class SettingsStepperHostedTests: XCTestCase {
+    func testSkipDelayShowsEachRemoteAdjustmentBeforeTheNextPress() async throws {
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let suite = "skip-delay-feedback-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let model = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+        model.settings.setConfiguredSkipMode(.autoDelay, for: .intro, category: .movie)
+        model.settings.setSkipAutomaticDelay(12, for: .intro, category: .movie)
+        let host = SizingHost(rootView:
+            SkipMarkerContentSettingsView(model: model, kind: .intro)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .frame(width: SettingsFormMetrics.pageWidth)
+        )
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        try await waitUntil { self.inputController(in: host) != nil }
+        let input = try XCTUnwrap(inputController(in: host))
+        let system = try XCTUnwrap(UIFocusSystem(for: window))
+        let inputView = try XCTUnwrap((input as? UIViewController)?.view)
+        let middle = inputView.convert(inputView.bounds, to: window).midY
+        host.target = try XCTUnwrap(focusItems(in: window).filter { $0.frame.width > 300 }.min {
+            abs(focusFrame($0, in: window).midY - middle) < abs(focusFrame($1, in: window).midY - middle)
+        })
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await waitUntil { input.ownsHorizontalNavigationInput }
+        host.target = nil
+        let focused = try XCTUnwrap(system.focusedItem)
+        var frames: [(Int, UIImage)] = []
+        for expected in [13, 14, 15, 14, 13] {
+            press(expected > model.settings.configuredSkipDelay(for: .intro, category: .movie) ? .right : .left, input)
+            XCTAssertEqual(model.settings.configuredSkipDelay(for: .intro, category: .movie), expected)
+            try await Task.sleep(for: .milliseconds(100))
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            frames.append((expected, image))
+            XCTAssertTrue(system.focusedItem === focused)
+        }
+        for (expected, image) in frames {
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Skip-after-live-\(expected)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            XCTAssertTrue(text.contains("\(expected) seconds"), "Value must be visible before the next press: \(text)")
+        }
+        XCTAssertEqual(model.settings.configuredSkipDelay(for: .intro, category: .anime), 5)
+    }
+
     func testSharedThemeVolumeControlPreviewsOnceUpdatesGainAndStopsOnExit() async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }

@@ -23,6 +23,7 @@ struct NavigationRailFixture<SearchContent: View>: View {
             content: NavigationStack {
                 if model.selection == .search {
                     searchContent
+                        .modifier(NavigationRailSearchRootInset())
                 } else {
                     NavigationRailFixturePage(model: model)
                 }

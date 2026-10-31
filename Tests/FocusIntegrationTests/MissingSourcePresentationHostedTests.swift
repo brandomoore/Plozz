@@ -55,7 +55,7 @@ final class MissingSourcePresentationHostedTests: XCTestCase {
         }
     }
 
-    func testOnlineTrailerReachesItsPlayerFactoryWithoutResolvingALibraryAccount() async throws {
+    func testOnlineTrailerCannotEnterThePlayerOrResolveALibraryAccount() async throws {
         let probe = MissingSourcePresentationProbe()
         let trailer = MediaItem.youTubeTrailer(videoID: "fixture1234", title: "External Movie Trailer")
         let suite = "MissingSourceTrailer.\(UUID())"
@@ -65,10 +65,9 @@ final class MissingSourcePresentationHostedTests: XCTestCase {
         try await withWindow(
             PlayerPresentation(
                 request: PlayRequest(item: trailer, startPosition: 0, versionPreferences: preferences),
-                make: { request, _, _ in
-                    XCTAssertEqual(request.item.youTubeTrailerVideoID, trailer.youTubeTrailerVideoID)
+                make: { _, _, _ in
                     probe.creationAttempts += 1
-                    // Stop at the handoff; this test must not start internet playback.
+                    XCTFail("Online trailers must open externally, never through an embedded player.")
                     throw CancellationError()
                 },
                 makeFailover: { _, _ in XCTFail("Trailers do not fail over between libraries"); return nil },
@@ -80,10 +79,8 @@ final class MissingSourcePresentationHostedTests: XCTestCase {
                 versionAuthorizationScope: []
             )
         ) { window in
-            try await waitUntil { probe.creationAttempts == 1 }
-            try await Task.sleep(for: .milliseconds(150))
-            XCTAssertNil(window.rootViewController?.presentedViewController)
-            XCTAssertEqual(probe.creationAttempts, 1)
+            try await waitUntil { window.rootViewController?.presentedViewController is UIAlertController }
+            XCTAssertEqual(probe.creationAttempts, 0)
         }
     }
 

@@ -65,6 +65,7 @@ final class WebDAVTransportErrorTests: XCTestCase {
             (.sourceChanged(reason: "x"), "sourceChanged", false),
             (.cancelled, "cancelled", false),
             (.transport(code: 54), "transport", true),
+            (.deliveryConnectionFailed, "transport", true),
             // HTTP statuses surfaced as protocolError.
             (.protocolError(status: 401, detail: ""), "authentication", false),
             (.protocolError(status: 403, detail: ""), "permissionDenied", false),

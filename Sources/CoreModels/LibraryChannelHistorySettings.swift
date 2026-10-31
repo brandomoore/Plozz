@@ -13,7 +13,7 @@ public final class LibraryChannelHistorySettings {
     public private(set) var authorizationID: UUID?
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let key: String
-    @ObservationIgnored private var observation: LibraryChannelHistoryDefaultsObservation?
+    @ObservationIgnored private var observation: UserDefaultsObservation?
 
     public static func shared(namespace: String? = nil) -> LibraryChannelHistorySettings {
         let key = SettingsKey.scoped(baseKey, namespace: namespace)
@@ -29,7 +29,7 @@ public final class LibraryChannelHistorySettings {
         key = SettingsKey.scoped(Self.baseKey, namespace: namespace)
         isEnabled = defaults.bool(forKey: key)
         authorizationID = isEnabled ? UUID() : nil
-        observation = LibraryChannelHistoryDefaultsObservation { [weak self] in self?.reload() }
+        observation = UserDefaultsObservation { [weak self] in self?.reload() }
     }
 
     public func setEnabled(_ enabled: Bool) {
@@ -47,28 +47,5 @@ public final class LibraryChannelHistorySettings {
         guard enabled != isEnabled else { return }
         isEnabled = enabled
         authorizationID = enabled ? UUID() : nil
-    }
-}
-
-private final class LibraryChannelHistoryDefaultsObservation {
-    private let token: any NSObjectProtocol
-
-    init(onChange: @escaping @MainActor @Sendable () -> Void) {
-        // A different UserDefaults instance can write the same persistent domain.
-        token = NotificationCenter.default.addObserver(
-            forName: UserDefaults.didChangeNotification, object: nil, queue: nil
-        ) { _ in
-            if Thread.isMainThread {
-                MainActor.assumeIsolated { onChange() }
-            } else {
-                // NotificationCenter waits for queued observers. A main-queue
-                // observer deadlocks a writer when main is waiting for that work.
-                Task { @MainActor in onChange() }
-            }
-        }
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(token)
     }
 }

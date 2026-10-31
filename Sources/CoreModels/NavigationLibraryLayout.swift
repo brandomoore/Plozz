@@ -13,8 +13,8 @@ import Foundation
 ///
 /// Per the "build for flexibility" mandate, layout is DATA: an explicit order plus
 /// a hidden set, persisted per profile, resolved against the live library list via
-/// the shared ``OrderedVisibilityList`` so a newly discovered library appears
-/// (enabled, at the end) instead of silently vanishing.
+/// the shared ``OrderedVisibilityList``. Newly discovered keys are appended;
+/// each shell supplies their default visibility without persisting that default.
 public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
     /// Reserved keys for first-class destinations. Keeping these in the existing
     /// order/hidden payload preserves the on-disk format and profile scoping.
@@ -44,15 +44,21 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
     /// Explicit Show choices, distinct from destinations that happen to be
     /// useful today. Automatic visibility is never persisted in this set.
     public var shownKeys: Set<String>
+    /// Only Settings has a fixed trailing position in horizontal navigation.
+    public private(set) var settingsWasMoved: Bool
 
-    public init(order: [String] = [], hiddenKeys: Set<String> = [], shownKeys: Set<String> = []) {
+    public init(
+        order: [String] = [], hiddenKeys: Set<String> = [], shownKeys: Set<String> = [],
+        settingsWasMoved: Bool? = nil
+    ) {
         self.order = order
         self.hiddenKeys = hiddenKeys
         self.shownKeys = shownKeys.subtracting(hiddenKeys)
+        self.settingsWasMoved = settingsWasMoved ?? Self.legacySettingsWasMoved(order, hiddenKeys: hiddenKeys)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case order, hiddenKeys, shownKeys
+        case order, hiddenKeys, shownKeys, settingsWasMoved
     }
 
     public init(from decoder: any Decoder) throws {
@@ -64,6 +70,21 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
         shownKeys = try values.decodeIfPresent(Set<String>.self, forKey: .shownKeys)
             ?? Set(order.filter { Self.destinationKeys.contains($0) })
         shownKeys.subtract(hiddenKeys)
+        settingsWasMoved = try values.decodeIfPresent(Bool.self, forKey: .settingsWasMoved)
+            ?? Self.legacySettingsWasMoved(order, hiddenKeys: hiddenKeys)
+    }
+
+    public var pinsSettingsInTopBar: Bool {
+        !settingsWasMoved && !hiddenKeys.contains(Self.settingsKey)
+    }
+
+    public mutating func recordMove(of key: String) {
+        if key == Self.settingsKey { settingsWasMoved = true }
+    }
+
+    private static func legacySettingsWasMoved(_ order: [String], hiddenKeys: Set<String>) -> Bool {
+        let visibleOrder = order.filter { !hiddenKeys.contains($0) }
+        return visibleOrder.contains(Self.settingsKey) && visibleOrder.last != Self.settingsKey
     }
 
     /// No manual visibility choices. Shells supply content-aware visibility and

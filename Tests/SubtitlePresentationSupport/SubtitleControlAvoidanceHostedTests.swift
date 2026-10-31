@@ -153,6 +153,10 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
             return !self.frames(in: captions.view, relativeTo: window).isEmpty
         }
         let resting = try XCTUnwrap(frames(in: captions.view, relativeTo: window).first)
+        #if DEBUG
+        let line = try XCTUnwrap(subtitleLines(in: captions.view).first)
+        let builds = line.layoutBuildCountForTesting
+        #endif
         fixture.visible = true
         try await waitUntil {
             window.layoutIfNeeded()
@@ -180,13 +184,22 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
             return controls.subtitleLayout.frame == nil && abs(frame.maxY - resting.maxY) <= 1
         }
         XCTAssertEqual(model.style, originalStyle)
+        #if DEBUG
+        XCTAssertEqual(line.layoutBuildCountForTesting, builds, "Moving around controls must reuse shaped text")
+        #endif
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
         }
+
         let attachment = XCTAttachment(image: image)
         attachment.name = "Restored subtitle position after controls hide"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private func subtitleLines(in view: UIView) -> [SubtitleLineView] {
+        if let line = view as? SubtitleLineView { return [line] }
+        return view.subviews.flatMap { subtitleLines(in: $0) }
     }
 
     #if os(tvOS)

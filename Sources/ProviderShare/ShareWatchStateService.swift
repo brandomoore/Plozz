@@ -121,24 +121,52 @@ struct ShareWatchStateService: Sendable {
                   !episodes.isEmpty
             else { return season }
 
-            // A logical episode counts as watched when ANY of its files is —
-            // watching the 1080p rip means you have seen the episode.
-            let played = episodes.values.filter { $0.contains(where: \.played) }.count
-            let inProgress = episodes.values.contains { versions in
-                versions.contains { !$0.played && $0.position > 1 }
-            }
-            let latest = episodes.values.flatMap { $0 }.map(\.updatedAt).max()
-
-            var copy = season
-            copy.unwatchedEpisodeCount = episodes.count - played
-            copy.isPlayed = played == episodes.count
-            copy.playedPercentage = played > 0
-                ? min(1, Double(played) / Double(episodes.count))
-                : nil
-            copy.hasBeenPlayed = played > 0 || inProgress
-            copy.lastPlayedAt = latest
-            return copy
+            return Self.stampedContainer(season, episodes: Array(episodes.values))
         }
+    }
+
+    /// Indexed local reads only, for the bounded Home candidate window. All
+    /// share transports use the same profile/account-scoped watch store.
+    func stampRecentlyAdded(_ items: [MediaItem]) async throws -> [MediaItem] {
+        let catalog = await self.catalog()
+        var result = items
+        for index in result.indices {
+            try Task.checkCancellation()
+            let item = result[index]
+            guard item.kind == .series,
+                  let key = ShareCatalogID.seriesKey(forSeriesID: item.id) else { continue }
+            let identities = await catalog.episodeWatchIdentities(seriesKey: key)
+            let records = await watchStore.records(for: Set(identities.map(\.fileID)))
+            var episodes: [String: [ShareWatchStore.Record]] = [:]
+            for identity in identities {
+                let episode = "\(identity.season):\(identity.logicalKey)"
+                episodes[episode, default: []] += records[identity.fileID].map { [$0] } ?? []
+            }
+            result[index] = Self.stampedContainer(
+                item, episodes: Array(episodes.values), keepingActiveRewatches: true
+            )
+        }
+        try Task.checkCancellation()
+        return result
+    }
+
+    private static func stampedContainer(
+        _ item: MediaItem, episodes: [[ShareWatchStore.Record]], keepingActiveRewatches: Bool = false
+    ) -> MediaItem {
+        guard !episodes.isEmpty else { return item }
+        // A completed alternate copy must not hide an active Recently Added rewatch.
+        let played = episodes.filter { records in
+            records.contains(where: \.played)
+                && (!keepingActiveRewatches || !records.contains { !$0.played && $0.position > 1 })
+        }.count
+        let inProgress = episodes.contains { $0.contains { !$0.played && $0.position > 1 } }
+        var copy = item
+        copy.unwatchedEpisodeCount = episodes.count - played
+        copy.isPlayed = played == episodes.count
+        copy.playedPercentage = played > 0 ? Double(played) / Double(episodes.count) : nil
+        copy.hasBeenPlayed = played > 0 || inProgress
+        copy.lastPlayedAt = episodes.flatMap { $0 }.map(\.updatedAt).max()
+        return copy
     }
 
     /// Apply a resolved record onto an item (pure). Exposed so Continue Watching,

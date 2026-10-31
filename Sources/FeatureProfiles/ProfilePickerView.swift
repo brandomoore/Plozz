@@ -1,5 +1,6 @@
 #if os(tvOS)
 import SwiftUI
+import UIKit
 import CoreModels
 import CoreUI
 
@@ -26,6 +27,7 @@ public struct ProfilePickerView: View {
     /// than after a trip through Settings.
     private let onAddKidsProfile: (() -> Void)?
     private let onCancel: (() -> Void)?
+    private let onOpenSettings: (() -> Void)?
     private let showsPINLock: (Profile) -> Bool
 
     @Environment(\.themePalette) private var palette
@@ -39,6 +41,7 @@ public struct ProfilePickerView: View {
         onEditProfile: ((Profile) -> Void)? = nil,
         onAddKidsProfile: (() -> Void)? = nil,
         onCancel: (() -> Void)? = nil,
+        onOpenSettings: (() -> Void)? = nil,
         showsPINLock: @escaping (Profile) -> Bool = { $0.showsPINLock }
     ) {
         self.profiles = profiles
@@ -49,6 +52,7 @@ public struct ProfilePickerView: View {
         self.onEditProfile = onEditProfile
         self.onAddKidsProfile = onAddKidsProfile
         self.onCancel = onCancel
+        self.onOpenSettings = onOpenSettings
         self.showsPINLock = showsPINLock
     }
 
@@ -57,6 +61,7 @@ public struct ProfilePickerView: View {
     /// now has two focusable controls — the tile and its own Edit button — and
     /// the column needs to stay "open" while either of them is focused.
     @FocusState private var focus: PickerFocus?
+    @State private var hasFocusedProfile = false
 
     /// The profile the focus is currently within, whichever of its two controls
     /// holds it. Drives the background wash. `nil` while focus is on an Add tile
@@ -77,10 +82,6 @@ public struct ProfilePickerView: View {
 
     /// How long focus must rest on a tile before the background fades to it.
     private let backgroundSettleDelay: Duration = .milliseconds(300)
-    /// Guards the one-time programmatic initial focus so later re-renders don't
-    /// keep yanking focus back to the default tile.
-    @State private var didSetInitialFocus = false
-
     /// The profile whose colors the background should currently show. Before
     /// focus settles (i.e. at startup) it is pinned to the **default-focused**
     /// profile — the last-active one if there is one, else the first tile — which
@@ -96,7 +97,11 @@ public struct ProfilePickerView: View {
     /// last-active profile (so resuming is a single click), falling back to the
     /// first profile on a first-ever launch with no active profile.
     private var defaultFocusID: String? {
-        activeProfileID ?? profiles.first?.id
+        profiles.first { $0.id == activeProfileID }?.id ?? profiles.first?.id
+    }
+
+    private var awaitingInitialProfileFocus: Bool {
+        !profiles.isEmpty && !hasFocusedProfile
     }
 
     /// Resolve the *settled* (else default) tile's center into unit coordinates
@@ -163,6 +168,7 @@ public struct ProfilePickerView: View {
                                 onSelect(profile)
                             }
                             .focused($focus, equals: .profile(profile.id))
+                            .disabled(awaitingInitialProfileFocus && profile.id != defaultFocusID)
                             .anchorPreference(key: TileCentersKey.self, value: .center) {
                                 [profile.id: $0]
                             }
@@ -184,6 +190,7 @@ public struct ProfilePickerView: View {
                             action: onAddProfile
                         )
                         .focused($focus, equals: .add)
+                        .disabled(awaitingInitialProfileFocus)
                     }
                     if let onAddKidsProfile {
                         AddProfileTile(
@@ -193,6 +200,7 @@ public struct ProfilePickerView: View {
                             action: onAddKidsProfile
                         )
                         .focused($focus, equals: .addKids)
+                        .disabled(awaitingInitialProfileFocus)
                     }
                 }
                 .padding(.horizontal, ProfilePickerLayout.rowPadding)
@@ -205,12 +213,41 @@ public struct ProfilePickerView: View {
 
             if let onCancel {
                 Button("Cancel", action: onCancel)
+                    .disabled(awaitingInitialProfileFocus)
                     .padding(.top, 8)
                     .focusSection()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.vertical, 80)
+        .overlay(alignment: .topTrailing) {
+            if let onOpenSettings {
+                HStack {
+                    Spacer()
+                    Button(action: onOpenSettings) {
+                        Label("Settings", systemImage: "gearshape")
+                            .labelStyle(.iconOnly)
+                    }
+                    .plozzGlassPillButton(shape: .circle)
+                    .buttonBorderShape(.circle)
+                    .accessibilityIdentifier("profile-picker-settings")
+                    .disabled(awaitingInitialProfileFocus)
+                }
+                .padding(.horizontal, ProfilePickerLayout.rowPadding)
+                .padding(.top, 32)
+                .focusSection()
+            }
+        }
+        .background {
+            ProfilePickerFocusEntry(isPending: awaitingInitialProfileFocus) {
+                if let id = defaultFocusID { focus = .profile(id) }
+            }
+        }
+        .onChange(of: focus) { _, target in
+            if case .profile? = target {
+                hasFocusedProfile = true
+            }
+        }
         .backgroundPreferenceValue(TileCentersKey.self) { centers in
             GeometryReader { proxy in
                 ProfileBackgroundGradient(
@@ -231,25 +268,7 @@ public struct ProfilePickerView: View {
             do { try await Task.sleep(for: backgroundSettleDelay) } catch { return }
             settledProfileID = id
         }
-        .onAppear {
-            prefetchAvatars()
-            setInitialFocusIfNeeded()
-        }
-    }
-
-    /// Move focus to the default tile (last-used profile, else first) once when
-    /// the picker appears. tvOS's declarative `.defaultFocus` is unreliable with
-    /// `LazyVGrid`, so we set the `@FocusState` explicitly after a short runloop
-    /// hop — letting the focus engine finish its first pass — which dependably
-    /// pre-selects the right tile.
-    private func setInitialFocusIfNeeded() {
-        guard !didSetInitialFocus else { return }
-        didSetInitialFocus = true
-        guard let target = defaultFocusID else { return }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(50))
-            focus = .profile(target)
-        }
+        .onAppear(perform: prefetchAvatars)
     }
 
     /// Warm the decoded-image cache for every profile photo as soon as the picker
@@ -266,6 +285,101 @@ public struct ProfilePickerView: View {
             ArtworkImageCache.shared.prefetch(url, variant: .posterCard)
         }
         #endif
+    }
+}
+
+private struct ProfilePickerFocusEntry: UIViewControllerRepresentable {
+    let isPending: Bool
+    let onReady: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.onReady = isPending && isEnabled ? onReady : nil
+        controller.schedule()
+    }
+
+    static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
+        controller.stop()
+    }
+
+    final class Controller: UIViewController {
+        var onReady: (() -> Void)?
+        private var appeared = false
+        private var requested = false
+        private var displayLink: CADisplayLink?
+        private var crossedFrame = false
+
+        override func loadView() {
+            view = UIView()
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(schedule),
+                name: UIScene.didActivateNotification, object: nil
+            )
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(schedule),
+                name: UIWindow.didBecomeKeyNotification, object: nil
+            )
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            appeared = true
+            schedule()
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            schedule()
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            appeared = false
+            stopFrames()
+        }
+
+        private var isReady: Bool {
+            appeared && !requested && onReady != nil
+                && viewIfLoaded?.window?.isKeyWindow == true
+                && viewIfLoaded?.window?.windowScene?.activationState == .foregroundActive
+                && viewIfLoaded?.bounds.isEmpty == false
+        }
+
+        @objc func schedule() {
+            guard displayLink == nil, isReady else { return }
+            let link = CADisplayLink(target: self, selector: #selector(framePresented))
+            displayLink = link
+            link.add(to: .main, forMode: .common)
+        }
+
+        @objc private func framePresented() {
+            guard isReady else { stopFrames(); return }
+            // Cross the presentation commit before handing focus to the new screen.
+            guard crossedFrame else { crossedFrame = true; return }
+            stopFrames()
+            requested = true
+            onReady?()
+        }
+
+        private func stopFrames() {
+            displayLink?.invalidate()
+            displayLink = nil
+            crossedFrame = false
+        }
+
+        func stop() {
+            onReady = nil
+            stopFrames()
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
     }
 }
 

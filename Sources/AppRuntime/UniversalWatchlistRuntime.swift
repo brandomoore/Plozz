@@ -1215,7 +1215,8 @@ public extension UniversalWatchlistHost {
                     presentation: resolved.1.presentation,
                     presentationAccountID: resolved.1.presentationAccountID,
                     index: offset,
-                    attribution: resolved.1.attribution
+                    attribution: resolved.1.attribution,
+                    addedAt: resolved.1.addedAt
                 )
             }
             loadingView.applySuccess(
@@ -1359,7 +1360,8 @@ public extension UniversalWatchlistHost {
                     // until a later Home rebuild happened to find the full local
                     // MediaItem.
                     ownedPresentation: owned?.presentation,
-                    attribution: entry.attribution
+                    attribution: entry.attribution,
+                    addedAt: entry.addedAt
                 ) else { continue }
                 entries.append(value)
             }

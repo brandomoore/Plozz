@@ -77,21 +77,27 @@ struct SharePlaybackSourceService: Sendable {
         forVideoRelPath relPath: String,
         exactStemOnly: Bool = false
     ) async throws -> [MediaTrack] {
+        try Task.checkCancellation()
         let dir = (relPath as NSString).deletingLastPathComponent
         let videoStem = ShareMediaParser.videoStem((relPath as NSString).lastPathComponent)
 
         // Gather candidate (directory, entry, isDedicatedSubsFolder) triples from the
         // video's own folder and any sibling Subs/Subtitles folder. On a
-        // case-insensitive share (Windows/NTFS/exFAT/macOS-hosted SMB) "Subs" and
-        // "subs" resolve to the same folder, so dedup the probed candidates by a
-        // lowercased (dir, name) key to avoid surfacing every sidecar 2-4×.
+        // case-insensitive share, casing aliases must not duplicate tracks.
         var candidates: [(dir: String, name: String, dedicated: Bool)] = []
         var seenCandidateKeys = Set<String>()
-        let ownDir = dir
-        let subFolderNames = ["Subs", "Subtitles", "subs", "subtitles"]
+        let ownEntries = try await sidecarDirectoryEntries(dir)
+        // Use the real directory names rather than four speculative network
+        // requests. Keep the legacy probes when the parent cannot be listed.
+        let subFolderNames = ownEntries.map { entries in
+            Set(entries.filter {
+                $0.kind != .file && ["subs", "subtitles"].contains($0.name.lowercased())
+            }.map(\.name)).sorted()
+        } ?? ["Subs", "Subtitles", "subs", "subtitles"]
         let subDirs = subFolderNames.map { sub in dir.isEmpty ? sub : "\(dir)/\(sub)" }
-        for (listDir, dedicated) in [(ownDir, false)] + subDirs.map({ ($0, true) }) {
-            guard let entries = try? await store.rawEntries(inDirectory: listDir) else { continue }
+        for (listDir, dedicated) in [(dir, false)] + subDirs.map({ ($0, true) }) {
+            let entries = dedicated ? try await sidecarDirectoryEntries(listDir) : ownEntries
+            guard let entries else { continue }
             for entry in entries where entry.kind != .directory && ShareMediaParser.isSubtitleFile(entry.name) {
                 let key = "\(listDir.lowercased())/\(entry.name.lowercased())"
                 guard seenCandidateKeys.insert(key).inserted else { continue }
@@ -104,9 +110,15 @@ struct SharePlaybackSourceService: Sendable {
         var nextID = 5_000
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("plozz-sidecars", isDirectory: true)
-        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        } catch {
+            PlozzLog.playback.error("share.sidecars temporary directory unavailable")
+            return []
+        }
 
         for (candidateDir, name, dedicated) in candidates {
+            try Task.checkCancellation()
             guard let sidecar = ShareMediaParser.parseSidecar(name) else { continue }
             let matches = exactStemOnly
                 ? sidecar.stem.caseInsensitiveCompare(videoStem) == .orderedSame
@@ -118,13 +130,26 @@ struct SharePlaybackSourceService: Sendable {
             guard matches else { continue }
 
             let relSidecar = candidateDir.isEmpty ? name : "\(candidateDir)/\(name)"
-            guard let data = try? await store.readFile(relSidecar), !data.isEmpty else { continue }
+            let data: Data
+            do {
+                data = try await store.readFile(relSidecar)
+            } catch {
+                if error is CancellationError || (error as? MediaTransportError) == .cancelled {
+                    throw error
+                }
+                try Task.checkCancellation()
+                PlozzLog.playback.error("share.sidecars read unavailable")
+                continue
+            }
+            try Task.checkCancellation()
+            guard !data.isEmpty else { continue }
             // `.magnitude` (not `abs`) so `Int.min` can't trap; hex keeps it short.
             let stableKey = String(relSidecar.hashValue.magnitude, radix: 16)
             let localURL = tempDir.appendingPathComponent("\(stableKey)-\(name)")
             do {
                 try data.write(to: localURL, options: .atomic)
             } catch {
+                PlozzLog.playback.error("share.sidecars temporary file write failed")
                 continue
             }
             let language = sidecar.language
@@ -147,6 +172,20 @@ struct SharePlaybackSourceService: Sendable {
             nextID += 1
         }
         return tracks
+    }
+
+    private func sidecarDirectoryEntries(_ directory: String) async throws -> [RemoteFileEntry]? {
+        do {
+            try Task.checkCancellation()
+            return try await store.rawEntries(inDirectory: directory)
+        } catch {
+            if error is CancellationError || (error as? MediaTransportError) == .cancelled {
+                throw error
+            }
+            try Task.checkCancellation()
+            PlozzLog.playback.error("share.sidecars directory listing unavailable")
+            return nil
+        }
     }
 
     /// Whether a sidecar's parsed stem belongs to the video with `videoStem`.

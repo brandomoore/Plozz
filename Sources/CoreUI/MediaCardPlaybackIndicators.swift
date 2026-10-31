@@ -46,6 +46,7 @@ public struct MediaCardPlaybackIndicators: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzWatchStatusIndicator) private var watchStatusIndicator
     @Environment(\.plozzShowsUnwatchedEpisodeCount) private var showsUnwatchedEpisodeCount
+    @Environment(\.plozzShowsProgressBars) private var showsProgressBars
     @Environment(\.plozzEpisodeCountBadgeStyle) private var episodeCountStyle
     /// Whether an unowned title can be requested, or is merely flagged as absent.
     @Environment(\.plozzSeerConnected) private var seerConnected
@@ -189,7 +190,7 @@ public struct MediaCardPlaybackIndicators: View {
     }
 
     private var showsProgressBar: Bool {
-        MediaPlaybackIndicatorPresentation.showsProgress(for: playback)
+        showsProgressBars && MediaPlaybackIndicatorPresentation.showsProgress(for: playback)
     }
 
     /// Any chrome along the card's bottom edge that needs the artwork darkened
@@ -346,7 +347,7 @@ enum NativePosterIndicators: View, Equatable {
                 showsEpisodeCount: showsEpisodeCount, seerConnected: seerConnected
             ) != nil
         case let .episode(isWatched, hasProgress, isVisible, style, _, _):
-            return isVisible && (style == .watched ? isWatched : !isWatched && !hasProgress)
+            return isVisible && style != .hidden && (style == .watched ? isWatched : !isWatched && !hasProgress)
         }
     }
 
@@ -367,6 +368,8 @@ enum NativePosterIndicators: View, Equatable {
                         if !isWatched && !hasProgress {
                             MediaUnwatchedCorner(size: flagSize)
                         }
+                    case .hidden:
+                        EmptyView()
                     }
                 }
             }
@@ -562,6 +565,8 @@ enum MediaPlaybackIndicatorPresentation {
             return showsWatchedBadge(for: item, hidesStatus: hidesStatus) ? .watched : nil
         case .unwatched:
             return showsUnwatchedFlag(for: item, hidesStatus: hidesStatus) ? .unwatched : nil
+        case .hidden:
+            return nil
         }
     }
 

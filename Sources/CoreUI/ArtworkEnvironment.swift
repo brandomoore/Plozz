@@ -89,7 +89,7 @@ public extension EnvironmentValues {
             area = explicit
         } else {
             switch plozzCardCaptionView {
-            case .home: area = .homeRows
+            case .home, .homeLibraries: area = .homeRows
             case .recommended: area = .recommended
             case .search: area = .search
             case .watchlist: area = .watchlist

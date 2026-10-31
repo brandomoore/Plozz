@@ -62,7 +62,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                 state: touchGestures,
                 shortcutsEnabled: touchShortcutsEnabled,
                 levelsEnabled: keyboardShortcutsEnabled && viewModel.volumeBrightnessGesturesEnabled,
-                isActive: !isPlayingElsewhere && !isScrubbing && scenePhase == .active,
+                isActive: !isPlayingElsewhere && scenePhase == .active,
                 canSeek: viewModel.controls.duration.isFinite && viewModel.controls.duration > 0,
                 canBoost: !viewModel.controls.intendsPause
                     && viewModel.controls.engineCapabilities.contains(.playbackSpeed),

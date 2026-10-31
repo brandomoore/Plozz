@@ -103,6 +103,10 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
         try await verifyEntry(.seriesPage)
     }
 
+    func testGoToShowLoadsItsEpisodeRailBeforeResumeWithoutMovingFocus() async throws {
+        try await verifyEntry(.showNavigation)
+    }
+
     func testSeededMovieFocusDoesNotWaitForProviderDetails() async throws {
         try await verifyEntry(.moviePage)
     }
@@ -154,7 +158,13 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
         }
         capture(window, name: "detail-primary-pending-\(mode)")
         if let detail = model.detail {
-            XCTAssertFalse(detail.state.value?.childrenLoaded ?? true, "Provider work must still be pending.")
+            if mode == .showNavigation {
+                try await waitUntil { detail.episodes(for: "primary-season") != nil }
+                XCTAssertTrue(detail.isResolvingServerResume, "Resume must remain pending while the actual page loads its rail.")
+                XCTAssertEqual(detail.episodes(for: "primary-season")?.map(\.id), ["primary-episode"])
+            } else {
+                XCTAssertFalse(detail.state.value?.childrenLoaded ?? true, "Provider work must still be pending.")
+            }
             var expectedItem = openingItem
             if moveToSecondary {
                 let firstFrame = try XCTUnwrap(nativeFrame(openingItem, in: window))
@@ -301,11 +311,11 @@ private final class PrimaryFocusRecorder: NSObject {
 
 private enum PrimaryFocusMode {
     case loading, ready, request, awaitingRelease, seasons, seasonFailure
-    case seriesPage, moviePage, episodePage
+    case seriesPage, moviePage, episodePage, showNavigation
 
     var pageKind: MediaItemKind? {
         switch self {
-        case .seriesPage: .series
+        case .seriesPage, .showNavigation: .series
         case .moviePage: .movie
         case .episodePage: .episode
         default: nil
@@ -336,7 +346,7 @@ private final class PrimaryFocusModel {
         timing.zoom = 5
         entrance = usesEntrance ? TVDetailEntranceSession(timing: timing) : nil
         if let kind = mode.pageKind {
-            let provider = PrimaryFocusProvider(kind: kind, gate: gate)
+            let provider = PrimaryFocusProvider(kind: kind, gate: gate, holdsResume: mode == .showNavigation)
             detail = ItemDetailViewModel(
                 provider: provider, itemID: provider.seed.id, initialItem: provider.seed,
                 sourceAccountID: "fixture", onlineTrailerResolver: { _ in [] },
@@ -377,7 +387,10 @@ private struct PrimaryFocusRoot: View {
 
     @ViewBuilder private var destination: some View {
         if let detail = model.detail {
-            ItemDetailView(viewModel: detail, onPlay: { _ in }, onSelectChild: { _ in })
+            ItemDetailView(
+                viewModel: detail, onPlay: { _ in }, onSelectChild: { _ in },
+                initialSeasonID: model.mode == .showNavigation ? "primary-season" : nil
+            )
         } else {
             DetailHeroView(
                 item: MediaItem(
@@ -435,10 +448,12 @@ private actor PrimaryFocusLoadGate {
 private struct PrimaryFocusProvider: MediaProvider {
     let mediaKind: MediaItemKind
     let gate: PrimaryFocusLoadGate
+    let holdsResume: Bool
 
-    init(kind: MediaItemKind, gate: PrimaryFocusLoadGate) {
+    init(kind: MediaItemKind, gate: PrimaryFocusLoadGate, holdsResume: Bool = false) {
         mediaKind = kind
         self.gate = gate
+        self.holdsResume = holdsResume
     }
 
     var kind: ProviderKind { .jellyfin }
@@ -456,22 +471,33 @@ private struct PrimaryFocusProvider: MediaProvider {
                   runtime: 1800, allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture")
     }
     func item(id: String) async throws -> MediaItem {
-        await gate.wait()
+        if !holdsResume { await gate.wait() }
         try Task.checkCancellation()
         return seed
     }
     func children(of itemID: String) async throws -> [MediaItem] {
-        await gate.wait()
+        if !holdsResume { await gate.wait() }
         try Task.checkCancellation()
         guard mediaKind == .series else { return [] }
+        if holdsResume, itemID == seed.id {
+            return [MediaItem(
+                id: "primary-season", title: "Season 4", kind: .season, seasonNumber: 4,
+                allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture"
+            )]
+        }
         return [MediaItem(
             id: "primary-episode", title: "First episode", kind: .episode,
-            seasonNumber: 1, episodeNumber: 1, seriesID: seed.id,
+            seasonNumber: holdsResume ? 4 : 1, episodeNumber: 1, seriesID: seed.id,
+            seasonID: holdsResume ? "primary-season" : nil,
             runtime: 1800, allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture"
         )]
     }
     func libraries() async throws -> [MediaLibrary] { [] }
-    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func continueWatching(limit: Int) async throws -> [MediaItem] {
+        if holdsResume { await gate.wait() }
+        try Task.checkCancellation()
+        return []
+    }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         MediaPage(items: [], startIndex: 0, totalCount: 0)

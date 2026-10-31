@@ -13,7 +13,11 @@ and byte-source contracts live in `MediaTransportCore`.
   Configured HTTP shares permit credentials with an onboarding warning;
   HTTPS is recommended. This permission does not allow redirect downgrades.
   Password challenges enforce the immutable `PasswordAuthPolicy` and use
-  nonpersistent credentials. Descriptions and errors exclude secret values.
+  session-only credentials (`.forSession`). URLSession can reuse an accepted
+  challenge within that exact managed session rather than paying a 401 round
+  trip on every request. Credential storage remains disabled; account, revision,
+  origin, trust and role boundaries and retirement discard that learned state.
+  Descriptions and errors exclude secret values.
   Unsupported IIS NTLM/Negotiate protection spaces are declined at both session
   and task challenge callbacks, allowing URLSession to offer Basic or Digest.
   No credential is supplied to Windows authentication, and Digest-only policy
@@ -32,8 +36,10 @@ and byte-source contracts live in `MediaTransportCore`.
   extension properties cannot replace file identity or mark a file as a folder.
   CDATA and ordinary XML text are handled equivalently.
 - **Range safety**: identity encoding, exact `206`, matching `Content-Range`
-  offsets/total and body length. A two-byte GET (clamped to EOF) establishes the actual
-  representation's strongest usable validator. Every later read sends
+  offsets/total and body length. A bounded GET establishes the actual
+  representation's strongest usable validator. Two bytes remain the default;
+  playback opening of files at least 256 KiB retains a validated 256 KiB prefix.
+  Reads wholly inside it reuse those exact bytes; every later network read sends
   `If-Match` for a strong ETag, or `If-Unmodified-Since` for Last-Modified, and
   requires the same response validator. Weak ETags alone are insufficient.
   Missing/changed validators, HTTP 412, changed sizes, ignored ranges and
@@ -90,6 +96,25 @@ to the DAV ETag. The actual GET validator is pinned for the source lease.
 Same-origin comparable DAV/GET validators and all declared sizes must agree.
 The probe retains Last-Modified even when a stronger GET ETag is selected for
 reads, so a date-based locator cannot skip its modification-time comparison.
+For playback files at least 256 KiB, the opening probe also supplies the first
+media window, avoiding a separate two-byte request followed by a header GET.
+Its complete body, offsets, size and validator are checked before any prefix
+bytes become readable. The immutable prefix belongs to the source lease, not a
+shared URL cache; cancellation and cursor retirement still apply. Reads crossing
+its boundary use the normal conditional range path. Small files, non-playback
+roles and GET-only identity discovery keep the two-byte probe. The tradeoff is
+up to 256 KiB retained per source, and potentially unnecessary prefix bytes for
+a consumer that starts elsewhere or requests a larger first window. Remote
+cache revalidation is unchanged.
+
+Before a playback lease exists, an anonymous delivery connection failure
+(`URLError.cannotConnectToHost`, -1004) permits exactly one fresh opening.
+That opening repeats DAV identity/size validation before resolving another
+delivery URL, then validates the complete new prefix. Recovery is recorded in
+the `webdav` unified log without URLs or account data. Timeouts, TLS errors,
+authentication/HTTP refusals, malformed ranges and cancellation do not trigger
+this recovery; neither do DAV-origin failures or non-playback roles. Active
+leases never refresh their pinned URL or validator, including after read failures.
 
 Last-Modified is **change-detecting, not immutable**: it has one-second
 precision and cannot detect a server replacing bytes while preserving both
@@ -175,7 +200,7 @@ including repeated reads and rejection under Digest-only policy.
 
 The owned matrix also covers Apache Digest authentication, rclone with MD5 ETags,
 and Nextcloud/SabreDAV. Nextcloud 32.0.15 returned the entire resource for
-`Range: bytes=0-0` despite HTTP 206. Probes therefore request `bytes=0-1`, retain
-a strict two-byte response cap, and require exact offsets and body length
-(or one byte when the total resource length is one). This avoids the zero-end
+`Range: bytes=0-0` despite HTTP 206. Default probes therefore request `bytes=0-1`;
+playback-prefetch probes request `bytes=0-262143`. Both retain an exact response
+cap and require matching offsets and body length (clamped only at EOF). This avoids the zero-end
 quirk without accepting whole-file responses or relaxing validator checks.

@@ -26,18 +26,24 @@ public final class PendingPlayRequest {
         public let reference: TopShelf.ItemReference
     }
 
-    public private(set) var request: Request?
+    private var pendingRequest: Request?
+    @ObservationIgnored private let isAuthorized: @MainActor () -> Bool
 
-    public init() {}
+    /// Keep locked-profile links queued without waking navigation or playback.
+    public var request: Request? { isAuthorized() ? pendingRequest : nil }
+
+    public init(isAuthorized: @escaping @MainActor () -> Bool = { true }) {
+        self.isAuthorized = isAuthorized
+    }
 
     public func enqueue(_ reference: TopShelf.ItemReference) {
-        request = Request(id: UUID(), reference: reference)
+        pendingRequest = Request(id: UUID(), reference: reference)
     }
 
     /// A completed fetch cannot consume a newer action, even for the same title.
     public func consume(_ expected: Request) -> Bool {
         guard request == expected else { return false }
-        request = nil
+        pendingRequest = nil
         return true
     }
 }

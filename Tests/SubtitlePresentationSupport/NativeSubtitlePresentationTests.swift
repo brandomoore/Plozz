@@ -809,6 +809,97 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         }
     }
 
+    #if DEBUG
+    func testSidecarLinesRenderDuringUninterruptedPlaybackWithoutControls() async throws {
+        for liveClock in [false, true] {
+            let engine = NativeVideoEngine(startsMuted: true)
+            let model = LiveSubtitleModel()
+            model.style.followsSystemStyle = false
+            model.loadPrimary(SubtitleCueParser.parse("""
+            1
+            00:00:01,000 --> 00:00:02,000
+            First line
+
+            2
+            00:00:02,000 --> 00:00:03,000
+            A longer second line
+            with another row
+
+            3
+            00:00:03,500 --> 00:00:04,500
+            Last line
+            """))
+            let controls = PlayerControlsModel()
+            controls.controlsVisible = false
+            let window = try await mount(engine, subtitles: model, liveClock: liveClock, controls: controls)
+            defer { engine.stop(); window.isHidden = true; window.rootViewController = nil }
+            await engine.load(request: request(try fixtureURL("embedded.mp4"), tracks: []), startPosition: 0)
+            try await waitUntil { engine.underlyingPlayer?.currentItem?.status == .readyToPlay }
+            engine.selectSubtitleTrack(nil)
+            engine.play()
+            for text in ["First line", "A longer second line\nwith another row", "Last line"] {
+                try await waitUntil(timeout: 8, detail: "Expected \(text), liveClock=\(liveClock)") {
+                    model.primary.first?.text == text && self.paintedCaptionTexts(in: window) == [text]
+                }
+                XCTAssertFalse(engine.isPaused)
+                XCTAssertFalse(controls.controlsVisible)
+                XCTAssertTrue(controls.subtitleLayout.frames.isEmpty)
+            }
+            try await waitUntil {
+                engine.currentTime >= 4.5 && model.primary.isEmpty && self.paintedCaptionTexts(in: window).isEmpty
+            }
+        }
+    }
+
+    func testRevisedLiveCueBecomesVisibleWithoutPauseOrControlChanges() async throws {
+        let engine = NativeVideoEngine(startsMuted: true)
+        let model = LiveSubtitleModel()
+        model.style.followsSystemStyle = false
+        model.beginLiveFeed()
+        model.updateLiveCues([.init(id: 1, start: 0, end: 60, body: .text(.init("")))])
+        let controls = PlayerControlsModel()
+        controls.controlsVisible = false
+        let window = try await mount(engine, subtitles: model, controls: controls)
+        defer { engine.stop(); window.isHidden = true; window.rootViewController = nil }
+        await engine.load(request: request(try fixtureURL("embedded.mp4"), tracks: []), startPosition: 0)
+        try await waitUntil { engine.underlyingPlayer?.currentItem?.status == .readyToPlay }
+        engine.selectSubtitleTrack(nil)
+        engine.play()
+        try await waitUntil(detail: "time=\(engine.currentTime), paused=\(engine.isPaused), status=\(engine.status)") {
+            engine.currentTime >= 1 && !engine.isPaused
+        }
+        XCTAssertTrue(paintedCaptionTexts(in: window).isEmpty)
+        model.updateLiveCues([.init(id: 1, start: 0, end: 60, body: .text(.init("Now visible")))])
+        try await waitUntil {
+            model.primary.first?.text == "Now visible" && self.paintedCaptionTexts(in: window) == ["Now visible"]
+        }
+        XCTAssertFalse(engine.isPaused)
+        XCTAssertFalse(controls.controlsVisible)
+        XCTAssertTrue(controls.subtitleLayout.frames.isEmpty)
+        let line = try XCTUnwrap(paintedCaptionLines(in: window).first)
+        let builds = line.layoutBuildCountForTesting
+        let draws = line.drawCountForTesting
+        let time = engine.currentTime
+        try await waitUntil { engine.currentTime >= time + 0.5 }
+        XCTAssertEqual(line.layoutBuildCountForTesting, builds, "Clock ticks must not reshape an unchanged cue")
+        XCTAssertEqual(line.drawCountForTesting, draws, "Clock ticks must not redraw an unchanged cue")
+    }
+
+    private func paintedCaptionTexts(in view: UIView) -> [String] {
+        paintedCaptionLines(in: view).compactMap(\.drawnTextForTesting)
+    }
+
+    private func paintedCaptionLines(in view: UIView) -> [SubtitleLineView] {
+        guard !view.isHidden, view.alpha > 0 else { return [] }
+        if let line = view as? SubtitleLineView {
+            guard line.bounds.width > 0, line.bounds.height > 0,
+                  line.layer.contents != nil, line.drawnTextForTesting != nil else { return [] }
+            return [line]
+        }
+        return view.subviews.flatMap { paintedCaptionLines(in: $0) }
+    }
+    #endif
+
     private func assertOnlySuppressedOutput(_ engine: NativeVideoEngine) throws {
         let item = try XCTUnwrap(engine.underlyingPlayer?.currentItem)
         let outputs = item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }

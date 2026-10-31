@@ -9,6 +9,22 @@ final class SubtitleCueStoreTests: XCTestCase {
                     body: .text(SubtitleText("cue \(id)", alignment: alignment)))
     }
 
+    func testCueEqualityIncludesTextAndPresentationChanges() {
+        let original = textCue(1, 1, 3)
+        XCTAssertEqual(original, original)
+        for text in [
+            SubtitleText("Replacement"),
+            SubtitleText("cue 1", isItalic: true),
+            SubtitleText("cue 1", isBold: true),
+            SubtitleText("cue 1", alignment: .topCenter),
+            SubtitleText(runs: [.init("cue 1", color: .yellow)])
+        ] {
+            var revised = original
+            revised.body = .text(text)
+            XCTAssertNotEqual(original, revised)
+        }
+    }
+
     // MARK: Indexed query parity with the naive filter
 
     func testActiveMatchesNaiveAcrossTimeline() {

@@ -3,6 +3,62 @@ import CoreModels
 @testable import FeatureHomeCore
 
 final class HomePresentationRowTests: XCTestCase {
+    func testWatchedFilterUsesOverflowWithoutChangingHeroOrOtherRows() throws {
+        let items = (0..<80).map {
+            MediaItem(id: "\($0)", title: "Movie \($0)", kind: .movie, isPlayed: $0 < 30)
+        }
+        let content = HomeViewModel.Content(
+            continueWatching: [items[0]], latest: Array(items.prefix(20)), watchlist: [items[1]],
+            recentlyAddedCandidates: items
+        )
+        let raw = HomeRow.rows(for: content, isLibraryVisible: { _ in true })
+        var visibility = HomeLibraryVisibility(hideWatchedRecentlyAdded: true)
+        func recent(_ rows: [HomePresentationRow]) -> [MediaItem] {
+            guard case let .home(row) = rows.first(where: { $0.id == .global(.recentlyAdded) })?.source else { return [] }
+            return row.items
+        }
+        let filtered = HomePresentationRow.resolve(rows: raw, content: content, visibility: visibility)
+        XCTAssertEqual(recent(filtered).map(\.id), (30..<50).map(String.init))
+        XCTAssertEqual(filtered.map(\.id), [.global(.continueWatching), .global(.watchlist), .global(.recentlyAdded)])
+        XCTAssertEqual(content.latest.map(\.id), (0..<20).map(String.init))
+        visibility.hideWatchedRecentlyAdded = false
+        XCTAssertEqual(recent(HomePresentationRow.resolve(
+            rows: raw, content: content, visibility: visibility
+        )).map(\.id), (0..<20).map(String.init))
+        let restored = try JSONDecoder().decode(HomeViewModel.Content.self, from: JSONEncoder().encode(content))
+        XCTAssertEqual(restored.recentlyAddedCandidates, items)
+    }
+
+    func testAllWatchedRecentRowsDisappearButRecommendationsRemain() {
+        let source = library("a")
+        let played = MediaItem(id: "done", title: "Done", kind: .movie, isPlayed: true)
+        let recent = HomeServerRowDefinition(
+            accountID: "a", serverName: "Server", providerKind: .silo,
+            section: .init(id: "recent", kind: .recentlyAdded)
+        )
+        let picks = HomeServerRowDefinition(
+            accountID: "a", serverName: "Server", providerKind: .silo,
+            section: .init(id: "picks", kind: .recommendations)
+        )
+        let content = HomeViewModel.Content(
+            latest: [played], libraries: [source],
+            librarySections: [.init(library: source, sections: [
+                .init(id: "recentlyAdded", title: "Recent", items: [played])
+            ])],
+            serverRows: [.init(definition: recent, items: [played]), .init(definition: picks, items: [played])]
+        )
+        let visibility = HomeLibraryVisibility(
+            rowCustomization: .init(defaults: .custom, shown: [
+                .global(.recentlyAdded), .library(source.key, kind: .recentlyAdded), recent.id, picks.id
+            ], serverRows: [recent, picks]), hideWatchedRecentlyAdded: true
+        )
+        let rows = HomePresentationRow.resolve(
+            rows: HomeRow.rows(for: content, isLibraryVisible: { _ in true }),
+            content: content, visibility: visibility
+        )
+        XCTAssertEqual(rows.map(\.id), [picks.id])
+    }
+
     func testBothPresetsPutLibrariesLastInHomeAndTheArrangerWithLiveAndFallbackRows() {
         let source = library("a")
         let item = MediaItem(id: "movie", title: "Movie", kind: .movie)

@@ -30,6 +30,7 @@ struct MusicLandingView: View {
             }
             // Never clip a focused card's lift, shadow or border.
             .scrollClipDisabled()
+            .scrollsTopNavigation()
         }
         .navigationEntryFocus(viewModel.state == .idle || viewModel.state.isLoading ? .pending : nil)
         .task { if case .idle = viewModel.state { await viewModel.load() } }

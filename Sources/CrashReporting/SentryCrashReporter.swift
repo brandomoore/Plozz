@@ -101,6 +101,7 @@ public final class SentryCrashReporter: CrashReporter {
 
         isActive = true
         PerformanceDiagnostics.shared.start()
+        SearchDiagnosticJournal.shared.start()
         SiloSetupDiagnostics.shared.start { diagnostic in
             guard SentrySDK.isEnabled, let event = Self.siloSetupEvent(diagnostic) else { return }
             SentrySDK.capture(event: event)
@@ -132,6 +133,7 @@ public final class SentryCrashReporter: CrashReporter {
     public func stop() {
         guard isActive else { return }
         PerformanceDiagnostics.shared.stop()
+        SearchDiagnosticJournal.shared.stop()
         SiloSetupDiagnostics.shared.stop()
         DeviceSetupDiagnostics.shared.stop()
         for observer in diagnosticObservers { NotificationCenter.default.removeObserver(observer) }

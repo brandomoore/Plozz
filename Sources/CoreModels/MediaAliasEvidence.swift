@@ -81,17 +81,20 @@ public struct MediaAliasWeakEvidence: Codable, Hashable, Sendable, Comparable {
 public struct MediaAliasPresentation: Codable, Hashable, Sendable {
     public var title: String
     public var year: Int?
+    public var releaseDate: Date?
     public var artworkURL: String?
     public var backdropURL: String?
 
     public init(
         title: String,
         year: Int? = nil,
+        releaseDate: Date? = nil,
         artworkURL: String? = nil,
         backdropURL: String? = nil
     ) {
         self.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         self.year = year
+        self.releaseDate = releaseDate
         self.artworkURL = SyncURLSanitizer.sanitize(string: artworkURL)
         self.backdropURL = SyncURLSanitizer.sanitize(string: backdropURL)
     }
@@ -100,6 +103,7 @@ public struct MediaAliasPresentation: Codable, Hashable, Sendable {
         Self(
             title: title,
             year: year,
+            releaseDate: releaseDate,
             artworkURL: artworkURL,
             backdropURL: backdropURL
         )
@@ -361,6 +365,7 @@ public struct MediaAliasEvidence: Codable, Hashable, Sendable {
             presentation: MediaAliasPresentation(
                 title: item.title,
                 year: item.productionYear,
+                releaseDate: item.releaseDate,
                 artworkURL: item.posterURL?.absoluteString,
                 backdropURL: (item.heroBackdropURL ?? item.backdropURL)?.absoluteString
             ),

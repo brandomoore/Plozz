@@ -113,8 +113,8 @@ public struct SubtitleCueStream: Identifiable, Sendable {
 }
 
 extension SubtitleCueStream: Equatable {
-    /// Identity + cue-identity equality (never compares bitmap contents), mirroring
-    /// ``SubtitleCue``'s cheap, diffing-oriented equality.
+    /// Includes cue payload revisions; bitmap equality compares image identity,
+    /// never pixel contents.
     public static func == (lhs: SubtitleCueStream, rhs: SubtitleCueStream) -> Bool {
         lhs.id == rhs.id && lhs.metadata == rhs.metadata && lhs.cues == rhs.cues
     }

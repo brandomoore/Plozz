@@ -285,12 +285,66 @@ public struct MediaSourceMetadata: Hashable, Sendable, Codable {
     }
 }
 
+/// Server decisions are evidence, not permission to bypass a required conversion.
+public struct PlaybackServerDecision: Codable, Hashable, Sendable {
+    public let sourceBitrate: Int?
+    public let clientMaxBitrate: Int?
+    public let supportsDirectPlay: Bool?
+    public let supportsDirectStream: Bool?
+    public let supportsTranscoding: Bool?
+    public let subtitleBurnIn: Bool
+    public let transcodeReasons: [String]?
+
+    public init(
+        sourceBitrate: Int?, clientMaxBitrate: Int?,
+        supportsDirectPlay: Bool?, supportsDirectStream: Bool?, supportsTranscoding: Bool?,
+        subtitleBurnIn: Bool, transcodeReasons: [String]?
+    ) {
+        self.sourceBitrate = sourceBitrate.flatMap { Self.validBitrate($0) ? $0 : nil }
+        self.clientMaxBitrate = clientMaxBitrate.flatMap { Self.validBitrate($0) ? $0 : nil }
+        self.supportsDirectPlay = supportsDirectPlay
+        self.supportsDirectStream = supportsDirectStream
+        self.supportsTranscoding = supportsTranscoding
+        self.subtitleBurnIn = subtitleBurnIn
+        self.transcodeReasons = transcodeReasons.map { reasons in
+            var seen = Set<String>()
+            return reasons.prefix(32).map { Self.allowedReasons.contains($0) ? $0 : "Other" }
+                .filter { seen.insert($0).inserted }
+        }
+    }
+
+    var isValid: Bool {
+        sourceBitrate.map(Self.validBitrate) != false
+            && clientMaxBitrate.map(Self.validBitrate) != false
+            && transcodeReasons.map {
+                $0.count <= 32 && $0.allSatisfy(Self.allowedReasons.contains)
+            } != false
+    }
+
+    private static func validBitrate(_ value: Int) -> Bool { (1...Int(Int32.max)).contains(value) }
+
+    private static let allowedReasons: Set<String> = [
+        "ContainerNotSupported", "VideoCodecNotSupported", "AudioCodecNotSupported",
+        "SubtitleCodecNotSupported", "AudioIsExternal", "SecondaryAudioNotSupported",
+        "StreamCountExceedsLimit", "VideoProfileNotSupported", "VideoRangeTypeNotSupported",
+        "VideoCodecTagNotSupported", "VideoLevelNotSupported", "VideoResolutionNotSupported",
+        "VideoBitDepthNotSupported", "VideoFramerateNotSupported", "VideoRotationNotSupported",
+        "RefFramesNotSupported", "AnamorphicVideoNotSupported", "InterlacedVideoNotSupported",
+        "AudioChannelsNotSupported", "AudioProfileNotSupported", "AudioSampleRateNotSupported",
+        "AudioBitDepthNotSupported", "ContainerBitrateExceedsLimit", "VideoBitrateNotSupported",
+        "AudioBitrateNotSupported", "UnknownVideoStreamInfo", "UnknownAudioStreamInfo",
+        "DirectPlayError", "Other"
+    ]
+}
+
 /// Everything `FeaturePlayback` needs to start playing an item.
 ///
 /// Built by a provider's `playbackInfo(for:)`. The provider decides whether to
 /// direct-play or transcode and hands back either a legacy resolved URL or a
 /// credential-free typed source.
 public struct PlaybackRequest: Hashable, Sendable {
+    /// Bounded server negotiation facts, retained for optional diagnostic exports.
+    public var serverDecision: PlaybackServerDecision?
     /// Library channels own a separate interval-based reporting path; accidental
     /// use in the ordinary reporter must still fail closed.
     public var suppressOrdinaryWatchReporting: Bool = false

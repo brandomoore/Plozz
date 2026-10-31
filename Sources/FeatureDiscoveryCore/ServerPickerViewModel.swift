@@ -248,7 +248,7 @@ public final class ServerPickerViewModel {
             if generation == validationGeneration, phase == .validating { phase = .idle }
         }
         do {
-            let server = try await validator.validate(rawURL: text)
+            let server = try await validator.resolveManualAddress(text)
             guard !Task.isCancelled, generation == validationGeneration else { return nil }
             select(server)
             return server

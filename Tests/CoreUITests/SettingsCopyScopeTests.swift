@@ -15,6 +15,10 @@ final class SettingsCopyScopeTests: XCTestCase {
         XCTAssertTrue(automatic.contains("Sentry"), automatic)
         XCTAssertTrue(automatic.contains("screen categories"), automatic)
         XCTAssertTrue(automatic.contains("performance"), automatic)
+        XCTAssertTrue(automatic.contains("Automatically"), automatic)
+        XCTAssertTrue(automatic.contains("crash reports"), automatic)
+        XCTAssertEqual(resolve(SettingsCopy.shareDiagnostics), "Share Diagnostics")
+        XCTAssertTrue(resolve(SettingsCopy.diagnosticSharingRequired).contains("Share Diagnostics"))
         XCTAssertFalse(automatic.localizedCaseInsensitiveContains("anonymous"), automatic)
     }
 
@@ -22,8 +26,12 @@ final class SettingsCopyScopeTests: XCTestCase {
         let manual = resolve(SettingsCopy.manualDiagnostics)
         XCTAssertTrue(manual.contains("Sentry"), manual)
         XCTAssertTrue(manual.contains("playback and connection"), manual)
-        XCTAssertTrue(manual.contains("optional message"), manual)
+        XCTAssertTrue(manual.contains("search"), manual)
+        XCTAssertTrue(manual.contains("your message"), manual)
+        XCTAssertFalse(manual.contains("optional"), manual)
+        XCTAssertEqual(resolve(SettingsCopy.diagnosticsMessage), "Message (required)")
         XCTAssertTrue(manual.contains("Don't include passwords or personal information"), manual)
+        XCTAssertEqual(resolve(SettingsCopy.diagnosticsMessagePrivacy), "Don't include passwords or personal information.")
         XCTAssertFalse(manual.localizedCaseInsensitiveContains("anonymous"), manual)
     }
 

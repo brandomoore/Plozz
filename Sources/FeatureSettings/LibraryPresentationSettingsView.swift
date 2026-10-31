@@ -34,7 +34,7 @@ public struct LibraryPresentationSettingsView: View {
     }
 
     public var body: some View {
-        HomeEditorPage(title: Text("Customize Libraries"), showsHeader: true) {
+        HomeEditorPage(title: Text("Libraries"), showsHeader: true) {
             HomeEditorLink {
                 LibraryNavigationSettingsView(model: model)
             } label: {

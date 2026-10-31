@@ -359,13 +359,81 @@ final class WebDAVMediaTransportTests: XCTestCase {
         XCTAssertTrue(bytes.prefix(length / 2).allSatisfy { $0 == 42 })
         XCTAssertTrue(bytes.suffix(length / 2).allSatisfy { $0 == 42 })
         let reads = StubURLProtocol.requests(for: url).filter {
-            $0.httpMethod == "GET" && $0.value(forHTTPHeaderField: "Range") != "bytes=0-1"
+            $0.httpMethod == "GET" && $0.value(forHTTPHeaderField: "If-Match") != nil
         }
         XCTAssertEqual(reads.count, 1)
         XCTAssertEqual(Set(reads.compactMap { $0.value(forHTTPHeaderField: "Range") }), [
             "bytes=\(offset)-\(offset + length - 1)"
         ])
         XCTAssertTrue(reads.allSatisfy { $0.value(forHTTPHeaderField: "If-Match") == "\"strong-1\"" })
+    }
+
+    func testPlaybackReusesValidatedPrefixWithoutAnotherGET() async throws {
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let length = RangeProbe.initialReadByteCount
+        let cursor = try await openLargeSource(total: 1_000_000)
+        for (offset, count) in [(0, length), (7, 100), (length - 1, 1)] {
+            let data = try await cursor.read(at: Int64(offset), length: count)
+            XCTAssertEqual(data, Data(repeating: 42, count: count))
+        }
+        let requests = StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }
+        XCTAssertEqual(requests.count, 1, "The validated probe is already the first media window")
+        XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "Range"), "bytes=0-\(length - 1)")
+        queueReadHalf(url: url, offset: length - 2, length: 4, total: 1_000_000, byte: 7)
+        let crossing = try await cursor.read(at: Int64(length - 2), length: 4)
+        XCTAssertEqual(crossing, Data(repeating: 7, count: 4))
+        XCTAssertEqual(StubURLProtocol.requests(for: url).last?.value(forHTTPHeaderField: "If-Match"), "\"strong-1\"")
+    }
+
+    func testLargeMetadataOpenKeepsTwoByteProbe() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        queueStat(size: 1_000_000)
+        StubURLProtocol.queue(
+            StubResponse(
+                statusCode: 206, headers: ["ETag": "\"strong-1\"", "Content-Range": "bytes 0-1/1000000"],
+                body: Data([42, 42])
+            ), for: url
+        )
+        let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .metadata))
+        addTeardownBlock { await session.shutdown() }
+        let lease = try await session.fileSystem.openSource(
+            for: strongETagLocator(size: 1_000_000, revision: revision)
+        )
+        XCTAssertEqual(StubURLProtocol.requests(for: url).last?.value(forHTTPHeaderField: "Range"), "bytes=0-1")
+        lease.close()
+        await lease.waitForFinalShutdown()
+    }
+
+    func testPrefetchedBytesStillRespectCancellationAndLeaseClosure() async throws {
+        let cursor = try await openLargeSource(total: 1_000_000)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await cursor.read(at: 0, length: 4)
+        }
+        do {
+            _ = try await task.value
+            XCTFail("Cancelled work must not return cached bytes")
+        } catch is CancellationError {
+        } catch let error as MediaTransportError {
+            XCTAssertEqual(error, .cancelled)
+        }
+        cursor.close()
+        do {
+            _ = try await cursor.read(at: 0, length: 4)
+            XCTFail("Closed cursors must not return cached bytes")
+        } catch let error as MediaTransportError {
+            XCTAssertEqual(error, .cancelled)
+        }
+    }
+
+    func testChangedPrefetchedRepresentationNeverBecomesReadable() async throws {
+        do {
+            _ = try await openLargeSource(total: 1_000_000, probeETag: "\"changed\"")
+            XCTFail("A matching body cannot override a changed validator")
+        } catch let error as MediaTransportError {
+            guard case .sourceChanged = error else { return XCTFail("Unexpected error: \(error)") }
+        }
     }
 
     @MainActor
@@ -455,25 +523,25 @@ final class WebDAVMediaTransportTests: XCTestCase {
         XCTAssertEqual(bytes.suffix(7), Data(repeating: 42, count: 7))
     }
 
-    private func openLargeSource(total: Int) async throws -> MediaTransportSourceCursor {
+    private func openLargeSource(total: Int, probeETag: String = "\"strong-1\"") async throws -> MediaTransportSourceCursor {
         let revision = CredentialRevision()
         let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
         queueStat(size: total)
         StubURLProtocol.queue(
             StubResponse(
                 statusCode: 206,
-                headers: ["ETag": "\"strong-1\"", "Content-Range": "bytes 0-1/\(total)"],
-                body: Data([42, 42])
+                headers: ["ETag": probeETag, "Content-Range": "bytes 0-\(RangeProbe.initialReadByteCount - 1)/\(total)"],
+                body: Data(repeating: 42, count: RangeProbe.initialReadByteCount)
             ), for: url
         )
         let session = try await makeAdapter().connect(for: try makeKey(revision: revision, role: .playback))
+        addTeardownBlock { await session.shutdown() }
         let locator = try strongETagLocator(size: Int64(total), revision: revision)
         let lease = try await session.fileSystem.openSource(for: locator)
         let cursor = try XCTUnwrap(lease.makeCursor())
         addTeardownBlock {
             cursor.close()
             await lease.waitForFinalShutdown()
-            await session.shutdown()
         }
         return cursor
     }
@@ -766,6 +834,187 @@ final class WebDAVMediaTransportTests: XCTestCase {
         let cursor = try XCTUnwrap(lease.makeCursor())
         let data = try await cursor.read(at: 0, length: 10)
         XCTAssertEqual(data.count, 10)
+    }
+
+    func testPlaybackRecoversOneDeliveryConnectionFailureAndPinsTheRecoveredLease() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let failed = URL(string: "https://cdn.example.com/movie?grant=old")!
+        let recovered = URL(string: "https://cdn.example.com/movie?grant=new")!
+        queueStat(size: 300000)
+        StubURLProtocol.queue(redirect: StubRedirect(location: failed), for: url)
+        StubURLProtocol.queue(error: URLError(.cannotConnectToHost), for: failed)
+        queueStat(size: 300000)
+        StubURLProtocol.queue(redirect: StubRedirect(location: recovered), for: url)
+        let prefix = Data(repeating: 7, count: RangeProbe.initialReadByteCount)
+        StubURLProtocol.queue(
+            StubResponse(
+                statusCode: 206, headers: ["ETag": "\"cdn-new\"", "Content-Range": "bytes 0-262143/300000"],
+                body: prefix
+            ), for: recovered
+        )
+        let session = try await makeAdapter(credential: .bearerToken("dav-secret")).connect(
+            for: makeKey(revision: revision, role: .playback)
+        )
+        let lease = try await session.fileSystem.openSource(for: strongETagLocator(size: 300000, revision: revision))
+        let cursor = try XCTUnwrap(lease.makeCursor())
+        let bytes = try await cursor.read(at: 0, length: 16)
+        XCTAssertEqual(bytes, prefix.prefix(16))
+        XCTAssertEqual(StubURLProtocol.requests(for: recovered).count, 1)
+
+        StubURLProtocol.queue(error: URLError(.cannotConnectToHost), for: recovered)
+        do {
+            _ = try await cursor.read(at: 262144, length: 4)
+            XCTFail("an active lease must not refresh its delivery URL")
+        } catch let error as MediaTransportError {
+            XCTAssertEqual(error, .transport(code: URLError.cannotConnectToHost.rawValue))
+        }
+        XCTAssertEqual(StubURLProtocol.requests(for: url).map(\.httpMethod), ["PROPFIND", "GET", "PROPFIND", "GET"])
+        for request in StubURLProtocol.requests(for: url) {
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer dav-secret")
+        }
+        for request in StubURLProtocol.requests(for: failed) + StubURLProtocol.requests(for: recovered) {
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        }
+        XCTAssertEqual(StubURLProtocol.requests(for: recovered).last?.value(forHTTPHeaderField: "If-Match"), "\"cdn-new\"")
+        await session.shutdown()
+    }
+
+    func testDeliveryConnectionRecoveryStopsAfterOneFreshOpening() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let cdn = URL(string: "https://cdn.example.com/movie")!
+        for _ in 0..<2 {
+            queueStat()
+            StubURLProtocol.queue(redirect: StubRedirect(location: cdn), for: url)
+            StubURLProtocol.queue(error: URLError(.cannotConnectToHost), for: cdn)
+        }
+        let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .playback))
+        do {
+            _ = try await session.fileSystem.openSource(for: strongETagLocator(revision: revision))
+            XCTFail("a second failed connection must surface")
+        } catch let error as MediaTransportError {
+            XCTAssertEqual(error, .transport(code: URLError.cannotConnectToHost.rawValue))
+        }
+        XCTAssertEqual(StubURLProtocol.requests(for: url).map(\.httpMethod), ["PROPFIND", "GET", "PROPFIND", "GET"])
+        XCTAssertEqual(StubURLProtocol.requests(for: cdn).count, 2)
+        await session.shutdown()
+    }
+
+    func testDeliveryRecoveryRevalidatesIdentityAndSizeBeforeAnotherGET() async throws {
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let cdn = URL(string: "https://cdn.example.com/movie")!
+        for changesIdentity in [true, false] {
+            StubURLProtocol.reset()
+            let revision = CredentialRevision()
+            queueStat()
+            StubURLProtocol.queue(redirect: StubRedirect(location: cdn), for: url)
+            StubURLProtocol.queue(error: URLError(.cannotConnectToHost), for: cdn)
+            queueStat(etag: changesIdentity ? "\"changed\"" : "\"strong-1\"", size: changesIdentity ? 1000 : 1001)
+            let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .playback))
+            do {
+                _ = try await session.fileSystem.openSource(for: strongETagLocator(revision: revision))
+                XCTFail("a fresh delivery must not bypass the persisted file identity")
+            } catch let error as MediaTransportError {
+                guard case .sourceChanged = error else { return XCTFail("unexpected \(error)") }
+            }
+            XCTAssertEqual(StubURLProtocol.requests(for: url).map(\.httpMethod), ["PROPFIND", "GET", "PROPFIND"])
+            XCTAssertEqual(StubURLProtocol.requests(for: cdn).count, 1)
+            await session.shutdown()
+        }
+    }
+
+    func testCancellingDuringDeliveryRecoveryStopsBeforeAnotherGET() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let cdn = URL(string: "https://cdn.example.com/movie")!
+        queueStat()
+        StubURLProtocol.queue(redirect: StubRedirect(location: cdn), for: url)
+        StubURLProtocol.queue(error: URLError(.cannotConnectToHost), for: cdn)
+        let revalidating = expectation(description: "fresh identity revalidation started")
+        StubURLProtocol.queue(
+            StubResponse(statusCode: 207, delay: .seconds(30), onRequest: { _ in revalidating.fulfill() }),
+            for: url
+        )
+        let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .playback))
+        let locator = try strongETagLocator(revision: revision)
+        let opening = Task { try await session.fileSystem.openSource(for: locator) }
+        await fulfillment(of: [revalidating], timeout: 5)
+        opening.cancel()
+        do {
+            _ = try await opening.value
+            XCTFail("cancellation must end the fresh opening")
+        } catch let error as MediaTransportError {
+            XCTAssertEqual(error, .cancelled)
+        }
+        XCTAssertEqual(StubURLProtocol.requests(for: url).map(\.httpMethod), ["PROPFIND", "GET", "PROPFIND"])
+        XCTAssertEqual(StubURLProtocol.requests(for: cdn).count, 1)
+        await session.shutdown()
+    }
+
+    func testDeliveryRecoveryDoesNotRetryTimeoutCancellationTLSOrHTTPRefusals() async throws {
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let cdn = URL(string: "https://cdn.example.com/movie")!
+        let failures: [URLError.Code] = [.timedOut, .cancelled, .secureConnectionFailed, .serverCertificateUntrusted]
+        for failure in failures {
+            StubURLProtocol.reset()
+            let revision = CredentialRevision()
+            queueStat()
+            StubURLProtocol.queue(redirect: StubRedirect(location: cdn), for: url)
+            StubURLProtocol.queue(error: URLError(failure), for: cdn)
+            let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .playback))
+            do {
+                _ = try await session.fileSystem.openSource(for: strongETagLocator(revision: revision))
+                XCTFail("expected delivery error \(failure)")
+            } catch let error as MediaTransportError {
+                XCTAssertEqual(error, failure == .cancelled ? .cancelled : .transport(code: failure.rawValue))
+            }
+            XCTAssertEqual(StubURLProtocol.requests(for: url).map(\.httpMethod), ["PROPFIND", "GET"])
+            XCTAssertEqual(StubURLProtocol.requests(for: cdn).count, 1)
+            await session.shutdown()
+        }
+        for status in [401, 403, 429, 503, 412, 206] {
+            StubURLProtocol.reset()
+            let revision = CredentialRevision()
+            queueStat()
+            StubURLProtocol.queue(redirect: StubRedirect(location: cdn), for: url)
+            StubURLProtocol.queue(StubResponse(statusCode: status), for: cdn)
+            let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .playback))
+            do {
+                _ = try await session.fileSystem.openSource(for: strongETagLocator(revision: revision))
+                XCTFail("expected refusal or malformed range for \(status)")
+            } catch {
+                XCTAssertTrue(error is MediaTransportError)
+            }
+            XCTAssertEqual(StubURLProtocol.requests(for: url).map(\.httpMethod), ["PROPFIND", "GET"])
+            XCTAssertEqual(StubURLProtocol.requests(for: cdn).count, 1)
+            await session.shutdown()
+        }
+    }
+
+    func testDeliveryRecoveryDoesNotRetryDAVConnectionsOrNonPlaybackRoles() async throws {
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let cdn = URL(string: "https://cdn.example.com/movie")!
+        for role in MediaTransportRole.allCases {
+            StubURLProtocol.reset()
+            let revision = CredentialRevision()
+            queueStat()
+            if role == .playback {
+                StubURLProtocol.queue(error: URLError(.cannotConnectToHost), for: url)
+            } else {
+                StubURLProtocol.queue(redirect: StubRedirect(location: cdn), for: url)
+                StubURLProtocol.queue(error: URLError(.cannotConnectToHost), for: cdn)
+            }
+            let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: role))
+            do {
+                _ = try await session.fileSystem.openSource(for: strongETagLocator(revision: revision))
+                XCTFail("must not retry this connection failure")
+            } catch let error as MediaTransportError {
+                XCTAssertEqual(error, .transport(code: URLError.cannotConnectToHost.rawValue))
+            }
+            XCTAssertEqual(StubURLProtocol.requests(for: url).map(\.httpMethod), ["PROPFIND", "GET"])
+            await session.shutdown()
+        }
     }
 
     func testTrustRevisionMismatchFailsClosed() async throws {

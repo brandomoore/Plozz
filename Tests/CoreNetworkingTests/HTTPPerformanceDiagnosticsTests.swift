@@ -7,6 +7,84 @@ import XCTest
 final class HTTPPerformanceDiagnosticsTests: XCTestCase {
     private struct Payload: Decodable { let value: String }
 
+    func testSearchAndScopedCaptureShareSafeUnderlyingTransportEvidence() async throws {
+        let journal = SearchDiagnosticJournal()
+        journal.start()
+        let error = URLError(.cannotConnectToHost, userInfo: [
+            NSUnderlyingErrorKey: NSError(
+                domain: NSPOSIXErrorDomain, code: 61,
+                userInfo: [NSLocalizedDescriptionKey: "private-server"]
+            )
+        ])
+        for route: ResponseDecodingDiagnostic.Route in [.other, .serverAuthentication] {
+            let source = try XCTUnwrap(journal.beginSearch()?.source(
+                index: 0, provider: .silo, limit: 40, disabledLibraries: 0
+            ))
+            let captured = await SearchDiagnosticJournal.$currentSource.withValue(source) {
+                await HTTPResponseDiagnostics.$route.withValue(route) {
+                    await HTTPResponseDiagnostics.capture { () async throws -> Bool in
+                        HTTPResponseDiagnostics.recordTransportFailure(error)
+                        throw AppError.serverUnreachable
+                    }
+                }
+            }
+            source.finish(error: .serverUnreachable)
+            let transport = try XCTUnwrap(captured.transport.first)
+            XCTAssertEqual(transport.route, route == .other ? .search : route)
+            XCTAssertEqual(transport.urlErrorCode, URLError.cannotConnectToHost.rawValue)
+            XCTAssertEqual(transport.underlying.count, 1)
+            XCTAssertEqual(transport.underlying.first?.code, 61)
+            XCTAssertEqual(journal.export(scope: DiagnosticExportScope()).entries.last?.facts.transport, [transport])
+        }
+        let text = String(decoding: try JSONEncoder().encode(journal.export(scope: DiagnosticExportScope())), as: UTF8.self)
+        XCTAssertFalse(text.contains("private-server"))
+        XCTAssertNil(SearchDiagnosticJournal.currentSource)
+        XCTAssertFalse(HTTPResponseDiagnostics.isCapturing)
+    }
+
+    func testSearchJournalCapturesRequestsAfterSuccessFailureTimeoutAndCancellation() async throws {
+        let session = makeSession()
+        defer { session.invalidateAndCancel() }
+        let client = URLSessionHTTPClient(session: session)
+        let journal = SearchDiagnosticJournal()
+        journal.start()
+        for (path, expected): (String, AppError?) in [
+            ("/success", nil), ("/failure", .invalidResponse),
+            ("/timeout", .serverUnreachable), ("/cancelled", .cancelled)
+        ] {
+            let source = try XCTUnwrap(journal.beginSearch()?.source(index: 0, provider: .silo, limit: 40, disabledLibraries: 0))
+            do {
+                _ = try await SearchDiagnosticJournal.$currentSource.withValue(source) {
+                    try await client.send(
+                        Endpoint(method: .get, path: path, queryItems: [.init(name: "q", value: "private-search")],
+                                 headers: ["Authorization": "private-token"]),
+                        baseURL: XCTUnwrap(URL(string: "https://private-server.invalid"))
+                    )
+                }
+                XCTAssertNil(expected)
+                source.finish(resultCount: 1)
+            } catch {
+                XCTAssertEqual(error as? AppError, expected)
+                source.finish(error: try XCTUnwrap(error as? AppError))
+            }
+        }
+        let report = journal.export(scope: DiagnosticExportScope())
+        XCTAssertEqual(report.entries.count, 4)
+        XCTAssertEqual(report.entries.map(\.facts.outcome), [.results, .failed, .failed, .cancelled])
+        XCTAssertTrue(report.entries.allSatisfy { $0.facts.requests.count == 1 })
+        XCTAssertTrue(report.entries.allSatisfy { $0.facts.requests.first?.route == .search })
+        XCTAssertEqual(report.entries[0].facts.requests.first?.httpStatus, 200)
+        XCTAssertEqual(report.entries[1].facts.http.first?.httpStatus, 500)
+        XCTAssertEqual(report.entries[2].facts.transport.first?.urlErrorCode, URLError.timedOut.rawValue)
+        XCTAssertEqual(report.entries[3].facts.requests.first?.urlErrorCode, URLError.cancelled.rawValue)
+        XCTAssertTrue(report.entries[3].facts.transport.isEmpty)
+        let text = String(decoding: try JSONEncoder().encode(report), as: UTF8.self)
+        XCTAssertFalse(text.contains("private"))
+        XCTAssertFalse(text.contains("Authorization"))
+        XCTAssertNil(SearchDiagnosticJournal.currentSource)
+        XCTAssertFalse(HTTPResponseDiagnostics.isCapturing)
+    }
+
     func testTransportAndDecodeKeepProviderContextWithoutPrivateRequestOrPayloadData() async throws {
         PerformanceDiagnostics.shared.start()
         defer { PerformanceDiagnostics.shared.stop() }
@@ -113,8 +191,8 @@ private final class PerformanceURLProtocol: URLProtocol {
             client?.urlProtocol(self, didFailWithError: URLError(.badURL))
             return
         }
-        if url.path == "/cancelled" {
-            client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+        if url.path == "/cancelled" || url.path == "/timeout" {
+            client?.urlProtocol(self, didFailWithError: URLError(url.path == "/cancelled" ? .cancelled : .timedOut))
             return
         }
         guard let response = HTTPURLResponse(

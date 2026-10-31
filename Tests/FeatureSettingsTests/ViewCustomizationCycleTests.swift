@@ -33,9 +33,9 @@ final class ViewCustomizationCycleTests: XCTestCase {
 
     func testSharedRowCopyDistinguishesEachParentFromTheSharedOverride() throws {
         let home = try XCTUnwrap(CardCaptionSettingsPage.home.sharedRowNote)
-        XCTAssertEqual(String(localized: home), "Shared with Recommended.")
+        XCTAssertEqual(String(localized: home), "Continue Watching is shared with Recommended.")
         let recommended = try XCTUnwrap(CardCaptionSettingsPage.recommended.sharedRowNote)
-        XCTAssertEqual(String(localized: recommended), "Shared with Home.")
+        XCTAssertEqual(String(localized: recommended), "Continue Watching is shared with Home.")
         for page in CardCaptionSettingsPage.allCases where page != .home && page != .recommended {
             XCTAssertNil(page.sharedRowNote)
         }
@@ -54,7 +54,7 @@ final class ViewCustomizationCycleTests: XCTestCase {
             XCTAssertEqual(page.hasOverrides, page == .home || page == .recommended)
             for view in page.controls {
                 let expected: String
-                if page == .detail || view == .continueWatching {
+                if page == .detail || view.isRowOverride {
                     expected = String(localized: view.cardLabelTitle)
                 } else {
                     expected = page.hasOverrides ? "Default" : "Card labels"
@@ -75,7 +75,7 @@ final class ViewCustomizationCycleTests: XCTestCase {
     func testEveryCaptionSettingHasARecognizablePageInTheSharedEditor() {
         XCTAssertEqual(CardCaptionSettingsScope.home.pages, [.home])
         XCTAssertEqual(CardCaptionSettingsScope.detail.pages, [.detail])
-        XCTAssertEqual(CardCaptionSettingsPage.home.controls, [.home, .continueWatching])
+        XCTAssertEqual(CardCaptionSettingsPage.home.controls, [.home, .continueWatching, .homeLibraries])
         XCTAssertEqual(CardCaptionSettingsPage.detail.controls, [.episodes, .related, .extras])
         XCTAssertEqual(CardCaptionSettingsPage.people.controls, [.filmography])
         let controls = CardCaptionSettingsScope.all.pages.flatMap(\.controls)
@@ -99,6 +99,31 @@ final class ViewCustomizationCycleTests: XCTestCase {
         }
     }
 
+    func testHomePreviewIncludesIndependentLibraryOverrideAndParentHighlighting() throws {
+        var settings = CardCaptionSettings.default
+        settings.setOverride(.hide, for: .home)
+        settings.setOverride(.show, for: .continueWatching)
+        for choice in CardCaptionView.homeLibraries.customizationChoices {
+            settings.setOverride(choice, for: .homeLibraries)
+            for editing in CardCaptionSettingsPage.home.controls {
+                let snapshot = CardLabelScopePreview.snapshot(
+                    page: .home, editing: editing, settings: settings,
+                    isShowcase: true, seriesArtwork: true, layout: .portrait
+                )
+                XCTAssertEqual(snapshot.rows.map(\.view), [.continueWatching, .home, .homeLibraries])
+                let libraries = try XCTUnwrap(snapshot.rows.last)
+                XCTAssertEqual(libraries.showsLabels, choice == .show)
+                XCTAssertEqual(libraries.highlighted,
+                               editing == .homeLibraries || (editing == .home && choice == .automatic))
+                XCTAssertTrue(try XCTUnwrap(snapshot.rows.first).showsLabels)
+                XCTAssertEqual(String(localized: libraries.title), "Libraries")
+            }
+        }
+        XCTAssertFalse(CardCaptionSettingsPage.recommended.controls.contains(.homeLibraries))
+        settings.setOverride(.automatic, for: .homeLibraries)
+        XCTAssertEqual(String(localized: settings.cardLabelHelp(in: .homeLibraries)), "Uses this page's default.")
+    }
+
     func testLibraryLabelPreviewShowsEachParentAndTheSharedRowOverride() throws {
         var settings = CardCaptionSettings.default
         settings.setOverride(.show, for: .home)
@@ -112,7 +137,7 @@ final class ViewCustomizationCycleTests: XCTestCase {
                 )
                 XCTAssertEqual(preview.page, page)
                 let watching = try XCTUnwrap(preview.rows.first)
-                let ordinary = try XCTUnwrap(preview.rows.last)
+                let ordinary = try XCTUnwrap(preview.rows.first { $0.view == page.firstControl })
                 XCTAssertTrue(watching.isContinueWatching)
                 XCTAssertTrue(watching.highlighted)
                 XCTAssertFalse(ordinary.highlighted)
@@ -183,7 +208,7 @@ final class ViewCustomizationCycleTests: XCTestCase {
                                     XCTAssertLessThan(geometry.gap / first.artwork.width, 0.3,
                                                       "A media row must not distribute its cards across empty space.")
                                     let landscape = row.isContinueWatching ? layout == .landscape
-                                        : row.view == .episodes || row.view == .extras
+                                        : row.view == .episodes || row.view == .extras || row.view == .homeLibraries
                                     let expected: CGFloat = if row.isContinueWatching && layout == .portrait {
                                         details.cardAspectRatio
                                     } else if row.isContinueWatching && seriesArtwork {
@@ -267,7 +292,7 @@ final class ViewCustomizationCycleTests: XCTestCase {
             for view in CardCaptionView.allCases {
                 var settings = CardCaptionSettings(preference: preference)
                 let choices = view.customizationChoices
-                XCTAssertEqual(choices, view == .continueWatching
+                XCTAssertEqual(choices, view.isRowOverride
                     ? [.automatic, .show, .hide]
                     : [.home, .recommended].contains(view) ? [.show, .hide, .mixed] : [.show, .hide])
                 let initial = choices.firstIndex(of: settings.customization(in: view))!
@@ -278,7 +303,8 @@ final class ViewCustomizationCycleTests: XCTestCase {
                     XCTAssertEqual(settings.selectedPreset, followsParent ? preference : nil)
                     XCTAssertEqual(settings.overrides.count + settings.mixedOverrides.count, followsParent ? 0 : 1)
                     XCTAssertEqual(settings.preference, preference)
-                    for other in CardCaptionView.allCases where other != view {
+                    for other in CardCaptionView.allCases where other != view
+                        && !(view == .home && other == .homeLibraries) {
                         for artworkTitle in [false, true] {
                             XCTAssertEqual(
                                 settings.showsLabels(in: other, isShowcase: true, hasArtworkTitle: artworkTitle),
@@ -329,7 +355,8 @@ final class ViewCustomizationCycleTests: XCTestCase {
         XCTAssertEqual(String(localized: labels.customizationDetail(in: .home)),
                        "Labels are visible except in Showcase and on series artwork.")
         XCTAssertEqual(String(localized: labels.customizationValue(in: .continueWatching)), "Use default")
-        for view in CardCaptionView.allCases where view != .home && view != .recommended && view != .continueWatching {
+        XCTAssertEqual(String(localized: labels.customizationValue(in: .homeLibraries)), "Use default")
+        for view in CardCaptionView.allCases where view != .home && view != .recommended && !view.isRowOverride {
             XCTAssertEqual(String(localized: labels.customizationValue(in: view)), "On")
         }
         var customized = labels
@@ -500,6 +527,8 @@ final class ViewCustomizationCycleTests: XCTestCase {
                         case .mixed: XCTFail("Unsupported Continue Watching choice"); return
                         }
 
+                    } else if view == .homeLibraries, settings.customization(in: view) == .automatic {
+                        expected = "Uses Home's default."
                     } else {
                         expected = settings.customization(in: view) == .mixed
                         ? "Labels are visible except in Showcase and on series artwork."

@@ -626,6 +626,7 @@ final class ShareExtrasTests: XCTestCase {
         func list(relativePath: String) async throws -> [RemoteFileEntry] {
             if relativePath == trailerDirectory {
                 return [
+                    try RemoteFileEntry(relativePath: "Subs", kind: .directory),
                     try RemoteFileEntry(
                         relativePath: (trailerPath as NSString).lastPathComponent,
                         kind: .file,

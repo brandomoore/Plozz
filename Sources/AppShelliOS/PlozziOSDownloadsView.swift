@@ -6,6 +6,8 @@ import SwiftUI
 import UIKit
 
 struct PlozziOSDownloadsView: View {
+    @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
+    @Environment(\.plozziOSOverflowNavigation) private var overflowNavigation
     @Bindable var model: PlozziOSDownloadsModel
     let appModel: PlozziOSAppModel
     let onShowSettings: () -> Void
@@ -70,18 +72,20 @@ struct PlozziOSDownloadsView: View {
                 )
             }
         }
-        .toolbarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            // Compose with the page's actions; a separate ancestor toolbar can be displaced.
+            if isOverflowDestination, let overflowNavigation {
+                PlozziOSOverflowBackToolbarItem(action: overflowNavigation.returnToMore)
+            }
+            ToolbarItem(id: "download-settings", placement: .topBarTrailing) {
                 NavigationLink {
                     PlozziOSDownloadSettingsView(model: model)
                 } label: {
                     Label("Download Settings", systemImage: "gearshape")
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                PlozziOSSettingsAvatarButton(size: 36, action: onShowSettings)
-            }
+            PlozziOSSettingsToolbarItem(action: onShowSettings)
         }
         .confirmationDialog(
             pendingBulkDeletion.map { Text($0.title) } ?? Text(verbatim: ""),

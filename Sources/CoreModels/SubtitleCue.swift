@@ -20,7 +20,7 @@ import CoreGraphics
 /// timing for karaoke, ASS run styling, ruby/furigana annotations) without any
 /// migration concern. The stable axis is the `.text` / `.image` enum; the
 /// associated `SubtitleText` is a struct precisely so new fields are additive.
-public struct SubtitleCue: Identifiable, Sendable {
+public struct SubtitleCue: Identifiable, Sendable, Equatable {
     /// Monotonic per playback session. Sufficient for SwiftUI diffing and for
     /// addressing a cue when applying a per-cue sync shift.
     public let id: Int
@@ -30,7 +30,7 @@ public struct SubtitleCue: Identifiable, Sendable {
     public var end: Double
     public var body: Body
 
-    public enum Body: Sendable {
+    public enum Body: Sendable, Equatable {
         case text(SubtitleText)
         /// A decoded bitmap (PGS / DVB / DVD) or a libass-composited authored
         /// frame. The overlay places and luminance-clamps it.
@@ -53,15 +53,6 @@ public struct SubtitleCue: Identifiable, Sendable {
     public var isImage: Bool {
         if case .image = body { return true }
         return false
-    }
-}
-
-extension SubtitleCue: Equatable {
-    /// Identity-based equality (id + timing). We never compare `CGImage`
-    /// contents — the monotonic `id` already uniquely identifies a cue within a
-    /// session, which is all SwiftUI diffing needs. Mirrors AetherEngine.
-    public static func == (lhs: SubtitleCue, rhs: SubtitleCue) -> Bool {
-        lhs.id == rhs.id && lhs.start == rhs.start && lhs.end == rhs.end
     }
 }
 
@@ -179,7 +170,7 @@ public extension SubtitleText {
 /// `canvasSize == .zero` means the subtitle canvas matches the video frame.
 /// Ordinary decoded bitmaps keep automatic avoidance; authored renderers can
 /// protect fixed artwork or bound movement to an independent lower region.
-public struct SubtitleImage: @unchecked Sendable {
+public struct SubtitleImage: @unchecked Sendable, Equatable {
     public enum ControlAvoidance: Sendable, Equatable {
         case automatic
         case fixed
@@ -202,6 +193,13 @@ public struct SubtitleImage: @unchecked Sendable {
         self.normalizedRect = normalizedRect
         self.canvasSize = canvasSize
         self.controlAvoidance = controlAvoidance
+    }
+
+    /// Compare immutable image identity, not pixels. A corrected bitmap or
+    /// placement must invalidate presentation even when its cue ID is unchanged.
+    public static func == (lhs: SubtitleImage, rhs: SubtitleImage) -> Bool {
+        lhs.cgImage === rhs.cgImage && lhs.normalizedRect == rhs.normalizedRect
+            && lhs.canvasSize == rhs.canvasSize && lhs.controlAvoidance == rhs.controlAvoidance
     }
 }
 

@@ -28,7 +28,7 @@ public struct LibraryFilterMenu: View {
     }
 
     public var body: some View {
-        Menu {
+        BrowseFilterMenu(activeCount: filters.activeCount, summary: filters.summary(in: locale)) {
             Picker("Filter", selection: binding(\.filter)) {
                 ForEach(capabilities.filters, id: \.self) { filter in
                     switch filter.displayName {
@@ -57,18 +57,6 @@ public struct LibraryFilterMenu: View {
             if isLoading { Text("Loading filters…") }
             if hasError { Button("Couldn't load filter options. Try Again", action: onRetry) }
             if !filters.isEmpty { Button("Clear Filters") { onChange(.all) } }
-        } label: {
-            if filters.isEmpty {
-                Label("Filter", systemImage: "line.3.horizontal.decrease")
-            } else {
-                ViewThatFits(in: .horizontal) {
-                    Label("Filter: \(filters.summary(in: locale))", systemImage: "line.3.horizontal.decrease")
-                        .fixedSize()
-                    Label("Filter: \(filters.activeCount)", systemImage: "line.3.horizontal.decrease")
-                        .fixedSize()
-                }
-                .accessibilityLabel(Text("Filter: \(filters.summary(in: locale))"))
-            }
         }
         .accessibilityIdentifier("library-filter-menu")
         .task { await onLoadFacets() }

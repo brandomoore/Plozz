@@ -90,6 +90,7 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
         public let quality: StreamingQuality?
         public let codecPreference: StreamingCodecPreference?
         public let sourceRange: SourceDynamicRange?
+        public let serverDecision: PlaybackServerDecision?
 
         public init(
             provider: ProviderKind?, engine: PlaybackEngineKind? = nil, request: PlaybackRequest? = nil,
@@ -119,6 +120,7 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
             quality = options?.quality
             codecPreference = options?.codec
             sourceRange = SourceDynamicRange.providerHint(from: request?.sourceMetadata)
+            serverDecision = request?.serverDecision
         }
 
         private static func token(_ value: String?, accepts: (String) -> Bool) -> String? {
@@ -131,6 +133,7 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
                 && sourceVideo.map(PlozzigenMediaFormats.supports(videoCodec:)) != false
                 && sourceAudio.map(PlozzigenMediaFormats.supports(audioCodec:)) != false
                 && negotiatedCodec.map { DirectPlayVideoCodec(rawValue: $0) != nil } != false
+                && serverDecision?.isValid != false
         }
     }
 
@@ -307,6 +310,7 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
         let quality: StreamingQuality?
         let codecPreference: StreamingCodecPreference?
         let sourceRange: SourceDynamicRange?
+        let serverDecision: PlaybackServerDecision?
 
         init(_ facts: Facts) {
             provider = facts.provider
@@ -324,6 +328,7 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
             quality = facts.quality
             codecPreference = facts.codecPreference
             sourceRange = facts.sourceRange
+            serverDecision = facts.serverDecision
         }
     }
 

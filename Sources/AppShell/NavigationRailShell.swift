@@ -70,6 +70,7 @@ private struct NavigationRailShellContent<Content: View>: View {
     /// or the viewer switches destination.
     @Namespace private var focusScopeID
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var pinnedSidebarInteraction = PlozzPinnedSidebarInteraction()
     /// Whether focus is inside the rail, reported up from it.
@@ -126,9 +127,6 @@ private struct NavigationRailShellContent<Content: View>: View {
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 }
-                // Native Search owns its navigation bar. Reserve actual container
-                // space above it, rather than overlaying its field or keyboard.
-                .padding(.top, presentation.headerHeight)
                 // The rail makes room for itself by PUBLISHING an inset, never by
                 // insetting this container.
                 //
@@ -154,26 +152,26 @@ private struct NavigationRailShellContent<Content: View>: View {
                     in: focusScopeID
                 )
 
-            ZStack(alignment: .leading) {
-                if presentation.showsPageButton {
-                    PinnedSidebarPageButton(
-                        title: NavigationRailView.searchTitle,
-                        symbol: "magnifyingglass",
-                        isNavigationExpanded: railExpanded || isOpeningNavigation,
-                        isFocusEnabled: presentation.isPageButtonEnabled(
-                            hasEnteredContent: hasEnteredSearchContent
-                        ) && !chrome.transitionSuppressesFocus,
-                        onOpenNavigation: requestNavigationFocus
-                    )
-                    .padding(.leading, NavigationRailMetrics.expandedContentHorizontalPadding)
-                    .padding(.top, NavigationRailMetrics.pageButtonTopInset)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .ignoresSafeArea(edges: .leading)
-                }
+            if !hidden {
+                ZStack(alignment: .leading) {
+                    if presentation.showsPageButton {
+                        PinnedSidebarPageButton(
+                            title: NavigationRailView.searchTitle,
+                            symbol: "magnifyingglass",
+                            isNavigationExpanded: railExpanded || isOpeningNavigation,
+                            isFocusEnabled: presentation.isPageButtonEnabled(
+                                hasEnteredContent: hasEnteredSearchContent
+                            ) && !chrome.transitionSuppressesFocus,
+                            onOpenNavigation: requestNavigationFocus
+                        )
+                        .padding(.leading, NavigationRailMetrics.expandedContentHorizontalPadding)
+                        .padding(.top, NavigationRailMetrics.pageButtonTopInset)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .ignoresSafeArea(edges: .leading)
+                    }
 
-                // Left opens unresolved result/page edges; Right returns from
-                // navigation. Hero controls and the Search keyboard own their input.
-                if !hidden {
+                    // Left opens unresolved result/page edges; Right returns from
+                    // navigation. Hero controls and the Search keyboard own their input.
                     NavigationRailEdgeCatcher(
                         onOpenNavigation: requestNavigationFocus,
                         onLeaveNavigation: returnFocusToPage,
@@ -195,9 +193,6 @@ private struct NavigationRailShellContent<Content: View>: View {
                     .frame(width: 0, height: 0)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
-                }
-
-                if !hidden {
                     NavigationRailView(
                         profile: profile,
                         entries: entries,
@@ -232,30 +227,31 @@ private struct NavigationRailShellContent<Content: View>: View {
                     )
                     .accessibilityHidden(!presentation.isRailEnabled || chrome.transitionSuppressesFocus)
                     .ignoresSafeArea(edges: .leading)
-                    .transition(chrome.transitionSuppressesFocus
-                        ? .identity : .move(edge: .leading).combined(with: .opacity))
                 }
-            }
-            .backgroundPreferenceValue(NavigationGlassAnchors.self) { anchors in
-                GeometryReader { geometry in
-                    if let menu = anchors[.menu],
-                       !geometry[menu].isEmpty,
-                       !geometry[menu].isNull,
-                       !geometry[menu].isInfinite {
-                        NavigationGlassMorph(
-                            buttonFrame: anchors[.button].map { geometry[$0] },
-                            menuFrame: geometry[menu],
-                            isExpanded: railExpanded || presentation.opensExpanded,
-                            showsPageButton: presentation.showsPageButton
-                        )
+                .backgroundPreferenceValue(NavigationGlassAnchors.self) { anchors in
+                    GeometryReader { geometry in
+                        if let menu = anchors[.menu],
+                           !geometry[menu].isEmpty,
+                           !geometry[menu].isNull,
+                           !geometry[menu].isInfinite {
+                            NavigationGlassMorph(
+                                buttonFrame: anchors[.button].map { geometry[$0] },
+                                menuFrame: geometry[menu],
+                                isExpanded: railExpanded || presentation.opensExpanded,
+                                showsPageButton: presentation.showsPageButton
+                            )
+                        }
                     }
                 }
+                .transition(chrome.transitionSuppressesFocus ? .identity
+                    : .offset(x: reduceMotion ? 0 : (layoutDirection == .leftToRight ? -1 : 1)
+                        * NavigationChromeMotion.distance).combined(with: .opacity))
             }
         }
         .background { NavigationChromeTransitionAnchor(chrome: chrome) }
         .focusScope(focusScopeID)
         .onExitCommand(perform: backAction)
-        .animation(reduceMotion || chrome.transitionSuppressesFocus ? nil : .easeInOut(duration: 0.26), value: hidden)
+        .animation(chrome.transitionSuppressesFocus ? nil : NavigationChromeMotion.animation, value: hidden)
         .animation(reduceMotion || chrome.transitionSuppressesFocus ? nil : NavigationRailMetrics.expandAnimation, value: railExpanded)
         .onChange(of: selection, initial: true) { previous, destination in
             // The outgoing destination's stack is torn down without reporting, so
@@ -268,7 +264,7 @@ private struct NavigationRailShellContent<Content: View>: View {
                     destinationFocus.cancel()
                 }
                 chrome.resetForDestinationChange()
-                // Settings is hosted outside the rail, so its Back action bypasses
+                // Programmatic returns from Settings can bypass
                 // selectDestination and needs the same presentation-gated handoff.
                 if previous == .settings, destination != .settings {
                     destinationFocus.begin(destination)
@@ -419,6 +415,15 @@ struct NavigationRailRootContentInset: ViewModifier {
     }
 }
 
+/// Reserve the page button's space on Search, never on its navigation stack.
+struct NavigationRailSearchRootInset: ViewModifier {
+    @Environment(\.plozzPinnedSidebarActive) private var isPinned
+
+    func body(content: Content) -> some View {
+        content.padding(.top, isPinned ? NavigationRailMetrics.searchHeaderHeight : 0)
+    }
+}
+
 struct NavigationRailPresentation: Equatable {
     let destination: NavigationRailDestination
     let chromeHidden: Bool
@@ -444,7 +449,6 @@ struct NavigationRailPresentation: Equatable {
     // before its focus-request observer adopts the selected destination.
     var isRailVisible: Bool { !chromeHidden && (!usesPageButton || isExpanded || isOpening) }
     var isRailEnabled: Bool { isRailVisible }
-    var headerHeight: CGFloat { showsPageButton ? NavigationRailMetrics.searchHeaderHeight : 0 }
     var contentInset: CGFloat {
         // Live TV also suppresses navigation while handing focus to its guide.
         // Keep that guide in place; its video and Search already use full bounds.

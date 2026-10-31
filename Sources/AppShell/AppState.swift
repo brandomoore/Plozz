@@ -78,9 +78,17 @@ public final class AppState {
     public var canEnterApp: Bool { admissionContext.canEnterApp }
     var isLiveTVProfileAuthorized: Bool { isActiveProfileAuthorized }
 
+    func lockBrowsingForForegroundIfNeeded() {
+        if !profileFlow.isForegroundLocked {
+            guard case .ready = rootPresentationState else { return }
+        }
+        profileFlow.lockForForegroundIfNeeded()
+    }
+
     var isActiveProfileAuthorized: Bool {
         guard canEnterApp, case .ready = state else { return false }
         return !profileFlow.isChoosingProfile
+            && !profileFlow.isForegroundLocked
             && profileFlow.pendingLockedProfile == nil
             && profileFlow.pendingParentalSwitch == nil
             && profileFlow.pendingIdentityAccountID == nil
@@ -127,7 +135,9 @@ public final class AppState {
     /// detail page each time, until the watchdog killed the app. A `let`
     /// reference is stable, so only the one leaf view that actually reads
     /// ``PendingPlayRequest/itemID`` takes the invalidation.
-    public let pendingPlay = PendingPlayRequest()
+    @ObservationIgnored public private(set) lazy var pendingPlay = PendingPlayRequest(
+        isAuthorized: { [weak self] in self?.isActiveProfileAuthorized == true }
+    )
 
     /// Drives the app to a named screen for an automated capture run. Held by
     /// reference for the same reason as ``pendingPlay``: only the leaf that

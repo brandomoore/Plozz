@@ -173,29 +173,19 @@ struct AddServerView: View {
             showingPlexSignIn = true
             return
         }
-        if provider == .silo {
-            siloDiscovery.manualURLText = address
-            guard siloDiscovery.canSubmitManualURL else { return }
-            isValidating = true
-            validationTask = Task {
-                let validated = await siloDiscovery.submitManualURL()
-                guard !Task.isCancelled, provider == .silo else { return }
-                isValidating = false
-                if let validated { server = validated }
-                else if case let .error(message) = siloDiscovery.phase { validationMessage = message }
-            }
-            return
+        let model = discoveryModel
+        let selectedProvider = provider
+        model.manualURLText = address
+        guard model.canSubmitManualURL else { return }
+        isValidating = true
+        validationTask = Task {
+            let validated = await model.submitManualURL()
+            guard !Task.isCancelled, provider == selectedProvider else { return }
+            isValidating = false
+            guard appModel.profiles.activeProfileID == initialProfileID else { return }
+            if let validated { server = validated }
+            else if case let .error(message) = model.phase { validationMessage = message }
         }
-        guard let url = ServerURLNormalizer.normalize(address, defaultPort: provider == .silo ? 8090 : 8096) else {
-            validationMessage = "Enter a valid server address."
-            return
-        }
-        server = MediaServer(
-            id: url.absoluteString,
-            name: provider.displayName,
-            baseURL: url,
-            provider: provider
-        )
     }
 
     private var discoveryModel: ServerPickerViewModel {

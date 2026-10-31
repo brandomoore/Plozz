@@ -19,14 +19,27 @@ public enum SettingsCopy {
         comment: "Navigation row for the screen crediting third-party software and data sources."
     )
 
+    public static let shareDiagnostics: LocalizedStringResource = "Share Diagnostics"
+    public static let enableDiagnosticSharing: LocalizedStringResource = "Enable Sharing"
+    public static let diagnosticSharingRequired: LocalizedStringResource =
+        "Turn on Share Diagnostics to send a report."
+    public static let diagnosticSharingUnavailable: LocalizedStringResource =
+        "Diagnostic sharing is unavailable in this build."
+    public static let diagnosticSubmissionFailed: LocalizedStringResource =
+        "Couldn't submit diagnostics. Check that Share Diagnostics is on and try again."
+
     public static let automaticDiagnostics: LocalizedStringResource =
-        "Share technical errors, app and device information, screen categories, and performance diagnostics with the developer through Sentry."
+        "Automatically share crash reports, technical errors, app and device information, screen categories, and performance diagnostics with the developer through Sentry."
 
     public static let automaticDiagnosticsExclusions: LocalizedStringResource =
         "Automatic reports exclude logins, server addresses, and media titles."
 
     public static let manualDiagnostics: LocalizedStringResource =
-        "Send recent logs, technical playback and connection diagnostics, and your optional message to the developer through Sentry. Don't include passwords or personal information."
+        "Send recent activity, search, playback and connection diagnostics, and your message to the developer through Sentry. Don't include passwords or personal information."
+
+    public static let diagnosticsMessage: LocalizedStringResource = "Message (required)"
+    public static let diagnosticsMessagePrivacy: LocalizedStringResource =
+        "Don't include passwords or personal information."
 
     // MARK: - Scope headers
 

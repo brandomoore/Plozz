@@ -433,6 +433,54 @@ final class TransportIOReaderReadAheadTests: XCTestCase {
         XCTAssertTrue(source.readLog.allSatisfy { $0.length == 64 * 1024 })
     }
 
+    func testDiscDirectoryReplayRetainsGrownProbeWindows() {
+        let source = SparseTransportByteSource(preferredReadSize: 32 * 1024 * 1024)
+        let reader = TransportIOReader(source: source)
+        defer { reader.close() }
+        let offsets: [Int64] = [
+            524_288, 589_824, 950_272, 94_558_208, 1_015_808, 94_623_744,
+            1_081_344, 94_689_280, 94_754_816, 659_456, 1_310_720,
+            735_232, 911_360, 41_529_344
+        ]
+        for offset in offsets {
+            XCTAssertEqual(reader.seek(offset: offset, whence: SEEK_SET), offset)
+            XCTAssertEqual(read(reader, count: 2).data, Data([42, 42]))
+        }
+        XCTAssertEqual(source.readLog.map(\.offset), offsets.filter { $0 != 659_456 && $0 != 735_232 })
+        XCTAssertEqual(source.readLog.filter { $0.length == 256 * 1024 }.count, 2)
+    }
+
+    func testDiscLargerProbeCachePreservesBytesAndCloneIndependence() throws {
+        let payload = Data((0..<(1024 * 1024)).map { UInt8($0 % 251) })
+        let source = CappedTransportByteSource(
+            payload, perReadCap: 32 * 1024 * 1024, preferredReadSize: 32 * 1024 * 1024
+        )
+        let reader = TransportIOReader(source: source)
+        defer { reader.close() }
+        XCTAssertEqual(read(reader, count: 256 * 1024).data, payload.prefix(256 * 1024))
+        XCTAssertEqual(reader.seek(offset: 512 * 1024, whence: SEEK_SET), 512 * 1024)
+        XCTAssertEqual(read(reader, count: 2).data, payload.subdata(in: (512 * 1024)..<(512 * 1024 + 2)))
+        XCTAssertEqual(reader.seek(offset: 65_530, whence: SEEK_SET), 65_530)
+        XCTAssertEqual(read(reader, count: 16).data, payload.subdata(in: 65_530..<65_546))
+        XCTAssertEqual(source.readCount, 2)
+        let clone = try XCTUnwrap(reader.makeIndependentReader())
+        defer { clone.close() }
+        XCTAssertEqual(read(clone, count: 2).data, payload.prefix(2))
+        XCTAssertEqual(source.readCount, 3)
+    }
+
+    func testDiscCacheDoesNotRetainLargeSequentialWindows() {
+        let source = SparseTransportByteSource(preferredReadSize: 32 * 1024 * 1024)
+        let reader = TransportIOReader(source: source)
+        defer { reader.close() }
+        XCTAssertEqual(read(reader, count: 1024 * 1024).result, 1024 * 1024)
+        XCTAssertEqual(reader.seek(offset: 10 * 1024 * 1024, whence: SEEK_SET), 10 * 1024 * 1024)
+        XCTAssertEqual(read(reader, count: 2).result, 2)
+        XCTAssertEqual(reader.seek(offset: 0, whence: SEEK_SET), 0)
+        XCTAssertEqual(read(reader, count: 2).result, 2)
+        XCTAssertEqual(source.readLog.map(\.length), [1024 * 1024, 64 * 1024, 64 * 1024])
+    }
+
     func testAdaptiveWindowPreservesShortReadsAndEOF() {
         let payload = Data((0..<4096).map { UInt8($0 & 0xff) })
         let source = CappedTransportByteSource(
@@ -496,6 +544,105 @@ final class TransportIOReaderReadAheadTests: XCTestCase {
         XCTAssertEqual(source.readLog.map(\.length), Array(repeating: 1024 * 1024, count: 4))
         let expectedOffsets: [Int64] = [0, 1_048_576, 2_097_152, 3_145_728]
         XCTAssertEqual(source.readLog.map(\.offset), expectedOffsets)
+    }
+
+    func testOrdinaryContainerTailCoalescesWithoutRefetchingHeader() {
+        let payload = Data((0..<(5 * 1024 * 1024)).map { UInt8($0 % 251) })
+        let source = CappedTransportByteSource(
+            payload, perReadCap: 32 * 1024 * 1024, preferredReadSize: 32 * 1024 * 1024
+        )
+        let reader = TransportIOReader(source: source, discImageProbeEnabled: false)
+        defer { reader.close() }
+        let chunk = 256 * 1024
+        XCTAssertEqual(read(reader, count: chunk).data, payload.prefix(chunk))
+        let tail = 1024 * 1024
+        XCTAssertEqual(reader.seek(offset: Int64(tail), whence: SEEK_SET), Int64(tail))
+        var index = Data()
+        for _ in 0..<16 { index.append(read(reader, count: chunk).data) }
+        XCTAssertEqual(index, payload.suffix(4 * 1024 * 1024))
+        XCTAssertEqual(read(reader, count: 1).result, 0)
+        XCTAssertEqual(reader.seek(offset: 48, whence: SEEK_SET), 48)
+        XCTAssertEqual(read(reader, count: 16).data, payload.subdata(in: 48..<64))
+        XCTAssertEqual(source.readCount, 2, "One header and one complete bounded index read")
+    }
+
+    func testOrdinaryContainerResumesWindowGrowthAfterCachedHeaderReplay() {
+        let chunk = 256 * 1024
+        let source = SparseTransportByteSource(preferredReadSize: 32 * 1024 * 1024)
+        let reader = TransportIOReader(source: source, discImageProbeEnabled: false)
+        defer { reader.close() }
+        XCTAssertEqual(read(reader, count: chunk).result, Int32(chunk))
+        let tail = source.byteSize - 4 * 1024 * 1024
+        XCTAssertEqual(reader.seek(offset: tail, whence: SEEK_SET), tail)
+        XCTAssertEqual(read(reader, count: chunk).result, Int32(chunk))
+        XCTAssertEqual(reader.seek(offset: 0, whence: SEEK_SET), 0)
+        XCTAssertEqual(read(reader, count: chunk).result, Int32(chunk))
+        XCTAssertEqual(reader.seek(offset: tail, whence: SEEK_SET), tail)
+        XCTAssertEqual(read(reader, count: chunk).result, Int32(chunk))
+        XCTAssertEqual(reader.seek(offset: 0, whence: SEEK_SET), 0)
+        XCTAssertEqual(read(reader, count: chunk).result, Int32(chunk))
+        for _ in 0..<4 {
+            let result = read(reader, count: chunk)
+            XCTAssertEqual(result.result, Int32(chunk))
+            XCTAssertTrue(result.data.allSatisfy { $0 == 42 })
+        }
+        XCTAssertEqual(source.readLog.map(\.offset), [0, tail, Int64(chunk)])
+        XCTAssertEqual(source.readLog.map(\.length), [chunk, 4 * 1024 * 1024, 4 * chunk])
+    }
+
+    func testOrdinaryRandomSeekAndIndependentReaderStillStartSmall() throws {
+        let chunk = 256 * 1024
+        let source = SparseTransportByteSource(preferredReadSize: 32 * 1024 * 1024)
+        let reader = TransportIOReader(source: source, discImageProbeEnabled: false)
+        defer { reader.close() }
+        XCTAssertEqual(read(reader, count: chunk).result, Int32(chunk))
+        let randomOffset: Int64 = 32 * 1024 * 1024
+        XCTAssertEqual(reader.seek(offset: randomOffset, whence: SEEK_SET), randomOffset)
+        XCTAssertEqual(read(reader, count: chunk).result, Int32(chunk))
+        let independent = try XCTUnwrap(reader.makeIndependentReader())
+        defer { independent.close() }
+        XCTAssertEqual(independent.seek(offset: Int64(chunk), whence: SEEK_SET), Int64(chunk))
+        XCTAssertEqual(read(independent, count: chunk).result, Int32(chunk))
+        XCTAssertEqual(source.readLog.map(\.offset), [0, randomOffset, Int64(chunk)])
+        XCTAssertEqual(source.readLog.map(\.length), [chunk, chunk, chunk])
+    }
+
+    func testTailCoalescingDoesNotEnlargeDiscOrTinyProbes() {
+        for enabled in [true, false] {
+            let source = SparseTransportByteSource(preferredReadSize: 32 * 1024 * 1024)
+            let reader = TransportIOReader(source: source, discImageProbeEnabled: enabled)
+            defer { reader.close() }
+            let offset = source.byteSize - 4 * 1024 * 1024
+            XCTAssertEqual(reader.seek(offset: offset, whence: SEEK_SET), offset)
+            XCTAssertEqual(read(reader, count: 2).result, 2)
+            XCTAssertEqual(source.readLog.map(\.length), [64 * 1024])
+        }
+        let source = SparseTransportByteSource(preferredReadSize: 32 * 1024 * 1024)
+        let reader = TransportIOReader(source: source)
+        defer { reader.close() }
+        XCTAssertEqual(reader.seek(offset: source.byteSize - 4 * 1024 * 1024, whence: SEEK_SET),
+                       source.byteSize - 4 * 1024 * 1024)
+        XCTAssertEqual(read(reader, count: 256 * 1024).result, 256 * 1024)
+        XCTAssertEqual(source.readLog.map(\.length), [256 * 1024])
+    }
+
+    func testProbeCacheRemainsBoundedToEightWindows() {
+        for discImageProbeEnabled in [true, false] {
+            let source = SparseTransportByteSource(preferredReadSize: 32 * 1024 * 1024)
+            let reader = TransportIOReader(source: source, discImageProbeEnabled: discImageProbeEnabled)
+            defer { reader.close() }
+            for index in 0..<9 {
+                let offset = Int64(index * 512 * 1024)
+                XCTAssertEqual(reader.seek(offset: offset, whence: SEEK_SET), offset)
+                XCTAssertEqual(read(reader, count: 256 * 1024).result, 256 * 1024)
+            }
+            XCTAssertEqual(reader.seek(offset: 512 * 1024, whence: SEEK_SET), 512 * 1024)
+            XCTAssertEqual(read(reader, count: 2).result, 2)
+            XCTAssertEqual(source.readLog.count, 9)
+            XCTAssertEqual(reader.seek(offset: 0, whence: SEEK_SET), 0)
+            XCTAssertEqual(read(reader, count: 2).result, 2)
+            XCTAssertEqual(source.readLog.count, 10, "The ninth window must evict the oldest")
+        }
     }
 
     /// Many small sequential reads within one window collapse to a single
@@ -692,6 +839,20 @@ final class TransportIOReaderTests: XCTestCase {
         await primary.waitForFinalShutdown()
         XCTAssertEqual(source.closeCount, 1)
         XCTAssertNil(primary.makeIndependentReader())
+    }
+
+    func testOrdinaryMediaReadersSkipDiscRecognitionIncludingClones() async throws {
+        let source = FakeTransportByteSource(payload)
+        let primary = TransportIOReader(source: source, discImageProbeEnabled: false)
+        let independent = try XCTUnwrap(primary.makeIndependentReader())
+        XCTAssertFalse(primary.discImageProbeEnabled)
+        XCTAssertFalse(independent.discImageProbeEnabled)
+        XCTAssertEqual(read(primary, count: 4).data, Data([0, 1, 2, 3]))
+        XCTAssertEqual(read(independent, count: 2).data, Data([0, 1]))
+        primary.close()
+        independent.close()
+        await primary.waitForFinalShutdown()
+        XCTAssertEqual(source.closeCount, 1)
     }
 
     func testCloseWaitsForIndependentInflightReadToDrain() async throws {

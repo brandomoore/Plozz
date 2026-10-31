@@ -141,7 +141,7 @@ private struct ScreenshotRoutingRegistration: ViewModifier {
 }
 
 /// A title's detail page, resolved to the best server that holds it.
-private struct PlozziOSItemPage: View {
+struct PlozziOSItemPage: View {
     let appModel: PlozziOSAppModel
     let item: MediaItem
 

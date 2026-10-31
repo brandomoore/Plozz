@@ -5,6 +5,238 @@ import XCTest
 @testable import ProviderJellyfin
 
 final class JellyfinPlaybackNegotiationTests: XCTestCase {
+    func testEmbyMaximumDirectPlaysWithNonNullableServerBitrateSemantics() async throws {
+        for bitrate in [1_166_625, 200_000_000] {
+            for hybrid in [false, true] {
+                for streaming in [nil, StreamingPlaybackOptions(quality: .original)] {
+                    let http = EmbyBitrateNegotiationHTTP(sourceBitrate: bitrate)
+                    let provider = provider(.emby, http: http, hybrid: hybrid)
+                    let request: PlaybackRequest
+                    if let streaming {
+                        request = try await provider.playbackInfo(
+                            for: "movie", mediaSourceID: "version", forceTranscode: false, streaming: streaming
+                        )
+                    } else {
+                        request = try await provider.playbackInfo(
+                            for: "movie", mediaSourceID: "version", forceTranscode: false
+                        )
+                    }
+                    XCTAssertFalse(request.isTranscoding)
+                    XCTAssertEqual(request.serverDecision?.supportsDirectPlay, true)
+                    XCTAssertEqual(request.deliveryMode, .directPlay)
+                    XCTAssertNil(request.serverDecision?.clientMaxBitrate, "Maximum has no selected quality cap")
+                    guard case .authenticatedHTTP(let locator) = request.playbackSource else {
+                        return XCTFail("Expected the selected original file")
+                    }
+                    XCTAssertEqual(locator.mediaSourceID, "version")
+                    XCTAssertEqual(locator.deliveryMode, .directFile)
+                }
+            }
+        }
+    }
+
+    func testEmbyLowerQualityStillHonorsTheSelectedBitrate() async throws {
+        let http = EmbyBitrateNegotiationHTTP(sourceBitrate: 1_166_625)
+        let quality = try StreamingQuality.custom(maximumHeight: 1080, bitrateKbps: 500)
+        let request = try await provider(.emby, http: http, hybrid: true).playbackInfo(
+            for: "movie", mediaSourceID: "version", forceTranscode: false,
+            streaming: .init(quality: quality)
+        )
+        XCTAssertTrue(request.isTranscoding)
+        XCTAssertEqual(request.serverDecision?.supportsDirectPlay, false)
+        XCTAssertEqual(request.serverDecision?.clientMaxBitrate, 500_000)
+        XCTAssertEqual(request.serverDecision?.transcodeReasons, ["ContainerBitrateExceedsLimit"])
+        XCTAssertNil(request.originalFileSource)
+    }
+
+    func testOriginalConversionBoundsOnlyEmbysSaturatedEncoderTarget() async throws {
+        for kind in [ProviderKind.emby, .jellyfin] {
+            for managed in [false, true] {
+                for forceTranscode in [false, true] {
+                    let http = fixtureHTTP(decisions: [decision(
+                        session: "conversion",
+                        url: "/Videos/movie/master.m3u8?VideoCodec=h264&VideoBitrate=2147483647&MaxStreamingBitrate=35128000&TranscodeReasons=DirectPlayError"
+                    )])
+                    let provider = provider(kind, http: http, hybrid: true)
+                    let request: PlaybackRequest
+                    if managed {
+                        request = try await provider.playbackInfo(
+                            for: "movie", mediaSourceID: "version", forceTranscode: forceTranscode,
+                            streaming: .init(quality: .original, codec: .preferH264)
+                        )
+                    } else {
+                        request = try await provider.playbackInfo(
+                            for: "movie", mediaSourceID: "version", forceTranscode: forceTranscode
+                        )
+                    }
+                    XCTAssertTrue(request.isTranscoding)
+                    guard case .authenticatedHTTP(let locator) = request.playbackSource else {
+                        return XCTFail("Expected the server's conversion")
+                    }
+                    XCTAssertEqual(
+                        locator.resource.queryItems.first { $0.name == "VideoBitrate" }?.value,
+                        kind == .emby ? "30000000" : "2147483647"
+                    )
+                    XCTAssertEqual(
+                        locator.resource.queryItems.first { $0.name == "MaxStreamingBitrate" }?.value,
+                        "35128000"
+                    )
+                    XCTAssertEqual(locator.mediaSourceID, "version")
+                    XCTAssertEqual(http.sentPaths.filter { $0.hasSuffix("/PlaybackInfo") }.count, 1)
+                }
+            }
+        }
+    }
+
+    func testEmbySaturatedEncoderTargetUsesVideoRateWithoutRaisingSmallerServerTargets() throws {
+        for (requested, expected) in [(35_000_000, 35_000_000), (Int(Int32.max), 998_075), (Int(Int64.max), 998_075)] {
+            var source = try JSONDecoder().decode(MediaSourceInfo.self, from: Data("""
+            {"Bitrate":1166625,
+             "TranscodingUrl":"/master.m3u8?VideoBitrate=\(requested)&AudioBitrate=161133&AllowVideoStreamCopy=false",
+             "MediaStreams":[{"Index":0,"Type":"Video","Codec":"h264","BitRate":998075}]}
+            """.utf8))
+            try source.boundEmbyOriginalTranscodingBitrate()
+            let query = try XCTUnwrap(URLComponents(string: XCTUnwrap(source.TranscodingUrl))?.queryItems)
+            XCTAssertEqual(query.first { $0.name == "VideoBitrate" }?.value, String(expected))
+            XCTAssertEqual(query.first { $0.name == "AudioBitrate" }?.value, "161133")
+            XCTAssertEqual(query.first { $0.name == "AllowVideoStreamCopy" }?.value, "false")
+        }
+    }
+
+    func testEmbyUnboundedConversionWithoutSourceBitrateFailsAndReleasesItsSession() async throws {
+        let http = fixtureHTTP(decisions: ["""
+        {"PlaySessionId":"unbounded","MediaSources":[{
+          "Id":"version","Container":"mp4","SupportsDirectPlay":false,"SupportsTranscoding":true,
+          "TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264&VideoBitrate=2147483647"
+        }]}
+        """])
+        do {
+            _ = try await provider(.emby, http: http, hybrid: true).playbackInfo(for: "movie")
+            XCTFail("Do not start a saturated encode without a source bitrate")
+        } catch {
+            XCTAssertEqual(error as? StreamingQualityError, .unavailable)
+        }
+        XCTAssertEqual(releasedSessions(http), ["unbounded"])
+    }
+
+    func testOriginalCodecRecoveryKeepsNoClientCapAndHonorsServerRenditionLimits() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let http = fixtureHTTP(decisions: [
+                decision(session: "initial"),
+                decision(
+                    session: "replacement",
+                    url: "/Videos/movie/master.m3u8?VideoCodec=h264&VideoBitrate=35000000&MaxStreamingBitrate=35128000&TranscodeReasons=DirectPlayError"
+                )
+            ])
+            let provider = provider(kind, http: http, hybrid: true)
+            let initial = try await provider.playbackInfo(
+                for: "movie", mediaSourceID: "version", forceTranscode: false
+            )
+            XCTAssertTrue(initial.isTranscoding)
+            XCTAssertNil(initial.streamingOptions)
+            XCTAssertNil(initial.serverDecision?.clientMaxBitrate)
+            let replacement = try await provider.playbackInfo(
+                for: "movie", mediaSourceID: "version", forceTranscode: true,
+                streaming: .init(quality: .original, codec: .preferH264)
+            )
+            XCTAssertTrue(replacement.isTranscoding)
+            XCTAssertEqual(replacement.streamingOptions?.quality, .original)
+            XCTAssertEqual(replacement.negotiatedStreamingVideoCodec, .h264)
+            XCTAssertNil(replacement.originalFileSource)
+            XCTAssertNil(replacement.localRemuxSource)
+            let evidence = try XCTUnwrap(replacement.serverDecision)
+            XCTAssertNil(evidence.clientMaxBitrate)
+            XCTAssertEqual(evidence.transcodeReasons, ["DirectPlayError"])
+            guard case .authenticatedHTTP(let locator) = replacement.playbackSource else {
+                return XCTFail("Recovery must keep a server-issued authenticated rendition.")
+            }
+            XCTAssertEqual(locator.mediaSourceID, "version")
+            XCTAssertEqual(locator.deliveryMode, .serverTranscode)
+            for (name, value) in [
+                ("VideoBitrate", "35000000"), ("MaxStreamingBitrate", "35128000"),
+                ("AllowVideoStreamCopy", "false"), ("AllowAudioStreamCopy", "false")
+            ] {
+                XCTAssertEqual(locator.resource.queryItems.first { $0.name == name }?.value, value)
+            }
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(
+                with: XCTUnwrap(http.sentBodies["/Items/movie/PlaybackInfo"])
+            ) as? [String: Any])
+            try assertOriginalBitrate(in: body, provider: kind)
+            XCTAssertEqual(body["EnableDirectPlay"] as? Bool, false)
+            XCTAssertEqual(body["EnableDirectStream"] as? Bool, false)
+            XCTAssertEqual(body["EnableTranscoding"] as? Bool, true)
+            XCTAssertEqual(http.sentPaths.filter { $0.hasSuffix("/PlaybackInfo") }.count, 2)
+        }
+    }
+
+    func testServerRequiredRemuxConversionKeepsDecisionEvidenceAtOriginalQuality() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let http = fixtureHTTP(decisions: ["""
+            {"PlaySessionId":"active","MediaSources":[{
+              "Id":"version","Container":"mkv","Bitrate":82000000,
+              "SupportsDirectPlay":false,"SupportsDirectStream":false,"SupportsTranscoding":true,
+              "TranscodeReasons":["SubtitleCodecNotSupported"],
+              "TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=hevc&SubtitleMethod=Encode&SubtitleStreamIndex=2&TranscodeReasons=SubtitleCodecNotSupported,VideoRangeTypeNotSupported",
+              "MediaStreams":[
+                {"Index":0,"Type":"Video","Codec":"hevc","VideoRangeType":"DOVIWithHDR10"},
+                {"Index":1,"Type":"Audio","Codec":"truehd","IsDefault":true},
+                {"Index":2,"Type":"Subtitle","Codec":"pgssub","IsDefault":true,"IsTextSubtitleStream":false}
+              ]
+            }]}
+            """])
+            let request = try await provider(kind, http: http, hybrid: true).playbackInfo(
+                for: "movie", mediaSourceID: "version", forceTranscode: false
+            )
+            let evidence = try XCTUnwrap(request.serverDecision)
+            XCTAssertEqual(evidence.sourceBitrate, 82_000_000)
+            XCTAssertNil(evidence.clientMaxBitrate)
+            XCTAssertEqual(evidence.supportsDirectPlay, false)
+            XCTAssertEqual(evidence.supportsTranscoding, true)
+            XCTAssertTrue(evidence.subtitleBurnIn)
+            XCTAssertEqual(evidence.transcodeReasons, ["SubtitleCodecNotSupported", "VideoRangeTypeNotSupported"])
+            XCTAssertTrue(request.isTranscoding, "Removing our cap must not override the server's decision")
+            XCTAssertEqual(request.burnedInSubtitleTrackID, 2)
+            XCTAssertEqual(http.sentPaths.filter { $0.hasSuffix("/PlaybackInfo") }.count, 1)
+        }
+    }
+
+    func testDecisionReasonsFromURLsAreAllowlistedWithoutLeakingServerData() throws {
+        let source = try JSONDecoder().decode(MediaSourceInfo.self, from: Data("""
+        {"Bitrate":77150000,"SupportsDirectPlay":false,
+         "TranscodingUrl":"https://private.test/master.m3u8?api_key=private-token&TranscodeReasons=ContainerBitrateExceedsLimit,private-token"}
+        """.utf8))
+        let evidence = source.playbackServerDecision(clientMaxBitrate: nil)
+        XCTAssertEqual(evidence.transcodeReasons, ["ContainerBitrateExceedsLimit", "Other"])
+        XCTAssertEqual(evidence.sourceBitrate, 77_150_000)
+        let data = try JSONEncoder().encode(evidence)
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("private"))
+        let unknown = try mediaSource(url: "/master.m3u8").playbackServerDecision(clientMaxBitrate: 2_000_000)
+        XCTAssertNil(unknown.transcodeReasons, "Missing reasons are unknown, not evidence of no conversion")
+        XCTAssertEqual(unknown.clientMaxBitrate, 2_000_000)
+    }
+
+    func testOriginalQualityRemovesClientBitrateLimitsWithoutDisablingServerConversion() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            for streaming in [nil, StreamingPlaybackOptions(quality: .original)] {
+                let http = StubHTTPClient()
+                http.stub(pathSuffix: "/PlaybackInfo", json: #"{"MediaSources":[]}"#)
+                let client = JellyfinClient(
+                    baseURL: URL(string: "https://fixture.test")!,
+                    deviceProfile: .init(deviceID: "device"), providerKind: kind, http: http
+                )
+                _ = try await client.playbackInfo(
+                    userID: "user", itemID: "movie", streaming: streaming
+                )
+                let data = try XCTUnwrap(http.sentBodies["/Items/movie/PlaybackInfo"])
+                let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                try assertOriginalBitrate(in: body, provider: kind)
+                XCTAssertEqual(body["EnableTranscoding"] as? Bool, true)
+                XCTAssertNil(body["EnableDirectPlay"])
+                XCTAssertNil(body["AllowVideoStreamCopy"])
+            }
+        }
+    }
+
     func testDecoderBackedPlaybackDoesNotOverrideDirectPlayWithALegacyServerRemux() async throws {
         for kind in [ProviderKind.jellyfin, .emby] {
             for container in ["mp4", "mkv"] {
@@ -287,6 +519,22 @@ final class JellyfinPlaybackNegotiationTests: XCTestCase {
         }
     }
 
+    private func assertOriginalBitrate(
+        in body: [String: Any], provider: ProviderKind,
+        file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let profile = try XCTUnwrap(body["DeviceProfile"] as? [String: Any], file: file, line: line)
+        if provider == .emby {
+            XCTAssertEqual(body["MaxStreamingBitrate"] as? Int, Int(Int64.max), file: file, line: line)
+            XCTAssertEqual(profile["MaxStreamingBitrate"] as? Int, Int(Int64.max), file: file, line: line)
+            XCTAssertEqual(profile["MaxStaticBitrate"] as? Int, Int(Int64.max), file: file, line: line)
+        } else {
+            XCTAssertNil(body["MaxStreamingBitrate"], file: file, line: line)
+            XCTAssertTrue(profile["MaxStreamingBitrate"] is NSNull, file: file, line: line)
+            XCTAssertTrue(profile["MaxStaticBitrate"] is NSNull, file: file, line: line)
+        }
+    }
+
     private func request(_ provider: JellyfinProvider, streaming: Bool) async throws -> PlaybackRequest {
         if streaming {
             return try await provider.playbackInfo(
@@ -339,6 +587,52 @@ final class JellyfinPlaybackNegotiationTests: XCTestCase {
         try JSONDecoder().decode(MediaSourceInfo.self, from: JSONSerialization.data(withJSONObject: [
             "TranscodingUrl": url, "Bitrate": 30_000_000
         ]))
+    }
+}
+
+/// Replays the bitrate decision observed on Emby 4.10.2.0: null/omitted limits
+/// reject even a compatible 1.17 Mbps original. The 200 Mbps case guards the old cap.
+private actor EmbyBitrateNegotiationHTTP: HTTPClient {
+    private let sourceBitrate: Int
+
+    init(sourceBitrate: Int) {
+        self.sourceBitrate = sourceBitrate
+    }
+
+    func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        let json: String
+        switch endpoint.path {
+        case "/Items/movie/PlaybackInfo":
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(
+                with: XCTUnwrap(endpoint.body)
+            ) as? [String: Any])
+            let profile = try XCTUnwrap(body["DeviceProfile"] as? [String: Any])
+            let limit = body["MaxStreamingBitrate"] as? Int ?? profile["MaxStreamingBitrate"] as? Int ?? 0
+            let direct = sourceBitrate <= limit
+            let rendition = direct ? "" : """
+            "TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264&TranscodeReasons=ContainerBitrateExceedsLimit",
+            """
+            json = """
+            {"PlaySessionId":"owned","MediaSources":[{
+              "Id":"version","Container":"mp4","Bitrate":\(sourceBitrate),
+              "SupportsDirectPlay":\(direct),"SupportsDirectStream":\(direct),"SupportsTranscoding":true,
+              \(rendition)
+              "MediaStreams":[
+                {"Index":0,"Type":"Video","Codec":"h264","Width":720,"Height":400},
+                {"Index":1,"Type":"Audio","Codec":"aac","IsDefault":true}
+              ]
+            }]}
+            """
+        case "/Users/user/Items/movie":
+            json = #"{"Id":"movie","Name":"Movie","Type":"Movie"}"#
+        case "/Videos/ActiveEncodings":
+            json = "{}"
+        default:
+            throw AppError.notFound
+        }
+        return (Data(json.utf8), HTTPURLResponse(
+            url: baseURL, statusCode: 200, httpVersion: nil, headerFields: nil
+        )!)
     }
 }
 

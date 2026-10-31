@@ -98,6 +98,7 @@ def resolve(github, releases=(), publish=True, fixes=None):
         redirect_stdout(io.StringIO()),
         patch.object(APP, "ancestor", return_value=True),
         patch.object(APP, "reverted", return_value=False),
+        patch.object(APP, "git", return_value="2026-10-20T00:00:00+00:00"),
     ):
         APP.resolve_issues(github, fixes or [FIX], list(releases), publish=publish)
 
@@ -168,6 +169,7 @@ class ResolutionTests(unittest.TestCase):
             with (
                 patch.object(APP, "ancestor", return_value=include),
                 patch.object(APP, "reverted", return_value=reverted),
+                patch.object(APP, "git", return_value="2026-10-20T00:00:00+00:00"),
                 redirect_stdout(io.StringIO()),
             ):
                 APP.resolve_issues(github, [FIX], [release()], publish=True)
@@ -199,6 +201,31 @@ class ResolutionTests(unittest.TestCase):
         github.issue.update(state="closed", state_reason="not_planned")
         resolve(github, [release()])
         self.assertEqual(github.writes, [])
+
+    def test_reopen_before_first_receipt_is_respected(self):
+        github = ResolutionGitHub()
+        github.events.append({"event": "reopened", "created_at": "2026-10-21T01:00:00Z"})
+        resolve(github, [release()])
+        self.assertEqual(github.writes, [])
+
+    def test_reopen_during_delivery_notification_does_not_close(self):
+        github = ResolutionGitHub()
+        original = github.call
+
+        def reopened(method, path, data=None):
+            if method == "POST" and path.endswith("/comments"):
+                github.events.append({"event": "reopened", "created_at": "2026-10-21T01:59:00Z"})
+            return original(method, path, data)
+
+        with patch.object(github, "call", side_effect=reopened):
+            resolve(github, [release()])
+        self.assertEqual(github.issue["state"], "open")
+
+    def test_new_declaration_after_reopen_can_resolve(self):
+        github = ResolutionGitHub()
+        github.events.append({"event": "reopened", "created_at": "2026-10-19T01:00:00Z"})
+        resolve(github, [release()])
+        self.assertEqual(github.issue["state"], "closed")
 
     def test_human_cannot_forge_a_receipt_or_duplicate_bot_records(self):
         github = ResolutionGitHub()
@@ -259,19 +286,87 @@ class SourceTests(unittest.TestCase):
 
     def test_only_explicit_full_fix_trailers_are_declarations(self):
         self.commit("Related changes\n\nRefs #177")
-        self.assertEqual(APP.declared_fixes(), [])
+        self.assertEqual(APP.declared_fixes(), ([], []))
         first = self.commit("Fix episode entry\n\nRefs #177\n\nTestFlight-Fix: #177 [tvOS]")
-        self.assertEqual(APP.declared_fixes(), [{"issue": 177, "commit": first, "platforms": ["tvOS"]}])
-        latest = self.commit("Follow-up fix\n\nTestFlight-Fix: #177 [tvOS,iOS]")
-        self.assertEqual(APP.declared_fixes(), [{**FIX, "commit": latest}])
+        self.assertEqual(APP.declared_fixes(), ([{"issue": 177, "commit": first, "platforms": ["tvOS"]}], []))
+        latest = self.commit("Follow-up fix\n\nRefs #177\n\nTestFlight-Issue: 177 [tvOS,iOS]")
+        self.assertEqual(APP.declared_fixes(), ([{**FIX, "commit": latest}], []))
 
     def test_malformed_trailer_and_standard_revert_fail_closed(self):
         fixed = self.commit("Fix\n\nTestFlight-Fix: #177 [tvOS]")
         self.commit(f"Revert fix\n\nThis reverts commit {fixed}.")
         self.assertTrue(APP.reverted(fixed, "HEAD"))
         self.commit("Bad declaration\n\nTestFlight-Fix: #177 [macOS]")
-        with self.assertRaisesRegex(BRIDGE.BridgeError, "invalid TestFlight-Fix"):
-            APP.declared_fixes()
+        fixes, errors = APP.declared_fixes()
+        self.assertEqual(fixes, [])
+        self.assertIn("invalid TestFlight declaration", errors[0])
+
+    def test_documented_trailer_has_no_github_closing_reference(self):
+        guide = (ROOT / ".github/CONTRIBUTING.md").read_text()
+        example = guide.split("```text\n", 1)[1].split("```", 1)[0]
+        self.assertIn("Refs #177", example)
+        self.assertIn("TestFlight-Issue: 177 [tvOS]", example)
+        self.assertNotRegex(example.lower(), r"\b(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?):?\s+#")
+
+    def test_historical_session_footer_preserves_explicit_declaration(self):
+        for key, reference in (("TestFlight-Fix", "#216"), ("TestFlight-Issue", "216")):
+            sha = self.commit(
+                f"Restore sign-ins\n\nRefs #216\n\n{key}: {reference} [tvOS,iOS]"
+                "\n\nCopilot-Session: c34f31ee-9ce6-4d07-be36-e8d3149dbfc4"
+            )
+            self.assertEqual(APP.declared_fixes(), ([{**FIX, "issue": 216, "commit": sha}], []))
+
+    def test_malformed_history_does_not_block_unrelated_new_fixes(self):
+        self.commit("Earlier fix\n\nTestFlight-Issue: 177 [tvOS]")
+        self.commit("Malformed follow-up\n\nRefs #177\n\nTestFlight-Issue: 177 [macOS]")
+        valid = self.commit("Different fix\n\nTestFlight-Issue: 178 [iOS]")
+        fixes, errors = APP.declared_fixes()
+        self.assertEqual(fixes, [{"issue": 178, "commit": valid, "platforms": ["iOS"]}])
+        self.assertEqual(len(errors), 1)
+        replacement = self.commit("Complete follow-up\n\nTestFlight-Issue: 177 [tvOS,iOS]")
+        fixes, errors = APP.declared_fixes()
+        self.assertEqual(fixes[0], {**FIX, "commit": replacement})
+        self.assertEqual(errors, [])
+
+    def test_prose_after_declaration_is_not_a_metadata_footer(self):
+        self.commit("Example\n\nTestFlight-Issue: 177 [tvOS]\n\nNot a complete fix.")
+        fixes, errors = APP.declared_fixes()
+        self.assertEqual(fixes, [])
+        self.assertIn("final trailer block", errors[0])
+
+    def test_malformed_legacy_number_is_quarantined_even_in_a_mixed_block(self):
+        self.commit("Old fix\n\nTestFlight-Issue: 250 [tvOS]")
+        self.commit("Malformed mixed block\n\nTestFlight-Issue: 238 [tvOS]\nTestFlight-Fix: 250 [tvOS]")
+        fixes, errors = APP.declared_fixes()
+        self.assertEqual(fixes, [])
+        self.assertEqual(len(errors), 1)
+        replacement = self.commit("Partial replacement\n\nTestFlight-Issue: 238 [tvOS]")
+        fixes, errors = APP.declared_fixes()
+        self.assertEqual(fixes, [{"issue": 238, "commit": replacement, "platforms": ["tvOS"]}])
+        self.assertEqual(len(errors), 1)
+        self.commit("Final replacement\n\nTestFlight-Issue: 250 [tvOS]")
+        fixes, errors = APP.declared_fixes()
+        self.assertEqual([fix["issue"] for fix in fixes], [238, 250])
+        self.assertEqual(errors, [])
+
+    def test_unidentifiable_line_cannot_hide_behind_an_identifiable_line(self):
+        self.commit("Old fix\n\nTestFlight-Issue: 250 [tvOS]")
+        self.commit("Unknown scope\n\nRefs #250\n\nTestFlight-Issue: 238 [tvOS]\nTestFlight-Fix: missing [tvOS]")
+        self.commit("Known scope only\n\nTestFlight-Issue: 238 [tvOS]")
+        fixes, errors = APP.declared_fixes()
+        self.assertEqual([fix["issue"] for fix in fixes], [238])
+        self.assertEqual(len(errors), 1)
+
+    def test_duplicate_and_mixed_invalid_declarations_quarantine_the_whole_commit(self):
+        self.commit("Old fix\n\nTestFlight-Issue: 177 [tvOS]")
+        for trailer in (
+            "TestFlight-Issue: 177 [tvOS]\nTestFlight-Fix: #177 [tvOS]",
+            "TestFlight-Issue: 177 [tvOS]\nTestFlight-Issue: 178 [macOS]",
+        ):
+            self.commit(f"Incomplete metadata\n\n{trailer}")
+            fixes, errors = APP.declared_fixes()
+            self.assertEqual(fixes, [])
+            self.assertTrue(errors)
 
     def test_published_available_tag_and_exact_catalog_are_required(self):
         self.run_git("tag", "release/056")
@@ -292,10 +387,10 @@ class SourceTests(unittest.TestCase):
         fixed = self.commit("Branch fix\n\nTestFlight-Fix: #177 [tvOS]")
         self.run_git("tag", "release/056")
         self.run_git("checkout", "--detach", main)
-        self.assertEqual(APP.declared_fixes(), [])
-        self.assertEqual(APP.declared_fixes(("HEAD", fixed)), [
-            {"issue": 177, "commit": fixed, "platforms": ["tvOS"]},
-        ])
+        self.assertEqual(APP.declared_fixes(), ([], []))
+        self.assertEqual(APP.declared_fixes(("HEAD", fixed)), (
+            [{"issue": 177, "commit": fixed, "platforms": ["tvOS"]}], [],
+        ))
 
     def test_tag_catalog_mismatch_prevents_resolution(self):
         self.run_git("tag", "release/057")

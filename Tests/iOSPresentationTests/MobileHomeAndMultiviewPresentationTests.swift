@@ -673,6 +673,65 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         }
     }
 
+    func testLibraryCardsRespectHomeOverridesWithoutChangingDirectoryLabels() async throws {
+        let artwork = try await posterArtwork()
+        let library = AggregatedLibrary(
+            accountID: "caption-fixture", accountName: "Viewer", serverName: "Media Server",
+            providerKind: .plex,
+            library: MediaLibrary(id: "movies", title: "Movies", kind: .movie, imageURL: artwork)
+        )
+        try await withWindow { window, host in
+            window.frame.size = CGSize(width: 390, height: 700)
+            for homeCard in [true, false] {
+                for style in CardStyle.allCases {
+                    var captionBottoms: [CardCaptionPreference: CGFloat] = [:]
+                    for preset in [CardCaptionPreference.show, .hide, .recommended] {
+                        let captions = CardCaptionSettings(
+                            preference: preset,
+                            overrides: [.home: preset == .hide, .browse: preset == .hide, .homeLibraries: preset != .hide]
+                        )
+                        host.rootView = AnyView(
+                            VStack(alignment: .leading, spacing: 8) {
+                                Group {
+                                    if homeCard {
+                                        PlozziOSHomeLibraryCard(
+                                            library: library, artworkSource: nil, width: 260
+                                        )
+                                    } else {
+                                        PlozziOSLibraryCard(library: library.library)
+                                    }
+                                }
+                                .frame(width: 260)
+                                Text("After card")
+                            }
+                            .padding(22)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .background(Color.black)
+                            .environment(\.themePalette, .dark)
+                            .environment(\.colorScheme, .dark)
+                            .environment(\.plozzCardStyle, style)
+                            .environment(\.plozzCardCaptionSettings, captions)
+                            .environment(\.plozzMetrics, .touch(density: .standard))
+                        )
+                        try await settle(window)
+                        let image = snapshot(window, name: "library-labels-\(homeCard)-\(style)-\(preset)")
+                        let observations = try text(image)
+                        let copy = observations.map(\.candidate.string).joined(separator: " ")
+                        XCTAssertEqual(copy.contains("Movies"), preset != .hide, copy)
+                        XCTAssertEqual(copy.contains("Media Server"), homeCard && preset != .hide, copy)
+                        captionBottoms[preset] = try textFrame(
+                            "After card", observations: observations, size: image.size
+                        ).minY
+                    }
+                    XCTAssertLessThan(try XCTUnwrap(captionBottoms[.hide]),
+                                      try XCTUnwrap(captionBottoms[.show]) - 20)
+                    XCTAssertEqual(try XCTUnwrap(captionBottoms[.show]),
+                                   try XCTUnwrap(captionBottoms[.recommended]), accuracy: 1)
+                }
+            }
+        }
+    }
+
     func testLibraryNameAndServerShareOneCaptionColumn() async throws {
         let artwork = try await posterArtwork()
         let library = AggregatedLibrary(

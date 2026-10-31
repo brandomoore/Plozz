@@ -124,6 +124,7 @@ final class ResumeChipLayoutTests: XCTestCase {
                 .frame(width: 120, height: 180)
             )
         }
+
         let capped = try image(reserved: 600)
         XCTAssertEqual(capped.size, CGSize(width: 120, height: 180))
         try assertPixelsEqual(capped, image(reserved: 54), context: "The bottom band is capped at 30%, never half.")
@@ -131,6 +132,30 @@ final class ResumeChipLayoutTests: XCTestCase {
         try assertPixelsEqual(
             image(reserved: 600, detailed: false), image(reserved: 0, detailed: false),
             context: "Progress only must not reserve a playback-text band."
+        )
+    }
+
+    func testHiddenCardProgressPreservesPlayGlyphAndRemainingTimeButNotPlayerBars() throws {
+        let item = MediaItem(id: "resume", title: "Movie", kind: .movie, runtime: 3600, resumePosition: 900)
+        let pill = EpisodeWatchStatePill(item: item, showsBackground: false)
+            .environment(\.plozzChromeIsFocused, true)
+        let actual = try render(pill.environment(\.plozzShowsProgressBars, false))
+        let remaining = try XCTUnwrap(item.resumeRemainingText)
+        let expected = try render(
+            HStack(spacing: 8) {
+                Image(systemName: "play.fill")
+                Text(verbatim: remaining)
+            }
+            .foregroundStyle(.white)
+            .lineLimit(1)
+        )
+        try assertPixelsEqual(actual, expected, context: "Only the bar should disappear from the resume chip.")
+        XCTAssertNotEqual(actual.pngData(), try render(pill.environment(\.plozzShowsProgressBars, true)).pngData())
+        let playerBar = ResumeProgressCapsule(progress: 0.25, onLight: false, width: 54, height: 5)
+        try assertPixelsEqual(
+            render(playerBar.environment(\.plozzShowsProgressBars, false)),
+            render(playerBar.environment(\.plozzShowsProgressBars, true)),
+            context: "The shared player/download bar primitive must not observe card visibility."
         )
     }
 

@@ -1160,7 +1160,7 @@ public struct LiveChannelPlayerView: View {
                     && model.networkBlock == nil && model.hasPresentedFrame && !model.continuesExternally
                     && !tracksArePresented && !guidePresented && !diagnosticsEnabled && !touchScrubbing,
                 isActive: isActive && isAuthorized && isExpanded && !isMultiview
-                    && !model.continuesExternally && !touchScrubbing && scenePhase == .active,
+                    && !model.continuesExternally && scenePhase == .active,
                 canSeek: model.canSeekWindow,
                 canBoost: false,
                 canZoom: model.engine.capabilities.contains(.videoZoom),

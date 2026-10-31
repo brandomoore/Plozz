@@ -127,7 +127,7 @@ public actor SimklWatchlistDestination:
             addedAt = nil
         }
         return SimklOrderedWatchlistEntry(
-            entry: try entry(kind: kind, from: listEntry),
+            entry: try entry(kind: kind, from: listEntry, addedAt: addedAt),
             addedAt: addedAt,
             kind: kind,
             providerOrder: providerOrder
@@ -215,7 +215,8 @@ public actor SimklWatchlistDestination:
 
     private func entry(
         kind: MediaItemKind,
-        from listEntry: SimklListEntry
+        from listEntry: SimklListEntry,
+        addedAt: Date?
     ) throws -> WatchlistDestinationEntry {
         guard let title = listEntry.title else {
             throw WatchlistDestinationError.transient
@@ -234,7 +235,8 @@ public actor SimklWatchlistDestination:
             binding: binding,
             presentation: title.title.map {
                 MediaAliasPresentation(title: $0, year: title.year)
-            }
+            },
+            addedAt: addedAt
         ) else {
             throw WatchlistDestinationError.transient
         }

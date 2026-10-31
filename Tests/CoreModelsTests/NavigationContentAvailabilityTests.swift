@@ -9,7 +9,7 @@ final class NavigationContentAvailabilityTests: XCTestCase {
         NavigationLibraryLayout.watchlistKey,
     ]
 
-    func testLiveOnlyIPTVAndStandaloneSourcesHideUnusedDestinationsInEveryStyle() {
+    func testLiveOnlySourcesHideUnusedTVDestinationsButKeepMobileDefaults() {
         for accounts in [[], [account("iptv", provider: .iptv)]] {
             let facts = availability(accounts: accounts)
             XCTAssertEqual(facts.automaticallyHiddenKeys, automaticKeys)
@@ -26,13 +26,11 @@ final class NavigationContentAvailabilityTests: XCTestCase {
                     visibleLibraries: [], layout: layout, availableKeys: keys
                 ), [.liveTV, .settings])
             }
-            XCTAssertEqual(layout.sections(
+            XCTAssertEqual(NavigationLibraryLayout.default.resolvingAutomaticVisibility(
+                hidden: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys
+            ).sections(
                 available: NavigationDestinationDefaults.iOS, requiredEnabled: []
-            ).enabled, [
-                NavigationLibraryLayout.liveTVKey,
-                NavigationLibraryLayout.downloadsKey,
-                NavigationLibraryLayout.settingsKey,
-            ])
+            ).enabled, NavigationDestinationDefaults.iOSDefaultVisibleKeys)
         }
     }
 

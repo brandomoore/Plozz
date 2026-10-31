@@ -11,6 +11,79 @@ import XCTest
 
 @MainActor
 final class PlayerTransportPositionTests: XCTestCase {
+    func testScrubbingDisablesLevelGesturesWithoutRestoringPlaybackBrightness() async throws {
+        let model = PlayerViewModel(provider: LayoutProvider(), itemID: "fixture")
+        model.controls.duration = 1200
+        model.controls.intendsPause = true
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        var brightness: CGFloat = 0.6
+        var writes: [CGFloat] = []
+        let control = PlayerTouchLevelControl(
+            readBrightness: { _ in brightness },
+            writeBrightness: { _, value in brightness = value; writes.append(value) }
+        )
+        let host = UIHostingController(rootView: PlozziOSPlayerControlsOverlay(
+            viewModel: model, keyboardActions: PlozziOSPlayerKeyboardActions(),
+            hasVersions: false, versionsPresented: false, onShowVersions: {}, onClose: {}
+        )
+            .environment(\.playerTouchLevelControl, control)
+            .environment(\.scenePhase, .active)
+        )
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            control.deactivate()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        func gestureView(in view: UIView) -> UIView? {
+            if view.gestureRecognizers?.contains(where: {
+                $0.delegate is PlayerTouchGestureSurface.Coordinator
+            }) == true { return view }
+            return view.subviews.lazy.compactMap { gestureView(in: $0) }.first
+        }
+        let mounted = ContinuousClock.now + .seconds(5)
+        while gestureView(in: host.view) == nil, ContinuousClock.now < mounted {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let surface = try XCTUnwrap(gestureView(in: host.view))
+        let recognizers = try XCTUnwrap(surface.gestureRecognizers)
+        let pan = try XCTUnwrap(recognizers.compactMap { $0 as? UIPanGestureRecognizer }.first)
+        let indicator = try XCTUnwrap(recognizers.compactMap { $0 as? UILongPressGestureRecognizer }
+            .first { $0.minimumPressDuration == 0 })
+        XCTAssertTrue(pan.isEnabled)
+        XCTAssertTrue(indicator.isEnabled)
+
+        for value in [0.25, 1.0] {
+            _ = try control.begin(.brightness, in: surface)
+            try control.set(.brightness, value: value, in: surface)
+            let beforeScrub = writes
+            model.controls.isScrubbing = true
+            let suspended = ContinuousClock.now + .seconds(5)
+            while pan.isEnabled, ContinuousClock.now < suspended {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(pan.isEnabled, "Neither brightness nor volume swipes may run during a seek.")
+            XCTAssertFalse(indicator.isEnabled, "Direct level-meter touches must also be suspended.")
+            XCTAssertEqual(brightness, CGFloat(value), "Seeking must preserve low and maximum brightness.")
+            XCTAssertEqual(writes, beforeScrub, "Entering scrub mode must not write brightness.")
+            model.controls.isScrubbing = false
+            let resumed = ContinuousClock.now + .seconds(5)
+            while !pan.isEnabled, ContinuousClock.now < resumed {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(pan.isEnabled)
+            XCTAssertTrue(indicator.isEnabled)
+            XCTAssertEqual(writes, beforeScrub, "Ending a seek must not write brightness either.")
+        }
+        control.deactivate()
+        XCTAssertEqual(brightness, 0.6, "Actual playback deactivation must still restore the original level.")
+    }
+
     func testInlineLiveControlsFitPreviewWithoutFullscreenCards() async throws {
         let input = LiveChannelInput.stream(
             url: try XCTUnwrap(URL(string: "https://fixture.invalid/live.m3u8")), httpHeaders: [:]

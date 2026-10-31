@@ -21,6 +21,8 @@ public enum WatchStatusIndicator: String, CaseIterable, Identifiable, Codable, S
     /// finished items unmarked. In-progress items always show their progress bar
     /// regardless of this choice.
     case unwatched
+    /// Hide watch marks without changing episode counts or playback progress.
+    case hidden
 
     public var id: String { rawValue }
 
@@ -39,6 +41,8 @@ public enum WatchStatusIndicator: String, CaseIterable, Identifiable, Codable, S
                 defaultValue: "Unwatched",
                 comment: "Watch-status badge style option in Settings > Appearance."
             )
+        case .hidden:
+            return "Hidden"
         }
     }
 
@@ -57,6 +61,8 @@ public enum WatchStatusIndicator: String, CaseIterable, Identifiable, Codable, S
                 defaultValue: "Corner flag on unwatched items.",
                 comment: "One-line explanation shown under the watch-indicator picker."
             )
+        case .hidden:
+            return "Episode counts and progress are unchanged."
         }
     }
 

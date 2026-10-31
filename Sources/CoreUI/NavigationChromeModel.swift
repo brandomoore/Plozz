@@ -10,9 +10,8 @@ import Observation
 /// layers below the shell that draws the chrome, and only the chrome reads this —
 /// so a push invalidates the rail and nothing else.
 ///
-/// Absent (`nil` in the environment) under the two native tab styles, which draw
-/// their own chrome and manage its visibility themselves — so every reporting call
-/// site is a no-op there.
+/// Used by both custom navigation layouts. Absent under the native sidebar,
+/// which manages its own visibility.
 ///
 /// Lives in `CoreUI` rather than beside the rail in `AppShell` because the stacks
 /// that know their own depth are spread across feature modules (`FeatureMusic`,
@@ -64,8 +63,8 @@ public final class NavigationChromeModel {
 
 public extension View {
     /// Reports this navigation stack's depth to the shell's chrome model, so the
-    /// rail hides while a detail page is on top. A no-op under the native tab
-    /// styles, which don't install a chrome model.
+    /// custom chrome hides while a detail page is on top. A no-op under the native
+    /// sidebar, which doesn't install a chrome model.
     func reportsNavigationDepth(_ depth: Int, to chrome: NavigationChromeModel?) -> some View {
         onChange(of: depth, initial: true) { _, newDepth in
             chrome?.setStackDepth(newDepth)

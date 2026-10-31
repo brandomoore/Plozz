@@ -889,6 +889,9 @@ public extension PlaybackDiagnostics {
             return "Lossy encoding"
         case let output where output.hasPrefix("APAC "):
             return "Lossy encoding"
+        case let output where output.hasPrefix("PCM ")
+            && SpatialAudioLayout(rawValue: String(output.dropFirst(4))) != nil:
+            return "Rendered to PCM"
         case "renderer (compressed)" where parts[0] == "EAC3 Atmos":
             return "No re-encoding"
         case "CoreAudio" where parts[0].hasPrefix("libavcodec "):

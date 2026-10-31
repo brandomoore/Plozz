@@ -3,6 +3,7 @@ import CoreModels
 import CoreNetworking
 import CoreUI
 import CrashReporting
+import FeatureSettings
 import Foundation
 import SwiftUI
 import UIKit
@@ -53,49 +54,47 @@ struct PlozziOSDiagnosticsSettingsView: View {
             }
 
             SettingsSectionGroup {
-                Toggle(
-                    "Share Crash Reports",
-                    isOn: $crashReporting.isEnabled
-                )
+                Toggle(isOn: $crashReporting.isEnabled) { Text(SettingsCopy.shareDiagnostics) }
+                .accessibilityIdentifier("diagnostics-sharing-toggle")
                 .disabled(!appModel.crashReportingController.isConfigured)
-            } footer: {
-                if appModel.crashReportingController.isConfigured {
-                    Text(SettingsCopy.automaticDiagnostics)
-                    Text(SettingsCopy.automaticDiagnosticsExclusions)
-                } else {
-                    Text("Crash reporting is unavailable in this build.")
-                }
             }
 
-            SettingsSectionGroup("Send Diagnostics") {
-                TextField("Optional note", text: $diagnosticNote, axis: .vertical)
-                    .lineLimit(2...4)
-                Button {
+            SettingsSectionGroup("Send Diagnostics", accessory: { DiagnosticsInfoButton() }) {
+                TextField(text: $diagnosticNote, axis: .vertical) {
+                    Text(SettingsCopy.diagnosticsMessage)
+                }
+                .lineLimit(2...4)
+                .accessibilityIdentifier("diagnostics-message")
+                .disabled(!appModel.crashReportingController.isConfigured || isSending)
+                DiagnosticsSendButton(
+                    sharingEnabled: $crashReporting.isEnabled,
+                    isConfigured: appModel.crashReportingController.isConfigured,
+                    hasMessage: CrashDiagnostics.normalizedNote(diagnosticNote) != nil,
+                    isSending: isSending
+                ) {
                     appModel.applyCrashReportingPreference()
-                    let note = diagnosticNote.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let note = diagnosticNote
                     isSending = true
                     Task {
                         defer { isSending = false }
                         let sent = await CrashDiagnostics.send(note: note)
                         sendStatus = sent
                             ? "Diagnostics submitted for delivery. Thank you."
-                            : "Couldn't submit diagnostics. Check that crash reporting is enabled and try again."
+                            : SettingsCopy.diagnosticSubmissionFailed
                     }
-                } label: {
-                    Label("Send to Developer", systemImage: "paperplane")
                 }
-                .disabled(
-                    !appModel.crashReportingController.isConfigured
-                        || !crashReporting.isEnabled
-                        || isSending
-                )
 
                 if let sendStatus {
                     Text(sendStatus)
                         .plozzForeground(.secondary)
                 }
             } footer: {
-                Text(SettingsCopy.manualDiagnostics)
+                if !appModel.crashReportingController.isConfigured {
+                    Text(SettingsCopy.diagnosticSharingUnavailable)
+                } else if !crashReporting.isEnabled {
+                    Text(SettingsCopy.diagnosticSharingRequired)
+                }
+                Text(SettingsCopy.diagnosticsMessagePrivacy)
             }
 
             SettingsSectionGroup {
@@ -194,15 +193,10 @@ private struct PlozziOSRecentActivityView: View {
                         }
                     }
                 } label: {
-                    Label {
-                        // The category is a log-subsystem name from our own
-                        // logging, so it stays verbatim; "Filter" is copy.
-                        selectedCategory.map { Text(verbatim: $0.capitalized) } ?? Text("Filter")
-                    } icon: {
-                        Image(systemName: selectedCategory == nil
-                              ? "line.3.horizontal.decrease.circle"
-                              : "line.3.horizontal.decrease.circle.fill")
-                    }
+                    BrowseFilterLabel(
+                        activeCount: selectedCategory == nil ? 0 : 1,
+                        summary: selectedCategory?.capitalized ?? ""
+                    )
                 }
                 Button("Refresh", systemImage: "arrow.clockwise") {
                     entries = PlozzLog.recentEntries(limit: 500)

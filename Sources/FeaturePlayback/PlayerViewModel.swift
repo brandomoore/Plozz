@@ -306,6 +306,21 @@ public final class PlayerViewModel {
     }
     public var streamingQualityError: StreamingQualityError? { streamingQuality.error }
     public var playbackFailureReport: PlaybackDiagnosticReport? { streamingQuality.failureReport }
+    public var showsForcedTranscodingFailureHint: Bool {
+        guard case .failed = phase, streamingQuality.forceTranscodingSelected,
+              streamingOptions?.forceTranscoding == true else { return false }
+        if let request { return request.isTranscoding }
+        // A conversion can be refused before the server supplies a stream.
+        switch streamingQuality.error {
+        case .unavailable, .unsupported, .noCompatibleStream, .codecUnavailable, .plexDecision:
+            return true
+        case .serverRefusal(_, let reason):
+            return reason == .transcodingDisabled || reason == .conversionToolUnavailable
+                || reason == .hdrTranscodeUnsupported
+        default:
+            return false
+        }
+    }
     public var streamingPreparation: StreamingPreparationPhase { streamingQuality.preparation }
     public var streamingUsedH264Fallback: Bool { streamingQuality.fallbackCodec == .preferH264 }
     public var streamingUsedHEVCFallback: Bool { streamingQuality.fallbackCodec == .preferHEVC }
@@ -747,6 +762,8 @@ public final class PlayerViewModel {
             streamingQuality.options = continuation.streamingOptions
             streamingTrackSnapshot = continuation.tracks
         }
+        streamingQuality.forceTranscodingSelected = streamingOptions != nil
+            && streamingQuality.options?.forceTranscoding == true
 
         // Kick off bring-up now so playbackInfo + engine warm-up run *during* the
         // navigation transition. `load()` (from the view's `.task`) adopts this
@@ -819,11 +836,9 @@ public final class PlayerViewModel {
             Task { [weak self] in
                 guard let self, self.engineToken == callbackEngineToken,
                       self.streamingLoadGeneration == failureGeneration else { return }
-                if self.streamingOptions != nil {
-                    let facts = failureEvidence
-                    let canRetry = facts?.allowsCodecFallback ?? (error == .invalidResponse)
-                    if (canRetry || facts?.kind == .hdrConversion), self.retryStreamingCodecIfNeeded(failure: facts) { return }
-                }
+                let canRetry = failureEvidence?.allowsCodecFallback ?? (error == .invalidResponse)
+                if (canRetry || failureEvidence?.kind == .hdrConversion),
+                   self.retryStreamingCodecIfNeeded(failure: failureEvidence) { return }
                 self.streamingQuality.error = Self.streamingFailure(error, evidence: failureEvidence)
                 await self.engineHandoff.handleEngineFailure(
                     error,
@@ -1479,6 +1494,7 @@ public final class PlayerViewModel {
         rewritten.streamingSessionID = nil
         rewritten.negotiatedStreamingVideoCodec = nil
         rewritten.burnedInSubtitleTrackID = nil
+        rewritten.serverDecision = nil
         rewritten.isManifestStream = false
         rewritten.isTranscoding = false
         rewritten.deliveryMode = .directPlay
@@ -1498,6 +1514,7 @@ public final class PlayerViewModel {
         guard streamingQualityAvailable, !didStop else { return }
         let failed: Bool
         if case .failed = phase { failed = true } else { failed = false }
+        streamingQuality.forceTranscodingSelected = options.forceTranscoding
         guard streamingOptions?.matchesSelection(options) != true || failed else { return }
         streamingQuality.options = options
         streamingQuality.fallbackCodec = nil
@@ -1576,14 +1593,26 @@ public final class PlayerViewModel {
     }
 
     private func retryStreamingCodecIfNeeded(failure: StreamingPlaybackFailure? = nil) -> Bool {
-        guard request?.isTranscoding == true, let options = streamingOptions,
-              !didStop, let retry = StreamingCodecRetryPolicy.next(
+        guard let request, request.isTranscoding, !didStop else { return false }
+        let options: StreamingPlaybackOptions
+        if let selected = streamingOptions {
+            options = selected
+        } else {
+            // Ordinary TV playback can receive server HLS without a quality selection.
+            // Enter managed conversion only for recovery, never for the initial resolve.
+            guard provider is any StreamingQualityProviding, request.isManifestStream,
+                  [.movie, .episode].contains(request.item.kind) else { return false }
+            options = .init(quality: .original)
+        }
+        guard let retry = StreamingCodecRetryPolicy.next(
                 preference: options.codec,
-                selectedCodec: engine.streamingOutputVideoCodec ?? request?.negotiatedStreamingVideoCodec
+                selectedCodec: engine.streamingOutputVideoCodec ?? request.negotiatedStreamingVideoCodec
                     ?? (failure?.kind == .hdrConversion ? .h264 : nil),
                 supportsHEVC: capabilities.supportsHEVC && streamingQualitySupport.codecs.contains(.preferHEVC),
                 alreadyRetried: streamingQuality.fallbackCodec != nil
               ) else { return false }
+        streamingMediaSourceID = currentMediaSourceID
+        streamingQuality.options = options
         streamingQuality.fallbackCodec = retry
         recordPlayback(.codecRetry)
         HandoffDiagnostics.emit("streaming CODEC_RETRY requested=\(retry.rawValue) quality=\(options.quality.diagnosticName)")

@@ -4,6 +4,7 @@ import AVFoundation
 import notify
 import FeatureHome
 import FeatureHomeCore
+import FeatureSearch
 import MetadataKit
 import Observation
 import SwiftUI
@@ -115,21 +116,41 @@ struct ProductionHomeFixture: View {
                             }
                             .allowsHitTesting(false)
                         }
-                    } else if ProcessInfo.processInfo.arguments.contains("--native-top-home") {
-                        TabView(selection: $selection) {
-                            Tab("Search", systemImage: "magnifyingglass", value: NavigationRailDestination.search) {
-                                Button("Search content") {}
-                            }
-                            Tab("Home", systemImage: "house.fill", value: NavigationRailDestination.home) {
-                                ProductionHomeContent(
-                                    fixture: fixture, path: $path, libraryPath: $libraryPath,
-                                    isPinned: false, isActive: selection == .home
-                                )
-                            }
-                            Tab("Settings", systemImage: "gearshape", value: NavigationRailDestination.settings) {
-                                Button("Settings content") {}
-                            }
-                        }
+                    } else if ProcessInfo.processInfo.arguments.contains("--top-bar-home") {
+                        TopBarNavigation(
+                            destinations: [.home, .watchlist, .search],
+                            selection: $selection, preventsAccidentalExit: true,
+                            content: { destination, active in
+                                if destination == .home {
+                                    AnyView(ProductionHomeContent(
+                                        fixture: fixture, path: $path, libraryPath: $libraryPath,
+                                        isPinned: false, isActive: active
+                                    ))
+                                } else if ProcessInfo.processInfo.arguments.contains("--real-root-pages") {
+                                    AnyView(NavigationStack {
+                                        if destination == .watchlist {
+                                            WatchlistBrowseView(
+                                                viewModel: fixture.model, visibility: fixture.visibility.visibility,
+                                                onSelect: { _ in }
+                                            )
+                                        } else {
+                                            SearchView(viewModel: fixture.search, onSelect: { _ in })
+                                        }
+                                    })
+                                } else {
+                                    AnyView(Button("Fixture destination") {})
+                                }
+                            },
+                            label: { destination in
+                                switch destination {
+                                case .home: AnyView(Label("Home", systemImage: "house"))
+                                case .watchlist: AnyView(Label("Watchlist", systemImage: "bookmark"))
+                                default: AnyView(Label("Search", systemImage: "magnifyingglass"))
+                                }
+                            },
+                            profile: profile, onOpenProfileSwitcher: {},
+                            chrome: fixture.chrome
+                        )
                     } else {
                         ProductionHomeContent(fixture: fixture, path: $path, libraryPath: $libraryPath, isPinned: false)
                     }
@@ -261,7 +282,8 @@ private struct ProductionHomeContent: View {
                         navigationStyle: isPinned
                             ? .rail
                             : (ProcessInfo.processInfo.arguments.contains("--native-sidebar-home")
-                                ? .sidebar : .default),
+                                ? .sidebar : (ProcessInfo.processInfo.arguments.contains("--top-bar-home")
+                                    ? .tabBar : .default)),
                         onSelectItem: { item in withCinematicDetailNavigation(for: item) { path.append(item) } },
                         onPlayItem: { item in
                             playbackCount += 1
@@ -277,7 +299,10 @@ private struct ProductionHomeContent: View {
                 .cinematicDetailNavigation(path: $path)
             }
         }
-        .reportsNavigationDepth(isLibrarySequence ? libraryPath.count : path.count, to: isPinned ? fixture.chrome : nil)
+        .reportsNavigationDepth(
+            isLibrarySequence ? libraryPath.count : path.count,
+            to: isPinned || ProcessInfo.processInfo.arguments.contains("--top-bar-home") ? fixture.chrome : nil
+        )
         .mediaItemActionHandler(
             ProcessInfo.processInfo.arguments.contains("--home-menu-control") ? fixture.actions : nil
         )
@@ -360,6 +385,7 @@ private actor ProductionHomeReadCounter {
 @MainActor
 private final class ProductionHomeState {
     let model: HomeViewModel
+    let search: SearchViewModel
     let library: LibraryBrowseViewModel
     let detailDepth = DetailStackDepth()
     let trailerURL: URL?
@@ -426,6 +452,7 @@ private final class ProductionHomeState {
             }
         }
         let reads = ProductionHomeReadCounter()
+        search = SearchViewModel(accounts: accounts)
         let resumePublication = self.resumePublication
         model = HomeViewModel(
             accounts: accounts,
@@ -626,7 +653,7 @@ private final class ProductionHomeState {
     }
 }
 
-private struct ProductionHomeProvider: MediaProvider {
+private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
     let poster: URL
     let backdrop: URL
     let logo: URL
@@ -640,6 +667,14 @@ private struct ProductionHomeProvider: MediaProvider {
         ProcessInfo.processInfo.arguments.contains("--home-performance-fixture") ? 75 : 24
     }
     var heroSeed: MediaItem { movie(rowCount + 10) }
+
+    func watchlist() async throws -> [MediaItem] {
+        ProcessInfo.processInfo.arguments.contains("--real-root-pages") ? (0..<48).map(movie) : []
+    }
+
+    func setWatchlisted(_ on: Bool, item: MediaItem) async throws {
+        throw AppError.unknown("Read-only navigation fixture")
+    }
 
     func waitForResumePublication() async { await resumePublicationGate.wait() }
 

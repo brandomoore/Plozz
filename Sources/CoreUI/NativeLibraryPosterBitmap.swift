@@ -51,6 +51,7 @@ enum NativePosterArtworkBitmap {
         let watchIndicatorColor: WatchIndicatorColor
         let episodeCountStyle: EpisodeCountBadgeStyle
         let showsEpisodeCount: Bool
+        let showsProgressBars: Bool
         let seerConnected: Bool
         let locale: Locale
         let layoutDirection: LayoutDirection
@@ -78,6 +79,7 @@ enum NativePosterArtworkBitmap {
                 && lhs.metrics == rhs.metrics && lhs.palette == rhs.palette
                 && lhs.watchIndicator == rhs.watchIndicator && lhs.watchIndicatorColor == rhs.watchIndicatorColor
                 && lhs.showsEpisodeCount == rhs.showsEpisodeCount
+                && (lhs.layer == .foreground || lhs.showsProgressBars == rhs.showsProgressBars)
                 && lhs.episodeCountStyle == rhs.episodeCountStyle
                 && lhs.seerConnected == rhs.seerConnected && lhs.locale == rhs.locale
                 && lhs.layoutDirection == rhs.layoutDirection && lhs.colorScheme == rhs.colorScheme
@@ -96,6 +98,7 @@ enum NativePosterArtworkBitmap {
             watchIndicatorColor = environment.plozzWatchIndicatorColor
             episodeCountStyle = environment.plozzEpisodeCountBadgeStyle
             showsEpisodeCount = environment.plozzShowsUnwatchedEpisodeCount
+            showsProgressBars = environment.plozzShowsProgressBars
             seerConnected = environment.plozzSeerConnected
             locale = environment.locale
             layoutDirection = environment.layoutDirection
@@ -474,6 +477,7 @@ enum NativeLibraryPosterBitmap {
         let watchIndicatorColor: WatchIndicatorColor
         let episodeCountStyle: EpisodeCountBadgeStyle
         let showsEpisodeCount: Bool
+        let showsProgressBars: Bool
         let seerConnected: Bool
         let locale: Locale
         let layoutDirection: LayoutDirection
@@ -486,7 +490,7 @@ enum NativeLibraryPosterBitmap {
             playback.map {
                 MediaCardPlaybackIndicators(
                     playback: $0, hidesStatus: hidesStatus,
-                    showsProgressBar: true, badgeInset: 8,
+                    showsProgressBar: showsProgressBars, badgeInset: 8,
                     progressHeight: metrics.progressBarHeight,
                     progressHorizontalInset: 16, progressBottomInset: 16,
                     artworkCornerRadius: PlozzTheme.Metrics.nativePosterArtworkCornerRadius
@@ -508,6 +512,7 @@ enum NativeLibraryPosterBitmap {
             watchIndicatorColor = environment.plozzWatchIndicatorColor
             episodeCountStyle = environment.plozzEpisodeCountBadgeStyle
             showsEpisodeCount = environment.plozzShowsUnwatchedEpisodeCount
+            showsProgressBars = environment.plozzShowsProgressBars
             seerConnected = environment.plozzSeerConnected
             locale = environment.locale
             layoutDirection = environment.layoutDirection

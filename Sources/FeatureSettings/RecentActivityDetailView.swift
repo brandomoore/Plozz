@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import CoreModels
 import CoreNetworking
 import CoreUI
 
@@ -15,12 +16,8 @@ import CoreUI
 /// Local messages may contain configuration or content details. Submitted reports
 /// use a separate allowlisted representation, never these displayed messages.
 struct RecentActivityDetailView: View {
-    /// Whether the on-demand "Send to Developer" upload is possible right now —
-    /// i.e. the build shipped with a crash-reporting endpoint AND the user has
-    /// opted in (Help & Diagnostics ▸ Share Crash Reports). When false the button
-    /// is replaced by a short note explaining how to enable it, because there is
-    /// nowhere to send the log.
-    var canSendDiagnostics: Bool = false
+    @Bindable var crashReporting: CrashReportingSettingsModel
+    let crashReportingConfigured: Bool
 
     private let entries = PlozzLog.recentEntries(limit: 500)
     @State private var selectedCategory: String? = nil
@@ -93,8 +90,8 @@ struct RecentActivityDetailView: View {
     /// Submit filtered technical evidence, not the displayed free-form messages.
     private var sendSection: some View {
         SendDiagnosticsCard(
-            canSend: canSendDiagnostics,
-            idleDescription: SettingsCopy.manualDiagnostics
+            sharingEnabled: $crashReporting.isEnabled,
+            isConfigured: crashReportingConfigured
         )
     }
 }

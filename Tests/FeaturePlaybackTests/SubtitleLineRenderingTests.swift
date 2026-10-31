@@ -261,6 +261,66 @@ final class SubtitleLineRenderingTests: XCTestCase {
         }
     }
 
+    func testLayoutProbesDoNotChangePixelsAtTheAcceptedSubtitleSize() throws {
+        for text in [
+            "A subtitle that wraps and must keep the same lines when SwiftUI measures it again.",
+            "First row\nA longer second row with descenders gyp and accents ÉÅ."
+        ] {
+            let c = config(family: .system, size: 42, text: text)
+            let reference = try render(c, maxWidth: 360)
+            for probes: [CGFloat] in [[0], [1200], [180], [0, 1200, 180]] {
+                let result = try render(c, maxWidth: 360, measurementProbes: probes)
+                XCTAssertEqual(result.size, reference.size)
+                XCTAssertEqual(result.ink, reference.ink, "Probes: \(probes)")
+                XCTAssertTrue(result.pixels == reference.pixels, "Probes changed subtitle pixels: \(probes)")
+            }
+        }
+    }
+
+    #if DEBUG
+    func testRepeatedLayoutProbesAndDrawingReuseBoundedCueGeometry() {
+        let view = SubtitleLineView()
+        let c = config(family: .system, size: 42, text: "A wrapped subtitle must keep its measured lines.")
+        view.configure(c)
+        let accepted = view.measure(maxWidth: 360)
+        _ = view.measure(maxWidth: 1200)
+        _ = view.measure(maxWidth: 180)
+        let builds = view.layoutBuildCountForTesting
+        XCTAssertEqual(builds, 3)
+        view.bounds = CGRect(origin: .zero, size: accepted)
+        let renderer = UIGraphicsImageRenderer(size: accepted)
+        for _ in 0..<60 {
+            view.configure(c)
+            XCTAssertEqual(view.measure(maxWidth: 0), .zero)
+            for width: CGFloat in [360, 1200, 180] { _ = view.measure(maxWidth: width) }
+            _ = renderer.image { _ in view.draw(view.bounds) }
+        }
+        XCTAssertEqual(view.layoutBuildCountForTesting, builds)
+        XCTAssertEqual(view.drawCountForTesting, 60)
+        XCTAssertEqual(view.cachedLayoutCountForTesting, 3)
+
+        for width in stride(from: 400, through: 800, by: 10) {
+            _ = view.measure(maxWidth: CGFloat(width))
+            XCTAssertLessThanOrEqual(view.cachedLayoutCountForTesting, 4)
+        }
+        let resizedBuilds = view.layoutBuildCountForTesting
+        XCTAssertEqual(view.measure(maxWidth: 360), accepted)
+        XCTAssertEqual(view.intrinsicContentSize, accepted)
+        _ = renderer.image { _ in view.draw(view.bounds) }
+        XCTAssertEqual(view.layoutBuildCountForTesting, resizedBuilds,
+                       "Resizing probes must not evict the currently displayed layout")
+        var revised = c
+        revised.text = "Revised cue"
+        view.configure(revised)
+        XCTAssertEqual(view.cachedLayoutCountForTesting, 0)
+        let size = view.measure(maxWidth: 360)
+        view.bounds = CGRect(origin: .zero, size: size)
+        _ = UIGraphicsImageRenderer(size: size).image { _ in view.draw(view.bounds) }
+        XCTAssertEqual(view.drawnTextForTesting, revised.text)
+        XCTAssertEqual(view.cachedLayoutCountForTesting, 1)
+    }
+    #endif
+
     func testBoxAndLargeEffectsFitWithoutFontDependentBottomPadding() throws {
         try registerFonts()
         for family in SubtitleFontFamily.allCases {
@@ -627,11 +687,12 @@ final class SubtitleLineRenderingTests: XCTestCase {
     /// Draw on an oversized canvas so ink outside the measured view is detected,
     /// rather than silently clipped by the snapshot itself.
     private func render(
-        _ c: SubtitleLineView.Config, maxWidth: CGFloat = 900
+        _ c: SubtitleLineView.Config, maxWidth: CGFloat = 900, measurementProbes: [CGFloat] = []
     ) throws -> (size: CGSize, ink: CGRect, pixels: [UInt8]) {
         let view = SubtitleLineView()
         view.configure(c)
         let size = view.measure(maxWidth: maxWidth)
+        for width in measurementProbes { _ = view.measure(maxWidth: width) }
         view.bounds = CGRect(origin: .zero, size: size)
         let margin: CGFloat = 40
         let format = UIGraphicsImageRendererFormat()

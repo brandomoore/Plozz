@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import CoreModels
 import FeatureHome
+import FeatureSettings
 
 /// Loads the full set of libraries across every active account for the Settings
 /// "Home Libraries" checklist. Lives in the composition root because it drives
@@ -16,6 +17,31 @@ final class LibraryDiscoveryModel {
 
     private let aggregator = HomeAggregator()
     private var loadGeneration = UUID()
+    private let navigationDiscovery = NavigationLibraryDiscovery()
+
+    /// Settings and navigation consume the same current-scope answer, without
+    /// making the Settings root observe the detail pages' loading state.
+    func refreshNavigationLibraries(
+        from accounts: [ResolvedAccount],
+        navigation: NavigationStyleSettingsModel,
+        settings: DiscoveredLibrariesStore,
+        changedAccountID: String? = nil,
+        isCurrent: () -> Bool
+    ) async -> Bool {
+        let accountIDs = Set(accounts.map(\.account.id))
+        let request = settings.beginRefresh(accountIDs: changedAccountID.map { Set([$0]) } ?? accountIDs)
+        defer { settings.cancelRefresh(request) }
+        guard let discovered = await navigationDiscovery.refresh(
+            from: accounts, navigation: navigation, isCurrent: isCurrent
+        ) else { return false }
+        settings.finishRefresh(
+            with: discovered.libraries,
+            unreachableAccountIDs: discovered.unreachableAccountIDs,
+            failures: discovered.failures,
+            request: request
+        )
+        return !navigation.contentLibraries.isEmpty || discovered.unreachableAccountIDs.isEmpty
+    }
 
     /// Discovers libraries across `accounts`, resiliently, WITHOUT publishing any
     /// state, reporting which accounts were unreachable. The Settings path uses

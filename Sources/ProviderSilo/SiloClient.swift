@@ -122,7 +122,11 @@ actor SiloClient {
             // A refresh rotates credentials; never replay an uncertain exchange.
             let result: Refreshed
             do {
-                result = try await http.decode(Refreshed.self, from: endpoint, baseURL: baseURL, decoder: JSONDecoder())
+                let route: ResponseDecodingDiagnostic.Route = SearchDiagnosticJournal.currentSource == nil
+                    ? HTTPResponseDiagnostics.route : .searchAuthentication
+                result = try await HTTPResponseDiagnostics.$route.withValue(route) {
+                    try await http.decode(Refreshed.self, from: endpoint, baseURL: baseURL, decoder: JSONDecoder())
+                }
             } catch let failure as HTTPRequestNotSentError {
                 try store.rotateCredential(
                     accountID: accountID, revision: revision, expected: pendingRaw, replacement: raw
@@ -151,11 +155,24 @@ actor SiloClient {
         _ path: String, method: HTTPMethod = .get, query: [URLQueryItem] = [], body: Data? = nil,
         deviceID: String? = nil
     ) async throws -> T {
-        let (data, _) = try await send(path, method: method, query: query, body: body, deviceID: deviceID)
-        do { return try JSONDecoder().decode(T.self, from: data) }
-        catch {
-            PlozzLog.networking.error("Silo response did not match \(String(describing: T.self))")
-            throw AppError.decoding
+        let route: ResponseDecodingDiagnostic.Route
+        if SearchDiagnosticJournal.currentSource != nil {
+            switch path {
+            case "/user/libraries": route = .searchLibraries
+            case "/catalog": route = .searchCatalog
+            default: route = .search
+            }
+        } else {
+            route = HTTPResponseDiagnostics.route
+        }
+        return try await HTTPResponseDiagnostics.$route.withValue(route) {
+            let (data, response) = try await send(path, method: method, query: query, body: body, deviceID: deviceID)
+            do { return try JSONDecoder().decode(T.self, from: data) }
+            catch {
+                HTTPResponseDiagnostics.recordDecodeFailure(error, data: data, response: response)
+                PlozzLog.networking.error("Silo response did not match \(String(describing: T.self))")
+                throw AppError.decoding
+            }
         }
     }
 
@@ -179,6 +196,7 @@ actor SiloClient {
             result = try await http.sendRaw(endpoint, baseURL: baseURL)
         }
         if !(200...299).contains(result.1.statusCode) {
+            HTTPResponseDiagnostics.recordHTTPFailure(status: result.1.statusCode)
             let operation = path.hasPrefix("/catalog/items/") ? "catalog/item"
                 : path.hasPrefix("/playback/") && path != "/playback/start" && path != "/playback/capabilities"
                     ? "playback/session" : path

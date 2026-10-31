@@ -424,6 +424,8 @@ final class TraktWatchlistDestinationTests: XCTestCase {
         let entries = try await makeDestination(http: http).fetchEntries()
 
         XCTAssertEqual(entries.map(\.kind), [.movie, .series])
+        XCTAssertEqual(entries[0].addedAt, Date(timeIntervalSince1970: 1_769_904_000))
+        XCTAssertEqual(entries[1].addedAt, Date(timeIntervalSince1970: 1_767_225_600))
         XCTAssertTrue(entries[0].externalIDs.contains {
             $0.namespace == .imdb && $0.value == "tt1160419"
         })

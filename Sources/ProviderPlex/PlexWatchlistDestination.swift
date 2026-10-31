@@ -120,10 +120,12 @@ public struct PlexWatchlistDestination:
                 presentation: MediaAliasPresentation(
                     title: item.title,
                     year: item.productionYear,
+                    releaseDate: item.releaseDate,
                     artworkURL: item.posterURL?.absoluteString,
                     backdropURL: item.backdropURL?.absoluteString
                 ),
-                presentationAccountID: provider.accountID
+                presentationAccountID: provider.accountID,
+                addedAt: item.watchlistAddedAt
             ) else {
                 throw WatchlistDestinationError.transient
             }
@@ -174,6 +176,7 @@ public struct PlexWatchlistDestination:
             presentation: MediaAliasPresentation(
                 title: item.title,
                 year: item.productionYear,
+                releaseDate: item.releaseDate,
                 artworkURL: item.posterURL?.absoluteString,
                 backdropURL:
                     (item.heroBackdropURL ?? item.backdropURL)?.absoluteString

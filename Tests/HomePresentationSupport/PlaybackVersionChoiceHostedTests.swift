@@ -1,8 +1,11 @@
 import CoreModels
 import CoreImage
+import CoreNetworking
 @testable import CoreUI
 import FeatureHomeCore
 import Observation
+import ProviderJellyfin
+import ProviderPlex
 import SwiftUI
 import UIKit
 import Vision
@@ -10,6 +13,216 @@ import XCTest
 
 @MainActor
 final class PlaybackVersionChoiceHostedTests: XCTestCase {
+    func testJellyfinHTTPInventoriesDriveVersionMenuAvailability() async throws {
+        for count in 0...2 { try await exerciseHTTPInventory(.jellyfin, sourceCount: count) }
+    }
+
+    func testPlexHTTPInventoriesDriveVersionMenuAvailability() async throws {
+        for count in 0...2 { try await exerciseHTTPInventory(.plex, sourceCount: count) }
+    }
+
+    func testEmbyHTTPInventoriesDriveVersionMenuAvailability() async throws {
+        for count in 0...2 { try await exerciseHTTPInventory(.emby, sourceCount: count) }
+    }
+
+    private func exerciseHTTPInventory(_ kind: ProviderKind, sourceCount: Int) async throws {
+        let mediaBrowserSources = [1080, 2160].enumerated().map { index, height in
+            """
+            {"Id":"file-\(index)","Name":"\(height)p","Container":"mkv",
+             "Path":"/fixture/Example.\(height)p.mkv",
+             "MediaStreams":[{"Index":0,"Type":"Video","Codec":"h264","Width":\(height * 16 / 9),"Height":\(height)}]}
+            """
+        }
+        let plexSources = [1080, 2160].enumerated().map { index, height in
+            """
+            {"id":\(10 + index),"container":"mkv","videoCodec":"h264","width":\(height * 16 / 9),"height":\(height),
+             "Part":[{"id":\(20 + index),"key":"/library/parts/\(20 + index)/file.mkv",
+                      "file":"/fixture/Example.\(height)p.mkv"}]}
+            """
+        }
+        let sources = (kind == .plex ? plexSources : mediaBrowserSources).prefix(sourceCount).joined(separator: ",")
+        let detail = kind == .plex
+            ? """
+              {"MediaContainer":{"Metadata":[{"ratingKey":"42","title":"Example movie","type":"movie","Media":[\(sources)]}]}}
+              """
+            : """
+              {"Id":"42","Name":"Example movie","Type":"Movie","MediaSources":[\(sources)]}
+              """
+        // Even unknown/single-file metadata has a working inventory endpoint;
+        // merely opening the menu must not call it to discover more choices.
+        let inventory = """
+        {"MediaSources":[\(mediaBrowserSources.joined(separator: ","))]}
+        """
+        let detailPath = kind == .plex ? "/library/metadata/42" : "/Users/fixture/Items/42"
+        let server = try IPTVTestHTTPServer { request in
+            let target = request.components(separatedBy: "\r\n").first?
+                .split(separator: " ").dropFirst().first?
+                .split(separator: "?").first.map(String.init)
+            switch target {
+            case detailPath:
+                return .init(data: Data(detail.utf8), headers: ["Content-Type": "application/json"])
+            case "/Items/42/PlaybackInfo" where kind != .plex:
+                return .init(data: Data(inventory.utf8), headers: ["Content-Type": "application/json"])
+            default:
+                return .init(status: 404)
+            }
+        }
+        addTeardownBlock { await server.stop() }
+        let url = try await server.start()
+        let transport = URLSession(configuration: .ephemeral)
+        defer { transport.invalidateAndCancel() }
+        let http = URLSessionHTTPClient(session: transport)
+        let session = UserSession(
+            server: MediaServer(id: UUID().uuidString, name: "Fixture", baseURL: url, provider: kind),
+            userID: "fixture", userName: "Fixture", deviceID: "fixture", accessToken: "synthetic-token"
+        )
+        let provider: any MediaProvider
+        if kind == .plex {
+            provider = PlexProvider(session: session, http: http, interactiveHTTP: http, probe: http)
+        } else {
+            provider = JellyfinProvider(session: session, http: http, interactiveHTTP: http, addressProbe: http)
+        }
+        let item = try await provider.item(id: "42")
+        XCTAssertEqual(item.id, "42")
+        XCTAssertEqual(item.title, "Example movie")
+        XCTAssertEqual(item.versions.count, sourceCount > 1 ? sourceCount : 0)
+        if sourceCount > 1 {
+            XCTAssertEqual(item.versions.map(\.id), kind == .plex ? ["10", "11"] : ["file-0", "file-1"])
+        }
+        let baselineRequests = await server.requestCount
+        XCTAssertEqual(baselineRequests, 1, "Detail metadata must not prepare playback.")
+        let probe = VersionChoiceHostedProbe()
+        let loader: MediaVersionInventoryLoader? = provider.playbackInventoryRequiresEnrichment
+            ? MediaVersionInventoryLoader(id: UUID().uuidString) {
+                let resolved = try await provider.playbackItem(id: item.id)
+                probe.inventoryRequests += 1
+                return resolved.versions
+            } : nil
+        XCTAssertEqual(loader != nil, kind != .plex)
+
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let menu = PlaybackSourceMenuState()
+        let window = UIWindow(windowScene: scene)
+        #if os(tvOS)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        #else
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        #endif
+        window.rootViewController = UIHostingController(rootView:
+            Color.black.ignoresSafeArea()
+                .playbackSourceMenu(
+                    state: menu, sources: [], selectedSourceID: nil,
+                    versions: item.versions, selectedVersionID: item.versions.first?.id, loadVersions: loader,
+                    onSelectSource: { _ in XCTFail("Browsing must not select a server.") },
+                    onSelectVersion: { _ in XCTFail("Browsing must not select or play a file.") }
+                )
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+        )
+        window.makeKeyAndVisible()
+        defer {
+            menu.isPresented = false
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        menu.open(
+            from: CGRect(x: 100, y: 100, width: 80, height: 48),
+            actions: [.init(id: "refresh", title: "Refresh", systemImage: "arrow.clockwise")]
+        )
+        try await waitUntil { window.rootViewController?.presentedViewController != nil }
+        let name = "\(kind.rawValue)-files-\(sourceCount)"
+        let root = try await visibleText(in: window, name: "\(name)-menu")
+        XCTAssertEqual(root.localizedCaseInsensitiveContains("version"), sourceCount > 1, root)
+        XCTAssertTrue(root.localizedCaseInsensitiveContains("refresh"), root)
+        let requestsAfterMenu = await server.requestCount
+        XCTAssertEqual(requestsAfterMenu, baselineRequests, "Opening/focusing the menu must not contact the server.")
+        XCTAssertEqual(probe.inventoryRequests, 0)
+
+        if sourceCount > 1 {
+            menu.page = .versions
+            if loader != nil { try await waitUntil { probe.inventoryRequests == 1 } }
+            let choices = try await visibleText(in: window, name: "\(name)-choices")
+            XCTAssertTrue(choices.contains("1080"), choices)
+            XCTAssertTrue(choices.contains("2160") || choices.contains("4K"), choices)
+            let requestsAfterChoices = await server.requestCount
+            XCTAssertEqual(requestsAfterChoices, baselineRequests + (loader == nil ? 0 : 2))
+            menu.page = .root
+            _ = try await visibleText(in: window, name: "\(name)-back")
+            let requestsAfterBack = await server.requestCount
+            XCTAssertEqual(requestsAfterBack, requestsAfterChoices)
+        }
+        let evidence = XCTAttachment(string: """
+        provider=\(kind.rawValue) serverFiles=\(sourceCount) decodedChoices=\(item.versions.count)
+        lazyLoader=\(loader != nil) versionAction=\(sourceCount > 1)
+        detailRequests=\(baselineRequests) requestsAfterMenu=\(requestsAfterMenu)
+        completedExplicitInventoryLoads=\(probe.inventoryRequests)
+        """)
+        evidence.name = "\(name)-http-evidence"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        await server.stop()
+    }
+
+    func testSourceMenuOffersVersionsOnlyWithMultipleKnownChoices() async throws {
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        #if os(tvOS)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        #else
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        #endif
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let probe = VersionChoiceHostedProbe()
+        let loader = MediaVersionInventoryLoader(id: "known-choices") {
+            probe.inventoryRequests += 1
+            return [.init(id: "hd"), .init(id: "uhd")]
+        }
+        for hasLoader in [false, true] {
+            for count in [0, 1, 2] {
+                let versions = Array([MediaVersion(id: "hd", height: 1080), .init(id: "uhd", height: 2160)].prefix(count))
+                let panel = PlaybackSourceMenuPanel(
+                    page: .constant(.root),
+                    sources: [.init(accountID: "local", itemID: "movie"), .init(accountID: "remote", itemID: "movie")],
+                    selectedSourceID: "local",
+                    versions: versions, selectedVersionID: versions.first?.id,
+                    loadVersions: hasLoader ? loader : nil,
+                    actions: [.init(id: "refresh", title: "Refresh", systemImage: "arrow.clockwise")],
+                    onSelectSource: { _ in }, onSelectVersion: { _ in }, onPerformAction: { _ in }
+                )
+                window.rootViewController = UIHostingController(rootView:
+                    panel
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.black)
+                        .environment(\.themePalette, .dark)
+                        .environment(\.colorScheme, .dark)
+                        .environment(\.locale, Locale(identifier: "en_US"))
+                )
+                window.makeKeyAndVisible()
+                let text = try await visibleText(in: window, name: "version-count-\(count)-loader-\(hasLoader)")
+                XCTAssertEqual(text.localizedCaseInsensitiveContains("version"), count > 1, text)
+                XCTAssertTrue(text.localizedCaseInsensitiveContains("server"), text)
+                XCTAssertTrue(text.localizedCaseInsensitiveContains("refresh"), text)
+                XCTAssertEqual(probe.inventoryRequests, 0, "Menu availability must not start playback inventory discovery.")
+            }
+        }
+    }
+
     func testSourceMenuOnlyDiscoversInventoryAfterOpeningItsVersionPage() async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
@@ -34,7 +247,7 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
             Color.black.ignoresSafeArea()
                 .playbackSourceMenu(
                     state: menu, sources: [], selectedSourceID: "account",
-                    versions: [], selectedVersionID: nil, loadVersions: loader,
+                    versions: [.init(id: "hd"), .init(id: "uhd")], selectedVersionID: nil, loadVersions: loader,
                     onSelectSource: { _ in XCTFail("Inventory does not select a server.") },
                     onSelectVersion: { _ in XCTFail("Inventory does not select or play a file.") }
                 )
@@ -52,7 +265,7 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
         menu.open(from: CGRect(x: 100, y: 100, width: 80, height: 48))
         try await waitUntil { window.rootViewController?.presentedViewController != nil }
         let root = try await visibleText(in: window, name: "inventory-root")
-        XCTAssertTrue(root.localizedCaseInsensitiveContains("version"), "Lazy sources remain discoverable.")
+        XCTAssertTrue(root.localizedCaseInsensitiveContains("version"), "Two known choices offer version selection.")
         XCTAssertEqual(probe.inventoryRequests, 0, "Opening/focusing overflow must remain metadata-only.")
         menu.page = .versions
         try await waitUntil { probe.inventoryRequests == 1 }

@@ -39,7 +39,7 @@ final class SubtitlePreviewControlsHostedTests: XCTestCase {
                     && UIFocusSystem(for: window)?.focusedItem.map(ObjectIdentifier.init) != previousFocus
                     && self.focusFrame(in: window).map(model.footerFrame.contains) == true
             }
-            try await Task.sleep(for: .milliseconds(220))
+            try await waitForHostedLayout(window)
             let focused = try XCTUnwrap(focusFrame(in: window))
             let controlAttachment = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
             controlAttachment.name = "Subtitle preview \(control), focus \(focused)"

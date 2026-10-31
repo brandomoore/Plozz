@@ -61,6 +61,21 @@ Fatal iOS 18 Downloads samples have included filesystem metadata lookup during
 episode-row rendering; a sampled UI frame alone does not prove a decoder fault
 or establish that every Downloads hang shares one cause.
 
+The completed-episode detail push also reproduced a separate main-thread
+navigation/List update loop on an iPhone XR simulator running iOS 18.0. The same
+four-push interaction completed on iOS 26.2, while iOS 18.0 stayed near 99% CPU
+after the first episode tap and exceeded the 120-second test allowance. No
+artwork files or active transfers were needed to reproduce it.
+
+Keep the downloaded show's destination closure scoped to `[appModel]`, not the
+whole view containing `@Environment(\.dismiss)`. Capturing only the model broke
+the loop with the original navigation hierarchy unchanged; moving the destination
+outside the conditional subtree alone did not. The native
+`DownloadsInteractionTests.testCompletedEpisodeDetailsRemainNavigableAcrossRepeatedPushes`
+regression uses a synthetic connected provider and the real episode detail page,
+then returns through both Back levels four times. Run it on iOS 18 as well as a
+current OS; this verifies navigation, not network transfer or offline playback.
+
 ## Sentry diagnostics and matching symbols
 
 Crash-reporting consent gates all uploads. Automatic UI/network breadcrumbs and
@@ -90,10 +105,35 @@ Library browsing, recommendations and Continue Watching additionally retain
 typed section, route, decode/paging facts and numeric errors, rather than relying
 on the local free-form log. These and preparation failures use bounded local
 record buffers with explicit dropped-record counts.
+The `connections` section records Jellyfin/Emby address validation (each candidate,
+including successful fallback), password sign-in, and Quick Connect begin/approval.
+It retains at most 32 attempts for 48 hours in memory, with at most four requests
+per attempt; restarting the app clears this journal. Submit after reproducing,
+before restarting. Facts include scheme, explicit-port/base-prefix presence,
+outcome, timings, response format/status, URL error codes, and bounded underlying
+error-domain categories/numeric codes (for example POSIX connection refusal).
+It never contains hosts, IPs, ports, paths, credentials, response bodies, or error
+descriptions, and does not infer VPN reachability from a VPN product name.
+Cancelled attempts and background reachability polling are excluded. There is
+no extra request, changed timeout, certificate exception, or automatic upload.
 Source/account/profile/attempt references are remapped within each report,
 including relationships between journals; stable local hashes and UUIDs do not
 leave the device. Record times are relative ages. The optional written message
 is submitted separately as written, so feedback is not guaranteed anonymous.
+
+Search has a separate consent-scoped, in-memory journal in the manual attachment's
+`search` section. It retains 32 completed source attempts and up to 32 active ones;
+ordinary Home/network traffic cannot displace them. Outcomes distinguish results,
+empty, failure, cancellation and still-running work per provider, correlated with
+report-local search aliases. Request/page totals accompany bounded tails (eight
+each); decoding, HTTP and transport failures retain four each. Silo also reports
+numeric library filtering and cursor progression, not names, IDs, query text or
+cursor values. Missing library metrics on other providers mean uninstrumented,
+not zero. Enable Share Crash Reports before reproducing, then submit without
+restarting: opt-out/relaunch clears the journal and late completions from a prior
+consent session are discarded. Completed records also expire after 48 hours.
+This evidence narrows client/server failures but cannot diagnose server indexing
+internals or prove that a successful empty response is correct.
 
 Opted-in reports also carry a bounded, in-memory performance snapshot. It records
 coarse operation/provider categories, elapsed time, start-thread identity,

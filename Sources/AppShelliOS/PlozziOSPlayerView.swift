@@ -10,7 +10,7 @@ import SwiftUI
 struct PlozziOSPlaybackRequest: Identifiable {
     let id = UUID()
     let item: MediaItem
-    let startPosition: TimeInterval
+    var startPosition: TimeInterval
     let playlist: VideoPlaylistPlaybackContext?
 
     /// Resolves the show's remembered version HERE, so no play path can skip it.

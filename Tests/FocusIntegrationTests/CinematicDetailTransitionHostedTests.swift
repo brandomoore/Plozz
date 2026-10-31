@@ -577,6 +577,9 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
             fixture.model.open(in: fixture.window, usesCard: usesCard)
             try await waitUntil { fixture.model.session != nil }
             let session = try XCTUnwrap(fixture.model.session)
+            if usesCard {
+                try await waitUntil { session.returnArtwork != nil }
+            }
             let retainedArtwork = session.returnArtwork
             // The source carousel can reconfigure or remove its selected slide
             // after navigation has captured the target.

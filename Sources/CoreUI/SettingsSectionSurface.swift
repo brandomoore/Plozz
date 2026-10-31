@@ -3,9 +3,14 @@ import SwiftUI
 
 public struct SettingsMenuLabel: View {
     private let title: LocalizedStringResource
-    private let value: LocalizedStringResource
+    private let value: Text
 
     public init(_ title: LocalizedStringResource, value: LocalizedStringResource) {
+        self.title = title
+        self.value = Text(value)
+    }
+
+    public init(_ title: LocalizedStringResource, value: Text) {
         self.title = title
         self.value = value
     }
@@ -13,7 +18,7 @@ public struct SettingsMenuLabel: View {
     public var body: some View {
         LabeledContent {
             HStack(spacing: 8) {
-                Text(value)
+                value
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption.weight(.semibold))
                     .accessibilityHidden(true)

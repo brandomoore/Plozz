@@ -61,7 +61,7 @@ public actor TraktWatchlistDestination:
             accessToken: validAccessToken()
         )
         return try result.map {
-            try entry(kind: $0.kind, title: $0.title)
+            try entry(kind: $0.kind, title: $0.title, addedAt: $0.listedAt)
         }
     }
 
@@ -152,7 +152,8 @@ public actor TraktWatchlistDestination:
 
     private func entry(
         kind: MediaItemKind,
-        title: TraktWatchlistTitle
+        title: TraktWatchlistTitle,
+        addedAt: Date
     ) throws -> WatchlistDestinationEntry {
         let externalIDs = Self.externalIDs(title.ids)
         guard let first = externalIDs.first,
@@ -168,7 +169,8 @@ public actor TraktWatchlistDestination:
             binding: binding,
             presentation: title.title.map {
                 MediaAliasPresentation(title: $0, year: title.year)
-            }
+            },
+            addedAt: addedAt
         ) else {
             throw WatchlistDestinationError.transient
         }

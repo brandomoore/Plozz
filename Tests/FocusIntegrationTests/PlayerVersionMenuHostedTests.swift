@@ -8,6 +8,19 @@ import XCTest
 
 @MainActor
 final class PlayerVersionMenuHostedTests: XCTestCase {
+    func testVersionFilenameQueriesRejectControlCharactersInOptimizedBuild() {
+        XCTAssertEqual(
+            MediaSourceDisplayName.fileName(from: "filename=Movie.Extended-GROUP.mkv"),
+            "Movie.Extended-GROUP.mkv"
+        )
+        for encodedControl in ["%00", "%09", "%0A", "%0D", "%7F", "%C2%85", "%E2%80%8B"] {
+            XCTAssertNil(
+                MediaSourceDisplayName.fileName(from: "filename=Movie\(encodedControl)Name.mkv"),
+                encodedControl
+            )
+        }
+    }
+
     func testReturningFromScrolledVersionsRestoresVisibleRootAndNativeFocus() async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
@@ -146,6 +159,10 @@ final class PlayerVersionMenuHostedTests: XCTestCase {
             versions: [version, .init(id: "other", height: 1080)], selectedVersionID: version.id,
             actions: [], onSelectSource: { _ in }, onSelectVersion: { _ in }, onPerformAction: { _ in }
         )
+        XCTAssertEqual(MediaSourceDisplayName.fileName(from: version.fileName),
+                       "Movie.Extended.2160p.REMUX.HEVC.TrueHD-GROUP.mkv")
+        XCTAssertEqual(MediaVersion.PickerPresentation(version).releaseName,
+                       "Movie.Extended.2160p.REMUX.HEVC.TrueHD-GROUP.mkv")
         window.rootViewController = UIHostingController(rootView:
             panel.environment(\.locale, Locale(identifier: "en_US"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity).background(.black)

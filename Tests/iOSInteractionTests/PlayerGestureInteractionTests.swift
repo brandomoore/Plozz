@@ -179,6 +179,49 @@ final class PlayerGestureInteractionTests: XCTestCase {
         XCTAssertEqual(Double(app.staticTexts["gesture-system-volume"].label), volume)
     }
 
+    func testTimelineDragsWithVerticalMovementSeekWithoutChangingLevels() throws {
+        app.buttons["Pause"].tap()
+        XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 3))
+        let brightness = try XCTUnwrap(Double(app.staticTexts["gesture-screen-brightness"].label))
+        let volume = try XCTUnwrap(Double(app.staticTexts["gesture-system-volume"].label))
+        for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
+            XCUIDevice.shared.orientation = orientation
+            let landscape = orientation.isLandscape
+            let rotated = NSPredicate { _, _ in
+                (self.app.frame.width > self.app.frame.height) == landscape
+            }
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [expectation(for: rotated, evaluatedWith: app)], timeout: 5), .completed
+            )
+            let scrubber = app.otherElements["player-timeline-scrubber"]
+            XCTAssertTrue(scrubber.waitForExistence(timeout: 3))
+            for (start, end) in [(0.15, 0.25), (0.85, 0.75)] {
+                let origin = scrubber.coordinate(withNormalizedOffset: CGVector(dx: start, dy: 0.5))
+                let landing = scrubber.coordinate(withNormalizedOffset: CGVector(dx: end, dy: 0.5))
+                    .withOffset(CGVector(dx: 0, dy: -120))
+                origin.press(forDuration: 0.05, thenDragTo: landing)
+                XCTAssertFalse(app.otherElements["player-gesture-level-pill"].exists, app.debugDescription)
+                XCTAssertFalse(app.staticTexts["player-gesture-skip-total"].exists)
+                XCTAssertEqual(Double(app.staticTexts["gesture-screen-brightness"].label), brightness)
+                XCTAssertEqual(Double(app.staticTexts["gesture-system-volume"].label), volume)
+                let target = end * 180
+                let time = app.buttons["player-timeline-current-time"]
+                let landed = NSPredicate { _, _ in
+                    guard let text = time.value as? String else { return false }
+                    let parts = text.split(separator: ":").compactMap { Double($0) }
+                    guard parts.count == 2 else { return false }
+                    return abs(parts[0] * 60 + parts[1] - target) < 3
+                }
+                XCTAssertEqual(
+                    XCTWaiter.wait(for: [expectation(for: landed, evaluatedWith: time)], timeout: 10), .completed,
+                    "A drag starting on either end of the timeline must remain a seek after leaving its bounds."
+                )
+                XCTAssertTrue(app.buttons["Play"].exists, "Seeking must preserve pause intent.")
+                XCTAssertEqual(app.staticTexts["rotation-load-count"].label, "Loads 1")
+            }
+        }
+    }
+
     func testRevealedBrightnessMeterAcceptsAbsoluteTapsAndDragsWithoutPlayerShortcuts() throws {
         let origin = app.coordinate(withNormalizedOffset: .zero)
         let revealStart = point(x: 0.18, y: 0.42)

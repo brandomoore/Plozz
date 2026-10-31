@@ -116,6 +116,41 @@ final class MediaFolderCardLayoutTests: XCTestCase {
 #endif
 
 final class PosterCardPresentationTests: XCTestCase {
+    func testHiddenSuppressesOnlyWatchMarks() {
+        for kind in [MediaItemKind.movie, .episode, .video, .series, .season] {
+            for played in [false, true] {
+                let state = MediaPlaybackIndicatorState(MediaItem(id: "item", title: "Item", kind: kind, isPlayed: played))
+                XCTAssertNil(MediaPlaybackIndicatorPresentation.status(
+                    for: state, hidesStatus: false, indicator: .hidden, showsEpisodeCount: true, seerConnected: false
+                ))
+            }
+        }
+        let series = MediaPlaybackIndicatorState(MediaItem(
+            id: "series", title: "Series", kind: .series,
+            resumePosition: 120, playedPercentage: 0.4, unwatchedEpisodeCount: 3
+        ))
+        XCTAssertEqual(MediaPlaybackIndicatorPresentation.status(
+            for: series, hidesStatus: false, indicator: .hidden, showsEpisodeCount: true, seerConnected: false
+        ), .episodeCount(3))
+        XCTAssertTrue(MediaPlaybackIndicatorPresentation.showsProgress(for: series))
+        XCTAssertNil(MediaPlaybackIndicatorPresentation.status(
+            for: series, hidesStatus: false, indicator: .hidden, showsEpisodeCount: false, seerConnected: false
+        ))
+        let external = MediaPlaybackIndicatorState(MediaItem(
+            id: "external", title: "External", kind: .movie, locallyValidatedPlayableSource: false
+        ))
+        XCTAssertEqual(MediaPlaybackIndicatorPresentation.status(
+            for: external, hidesStatus: false, indicator: .hidden, showsEpisodeCount: true, seerConnected: true
+        ), MediaPlaybackIndicatorPresentation.status(
+            for: external, hidesStatus: false, indicator: .unwatched, showsEpisodeCount: true, seerConnected: true
+        ))
+        for watched in [false, true] {
+            XCTAssertFalse(NativePosterIndicators.episode(
+                isWatched: watched, hasProgress: false, isVisible: true, style: .hidden, badgeSize: 24, flagSize: 24
+            ).hasContent(indicator: .hidden, showsEpisodeCount: true, seerConnected: false))
+        }
+    }
+
     func testProgressFallsBackToResumePositionWhenPercentageIsMissing() {
         for kind in [MediaItemKind.movie, .episode] {
             var item = MediaItem(id: "resume", title: "Resume", kind: kind, runtime: 3600, resumePosition: 900)

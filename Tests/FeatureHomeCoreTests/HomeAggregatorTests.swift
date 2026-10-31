@@ -4,6 +4,29 @@ import CoreModels
 
 @MainActor
 final class HomeAggregatorTests: XCTestCase {
+    func testHomePreviewsRetainOneLookaheadWithoutGrowingVisibleRows() async throws {
+        let definition = HomeServerRowDefinition(
+            accountID: "account", serverName: "Server", providerKind: .jellyfin,
+            section: .init(id: "shelf", kind: .recommendations)
+        )
+        let visibility = HomeLibraryVisibility(rowCustomization: .init(
+            defaults: .custom, order: [.global(.recentlyAdded), definition.id],
+            shown: [.global(.recentlyAdded), definition.id], serverRows: [definition]
+        ))
+        for count in [1, 20, 21, 100] {
+            let candidates = (0..<count).map { item("item-\($0)") }
+            let provider = AggregatorStub(latest: candidates, serverResults: ["shelf": .success(candidates)])
+            let account = resolved("account", user: "User", server: "Server", kind: .jellyfin, provider: provider)
+            let content = await HomeAggregator().unmergedContent(from: [account], visibility: visibility)
+            XCTAssertEqual(content.latest.count, min(count, 20))
+            XCTAssertEqual(content.recentlyAddedCandidates?.count, min(count, 21))
+            let shelf = try XCTUnwrap(content.serverRows.first)
+            XCTAssertEqual(shelf.items.count, min(count, 20))
+            XCTAssertEqual(shelf.hasMore, count > 20)
+            XCTAssertEqual(shelf.row.section.hasMore, count > 20)
+        }
+    }
+
     func testServerBatchDiagnosticsPreserveEmbeddedFailuresAndCancellation() async throws {
         let definitions = ["good", "bad"].map {
             HomeServerRowDefinition(
@@ -338,6 +361,27 @@ final class HomeAggregatorTests: XCTestCase {
 
         XCTAssertEqual(content.continueWatching.map(\.id), ["a1", "b1"])
         XCTAssertEqual(content.latest.map(\.id), ["al1", "bl1", "al2"])
+        XCTAssertEqual(content.recentlyAddedCandidates?.map(\.id), ["al1", "bl1", "al2", "bl2"])
+    }
+
+    func testMergedDuplicateTitlesDoNotCountAsLookahead() async {
+        let candidates = (0..<20).map {
+            MediaItem(id: "movie-\($0)", title: "Movie \($0)", kind: .movie,
+                      providerIDs: ["Tmdb": "\($0 + 1)"])
+        }
+        let accounts = ["first", "second"].map {
+            resolved($0, user: "User", server: "Server", kind: .jellyfin,
+                     provider: AggregatorStub(latest: candidates))
+        }
+        let content = await HomeAggregator().content(from: accounts)
+        XCTAssertEqual(content.latest.count, 20)
+        XCTAssertEqual(content.recentlyAddedCandidates?.count, 20)
+        let snapshot = HomeViewModel.Content(latest: content.latest, recentlyAddedCandidates: content.recentlyAddedCandidates)
+        let rows = HomePresentationRow.resolve(
+            rows: HomeRow.rows(for: snapshot, isLibraryVisible: { _ in true }),
+            content: snapshot, visibility: .default
+        )
+        XCTAssertFalse(rows.contains { $0.id == .global(.recentlyAdded) && $0.canBrowse })
     }
 
     func testContentBoundsConcurrentAccountFanOut() async {
@@ -488,13 +532,13 @@ private final class AggregatorStub: MediaProvider, @unchecked Sendable {
 
     func latest(limit: Int) async throws -> [MediaItem] {
         if shouldFail { throw AppError.serverUnreachable }
-        return stubbedLatest
+        return Array(stubbedLatest.prefix(limit))
     }
 
     func serverHomeItems(
         sections: [ServerHomeSection], limit: Int, excludingLibraryIDs: Set<String>
     ) async -> [String: Result<[MediaItem], AppError>] {
-        serverResults
+        serverResults.mapValues { $0.map { Array($0.prefix(limit)) } }
     }
 
     func item(id: String) async throws -> MediaItem { throw AppError.notFound }

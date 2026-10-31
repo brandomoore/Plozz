@@ -5,77 +5,64 @@ import CoreNetworking
 import CoreUI
 import CrashReporting
 
-/// One-tap "send my recent activity to the developer" card, shared by the Help &
+/// "Send my recent activity to the developer" card, shared by the Help &
 /// Diagnostics page (so it's discoverable without digging) and the Recent
 /// Activity page (next to the log it sends).
 ///
-/// It piggybacks on the opt-in crash-reporting pipe, so it can only send when
-/// crash reporting is both configured in the build *and* enabled by the user.
-/// When it can't, the card becomes a focusable explainer pointing at the toggle
-/// rather than a dead, unreachable panel.
+/// Uses the existing diagnostic-sharing consent and transport.
 struct SendDiagnosticsCard: View {
-    /// Whether sending is possible right now (crash reporting configured + on).
-    let canSend: Bool
-    /// Context-specific one-liner shown before the user has sent anything.
-    let idleDescription: LocalizedStringResource
-    /// Context-specific explainer shown when sending is unavailable. Defaults to
-    /// pointing at Help & Diagnostics (correct from anywhere); the Help page
-    /// passes a "below" variant since the toggle is right there.
-    var disabledDescription: LocalizedStringResource = "Turn on Share Crash Reports in Help & Diagnostics to send logs and technical diagnostics."
-
+    @Binding var sharingEnabled: Bool
+    let isConfigured: Bool
     private enum SendState { case idle, sent, failed }
     @State private var sendState: SendState = .idle
     @State private var isSending = false
     @State private var message: String = ""   // l10n:content — user-typed message text
 
     var body: some View {
-        if canSend {
-            SettingsPanel(title: "Send to Developer", footer: footer) {
-                VStack(alignment: .leading, spacing: 18) {
-                    TextField("Add a message (optional) — e.g. what went wrong", text: $message)
-                        .disabled(sendState == .sent)
+        SettingsPanel(title: "Send Diagnostics", footer: footer) {
+            VStack(alignment: .leading, spacing: 18) {
+                TextField(text: $message) {
+                    Text(SettingsCopy.diagnosticsMessage)
+                }
+                .accessibilityIdentifier("diagnostics-message")
+                .disabled(!isConfigured || sendState == .sent || isSending)
 
-                    Button {
-                        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+                HStack(spacing: 16) {
+                    DiagnosticsSendButton(
+                        sharingEnabled: $sharingEnabled, isConfigured: isConfigured,
+                        hasMessage: CrashDiagnostics.normalizedNote(message) != nil,
+                        isSending: isSending, isSubmitted: sendState == .sent
+                    ) {
+                        let note = message
                         isSending = true
                         Task {
                             defer { isSending = false }
-                            let ok = await CrashDiagnostics.send(note: trimmed.isEmpty ? nil : trimmed)
+                            let ok = await CrashDiagnostics.send(note: note)
                             sendState = ok ? .sent : .failed
                             if ok { message = "" }
                         }
-                    } label: {
-                        Label(
-                            sendState == .sent ? "Submitted" : "Send Recent Activity to Developer",
-                            systemImage: sendState == .sent ? "checkmark.circle.fill" : "paperplane.fill"
-                        )
-                        .font(.headline)
                     }
-                    .buttonStyle(PlozzOpaquePillButtonStyle())
-                    .disabled(sendState == .sent || isSending)
+                    DiagnosticsInfoButton()
+                }
+
+                if !isConfigured {
+                    Text(SettingsCopy.diagnosticSharingUnavailable).settingsHelperText()
+                } else if !sharingEnabled {
+                    Text(SettingsCopy.diagnosticSharingRequired).settingsHelperText()
                 }
             }
-        } else {
-            FocusableSettingsPanel(
-                title: "Send to Developer",
-                footer: disabledDescription
-            ) {
-                Label("Send Recent Activity to Developer", systemImage: "paperplane")
-                    .font(.headline)
-                    .plozzForeground(.secondary)
-                    .opacity(0.5)
-            }
         }
+        .onChange(of: sharingEnabled) { sendState = .idle }
     }
 
     private var footer: LocalizedStringResource {
         switch sendState {
         case .idle:
-            return idleDescription
+            return SettingsCopy.diagnosticsMessagePrivacy
         case .sent:
             return "Diagnostics submitted for delivery. Thank you."
         case .failed:
-            return "Couldn't submit diagnostics. Check that crash reporting is enabled and try again."
+            return SettingsCopy.diagnosticSubmissionFailed
         }
     }
 }

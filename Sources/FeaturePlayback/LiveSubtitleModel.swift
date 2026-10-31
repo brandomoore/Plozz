@@ -12,9 +12,8 @@ import CoreNetworking
 /// currently-on-screen cues as observable state. A display-link in the player
 /// container calls ``tick(_:)`` every frame with the engine clock; the timelines
 /// recompute the active window cheaply (O(log n + k)) and this model only
-/// publishes a new cue array when a cue boundary is actually crossed, so SwiftUI
-/// re-renders the overlay only when the visible text changes — and the display
-/// can idle while a line is held.
+/// publishes a new cue array when a cue boundary is crossed or a live payload
+/// changes, so SwiftUI can idle while an unchanged line is held.
 ///
 /// This is the runtime counterpart to the design's "engines emit cues, Plozz
 /// draws them" inversion: the model is fed by whatever produced the cues (a
@@ -57,16 +56,12 @@ public final class LiveSubtitleModel {
     @ObservationIgnored private var liveFeedPermitsTimingOffsets = true
     /// The full decoded cue buffer most recently pushed by a live engine feed.
     @ObservationIgnored private var liveCues: [SubtitleCue] = []
-    /// IDs of the currently-seated live cues, so we only republish `primary` when
-    /// the active set actually changes (not every 60 Hz tick).
-    @ObservationIgnored private var liveActiveIDs: [Int] = []
     /// Live-feed state for the SECONDARY (dual) channel, mirroring the primary
     /// live feed above. Lets an engine that decodes a second subtitle stream
     /// (AetherEngine/Plozzigen) push its cues for the dual line — the path that
     /// makes dual subtitles work for embedded tracks with no sidecar URL.
     @ObservationIgnored private var isSecondaryLiveFeed = false
     @ObservationIgnored private var secondaryLiveCues: [SubtitleCue] = []
-    @ObservationIgnored private var secondaryLiveActiveIDs: [Int] = []
     /// Last clock value seen by ``tick(_:)``, so a fresh ``updateLiveCues(_:)``
     /// push can re-seat against the current playhead between ticks.
     @ObservationIgnored private var lastTickTime: Double = 0
@@ -120,7 +115,6 @@ public final class LiveSubtitleModel {
         liveFeedPermitsTimingOffsets = permitsTimingOffsets
         primaryTimeline = nil
         liveCues = []
-        liveActiveIDs = []
         primary = []
         // NOTE: deliberately does NOT touch the secondary channel. A primary
         // track change routes through here, and the dual line (sidecar timeline
@@ -142,9 +136,7 @@ public final class LiveSubtitleModel {
     /// `primary` only when the active set changes.
     private func recomputeLiveActive(at time: Double) {
         let active = liveCues.active(at: time, offset: liveFeedPermitsTimingOffsets ? storedOffset : 0)
-        let ids = active.map(\.id)
-        if ids != liveActiveIDs {
-            liveActiveIDs = ids
+        if active != primary {
             primary = active
         }
     }
@@ -154,7 +146,6 @@ public final class LiveSubtitleModel {
     public func loadSecondary(_ stream: SubtitleCueStream?) {
         isSecondaryLiveFeed = false
         secondaryLiveCues = []
-        secondaryLiveActiveIDs = []
         if let stream {
             secondaryTimeline = SubtitleCueTimeline(stream: stream, offset: storedOffset)
         } else {
@@ -173,7 +164,6 @@ public final class LiveSubtitleModel {
         isSecondaryLiveFeed = true
         secondaryTimeline = nil
         secondaryLiveCues = []
-        secondaryLiveActiveIDs = []
         hasSecondaryTrack = true
         secondary = []
     }
@@ -190,9 +180,7 @@ public final class LiveSubtitleModel {
     /// only when the active set changes.
     private func recomputeSecondaryLiveActive(at time: Double) {
         let active = secondaryLiveCues.active(at: time, offset: storedOffset)
-        let ids = active.map(\.id)
-        if ids != secondaryLiveActiveIDs {
-            secondaryLiveActiveIDs = ids
+        if active != secondary {
             secondary = active
         }
     }
@@ -205,9 +193,7 @@ public final class LiveSubtitleModel {
         primaryTimeline = nil
         secondaryTimeline = nil
         liveCues = []
-        liveActiveIDs = []
         secondaryLiveCues = []
-        secondaryLiveActiveIDs = []
         primary = []
         secondary = []
     }

@@ -77,6 +77,42 @@ final class WebDAVMediaDeliveryTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.requests(for: source).count, 1)
     }
 
+    func testPrefetchedDeliveryRetainsOnlyACompleteValidatedAnonymousPrefix() async throws {
+        let count = RangeProbe.initialReadByteCount
+        for bodyLength in [count, count - 1, count + 1] {
+            StubURLProtocol.queue(redirect: StubRedirect(location: delivery), for: source)
+            StubURLProtocol.queue(
+                StubResponse(
+                    statusCode: 206,
+                    headers: ["ETag": "\"delivery-1\"", "Content-Range": "bytes 0-\(count - 1)/1000000"],
+                    body: Data(repeating: 42, count: bodyLength),
+                    onRequest: {
+                        XCTAssertEqual($0.value(forHTTPHeaderField: "Range"), "bytes=0-\(count - 1)")
+                        XCTAssertNil($0.value(forHTTPHeaderField: "Authorization"))
+                        XCTAssertNil($0.value(forHTTPHeaderField: "Cookie"))
+                        XCTAssertEqual($0.cachePolicy, .reloadIgnoringLocalAndRemoteCacheData)
+                    }
+                ), for: delivery
+            )
+            do {
+                let result = try await client().probeRange(
+                    root: root, url: source, sessionKey: key(),
+                    credential: .bearerToken("account-secret"), trustPolicy: .system, prefetch: true
+                )
+                XCTAssertEqual(bodyLength, count, "Partial or oversized prefixes must fail")
+                XCTAssertEqual(result.initialData, Data(repeating: 42, count: count))
+                XCTAssertTrue(result.usesAnonymousSession)
+                XCTAssertEqual(result.resourceURL, delivery)
+            } catch let error as TransportError {
+                XCTAssertNotEqual(bodyLength, count, "Valid prefix failed: \(error)")
+                switch error {
+                case .rangeValidationFailed, .responseTooLarge: break
+                default: XCTFail("Unexpected prefix rejection: \(error)")
+                }
+            }
+        }
+    }
+
     func testReturnToDAVOriginNeverRestoresCredentials() async throws {
         let returned = URL(string: "https://dav.example.com/files/returned.mkv")!
         StubURLProtocol.queue(redirect: StubRedirect(location: delivery), for: source)

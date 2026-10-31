@@ -32,24 +32,41 @@ public struct WatchlistBrowseView: View {
     }
 
     public var body: some View {
-        ContentStateView(
-            state: viewModel.state,
-            emptyMessage: "Your Watchlist is empty.",
-            onRetry: { Task { await viewModel.load() } },
-            loadingContent: {
-                watchlistContent(
-                    [],
-                    loadingPlaceholderCount:
-                        max(metrics.posterColumns.count * 2, 6)
-                )
+        @Bindable var browse = viewModel.watchlistBrowse
+        ScrollView(.vertical) {
+            LazyVStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
+                HStack {
+                    Text("Watchlist")
+                        .font(.largeTitle.bold())
+                        .accessibilityIdentifier("watchlist-title")
+                    Spacer(minLength: PlozzTheme.Spacing.large)
+                    WatchlistBrowseControls(preferences: $browse.preferences)
+                }
+                .padding(.leading, contentLeadingPadding)
+                .padding(.trailing, HomeLayout.horizontalPadding)
+                .focusSection()
+
+                ContentStateView(
+                    state: viewModel.state,
+                    emptyMessage: "Your Watchlist is empty.",
+                    onRetry: { Task { await viewModel.load() } },
+                    loadingContent: {
+                        watchlistContent(
+                            [],
+                            loadingPlaceholderCount: max(metrics.posterColumns.count * 2, 6)
+                        )
+                    }
+                ) { content in
+                    watchlistContent(
+                        content.watchlist,
+                        loadingPlaceholderCount: viewModel.watchlistLoadingPlaceholderCount
+                    )
+                }
             }
-        ) { content in
-            watchlistContent(
-                content.watchlist,
-                loadingPlaceholderCount:
-                    viewModel.watchlistLoadingPlaceholderCount
-            )
+            .padding(.top, PlozzTheme.Spacing.large)
         }
+        .scrollClipDisabled()
+        .scrollsTopNavigation()
         .environment(\.plozzCardCaptionView, .watchlist)
         .task(id: visibility) {
             await viewModel.loadIfNeeded(for: visibility)
@@ -99,53 +116,38 @@ public struct WatchlistBrowseView: View {
         _ items: [MediaItem],
         loadingPlaceholderCount: Int
     ) -> some View {
-        if items.isEmpty, loadingPlaceholderCount == 0 {
-            ContentUnavailableView {
-                Label("Your Watchlist is empty", systemImage: "bookmark")
-            } description: {
-                Text("Add a movie or show from Plozz or any connected Watchlist.")
+        let filteredItems = viewModel.watchlistBrowse.preferences.items(from: items)
+        if filteredItems.isEmpty, loadingPlaceholderCount == 0 {
+            WatchlistEmptyStateView(isFiltered: !items.isEmpty) {
+                viewModel.watchlistBrowse.preferences.filter = .all
             }
         } else {
-            ScrollView(.vertical) {
-                LazyVStack(
-                    alignment: .leading,
-                    spacing: metrics.sectionTitleSpacing
-                ) {
-                    WatchlistBrowseHeader()
-                        .padding(.leading, contentLeadingPadding)
-                        .padding(.trailing, HomeLayout.horizontalPadding)
-
-                    LazyVGrid(
-                        columns: metrics.posterColumns,
-                        spacing: metrics.gridSpacing
-                    ) {
-                        ForEach(MediaRowView.presentationElements(
-                            items: items,
-                            loadingPlaceholderCount: loadingPlaceholderCount
-                        )) { element in
-                            switch element {
-                            case .item(let item):
-                                PosterCardView(
-                                    item: item,
-                                    style: .poster,
-                                    spoilerSettings: spoilerSettings,
-                                    isPendingRemoval: isPendingRemoval(item)
-                                ) {
-                                    onSelect(item)
-                                }
-                            case .loadingPlaceholder:
-                                SkeletonCardView(style: .poster)
-                            }
+            LazyVGrid(columns: metrics.posterColumns, spacing: metrics.gridSpacing) {
+                ForEach(MediaRowView.presentationElements(
+                    items: filteredItems,
+                    loadingPlaceholderCount: loadingPlaceholderCount
+                )) { element in
+                    switch element {
+                    case .item(let item):
+                        PosterCardView(
+                            item: item,
+                            style: .poster,
+                            spoilerSettings: spoilerSettings,
+                            isPendingRemoval: isPendingRemoval(item)
+                        ) {
+                            onSelect(item)
                         }
+                        .navigationEntryFocus(.content)
+                    case .loadingPlaceholder:
+                        SkeletonCardView(style: .poster)
                     }
-                    .padding(.leading, contentLeadingPadding)
-                    .padding(.trailing, HomeLayout.horizontalPadding)
-                    .padding(.bottom, PlozzTheme.Metrics.screenVerticalPadding)
-                    .focusSection()
                 }
-                .padding(.top, PlozzTheme.Spacing.large)
             }
-            .scrollClipDisabled()
+            .padding(.leading, contentLeadingPadding)
+            .padding(.trailing, HomeLayout.horizontalPadding)
+            .padding(.bottom, PlozzTheme.Metrics.screenVerticalPadding)
+            .focusSection()
+            .accessibilityIdentifier("watchlist-grid")
         }
     }
 
@@ -163,10 +165,4 @@ public struct WatchlistBrowseView: View {
     }
 }
 
-private struct WatchlistBrowseHeader: View {
-    var body: some View {
-        Text("Watchlist")
-            .font(.largeTitle.bold())
-    }
-}
 #endif

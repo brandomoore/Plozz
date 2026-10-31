@@ -32,13 +32,14 @@ private enum PreviewTileState {
 
 /// A tiny mock "poster row" painted with fixed colours: a faux title bar over
 /// three poster tiles representing a finished title, an in-progress series (always
-/// shows a progress bar) and a brand-new title. Which tiles wear a corner mark is
+/// follows the progress-bar preference) and a brand-new title. Which tiles wear a corner mark is
 /// driven by `indicator`, so the two option cards differ only in *where* the mark
 /// lands — exactly the choice the setting makes. Fills whatever frame the caller
 /// gives it and stays proportionate at the compact and full sizes.
 private struct WatchIndicatorMini: View {
     let indicator: WatchStatusIndicator
     @Environment(\.plozzShowsUnwatchedEpisodeCount) private var showsEpisodeCount
+    @Environment(\.plozzShowsProgressBars) private var showsProgressBars
     @Environment(\.plozzEpisodeCountBadgeStyle) private var episodeCountStyle
 
     private let states: [PreviewTileState] = [.finished, .inProgress, .new]
@@ -144,12 +145,10 @@ private struct WatchIndicatorMini: View {
         }
     }
 
-    /// The in-progress tile always shows a partial progress bar — the same in both
-    /// modes — so the illustration also conveys that in-progress items are never
-    /// marked watched.
+    /// Progress visibility is independent of the selected watch mark.
     @ViewBuilder
     private func progressBar(for state: PreviewTileState, tileWidth: CGFloat, tileHeight: CGFloat) -> some View {
-        if case .inProgress = state {
+        if showsProgressBars, case .inProgress = state {
             let barH = max(3, tileHeight * 0.05)
             let inset = tileWidth * 0.12
             ZStack(alignment: .leading) {

@@ -109,6 +109,7 @@ public final class PlexHomeUsersModel {
     /// `prefillPlexPIN(_:forProfile:)`.
     @ObservationIgnored
     private var prefilledPlexPIN: (profileID: String, pin: String)?
+    @ObservationIgnored private var foregroundReauthenticationAccounts: Set<String> = []
 
     private struct CredentialSource: Equatable {
         let provider: ProviderKind
@@ -402,6 +403,33 @@ public final class PlexHomeUsersModel {
         authenticatedProfileAccess = .init(profilesModel.activeProfile)
         clearPlexOverrides()
         invalidateAutomaticSignInSession()
+    }
+
+    /// Re-prove access without discarding an unchanged viewer's browsing credentials.
+    public func suspendProfileAccessForForeground() {
+        profileActivationGeneration += 1
+        reconciledProfileID = nil
+        startupProfileAccess = nil
+        authenticatedProfileAccess = nil
+        cancelPlexReauthentication()
+        cancelPINRequirementCheck()
+        prefilledPlexPIN = nil
+        pendingPlexPINRequest = nil
+        plexPINError = nil
+        foregroundReauthenticationAccounts = Set(accountsProviders.accounts.compactMap { account in
+            guard account.server.provider == .plex,
+                  accountsProviders.activeAccountIDs.contains(account.id),
+                  profilesModel.activeProfile.homeUserBinding(forPlexAccount: account.id) != nil
+            else { return nil }
+            return account.id
+        })
+        plexPINVerifiedHomeUser.removeAll()
+        plexHomeAuthorizationScopes.removeAll()
+    }
+
+    public func resumeProfileAccessAfterForegroundSelection() {
+        authenticatedProfileAccess = .init(profilesModel.activeProfile)
+        ensurePlexIdentityForActiveProfile()
     }
 
     private func automaticSignInAccounts(for profile: Profile) -> [AutomaticSignInStore.Session.AccountAccess] {
@@ -893,7 +921,8 @@ public final class PlexHomeUsersModel {
                 bumpIdentityGeneration(for: account.id, site: "ensure.replacedCredential")
             }
             if let binding = profile.homeUserBinding(forPlexAccount: account.id) {
-                let hasUnprotectedSession = binding.requiresPIN == false
+                let needsForegroundProof = foregroundReauthenticationAccounts.contains(account.id)
+                let hasUnprotectedSession = !needsForegroundProof && binding.requiresPIN == false
                     && binding.pinRequirementVerified == true
                     && plexTokenOverrides[account.id] != nil
                     && plexResolvedHomeUser[account.id] == binding.homeUserID
@@ -910,7 +939,11 @@ public final class PlexHomeUsersModel {
                     }
                     // No authorized identity for this binding; do not expose
                     // stale credentials while its current protection is checked.
-                    if plexTokenOverrides[account.id] != nil || plexResolvedHomeUser[account.id] != nil {
+                    let retainsSameViewer = needsForegroundProof
+                        && hasCurrentCredentialSource(for: account.id)
+                        && plexResolvedHomeUser[account.id] == binding.homeUserID
+                    if !retainsSameViewer,
+                       plexTokenOverrides[account.id] != nil || plexResolvedHomeUser[account.id] != nil {
                         setPlexTokenOverride(nil, for: account.id)
                         plexResolvedHomeUser[account.id] = nil
                         accountsProviders.registry.invalidate(accountID: account.id)
@@ -1343,6 +1376,7 @@ public final class PlexHomeUsersModel {
 
     /// Drops all Plex token overrides, falling back to stored (admin) tokens.
     private func clearPlexOverrides() {
+        foregroundReauthenticationAccounts.removeAll()
         cancelPlexReauthentication()
         cancelPINRequirementCheck()
         pendingBindingChange = nil
@@ -1498,6 +1532,7 @@ public final class PlexHomeUsersModel {
             plexPINVerifiedHomeUser[accountID] = pin?.isEmpty == false || sharedAuthorization != nil ? homeUserID : nil
             plexCredentialSources[accountID] = CredentialSource(account)
             plexHomeAuthorizationScopes[accountID] = authorizationScope
+            foregroundReauthenticationAccounts.remove(accountID)
             if liveBinding != savedBinding {
                 profilesModel.update(profilesModel.activeProfile.settingHomeUserBinding(
                     liveBinding, forPlexAccount: accountID

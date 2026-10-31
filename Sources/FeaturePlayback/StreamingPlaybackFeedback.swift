@@ -35,11 +35,17 @@ struct StreamingPlaybackLoadingView: View {
 struct StreamingPlaybackFailureView: View {
     let message: LocalizedStringResource
     let report: PlaybackDiagnosticReport?
+    var showsForcedTranscodingHint = false
     let onRetry: (() -> Void)?
     let onDismiss: () -> Void
 
     var body: some View {
-        PlaybackFailureView(message: message, report: report) {
+        PlaybackFailureView(
+            message: message, report: report,
+            recoveryHint: showsForcedTranscodingHint
+                ? "Force transcoding is on. Try turning it off in Streaming quality."
+                : nil
+        ) {
             if let onRetry {
                 Button("Retry", action: onRetry)
                     .plozzActionButton(role: .primary)

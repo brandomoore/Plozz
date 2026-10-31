@@ -102,6 +102,7 @@ final class UnwatchedEpisodeBadgeHostedTests: XCTestCase {
                 try render(unwatched, enabled: true, scheme: .dark, indicator: indicator).pngData(),
                 try render(unwatched, enabled: false, scheme: .dark, indicator: indicator).pngData(),
                 "Movies must keep their unnumbered state even if a provider supplies a count")
+            if indicator == .hidden { continue }
             let marked = indicator == .watched ? watched : unwatched
             let image = try render(marked, enabled: true, scheme: .dark, indicator: indicator)
             let sample = try pixel(image, at: indicator == .watched

@@ -21,7 +21,7 @@ final class ExtrasWatchIndicatorHostedTests: XCTestCase {
                         updated.isPlayed = played
                         updated.playedPercentage = played ? 1 : nil
                         host.rootView.item = updated
-                        let shouldShow = indicator == .watched ? played : !played
+                        let shouldShow = indicator != .hidden && (indicator == .watched ? played : !played)
                         try await assertBadge(shouldShow, in: window, label: "\(style)-\(indicator)-\(played)")
                     }
                 }

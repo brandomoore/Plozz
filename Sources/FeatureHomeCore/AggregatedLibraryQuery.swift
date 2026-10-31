@@ -1,6 +1,5 @@
 import Foundation
 import CoreModels
-import FeatureHomeCore
 import CoreNetworking
 
 extension AggregatedLibraryProvider {

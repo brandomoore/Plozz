@@ -190,7 +190,6 @@ public struct PlayerView: View {
                     diagnostics: diagnosticsSampler.latest, presentation: .mobile,
                     streamingError: viewModel.streamingQualityError
                 )
-                    .environment(\.themePalette, themePalette)
                     .navigationTitle("Playback Diagnostics")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -306,6 +305,7 @@ public struct PlayerView: View {
                     ?? viewModel.streamingQualityError?.userMessage
                     ?? StreamingPlaybackFailure(kind: .unknown).userMessage,
                 report: viewModel.playbackFailureReport,
+                showsForcedTranscodingHint: viewModel.showsForcedTranscodingFailureHint,
                 onRetry: { viewModel.retryPlayback() },
                 onDismiss: { dismissPlayer() }
             )

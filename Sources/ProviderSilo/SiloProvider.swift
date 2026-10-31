@@ -211,7 +211,11 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         guard limit > 0 else { return [] }
         var result: [MediaItem] = []
         var seen = Set<String>()
-        for library in try await libraries() where !disabled.contains(library.id) {
+        let available = try await libraries()
+        let diagnostic = SearchDiagnosticJournal.currentSource
+        diagnostic?.libraries(available: available.count, excluded: available.filter { disabled.contains($0.id) }.count)
+        for (index, library) in available.enumerated() where !disabled.contains(library.id) {
+            diagnostic?.beginLibrary(index: index)
             let matches = try await catalogItems(
                 [URLQueryItem(name: "library_id", value: library.id),
                  URLQueryItem(name: "q", value: query)],
@@ -292,15 +296,28 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
 
     func catalogDTOs(_ query: [URLQueryItem], limit: Int) async throws -> [SiloItem] {
         guard limit > 0 else { return [] }
+        // Silo binds the page size into its cursor scope, including the final page.
+        let pageLimit = min(200, limit)
         var result: [SiloItem] = []
         var cursor: String?
         var seen = Set<String>()
         repeat {
             try Task.checkCancellation()
-            var parameters = query + [URLQueryItem(name: "limit", value: String(min(200, limit - result.count)))]
+            var parameters = query + [URLQueryItem(name: "limit", value: String(pageLimit))]
             if let cursor { parameters.append(URLQueryItem(name: "cursor", value: cursor)) }
+            let diagnostic = SearchDiagnosticJournal.currentSource
+            diagnostic?.beginPage(limit: pageLimit, usedCursor: cursor != nil)
             let page: SiloCatalogPage = try await client.request("/catalog", query: parameters)
             result += page.items
+            let needsMore = page.page?.has_more == true && result.count < limit
+            let next = page.page?.next_cursor
+            let failure: SearchDiagnosticJournal.PagingFailure?
+            if needsMore && page.items.isEmpty { failure = .emptyPage }
+            else if needsMore && (next?.isEmpty != false) { failure = .missingCursor }
+            else if needsMore, let next, seen.contains(next) { failure = .repeatedCursor }
+            else { failure = nil }
+            diagnostic?.finishPage(rows: page.items.count, hasMore: page.page?.has_more == true,
+                                   hasNextCursor: next?.isEmpty == false, failure: failure)
             guard page.page?.has_more == true, result.count < limit else { break }
             guard !page.items.isEmpty, let next = page.page?.next_cursor, !next.isEmpty,
                   seen.insert(next).inserted else { throw AppError.invalidResponse }

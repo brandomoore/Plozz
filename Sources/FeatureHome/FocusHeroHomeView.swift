@@ -89,8 +89,7 @@ enum FocusHeroLayout {
     static let logoPresentationPolicy = HeroLogoPresentationPolicy.whenResolved
     /// How much closer a row's title sits to its cards than on the classic Home.
     static let rowTitleTightening: CGFloat = 22
-    /// With the top tab bar the column starts below it: nothing scrolls here, so
-    /// the bar never tucks away the way it does over the carousel.
+    /// Reserve the initial top-bar clearance without relaying scrolling into column layout.
     static let columnTopUnderTabBar: CGFloat = 150
     static let columnWidth: CGFloat = 900
     /// Shared perceptual timing for the native viewport, heading, mask and hero.
@@ -302,6 +301,16 @@ final class FocusHeroModel {
         HeroFocusDiagnostics.emit("FHOME row height \(rowID)=\(height)")
     }
 
+    func returnToTop(in rows: [FocusHeroRow]) {
+        pendingShow?.cancel()
+        pendingShow = nil
+        passingThrough = false
+        lastRowChange = -.infinity
+        hasFocusedTitle = false
+        activeRowID = rows.first?.id
+        seed(from: rows)
+    }
+
     func resolvedActiveRowID(in rows: [FocusHeroRow]) -> String? {
         if let activeRowID, rows.contains(where: { $0.id == activeRowID }) { return activeRowID }
         return rows.first?.id
@@ -378,6 +387,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
     let isFrontmost: Bool
     let enrich: FocusHeroMetadata.Enrich?
     let minimumDetailsTop: CGFloat?
+    let onReturnToTop: () -> Void
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
 
     init(
@@ -388,6 +398,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
         isFrontmost: Bool,
         enrich: FocusHeroMetadata.Enrich? = nil,
         minimumDetailsTop: CGFloat? = nil,
+        onReturnToTop: @escaping () -> Void = {},
         @ViewBuilder rowContent: @escaping (FocusHeroRow, FocusHeroRowReporter) -> RowContent
     ) {
         self.rows = rows
@@ -397,6 +408,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
         self.isFrontmost = isFrontmost
         self.enrich = enrich
         self.minimumDetailsTop = minimumDetailsTop
+        self.onReturnToTop = onReturnToTop
         self.rowContent = rowContent
     }
 
@@ -425,7 +437,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 minimumDetailsTop: minimumDetailsTop
             )
             .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
-            FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent)
+            FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent, onReturnToTop: onReturnToTop)
                 .ignoresSafeArea(.container, edges: .trailing)
                 .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
                 .environment(\.plozzCardCaptionIsShowcase, true)
@@ -719,6 +731,7 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
     let rows: [FocusHeroRow]
     let model: FocusHeroModel
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
+    var onReturnToTop: () -> Void = {}
     var body: some View {
         FocusHeroMotionSurface(
             content: scroll.safeAreaPadding(.leading, FocusHeroLayout.maskHorizontalOverhang),
@@ -734,7 +747,7 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
             FocusHeroRowStack(rows: rows, model: model, rowContent: rowContent)
                 .padding(.top, bottom - model.scrollOrigin(in: rows))
                 .padding(.bottom, FocusHeroLayout.screenHeight - bottom)
-                .background(FocusHeroScrollPosition(model: model, rows: rows))
+                .background(FocusHeroScrollPosition(model: model, rows: rows, onReturnToTop: onReturnToTop))
         }
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
@@ -747,6 +760,7 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
 private struct FocusHeroScrollPosition: View {
     let model: FocusHeroModel
     let rows: [FocusHeroRow]
+    let onReturnToTop: () -> Void
 
     var body: some View {
         let spacing = FocusHeroLayout.rowSpacing
@@ -758,7 +772,11 @@ private struct FocusHeroScrollPosition: View {
             motion: model.motion,
             height: model.activeHeight(in: rows),
             heightStops: model.heightStops(in: rows),
-            rowOffsets: model.tuckOffsets(in: rows)
+            rowOffsets: model.tuckOffsets(in: rows),
+            onReturnToTop: {
+                model.returnToTop(in: rows)
+                onReturnToTop()
+            }
         )
     }
 }
@@ -1054,6 +1072,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
     var height: CGFloat? = nil
     var heightStops: [FocusHeroHeightStop] = []
     var rowOffsets: [String: CGFloat] = [:]
+    var onReturnToTop: (() -> Void)?
 
     func makeUIView(context: Context) -> PositionView {
         let view = PositionView()
@@ -1067,6 +1086,8 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
         motion?.height = height
         motion?.heightStops = heightStops
         motion?.rowOffsets = rowOffsets
+        view.navigation = context.environment.plozzTopNavigationScroll
+        view.onReturnToTop = onReturnToTop
         view.move(to: y, rowID: rowID, heightChanged: heightChanged)
     }
 
@@ -1076,6 +1097,12 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
 
     final class PositionView: UIView {
         weak var rowMotion: FocusHeroRowMotion?
+        weak var navigation: TopNavigationScroll?
+        var onReturnToTop: (() -> Void)?
+        private weak var registeredNavigation: TopNavigationScroll?
+        private let navigationScrollID = UUID()
+        private var navigationFrames: CADisplayLink?
+        private var navigationDeadline: CFTimeInterval = 0
         private struct ScrollStep {
             let key: String
             let distance: CGFloat
@@ -1169,9 +1196,65 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
                 rowMotion?.applyTargets()
             }
             isStepping = false
+            if shouldAnimate, navigation != nil {
+                // Follow the actual additive springs, including rapid retargets,
+                // rather than animate the bar toward a clamped row destination.
+                navigationDeadline = beganAt + timing.settlingDuration
+                if navigationFrames == nil {
+                    let frames = CADisplayLink(target: self, selector: #selector(reportNavigationFrame))
+                    navigationFrames = frames
+                    frames.add(to: .main, forMode: .common)
+                }
+            } else {
+                stopNavigationFrames()
+                navigation?.update(offset: y, source: navigationScrollID)
+            }
+        }
+
+        @objc private func reportNavigationFrame() {
+            guard window != nil, let scroller else {
+                stopNavigationFrames()
+                return
+            }
+            let finished = !isMoving || CACurrentMediaTime() >= navigationDeadline
+            navigation?.update(
+                offset: finished ? y : scroller.layer.presentation()?.bounds.origin.y ?? y,
+                source: navigationScrollID
+            )
+            if finished { stopNavigationFrames() }
+        }
+
+        private func stopNavigationFrames() {
+            navigationFrames?.invalidate()
+            navigationFrames = nil
+        }
+
+        private func returnToTop() {
+            stopNavigationFrames()
+            for step in scrollSteps { scroller?.layer.removeAnimation(forKey: step.key) }
+            scrollSteps.removeAll()
+            rowID = nil
+            y = 0
+            compositorTarget = 0
+            isStepping = true
+            scroller?.setContentOffset(.zero, animated: false)
+            isStepping = false
+            onReturnToTop?()
+        }
+
+        private func bindNavigation() {
+            guard registeredNavigation !== navigation else { return }
+            registeredNavigation?.unregister(source: navigationScrollID)
+            registeredNavigation = navigation
+            navigation?.register(source: navigationScrollID, offset: y) { [weak self] in
+                self?.returnToTop()
+            }
         }
 
         func stop() {
+            stopNavigationFrames()
+            registeredNavigation?.unregister(source: navigationScrollID)
+            registeredNavigation = nil
             for step in scrollSteps { scroller?.layer.removeAnimation(forKey: step.key) }
             scrollSteps.removeAll()
             rowMotion?.stop()
@@ -1216,6 +1299,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
                     } else {
                         scrollView.isScrollEnabled = false
                     }
+                    bindNavigation()
                     return
                 }
                 ancestor = view.superview

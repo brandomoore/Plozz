@@ -6,6 +6,33 @@ import FoundationNetworking
 #endif
 
 final class ServerURLNormalizerTests: XCTestCase {
+    func testManualConnectionCandidatesPreserveAddressIntent() throws {
+        for (raw, expected) in [
+            ("media.example/jf", ["https://media.example/jf", "http://media.example:8096/jf", "http://media.example/jf"]),
+            ("http://media.example/jf", ["https://media.example/jf", "http://media.example/jf", "http://media.example:8096/jf"]),
+            ("192.168.1.5", ["https://192.168.1.5", "http://192.168.1.5:8096", "http://192.168.1.5"]),
+            ("media.example:8443/jf/", ["https://media.example:8443/jf", "http://media.example:8443/jf"]),
+            ("http://media.example:80/jf", ["https://media.example:80/jf", "http://media.example:80/jf"]),
+            ("[::1]:8096", ["https://[::1]:8096", "http://[::1]:8096"]),
+            (" HTTPS://media.example/jf/ \n", ["https://media.example/jf"]),
+            ("https://media.example:8920/jf", ["https://media.example:8920/jf"]),
+            ("media.example/a%2Fb/", ["https://media.example/a%2Fb", "http://media.example:8096/a%2Fb", "http://media.example/a%2Fb"])
+        ] {
+            XCTAssertEqual(try ServerURLNormalizer.manualConnectionCandidates(raw).map(\.absoluteString), expected, raw)
+        }
+    }
+
+    func testManualConnectionCandidatesRejectUnsafeOrInvalidInput() {
+        for raw in [
+            "", "   ", "ftp://media.example", "http://", "bad host",
+            "https://user:password@media.example", "media.example?api_key=secret",
+            "media.example#fragment", "media.example:0", "media.example:65536",
+            "media.example/a/../b", "media.example/%2e%2e/b"
+        ] {
+            XCTAssertThrowsError(try ServerURLNormalizer.manualConnectionCandidates(raw), raw)
+        }
+    }
+
     func testDiscoveryRetainsResolvedHTTPSAndReverseProxyPrefix() throws {
         let requested = URL(string: "http://media.example/old")!
         let resolved = try ServerURLNormalizer.resolvedBaseURL(

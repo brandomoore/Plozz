@@ -63,15 +63,15 @@ public struct NavigationLibrariesDetailView: View {
     private func content(for all: [AggregatedLibrary]) -> some View {
         let visible = all.filter { scope.homeVisibility.isEnabled($0.key) }
         #if os(iOS)
-        let keys = NavigationDestinationDefaults.iOS
-        let automaticallyHiddenDestinations = NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys
+        let keys = NavigationDestinationDefaults.iOS(
+            visibleLibraries: includesIndividualLibraries ? visible : []
+        )
+        let automaticallyHiddenDestinations = NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(available: keys)
         #else
         let keys = NavigationRailPlan.customizableKeys(
             visibleLibraries: includesIndividualLibraries ? visible : [], style: navigation.style
         )
-        let automaticallyHiddenDestinations = NavigationRailPlan.automaticallyHiddenLibraryKeys(
-            visibleLibraries: visible, style: navigation.style
-        )
+        let automaticallyHiddenDestinations: Set<String> = []
         #endif
         let available = keys.filter { !excludedKeys.contains($0) }
         let titles = Self.rowsByKey(visible: visible)
@@ -81,7 +81,8 @@ public struct NavigationLibrariesDetailView: View {
         #if os(iOS)
         let requiredEnabled = sections.enabled.count == 1 ? Set(sections.enabled) : navigation.requiredNavigationKeys
         #else
-        let requiredEnabled = navigation.requiredNavigationKeys
+        let requiredEnabled = navigation.style == .tabBar && sections.enabled.count == 1
+            ? Set(sections.enabled) : navigation.requiredNavigationKeys
         #endif
 
         VStack(alignment: .leading, spacing: sectionSpacing) {
@@ -91,6 +92,7 @@ public struct NavigationLibrariesDetailView: View {
                 disabledPlaceholder: Self.hiddenPlaceholder,
                 isLifting: $isReordering,
                 requiredEnabled: requiredEnabled,
+                onMove: { navigation.recordNavigationMove(of: $0) },
                 row: { key in
                     titles[key] ?? LiftableReorderList.Row(title: Text(verbatim: key))
                 },
@@ -101,7 +103,7 @@ public struct NavigationLibrariesDetailView: View {
                 }
             )
 
-            Text(Self.footnote)
+            Text(footnote)
                 .font(.caption)
                 .plozzForeground(.secondary)
 
@@ -124,9 +126,8 @@ public struct NavigationLibrariesDetailView: View {
         }
     }
 
-    /// One row descriptor per arrangeable key: library name, provider brand mark,
-    /// and server name so same-named libraries on different servers are distinct.
-    private static func rowsByKey(
+    /// Content glyphs match navigation; provider and server share the subtitle.
+    static func rowsByKey(
         visible: [AggregatedLibrary]
     ) -> [String: LiftableReorderList<String>.Row] {
         var rows: [String: LiftableReorderList<String>.Row] = [
@@ -145,9 +146,11 @@ public struct NavigationLibrariesDetailView: View {
         for aggregated in NavigationRailPlan.browsableLibraries(visible) {
             rows[aggregated.key] = LiftableReorderList<String>.Row(
                 title: aggregated.library.displayName,
+                symbolName: aggregated.library.navigationSymbolName,
                 providerKind: aggregated.providerKind,
                 mediaShareTransport: aggregated.transportKind,
-                detail: Text(verbatim: aggregated.serverName)
+                subtitle: Text(verbatim: aggregated.serverName),
+                providerMarkInSubtitle: true
             )
         }
         return rows
@@ -166,13 +169,22 @@ public struct NavigationLibrariesDetailView: View {
         comment: "Empty-state drop target under the Hidden divider."
     )
     #if os(iOS)
-    private static let footnote = LocalizedStringResource(
+    private var footnote: LocalizedStringResource { Self.mobileFootnote }
+    private static let mobileFootnote = LocalizedStringResource(
         "navigationArrangement.footnote.iOS",
-        defaultValue: "Drag to reorder. Hold to hide or show. Unused pages hide automatically unless you show them.",
+        defaultValue: "Drag to reorder. Hold to hide or show.",
         comment: "Instructions for arranging iPhone and iPad navigation tabs."
     )
     #else
-    private static let footnote = LocalizedStringResource(
+    private var footnote: LocalizedStringResource {
+        navigation.style == .tabBar ? Self.topBarFootnote : Self.sidebarFootnote
+    }
+    private static let topBarFootnote = LocalizedStringResource(
+        "navigationArrangement.footnote.horizontal",
+        defaultValue: "Press and hold to hide, show, or move. Settings stays fixed until moved. Settings is also in the profile picker.",
+        comment: "Instructions for arranging the scrolling horizontal navigation."
+    )
+    private static let sidebarFootnote = LocalizedStringResource(
         "navigationArrangement.footnote",
         defaultValue: "Press and hold an item to hide, show, or move it. Unused pages hide automatically unless you show them. Settings always stays visible.",
         comment: "Instructions and the always-visible Settings safety rule for navigation customization."

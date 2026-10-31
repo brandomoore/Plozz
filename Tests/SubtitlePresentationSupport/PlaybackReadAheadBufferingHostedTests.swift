@@ -87,7 +87,10 @@ final class PlaybackReadAheadBufferingHostedTests: XCTestCase {
             XCTAssertGreaterThan(cache.residentBytes, 0)
             XCTAssertGreaterThan(cache.effectiveBudgetBytes, 0)
         case .software:
-            XCTAssertNil(engine.liveTelemetry?.sessionCache, "The packet store is not the loopback segment cache.")
+            let cache = try XCTUnwrap(engine.liveTelemetry?.sessionCache)
+            XCTAssertGreaterThan(cache.residentBytes, 0)
+            XCTAssertEqual(cache.effectiveBudgetBytes, 96 * 1_024 * 1_024)
+            XCTAssertEqual(cache.targetSeconds, preference == .automatic ? 40 : 300)
         default:
             XCTFail("This fixture must exercise an engine-owned buffer.")
         }

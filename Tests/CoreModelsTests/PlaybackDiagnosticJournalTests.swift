@@ -3,6 +3,51 @@ import XCTest
 @testable import CoreModels
 
 final class PlaybackDiagnosticJournalTests: XCTestCase {
+    func testServerDecisionSurvivesPersistenceAndOptionalExportWithoutPrivateText() async throws {
+        let url = try location()
+        let journal = PlaybackDiagnosticJournal(url: url)
+        var request = PlaybackRequest(
+            item: .init(id: "private-item", title: "private-title", kind: .movie),
+            streamURL: URL(string: "https://private.test/master.m3u8?token=private-token")!
+        )
+        request.serverDecision = .init(
+            sourceBitrate: 82_000_000, clientMaxBitrate: nil,
+            supportsDirectPlay: false, supportsDirectStream: false, supportsTranscoding: true,
+            subtitleBurnIn: true,
+            transcodeReasons: ["SubtitleCodecNotSupported", "private-token", "SubtitleCodecNotSupported"]
+        )
+        journal.record(.resolved, session: UUID(), attempt: UUID(),
+                       facts: .init(provider: .jellyfin, request: request))
+        await journal.flush()
+        let restored = PlaybackDiagnosticJournal(url: url)
+        let report = await restored.report()
+        let evidence = try XCTUnwrap(decode(report).entries.first?.facts.serverDecision)
+        XCTAssertEqual(evidence, request.serverDecision)
+        XCTAssertEqual(evidence.transcodeReasons, ["SubtitleCodecNotSupported", "Other"])
+        let export = await restored.export(scope: DiagnosticExportScope())
+        let text = String(decoding: try JSONEncoder().encode(export), as: UTF8.self)
+        XCTAssertTrue(text.contains("\"sourceBitrate\":82000000"))
+        XCTAssertTrue(text.contains("SubtitleCodecNotSupported"))
+        XCTAssertFalse(text.contains("private"))
+        XCTAssertFalse(text.contains("https"))
+    }
+
+    func testServerDecisionRejectsUntrustedRestoredReasonsAndBoundsInput() throws {
+        let bounded = PlaybackServerDecision(
+            sourceBitrate: -1, clientMaxBitrate: Int.max,
+            supportsDirectPlay: nil, supportsDirectStream: nil, supportsTranscoding: nil,
+            subtitleBurnIn: false, transcodeReasons: Array(repeating: "private-token", count: 100)
+        )
+        XCTAssertNil(bounded.sourceBitrate)
+        XCTAssertNil(bounded.clientMaxBitrate)
+        XCTAssertEqual(bounded.transcodeReasons, ["Other"])
+        XCTAssertTrue(bounded.isValid)
+        let untrusted = try JSONDecoder().decode(PlaybackServerDecision.self, from: Data(
+            #"{"subtitleBurnIn":false,"transcodeReasons":["private-token"]}"#.utf8
+        ))
+        XCTAssertFalse(untrusted.isValid)
+    }
+
     func testPersistsCorrelatedLifecycleWithoutPrivateSourceData() async throws {
         let url = try location()
         let journal = PlaybackDiagnosticJournal(url: url)
@@ -80,6 +125,7 @@ final class PlaybackDiagnosticJournalTests: XCTestCase {
         XCTAssertNil(entry.stage)
         XCTAssertNil(entry.evidence)
         XCTAssertNil(entry.facts.quality)
+        XCTAssertNil(entry.facts.serverDecision)
     }
 
     func testInvalidNativeEvidenceIsRejectedAtAdmissionAndRestore() async throws {

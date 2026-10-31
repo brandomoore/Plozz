@@ -296,7 +296,7 @@ public struct JellyfinClient: Sendable {
             URLQueryItem(name: "Limit", value: String(limit)),
             URLQueryItem(name: "StartIndex", value: String(startIndex)),
             URLQueryItem(name: "EnableTotalRecordCount", value: "true"),
-            URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,PrimaryImageAspectRatio,ProviderIds")
+            URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,PrimaryImageAspectRatio,ProviderIds,DateCreated")
         ]
         if let parentID { query.append(URLQueryItem(name: "ParentId", value: parentID)) }
         return try await http.decode(
@@ -317,7 +317,7 @@ public struct JellyfinClient: Sendable {
                 URLQueryItem(name: "Limit", value: String(limit)),
                 URLQueryItem(name: "IsInProgress", value: "true"),
                 URLQueryItem(name: "EnableTotalRecordCount", value: "false"),
-                URLQueryItem(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds")
+                URLQueryItem(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,DateCreated")
             ],
             headers: authHeaders
         )
@@ -361,7 +361,7 @@ public struct JellyfinClient: Sendable {
         var queryItems = [
             URLQueryItem(name: "Limit", value: String(limit)),
             URLQueryItem(name: "MediaTypes", value: "Video"),
-            URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,PrimaryImageAspectRatio,ProviderIds")
+            URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,PrimaryImageAspectRatio,ProviderIds,DateCreated")
         ]
         if let startIndex {
             queryItems.append(URLQueryItem(name: "StartIndex", value: String(startIndex)))
@@ -429,7 +429,7 @@ public struct JellyfinClient: Sendable {
             URLQueryItem(name: "MediaTypes", value: "Video"),
             URLQueryItem(name: "EnableResumable", value: seriesID == nil ? "false" : "true"),
             URLQueryItem(name: "EnableRewatching", value: "false"),
-            URLQueryItem(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds")
+            URLQueryItem(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,DateCreated")
         ]
         if let startIndex {
             queryItems.append(URLQueryItem(name: "StartIndex", value: String(startIndex)))
@@ -648,7 +648,7 @@ public struct JellyfinClient: Sendable {
     ) async throws -> [BaseItemDto] {
         var queryItems = [
             URLQueryItem(name: "Limit", value: String(limit)),
-            URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,ProviderIds")
+            URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,ProviderIds,DateCreated")
         ]
         if let parentID {
             queryItems.append(URLQueryItem(name: "ParentId", value: parentID))
@@ -674,7 +674,7 @@ public struct JellyfinClient: Sendable {
                 URLQueryItem(name: "parentId", value: parentID),
                 URLQueryItem(name: "categoryLimit", value: "5"),
                 URLQueryItem(name: "itemLimit", value: String(limit)),
-                URLQueryItem(name: "fields", value: "Overview,OriginalTitle,ProviderIds")
+                URLQueryItem(name: "fields", value: "Overview,OriginalTitle,ProviderIds,DateCreated")
             ],
             headers: authHeaders
         )
@@ -788,7 +788,7 @@ public struct JellyfinClient: Sendable {
                 URLQueryItem(name: "Limit", value: String(page.limit)),
                 URLQueryItem(name: "EnableTotalRecordCount", value: "true"),
                 URLQueryItem(name: "EnableUserData", value: "true"),
-                URLQueryItem(name: "Fields", value: "Overview,MediaStreams,MediaSources,Genres,ProviderIds,UserData")
+                URLQueryItem(name: "Fields", value: "Overview,MediaStreams,MediaSources,Genres,ProviderIds,UserData,DateCreated")
             ],
             headers: authHeaders
         )
@@ -1150,6 +1150,12 @@ public struct JellyfinClient: Sendable {
     ) async throws -> PlaybackInfoResponse {
         try streaming?.quality.validate()
         var capabilityProfile = streaming.map { self.capabilityProfile.applying($0) } ?? self.capabilityProfile
+        // Emby treats null/omitted limits as restrictive, unlike Jellyfin. Its
+        // signed-64-bit ceiling represents Maximum without restoring the 120 Mbps cap.
+        let maximumBitrate = streaming?.quality.maximumBitrate
+            ?? (providerKind == .emby ? Int(Int64.max) : nil)
+        capabilityProfile.maxStreamingBitrate = maximumBitrate
+        capabilityProfile.maxStaticBitrate = maximumBitrate
         var queryItems = [URLQueryItem(name: "UserId", value: userID)]
         if let streaming {
             if let track = streaming.audioTrack {
@@ -1613,7 +1619,9 @@ public struct JellyfinClient: Sendable {
 
     // MARK: Music
 
-    var musicMaxStreamingBitrate: Int { capabilityProfile.maxStreamingBitrate }
+    var musicMaxStreamingBitrate: Int {
+        capabilityProfile.maxStreamingBitrate ?? JellyfinCapabilityProfile.defaultMaxBitrate
+    }
 
     /// One page of music items from a container, using an explicit Jellyfin
     /// `SortBy` (music needs multi-key sorts like `ParentIndexNumber,IndexNumber`
@@ -1736,7 +1744,7 @@ public struct JellyfinClient: Sendable {
             ),
             AuthenticatedHTTPQueryItem(
                 name: "MaxStreamingBitrate",
-                value: String(capabilityProfile.maxStreamingBitrate)
+                value: String(musicMaxStreamingBitrate)
             ),
             // Bare containers would allow unsupported codecs (such as DTS in WAV).
             AuthenticatedHTTPQueryItem(

@@ -3,6 +3,37 @@ import CoreModels
 
 /// Helpers for turning messy user/discovery input into a usable base URL.
 public enum ServerURLNormalizer {
+    /// Credential-free manual discovery only; never reinterpret saved routes.
+    /// Explicit HTTPS and ports are authoritative. Otherwise prefer HTTPS,
+    /// followed by the legacy HTTP address and the other conventional HTTP port.
+    public static func manualConnectionCandidates(_ raw: String, defaultPort: Int = 8096) throws -> [URL] {
+        guard let parsed = normalize(raw, defaultPort: nil),
+              var components = URLComponents(url: parsed, resolvingAgainstBaseURL: false),
+              let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = components.host, !host.isEmpty,
+              host.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil,
+              components.port.map({ (1...65535).contains($0) }) ?? true,
+              !components.path.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }),
+              (1...65535).contains(defaultPort) else { throw AppError.invalidResponse }
+        components.scheme = scheme
+        guard let original = components.url else { throw AppError.invalidResponse }
+        guard scheme != "https" else { return [original] }
+
+        components.scheme = "https"
+        guard let secure = components.url else { throw AppError.invalidResponse }
+        if components.port != nil { return [secure, original] }
+
+        components.scheme = "http"
+        components.port = defaultPort
+        guard let direct = components.url else { throw AppError.invalidResponse }
+        let http = raw.contains("://") ? [original, direct] : [direct, original]
+        return ([secure] + http).reduce(into: []) { urls, url in
+            if !urls.contains(url) { urls.append(url) }
+        }
+    }
+
     /// Only credential-free discovery may resolve a new API base. Authenticated
     /// requests continue to use the strict same-origin transport policy.
     public static func resolvedBaseURL(
@@ -53,10 +84,8 @@ public enum ServerURLNormalizer {
         guard !trimmed.isEmpty else { return nil }
 
         let hadScheme = trimmed.contains("://")
-        // Self-hosted media servers overwhelmingly run plain HTTP on the local
-        // network (no TLS cert for a LAN IP), so a scheme-less host defaults to
-        // `http`, not `https` — matching how every server-add flow in this app
-        // behaves and avoiding a silent TLS-handshake failure against a bare IP.
+        // Preserve legacy normalization for saved addresses and service URLs.
+        // Manual connection discovery tries alternatives before sign-in.
         let withScheme = hadScheme ? trimmed : "http://\(trimmed)"
 
         guard var components = URLComponents(string: withScheme),
@@ -71,8 +100,8 @@ public enum ServerURLNormalizer {
         }
 
         // Strip trailing slash from the path for a canonical form.
-        if components.path.hasSuffix("/") {
-            components.path = String(components.path.dropLast())
+        if components.percentEncodedPath.hasSuffix("/") {
+            components.percentEncodedPath = String(components.percentEncodedPath.dropLast())
         }
 
         return components.url

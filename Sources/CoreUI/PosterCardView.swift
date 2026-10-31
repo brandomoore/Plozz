@@ -69,6 +69,7 @@ public struct PosterCardView: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.locale) private var locale
     @Environment(\.plozzShowsUnwatchedEpisodeCount) private var showsUnwatchedEpisodeCount
+    @Environment(\.plozzShowsProgressBars) private var showsProgressBars
     /// Per-profile card presentation (framed glass card vs borderless artwork).
     @Environment(\.plozzCardStyle) private var cardStyle
     /// Per-profile focus treatment. With the outline off, a framed card keeps its
@@ -376,7 +377,7 @@ public struct PosterCardView: View {
         MediaCardPlaybackIndicators(
             item: item,
             hidesStatus: hidesPlaybackStatus,
-            showsProgressBar: !showsResumeChip,
+            showsProgressBar: !showsResumeChip && showsProgressBars,
             badgeInset: borderlessBadgeInset,
             progressHeight: metrics.progressBarHeight,
             progressHorizontalInset: borderlessProgressInset,
@@ -400,7 +401,7 @@ public struct PosterCardView: View {
                     MediaCardPlaybackIndicators(
                         item: item,
                         hidesStatus: hidesPlaybackStatus,
-                        showsProgressBar: !showsResumeChip,
+                        showsProgressBar: !showsResumeChip && showsProgressBars,
                         badgeInset: 8,
                         progressHeight: metrics.progressBarHeight,
                         progressHorizontalInset: 16,
@@ -487,7 +488,7 @@ public struct PosterCardView: View {
                     MediaCardPlaybackIndicators(
                         item: item,
                         hidesStatus: hidesPlaybackStatus,
-                        showsProgressBar: !showsResumeChip,
+                        showsProgressBar: !showsResumeChip && showsProgressBars,
                         badgeInset: 8,
                         progressHeight: metrics.progressBarHeight,
                         progressHorizontalInset: 16,
@@ -591,7 +592,7 @@ public struct PosterCardView: View {
                 MediaCardPlaybackIndicators(
                     item: item,
                     hidesStatus: hidesPlaybackStatus,
-                    showsProgressBar: !showsResumeChip,
+                    showsProgressBar: !showsResumeChip && showsProgressBars,
                     badgeInset: borderlessBadgeInset,
                     progressHeight: metrics.progressBarHeight,
                     progressHorizontalInset: borderlessProgressInset,

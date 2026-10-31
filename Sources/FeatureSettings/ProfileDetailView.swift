@@ -1,14 +1,10 @@
-#if canImport(SwiftUI)
+#if os(tvOS)
 import SwiftUI
 import CoreModels
 import CoreUI
 import FeatureProfiles
 
-/// Settings → Profile detail.
-///
-/// Profile-level controls only: switch profile, edit the *currently selected*
-/// profile, and toggle the launch picker. Per-server membership lives in
-/// Servers & Libraries — this page intentionally does not duplicate that.
+/// Device-wide access preferences and household profile management.
 struct ProfileDetailView: View {
     let context: SettingsContext
     let appVersion: String
@@ -17,24 +13,13 @@ struct ProfileDetailView: View {
 
     @State private var showingNewProfile = false
 
-    /// Settings receives profiles in the model's active-first/recency order.
-    private var orderedProfiles: [Profile] { context.profiles }
-
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                SettingsPageHeader(
-                    "Profiles",
-                    subtitle: "Each profile keeps its own settings — theme, playback, subtitles, spoilers, trackers, and Home layout. Only your servers are shared. Open one to lock it or make it a Kids Profile."
-                )
-                profilesListPanel
-            }
-            .frame(maxWidth: PlozzTheme.Metrics.settingsContentMaxWidth, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
-            .padding(.vertical, 24)
-        }
-        .scrollClipDisabled()
+        ProfileSettingsContent(
+            profiles: context.profiles,
+            activeProfileID: context.activeProfile.id,
+            automaticSignIn: context.automaticSignIn,
+            onAddProfile: { showingNewProfile = true }
+        )
         .plozzSheet(isPresented: $showingNewProfile) {
             ProfileEditorView(
                 canDelete: false,
@@ -53,58 +38,89 @@ struct ProfileDetailView: View {
             )
         }
     }
+}
 
-    private var profilesListPanel: some View {
-        SettingsPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                AutomaticSignInToggle(settings: context.automaticSignIn)
-                    .toggleStyle(SettingsSwitchToggleStyle())
+struct ProfileSettingsContent: View {
+    let profiles: [Profile]
+    let activeProfileID: String
+    let automaticSignIn: AutomaticSignInSettings
+    let onAddProfile: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.sectionSpacing) {
+                SettingsPageHeader("Profiles")
+                ProfileAccessSettingsGroup(automaticSignIn: automaticSignIn)
+                ProfilesSettingsList(
+                    profiles: profiles,
+                    activeProfileID: activeProfileID,
+                    onAddProfile: onAddProfile
+                )
+            }
+            .padding(.horizontal, SettingsFormMetrics.pageInset)
+            .padding(.top, SettingsFormMetrics.pageTopInset)
+            .padding(.bottom, SettingsFormMetrics.pageBottomInset)
+        }
+        .scrollClipDisabled()
+    }
+}
+
+private struct ProfileAccessSettingsGroup: View {
+    let automaticSignIn: AutomaticSignInSettings
+
+    var body: some View {
+        SettingsControlGroup {
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
+                AutomaticSignInToggle(settings: automaticSignIn, showsDescription: false)
                     .settingsWorkspaceEntry()
-                AutomaticSignInErrorMessage(settings: context.automaticSignIn)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                PlozzDivider()
-                ForEach(orderedProfiles) { profile in
-                    profileRow(profile)
-                }
-                Button {
-                    showingNewProfile = true
-                } label: {
-                    Label("Add Profile", systemImage: "plus.circle")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                AutomaticSignInErrorMessage(settings: automaticSignIn)
+                    .settingsHelperText()
             }
-            .tvOSFocusSection()
         }
+        .tvOSFocusSection()
+        .accessibilityIdentifier("profiles.accessSettings")
     }
+}
 
-    private func profileRow(_ profile: Profile) -> some View {
-        SettingsRouteLink(value: SettingsRoute.profileSettings(profileID: profile.id)) {
-            HStack(alignment: .center, spacing: 16) {
-                ProfileAvatarView(profile: profile, size: 40)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(profile.name).font(.headline)
-                    if profile.id == context.activeProfile.id {
-                        StatusChip("Active")
-                    }
-                }
-                Spacer()
-                // Glance the access state so the list answers "who's locked?"
-                // and "which one is the kid's?" without drilling into each.
-                if profile.isKids {
-                    Image(systemName: "figure.and.child.holdinghands")
+private struct ProfilesSettingsList: View {
+    let profiles: [Profile]
+    let activeProfileID: String
+    let onAddProfile: () -> Void
+
+    var body: some View {
+        SettingsControlGroup(dividerLeadingInset: SettingsRowMetrics.iconTitleInset) {
+            ForEach(profiles) { profile in
+                SettingsRouteLink(value: SettingsRoute.profileSettings(profileID: profile.id)) {
+                    SettingsRowLabel(title: Text(profile.name), icon: {
+                        ProfileAvatarView(profile: profile, size: SettingsRowMetrics.iconColumnWidth)
+                    }, secondary: {
+                        if profile.id == activeProfileID {
+                            StatusChip("Active")
+                        }
+                    }, trailing: {
+                        HStack(spacing: 8) {
+                            if profile.isKids {
+                                Image(systemName: "figure.and.child.holdinghands")
+                            }
+                            if profile.isLocked {
+                                Image(systemName: "lock.fill")
+                            }
+                            Image(systemName: "chevron.forward")
+                        }
+                        .font(.caption)
                         .settingsRowSecondary()
+                    })
                 }
-                if profile.isLocked {
-                    Image(systemName: "lock.fill")
-                        .settingsRowSecondary()
-                }
-                Image(systemName: "chevron.right")
-                    .settingsRowSecondary()
+                .accessibilityIdentifier("profiles.manage.\(profile.id)")
             }
-            .padding(.vertical, 2)
+            Button(action: onAddProfile) {
+                SettingsRowLabel(icon: "plus.circle", title: "Add Profile")
+            }
+            .accessibilityIdentifier("profiles.add")
         }
+        .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+        .tvOSFocusSection()
+        .accessibilityIdentifier("profiles.list")
     }
-
 }
 #endif

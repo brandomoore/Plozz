@@ -101,6 +101,21 @@ final class CrashRedactionTests: XCTestCase {
         XCTAssertEqual(clean.fingerprint?.first, "playback_failure")
     }
 
+    func testPlexTuneFailureRetainsTypedStatusAndRejectsServerPayload() throws {
+        let diagnostics = PlaybackFailureDiagnostics()
+        let attempt = try XCTUnwrap(diagnostics.begin(
+            layer: .plexLiveTune, content: .live, captureForPresentation: true
+        ))
+        let diagnostic = try XCTUnwrap(attempt.fail(stage: .response, code: -1, format: .json))
+        let event = try XCTUnwrap(SentryCrashReporter.playbackEvent(diagnostic))
+        event.context?["playback_failure"]?["serverMessage"] = "private-token private-channel"
+        let clean = try XCTUnwrap(CrashRedaction.scrub(event))
+        XCTAssertEqual(clean.tags?["playback.layer"], "plexLiveTune")
+        let data = try XCTUnwrap(clean.context?["playback_failure"])
+        XCTAssertEqual(data["code"] as? Int, -1)
+        XCTAssertNil(data["serverMessage"])
+    }
+
     func testPlaybackRedactionRejectsInvalidEnumsCountersAndCancellation() throws {
         for (key, value) in [
             ("layer", "private" as Any), ("content", "private" as Any), ("stage", "private" as Any),

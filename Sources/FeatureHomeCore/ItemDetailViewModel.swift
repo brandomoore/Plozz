@@ -791,15 +791,14 @@ public final class ItemDetailViewModel {
                 // await — so navigating away cancels it instead of letting the
                 // multi-server search fan-out starve the next page's `provider.item`.
                 startSpeculativeEnrichment(for: item)
-                // Play can use the resume answer before the season list arrives.
-                // Keep season selection gated on that answer so it never settles
-                // on Season 1 while the real resume target is still pending.
+                // Publish seasons and resume independently. Explicit episode/season
+                // entries can browse immediately; SeriesEpisodeEntry owns the
+                // resume gate for entries without an explicit selection.
                 async let resumeTask: Void = publishServerResumeEpisode(
                     for: item, provider: loadProvider,
                     sourceGeneration: loadSourceGeneration
                 )
                 let fetchedChildren = await fetchChildren(loadProvider, of: item.id)
-                await resumeTask
                 guard !Task.isCancelled, isCurrent() else { return }
                 state = .loaded(Detail(
                     item: tagged(state.value?.item ?? taggedItem),
@@ -814,6 +813,8 @@ public final class ItemDetailViewModel {
                 loadUpcomingSchedule(for: taggedItem)
                 loadRelatedTitles(for: taggedItem)
                 persistSnapshot()
+                await resumeTask
+                guard !Task.isCancelled, isCurrent() else { return }
                 // Trailers and ordinary enrichment remain on the existing load
                 // path. Optional server ratings run independently of completion.
                 await runTrailersAndRatings(
@@ -860,19 +861,25 @@ public final class ItemDetailViewModel {
             // (seeded hero, full hero, or .loading) — never flash a failure for a
             // clean cancel.
             return
-        } catch let error as AppError {
-            // Don't bury an already-painted hero under a full-screen error just
-            // because the detail re-fetch failed; the seeded hero stays usable.
-            if isCurrent(), state.value == nil { state = .failed(error) }
-            if isCurrent(), error != .cancelled,
-               case var .loaded(detail) = state, detail.item.kind == .collection {
-                detail.collectionMembersState = .failed(error)
-                state = .loaded(detail)
-            }
         } catch {
-            if isCurrent(), state.value == nil { state = .failed(.unknown("")) }
-            if isCurrent(), case var .loaded(detail) = state, detail.item.kind == .collection {
-                detail.collectionMembersState = .failed(.unknown(""))
+            guard !Task.isCancelled, isCurrent() else { return }
+            let failure = error as? AppError ?? .unknown("")
+            guard failure != .cancelled else { return }
+            PlozzLog.app.error("Library detail request failed")
+            guard var detail = state.value else {
+                state = .failed(failure)
+                return
+            }
+            let isSeriesEntry = detail.item.kind == .series
+                || detail.item.kind == .season
+                || (detail.item.kind == .episode && detail.item.id != loadItemID)
+            if isSeriesEntry, !detail.childrenLoaded {
+                // A show/episode seed without its season list is not a usable
+                // detail page: keeping it loaded leaves the browser spinning.
+                snapshotRestoreTask?.cancel()
+                state = .failed(failure)
+            } else if detail.item.kind == .collection {
+                detail.collectionMembersState = .failed(failure)
                 state = .loaded(detail)
             }
         }

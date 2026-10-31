@@ -108,7 +108,7 @@ final class WatchlistCollectionRefreshTests: XCTestCase {
             try await waitUntil { model.collectionRefreshQueue.isEmpty }
             let requests = await provider.requests
             XCTAssertEqual(requests.map(\.collectionID), ["saved", "later", "drama", "saved", "later", "drama"])
-            XCTAssertTrue(requests.allSatisfy { $0.page.startIndex == 0 && $0.page.limit == 20 })
+            XCTAssertTrue(requests.allSatisfy { $0.page.startIndex == 0 && $0.page.limit == 21 })
             let maximumConcurrent = await provider.maximumConcurrent
             let unrelatedRequests = await unrelated.requests
             let extraRequests = await provider.nonCollectionRequests
@@ -351,7 +351,7 @@ final class WatchlistCollectionRefreshTests: XCTestCase {
         XCTAssertEqual(model.state.value?.collectionRows.first?.failure, .serverUnreachable)
     }
 
-    func testShortServerPagesStillStopAfterTwentyMembersPerPreview() async throws {
+    func testShortServerPagesKeepTwentyMembersAndOneLookaheadPerPreview() async throws {
         let provider = RefreshProvider(totalCount: 1_000_000, pageSize: 3)
         let settings = visibility([section("saved", "Watchlist")])
         let model = makeModel(provider, settings: { settings })
@@ -362,10 +362,26 @@ final class WatchlistCollectionRefreshTests: XCTestCase {
         let requests = await provider.requests
         let offsets = [0, 3, 6, 9, 12, 15, 18]
         XCTAssertEqual(requests.map(\.page.startIndex), offsets + offsets)
-        XCTAssertEqual(requests.map(\.page.limit), (offsets + offsets).map { 20 - $0 })
+        XCTAssertEqual(requests.map(\.page.limit), (offsets + offsets).map { 21 - $0 })
         XCTAssertEqual(model.state.value?.collectionRows.first?.items.count, 20)
+        XCTAssertEqual(model.state.value?.collectionRows.first?.hasMore, true)
         let concurrent = await provider.maximumConcurrent
         XCTAssertEqual(concurrent, 1)
+    }
+
+    func testCollectionRefreshUpdatesOverflowAsMembershipGrowsAndShrinks() async throws {
+        let provider = RefreshProvider(totalCount: 20)
+        let settings = visibility([section("saved", "Watchlist")])
+        let model = makeModel(provider, settings: { settings })
+        await model.load()
+        XCTAssertEqual(model.state.value?.collectionRows.first?.hasMore, false)
+        for count in [21, 1, 20] {
+            await provider.setTotalCount(count)
+            change.post()
+            try await waitUntil { model.collectionRefreshQueue.isEmpty }
+            XCTAssertEqual(model.state.value?.collectionRows.first?.items.count, min(20, count))
+            XCTAssertEqual(model.state.value?.collectionRows.first?.hasMore, count > 20)
+        }
     }
 
     private var change: WatchlistProviderChange {

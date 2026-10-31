@@ -34,6 +34,8 @@ public struct Endpoint: Sendable {
     public var redactsURLForLogging: Bool = false
     /// Stop receiving before an untrusted response exceeds this byte budget.
     public var maximumResponseBytes: Int?
+    /// Manual scheme discovery must distinguish rejected trust from an offline port.
+    public var reportsServerTrustFailures: Bool = false
 
     public init(
         method: HTTPMethod = .get,

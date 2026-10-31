@@ -498,6 +498,44 @@ final class SiloProviderTests: XCTestCase {
       ProviderKind.silo.metadataRichnessRank, ProviderKind.jellyfin.metadataRichnessRank)
   }
 
+  func testWatchlistQueriesUseReleaseDatesWithoutInventingWatchlistAddDates() async throws {
+    let raw = try credential().encoded()
+    let http = SiloHTTPStub([
+      "/api/v2/catalog": """
+      {"items":[
+        {"content_id":"movie:1","type":"movie","title":"Alpha","release_date":"2024-01-01","added_at":"2026-01-01"},
+        {"content_id":"series:2","type":"series","title":"Zulu","release_date":"2023-01-01"},
+        {"content_id":"movie:3","type":"movie","title":"Oscar"}
+      ],"total":3,"total_exact":true,"window_cursor":"window"}
+      """
+    ])
+    let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    let destination = try XCTUnwrap(SiloWatchlistDestination(provider: provider))
+    let entries = try await destination.fetchEntries()
+    XCTAssertEqual(entries.map(\.kind), [.movie, .series, .movie])
+    XCTAssertTrue(entries.allSatisfy { $0.addedAt == nil })
+    XCTAssertEqual(entries.first?.presentation?.releaseDate, Date(timeIntervalSince1970: 1_704_067_200))
+    let items = try entries.map { entry in
+      let presentation = try XCTUnwrap(entry.presentation)
+      return MediaItem(id: presentation.title, title: presentation.title, kind: entry.kind,
+                       watchlistAddedAt: entry.addedAt, releaseDate: presentation.releaseDate)
+    }
+    XCTAssertEqual(WatchlistBrowsePreferences(filter: .movies).items(from: items).map(\.title), ["Alpha", "Oscar"])
+    XCTAssertEqual(WatchlistBrowsePreferences(filter: .shows).items(from: items).map(\.title), ["Zulu"])
+    XCTAssertEqual(WatchlistBrowsePreferences(sort: .init(field: .releaseDate, direction: .ascending))
+      .items(from: items).map(\.title), ["Zulu", "Alpha", "Oscar"])
+    XCTAssertEqual(WatchlistBrowsePreferences.default.items(from: items), items)
+    for entry in entries {
+      let owned = await destination.resolveLibraryCopy(for: entry)
+      XCTAssertEqual(owned?.source.providerKind, .silo)
+      XCTAssertEqual(owned?.source.accountID, provider.accountID)
+      XCTAssertEqual(owned?.presentation?.releaseDate, entry.presentation?.releaseDate)
+    }
+    let requests = await http.requests
+    XCTAssertEqual(requests.count, 1)
+    XCTAssertEqual(requests.first?.queryItems.first { $0.name == "source" }?.value, "watchlist")
+  }
+
   func testPairingUsesNativeCapabilityAndDoesNotSendProfileCredentials() async throws {
     let http = SiloHTTPStub([
       "/api/v2/auth/device/capability": #"{"state":"available","protocol_versions":[2]}"#,

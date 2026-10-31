@@ -239,7 +239,7 @@ final class DetailReturnFocusRemoteTests: XCTestCase {
         continueAfterFailure = false
         let attach = ProcessInfo.processInfo.environment["PLOZZ_PERFORMANCE_ATTACH"] == "1"
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
-        app.launchArguments = ["--production-home-fixture", "--native-top-home", "--return-focus-trace"]
+        app.launchArguments = ["--production-home-fixture", "--top-bar-home", "--return-focus-trace"]
         if showcase { app.launchArguments.append("--immersive-home") }
         if libraryRows {
             app.launchArguments += ["--progressive-library-rows", "--populated-home-return"]
@@ -251,7 +251,7 @@ final class DetailReturnFocusRemoteTests: XCTestCase {
         }
         defer { if !attach { app.terminate() } }
         XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
-        let homeTab = app.tabBars.buttons["Home"]
+        let homeTab = app.buttons["top-navigation-home"]
         if homeTab.exists && homeTab.hasFocus { XCUIRemote.shared.press(.down) }
         if !showcase { XCUIRemote.shared.press(.down) }
         for _ in 0..<5 {
@@ -291,7 +291,7 @@ final class DetailReturnFocusRemoteTests: XCTestCase {
             }
             let next = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
             XCTAssertTrue(next.exists)
-            let index = try XCTUnwrap(Int(next.label.split(separator: " ").last ?? ""))
+            let index = try XCTUnwrap(Int(next.label.split(separator: " ").last ?? ""), app.debugDescription)
             XCTAssertTrue((rowStart..<(rowStart + 20)).contains(index),
                           "Only Left was pressed; native focus must remain in the source row.")
             let sourceIndex = try XCTUnwrap(Int(title.split(separator: " ").last ?? ""))

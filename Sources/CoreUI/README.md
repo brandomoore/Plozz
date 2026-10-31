@@ -1,10 +1,55 @@
 # CoreUI
 
+Home row browsing uses `BrowseRowHeading` for a single accessible title/chevron
+touch target and `MediaRowBrowseCard` for a native TV rail action. Opt a rail in
+with `browsingRow`; existing collection-detail `onSeeAll` headers elsewhere keep
+their behavior. Passing `nil` opts into Home browsing without showing an action
+or falling back to the old header action. Browse actions carry no media identity
+or context-menu actions.
+
 Shared, **focusable** UI primitives, the app theme, and the artwork image
 cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 `#if canImport(SwiftUI)` so the package still compiles on Linux for tests.
 
 ## Responsibility
+
+`PlaybackResumePrompt` owns the native Resume / Start Over dialog on both
+platforms. It retains the full pending playback request through the choice so
+source, version and playlist context are preserved; cancellation starts nothing.
+Callers apply the profile's opt-in setting before presenting it.
+
+`TopNavigationScroll` connects each root vertical scroll owner to the custom
+top bar. `scrollsTopNavigation()` handles ordinary SwiftUI roots; native grids
+and Showcase report through their existing owners. Source tokens reject late
+callbacks from departed pages. Back resets the active owner to the page top;
+scroll updates invalidate only the bar's position, not the page builder.
+There is no top-navigation foreground mask. Native and pinned sidebars do not
+receive this coordinator and retain their existing behavior.
+
+`NavigationStyleSwatch` preserves the miniature-window illustrations for all
+three navigation choices: a full-height dotted pinned sidebar, a compact sidebar
+of stacked tabs, and a centered top bar. The shared 320-by-180 drawing scales to
+fit both compact Settings cards and onboarding, keeping the top bar centered and
+all three equal-sized posters visible. Preview sizing does not change the shared
+card's focus or selection treatment.
+
+`BrowseQueryControls`, `BrowseSortMenu`, and `BrowseFilterMenu` own the native
+query-control layout, sort choices/directions, and active-filter labels shared
+by Library and Watchlist on TV and mobile. Mobile controls wrap at narrow widths
+and keep their 44-point action targets; TV keeps the existing native menu style.
+`WatchlistSortMenu` and `WatchlistFilterMenu` supply Watchlist's supported choices,
+not a parallel menu design. `WatchlistBrowseControls` composes them for inline
+surfaces. On iPhone and iPad, Watchlist, library grids, and Home row browsers
+place their supported sort/filter actions in the trailing navigation toolbar,
+outside the scrolling content. Library content-mode tabs remain in the page;
+unsupported query actions stay hidden. Mobile filter icons fill when filters
+are active, including in icon-only toolbars.
+Callers retain their query behavior and accessibility identifiers.
+Sort and filter buttons show their icon and current choice, without `Sort:` or
+`Filter:` prefixes. An unfiltered button shows `All`; compound filters keep their
+summary and fall back to the active count at narrow widths. Descriptive prefixes
+remain in accessibility labels. `BrowseFilterLabel` also supplies this presentation
+to Recent Activity; native icon-only toolbars and titles inside menus remain intact.
 
 `ServerUserRow` keeps the user's name above its owner/PIN metadata. The metadata
 wraps independently, preserving the avatar, native focus treatment, and trailing
@@ -204,9 +249,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Adaptive hero rows own `PlaybackSourceMenuState` and its presentation above
   `ViewThatFits`; candidate rows contain only triggers. Late trailer, action or
   inventory updates can rearrange the row without destroying an open version page.
-  An optional `MediaVersionInventoryLoader` keeps lazy sources discoverable even
-  with no cached alternatives. Only a mounted version page/sheet starts discovery,
-  not the overflow root or focus changes. Shared loading/error/Retry content
+  Version actions require at least two known choices, including when a
+  `MediaVersionInventoryLoader` is available. Unknown or single-version inventory
+  does not create an action, reserve a menu row, or provide a focus target.
+  Only a mounted version page/sheet starts discovery, not the overflow root or
+  focus changes. Shared loading/error/Retry content
   never starts playback or retries automatically. Loader identity fences retained
   choices across owner, account and playable-target changes; dismissal cancels
   the reader, not any server work already admitted by its provider.
@@ -398,6 +445,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   stepper, not placed outside its focus target. Left/Right adjusts,
   Select increments, and Up/Down remains native focus navigation. Bounds clamp
   unless a caller explicitly requests wrapping. Width reserves the longest value.
+  Numeric labels update immediately on every adjustment rather than rolling
+  through an animation that can hide changing digits during repeated presses.
   `SettingsAdjustmentFocusScope` shares the player's horizontal input ownership,
   held-press cancellation, and navigation-rail protection. VoiceOver adjustment
   uses the same stepping operation. Mobile retains separate buttons.
@@ -446,6 +495,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   the group's full-width row-button style. Place a standalone native action in
   a layout container so its accessibility bounds do not include the row's
   noninteractive space.
+- **Hidden watch indicators** suppress watched badges and unwatched flags in
+  shared media chrome and native episode cards, not episode counts, progress,
+  download badges, or library/request status. The existing profile-scoped
+  indicator value also invalidates native bitmap caches when it changes.
 - **Unwatched episode counts** — a default-on profile preference replaces the
   top-right watch-status mark with a number on series/season cards.
   Episode counts use charcoal tiles with white digits so they stay quieter than
@@ -462,7 +515,7 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   watch-indicator Settings previews reuse the same check badge and flag.
   Their middle poster represents an in-progress series with three remaining
   episodes. Its shared count badge follows the live count toggle and independent
-  Attached/Floating preference while progress stays visible. Count style crosses
+  Attached/Floating preference while progress follows its independent visibility setting. Count style crosses
   native hosting boundaries, controls overlay placement, and invalidates both
   native poster bitmap caches.
   `MediaWatchIndicatorStyle` owns the eight opaque watch-mark colors and contrasting
@@ -690,6 +743,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   reflections without changing the surrounding page's card policy.
   Shared hero/reflection first-paint results are qualified by source and provider
   policy so changing those settings cannot reuse a previous provider's winner.
+  A pinned show identity keeps its current image visible during hydration, not
+  permanently selected. New artwork references or source preferences resolve
+  again before replacing it at full quality, so an early poster fallback cannot
+  remain stretched across "Go to Show" after the proper backdrop arrives.
+  Unchanged inputs reuse the existing result without another lookup.
   Library-first and metadata-provider-first
   presets initialize source choices for Home, Continue Watching, Browse,
   Search, Watchlist, Details, Episodes, Playback, Music, Top Shelf, and Downloads

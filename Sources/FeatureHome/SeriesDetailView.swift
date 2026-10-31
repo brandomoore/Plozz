@@ -290,12 +290,8 @@ struct SeriesDetailView: View {
             // the same flags on `heroItem` in place so the visible hero button
             // reflects the new state immediately.
             //
-            // Marking the fronted episode watched then makes the hero *stale*: it
-            // now describes something finished while Play still points at it. The
-            // resting hero is derived from watch state, so re-derive it — the page
-            // moves on to the next episode the way it would on a fresh open. A
-            // The tapped episode is browser context only, so every entry route
-            // advances the resting hero when its Play target becomes watched.
+            // Re-resolve against current episode state. Explicit episode entries
+            // keep their target so the same button can mark it unwatched again.
             .onReceive(NotificationCenter.default.publisher(for: .mediaItemDidMutate)) { note in
                 guard let mutation = MediaItemMutation.from(note) else { return }
                 let seasonWasEdited = mutation.cascadesToSeasonEpisodes
@@ -311,8 +307,7 @@ struct SeriesDetailView: View {
                 guard seasonWasEdited || (heroItem.kind == .episode && heroItem.isPlayed) else {
                     return
                 }
-                // The hero advances to the next unwatched episode, but the rail
-                // must stay exactly where the user left it: marking an episode
+                // The rail must stay exactly where the user left it: marking an episode
                 // watched from its own card should update that card in place, not
                 // scroll the row to a different episode and take focus with it.
                 // Marking from the hero has no rail focus to protect, so there the
@@ -1550,7 +1545,7 @@ struct SeriesDetailView: View {
             await frontSwitchTarget(target)
             return
         }
-        if !hasUserDirectedFocus,
+        if !hasUserDirectedFocus, initialEpisode == nil,
            let seed = SeriesEpisodeEntry.openingSeed(
                for: series, initialEpisode: initialEpisode,
                initialSeasonID: initialSeasonID, resumeEpisode: viewModel.serverResumeEpisode
@@ -1689,14 +1684,13 @@ struct SeriesDetailView: View {
         }
 
         if !hasEditedSeasonWatchState,
-                  let resume = initialEpisode ?? (initialSeasonID == nil ? viewModel.serverResumeEpisode : nil),
-                  let loaded = SeriesEpisodeEntry.episode(
-                      matching: resume,
-                      in: pool
-                  ) {
-            // The server named the episode to resume; prefer the loaded copy so
-            // the hero carries full metadata and badges.
-            heroItem = DetailPlaybackSelection.applyingResumeItem(resume, to: loaded)
+           let loaded = SeriesEpisodeEntry.resolvedOpeningEpisode(
+               initialEpisode: initialEpisode,
+               initialSeasonID: initialSeasonID,
+               resumeEpisode: viewModel.serverResumeEpisode,
+               in: pool
+           ) {
+            heroItem = loaded
         } else {
             guard !pool.isEmpty else { return }
             heroItem = SeriesResume.restingHero(

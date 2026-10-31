@@ -218,7 +218,7 @@ struct HomeTab: View {
         case .watchlist:
             watchlistRoot
         case let .library(library):
-            libraryBrowse(for: library)
+            libraryBrowse(for: library, isNavigationRoot: true)
         case let .allLibraries(libraries):
             allLibrariesBrowse(libraries)
         }
@@ -399,10 +399,10 @@ struct HomeTab: View {
     }
 
     /// One library's paged grid. Shared by the pushed `MediaLibrary` destination
-    /// and — under the rail — by the stack root, so a library looks and behaves the
+    /// and by the stack root, so a library looks and behaves the
     /// same however it was opened.
     @ViewBuilder
-    private func libraryBrowse(for library: MediaLibrary) -> some View {
+    private func libraryBrowse(for library: MediaLibrary, isNavigationRoot: Bool = false) -> some View {
         if let browse = try? resolveLibraryBrowse(
             for: library,
             in: accounts,
@@ -419,6 +419,7 @@ struct HomeTab: View {
                     presentation: libraryPresentation
                 ),
                 title: library.displayName,
+                isNavigationRoot: isNavigationRoot,
                 spoilerSettings: spoilerSettings,
                 continueWatchingShowsSeriesArtwork: homeVisibility.continueWatchingUsesSeriesArtwork,
                 continueWatchingLayout: homeVisibility.continueWatchingLayout,
@@ -459,6 +460,7 @@ struct HomeTab: View {
                     presentation: libraryPresentation
                 ),
                 title: Text(AllLibrariesBrowse.title),
+                isNavigationRoot: true,
                 spoilerSettings: spoilerSettings,
                 onSelect: { navigate($0) }
             )
@@ -721,7 +723,7 @@ struct HomeTab: View {
                 },
                 onPush: { path.append($0) },
                 // Straight to the player, NOT through `requestPlay`: an item
-                // with progress raises the Resume/Start Over prompt, and a
+                // with progress can raise the Resume/Start Over prompt, and a
                 // capture of the player is then a capture of that alert.
                 //
                 // A series still has to be resolved to an episode first. Series
@@ -1238,9 +1240,7 @@ struct HomeTab: View {
         }
     }
 
-    /// In-progress items prompt "Resume vs Start Over"; fully-unwatched items
-    /// play immediately from the start.
-
+    /// In-progress items resume directly unless the profile asks for a choice.
     private func requestPlay(
         _ item: MediaItem, playlistOrigin: VideoPlaylistPlaybackOrigin? = nil
     ) {
@@ -1277,12 +1277,12 @@ struct HomeTab: View {
     }
 
     /// Presents the player for an already-resolved, directly-playable `target`
-    /// (movie or episode), prompting Resume vs Start Over when it has progress.
+    /// (movie or episode), honoring the profile's resume confirmation preference.
     private func presentPlay(
         _ target: MediaItem, playlistOrigin: VideoPlaylistPlaybackOrigin? = nil
     ) {
         pendingPlaylistOrigin = playlistOrigin
-        if let resume = target.resumePosition, resume > 1 {
+        if playbackSettings.shouldAskBeforeResuming(at: target.resumePosition) {
             HandoffDiagnostics.emit(
                 "tap RESUME_PROMPT item=\(target.id) provider=\(target.sourceAccountID ?? "nil")"
             )
@@ -1292,7 +1292,8 @@ struct HomeTab: View {
                 guard let provider = try? resolveProvider(origin.accountID, in: accounts) else { return nil }
                 return VideoPlaylistPlaybackContext(origin: origin, provider: provider)
             }
-            let request = PlayRequest(item: target, startPosition: 0, playlist: playlist)
+            let request = PlayRequest(item: target, startPosition: target.resumePosition ?? 0, playlist: playlist)
+            pendingPlaylistOrigin = nil
             HandoffDiagnostics.emit(
                 "tap PLAY trace=\(request.traceID.uuidString.prefix(8)) item=\(target.id) "
                     + "provider=\(target.sourceAccountID ?? "nil")"

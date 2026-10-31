@@ -405,10 +405,10 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         session.finishImmediately()
     }
 
-    func testLeavingExternalSettingsRestoresPinnedPageFocus() async throws {
+    func testLeavingSettingsRestoresPinnedPageFocus() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
-        fixture.model.usesSettingsShell = true
+        fixture.model.includesSettingsPage = true
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: fixture.window))
         try await Task.sleep(for: .milliseconds(100))
         for _ in 0..<3 {
@@ -420,6 +420,9 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
                 $0.convert($0.bounds, to: fixture.window).midY
                     < $1.convert($1.bounds, to: fixture.window).midY
             })
+            try await waitUntil {
+                NavigationRowFocusRequester.target(for: settingsRow, in: fixture.window) != nil
+            }
             let settingsTarget = try XCTUnwrap(
                 NavigationRowFocusRequester.target(for: settingsRow, in: fixture.window)
             )
@@ -445,6 +448,48 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
             }
             XCTAssertFalse(fixture.model.destinationFocus.isWaiting)
         }
+    }
+
+    func testChromeDepthTransitionsPreserveContentWithAndWithoutReducedMotion() async throws {
+        for reduceMotion in [false, true] {
+            let fixture = try await makeFixture()
+            defer { fixture.close() }
+            fixture.model.reduceMotion = reduceMotion
+            try await waitUntil { fixture.model.buttonEnabled && !self.markers(in: fixture.window).isEmpty }
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: fixture.window))
+            try await waitUntil { system.focusedItem != nil }
+            let focused = try XCTUnwrap(system.focusedItem)
+            let before = try XCTUnwrap(NavigationRowFocusRequester.frame(of: focused, relativeTo: fixture.window))
+
+            fixture.model.chrome.setStackDepth(1)
+            try await Task.sleep(for: .milliseconds(90))
+            captureMotion(in: fixture.window, name: "Pinned sidebar exiting; reduced motion \(reduceMotion)")
+            try await waitUntil { self.markers(in: fixture.window).isEmpty }
+            XCTAssertTrue(fixture.model.buttonEnabled)
+            XCTAssertTrue(system.focusedItem === focused)
+            XCTAssertEqual(
+                NavigationRowFocusRequester.frame(of: focused, relativeTo: fixture.window), before,
+                "Chrome motion must not move its page content."
+            )
+
+            fixture.model.chrome.setStackDepth(0)
+            try await Task.sleep(for: .milliseconds(90))
+            captureMotion(in: fixture.window, name: "Pinned sidebar returning; reduced motion \(reduceMotion)")
+            try await waitUntil { !self.markers(in: fixture.window).isEmpty }
+            try await Task.sleep(for: .milliseconds(350))
+            XCTAssertTrue(system.focusedItem === focused, "Returning chrome must not steal focus.")
+            XCTAssertTrue(targets(in: fixture.window).isEmpty, "The rail stays collapsed until explicit entry.")
+        }
+    }
+
+    private func captureMotion(in window: UIWindow, name: String) {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: false))
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func markers(in view: UIView) -> [NavigationRowFocusRequester.RequestView] {
@@ -532,7 +577,8 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         var seasonContext = "initial-profile"
         var hostedHeader = false
         var blocksContent = false
-        var usesSettingsShell = false
+        var includesSettingsPage = false
+        var reduceMotion = false
         let destinationFocus = NavigationDestinationFocusHandoff()
         @ObservationIgnored weak var settingsButton: UIButton?
         let scrollTarget = NativeLibraryScrollTarget()
@@ -542,16 +588,7 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         @Bindable var model: Model
 
         var body: some View {
-            if model.usesSettingsShell {
-                SettingsNavigationShell(style: .rail, showsSettings: model.selection == .settings) { _ in
-                    rail
-                } settings: {
-                    SettingsButton(model: model)
-                        .frame(width: 400, height: 100)
-                }
-            } else {
-                rail
-            }
+            rail
         }
 
         private var rail: some View {
@@ -561,8 +598,9 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
                 selection: $model.selection, onOpenProfileSwitcher: {},
                 chrome: model.chrome,
                 content: Group {
-                    if model.usesSettingsShell && model.selection == .settings {
-                        Color.clear
+                    if model.includesSettingsPage && model.selection == .settings {
+                        SettingsButton(model: model)
+                            .frame(width: 400, height: 100)
                     } else {
                         PageContent(model: model)
                     }
@@ -573,6 +611,7 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
             .environment(\.seasonRequestContextID, model.seasonContext)
             .environment(\.themeMusicController, model.musicController)
             .environment(\.themeMusicSettings, model.musicSettings)
+            .environment(\._accessibilityReduceMotion, model.reduceMotion)
         }
     }
 

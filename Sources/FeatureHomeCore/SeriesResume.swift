@@ -225,6 +225,20 @@ public enum SeriesEpisodeEntry {
         return playableSeed(requested, for: series)
     }
 
+    /// The entry snapshot selects an episode; it must not restore old watch state
+    /// over the loaded copy. Only the live, mutation-updated resume item may supply
+    /// progress that sparse episode metadata omits.
+    public static func resolvedOpeningEpisode(
+        initialEpisode: MediaItem?,
+        initialSeasonID: String?,
+        resumeEpisode: MediaItem?,
+        in episodes: [MediaItem]
+    ) -> MediaItem? {
+        let requested = initialEpisode ?? (initialSeasonID == nil ? resumeEpisode : nil)
+        guard let loaded = episode(matching: requested, in: episodes) else { return nil }
+        return DetailPlaybackSelection.applyingResumeItem(resumeEpisode, to: loaded)
+    }
+
     /// Only a real episode on the currently selected source can seed Play before
     /// the season loads. An ordinal match alone cannot authorize a playback id.
     public static func playableSeed(_ episode: MediaItem?, for series: MediaItem) -> MediaItem? {

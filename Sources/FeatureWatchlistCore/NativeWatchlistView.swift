@@ -15,6 +15,7 @@ public struct NativeWatchlistEntry: Codable, Hashable, Sendable {
     /// Position in the destination's own list, preserved so the union can order
     /// entries the way the server does rather than by hash order.
     public let index: Int
+    public let addedAt: Date?
     /// The item in the viewer's OWN library this entry is, as answered by the
     /// server that holds the list.
     ///
@@ -41,7 +42,8 @@ public struct NativeWatchlistEntry: Codable, Hashable, Sendable {
         index: Int,
         ownedSource: MediaSourceRef? = nil,
         ownedPresentation: MediaAliasPresentation? = nil,
-        attribution: MetadataAttribution? = nil
+        attribution: MetadataAttribution? = nil,
+        addedAt: Date? = nil
     ) {
         guard kind == .movie || kind == .series else { return nil }
         self.aliasID = aliasID
@@ -50,6 +52,7 @@ public struct NativeWatchlistEntry: Codable, Hashable, Sendable {
         self.presentationAccountID = presentationAccountID
         self.attribution = attribution
         self.index = index
+        self.addedAt = addedAt
         self.ownedSource = ownedSource
         self.ownedPresentation = ownedPresentation?.sanitizedForSync()
     }
@@ -67,7 +70,7 @@ public struct NativeWatchlistEntry: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case aliasID, kind, presentation, presentationAccountID
-        case index, ownedSource, ownedPresentation, attribution
+        case index, ownedSource, ownedPresentation, attribution, addedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -91,6 +94,7 @@ public struct NativeWatchlistEntry: Codable, Hashable, Sendable {
             forKey: .presentationAccountID
         )
         index = try container.decode(Int.self, forKey: .index)
+        addedAt = try container.decodeIfPresent(Date.self, forKey: .addedAt)
         attribution = try container.decodeIfPresent(MetadataAttribution.self, forKey: .attribution)
         ownedSource = try container.decodeIfPresent(
             MediaSourceRef.self,
@@ -115,6 +119,7 @@ public struct NativeWatchlistEntry: Codable, Hashable, Sendable {
             forKey: .presentationAccountID
         )
         try container.encode(index, forKey: .index)
+        try container.encodeIfPresent(addedAt, forKey: .addedAt)
         try container.encodeIfPresent(attribution, forKey: .attribution)
         try container.encodeIfPresent(ownedSource, forKey: .ownedSource)
         try container.encodeIfPresent(

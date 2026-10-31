@@ -1,9 +1,33 @@
 import XCTest
 import CoreModels
+import CoreNetworking
 @testable import FeatureAuthCore
 
 final class QuickConnectServiceTests: XCTestCase {
     private let server = MediaServer(id: "s", name: "Home", baseURL: URL(string: "http://host:8096")!, provider: .jellyfin)
+
+    func testQuickConnectRecordsOneEntryPerStageNotPerPoll() async throws {
+        let diagnostics = ServerConnectionDiagnostics()
+        let stub = StubHTTPClient()
+        stub.stubFixed(pathSuffix: "/QuickConnect/Enabled", json: "true")
+        stub.stubFixed(pathSuffix: "/QuickConnect/Initiate", json: #"{"Authenticated":false,"Secret":"private-secret","Code":"654321"}"#)
+        stub.stubSequence(pathSuffix: "/QuickConnect/Connect", jsons:
+            Array(repeating: #"{"Authenticated":false,"Secret":"private-secret","Code":"654321"}"#, count: 8) +
+                [#"{"Authenticated":true,"Secret":"private-secret","Code":"654321"}"#])
+        stub.stubFixed(pathSuffix: "/Users/AuthenticateWithQuickConnect",
+                       json: #"{"AccessToken":"private-token","ServerId":"srv","User":{"Id":"u1","Name":"Alice"}}"#)
+        let service = QuickConnectService(server: server, deviceID: "dev1", http: stub,
+                                          sleep: { _ in }, diagnostics: diagnostics)
+        let challenge = try await service.begin()
+        _ = try await service.awaitApproval(for: challenge)
+        let data = try JSONEncoder().encode(diagnostics.export(scope: DiagnosticExportScope()))
+        let report = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let facts = try XCTUnwrap(report["entries"] as? [[String: Any]]).compactMap { $0["facts"] as? [String: Any] }
+        XCTAssertEqual(facts.compactMap { $0["stage"] as? String }, ["quickConnectBegin", "quickConnectApproval"])
+        XCTAssertEqual(facts.compactMap { $0["outcome"] as? String }, ["succeeded", "succeeded"])
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("private"))
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("654321"))
+    }
 
     private func makeService(
         stub: StubHTTPClient,

@@ -14,6 +14,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
     public let credentialRevision: CredentialRevision
     let client: PlexClient
     let liveTVLeases = PlexLiveTVLeaseStore()
+    let playbackFailureDiagnostics: PlaybackFailureDiagnostics
     let libraryGenreCache = PlexLibraryGenreCache()
     private let videoPlaylistCache = VideoPlaylistSnapshotCache()
     let themeArchiveResolver: @Sendable (String?) async -> URL?
@@ -60,6 +61,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         hybridEngineEnabled: Bool = false,
         connectionRefresh: PlexConnectionResolver.Refresh? = nil,
         probe: HTTPClient = URLSessionHTTPClient(session: .plozzDiscovery),
+        playbackFailureDiagnostics: PlaybackFailureDiagnostics = .shared,
         themeArchiveResolver: @escaping @Sendable (String?) async -> URL? = {
             await ThemeMusicArchive.resolvedURL(tvdbID: $0)
         }
@@ -67,6 +69,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         self.session = session
         self.accountID = accountID ?? session.server.id
         self.credentialRevision = credentialRevision
+        self.playbackFailureDiagnostics = playbackFailureDiagnostics
         self.themeArchiveResolver = themeArchiveResolver
         let deviceProfile = PlexDeviceProfile(clientIdentifier: session.deviceID)
         // Probe the persisted connection list (or the single saved URL) and stay
@@ -558,7 +561,8 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
                 id: id,
                 title: title,
                 style: .poster,
-                items: Array(items.prefix(max(1, limit)))
+                items: Array(items.prefix(max(1, limit))),
+                browseID: PlexClient.homeShelfKey(hub.key) ?? "hub:\(id)"
             )
         }
     }
@@ -601,7 +605,8 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
                 id: id, title: title, items: Array(items.prefix(max(1, limit))),
                 isHomeDefault: isDefault,
                 isLegacyHomeDefault: items.count >= Self.minimumHubItems
-                    && !Self.isPersonHub(identifier: hub.hubIdentifier, context: hub.context, title: hub.title)
+                    && !Self.isPersonHub(identifier: hub.hubIdentifier, context: hub.context, title: hub.title),
+                browseID: PlexClient.homeShelfKey(hub.key) ?? "hub:\(rawID)"
             )
         }
     }
@@ -2873,6 +2878,7 @@ extension PlexProvider: WatchlistProviding {
         let items =         try await client.watchlist()
             .map { dto -> MediaItem in
                 var copy = mapDiscover(metadata: dto)
+                copy.watchlistAddedAt = dto.watchlistedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
                 copy.isFavorite = true
                 copy.locallyValidatedPlayableSource = false
                 return copy

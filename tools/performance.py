@@ -774,7 +774,9 @@ class Lane:
         bundle_id = "com.thatcube.Plozz.FocusHost"
         workload = getattr(self.args, "workload", "home-navigation")
         test = (
-            "DetailReturnFocusRemoteTests/testProfilePopulatedShowcaseDetailReturns"
+            "LargeNativeNavigationRemoteTests/testProfileRapidHorizontalNavigation"
+            if workload == "horizontal-navigation"
+            else "DetailReturnFocusRemoteTests/testProfilePopulatedShowcaseDetailReturns"
             if workload == "detail-return"
             else "ProductionHomeNavigationTests/testNavigateProductionHomeWithNativeCards"
         )
@@ -814,9 +816,14 @@ class Lane:
                          "--home-artwork-cache-namespace=" + self.output.name]
             if workload == "detail-return":
                 arguments = [
-                    "--production-home-fixture", "--native-top-home", "--return-focus-trace",
+                    "--production-home-fixture", "--top-bar-home", "--return-focus-trace",
                     "--immersive-home", "--progressive-library-rows", "--populated-home-return",
                     "--distinct-home-artwork", "--home-artwork-cache-namespace=" + self.output.name,
+                ]
+            elif workload == "horizontal-navigation":
+                arguments = [
+                    "--large-native-navigation-fixture", "--real-library-pages",
+                    "--trace-tab-transitions",
                 ]
             _, launch = self.command("fixture-launch", ["xcrun", "simctl", "launch", self.args.sim_id, bundle_id, *arguments])
             launched = True
@@ -1015,7 +1022,7 @@ def main(argv=None):
     profile.add_argument("--sim-id", required=True)
     profile.add_argument("--timeout", type=int, default=2400)
     profile.add_argument("--template", choices=("Time Profiler", "SwiftUI", "Process Sample"), default="Process Sample")
-    profile.add_argument("--workload", choices=("home-navigation", "detail-return"), default="home-navigation")
+    profile.add_argument("--workload", choices=("home-navigation", "detail-return", "horizontal-navigation"), default="home-navigation")
     comparison = commands.add_parser("compare", help="Compare saved runs; never updates a baseline.")
     comparison.add_argument("baseline", type=Path)
     comparison.add_argument("candidate", type=Path)

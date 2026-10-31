@@ -5,6 +5,25 @@ import XCTest
 
 @MainActor
 final class NativePlaybackLifecycleTests: XCTestCase {
+    func testNativePlaybackDeclaresMultichannelContentBeforePlaying() async throws {
+        let session = AVAudioSession.sharedInstance()
+        let previous = session.supportsMultichannelContent
+        let engine = NativeVideoEngine(startsMuted: true)
+        defer {
+            engine.stop()
+            do {
+                try session.setSupportsMultichannelContent(previous)
+            } catch {
+                XCTFail("Could not restore the audio session: \(error)")
+            }
+        }
+        try session.setSupportsMultichannelContent(false)
+        await engine.load(request: request(), startPosition: 0)
+        XCTAssertEqual(session.category, .playback)
+        XCTAssertEqual(session.mode, .moviePlayback)
+        XCTAssertTrue(session.supportsMultichannelContent)
+    }
+
     func testRepeatedStopDisconnectsRetainedPlayersAndTheirOutputs() async throws {
         let engine = NativeVideoEngine(startsMuted: true)
         defer { engine.stop() }

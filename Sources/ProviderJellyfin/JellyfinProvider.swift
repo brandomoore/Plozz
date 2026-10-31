@@ -165,7 +165,8 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
                 title: title,
                 localizedTitle: localizedTitle,
                 items: Array(items.prefix(limit)),
-                isHomeDefault: forHome ? false : nil
+                isHomeDefault: forHome ? false : nil,
+                browseID: "\(recommendation.RecommendationType):\(recommendation.CategoryId ?? subject ?? "")"
             )
         }
     }
@@ -1512,6 +1513,10 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
             try Task.checkCancellation()
         }
 
+        if kind == .emby, streaming?.quality.maximumBitrate == nil {
+            try source.boundEmbyOriginalTranscodingBitrate()
+        }
+
         if !didRemux {
             do {
                 try source.requestSDRForH264Transcode(
@@ -1637,6 +1642,7 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
                 ?? PlaybackRequest.sourceFileName(from: originalSource.Name)
         )
         request.burnedInSubtitleTrackID = source.burnedInSubtitleTrackID
+        request.serverDecision = source.playbackServerDecision(clientMaxBitrate: streaming?.quality.maximumBitrate)
         request.chapters = MediaChapter.normalized((detail.Chapters ?? []).enumerated().compactMap { index, chapter -> MediaChapter? in
             // Emby mixes skip boundaries into this array; those are not chapters.
             let marker = chapter.MarkerType?.lowercased() ?? ""

@@ -208,7 +208,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 CardCaptionCustomizationView(cards: cards, scope: scope)
                     .frame(width: 1100, height: 1000)
             ) { window in
-                let text = try await self.capture(window, name: "card-labels-\(scope)", includeMaster: true)
+                var text = try await self.capture(window, name: "card-labels-\(scope)", includeMaster: true)
                 let page = try XCTUnwrap(scope.pages.first)
                 XCTAssertEqual(self.focusItems(in: window).count,
                                page.controls.count + 1 + (scope.pages.count > 1 ? 1 : 0))
@@ -217,10 +217,19 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 XCTAssertEqual(text.contains("Overrides"), page.hasOverrides, text)
                 if page.hasOverrides {
                     XCTAssertTrue(text.contains("Default"), text)
+                    let scroll = try self.verticalScroll(in: window)
+                    scroll.setContentOffset(CGPoint(
+                        x: scroll.contentOffset.x,
+                        y: max(-scroll.adjustedContentInset.top,
+                               scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+                    ), animated: false)
+                    text += " " + (try await self.capture(
+                        window, name: "card-labels-\(scope)-overrides", includeMaster: true
+                    ))
                     XCTAssertTrue(text.contains("Use default"), text)
                     XCTAssertTrue(text.contains(String(localized: try XCTUnwrap(page.sharedRowNote))), text)
                 }
-                for view in page.controls where view == .continueWatching || page == .detail {
+                for view in page.controls where view.isRowOverride || page == .detail {
                     XCTAssertTrue(text.contains(String(localized: view.cardLabelTitle)), text)
                 }
                 XCTAssertFalse(text.contains("Filmography"), text)
@@ -566,9 +575,15 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 .sorted { $0.minY < $1.minY }
             XCTAssertGreaterThanOrEqual(frames.count, 9)
             let rowHeight = SettingsRowMetrics.minHeight(.primary) + 2 * SettingsRowMetrics.verticalPadding(.primary)
-            for frame in frames.prefix(9) {
+            let singleLineRows = frames.prefix(9).filter { $0.height <= rowHeight + 1 }
+            let libraryRows = frames.prefix(9).filter { $0.height > rowHeight + 1 }
+            XCTAssertEqual(singleLineRows.count, 7)
+            XCTAssertEqual(libraryRows.count, 2, "Library rows reserve a second line for their server.")
+            for frame in singleLineRows {
                 XCTAssertEqual(frame.height, rowHeight, accuracy: 1)
             }
+            XCTAssertEqual(try XCTUnwrap(libraryRows.first).height,
+                           try XCTUnwrap(libraryRows.last).height, accuracy: 1)
             for (previous, next) in zip(frames.prefix(8), frames.dropFirst().prefix(8)) {
                 XCTAssertEqual(next.minY - previous.maxY, SettingsRowMetrics.formRowSpacing, accuracy: 1)
             }
@@ -763,10 +778,10 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         .environment(models.heroSettingsModel)
         .environment(models.heroBackgroundModel)) { window in
             let root = try await self.capture(window, name: "hero-inline-titles", includeMaster: true)
-            for title in ["Hero content sources", "Hide watched content", "Items to show", "Advance automatically"] {
+            for title in ["Hero content sources", "Items to show", "Advance automatically"] {
                 XCTAssertTrue(root.contains(title), root)
             }
-            for title in ["Titles shown in hero", "Automatic changes", "Appearance", "Rotation", "Rotate automatically"] {
+            for title in ["Hide watched content", "Titles shown in hero", "Automatic changes", "Appearance", "Rotation", "Rotate automatically"] {
                 XCTAssertFalse(root.contains(title), root)
             }
             XCTAssertFalse(root.contains("TMDB"), root)
@@ -1167,8 +1182,8 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                     XCTAssertTrue(text.contains("Changes labels below Home cards"), text)
                     XCTAssertFalse(text.contains("Mixed hides labels"), text)
                 }
-                XCTAssertTrue(text.contains("each page's setting"), text)
-                XCTAssertTrue(text.contains("Home and Recommended"), text)
+                XCTAssertTrue(text.contains("Default"), text)
+                XCTAssertFalse(text.contains("each page's setting"), text)
                 XCTAssertFalse(text.contains("Labels are visible"), text)
                 XCTAssertFalse(text.contains("Labels are hidden"), text)
             }
@@ -1595,24 +1610,62 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             settings: settings
         )) { window in
             let initial = try await self.capture(window, name: "labels-browse-inherited", includeMaster: true)
-            XCTAssertTrue(initial.contains("Card labels"), initial)
+            XCTAssertTrue(initial.contains("Customize labels"), initial)
             XCTAssertTrue(initial.contains("Mixed"), initial)
             XCTAssertFalse(initial.contains("Main setting"), initial)
             XCTAssertFalse(initial.contains("App default"), initial)
-            XCTAssertFalse(initial.contains("Use default"), initial)
             XCTAssertTrue(initial.contains("Home"), initial)
             XCTAssertTrue(initial.contains("Continue Watching"), initial)
             XCTAssertFalse(initial.contains("No labels"), initial)
+            let scroll = try self.verticalScroll(in: window)
+            let initialOffset = scroll.contentOffset
+            scroll.setContentOffset(CGPoint(
+                x: initialOffset.x,
+                y: max(-scroll.adjustedContentInset.top,
+                       scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+            ), animated: false)
+            let overrides = try await self.capture(
+                window, name: "labels-home-row-overrides", includeMaster: true
+            )
+            for label in ["Overrides", "Continue Watching", "Libraries", "Use default"] {
+                XCTAssertTrue(overrides.contains(label), overrides)
+            }
+            XCTAssertTrue(overrides.contains("Continue Watching is shared with Recommended"), overrides)
+            scroll.setContentOffset(initialOffset, animated: false)
             cards.captions.toggleCustomization(in: .home)
-            let changed = try await self.capture(window, name: "labels-home-explicit")
-            XCTAssertFalse(changed.contains("Custom"), changed)
-            XCTAssertFalse(changed.contains("Use default"), changed)
+            let changed = try await self.capture(window, name: "labels-home-explicit", includeMaster: true)
+            XCTAssertNil(changed.range(of: #"\bCustom\b"#, options: .regularExpression), changed)
             XCTAssertEqual(cards.captions.override(for: .home), .show)
+            XCTAssertEqual(cards.captions.override(for: .continueWatching), .automatic)
+            XCTAssertEqual(cards.captions.override(for: .homeLibraries), .automatic)
             XCTAssertTrue(cards.captions.showsLabels(in: .home))
             XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults).load(), cards.captions)
             cards.captions.applyPreset(.show)
             XCTAssertTrue(cards.captions.showsLabels(in: .browse))
             XCTAssertTrue(cards.captions.overrides.isEmpty)
+        }
+    }
+
+    func testWatchIndicatorPickerShowsThreeNativePreviewChoices() async throws {
+        let suite = "WatchChoicesHosted.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = WatchStatusIndicatorSettingsModel(store: WatchStatusIndicatorSettingsStore(defaults: defaults))
+        try await withScreen(content: SettingsSplitLayout(title: "Watch indicators", rows: [
+            SettingsSplitRow(id: "watch-indicators", title: "Watch indicators") {
+                CompactWatchIndicatorPicker(
+                    selection: Binding(get: { model.indicator }, set: { model.indicator = $0 }),
+                    swatchHeight: 150
+                )
+            }
+        ])) { window in
+            for mode in WatchStatusIndicator.allCases {
+                model.indicator = mode
+                let text = try await self.capture(window, name: "watch-choices-\(mode)", includeMaster: true)
+                for label in ["Watched", "Unwatched", "Hidden"] {
+                    XCTAssertTrue(text.contains(label), text)
+                }
+            }
         }
     }
 

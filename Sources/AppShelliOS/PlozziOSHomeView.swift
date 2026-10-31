@@ -88,8 +88,10 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
 
 struct PlozziOSHomeView: View {
     @Environment(\.homeLiveTVSnapshot) private var liveTV
+    @Environment(\.openWatchlist) private var openWatchlist
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSHeroContainerHeight) private var heroContainerHeight
     @Environment(\.plozziOSHomeIsFrontmost) private var homeIsFrontmost
     @Environment(\.scenePhase) private var scenePhase
@@ -123,6 +125,7 @@ struct PlozziOSHomeView: View {
     /// connected server. See ``HeroRandomRollStore``.
     @State private var heroRandomRolls = HeroRandomRollStore()
     @State private var playbackRequest: PlozziOSPlaybackRequest?
+    @State private var pendingResumeRequest: PlozziOSPlaybackRequest?
     @State private var isRequestingHero = false
     @State private var heroRequestStatuses: [String: MediaAvailabilityStatus] = [:]
     /// High-frequency overscroll state. The Home page passes this reference without
@@ -148,11 +151,18 @@ struct PlozziOSHomeView: View {
     @State private var watchlistIntentRevision = 0
     @State private var discoveryIdentityRevision = 0
     @State private var homeHasAppeared = false
+    @State private var rowBrowser: HomeRowBrowseModel?
     @State private var heroFreshnessRefresh = HeroFreshnessRefreshDriver()
     private let appModel: PlozziOSAppModel
     private let onAddServer: () -> Void
     private let onShowSettings: () -> Void
     private let heroMetadataEnricher: HeroMetadataEnricher
+
+    private func browseAction(for row: HomePresentationRow) -> (() -> Void)? {
+        guard row.canBrowse else { return nil }
+        if row.id == .global(.watchlist) { return openWatchlist }
+        return { rowBrowser = viewModel.browseRow(row) }
+    }
 
     init(
         appModel: PlozziOSAppModel,
@@ -262,7 +272,23 @@ struct PlozziOSHomeView: View {
         .onAppear { homeHasAppeared = true }
         .environment(\.plozzCardCaptionView, .home)
         .onDisappear { homeHasAppeared = false }
+        .navigationDestination(item: $rowBrowser) { browser in
+            HomeRowBrowseView(
+                model: browser,
+                columns: appModel.settings.density.density.iOSPosterGridColumns(horizontalSizeClass: horizontalSizeClass)
+            ) { item in
+                PlozziOSHomeMediaCard(
+                    item: item, isLandscape: false,
+                    provider: item.sourceAccountID.flatMap { appModel.accountsProviders.provider(forAccountID: $0) }
+                )
+            }
+            .environment(\.plozzMetrics, .touch(
+                density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize
+            ))
+        }
         .onChange(of: ObjectIdentifier(viewModel)) { _, _ in
+            rowBrowser?.invalidate()
+            rowBrowser = nil
             resetHeroScope()
         }
         .onChange(of: appModel.settings.homeVisibility.visibility.disabledKeys) { _, disabled in
@@ -284,6 +310,7 @@ struct PlozziOSHomeView: View {
         .navigationTitle(Text(verbatim: ""))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar(usesVerticalToolbar ? .visible : .automatic, for: .navigationBar)
         .toolbar {
             if trailerController.isPlaying {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -293,9 +320,7 @@ struct PlozziOSHomeView: View {
                     )
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                PlozziOSSettingsAvatarButton(size: 36, action: onShowSettings)
-            }
+            PlozziOSSettingsToolbarItem(action: onShowSettings)
         }
         .task(
             id: PlozziOSHomeLoadID(
@@ -358,6 +383,17 @@ struct PlozziOSHomeView: View {
         // still resolves to its next-up episode rather than being handed to the
         // player as a container.
         .plozziOSRailPlay { play($0) }
+        .resumePrompt(request: $pendingResumeRequest, mediaItem: { $0.item }) { request, position in
+            var request = request
+            request.startPosition = position
+            pendingResumeRequest = nil
+            playbackRequest = request
+        }
+        .onChange(of: appModel.profiles.activeProfileID) { _, _ in pendingResumeRequest = nil }
+        .onChange(of: appModel.isActiveProfileAuthorized) { _, authorized in
+            if !authorized { pendingResumeRequest = nil }
+        }
+        .onDisappear { pendingResumeRequest = nil }
         .plozziOSPlayerCover(
             item: $playbackRequest, orientation: appModel.settings.playback.settings.orientation
         ) { request, orientation in
@@ -458,6 +494,7 @@ struct PlozziOSHomeView: View {
         )
         let rows = HomeRow.rows(
             for: content,
+            libraryOrder: appModel.settings.navigation.libraryOrderingKeys,
             isLibraryVisible: visibility.isVisibleOnHome,
             isLibraryTileVisible: visibility.isVisibleOnHome,
             isGlobalRowEnabled: visibility.isGlobalRowEnabled,
@@ -565,7 +602,8 @@ struct PlozziOSHomeView: View {
                         viewModel: viewModel,
                         watchlistIntentRevision: watchlistIntentRevision,
                         watchlistLoadingPlaceholderCount:
-                            viewModel.watchlistLoadingPlaceholderCount
+                            viewModel.watchlistLoadingPlaceholderCount,
+                        onBrowse: browseAction(for: presentation)
                     )
                 case let .liveTV(channels):
                     PlozziOSHomeMediaRail(
@@ -594,7 +632,8 @@ struct PlozziOSHomeView: View {
                             PlozziOSFeaturedCollectionRail(
                                 row: row, appModel: appModel, scope: ObjectIdentifier(viewModel),
                                 coordinator: featuredTrailers, controller: trailerController,
-                                isActive: homeIsFrontmost && homeHasAppeared && !homeIsScrolling
+                                isActive: homeIsFrontmost && homeHasAppeared && !homeIsScrolling,
+                                onBrowse: browseAction(for: presentation)
                             )
                         } else {
                             PlozziOSHomeMediaRail(
@@ -605,6 +644,7 @@ struct PlozziOSHomeView: View {
                                     : .poster,
                                 appModel: appModel,
                                 browseItem: row.browseItem,
+                                onBrowse: browseAction(for: presentation),
                                 onNavigationInteraction:
                                     viewModel.noteHomeNavigationInteraction
                             )
@@ -785,24 +825,34 @@ struct PlozziOSHomeView: View {
         // A series or season can't be played directly (see `playbackTarget`), so
         // resolve the next-up episode first. Every other kind plays as-is.
         guard item.kind.needsPlaybackTargetResolution else {
-            playbackRequest = PlozziOSPlaybackRequest(
+            presentPlay(PlozziOSPlaybackRequest(
                 item: item,
                 startPosition: item.resumePosition ?? 0,
                 versionPreferences: appModel.versionPreferences
-            )
+            ))
             return
         }
         guard let provider = appModel.provider(for: item) else { return }
+        let profileID = appModel.profiles.activeProfileID
         Task { @MainActor in
             guard let episode = await HeroPlayTargetResolver.playbackTarget(
                 for: item,
                 provider: provider
-            ) else { return }
-            playbackRequest = PlozziOSPlaybackRequest(
+            ), !Task.isCancelled, appModel.profiles.activeProfileID == profileID,
+               appModel.isActiveProfileAuthorized else { return }
+            presentPlay(PlozziOSPlaybackRequest(
                 item: episode,
                 startPosition: episode.resumePosition ?? 0,
                 versionPreferences: appModel.versionPreferences
-            )
+            ))
+        }
+    }
+
+    private func presentPlay(_ request: PlozziOSPlaybackRequest) {
+        if appModel.settings.playback.settings.shouldAskBeforeResuming(at: request.startPosition) {
+            pendingResumeRequest = request
+        } else {
+            playbackRequest = request
         }
     }
 
@@ -2086,6 +2136,16 @@ private struct PlozziOSPullResponsiveHomeBackdrop<Backdrop: View>: View {
     @ViewBuilder let backdrop: (CGFloat) -> Backdrop
 
     var body: some View {
+        // The image and its dissolve must share the window-wide bounds; masking
+        // only the safe-area column cuts off artwork underneath side chrome.
+        PlozziOSFullWidthHeroStage(height: heroHeight) {
+            composite
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private var composite: some View {
         let pullDistance = model.distance
         let pullScale = 1 + (pullDistance / max(heroHeight, 1))
         let upwardScaleGrowth = (pullScale - 1) * heroHeight / 2
@@ -2102,7 +2162,7 @@ private struct PlozziOSPullResponsiveHomeBackdrop<Backdrop: View>: View {
         // background. The bottom of the hero came out greyer and flatter than
         // tvOS's, and no amount of re-tuning the gradients could close the gap,
         // because the compositing - not the curve - was what differed.
-        ZStack {
+        return ZStack {
             // The backdrop's EXTRA travel only. The shared `-pullDistance` is
             // applied to the masked composite below, so the two still land at
             // -pullOffset and -pullDistance respectively.
@@ -2366,6 +2426,7 @@ private struct PlozziOSHomeRowView: View {
     let viewModel: HomeViewModel
     let watchlistIntentRevision: Int
     let watchlistLoadingPlaceholderCount: Int
+    let onBrowse: (() -> Void)?
     private var liveChannels: [HomeLiveTVChannel] {
         row.kind == .continueWatching ? liveTV.recentChannels : []
     }
@@ -2399,7 +2460,8 @@ private struct PlozziOSHomeRowView: View {
                     style: cardStyle,
                     cardCount: row.loadingPlaceholderCount > 0 ? row.loadingPlaceholderCount : 8,
                     showsCaption: row.kind == .libraries
-                        || appModel.settings.cardStyle.captions.showsLabels(
+                        ? appModel.settings.cardStyle.captions.showsLabels(in: .homeLibraries)
+                        : appModel.settings.cardStyle.captions.showsLabels(
                             in: .home,
                             hasArtworkTitle: row.kind == .continueWatching
                                 && appModel.settings.homeVisibility.continueWatchingUsesSeriesArtwork,
@@ -2428,6 +2490,7 @@ private struct PlozziOSHomeRowView: View {
                     showsSeriesArtwork: row.kind == .continueWatching
                         && appModel.settings.homeVisibility.continueWatchingUsesSeriesArtwork,
                     liveChannels: liveChannels,
+                    onBrowse: row.items.isEmpty ? nil : onBrowse,
                     onNavigationInteraction:
                         viewModel.noteHomeNavigationInteraction
                 )
@@ -2497,6 +2560,7 @@ private struct PlozziOSFeaturedCollectionRail: View {
     let coordinator: FeaturedTrailerCoordinator
     let controller: HeroTrailerController
     let isActive: Bool
+    let onBrowse: (() -> Void)?
     @State private var selection: MediaItem?
 
     var body: some View {
@@ -2510,6 +2574,7 @@ private struct PlozziOSFeaturedCollectionRail: View {
             onSeeAll: row.browseItem.map { item in { selection = item } },
             onSelect: { selection = $0 }
         )
+        .browsingRow(onBrowse)
         .navigationDestination(item: $selection) { item in
             PlozziOSHomeCardDetail(
                 item: item,
@@ -2548,8 +2613,8 @@ struct PlozziOSHomeMediaRail: View {
     var showsSeriesArtwork: Bool = false
     var liveChannels: [HomeLiveTVChannel] = []
     var browseItem: MediaItem? = nil
+    var onBrowse: (() -> Void)? = nil
     var onNavigationInteraction: () -> Void = {}
-    @State private var isBrowsingCollection = false
     @State private var prefetchedIDs: Set<String> = []
     @State private var prefetchedPreviewIDs: Set<String> = []
     @State private var lastArtworkPrefetchIndex: Int?
@@ -2559,17 +2624,12 @@ struct PlozziOSHomeMediaRail: View {
 
     var body: some View {
         PlozziOSHomeRailLayout { rail(metrics: $0) }
-            .navigationDestination(isPresented: $isBrowsingCollection) {
-                if let browseItem {
-                    PlozziOSHomeCardDetail(item: browseItem, fallbackProvider: provider(for: browseItem))
-                }
-            }
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
         PlozziOSMediaSection(
             title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0,
-            onSeeAll: browseItem == nil ? nil : { isBrowsingCollection = true }
+            onBrowse: onBrowse
         ) {
             if browseItem != nil && items.isEmpty && loadingPlaceholderCount == 0 {
                 Text("No titles in this collection.")
@@ -2973,21 +3033,26 @@ struct PlozziOSHomeLibraryCard: View {
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzCardCaptionSettings) private var captions
     let library: AggregatedLibrary
     let artworkSource: LibraryArtworkSource?
     let width: CGFloat
 
-    @ViewBuilder
     var body: some View {
-        if cardStyle == .framed {
-            content
-                .plozzFramedMediaCard(
-                    innerCornerRadius: metrics.landscapeArtworkCornerRadius
-                )
-                .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
-        } else {
-            content
+        Group {
+            if cardStyle == .framed {
+                content
+                    .plozzFramedMediaCard(
+                        innerCornerRadius: metrics.landscapeArtworkCornerRadius
+                    )
+                    .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+            } else {
+                content
+            }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(library.library.displayName)
+        .accessibilityValue(Text(library.serverName))
     }
 
     private var content: some View {
@@ -3007,29 +3072,35 @@ struct PlozziOSHomeLibraryCard: View {
                 cornerRadius: metrics.landscapeArtworkCornerRadius
             )
 
-            HStack(spacing: 8) {
-                ProviderBrandMark(
-                    provider: library.providerKind, size: providerBadgeSize,
-                    mediaShareTransport: library.transportKind
-                )
-                .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(library.library.title)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Text(library.serverName)
-                        .font(.caption)
-                        .plozzForeground(.secondary)
-                        .lineLimit(1)
-                }
+            if captions.showsLabels(in: .homeLibraries) {
+                caption
             }
-            .padding(.trailing, metrics.landscapeCaptionHorizontalInset)
-            .padding(
-                .bottom,
-                cardStyle == .framed ? metrics.landscapeCaptionInset : 0
-            )
         }
         .frame(width: width, alignment: .leading)
+    }
+
+    private var caption: some View {
+        HStack(spacing: 8) {
+            ProviderBrandMark(
+                provider: library.providerKind, size: providerBadgeSize,
+                mediaShareTransport: library.transportKind
+            )
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(library.library.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                Text(library.serverName)
+                    .font(.caption)
+                    .plozzForeground(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.trailing, metrics.landscapeCaptionHorizontalInset)
+        .padding(
+            .bottom,
+            cardStyle == .framed ? metrics.landscapeCaptionInset : 0
+        )
     }
 }
 

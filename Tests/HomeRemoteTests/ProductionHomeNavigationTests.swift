@@ -2,6 +2,75 @@ import XCTest
 
 @MainActor
 final class ProductionHomeNavigationTests: XCTestCase {
+    func testHorizontalHomeWatchlistAndSearchForegroundClearance() throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--production-home-fixture", "--top-bar-home", "--real-root-pages"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
+        let bar = app.descendants(matching: .any)["top-navigation"]
+        let hero = app.buttons["home-hero-action-row"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 15))
+        XCTAssertGreaterThanOrEqual(hero.frame.minY, bar.frame.maxY + 16)
+        captureNavigation("Compact navigation over Home", app: app)
+        XCUIRemote.shared.press(.right)
+        let title = app.staticTexts["watchlist-title"]
+        XCTAssertFalse(title.exists, "Highlighting Watchlist must leave Home open.")
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(title.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertGreaterThanOrEqual(title.frame.minY, bar.frame.maxY + 16)
+        let initialTitleY = title.frame.minY
+        XCTAssertTrue(app.buttons["watchlist-filter-menu"].exists)
+        XCTAssertTrue(app.buttons["watchlist-sort-menu"].exists)
+        let first = app.buttons["Fixture movie 0"]
+        XCTAssertTrue(first.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertGreaterThanOrEqual(first.frame.minY, bar.frame.maxY + 16)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in first.hasFocus }, object: nil
+        )], timeout: 5), .completed, app.debugDescription)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["top-navigation-watchlist"].hasFocus)
+        captureNavigation("Watchlist foreground clears navigation", app: app)
+        XCUIRemote.shared.press(.down)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in first.hasFocus }, object: nil
+        )], timeout: 5), .completed, app.debugDescription)
+        XCUIRemote.shared.press(.down)
+        XCUIRemote.shared.press(.down)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in !app.buttons["top-navigation-watchlist"].isHittable }, object: nil
+        )], timeout: 5), .completed, "Watchlist scrolling must carry the top bar offscreen.")
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["top-navigation-watchlist"].hasFocus)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in abs(title.frame.minY - initialTitleY) < 1 }, object: nil
+        )], timeout: 5), .completed, "Back must restore both Watchlist content and navigation to the top.")
+        captureNavigation("Watchlist navigation after scrolling", app: app)
+        XCUIRemote.shared.press(.right)
+        let search = app.searchFields.firstMatch
+        XCTAssertFalse(search.exists, "Highlighting Search must leave Watchlist open.")
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(search.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertGreaterThanOrEqual(search.frame.minY.rounded(), bar.frame.maxY + 16)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in !app.buttons["top-navigation-search"].hasFocus }, object: nil
+        )], timeout: 5), .completed, app.debugDescription)
+        captureNavigation("Search foreground clears navigation", app: app)
+        #else
+        throw XCTSkip("Uses an owned simulator with local fixture data.")
+        #endif
+    }
+
+    private func captureNavigation(_ name: String, app: XCUIApplication) {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testContinueWatchingPlayPauseAlwaysPlaysWhileSelectFollowsPreference() throws {
         #if targetEnvironment(simulator)
         continueAfterFailure = false

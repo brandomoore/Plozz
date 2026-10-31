@@ -9,6 +9,19 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   household's profile tiles (avatar + name), focusable, with an "add
   profile" tile that opens the editor. `AppShell.ProfileSelectionView`
   hosts this for both the launch flow and Settings → Switch Profile.
+  Its upper-right Settings cog uses the shared native glass button, including
+  the reduced-transparency fallback. A full-width focus section lets Up from
+  the profile tiles reach it. The shell owns authentication and profile-scoped
+  routing; the picker never bypasses a PIN or activates another profile itself.
+  Initial native focus selects the active profile, falling back to the first
+  available profile. A presentation anchor waits for visible layout in the
+  active scene's key window, then crosses the presentation commit before handing
+  off focus. Background mounting and disabled input do not consume the request.
+  Entry does not depend on a timed focus assignment.
+  Other tiles, Cancel, and the Settings cog become focusable after the entry
+  profile receives native focus. They cannot win entry, but normal navigation
+  is available afterward, including Up to Settings. An empty picker leaves its
+  available actions enabled.
   Mobile uses `AppShelliOS.PlozziOSProfileSelectionView` and its touch picker.
 - `ProfileEditorView` — create / rename / restyle a profile (name,
   `avatarSymbol` SF Symbol, color from `ProfileTileColor` palette,
@@ -42,6 +55,36 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
 
 ## Invariants
 
+- **tvOS profile selection on return.** Automatically Sign In is the only
+  device-wide access preference. When it is on, warm returns keep the current
+  profile authorized. When it is off, `CoreModels.ProfileReturnPolicy` derives
+  the return timing from the current profiles: immediate selection when any
+  profile has a configured local or Plex PIN, five minutes away for multiple
+  unprotected profiles, and no return prompt for one unprotected profile.
+  There is no configurable timeout or persisted override; profile and PIN
+  changes take effect without another setting to update.
+  Elapsed time is measured only while away, using a continuous clock (including
+  sleep), not a background timer or browsing inactivity. Returning before the
+  threshold starts a new grace period for the next departure. Expiry requires
+  profile selection and fresh authorization for whichever profile is selected.
+  Retaining the current authorization never skips manual switching gates.
+  Cold launches keep the existing Automatically Sign In policy.
+  Control Center and other inactive-only interruptions do not lock. Open video
+  players (including paused/buffering sessions), visible Live TV players, Now
+  Playing, actively playing music, and the current external-player handoff are
+  exempt; ambient hero trailers and an empty Live TV guide are not.
+  A scene-owned opaque window covers browsing and any presented Settings page,
+  removing their input/accessibility access without destroying their navigation.
+  Selecting the same profile restores that context after successful PIN entry;
+  choosing another profile uses normal identity/settings rescoping. Cancellation
+  stays at the mandatory picker, including when leaving from a previously
+  cancelable profile picker or in-app account setup. The picker's Settings
+  shortcut also requires fresh authorization on return, and another departure
+  clears any unconsumed Settings request. Top Shelf links wait for
+  authorization, and a late async result cannot start a new player behind the
+  gate. Pending PIN attempts are revoked on another departure even within the
+  return delay. Configured Plex PINs affect the return default, but disabled
+  sources still do not ask for PINs. This policy does not change iOS.
 - **Non-secret only.** Profiles are non-secret metadata; tokens belong
   to `FeatureAuth.AccountStore`.
 - **Default profile is special.** Stable id

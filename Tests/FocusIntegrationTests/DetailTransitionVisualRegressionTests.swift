@@ -123,6 +123,12 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
     }
 
     func testProductionMovieAndSeriesTintTheirInformationBackgroundFromArtwork() async throws {
+        let settingsStore = MetadataProviderSettingsStore()
+        let originalSettings = settingsStore.load()
+        var settings = originalSettings
+        settings.preferOnlineArtwork = false
+        settingsStore.save(settings)
+        defer { settingsStore.save(originalSettings) }
         func backgrounds(in view: UIView) -> [NativeGradientCardFill.View] {
             (view as? NativeGradientCardFill.View).map { [$0] } ?? view.subviews.flatMap { backgrounds(in: $0) }
         }
@@ -136,7 +142,9 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             item.productionYear = 2020
             provider.detailItem = item
             let model = TransitionShowModel(provider: provider)
-            let host = TransitionShowController(rootView: TransitionShowRoot(model: model))
+            let host = TransitionShowController(rootView: TransitionShowRoot(
+                model: model, artworkSettings: ArtworkSettings(preference: .library)
+            ))
             let previous = scene.windows.first(where: \.isKeyWindow)
             let window = UIWindow(windowScene: scene)
             window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -1728,8 +1736,14 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await waitUntil { focused }
-        XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        try await waitUntil {
+            window.layoutIfNeeded()
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            return focused
+        }
+        XCTAssertNotNil(system.focusedItem)
     }
 
     private func sourceView(in view: UIView) -> DetailTransitionSourceView? {

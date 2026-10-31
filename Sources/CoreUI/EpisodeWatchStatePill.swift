@@ -28,6 +28,7 @@ public struct EpisodeWatchStatePill: View {
     private var fittingFontSize: CGFloat?
 
     @Environment(\.plozzChromeIsFocused) private var isFocused
+    @Environment(\.plozzShowsProgressBars) private var showsProgressBars
 
     /// - Parameters:
     ///   - detailText: a short qualifier shown immediately before the duration
@@ -169,7 +170,7 @@ public struct EpisodeWatchStatePill: View {
     private func playbackRow(fraction: Double?, text: String?, showsPlay: Bool) -> some View {
         HStack(spacing: spacing) {
             if showsPlay { playGlyph }
-            if let fraction {
+            if showsProgressBars, let fraction {
                 ResumeProgressCapsule(
                     progress: fraction, onLight: false,
                     width: barWidth, height: barHeight, flexesToFitRow: fittingFontSize == nil

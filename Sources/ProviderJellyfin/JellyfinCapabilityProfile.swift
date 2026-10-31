@@ -15,8 +15,8 @@ import CoreModels
 /// the last-resort fallback. The HLS transcoding profile uses fMP4 segments with
 /// `BreakOnNonKeyFrames`, which makes far-seeking reliable in `AVPlayer`.
 public struct JellyfinCapabilityProfile: Encodable, Sendable, Equatable {
-    public var maxStreamingBitrate: Int
-    public var maxStaticBitrate: Int
+    public var maxStreamingBitrate: Int?
+    public var maxStaticBitrate: Int?
     public var musicStreamingTranscodingBitrate: Int
     public var directPlayProfiles: [DirectPlayProfile]
     public var transcodingProfiles: [TranscodingProfile]
@@ -32,13 +32,26 @@ public struct JellyfinCapabilityProfile: Encodable, Sendable, Equatable {
         case codecProfiles = "CodecProfiles"
         case subtitleProfiles = "SubtitleProfiles"
     }
+
+    public func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        // Jellyfin restores 8 Mbps defaults for missing keys; null means unlimited.
+        // JellyfinClient replaces Original's nulls with Emby's numeric protocol ceiling.
+        try values.encode(maxStreamingBitrate, forKey: .maxStreamingBitrate)
+        try values.encode(maxStaticBitrate, forKey: .maxStaticBitrate)
+        try values.encode(musicStreamingTranscodingBitrate, forKey: .musicStreamingTranscodingBitrate)
+        try values.encode(directPlayProfiles, forKey: .directPlayProfiles)
+        try values.encode(transcodingProfiles, forKey: .transcodingProfiles)
+        try values.encode(codecProfiles, forKey: .codecProfiles)
+        try values.encode(subtitleProfiles, forKey: .subtitleProfiles)
+    }
 }
 
 // MARK: - Builders
 
 extension JellyfinCapabilityProfile {
-    /// ~120 Mbit/s: enough headroom for high-bitrate 4K remuxes on a LAN while
-    /// still capping pathological files.
+    /// Legacy Live TV/music default. On-demand requests replace this with the
+    /// selected quality's limit, or the provider's unlimited representation for Original.
     public static let defaultMaxBitrate = 120_000_000
 
     /// Advertise the linked engine's input formats when available. Native-only

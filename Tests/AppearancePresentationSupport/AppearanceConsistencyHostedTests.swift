@@ -7,6 +7,123 @@ import XCTest
 
 @MainActor
 final class AppearanceConsistencyHostedTests: XCTestCase {
+    func testDetailBackdropHydrationReplacesPosterFallbackWithNormalShowArtwork() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        func artwork(size: CGSize, color: UIColor) throws -> URL {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let image = UIGraphicsImageRenderer(size: size, format: format).image {
+                color.setFill()
+                $0.fill(CGRect(origin: .zero, size: size))
+                UIColor.white.setFill()
+                for x in stride(from: CGFloat(0), to: size.width, by: 40) {
+                    $0.fill(CGRect(x: x, y: 0, width: 4, height: size.height))
+                }
+            }
+            return try seedImage(image)
+        }
+        let poster = try artwork(size: CGSize(width: 120, height: 180), color: .green)
+        let library = try artwork(size: CGSize(width: 1600, height: 900), color: .blue)
+        let online = try artwork(size: CGSize(width: 1600, height: 900), color: .red)
+        defer {
+            for url in [poster, library, online] {
+                ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: url))
+            }
+        }
+        for preference in [ArtworkPreference.library, .recommended, .online] {
+            let episode = MediaItem(
+                id: UUID().uuidString, title: "Episode", kind: .episode,
+                seriesID: UUID().uuidString, seasonID: "season"
+            )
+            let target = try XCTUnwrap(episode.navigationTarget(for: .goToSeason))
+            let model = HydratingDetailArtwork(
+                id: target.id, references: [], fallback: poster, preference: preference
+            )
+            fixture.host.rootView = AnyView(HydratingDetailBackdrop(model: model).id(model.id))
+            try await waitUntil {
+                model.display.displayed?.artwork.reference == .remote(poster)
+                    && model.display.displayed?.artwork.variant == .heroBackdrop
+            }
+            attach(try capture(fixture.window), name: "show-artwork-\(preference)-initial-poster")
+
+            model.references = [.remote(library), .remote(poster)]
+            model.fallback = online
+            let expected = preference == .library ? library : online
+            try await waitUntil("Hydrated \(preference) backdrop must replace the seed's poster") {
+                model.display.displayed?.artwork.reference == .remote(expected)
+                    && model.display.displayed?.artwork.variant == .heroBackdrop
+            }
+            let selected = try XCTUnwrap(model.display.displayed?.artwork.image.cgImage)
+            XCTAssertEqual(selected.width, 1600)
+            XCTAssertEqual(selected.height, 900, "Do not magnify a portrait fallback into the wide backdrop.")
+            let lookups = model.lookupCount
+            fixture.host.rootView = AnyView(HydratingDetailBackdrop(model: model).id(model.id))
+            try await Task.sleep(for: .milliseconds(150))
+            XCTAssertEqual(model.lookupCount, lookups, "An unchanged redraw must not restart artwork lookup.")
+            let hydrated = try capture(fixture.window)
+            attach(hydrated, name: "show-artwork-\(preference)-hydrated")
+
+            let direct = HydratingDetailArtwork(
+                id: UUID().uuidString, references: model.references, fallback: online, preference: preference
+            )
+            fixture.host.rootView = AnyView(HydratingDetailBackdrop(model: direct).id(direct.id))
+            try await waitUntil {
+                direct.display.displayed?.artwork.reference == .remote(expected)
+                    && direct.display.displayed?.artwork.variant == .heroBackdrop
+            }
+            try await Task.sleep(for: .milliseconds(150))
+            let normal = try capture(fixture.window)
+            attach(normal, name: "show-artwork-\(preference)-normal")
+            XCTAssertTrue(try rgba(hydrated) == rgba(normal),
+                          "Go to Show and an already-hydrated show must render the same crop and detail.")
+        }
+    }
+
+    func testHydratedBackdropSupersedesAnOldPreviewWhoseFullImageIsStillLoading() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let preview = logoImage(monochrome: false, color: .green)
+        let bytes = try XCTUnwrap(preview.pngData())
+        let server = try IPTVTestHTTPServer { _ in
+            .init(data: bytes, headers: ["Content-Type": "image/png"], headerDelay: .seconds(30))
+        }
+        addTeardownBlock { await server.stop() }
+        let delayed = try await server.start().appendingPathComponent("poster.png")
+        let library = try seedArtwork(color: .blue)
+        let model = HydratingDetailArtwork(
+            id: UUID().uuidString, references: [], fallback: delayed, preference: .library
+        )
+        let policy = ArtworkPresentationPolicy(area: .details, settings: .init(preference: .library))
+            .forPlacement(.detailBackdrop)
+        let key = ArtworkResolveKey.make(
+            references: [], variant: .heroPreview, maxAspectRatio: 3,
+            pinIdentity: "detail:\(model.id)", providerPolicyIdentity: policy.identity
+        )
+        ArtworkSeedMemo.store(
+            .init(image: preview, reference: .remote(delayed), variant: .heroPreview), for: key
+        )
+        fixture.host.rootView = AnyView(HydratingDetailBackdrop(model: model).id(model.id))
+        try await waitUntil { model.display.displayed?.artwork.variant == .heroPreview }
+        XCTAssertEqual(model.display.displayed?.artwork.reference, .remote(delayed))
+        let deadline = ContinuousClock.now + .seconds(5)
+        while await server.requestCount == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let startedRequests = await server.requestCount
+        XCTAssertGreaterThan(startedRequests, 0, "The old full-size request must be pending before hydration.")
+        model.references = [.remote(library)]
+        model.fallback = library
+        try await waitUntil("A new backdrop must not wait on the old preview's full-size request") {
+            model.display.displayed?.artwork.reference == .remote(library)
+                && model.display.displayed?.artwork.variant == .heroBackdrop
+        }
+        await server.stop()
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(model.display.displayed?.artwork.reference, .remote(library),
+                       "The cancelled old request cannot replace the hydrated backdrop.")
+    }
+
     func testPolicySelectedPrefetchedLogoPaintsBeforeAnyViewHasLoadedIt() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -752,5 +869,46 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
         let deadline = ContinuousClock.now + .seconds(5)
         while !condition(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertTrue(condition(), "Appearance fixture did not finish resolving. \(context)")
+    }
+}
+
+@MainActor @Observable
+private final class HydratingDetailArtwork {
+    let id: String
+    let display = HeroArtworkDisplayState()
+    var references: [ArtworkReference]
+    var fallback: URL
+    var preference: ArtworkPreference
+    var lookupCount = 0
+
+    init(id: String, references: [ArtworkReference], fallback: URL, preference: ArtworkPreference) {
+        self.id = id
+        self.references = references
+        self.fallback = fallback
+        self.preference = preference
+    }
+
+    func recordLookup() { lookupCount += 1 }
+}
+
+private struct HydratingDetailBackdrop: View {
+    let model: HydratingDetailArtwork
+
+    var body: some View {
+        let fallback = model.fallback
+        HeroBackdropLayer(
+            references: model.references,
+            asyncFallbackURL: { await model.recordLookup(); return fallback },
+            height: 180, scrimTone: .black, ignoresOverscan: false,
+            pinIdentity: "detail:\(model.id)"
+        ) { EmptyView() }
+        .frame(width: 320, height: 180)
+        .heroArtworkSource(id: "detail:\(model.id)")
+        .environment(\.heroArtworkDisplayState, model.display)
+        .environment(\.plozzArtworkSettings, ArtworkSettings(preference: model.preference))
+        .environment(\.themePalette, .dark)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(.black)
+        .transaction { $0.disablesAnimations = true }
     }
 }

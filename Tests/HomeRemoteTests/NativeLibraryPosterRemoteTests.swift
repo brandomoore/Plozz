@@ -110,8 +110,9 @@ final class NativeLibraryPosterRemoteTests: XCTestCase {
             if startColumn != initial { XCUIRemote.shared.press(.left) }
             XCTAssertEqual(try focusedPoster(in: app, arm: arm).label, initial)
         }
-        XCTAssertTrue(app.staticTexts["Filter"].exists, "The workload must include all watch states.")
-        XCTAssertTrue(app.staticTexts["Sort: Name"].exists)
+        XCTAssertEqual(app.buttons["library-filter-menu"].label, "Filter: All",
+                       "The workload must include all watch states.")
+        XCTAssertEqual(app.buttons["library-sort-menu"].label, "Sort: Name")
         let calibration = try traversalSnapshot(in: app)
         let firstIndex = try XCTUnwrap(calibration.focusedIndex)
         XCTAssertGreaterThan(calibration.columns, 0)

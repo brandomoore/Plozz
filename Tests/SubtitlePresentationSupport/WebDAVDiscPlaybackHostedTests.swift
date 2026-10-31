@@ -22,6 +22,18 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkFixturePlayback(named: "embedded", fileExtension: "mp4")
     }
 
+    func testMKVPlaysAndSeeksOverWebDAV() async throws {
+        try await checkFixturePlayback(named: "glow-software", fileExtension: "mkv")
+    }
+
+    func testMKVResumesOverWebDAV() async throws {
+        try await checkFixturePlayback(named: "glow-software", fileExtension: "mkv", startPosition: 3)
+    }
+
+    func testSyntheticDVDISOResumesOverWebDAV() async throws {
+        try await checkFixturePlayback(named: "dvd-test-pattern", fileExtension: "iso", startPosition: 3)
+    }
+
     func testExplicitLocalHighBitratePlaybackWithLatency() async throws {
         guard let name = ProcessInfo.processInfo.environment["PLOZZ_WEBDAV_LOCAL_PLAYBACK_FIXTURE"] else {
             throw XCTSkip("Requires a staged synthetic local playback fixture; never contacts a public server.")
@@ -37,16 +49,21 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         )
     }
 
-    private func checkFixturePlayback(named name: String, fileExtension: String) async throws {
+    private func checkFixturePlayback(
+        named name: String, fileExtension: String, startPosition: Double = 0
+    ) async throws {
         let file = try XCTUnwrap(Bundle(for: Self.self).url(
             forResource: name, withExtension: fileExtension, subdirectory: "Fixtures"
         ))
-        try await checkFixturePlayback(file: file, fileExtension: fileExtension, seekPositions: [4, 1])
+        try await checkFixturePlayback(
+            file: file, fileExtension: fileExtension, seekPositions: [4, 1], startPosition: startPosition
+        )
     }
 
     private func checkFixturePlayback(
         file: URL, fileExtension: String, seekPositions: [Double],
-        sustainedPlaybackSeconds: Int = 0, headerDelay: Duration = .zero, bodyDelay: Duration = .zero
+        startPosition: Double = 0, sustainedPlaybackSeconds: Int = 0,
+        headerDelay: Duration = .zero, bodyDelay: Duration = .zero
     ) async throws {
         let path = "fixture.\(fileExtension)"
         let data = try Data(contentsOf: file, options: .mappedIfSafe)
@@ -104,13 +121,15 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         let base = try await server.start().appendingPathComponent("dav")
         try await checkPlayback(
             base: base, path: path, credential: .anonymous, seekPositions: seekPositions,
-            sustainedPlaybackSeconds: sustainedPlaybackSeconds
+            startPosition: startPosition, sustainedPlaybackSeconds: sustainedPlaybackSeconds
         )
         print("WEBDAV_LOCAL requests=\(await server.requestCount) peakActive=\(await server.peakActiveRequestCount)")
     }
 
     func testExplicitLiveWebDAVISOPlaysAndSeeks() async throws {
-        guard let inputPath = ProcessInfo.processInfo.environment["PLOZZ_WEBDAV_PLAYBACK_INPUT"] else {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["PLOZZ_WEBDAV_PLAYBACK_JSON"] != nil
+                || environment["PLOZZ_WEBDAV_PLAYBACK_INPUT"] != nil else {
             throw XCTSkip("Requires an explicitly supplied private WebDAV playback configuration.")
         }
         struct Input: Decodable {
@@ -119,14 +138,24 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             let password: String
             let relativePath: String
             let seekPositions: [Double]
+            let startPosition: Double?
         }
-        let inputURL = inputPath.hasPrefix("cache:")
-            ? try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
-                .appendingPathComponent(String(inputPath.dropFirst("cache:".count)))
-            : URL(fileURLWithPath: inputPath)
-        let input = try JSONDecoder().decode(Input.self, from: Data(contentsOf: inputURL))
+        let data: Data
+        if let json = environment["PLOZZ_WEBDAV_PLAYBACK_JSON"] {
+            data = Data(json.utf8)
+        } else {
+            let inputPath = try XCTUnwrap(environment["PLOZZ_WEBDAV_PLAYBACK_INPUT"])
+            let inputURL = inputPath.hasPrefix("cache:")
+                ? try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+                    .appendingPathComponent(String(inputPath.dropFirst("cache:".count)))
+                : URL(fileURLWithPath: inputPath)
+            data = try Data(contentsOf: inputURL)
+        }
+        let input = try JSONDecoder().decode(Input.self, from: data)
+        let startPosition = input.startPosition ?? 0
         guard input.baseURL.scheme == "https", input.baseURL.user == nil,
               input.baseURL.password == nil, input.baseURL.query == nil,
+              startPosition.isFinite, startPosition >= 0,
               !input.seekPositions.isEmpty, input.seekPositions.count <= 3,
               input.seekPositions.allSatisfy({ $0.isFinite && $0 >= 0 }) else {
             throw CheckFailure.invalidInput
@@ -134,13 +163,13 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkPlayback(
             base: input.baseURL, path: input.relativePath,
             credential: .password(username: input.username, password: input.password, policy: .automatic),
-            seekPositions: input.seekPositions, sustainedPlaybackSeconds: 60
+            seekPositions: input.seekPositions, startPosition: startPosition, sustainedPlaybackSeconds: 60
         )
     }
 
     private func checkPlayback(
         base: URL, path: String, credential: WebDAVCredential, seekPositions: [Double],
-        sustainedPlaybackSeconds: Int = 0
+        startPosition: Double = 0, sustainedPlaybackSeconds: Int = 0
     ) async throws {
         let scheme = try XCTUnwrap(base.scheme.flatMap(WebDAVScheme.init(rawValue:)))
         let account = "webdav-playback-\(UUID().uuidString)"
@@ -180,7 +209,10 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             catalogCoordinator: ShareCatalogCoordinator(initialWorkScope: .paused)
         )
         addTeardownBlock { await provider.teardown() }
+        let preparationStarted = ContinuousClock.now
         let request = try await provider.playbackInfo(for: item.id, mediaSourceID: nil, forceTranscode: false)
+        let preparationDuration = preparationStarted.duration(to: .now)
+        print("WEBDAV_DISC preparationSeconds=\(preparationDuration)")
         guard case .networkFile = request.playbackSource else {
             return XCTFail("Disc playback must use the production network-file path")
         }
@@ -203,10 +235,18 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         defer { window.isHidden = true; window.rootViewController = nil }
 
         let started = ContinuousClock.now
-        try await perform(engine: engine) { await engine.load(request: request, startPosition: 0) }
-        try await waitForPlayback(engine, after: 0.5)
-        XCTAssertGreaterThan(engine.duration, seekPositions.max()! + 1)
+        try await perform(engine: engine) { await engine.load(request: request, startPosition: startPosition) }
+        try await wait(engine: engine, seconds: 45) {
+            engine.isPlaybackPositionReady && engine.hasPresentedVideoFrame
+        }
+        let firstPresentedPosition = engine.currentTime
+        XCTAssertGreaterThanOrEqual(firstPresentedPosition, max(0, startPosition - 1))
+        XCTAssertLessThan(firstPresentedPosition, startPosition + 5)
+        try await waitForPlayback(engine, after: startPosition + 0.5, before: startPosition + 5)
+        XCTAssertGreaterThan(engine.duration, max(startPosition, seekPositions.max()!) + 1)
+        print("WEBDAV_DISC startPosition=\(startPosition) firstPresentedPosition=\(firstPresentedPosition)")
         print("WEBDAV_DISC firstFrameSeconds=\(started.duration(to: .now)) duration=\(engine.duration)")
+        print("WEBDAV_DISC preparationAndFirstFrameSeconds=\(preparationDuration + started.duration(to: .now))")
         for target in seekPositions {
             let seekStart = ContinuousClock.now
             try await perform(engine: engine) { await engine.seek(to: target) }

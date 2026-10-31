@@ -10,6 +10,7 @@ public struct PlayerTouchGestureSurface: UIViewRepresentable {
     let state: PlayerTouchGestureState
     let shortcutsEnabled: Bool
     let levelsEnabled: Bool
+    // Playback lifetime only: temporary gesture suppression must not restore brightness.
     let isActive: Bool
     let canSeek: Bool
     let canBoost: Bool

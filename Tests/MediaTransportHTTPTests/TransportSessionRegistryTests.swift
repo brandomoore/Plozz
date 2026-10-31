@@ -4,6 +4,115 @@ import XCTest
 @testable import TestSupportNetworking
 
 final class TransportSessionRegistryTests: XCTestCase {
+    func testPasswordReuseIsConfinedToTheExactManagedSession() async throws {
+        let authorization = "Basic " + Data("fixture:password".utf8).base64EncodedString()
+        let server = try LoopbackHTTPServer { request in
+            if request.target == "/anonymous" {
+                return .init(body: Data(request.headers["authorization"] == nil ? [1] : [0]))
+            }
+            guard request.headers["authorization"] == authorization else {
+                return .init(status: 401, headers: ["WWW-Authenticate": "Basic realm=\"fixture\""])
+            }
+            return .init(body: Data([7]))
+        }
+        let base = try await server.start()
+        let registry = TransportSessionRegistry()
+        addTeardownBlock { await registry.drainAll(); await server.stop() }
+        let origin = try XCTUnwrap(TransportOrigin(url: base))
+        let key = try makeKey(origin: origin)
+        let credential = WebDAVCredential.password(username: "fixture", password: "password", policy: .automatic)
+        let first = try await registry.session(for: key, credential: credential, trustPolicy: .system)
+        XCTAssertNil(first.session.configuration.urlCredentialStorage)
+        var request = URLRequest(url: base.appendingPathComponent("dav/file"))
+        request.timeoutInterval = 5
+        let initial = try await first.data(for: request, maxResponseBytes: 1)
+        XCTAssertEqual(initial.data, Data([7]))
+        request.httpMethod = "PROPFIND"
+        let repeated = try await first.data(for: request, maxResponseBytes: 1)
+        XCTAssertEqual(repeated.data, Data([7]))
+        let firstRequests = await server.requests
+        XCTAssertEqual(firstRequests.count, 3, "Only the first task should pay for a 401 challenge")
+        XCTAssertNil(firstRequests.first?.headers["authorization"])
+
+        let otherKeys = try [
+            makeKey(accountID: "other", credentialRevision: key.credentialRevision.rawValue,
+                    origin: origin, trustRevision: key.trustRevision, role: key.role),
+            makeKey(accountID: key.accountID, origin: origin, trustRevision: key.trustRevision, role: key.role),
+            makeKey(accountID: key.accountID, credentialRevision: key.credentialRevision.rawValue,
+                    origin: origin, role: key.role),
+            makeKey(accountID: key.accountID, credentialRevision: key.credentialRevision.rawValue,
+                    origin: origin, trustRevision: key.trustRevision, role: .playback)
+        ]
+        for otherKey in otherKeys {
+            let before = await server.requests.count
+            let isolated = try await registry.session(for: otherKey, credential: credential, trustPolicy: .system)
+            let result = try await isolated.data(for: request, maxResponseBytes: 1)
+            XCTAssertEqual(result.data, Data([7]))
+            let newRequests = Array(await server.requests.dropFirst(before))
+            XCTAssertEqual(newRequests.count, 2)
+            XCTAssertNil(newRequests.first?.headers["authorization"], "Another session must not inherit authentication")
+        }
+
+        let media = try await registry.mediaSession(for: key, origin: origin)
+        let anonymous = try await media.data(
+            for: URLRequest(url: base.appendingPathComponent("anonymous")), maxResponseBytes: 1
+        )
+        XCTAssertEqual(anonymous.data, Data([1]), "Anonymous delivery must not inherit account authentication")
+        await registry.invalidate(key)
+        let before = await server.requests.count
+        let replacement = try await registry.session(for: key, credential: credential, trustPolicy: .system)
+        _ = try await replacement.data(for: request, maxResponseBytes: 1)
+        let newRequests = Array(await server.requests.dropFirst(before))
+        XCTAssertEqual(newRequests.count, 2)
+        XCTAssertNil(newRequests.first?.headers["authorization"], "Retirement must discard session authentication")
+        let anonymousRequestsBefore = await server.requests.count
+        let anonymousAccount = try await registry.session(
+            for: makeKey(origin: origin), credential: .anonymous, trustPolicy: .system
+        )
+        _ = try await anonymousAccount.data(
+            for: URLRequest(url: base.appendingPathComponent("anonymous")), maxResponseBytes: 1
+        )
+        let anonymousRequests = Array(await server.requests.dropFirst(anonymousRequestsBefore))
+        XCTAssertNil(anonymousRequests.first?.headers["authorization"])
+        let space = URLProtectionSpace(
+            host: origin.host, port: origin.port, protocol: origin.scheme,
+            realm: "fixture", authenticationMethod: NSURLAuthenticationMethodHTTPBasic
+        )
+        XCTAssertTrue(URLCredentialStorage.shared.credentials(for: space)?.isEmpty ?? true)
+    }
+
+    func testPreviouslyAcceptedPasswordStillFailsWhenServerRejectsIt() async throws {
+        let acceptsPassword = LockedValue(true)
+        let server = try LoopbackHTTPServer { request in
+            if acceptsPassword.get(), request.headers["authorization"] != nil {
+                return .init(body: Data([7]))
+            }
+            return .init(status: 401, headers: ["WWW-Authenticate": "Basic realm=\"fixture\""])
+        }
+        let base = try await server.start()
+        let registry = TransportSessionRegistry()
+        addTeardownBlock { await registry.drainAll(); await server.stop() }
+        let session = try await registry.session(
+            for: makeKey(origin: XCTUnwrap(TransportOrigin(url: base))),
+            credential: .password(username: "fixture", password: "password", policy: .automatic),
+            trustPolicy: .system
+        )
+        var request = URLRequest(url: base.appendingPathComponent("dav/file"))
+        request.timeoutInterval = 5
+        _ = try await session.data(for: request, maxResponseBytes: 1)
+        acceptsPassword.set(false)
+        let before = await server.requests.count
+        do {
+            _ = try await session.data(for: request, maxResponseBytes: 1)
+            XCTFail("Remembered authentication must not turn a server rejection into success")
+        } catch let error as TransportError {
+            guard case .authenticationFailed = error else { return XCTFail("Unexpected rejection: \(error)") }
+        }
+        let attempts = await server.requests.count - before
+        XCTAssertGreaterThan(attempts, 0)
+        XCTAssertLessThanOrEqual(attempts, 2, "A rejected credential must not loop")
+    }
+
     override func tearDown() {
         StubURLProtocol.reset()
         super.tearDown()

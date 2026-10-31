@@ -84,7 +84,7 @@ struct JellyfinLiveTVOpenBody: Encodable {
     let UserId: String
     let ItemId: JellyfinLiveTVOpenItemID
     let PlaySessionId: String?
-    let MaxStreamingBitrate: Int
+    let MaxStreamingBitrate: Int?
     let DeviceProfile: JellyfinCapabilityProfile
     let EnableDirectPlay = true
     let EnableDirectStream = true

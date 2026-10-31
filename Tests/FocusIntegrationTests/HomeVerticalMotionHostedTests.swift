@@ -259,11 +259,21 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
         host.target = seventh
         focus.requestFocusUpdate(to: host)
         focus.updateFocusIfNeeded()
-        try await Task.sleep(for: .milliseconds(800))
-        XCTAssertTrue(focus.focusedItem === seventh)
         var ancestor = seventh.superview
         while let view = ancestor, !(view is UIScrollView) { ancestor = view.superview }
         let scroll = try XCTUnwrap(ancestor as? UIScrollView)
+        let deadline = ContinuousClock.now + .seconds(4)
+        var previousOffset = scroll.contentOffset
+        var stableSamples = 0
+        while stableSamples < 10, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(25))
+            let current = scroll.contentOffset
+            stableSamples = abs(current.x - previousOffset.x) < 0.1
+                && abs(current.y - previousOffset.y) < 0.1 ? stableSamples + 1 : 0
+            previousOffset = current
+        }
+        XCTAssertEqual(stableSamples, 10, "The native scroll must settle before measuring slot alignment.")
+        XCTAssertTrue(focus.focusedItem === seventh)
         let position = (scroll.contentOffset.x + scroll.adjustedContentInset.left) / pitch
         XCTAssertGreaterThan(position, 0, "Focusing the partially visible poster must actually scroll the row.")
         XCTAssertEqual(position, position.rounded(), accuracy: 0.01)
@@ -914,6 +924,10 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
         let scroll = UIScrollView(frame: CGRect(x: 100, y: 100, width: 800, height: 700))
         scroll.contentSize = CGSize(width: 800, height: 2400)
         let position = FocusHeroNativeScrollPosition.PositionView()
+        let navigation = TopNavigationScroll()
+        var returnedToTop = false
+        position.navigation = navigation
+        position.onReturnToTop = { returnedToTop = true }
         position.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
         scroll.addSubview(position)
         window.rootViewController?.view.addSubview(scroll)
@@ -932,6 +946,9 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
         XCTAssertEqual(scroll.contentOffset.y, 480)
         XCTAssertGreaterThan(before, 1)
         XCTAssertLessThan(before, 479)
+        XCTAssertGreaterThan(navigation.offset, 0)
+        XCTAssertLessThan(navigation.offset, 479, "Navigation must follow the painted spring, not its final target.")
+        XCTAssertEqual(navigation.offset, before, accuracy: 60, "Allow one display-frame sampling interval.")
         XCTAssertFalse((scroll.layer.animationKeys() ?? []).isEmpty)
         var previousVelocity: CGFloat = 0
         for (row, destination) in [("third", CGFloat(960)), ("fourth", CGFloat(1440))] {
@@ -960,6 +977,15 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
         try await Task.sleep(for: .seconds(1))
         XCTAssertEqual(scroll.contentOffset.y, 0)
         XCTAssertEqual(try XCTUnwrap(scroll.layer.presentation()).bounds.minY, 0, accuracy: 0.5)
+        XCTAssertEqual(navigation.offset, 0)
+        position.move(to: 480, rowID: "second")
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(navigation.scrollToTop())
+        XCTAssertTrue(returnedToTop)
+        XCTAssertEqual(scroll.contentOffset.y, 0)
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(navigation.offset, 0, "The old compositor must not resume after Back.")
+        XCTAssertEqual(scroll.contentOffset.y, 0)
     }
 
     func testNativeShowcaseColumnMatchesPaintedOffsetAfterRelayoutAndReversal() async throws {

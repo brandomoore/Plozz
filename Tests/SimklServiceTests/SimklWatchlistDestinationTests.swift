@@ -50,6 +50,8 @@ final class SimklWatchlistDestinationTests: XCTestCase {
         })
         XCTAssertEqual(entries[0].presentation?.title, "Dune")
         XCTAssertEqual(entries[1].presentation?.year, 2022)
+        XCTAssertEqual(entries[0].addedAt, ISO8601DateFormatter().date(from: "2026-02-01T00:00:00Z"))
+        XCTAssertEqual(entries[1].addedAt, ISO8601DateFormatter().date(from: "2026-01-01T00:00:00Z"))
         XCTAssertTrue(
             http.sent.allSatisfy {
                 !$0.queryItems.contains { $0.name == "extended" }

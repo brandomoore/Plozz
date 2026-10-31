@@ -21,11 +21,10 @@ private enum NavigationPreviewColors {
 
 /// A tiny mock app window painted with fixed colours, illustrating one
 /// `NavigationStyle`:
-/// - `.rail` ("Library Rail"): Plozz's own full-height leading rail of collapsed
+/// - `.rail` ("Pinned Sidebar"): Plozz's full-height leading rail of collapsed
 ///   icon dots, with Settings pinned to the bottom.
-/// - `.tabBar` ("Top Bar"): a centred pill of tabs across the top, page content
-///   beneath.
-/// - `.sidebar` ("Sidebar"): the collapsed native sidebar trigger above content.
+/// - `.tabBar` ("Top Bar"): a centred pill of tabs above the page content.
+/// - `.sidebar` ("Sidebar"): a compact column of tabs beside the page content.
 ///
 /// The page content uses the same neutral posters in every variant, so the
 /// choices read as the same app wearing different chrome.
@@ -88,7 +87,6 @@ private struct NavigationStyleMini: View {
         let chromePadV = thick * 0.75
         let chromePadH = thick * 1.3
         return VStack(spacing: availH * 0.09) {
-            // Centred pill of tabs (active in the middle).
             HStack(spacing: tabGap(availH)) {
                 ForEach(0..<4, id: \.self) { i in
                     tabPill(availH: availH, active: i == 1)
@@ -108,15 +106,23 @@ private struct NavigationStyleMini: View {
 
     private func sidebar(availW: CGFloat, availH: CGFloat) -> some View {
         let thick = tabThickness(availH)
-        return VStack(alignment: .leading, spacing: availH * 0.09) {
-            Circle()
-                .fill(NavigationPreviewColors.chrome)
-                .overlay {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: thick * 1.4, weight: .medium))
-                        .foregroundStyle(NavigationPreviewColors.itemIdle)
+        return HStack(alignment: .top, spacing: availW * 0.06) {
+            VStack(alignment: .leading, spacing: tabGap(availH)) {
+                ForEach(0..<4, id: \.self) { i in
+                    tabPill(availH: availH, active: i == 0)
                 }
-                .frame(width: barHeight(availH), height: barHeight(availH))
+            }
+            .padding(.vertical, thick)
+            .padding(.horizontal, thick * 1.1)
+            .background(
+                RoundedRectangle(cornerRadius: thick * 1.6, style: .continuous)
+                    .fill(NavigationPreviewColors.chrome)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: thick * 1.6, style: .continuous)
+                    .strokeBorder(NavigationPreviewColors.chromeBorder, lineWidth: 1)
+            )
+
             posterRow(availH: availH)
         }
     }
@@ -181,7 +187,7 @@ private struct NavigationStyleMini: View {
     /// (shorter) top-bar content height, with a little breathing room.
     private func posterTileSize(availH: CGFloat) -> CGSize {
         let contentH = max(0, availH - barHeight(availH) - availH * 0.09)
-        let h = contentH * 0.86
+        let h = contentH * 0.85
         return CGSize(width: h * (2.0 / 3.0), height: h)
     }
 
@@ -215,12 +221,12 @@ private struct NavigationStyleMini: View {
 }
 
 /// The per-option preview graphic for the navigation-style picker: a mock app
-/// window shown with a top tab bar or a left sidebar. Fills the caller's frame, so
-/// it scales for both the full and compact card sizes, mirroring `ThemeSwatch` /
-/// `CardStyleSwatch`.
+/// window shown with a top tab bar or a left sidebar. Scales the complete drawing
+/// to fit both full and compact cards, like `HomeLayoutSwatch`.
 public struct NavigationStyleSwatch: View {
     private let style: NavigationStyle
     private let cornerRadius: CGFloat
+    private static let screen = CGSize(width: 320, height: 180)
 
     public init(style: NavigationStyle, cornerRadius: CGFloat = 16) {
         self.style = style
@@ -228,12 +234,19 @@ public struct NavigationStyleSwatch: View {
     }
 
     public var body: some View {
-        NavigationStyleMini(style: style)
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color(white: 0.5).opacity(0.35), lineWidth: 1)
-            )
+        GeometryReader { geometry in
+            let scale = min(geometry.size.width / Self.screen.width, geometry.size.height / Self.screen.height)
+            NavigationStyleMini(style: style)
+                .frame(width: Self.screen.width, height: Self.screen.height)
+                .scaleEffect(scale, anchor: .topLeading)
+                .frame(width: Self.screen.width * scale, height: Self.screen.height * scale, alignment: .topLeading)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color(white: 0.5).opacity(0.35), lineWidth: 1)
+                )
+                .frame(width: geometry.size.width, height: geometry.size.height)
+        }
     }
 }
 #endif

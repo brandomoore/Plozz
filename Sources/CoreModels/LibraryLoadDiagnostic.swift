@@ -7,7 +7,8 @@ public struct ResponseDecodingDiagnostic: Encodable, Equatable, Sendable {
         case collectionCandidates, collectionLibraryScope, collectionMembers
         case continueWatching, continueWatchingItems, continueWatchingHub, onDeck
         case resumeItems, nextUp
-        case itemDetail, playbackInventory, serverDiscovery
+        case itemDetail, playbackInventory, serverDiscovery, serverAuthentication
+        case search, searchLibraries, searchCatalog, searchAuthentication
     }
     public enum Payload: String, Encodable, Sendable { case empty, object, array, scalar, nonJSON }
     public enum Reason: String, Encodable, Sendable { case missingKey, wrongType, nullValue, corruptedData, other }
@@ -59,7 +60,8 @@ public struct ResponseDecodingDiagnostic: Encodable, Equatable, Sendable {
             "ErrorCode", "PlaySessionId", "Container", "Protocol", "Path", "IsRemote", "Bitrate",
             "SupportsDirectPlay", "SupportsDirectStream", "SupportsTranscoding",
             "Index", "Codec", "Language", "Width", "Height", "Channels", "SampleRate",
-            "Media", "Part", "Stream"
+            "Media", "Part", "Stream",
+            "items", "content_id", "total", "total_exact", "window_cursor", "page", "has_more", "next_cursor"
         ]
         path = keys.isEmpty ? "<root>" : keys.prefix(24).map {
             if let index = $0.intValue, $0.stringValue == "Index \(index)" { return "[\(index)]" }
@@ -107,10 +109,15 @@ public struct LibraryPagingDiagnostic: Encodable, Equatable, Sendable {
 public struct ResponseTransportDiagnostic: Encodable, Equatable, Sendable {
     public let route: ResponseDecodingDiagnostic.Route
     public let urlErrorCode: Int
+    public let underlying: [PlaybackFailureEvidence.ErrorCode]
 
-    public init(route: ResponseDecodingDiagnostic.Route, urlErrorCode: Int) {
+    public init(
+        route: ResponseDecodingDiagnostic.Route, urlErrorCode: Int,
+        underlying: [PlaybackFailureEvidence.ErrorCode] = []
+    ) {
         self.route = route
         self.urlErrorCode = urlErrorCode
+        self.underlying = Array(underlying.prefix(7).filter(\.isValid))
     }
 }
 

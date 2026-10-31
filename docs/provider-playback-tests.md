@@ -87,6 +87,16 @@ of stall-free playback from an underpowered or stalled real encoder.
 The test reuses the existing generated `iptv` media fixture and discontinuity
 markers rather than adding captured content or contacting a live provider.
 
+The same hosted suite exercises ordinary server-HLS startup through
+`PlayerViewModel` and Plozzigen, with no initial quality options. Its first
+segment withholds response headers for 45 seconds; the unchanged 30-second app
+watchdog must request exactly one forced H.264 replacement at Original quality
+and present ten decoded frames before the original segment can respond.
+It verifies the selected version and that the outgoing session's stop report
+precedes replacement negotiation. This isolates the client recovery gap; the
+replacement is pre-encoded synthetic H.264, not evidence that a reporter's
+Jellyfin encoder, remux, Dolby Vision or TrueHD file will succeed.
+
 `--self-test` is explicitly labelled **harness-unit-tests**, not an end-to-end
 result. To test one available server, explicitly select `--providers emby`, for
 example. The report then names that narrower required set; it does not imply the

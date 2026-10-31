@@ -78,8 +78,6 @@ private struct HeroTitleControls: View {
         @Bindable var hero = hero
         HeroSettingsGroup(title: "Content") {
             HeroSettingsLink(page: .titles, libraries: libraries, accounts: accounts)
-            Toggle("Hide watched content", isOn: $hero.settings.hideWatched)
-                .accessibilityIdentifier("hero-hide-watched")
             #if os(tvOS)
             SettingsStepper(
                 options: Array(HeroSettings.maxItemsRange), selection: $hero.settings.maxItems,

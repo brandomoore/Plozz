@@ -25,7 +25,8 @@ final class PlexLiveTVTests: XCTestCase {
 
     private func provider(
         _ http: PlexLiveTVFixtureHTTP,
-        baseURL: URL = URL(string: "https://plex.invalid:32400")!
+        baseURL: URL = URL(string: "https://plex.invalid:32400")!,
+        diagnostics: PlaybackFailureDiagnostics = PlaybackFailureDiagnostics()
     ) -> PlexProvider {
         PlexProvider(
             session: UserSession(
@@ -38,7 +39,8 @@ final class PlexLiveTVTests: XCTestCase {
                 userID: "fixture-home-user", userName: "Fixture user",
                 deviceID: "fixture-device", accessToken: "fixture-home-token"
             ),
-            accountID: "fixture-account", http: http, interactiveHTTP: http, probe: http
+            accountID: "fixture-account", http: http, interactiveHTTP: http, probe: http,
+            playbackFailureDiagnostics: diagnostics
         )
     }
 
@@ -248,7 +250,7 @@ final class PlexLiveTVTests: XCTestCase {
         PlexLiveTVFixtureHTTP([
             "/media/providers": [.init(json: providers)],
             "/\(epg)/lineups/dvr/channels": [.init(json: channels)],
-            "/livetv/dvrs/12/channels/7.1/tune": [.init(
+            "/livetv/dvrs/12/channels/101/tune": [.init(
                 json: tune ?? """
                 {"MediaContainer":{"MediaGrabOperation":[{"Metadata":{
                   "key":"\(sessionPath)","ratingKey":4321,"live":true,
@@ -290,6 +292,8 @@ final class PlexLiveTVTests: XCTestCase {
         await lease.close()
         let requests = await http.requests
         let tune = try XCTUnwrap(requests.first { $0.path.hasSuffix("/tune") })
+        XCTAssertEqual(tune.path, "/livetv/dvrs/12/channels/101/tune",
+                       "Plex's native ID selects the channel; vcn 7.1 is only its displayed number.")
         XCTAssertEqual(tune.method, .post)
         XCTAssertEqual(tune.headers["X-Plex-Session-Identifier"], locator.playSessionID)
         let decision = try XCTUnwrap(requests.first { $0.path.hasSuffix("/decision") })
@@ -490,9 +494,12 @@ final class PlexLiveTVTests: XCTestCase {
 
     func testTransportFailureNeverRetriesSpeculativeTuneAndNeverUsesAdminSessionStop() async throws {
         let http = playbackHTTP()
-        await http.set("/livetv/dvrs/12/channels/7.1/tune", replies: [.init(error: .serverUnreachable)])
+        await http.set("/livetv/dvrs/12/channels/101/tune", replies: [.init(error: .serverUnreachable)])
+        let diagnostics = PlaybackFailureDiagnostics()
+        let buffer = PlexTuneDiagnosticBuffer()
+        diagnostics.start { buffer.append($0) }
         do {
-            _ = try await provider(http).openLiveTVChannel(id: "\(epg)|101")
+            _ = try await provider(http, diagnostics: diagnostics).openLiveTVChannel(id: "\(epg)|101")
             XCTFail("An ambiguous allocation failure must not open another tuner")
         } catch {
             XCTAssertEqual(error as? AppError, .serverUnreachable)
@@ -501,12 +508,18 @@ final class PlexLiveTVTests: XCTestCase {
         XCTAssertEqual(requests.filter { $0.path.hasSuffix("/tune") }.count, 1)
         XCTAssertFalse(requests.contains { $0.path.hasSuffix("/decision") })
         XCTAssertFalse(requests.contains { $0.path.contains("/status/sessions") || $0.method == .delete })
+        XCTAssertEqual(buffer.values.count, 1)
+        XCTAssertEqual(buffer.values.first?.stage, .load)
+        XCTAssertEqual(buffer.values.first?.reason, .network)
     }
 
     func testMalformedSuccessfulTuneCanOnlyAttemptItsOwnPlaybackRelease() async throws {
         let http = playbackHTTP(tune: #"{"MediaContainer":{"Metadata":"invalid"}}"#)
+        let diagnostics = PlaybackFailureDiagnostics()
+        let buffer = PlexTuneDiagnosticBuffer()
+        diagnostics.start { buffer.append($0) }
         do {
-            _ = try await provider(http).openLiveTVChannel(id: "\(epg)|101")
+            _ = try await provider(http, diagnostics: diagnostics).openLiveTVChannel(id: "\(epg)|101")
             XCTFail("No invented tune handle")
         } catch {
             XCTAssertEqual(error as? AppError, .invalidResponse)
@@ -516,6 +529,8 @@ final class PlexLiveTVTests: XCTestCase {
             .headers["X-Plex-Session-Identifier"])
         XCTAssertEqual(requests.last?.query("session"), ownID)
         XCTAssertNil(requests.first { $0.path == "/:/timeline" }?.query("key"))
+        XCTAssertEqual(buffer.values.count, 1)
+        XCTAssertEqual(buffer.values.first?.reason, .invalidResponse)
     }
 
     func testPeriodicHeartbeatStartsWithoutPlayerProgressAndStopsWithLease() async throws {
@@ -627,6 +642,130 @@ final class PlexLiveTVTests: XCTestCase {
         let requests = await http.requests
         XCTAssertEqual(requests.map(\.path), ["/media/providers"])
     }
+
+    func testNativeChannelIDTunesWithoutADisplayNumber() async throws {
+        let http = playbackHTTP()
+        await http.set("/\(epg)/lineups/dvr/channels", replies: [.init(json:
+            #"{"MediaContainer":{"Channel":[{"id":"101","title":"News"}]}}"#
+        )])
+        let lease = try await provider(http).openLiveTVChannel(id: "\(epg)|101")
+        await lease.close()
+        let requests = await http.requests
+        XCTAssertEqual(requests.first { $0.path.hasSuffix("/tune") }?.path,
+                       "/livetv/dvrs/12/channels/101/tune")
+    }
+
+    func testUnsafeNativeIDsCannotBecomeTunePathsOrFallBackToDisplayNumber() async throws {
+        for id in [".", "..", "101/other", "101?token=secret", "%2F", String(repeating: "a", count: 257)] {
+            let http = playbackHTTP()
+            await http.set("/\(epg)/lineups/dvr/channels", replies: [.init(json: """
+                {"MediaContainer":{"Channel":[{"id":"\(id)","vcn":"7.1","title":"News"}]}}
+                """)])
+            do {
+                _ = try await provider(http).openLiveTVChannel(id: "\(epg)|\(id)")
+                XCTFail("An unsafe ID must not be sent to the tuner")
+            } catch {
+                XCTAssertEqual(error as? ServerLiveTVError, .invalidChannel)
+            }
+            let requests = await http.requests
+            XCTAssertFalse(requests.contains { $0.method == .post })
+        }
+    }
+
+    func testTuneHTTPFailuresCaptureOnlyBoundedEvidenceOnce() async throws {
+        for status in [401, 403, 409, 423, 500, 503] {
+            let http = playbackHTTP()
+            await http.set("/livetv/dvrs/12/channels/101/tune", replies: [.init(
+                status: status, json: #"{"message":"private-token private-channel private-server"}"#
+            )])
+            let diagnostics = PlaybackFailureDiagnostics()
+            let buffer = PlexTuneDiagnosticBuffer()
+            diagnostics.start { buffer.append($0) }
+            do {
+                _ = try await provider(http, diagnostics: diagnostics).openLiveTVChannel(id: "\(epg)|101")
+                XCTFail("A refused tune must fail")
+            } catch {
+                if [409, 423, 500, 503].contains(status) {
+                    XCTAssertEqual(error as? ServerLiveTVError, .tunerUnavailable)
+                }
+            }
+            XCTAssertEqual(buffer.values.count, 1)
+            let diagnostic = try XCTUnwrap(buffer.values.first)
+            XCTAssertEqual(diagnostic.layer, .plexLiveTune)
+            XCTAssertEqual(diagnostic.stage, .response)
+            XCTAssertEqual(diagnostic.httpStatus, status)
+            XCTAssertTrue(diagnostic.isValid)
+            let encoded = String(decoding: try JSONEncoder().encode(diagnostic), as: UTF8.self)
+            XCTAssertFalse(encoded.contains("private"))
+            XCTAssertFalse(encoded.contains("fixture"))
+            let requests = await http.requests
+            XCTAssertEqual(requests.filter { $0.path.hasSuffix("/tune") }.count, 1)
+            XCTAssertFalse(requests.contains { $0.path.hasSuffix("/decision") })
+        }
+    }
+
+    func testTuneContainerFailureCapturesStatusWithoutServerMessage() async throws {
+        let http = playbackHTTP(tune: """
+            {"MediaContainer":{"status":-1,"message":"private-token private-channel",
+              "Metadata":{"key":"\(sessionPath)","ratingKey":4321}}}
+            """)
+        let diagnostics = PlaybackFailureDiagnostics()
+        let buffer = PlexTuneDiagnosticBuffer()
+        diagnostics.start { buffer.append($0) }
+        do {
+            _ = try await provider(http, diagnostics: diagnostics).openLiveTVChannel(id: "\(epg)|101")
+            XCTFail("Plex's failure status is not a successful tune")
+        } catch {
+            XCTAssertEqual(error as? ServerLiveTVError, .tunerUnavailable)
+        }
+        XCTAssertEqual(buffer.values.count, 1)
+        let diagnostic = try XCTUnwrap(buffer.values.first)
+        XCTAssertEqual(diagnostic.code, -1)
+        XCTAssertEqual(diagnostic.format, .json)
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(diagnostic), as: UTF8.self).contains("private"))
+        let requests = await http.requests
+        XCTAssertEqual(requests.first { $0.query("state") == "stopped" }?.query("key"), sessionPath)
+    }
+
+    func testTuneDiagnosticsRespectConsentAndIgnoreCancellationAndSuccess() async throws {
+        for mode in ["disabled", "revoked", "cancelled", "success"] {
+            let http = playbackHTTP()
+            let diagnostics = PlaybackFailureDiagnostics()
+            let buffer = PlexTuneDiagnosticBuffer()
+            if mode != "disabled" { diagnostics.start { buffer.append($0) } }
+            if mode == "success" {
+                let lease = try await provider(http, diagnostics: diagnostics).openLiveTVChannel(id: "\(epg)|101")
+                await lease.close()
+            } else {
+                let gate = PlexLiveTVGate()
+                await http.set("/livetv/dvrs/12/channels/101/tune", replies: [.init(
+                    status: 500, gate: gate, error: mode == "cancelled" ? .cancelled : nil
+                )])
+                let provider = provider(http, diagnostics: diagnostics)
+                let task = Task { try await provider.openLiveTVChannel(id: "\(epg)|101") }
+                await gate.waitUntilEntered()
+                if mode == "revoked" {
+                    diagnostics.stop()
+                    diagnostics.start { buffer.append($0) }
+                }
+                await gate.release()
+                do {
+                    _ = try await task.value
+                    XCTFail("The fixture tune must fail")
+                } catch {
+                    XCTAssertTrue(error is ServerLiveTVError || error as? AppError == .cancelled)
+                }
+            }
+            XCTAssertTrue(buffer.values.isEmpty, mode)
+        }
+    }
+}
+
+private final class PlexTuneDiagnosticBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [PlaybackFailureDiagnostic] = []
+    var values: [PlaybackFailureDiagnostic] { lock.withLock { storage } }
+    func append(_ value: PlaybackFailureDiagnostic) { lock.withLock { storage.append(value) } }
 }
 
 private actor PlexLiveTVFixtureHTTP: HTTPClient {

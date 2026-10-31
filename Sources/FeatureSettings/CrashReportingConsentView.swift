@@ -100,7 +100,7 @@ private struct CrashReportingConsentChoices: View {
     }
 
     private var shareButton: some View {
-        Button("Share Diagnostics") { onChoice(true) }
+        Button { onChoice(true) } label: { Text(SettingsCopy.shareDiagnostics) }
             .fixedSize(horizontal: false, vertical: true)
             .plozzActionButton(role: .primary)
             .accessibilityIdentifier("diagnostics-consent-share")

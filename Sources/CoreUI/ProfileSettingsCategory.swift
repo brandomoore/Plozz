@@ -45,11 +45,7 @@ public enum ProfileSettingsCategory: String, CaseIterable, Identifiable, Sendabl
         case .appearance:
             "Theme, cards, artwork, and display size"
         case .screensNavigation:
-            #if os(tvOS)
-            "Shared settings, Home, libraries, detail pages, and music"
-            #else
-            "Shared settings, Home, libraries, and detail pages"
-            #endif
+            "Navigation and screen preferences"
         case .trackers:
             if RuntimeFeatureFlags.buildDefault.isEnabled(.wetrakr) {
                 "Trakt, Simkl, WeTrakr, AniList, MyAnimeList, Last.fm"

@@ -18,7 +18,7 @@ final class TransportSessionDelegateTests: XCTestCase {
         }
     }
 
-    func testDigestChallengeUsesNonPersistentPasswordCredential() {
+    func testDigestChallengeUsesSessionOnlyPasswordCredential() {
         let decision = evaluateChallenge(
             authenticationMethod: NSURLAuthenticationMethodHTTPDigest,
             credential: .password(username: "user", password: "secret", policy: .automatic)
@@ -29,7 +29,7 @@ final class TransportSessionDelegateTests: XCTestCase {
         }
         XCTAssertEqual(credential.user, "user")
         XCTAssertEqual(credential.password, "secret")
-        XCTAssertEqual(credential.persistence, .none)
+        XCTAssertEqual(credential.persistence, .forSession)
     }
 
     func testDigestOnlyRejectsBasicChallenge() {
@@ -52,7 +52,7 @@ final class TransportSessionDelegateTests: XCTestCase {
         guard case .useCredential(let credential) = decision else {
             return XCTFail("expected useCredential")
         }
-        XCTAssertEqual(credential.persistence, .none)
+        XCTAssertEqual(credential.persistence, .forSession)
     }
 
     func testRejectedCredentialIsNotRetried() {

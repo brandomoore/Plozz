@@ -379,6 +379,7 @@ public struct WatchlistDestinationEntry: Codable, Hashable, Sendable {
     /// provider rather than a tracker.
     public let presentationAccountID: String?
     public let attribution: MetadataAttribution?
+    public let addedAt: Date?
 
     public init?(
         kind: MediaItemKind,
@@ -387,7 +388,8 @@ public struct WatchlistDestinationEntry: Codable, Hashable, Sendable {
         corroboratedProviderBinding: MediaAliasProviderBindingKey? = nil,
         presentation: MediaAliasPresentation? = nil,
         presentationAccountID: String? = nil,
-        attribution: MetadataAttribution? = nil
+        attribution: MetadataAttribution? = nil,
+        addedAt: Date? = nil
     ) {
         guard kind == .movie || kind == .series else { return nil }
         self.kind = kind
@@ -397,6 +399,7 @@ public struct WatchlistDestinationEntry: Codable, Hashable, Sendable {
         self.presentation = presentation?.sanitizedForSync()
         self.presentationAccountID = presentationAccountID
         self.attribution = attribution
+        self.addedAt = addedAt
     }
 
     /// Alias-ledger evidence produced by a successful destination read. Provider

@@ -39,6 +39,9 @@ public protocol MediaProvider: Sendable {
     /// Recently added items across the user's libraries.
     func latest(limit: Int) async throws -> [MediaItem]
 
+    /// Continues the exact Home feed in provider order, not an unrestricted library.
+    func homeRowPage(_ feed: HomeRowFeed, startIndex: Int, limit: Int) async throws -> HomeRowPage
+
     /// "Continue Watching" restricted to the given libraries, used by the Home
     /// aggregator to honour the user's per-library Home-visibility *at fetch
     /// time* — and, crucially, to stamp each returned item's `libraryID` so
@@ -58,6 +61,10 @@ public protocol MediaProvider: Sendable {
     /// Recently added items restricted to the given libraries. See
     /// ``continueWatching(limit:inLibraries:)`` for the scoping/tagging contract.
     func latest(limit: Int, inLibraries libraryIDs: [String]?) async throws -> [MediaItem]
+
+    /// Completes local container watch state for a bounded Recently Added batch.
+    /// Server providers already include their authoritative user state in feeds.
+    func recentlyAddedWatchState(_ items: [MediaItem]) async throws -> [MediaItem]
 
     /// Full presentation metadata without probe-capable playback preparation.
     func item(id: String) async throws -> MediaItem
@@ -657,6 +664,10 @@ public extension MediaProvider {
     /// ``continueWatching(limit:inLibraries:)``.
     func latest(limit: Int, inLibraries libraryIDs: [String]?) async throws -> [MediaItem] {
         try await latest(limit: limit)
+    }
+
+    func recentlyAddedWatchState(_ items: [MediaItem]) async throws -> [MediaItem] {
+        items
     }
 
     /// Default: no trailers. Providers that can surface them (Jellyfin local

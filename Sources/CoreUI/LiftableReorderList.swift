@@ -64,6 +64,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
     @Binding private var isLifting: Bool
     private let onChange: (OrderedVisibilityList.Sections<Element>) -> Void
     private let onRemove: ((Element) -> Void)?
+    private let onMove: ((Element) -> Void)?
     private let initialElement: Element?
     @AccessibilityFocusState private var accessibilityFocusedElement: Element?
 
@@ -85,6 +86,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
         allowsHiding: Bool = true,
         removeTitle: LocalizedStringResource = "Remove section",
         onRemove: ((Element) -> Void)? = nil,
+        onMove: ((Element) -> Void)? = nil,
         initialElement: Element? = nil,
         row: @escaping (Element) -> Row,
         onChange: @escaping (OrderedVisibilityList.Sections<Element>) -> Void
@@ -99,6 +101,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
         self.row = row
         self.onChange = onChange
         self.onRemove = onRemove
+        self.onMove = onMove
         let target = initialElement.flatMap { sections.combined.contains($0) ? $0 : nil }
         self.initialElement = target
         #if os(tvOS)
@@ -214,6 +217,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
         )
         guard next != current else { return }
         liftedSections = next
+        onMove?(lifted)
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.10)) {
             onChange(next)
         }
@@ -249,14 +253,17 @@ public struct LiftableReorderList<Element: Hashable>: View {
                     .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
             }
             .onMove { offsets, destination in
-                onChange(
-                    OrderedVisibilityList.moving(
-                        fromOffsets: offsets,
-                        toOffset: destination,
-                        in: sections,
-                        keepingEnabled: requiredEnabled
-                    )
+                let next = OrderedVisibilityList.moving(
+                    fromOffsets: offsets,
+                    toOffset: destination,
+                    in: sections,
+                    keepingEnabled: requiredEnabled
                 )
+                guard next != sections else { return }
+                for offset in offsets {
+                    if case let .element(element) = items[offset] { onMove?(element) }
+                }
+                onChange(next)
             }
         }
         .listStyle(.plain)
@@ -387,6 +394,9 @@ public struct LiftableReorderList<Element: Hashable>: View {
 
     private func perform(_ action: OrderedVisibilityList.Action, on element: Element) {
         guard let edit = edit(action, for: element) else { return }
+        if action == .moveUp || action == .moveDown || action == .moveToTop || action == .moveToBottom {
+            onMove?(element)
+        }
         #if os(tvOS)
         liftedElement = nil
         if action == .hide, edit.focusTarget != element {

@@ -120,6 +120,7 @@ public enum WatchlistPresentationResolver {
                 kind: entry.kind,
                 watchlistAliasID: aliasID,
                 productionYear: presentation.year,
+                releaseDate: presentation.releaseDate,
                 posterURL: presentation.artworkURL.flatMap(URL.init(string:)),
                 backdropURL: presentation.backdropURL.flatMap(URL.init(string:)),
                 providerIDs: providerIDs,
@@ -157,6 +158,8 @@ public enum WatchlistPresentationResolver {
 
     private static func attributing(_ item: MediaItem, entry: WatchlistUnionEntry) -> MediaItem {
         var item = item
+        item.watchlistAddedAt = entry.addedAt
+        if item.releaseDate == nil { item.releaseDate = entry.presentation?.releaseDate }
         item.metadataProvenance[MetadataField(rawValue: "watchlist.wetrakr")] = nil
         for attribution in entry.attributions {
             item.metadataProvenance[MetadataField(rawValue: "watchlist.\(attribution.source.rawValue)")] = attribution
@@ -180,6 +183,7 @@ public enum WatchlistPresentationResolver {
     ) -> MediaItem {
         guard let presentation else { return item }
         var item = item
+        if let releaseDate = presentation.releaseDate { item.releaseDate = releaseDate }
         var adoptedArtwork: [URL] = []
         if let artwork = presentation.artworkURL.flatMap(URL.init(string:)) {
             item.posterURL = artwork

@@ -71,10 +71,9 @@ final class ProfileToolbarPresentationTests: XCTestCase {
                 Color.black
                     .navigationTitle("")
                     .navigationBarTitleDisplayMode(.inline)
+                    .toolbar(.visible, for: .navigationBar)
                     .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            PlozziOSSettingsAvatarButton {}
-                        }
+                        PlozziOSSettingsToolbarItem {}
                     }
             }
             .environment(app)

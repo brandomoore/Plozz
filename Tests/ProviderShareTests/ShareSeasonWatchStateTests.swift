@@ -125,6 +125,29 @@ final class ShareSeasonWatchStateTests: XCTestCase {
         XCTAssertEqual(s1.unwatchedEpisodeCount, 0)
     }
 
+    func testRecentlyAddedRollsUpSeriesAndKeepsUnwatchedEpisodes() async throws {
+        let durableStore = try makeDurableStore()
+        let catalog = await makeCatalog()
+        let watch = makeWatchStore(durableStore)
+        let provider = ShareProvider(
+            session: makeSession(), durableLocalStateStore: durableStore, catalogStore: catalog
+        )
+        let series = MediaItem(id: ShareCatalogID.series(seriesKey), title: "Test Show", kind: .series)
+        for season in 1...2 {
+            for episode in 1...2 {
+                await watch.setPlayed(true, itemID: fileID(season: season, episode: episode), capturedAt: Date())
+            }
+        }
+        let complete = try await provider.recentlyAddedWatchState([series])
+        XCTAssertTrue(try XCTUnwrap(complete.first).isPlayed)
+        XCTAssertEqual(complete.first?.unwatchedEpisodeCount, 0)
+        XCTAssertTrue(HomeRecentlyAddedPolicy.items(complete, hideWatched: true).isEmpty)
+        try await provider.setPlayed(false, itemID: fileID(season: 2, episode: 2))
+        let partial = try await provider.recentlyAddedWatchState([series])
+        XCTAssertEqual(partial.first?.unwatchedEpisodeCount, 1)
+        XCTAssertEqual(HomeRecentlyAddedPolicy.items(partial, hideWatched: true).map(\.id), [series.id])
+    }
+
     func testPartlyWatchedSeasonReportsProgressNotPlayed() async throws {
         let durableStore = try makeDurableStore()
         let catalog = await makeCatalog()
@@ -202,6 +225,21 @@ final class ShareSeasonWatchStateTests: XCTestCase {
             "two files of one episode are one episode — watching either completes the season"
         )
         XCTAssertEqual(s1.playedPercentage, 1.0)
+
+        let provider = ShareProvider(
+            session: makeSession(), durableLocalStateStore: durableStore, catalogStore: catalog
+        )
+        let series = MediaItem(id: ShareCatalogID.series(seriesKey), title: "Test Show", kind: .series)
+        let complete = try await provider.recentlyAddedWatchState([series])
+        XCTAssertTrue(HomeRecentlyAddedPolicy.items(complete, hideWatched: true).isEmpty)
+        try await provider.setResumePosition(
+            300, itemID: ShareCatalogID.file("\(base) 2160p.mkv"), capturedAt: Date()
+        )
+        let rewatch = try await provider.recentlyAddedWatchState([series])
+        XCTAssertEqual(rewatch.first?.unwatchedEpisodeCount, 1)
+        XCTAssertEqual(HomeRecentlyAddedPolicy.items(rewatch, hideWatched: true).map(\.id), [series.id])
+        let unchangedSeasons = try await provider.children(of: series.id)
+        XCTAssertTrue(try XCTUnwrap(unchangedSeasons.first).isPlayed)
     }
 
     /// No watch records means all known catalog episodes are unwatched.

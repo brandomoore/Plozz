@@ -72,6 +72,35 @@ final class HomeHeroInteractionTests: XCTestCase {
         XCTAssertEqual(artwork.value as? String, "Hero Movie", "Vertical scrolling must not page the carousel.")
     }
 
+    func testNativeHeroChromePreservesActionsAndTabNavigation() {
+        app.terminate()
+        app.launchArguments += ["--hero-native-chrome"]
+        app.launch()
+        let artwork = app.buttons["home-hero-artwork-detail"]
+        XCTAssertTrue(artwork.waitForExistence(timeout: 15), app.debugDescription)
+        let play = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Play")).firstMatch
+        XCTAssertTrue(play.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        let profile = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Settings for ")).firstMatch
+        XCTAssertTrue(profile.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        capture("native-home-hero")
+        for (index, screen) in XCUIScreen.screens.enumerated() {
+            let attachment = XCTAttachment(screenshot: screen.screenshot())
+            attachment.name = "native-home-hero-screen-\(index)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        play.tap()
+        XCTAssertTrue(app.staticTexts["hero-play-count"].wait(for: \.label, toEqual: "1", timeout: 5))
+        app.buttons["Add to Watchlist"].tap()
+        XCTAssertTrue(app.staticTexts["hero-watchlist-count"].wait(for: \.label, toEqual: "1", timeout: 5))
+        let search = app.buttons["Search"].firstMatch
+        XCTAssertTrue(search.isHittable, app.debugDescription)
+        search.tap()
+        XCTAssertTrue(app.staticTexts["Search fixture"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["Home"].firstMatch.tap()
+        XCTAssertTrue(artwork.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    }
+
     func testTitleAndDescriptionOpenDetailsWithoutStartingPlayback() {
         let artwork = app.buttons["home-hero-artwork-detail"]
         XCTAssertTrue(artwork.waitForExistence(timeout: 15), app.debugDescription)

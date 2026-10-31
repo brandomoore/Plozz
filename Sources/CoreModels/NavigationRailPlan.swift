@@ -74,6 +74,16 @@ public struct NavigationRailLibraryEntry: Hashable, Sendable, Identifiable {
 /// profile's saved arrangement. SwiftUI-free so the ordering/visibility rules are
 /// unit-testable without a running view hierarchy.
 public enum NavigationDestinationDefaults {
+    public static func topBar(
+        destinations: [NavigationRailDestination],
+        layout: NavigationLibraryLayout = .default
+    ) -> [NavigationRailDestination] {
+        let visible = destinations.filter { $0 != .settings || !layout.hiddenKeys.contains(NavigationLibraryLayout.settingsKey) }
+        if visible.isEmpty, destinations.contains(.settings) { return [.settings] }
+        guard layout.pinsSettingsInTopBar, visible.contains(.settings) else { return visible }
+        return visible.filter { $0 != .settings } + [.settings]
+    }
+
     public static func iPhoneOverflowKeys(visible: [String]) -> Set<String> {
         visible.count > 5 ? Set(visible.dropFirst(4)) : []
     }
@@ -103,19 +113,41 @@ public enum NavigationDestinationDefaults {
         return keys
     }
 
+    public static let iOSDefaultVisibleKeys = [
+        NavigationLibraryLayout.homeKey,
+        NavigationLibraryLayout.downloadsKey,
+        NavigationLibraryLayout.searchKey,
+    ]
+
+    /// The editor's catalogue, not the default enabled tabs.
     public static var iOS: [String] {
-        var keys = [NavigationLibraryLayout.homeKey, NavigationLibraryLayout.watchlistKey]
-        keys.append(NavigationLibraryLayout.liveTVKey)
-        return keys + [
-            NavigationLibraryLayout.downloadsKey,
+        iOSDefaultVisibleKeys + [
+            NavigationLibraryLayout.watchlistKey,
+            NavigationLibraryLayout.liveTVKey,
             NavigationLibraryLayout.settingsKey,
-            NavigationLibraryLayout.searchKey,
         ]
     }
 
-    /// The profile button opens Settings; its optional tab must not force a
-    /// sixth default destination into More.
-    public static let iOSAutomaticallyHiddenKeys: Set<String> = [NavigationLibraryLayout.settingsKey]
+    public static func iOS(visibleLibraries: [AggregatedLibrary]) -> [String] {
+        var keys = iOS
+        let libraries = NavigationRailPlan.browsableLibraries(visibleLibraries)
+        keys.insert(
+            contentsOf: (libraries.count > 1 ? [NavigationLibraryLayout.allLibrariesKey] : [])
+                + libraries.map(\.key),
+            at: keys.count - 1
+        )
+        return keys
+    }
+
+    public static var iOSAutomaticallyHiddenKeys: Set<String> {
+        iOSAutomaticallyHiddenKeys(available: iOS)
+    }
+
+    /// New libraries stay in the editor until explicitly shown. This is a
+    /// presentation default, not a persisted hide or a content restriction.
+    public static func iOSAutomaticallyHiddenKeys(available: [String]) -> Set<String> {
+        Set(available).subtracting(iOSDefaultVisibleKeys)
+    }
 }
 
 public enum NavigationRailPlan {
@@ -129,7 +161,9 @@ public enum NavigationRailPlan {
     ) -> [String] {
         let keys: [String]
         switch style {
-        case .tabBar, .sidebar:
+        case .tabBar:
+            keys = NavigationDestinationDefaults.sidebar(visibleLibraries: visibleLibraries, hasMusic: true)
+        case .sidebar:
             keys = NavigationDestinationDefaults.sidebar(visibleLibraries: visibleLibraries, hasMusic: true)
         case .rail: keys = NavigationDestinationDefaults.rail(visibleLibraries: visibleLibraries, hasMusic: true)
         }
@@ -140,14 +174,6 @@ public enum NavigationRailPlan {
     /// non-music library in discovery order.
     public static func availableKeys(visibleLibraries: [AggregatedLibrary]) -> [String] {
         [NavigationLibraryLayout.allLibrariesKey] + browsableLibraries(visibleLibraries).map(\.key)
-    }
-
-    /// Keep the horizontal bar compact until the profile explicitly shows a
-    /// library. This is resolved presentation, not a persisted Hide choice.
-    public static func automaticallyHiddenLibraryKeys(
-        visibleLibraries: [AggregatedLibrary], style: NavigationStyle
-    ) -> Set<String> {
-        style == .tabBar ? Set(availableKeys(visibleLibraries: visibleLibraries)) : []
     }
 
     /// The libraries the rail can offer: everything that is not a music library.
@@ -188,9 +214,8 @@ public enum NavigationRailPlan {
     /// Resolves the complete ordered destination list for one navigation style.
     ///
     /// `availableKeys` is both the style's supported set and its historical
-    /// default order. The horizontal bar resolves library visibility as opt-in;
-    /// the sidebars include libraries by default. Once a profile has explicitly
-    /// arranged built-ins, that saved order wins in every style.
+    /// default order. All styles include libraries by default. A saved arrangement
+    /// wins in every style.
     public static func destinations(
         visibleLibraries: [AggregatedLibrary],
         layout: NavigationLibraryLayout,

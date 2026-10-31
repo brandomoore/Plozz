@@ -11,6 +11,143 @@ import XCTest
 
 @MainActor
 final class SettingsDetailNavigationHostedTests: XCTestCase {
+    func testTopBarSettingsSlidesWithoutChangingScrollGeometry() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        for reducedMotion in [false, true] {
+            for rootOffset: CGFloat in [0, 600] {
+                let window = UIWindow(windowScene: scene)
+                let navigation = SettingsNavigationModel()
+                let probes = PageMotionProbes()
+                let chrome = NavigationChromeModel()
+                window.rootViewController = UIHostingController(rootView:
+                    SettingsTopBarMotionFixture(navigation: navigation, probes: probes, chrome: chrome)
+                        .environment(\._accessibilityReduceMotion, reducedMotion)
+                )
+                window.makeKeyAndVisible()
+                defer {
+                    window.isHidden = true
+                    window.rootViewController = nil
+                    previous?.makeKeyAndVisible()
+                }
+                try await Task.sleep(for: .milliseconds(250))
+                func scrollView(_ id: String) throws -> UIScrollView {
+                    var view = probes.views["\(id)-content"]
+                    while let current = view {
+                        if let scroll = current as? UIScrollView { return scroll }
+                        view = current.superview
+                    }
+                    return try XCTUnwrap(nil as UIScrollView?, "Missing native scroll view for \(id)")
+                }
+                let rootScroll = try scrollView("root")
+                rootScroll.setContentOffset(CGPoint(x: 0, y: rootOffset), animated: false)
+                try await Task.sleep(for: .milliseconds(100))
+                let rootFrame = try XCTUnwrap(probes.frame("root", in: window))
+                let rootPosition = rootScroll.contentOffset
+                XCTAssertEqual(rootPosition.y, rootOffset, accuracy: 1)
+                XCTAssertEqual(navigation.pages.animationsEnabled, !reducedMotion && !UIAccessibility.isReduceMotionEnabled)
+
+                func assertStableScrollDuringSlide(current: String, returning: Bool = false) async throws {
+                    var movingFrames = 0
+                    for _ in 0..<15 {
+                        try await Task.sleep(for: .milliseconds(40))
+                        let root = try XCTUnwrap(probes.frame("root", in: window))
+                        XCTAssertEqual(root.minY, rootFrame.minY, accuracy: 0.5)
+                        XCTAssertEqual(root.height, rootFrame.height, accuracy: 0.5)
+                        XCTAssertEqual(rootScroll.contentOffset.y, rootPosition.y, accuracy: 0.5)
+                        let visible = try XCTUnwrap(probes.frame(current, in: window))
+                        let travel = abs(visible.midX - rootFrame.midX)
+                        let opacity = try XCTUnwrap(probes.opacity(current))
+                        if travel > 0.5, travel < SettingsPageMotion.travelDistance - 0.5,
+                           opacity > 0.01, opacity < 0.99 {
+                            movingFrames += 1
+                        }
+                        XCTAssertLessThanOrEqual(travel, SettingsPageMotion.travelDistance + 0.5)
+                    }
+                    XCTAssertEqual(try XCTUnwrap(probes.frame(current, in: window)).midX, rootFrame.midX, accuracy: 0.5)
+                    XCTAssertEqual(try XCTUnwrap(probes.opacity(current)), 1, accuracy: 0.01)
+                    XCTAssertEqual(chrome.isChromeHidden, !returning)
+                    if navigation.pages.animationsEnabled {
+                        XCTAssertGreaterThan(movingFrames, 2, "The page must slide and fade, not appear instantly.")
+                    } else {
+                        XCTAssertEqual(movingFrames, 0)
+                    }
+                }
+
+                navigation.enterDetail()
+                try await assertStableScrollDuringSlide(current: "detail")
+                let detailScroll = try scrollView("detail")
+                detailScroll.setContentOffset(CGPoint(x: 0, y: 280), animated: false)
+                try await Task.sleep(for: .milliseconds(100))
+                let detailPosition = detailScroll.contentOffset
+                XCTAssertEqual(detailPosition.y, 280, accuracy: 1)
+                navigation.pages.push(.artwork)
+                try await assertStableScrollDuringSlide(current: "nested")
+                navigation.pages.pop()
+                try await assertStableScrollDuringSlide(current: "detail")
+                XCTAssertTrue(try scrollView("detail") === detailScroll)
+                XCTAssertEqual(detailScroll.contentOffset.y, detailPosition.y, accuracy: 0.5)
+                navigation.pages.pop()
+                try await assertStableScrollDuringSlide(current: "root", returning: true)
+                XCTAssertTrue(try scrollView("root") === rootScroll)
+                XCTAssertEqual(probes.creations["root"], 1)
+                XCTAssertEqual(probes.creations["detail"], 1)
+                XCTAssertEqual(navigation.pages.returnGeneration, 2)
+            }
+        }
+    }
+
+    func testDiscoveredLibrariesRenderAsEnabledNavigationRowsInEveryTVStyle() async throws {
+        let suite = "NavigationLibraryEditorHosted.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let libraries: [AggregatedLibrary] = [
+            .init(accountID: "plex", accountName: "Viewer", serverName: "Plex",
+                  providerKind: .plex, library: .init(id: "movies", title: "Plex Movies", kind: .movie)),
+            .init(accountID: "jellyfin", accountName: "Viewer", serverName: "Jellyfin",
+                  providerKind: .jellyfin, library: .init(id: "shows", title: "Jellyfin Shows", kind: .series))
+        ]
+        let scope = ProfileLibrariesScope(
+            accounts: [], activeProfile: Profile(id: "viewer", name: "Viewer"),
+            discoveredLibraries: .loaded(libraries),
+            refreshingLibraryAccountIDs: [], unreachableLibraryAccountIDs: [],
+            reloadLibraries: {},
+            homeVisibility: HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults)),
+            isAccountIncludedInActiveProfile: { _ in true },
+            onSetAccountIncluded: { _, _ in }, onAddAccount: {},
+            plexHomeUsersFetcher: { _ in [] }, onSelectPlexHomeUser: { _, _ in }
+        )
+        let navigation = NavigationStyleSettingsModel(
+            store: NavigationStyleSettingsStore(defaults: defaults),
+            layoutStore: NavigationLibraryLayoutStore(defaults: defaults)
+        )
+        let builtIns = Set(NavigationDestinationDefaults.compact(hasMusic: true))
+            .union([NavigationLibraryLayout.allLibrariesKey])
+        for style in NavigationStyle.allCases {
+            navigation.style = style
+            try await withProfileDestination(.navigationLayout, direction: .leftToRight) {
+                NavigationLibrariesDetailView(
+                    scope: scope, navigation: navigation, excludedKeys: builtIns
+                )
+            } inspect: { window in
+                let labels = try self.captureLabels(window, name: "navigation-libraries-\(style.rawValue)")
+                let hidden = try self.label("HIDDEN", in: labels)
+                for title in ["Plex Movies", "Jellyfin Shows"] {
+                    let row = try XCTUnwrap(
+                        labels.first { $0.text.contains(title) }, "Missing library row: \(title)"
+                    ).frame
+                    XCTAssertLessThan(row.maxY, hidden.minY, "New libraries belong above Hidden.")
+                }
+            }
+        }
+    }
+
     func testDialogDismissDoesNotPopItsPresentingSettingsPage() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -735,6 +872,37 @@ private final class PageMotionProbes {
             layer = current.superlayer
         }
         return opacity
+    }
+}
+
+private struct SettingsTopBarMotionFixture: View {
+    let navigation: SettingsNavigationModel
+    let probes: PageMotionProbes
+    let chrome: NavigationChromeModel
+
+    var body: some View {
+        TopBarNavigation(
+            destinations: [.home, .settings], selection: .constant(.settings),
+            preventsAccidentalExit: false,
+            content: { _, _ in
+                AnyView(SettingsWorkspace(navigation: navigation) {
+                    page("root").scrollsTopNavigation()
+                } detail: { route in
+                    page(route == .playback ? "detail" : "nested")
+                })
+            },
+            label: { AnyView(Text($0.storageValue)) },
+            chrome: chrome
+        )
+        .environment(\.plozzNavigationStyle, .tabBar)
+        .disabled(true)
+    }
+
+    private func page(_ id: String) -> some View {
+        ScrollView {
+            PageMotionProbe(id: "\(id)-content", probes: probes).frame(height: 2400)
+        }
+        .background { PageMotionProbe(id: id, probes: probes) }
     }
 }
 

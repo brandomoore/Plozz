@@ -156,6 +156,7 @@ struct SearchTab: View {
                 spoilerSettings: spoilerSettings,
                 onSelect: { open($0) }
             )
+            .modifier(NavigationRailSearchRootInset())
             .youTubeTrailerOpeningFailures(trailerOpening)
             .navigationDestination(for: MediaItem.self) { item in
                 let provider = try? resolveProvider(item.sourceAccountID, in: accounts)
@@ -423,18 +424,17 @@ struct SearchTab: View {
         }
     }
 
-    /// In-progress items prompt "Resume vs Start Over"; fully-unwatched items
-    /// play immediately from the start.
+    /// In-progress items resume directly unless the profile asks for a choice.
     private func requestPlay(_ item: MediaItem) {
         if item.isYouTubeTrailer {
             Task { await trailerOpening.open(item) }
             return
         }
         let target = bestSourcePlayItem(item, accounts: accounts, identitySources: identitySources)
-        if let resume = target.resumePosition, resume > 1 {
+        if playbackSettings.shouldAskBeforeResuming(at: target.resumePosition) {
             resumePrompt = target
         } else {
-            playRequest = PlayRequest(item: target, startPosition: 0)
+            playRequest = PlayRequest(item: target, startPosition: target.resumePosition ?? 0)
         }
     }
 }

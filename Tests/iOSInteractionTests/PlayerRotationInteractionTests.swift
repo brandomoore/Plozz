@@ -123,6 +123,43 @@ final class PlayerRotationInteractionTests: XCTestCase {
         closePlayer()
     }
 
+    func testFailedConversionExplainsForceTranscodingOnlyWhenEnabled() {
+        for enabled in [false, true] {
+            app.launchArguments = [
+                "--rotation-player-fixture", "--failed-conversion-fixture", "--portrait",
+                "--large-player-text", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
+            ] + (enabled ? ["--force-transcoding"] : [])
+            app.launch()
+            XCTAssertTrue(app.buttons["Open rotation player"].waitForExistence(timeout: 10))
+            app.buttons["Open rotation player"].tap()
+            let message = app.staticTexts["playback-failure-message"]
+            XCTAssertTrue(message.waitForExistence(timeout: 15), app.debugDescription)
+            XCTAssertEqual(message.label, "The server didn’t offer a converted stream for these settings.")
+            let hint = app.staticTexts["playback-failure-hint"]
+            if enabled {
+                XCTAssertTrue(hint.waitForExistence(timeout: 5), app.debugDescription)
+                XCTAssertEqual(hint.label, "Force transcoding is on. Try turning it off in Streaming quality.")
+                XCTAssertGreaterThanOrEqual(hint.frame.minX, app.windows.firstMatch.frame.minX)
+                XCTAssertLessThanOrEqual(hint.frame.maxX, app.windows.firstMatch.frame.maxX)
+                let image = XCTAttachment(screenshot: app.screenshot())
+                image.name = "forced-transcoding-failure"
+                image.lifetime = .keepAlways
+                add(image)
+            } else {
+                XCTAssertFalse(hint.exists)
+            }
+            let back = app.buttons["player-failed-back"]
+            for _ in 0..<6 {
+                if back.isHittable { break }
+                app.swipeUp()
+            }
+            XCTAssertTrue(back.isHittable, app.debugDescription)
+            back.tap()
+            XCTAssertTrue(app.buttons["Open rotation player"].waitForExistence(timeout: 10))
+            app.terminate()
+        }
+    }
+
     func testEmbyQualitySheetDoesNotReplacePlayerAndXStillCloses() {
         launch("--emby-streaming-fixture")
         openPlayer()

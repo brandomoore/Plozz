@@ -36,6 +36,8 @@ func mapWebDAVError(_ error: Error) -> MediaTransportError {
     // Genuinely transient — reconnectable.
     case .transport(let code):
         return .transport(code: code)
+    case .deliveryConnectionFailed:
+        return .transport(code: URLError.cannotConnectToHost.rawValue)
 
     // Auth: terminal. A 401/scheme/cleartext rejection won't succeed on retry;
     // the user must fix credentials or security.

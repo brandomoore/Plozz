@@ -25,7 +25,17 @@ Error = BRIDGE.BridgeError
 AWAITING_LABEL = "awaiting release"
 PLATFORMS = {"tvOS": "TV_OS", "iOS": "IOS"}
 NAMES = {"tvOS": "Apple TV", "iOS": "iPhone and iPad"}
-TRAILER = re.compile(r"TestFlight-Fix: #([1-9][0-9]*) \[(tvOS|iOS|tvOS,iOS|iOS,tvOS)\]")
+DECLARATION_KEYS = ("TestFlight-Issue:", "TestFlight-Fix:")
+TRAILER = re.compile(
+    r"(?:TestFlight-Issue: |TestFlight-Fix: #)([1-9][0-9]*) \[(tvOS|iOS|tvOS,iOS|iOS,tvOS)\]"
+)
+SESSION_FOOTER = re.compile(
+    r"\n\n+(Copilot-Session: [0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\s*\Z"
+)
+
+
+class InvalidDeclaration(Error):
+    pass
 
 
 def git(*args, input=None, allow_nonancestor=False):
@@ -50,34 +60,81 @@ def reverted(commit, source):
     ))
 
 
+def commit_declarations(commit, body):
+    # Older clients appended this independent footer after an otherwise valid
+    # trailer block. Normalize only that terminal metadata, never prose/examples.
+    normalized = SESSION_FOOTER.sub(r"\n\1", body)
+    trailers = git("interpret-trailers", "--parse", input=normalized + "\n").splitlines()
+    declarations = [line for line in trailers if line.startswith(DECLARATION_KEYS)]
+    raw = [line for line in body.splitlines() if line.startswith(DECLARATION_KEYS)]
+    if not declarations or declarations != raw:
+        raise InvalidDeclaration(f"{commit}: TestFlight declarations must be in the final trailer block.")
+    result = []
+    seen = set()
+    for line in declarations:
+        match = TRAILER.fullmatch(line)
+        if not match:
+            raise InvalidDeclaration(f"{commit}: invalid TestFlight declaration; expected TestFlight-Issue: 123 [tvOS,iOS].")
+        number = int(match[1])
+        if number in seen:
+            raise InvalidDeclaration(f"{commit}: issue #{number} is declared more than once.")
+        seen.add(number)
+        result.append({"issue": number, "commit": commit, "platforms": sorted(match[2].split(","))})
+    return result
+
+
 def declared_fixes(sources=("HEAD",)):
     fixes = {}
-    for commit in git("log", "--format=%H", "--grep=^TestFlight-Fix:", *sources).splitlines():
+    failures = []
+    invalid = []
+    competing = set()
+    for commit in git(
+        "log", "--topo-order", "--format=%H",
+        "--grep=^TestFlight-Issue:", "--grep=^TestFlight-Fix:", *sources,
+    ).splitlines():
         if not re.fullmatch(r"[0-9a-f]{40}", commit):
             raise Error("Git returned an invalid fixing commit.")
         body = git("show", "-s", "--format=%B", commit)
-        trailers = git("interpret-trailers", "--parse", input=body + "\n").splitlines()
-        declarations = [line for line in trailers if line.startswith("TestFlight-Fix:")]
-        if not declarations:
-            raise Error(f"{commit}: TestFlight-Fix must be a real commit trailer.")
-        seen = set()
-        for line in declarations:
-            match = TRAILER.fullmatch(line)
-            if not match:
-                raise Error(f"{commit}: invalid TestFlight-Fix trailer; expected #123 [tvOS,iOS].")
-            number = int(match[1])
-            if number in seen:
-                raise Error(f"{commit}: issue #{number} is declared more than once.")
-            seen.add(number)
-            fix = {"issue": number, "commit": commit, "platforms": sorted(match[2].split(","))}
+        try:
+            declarations = commit_declarations(commit, body)
+        except InvalidDeclaration as error:
+            lines = [line for line in body.splitlines() if line.startswith(DECLARATION_KEYS)]
+            references = [
+                re.match(r"TestFlight-(?:Issue|Fix):\s*#?([1-9][0-9]*)(?=\s|\[|$)", line)
+                for line in lines
+            ]
+            # A partially identified block is still unidentifiable: do not let
+            # its recognized issues hide another malformed declaration.
+            referenced = {int(match[1]) for match in references} if all(references) else set()
+            invalid.append((commit, referenced, str(error)))
+            continue
+        for fix in declarations:
+            number = fix["issue"]
             previous = fixes.get(number)
             if previous:
                 if ancestor(commit, previous["commit"]):
                     continue
                 if not ancestor(previous["commit"], commit):
-                    raise Error(f"Issue #{number} has competing fixes; add one final declaration after integration.")
+                    failures.append(f"Issue #{number} has competing fixes; add one final declaration after integration.")
+                    competing.add(number)
+                    continue
             fixes[number] = fix
-    return sorted(fixes.values(), key=lambda item: item["issue"])
+    for commit, referenced, failure in invalid:
+        if referenced and all(
+            number in fixes and number not in competing and ancestor(commit, fixes[number]["commit"])
+            for number in referenced
+        ):
+            continue
+        failures.append(failure)
+        for number, fix in list(fixes.items()):
+            # An unidentifiable declaration cannot authorize an older fix.
+            # A new explicit declaration after the bad commit can supersede it.
+            if (not referenced or number in referenced) and not ancestor(commit, fix["commit"]):
+                del fixes[number]
+    return sorted(
+        (fix for number, fix in fixes.items() if number not in competing),
+        key=lambda item: item["issue"],
+    ), failures
 
 
 def delivered_releases(apple, github, minimum):
@@ -139,13 +196,10 @@ def fix_record(comments, fix):
     return matches.get(True) or matches.get(False) or (None, {**fix, "deliveries": {}, "status": "awaiting_release"})
 
 
-def was_reopened(github, number, comment):
-    if comment is None:
-        return False
-    created = datetime.fromisoformat(comment["created_at"].replace("Z", "+00:00"))
+def was_reopened(github, number, declared_at):
     return any(
         event.get("event") == "reopened"
-        and datetime.fromisoformat(event["created_at"].replace("Z", "+00:00")) >= created
+        and datetime.fromisoformat(event["created_at"].replace("Z", "+00:00")) >= declared_at
         for event in github.pages(f"/repos/{BRIDGE.REPO}/issues/{number}/events")
     )
 
@@ -180,7 +234,8 @@ def resolve_issues(github, fixes, releases, *, publish=False):
             comments = github.pages(path + "/comments")
             comment, receipt = fix_record(comments, fix)
             previously_delivered = receipt["status"] == "delivered"
-            if was_reopened(github, number, comment):
+            declared_at = datetime.fromisoformat(git("show", "-s", "--format=%cI", fix["commit"]))
+            if was_reopened(github, number, declared_at):
                 print(f"Issue #{number}: reopened after this fix; requires a new fixing-commit declaration.")
                 continue
             if reverted(fix["commit"], "HEAD"):
@@ -215,7 +270,7 @@ def resolve_issues(github, fixes, releases, *, publish=False):
             if not ready:
                 ensure_awaiting_label(github, current)
                 continue
-            if was_reopened(github, number, comment):
+            if was_reopened(github, number, declared_at):
                 print(f"WARNING: issue #{number} was reopened during notification; not closing it.")
                 continue
             current = github.call("GET", path)
@@ -249,10 +304,11 @@ def main():
                 BRIDGE.API("App Store Connect", ANNOUNCEMENTS.apple_token()), github,
                 NOTES.build_parts(os.environ.get("TESTFLIGHT_DISCORD_MIN_BUILD", "")),
             )
-            fixes = declared_fixes(("HEAD", *(release["source"] for release in releases)))
+            fixes, declaration_failures = declared_fixes(("HEAD", *(release["source"] for release in releases)))
+            failures.extend(declaration_failures)
             resolve_issues(github, fixes, releases, publish=publish)
             if not fixes:
-                print("No TestFlight-Fix declarations on main or available release tags; no GitHub issues changed.")
+                print("No eligible TestFlight declarations on main or available release tags; no GitHub issues changed.")
         except (Error, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
             failures.append(str(error) if isinstance(error, Error) else "Invalid release metadata or source history.")
         if os.environ.get("DISCORD_BRIDGE_ENABLED") == "true":

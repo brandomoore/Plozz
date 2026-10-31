@@ -261,7 +261,7 @@ class RunnerFailureTests(unittest.TestCase):
             self.assertEqual(json.loads((lane.output / "result.json").read_text())["status"], "failed")
 
     def test_profile_lifecycle_preserves_evidence_and_never_drives_without_recorder(self):
-        for failure in (None, "detail-return", "missing-journal", "build", "identity", "readiness", "test", "early-exit",
+        for failure in (None, "horizontal-navigation", "detail-return", "missing-journal", "build", "identity", "readiness", "test", "early-exit",
                         "finalize", "summary", "process", "sample"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -277,6 +277,7 @@ class RunnerFailureTests(unittest.TestCase):
                 args = argparse.Namespace(platform="tvOS", sim_id="owned", timeout=120, names=[],
                                           operation="profile", template="Process Sample",
                                           workload="detail-return" if failure in ("detail-return", "missing-journal")
+                                          else "horizontal-navigation" if failure == "horizontal-navigation"
                                           else "home-navigation")
                 if failure == "detail-return":
                     journal = root / "data/Library/Caches/Plozz/playback-trace.log"
@@ -309,7 +310,9 @@ class RunnerFailureTests(unittest.TestCase):
                     if label == "navigation-test":
                         self.assertIsNone(recorder.returncode)
                         expected = (
-                            "DetailReturnFocusRemoteTests/testProfilePopulatedShowcaseDetailReturns"
+                            "LargeNativeNavigationRemoteTests/testProfileRapidHorizontalNavigation"
+                            if args.workload == "horizontal-navigation"
+                            else "DetailReturnFocusRemoteTests/testProfilePopulatedShowcaseDetailReturns"
                             if args.workload == "detail-return"
                             else "ProductionHomeNavigationTests/testNavigateProductionHomeWithNativeCards"
                         )
@@ -327,14 +330,18 @@ class RunnerFailureTests(unittest.TestCase):
                 with patch.object(lane, "command", side_effect=command), \
                         patch.object(performance.subprocess, "Popen", side_effect=spawn), \
                         patch.object(performance, "stop_owned") as stop:
-                    if failure and failure != "detail-return":
+                    if failure and failure not in ("detail-return", "horizontal-navigation"):
                         with self.assertRaises(performance.Failure):
                             lane.profile_navigation([])
                     else:
                         result = lane.profile_navigation([])
                         self.assertEqual(result["pid"], 42)
                         self.assertTrue(result["stacks"]["mainThreadFrames"])
-                        self.assertIn("--home-artwork-cache-namespace=" + lane.output.name, result["arguments"])
+                        if args.workload == "horizontal-navigation":
+                            self.assertIn("--large-native-navigation-fixture", result["arguments"])
+                            self.assertIn("--real-library-pages", result["arguments"])
+                        else:
+                            self.assertIn("--home-artwork-cache-namespace=" + lane.output.name, result["arguments"])
                         self.assertEqual(result["workload"], args.workload)
                         if args.workload == "detail-return":
                             self.assertIn("--populated-home-return", result["arguments"])

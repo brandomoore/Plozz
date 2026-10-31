@@ -266,7 +266,11 @@ Use the [commit trailer](../.github/CONTRIBUTING.md#commit-issue-references) onl
 when an issue is fully resolved. A non-closing `Refs #123` alone never enrolls an
 issue. The watcher reads declarations from `main` and verified available release
 tags, so an intentionally distributed branch release is supported too. Tagged
-code is never executed.
+code is never executed. New declarations use `TestFlight-Issue: 123 [tvOS,iOS]`,
+with `Refs #123` separately. The old closing-keyword trailer is read only for
+compatibility. A terminal, blank-separated `Copilot-Session` UUID footer from
+older clients is recognized without rewriting history; prose or examples outside
+the actual trailer block never enroll a report.
 
 For each declaration it:
 
@@ -291,8 +295,16 @@ GitHub comments hold durable delivery receipts; Discord bot footers retain
 message identity. A retry does not create another delivery notification. Each
 platform keeps its own build number if Apple releases them separately. A human
 reopen is respected: the same declaration cannot close the issue again; add a
-new trailer on the actual follow-up fix. Competing nonancestor declarations,
-malformed metadata, and recognized Git reverts fail closed. After withdrawing
+new trailer on the actual follow-up fix. Reopen protection starts at the fixing
+commit, even before the bot's first receipt, and is not reset by a later delivery
+notification. Competing nonancestor declarations, malformed metadata, and
+recognized Git reverts fail closed. Malformed declarations quarantine their
+referenced issues rather than block unrelated valid fixes; a new complete
+declaration after the malformed commit supersedes its issue's quarantine; the
+historical error clears once every affected issue is superseded. Unidentifiable malformed
+declarations also block older candidates. The run reports declaration errors and
+exits unsuccessfully even when unrelated reports synchronize successfully.
+After withdrawing
 an implementation, remove its `awaiting release` label; a replacement needs a
 new complete-fix declaration. As with any explicit resolution marker, maintainers
 must not leave a declaration claiming a fix that subsequent changes undo.

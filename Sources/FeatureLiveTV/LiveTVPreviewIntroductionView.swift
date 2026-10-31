@@ -5,14 +5,16 @@ struct LiveTVPreviewIntroductionPresentation: ViewModifier {
     let isPresented: Bool
     let choose: (Bool) -> Void
     let onDismiss: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
 
     func body(content: Content) -> some View {
         #if os(tvOS)
         // Only an explicit action records a choice, not a scene-driven dismissal.
-        content.plozzSheet(isPresented: .constant(isPresented), onDismiss: onDismiss) {
+        content.plozzSheet(isPresented: .constant(isPresented && isEnabled), onDismiss: onDismiss) {
             LiveTVPreviewIntroductionView(choose: choose)
                 .interactiveDismissDisabled()
         }
+        .navigationEntryFocus(isPresented ? .pending : nil)
         #else
         content
         #endif

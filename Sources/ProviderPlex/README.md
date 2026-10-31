@@ -55,6 +55,20 @@ first-class backends; co-equal with `ProviderJellyfin`.
   Home-user token, never the server-scoped token, and rechecks identity after
   the cloud response before publishing an empty inventory.
 
+## Live TV tuning
+
+Plex DVR tuning uses the lineup's native channel `id`, never its display number
+(`vcn`). Channels without display numbers remain playable. Native IDs are
+validated as a single path component; invalid IDs do not fall back to another
+channel or tuner.
+
+Failed tune requests use the consent-gated playback diagnostics sink under
+`plexLiveTune`. Evidence retains HTTP status, numeric Plex failure status,
+response format, and bounded transport error codes, never server messages,
+channel identifiers, URLs, credentials, or response bodies. Cancellation and
+successful tunes do not emit failure events. Existing owned-session cleanup
+and no-speculative-retry behavior remain unchanged.
+
 ## Format badges
 
 Detail and version badges preserve the same source's Dolby Vision compatibility

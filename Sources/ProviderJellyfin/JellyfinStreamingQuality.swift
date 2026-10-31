@@ -55,10 +55,8 @@ extension JellyfinCapabilityProfile {
 
     func applying(_ options: StreamingPlaybackOptions) -> Self {
         var result = self
-        if let limit = options.quality.maximumBitrate {
-            result.maxStreamingBitrate = limit
-            result.maxStaticBitrate = limit
-        }
+        result.maxStreamingBitrate = options.quality.maximumBitrate
+        result.maxStaticBitrate = options.quality.maximumBitrate
         for index in result.transcodingProfiles.indices {
             result.transcodingProfiles[index].videoCodec = options.codec.codecs(supportsHEVC: canRequestHEVC)
                 .joined(separator: ",")
@@ -99,6 +97,46 @@ extension PlaybackInfoResponse {
 }
 
 extension MediaSourceInfo {
+    mutating func boundEmbyOriginalTranscodingBitrate() throws {
+        guard let TranscodingUrl else { return }
+        guard var url = URLComponents(string: TranscodingUrl) else {
+            throw StreamingQualityError.unavailable
+        }
+        var query = url.queryItems ?? []
+        guard let value = query.first(where: { $0.name.caseInsensitiveCompare("VideoBitrate") == .orderedSame })?.value,
+              let requested = Int(value), requested >= Int(Int32.max) else { return }
+
+        // Emby carries the unlimited negotiation ceiling into its encoder target,
+        // saturating at Int32.max. Bound only that sentinel, not real server limits.
+        let videoBitrate = MediaStreams?.first { $0.Type == "Video" }?.BitRate
+            .flatMap { $0 > 0 ? $0 : nil }
+        let sourceBitrate = videoBitrate ?? Bitrate.flatMap { $0 > 0 ? $0 : nil }
+        guard let sourceBitrate else {
+            PlozzLog.playback.error("Emby returned an unbounded conversion without a source bitrate.")
+            throw StreamingQualityError.unavailable
+        }
+        query.removeAll { $0.name.caseInsensitiveCompare("VideoBitrate") == .orderedSame }
+        query.append(.init(name: "VideoBitrate", value: String(min(requested, sourceBitrate))))
+        url.queryItems = query
+        guard let value = url.string else { throw StreamingQualityError.unavailable }
+        self.TranscodingUrl = value
+    }
+
+    func playbackServerDecision(clientMaxBitrate: Int?) -> PlaybackServerDecision {
+        let urlReasons = TranscodingUrl.flatMap { URLComponents(string: $0)?.queryItems }?
+            .filter { $0.name.caseInsensitiveCompare("TranscodeReasons") == .orderedSame }
+            .compactMap(\.value)
+            .flatMap { $0.split(separator: ",").map(String.init) }
+        let reasons = TranscodeReasons == nil && urlReasons?.isEmpty != false
+            ? nil : Array(((TranscodeReasons ?? []) + (urlReasons ?? [])).prefix(32))
+        return PlaybackServerDecision(
+            sourceBitrate: Bitrate, clientMaxBitrate: clientMaxBitrate,
+            supportsDirectPlay: SupportsDirectPlay, supportsDirectStream: SupportsDirectStream,
+            supportsTranscoding: SupportsTranscoding, subtitleBurnIn: burnedInSubtitleTrackID != nil,
+            transcodeReasons: reasons
+        )
+    }
+
     mutating func requestSDRForH264Transcode(provider: ProviderKind, forceVideoTranscode: Bool) throws {
         guard let TranscodingUrl else { return }
         guard var url = URLComponents(string: TranscodingUrl) else {

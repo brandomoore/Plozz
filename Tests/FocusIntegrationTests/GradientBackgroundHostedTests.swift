@@ -12,7 +12,7 @@ import FeatureLiveTVCore
 
 @MainActor
 final class GradientBackgroundHostedTests: XCTestCase {
-    func testLiveTVSetupSharesOneBackdropWithNativeTopNavigationAndCards() async throws {
+    func testLiveTVSetupSharesOneBackdropWithHorizontalNavigationAndCards() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
               ContinuousClock.now < deadline {
@@ -23,7 +23,7 @@ final class GradientBackgroundHostedTests: XCTestCase {
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
-        let host = GradientFocusHost(rootView: AnyView(EmptyView()))
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
         window.rootViewController = host
         window.makeKeyAndVisible()
         let namespace = "LiveTVSetupGradient.\(UUID().uuidString)"
@@ -45,7 +45,7 @@ final class GradientBackgroundHostedTests: XCTestCase {
         for (name, palette) in [("dark", ThemePalette.dark), ("black", .pureBlack), ("light", .light)] {
             for (gradient, reduced) in [(true, false), (false, false), (true, true)] {
                 host.rootView = AnyView(
-                    NativeTopBarNavigation(
+                    TopBarNavigation(
                         destinations: [.home, .liveTV, .search], selection: .constant(.liveTV),
                         preventsAccidentalExit: false,
                         content: { destination, active in
@@ -118,11 +118,7 @@ final class GradientBackgroundHostedTests: XCTestCase {
                 let cardRenderer = ImageRenderer(content:
                     SettingsPageBackground()
                         .overlay {
-                            if gradient && !reduced {
-                                (palette.isLight ? Color.black : .white).opacity(0.05)
-                            } else {
-                                palette.raised.fill
-                            }
+                            (palette.isLight ? Color.black : .white).opacity(0.05)
                         }
                         .frame(width: 1920, height: 1080)
                         .environment(\.themePalette, palette)
@@ -131,6 +127,13 @@ final class GradientBackgroundHostedTests: XCTestCase {
                 )
                 let cardReference = try XCTUnwrap(cardRenderer.uiImage)
                 for card in cards where !card.isFocused {
+                    if !gradient || reduced {
+                        // TVUIKit dims disabled opaque cards; validate their semantic
+                        // fill instead of comparing them with enabled-card pixels.
+                        XCTAssertEqual(card.cardBackgroundColor, UIColor(palette.raised.fill))
+                        XCTAssertTrue(descendants(NativeGradientCardFill.View.self, in: card).allSatisfy(\.isHidden))
+                        continue
+                    }
                     let point = card.contentView.convert(CGPoint(
                         x: card.contentView.bounds.width * 0.9,
                         y: card.contentView.bounds.height * 0.65
@@ -143,20 +146,11 @@ final class GradientBackgroundHostedTests: XCTestCase {
                     }
                 }
                 let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
-                let restingFocus = try XCTUnwrap(focus.focusedItem as? UIView)
+                XCTAssertNotNil(focus.focusedItem)
                 for card in cards {
-                    host.target = card
-                    focus.requestFocusUpdate(to: host)
-                    focus.updateFocusIfNeeded()
-                    try await Task.sleep(for: .milliseconds(100))
-                    XCTAssertTrue(card.isFocused, "Every setup action must accept native focus.")
+                    XCTAssertFalse(card.isEnabled, "Setup actions must wait for explicit content entry.")
+                    XCTAssertFalse(card.isFocused, "Setup must not steal focus from horizontal navigation.")
                 }
-                host.target = restingFocus
-                focus.requestFocusUpdate(to: host)
-                focus.updateFocusIfNeeded()
-                try await Task.sleep(for: .milliseconds(150))
-                XCTAssertTrue(restingFocus.isFocused)
-                host.target = nil
             }
         }
     }
@@ -703,14 +697,6 @@ private struct GradientEmptyLibraryChannels: LibraryChannelDefinitionStoring {
     func load() throws -> [LibraryChannelDefinition] { [] }
     func save(_ definitions: [LibraryChannelDefinition]) throws {
         XCTAssertTrue(definitions.isEmpty, "Appearance coverage must not create library channels.")
-    }
-}
-
-@MainActor
-private final class GradientFocusHost: UIHostingController<AnyView> {
-    weak var target: UIView?
-    override var preferredFocusEnvironments: [any UIFocusEnvironment] {
-        target.map { [$0] } ?? super.preferredFocusEnvironments
     }
 }
 

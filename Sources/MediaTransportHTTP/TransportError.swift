@@ -27,6 +27,7 @@ public enum TransportError: Error, Equatable, Sendable {
     case sourceChanged(reason: String)
     case cancelled
     case transport(code: Int)
+    case deliveryConnectionFailed
 }
 
 extension TransportError: CustomStringConvertible {
@@ -54,6 +55,7 @@ extension TransportError: CustomStringConvertible {
         case .sourceChanged: return "sourceChanged"
         case .cancelled: return "cancelled"
         case .transport(let code): return "transport(code: \(code))"
+        case .deliveryConnectionFailed: return "deliveryConnectionFailed"
         }
     }
 }

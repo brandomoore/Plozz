@@ -9,9 +9,8 @@ import Foundation
 /// shell chrome and the Settings ▸ Appearance screen writes it. Foundation-only
 /// so it can live in `CoreModels` and be edited without importing SwiftUI.
 ///
-/// `.tabBar` and `.sidebar` are native tvOS 18 `TabView` presentations. The top
-/// bar keeps the compact supported destinations; the sidebar also exposes the
-/// active profile and configured library destinations. `.rail` is Plozz's own chrome: a
+/// `.sidebar` is the native tvOS `TabView` presentation. `.tabBar` is a custom
+/// scrolling horizontal strip with a separate profile action. `.rail` is a
 /// collapsed icon rail that expands over stationary content, lists the viewer's
 /// libraries as first-class destinations, and disappears entirely on a detail page.
 public enum NavigationStyle: String, CaseIterable, Identifiable, Codable, Sendable {
@@ -22,8 +21,7 @@ public enum NavigationStyle: String, CaseIterable, Identifiable, Codable, Sendab
     /// The native collapsible left sidebar (`.sidebarAdaptable`): tabs collapse
     /// to a rail and expand on left-focus, matching the system TV app.
     case sidebar
-    /// The classic top tab bar (`.tabBarOnly`): tabs sit in a pill across the
-    /// top of every page. This is the app's historical look.
+    /// Custom horizontal navigation. Keep the historical raw value for saved preferences.
     case tabBar
 
     public var id: String { rawValue }
@@ -67,8 +65,8 @@ public enum NavigationStyle: String, CaseIterable, Identifiable, Codable, Sendab
         switch self {
         case .tabBar:
             return LocalizedStringResource(
-                "navigationStyle.detail.tabBar",
-                defaultValue: "Native tabs stay across the top.",
+                "navigationStyle.detail.horizontal",
+                defaultValue: "Navigation scrolls across the top.",
                 comment: "One-line explanation shown under the navigation-style picker."
             )
         case .sidebar:

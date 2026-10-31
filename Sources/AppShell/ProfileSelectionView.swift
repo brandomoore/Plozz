@@ -112,6 +112,7 @@ struct ProfileSelectionView: View {
             onEditProfile: managementGated ? nil : { request(.edit($0)) },
             onAddKidsProfile: managementGated ? nil : { request(.add(isKids: true)) },
             onCancel: canCancel ? { appState.profileFlow.cancelProfileSelection() } : nil,
+            onOpenSettings: { appState.profileFlow.requestSettingsFromProfileSelection() },
             showsPINLock: appState.accountsProviders.profileShowsPINLock
         )
         // tvOS Menu button: the picker is rendered as a top-level view (not a

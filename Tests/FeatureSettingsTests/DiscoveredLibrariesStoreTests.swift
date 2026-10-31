@@ -46,5 +46,33 @@ final class DiscoveredLibrariesStoreTests: XCTestCase {
         XCTAssertTrue(store.failures.isEmpty)
         XCTAssertTrue(store.unreachableAccountIDs.isEmpty)
     }
+
+    func testCancellationClearsOnlyItsOwnRefreshAndRestoresPreviousState() {
+        let store = DiscoveredLibrariesStore()
+        store.state = .failed(.unauthorized)
+        let first = store.beginRefresh(accountIDs: ["first"])
+        let second = store.beginRefresh(accountIDs: ["second"])
+        store.cancelRefresh(second)
+        XCTAssertTrue(store.state.isLoading)
+        XCTAssertEqual(store.refreshingAccountIDs, ["first"])
+        store.cancelRefresh(first)
+        XCTAssertEqual(store.state, .failed(.unauthorized))
+        XCTAssertTrue(store.refreshingAccountIDs.isEmpty)
+    }
+
+    func testOldCancellationCannotClearNewRefreshOrReplacePublishedRows() {
+        let store = DiscoveredLibrariesStore()
+        let first = store.beginRefresh(accountIDs: ["first"])
+        let second = store.beginRefresh(accountIDs: ["second"])
+        store.finishRefresh(with: [], request: second)
+        XCTAssertEqual(store.state, .empty)
+        XCTAssertEqual(store.refreshingAccountIDs, ["first"])
+        let third = store.beginRefresh(accountIDs: ["third"])
+        store.cancelRefresh(first)
+        XCTAssertEqual(store.refreshingAccountIDs, ["third"])
+        store.cancelRefresh(third)
+        XCTAssertEqual(store.state, .empty)
+        XCTAssertTrue(store.refreshingAccountIDs.isEmpty)
+    }
 }
 #endif

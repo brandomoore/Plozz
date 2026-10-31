@@ -116,6 +116,64 @@ final class SeriesResumeTests: XCTestCase {
         )
     }
 
+    func testEpisodeEntryUsesLoadedWatchStateInsteadOfTheNavigationSnapshot() throws {
+        for initiallyPlayed in [false, true] {
+            let tapped = episode("e4", number: 4, played: initiallyPlayed, resume: 120)
+            let mutation = MediaItemMutation(
+                itemIDs: [tapped.id], played: !initiallyPlayed, resumePosition: 0
+            )
+            let loaded = mutation.applied(to: tapped)
+            let resolved = try XCTUnwrap(SeriesEpisodeEntry.resolvedOpeningEpisode(
+                initialEpisode: tapped, initialSeasonID: nil, resumeEpisode: nil, in: [loaded]
+            ))
+            XCTAssertEqual(resolved.id, tapped.id)
+            XCTAssertEqual(resolved.isPlayed, !initiallyPlayed)
+            XCTAssertNil(resolved.resumePosition)
+        }
+    }
+
+    func testEpisodeEntryKeepsLiveResumeProgressWithoutRestoringTheOldSnapshot() throws {
+        let tapped = episode("e4", number: 4, resume: 120)
+        var liveResume = tapped
+        liveResume.resumePosition = 867
+        liveResume.playedPercentage = 0.5
+        var sparse = tapped
+        sparse.resumePosition = nil
+        sparse.overview = "Loaded metadata"
+        for explicitEpisode in [MediaItem?.none, tapped] {
+            let resolved = try XCTUnwrap(SeriesEpisodeEntry.resolvedOpeningEpisode(
+                initialEpisode: explicitEpisode, initialSeasonID: nil,
+                resumeEpisode: liveResume, in: [sparse]
+            ))
+            XCTAssertEqual(resolved.resumePosition, 867)
+            XCTAssertEqual(resolved.playedPercentage, 0.5)
+            XCTAssertEqual(resolved.overview, sparse.overview)
+        }
+    }
+
+    func testEpisodeEntryDoesNotCopyResumeStateFromAnotherEpisodeOrAccount() throws {
+        var tapped = episode("e4", number: 4)
+        tapped.sourceAccountID = "plex"
+        var loaded = tapped
+        loaded.isPlayed = true
+        var otherEpisode = tapped
+        otherEpisode.id = "e5"
+        otherEpisode.episodeNumber = 5
+        var otherAccount = tapped
+        otherAccount.sourceAccountID = "jellyfin"
+        for resume in [otherEpisode, otherAccount] {
+            let resolved = try XCTUnwrap(SeriesEpisodeEntry.resolvedOpeningEpisode(
+                initialEpisode: tapped, initialSeasonID: nil, resumeEpisode: resume, in: [loaded]
+            ))
+            XCTAssertEqual(resolved.id, loaded.id)
+            XCTAssertEqual(resolved.sourceAccountID, loaded.sourceAccountID)
+            XCTAssertTrue(resolved.isPlayed)
+        }
+        XCTAssertNil(SeriesEpisodeEntry.resolvedOpeningEpisode(
+            initialEpisode: nil, initialSeasonID: "explicit-season", resumeEpisode: tapped, in: [loaded]
+        ))
+    }
+
     private func day(_ offset: Int) -> Date {
         Date(timeIntervalSince1970: 1_700_000_000 + Double(offset) * 86_400)
     }

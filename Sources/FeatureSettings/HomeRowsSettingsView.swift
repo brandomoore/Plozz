@@ -37,7 +37,7 @@ public struct HomeRowsSettingsView: View {
     }
 
     public var body: some View {
-        HomeEditorPage(title: Text("Customize Home"), showsHeader: true) {
+        HomeEditorPage(title: Text("Home"), showsHeader: true) {
             HomeEditorLink {
                 HomeHeroSettingsView(libraries: libraries, accounts: accounts, visibility: visibility)
                     .environment(hero)
@@ -67,6 +67,13 @@ public struct HomeRowsSettingsView: View {
                 HomeEditorRowLabel(title: Text("Rows"))
             }
             .accessibilityIdentifier("home-sections-settings")
+            HomeEditorLink {
+                HomeFilteringSettingsView(visibility: visibility)
+                    .environment(hero)
+            } label: {
+                HomeEditorRowLabel(title: Text("Filtering"))
+            }
+            .accessibilityIdentifier("home-filtering-settings")
         }
     }
 
@@ -85,6 +92,26 @@ public struct HomeRowsSettingsView: View {
         #else
         return hero.settings.isEnabled ? nil : Text("Off")
         #endif
+    }
+}
+
+struct HomeFilteringSettingsView: View {
+    let visibility: HomeLibraryVisibilityModel
+    @Environment(HeroSettingsModel.self) private var hero
+
+    var body: some View {
+        @Bindable var hero = hero
+        HomeEditorPage(title: Text("Filtering"), showsHeader: true) {
+            SettingsSectionGroup("Hide watched content") {
+                Toggle("Recently Added", isOn: Binding(
+                    get: { visibility.visibility.hideWatchedRecentlyAdded },
+                    set: { visibility.setHideWatchedRecentlyAdded($0) }
+                ))
+                .accessibilityIdentifier("home-hide-watched-recently-added")
+                Toggle("Hero & discovery", isOn: $hero.settings.hideWatched)
+                    .accessibilityIdentifier("hero-hide-watched")
+            }
+        }
     }
 }
 

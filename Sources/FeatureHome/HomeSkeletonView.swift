@@ -107,6 +107,8 @@ struct HomeSkeletonView: View {
 /// and the cached-launch path, where only volatile Continue Watching waits for
 /// live server data while the cached hero and stable rows are already visible.
 struct HomeSkeletonRowView: View {
+    @Environment(\.plozzCardCaptionSettings) private var captions
+    @Environment(\.plozzCardCaptionIsShowcase) private var isShowcase
     @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
     @Environment(\.plozzContinueWatchingCaptionsHidden) private var continueWatchingCaptionsHidden
     @Environment(\.plozzContinueWatchingCaptionsHiddenWithArtworkTitle) private var continueWatchingArtworkCaptionsHidden
@@ -195,7 +197,8 @@ struct HomeSkeletonRowView: View {
         if kind == .continueWatching {
             return !(usesSeriesArtwork(kind) ? continueWatchingArtworkCaptionsHidden : continueWatchingCaptionsHidden)
         }
-        return kind == .libraries || !captionsHidden
+        return kind == .libraries
+            ? captions.showsLabels(in: .homeLibraries, isShowcase: isShowcase) : !captionsHidden
     }
 
     /// Matches the selected Continue Watching layout and each other row's fixed shape.

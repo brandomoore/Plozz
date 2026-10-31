@@ -33,6 +33,8 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
         XCTAssertFalse(persisted.contains("https://"))
         XCTAssertFalse(persisted.contains("Fixture movie"))
         XCTAssertNil(fixture.runtime.returnID)
+        XCTAssertTrue(fixture.runtime.consumeForegroundDeparture(forProfile: fixture.profileID))
+        XCTAssertFalse(fixture.runtime.consumeForegroundDeparture(forProfile: fixture.profileID))
     }
 
     func testUnavailableAndOpenFailureFallBackWithoutChangingTheSelection() async throws {
@@ -46,6 +48,7 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
             XCTAssertEqual(fixture.selection.player, .infuse)
             XCTAssertNil(fixture.runtime.receipt)
             XCTAssertNil(fixture.runtime.error)
+            XCTAssertFalse(fixture.runtime.consumeForegroundDeparture(forProfile: fixture.profileID))
         }
     }
 

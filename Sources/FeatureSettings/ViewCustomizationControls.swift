@@ -117,6 +117,7 @@ struct ViewCustomizationList<Content: View>: View {
     let initialRowID: String
     var focusedHelp: (String) -> ViewCustomizationHelp? = { _ in nil }
     var pinsFocusedHelp = true
+    var inlineHelpAfterSection: Int?
     var sectionSpacing: CGFloat = SettingsRowMetrics.formRowSpacing
     var hasGroupedContent = false
     @ViewBuilder var content: () -> Content
@@ -150,7 +151,7 @@ struct ViewCustomizationList<Content: View>: View {
                         ))
                     VStack(alignment: .leading, spacing: SettingsFormMetrics.controlSpacing) {
                         Group(sections: content()) { sections in
-                            ForEach(sections) { section in
+                            ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
                                 VStack(alignment: .leading, spacing: sectionSpacing) {
                                     section.header
                                         .padding(.horizontal, SettingsFormMetrics.headingInset)
@@ -165,8 +166,11 @@ struct ViewCustomizationList<Content: View>: View {
                                         .settingsHelperText()
                                         .padding(.horizontal, SettingsFormMetrics.headingInset)
                                 }
+                                if !pinsFocusedHelp, inlineHelpAfterSection == index, let help {
+                                    ViewCustomizationHelpCard(help: help)
+                                }
                             }
-                            if !pinsFocusedHelp, let help {
+                            if !pinsFocusedHelp, inlineHelpAfterSection == nil, let help {
                                 ViewCustomizationHelpCard(help: help)
                             }
                         }

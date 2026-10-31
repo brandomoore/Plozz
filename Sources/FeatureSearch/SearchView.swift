@@ -102,6 +102,7 @@ public struct SearchView: View {
         }
         // Never clip a focused card's lift, shadow or border.
         .scrollClipDisabled()
+        .scrollsTopNavigation()
     }
 }
 

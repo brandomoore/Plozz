@@ -244,10 +244,15 @@ struct PlozziOSMyLibrariesSettingsView: View {
     /// Add-account actions are supplied by whichever host owns the screen, so
     /// they remain inside Settings or profile setup instead of escaping either.
     var presentation: ProfileLibrariesScope.Presentation = .settings
-    @State private var libraries: [ProfileLibraryChoice] = []
-    @State private var unreachableAccountIDs: Set<String> = []
-    @State private var libraryFailures: [String: AppError] = [:]
-    @State private var isLoading = false
+    private var discovery: DiscoveredLibrariesStore { appModel.settings.discoveredLibraries }
+    private var libraries: [ProfileLibraryChoice] {
+        (discovery.state.value ?? []).filter { !$0.library.isMusic }.map {
+            ProfileLibraryChoice(accountID: $0.accountID, library: $0.library)
+        }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+    private var unreachableAccountIDs: Set<String> { discovery.unreachableAccountIDs }
+    private var libraryFailures: [String: AppError] { discovery.failures }
+    private var isLoading: Bool { discovery.state == .loading || !discovery.refreshingAccountIDs.isEmpty }
 
     /// Server keys whose switch has been flipped but whose write hasn't landed.
     @State private var pendingWatching: [String: Bool] = [:]
@@ -283,7 +288,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
         .onChange(of: appModel.profiles.activeProfileID) { _, _ in
             pendingWatching.removeAll()
         }
-        .task(id: appModel.accounts.map(\.connectionScopeKey)) {
+        .task(id: appModel.navigationLibrariesScopeKey) {
             await loadLibraries()
         }
         // Asks who you are on a Plex server you just switched on — the same
@@ -620,42 +625,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
     }
 
     private func loadLibraries() async {
-        isLoading = true
-        defer { isLoading = false }
-
-        let resolved = appModel.accountsProviders.resolvedAccounts(
-            withIDs: appModel.accounts.map(\.id)
-        )
-        var loaded: [ProfileLibraryChoice] = []
-        var unreachable: Set<String> = []
-        var failures: [String: AppError] = [:]
-        for account in resolved {
-            do {
-                let choices = try await account.provider.libraries()
-                loaded.append(
-                    contentsOf: choices
-                        .filter { !$0.isMusic }
-                        .map {
-                            ProfileLibraryChoice(
-                                accountID: account.account.id,
-                                library: $0
-                            )
-                        }
-                )
-            } catch {
-                // A server we couldn't reach is marked unreachable (offline) so the
-                // card shows "can't reach this server", not "no libraries".
-                unreachable.insert(account.account.id)
-                let failure = (error as? AppError) ?? .unknown("")
-                failures[account.account.id] = failure
-                PlozzLog.app.error("Library discovery failed provider=\(account.provider.kind.rawValue) error=\(HandoffDiagnostics.errorCode(failure))")
-            }
-        }
-        libraries = loaded.sorted {
-            $0.title.localizedStandardCompare($1.title) == .orderedAscending
-        }
-        unreachableAccountIDs = unreachable
-        libraryFailures = failures
+        await appModel.refreshNavigationLibraries()
     }
 
     /// Whether every account backing this server card failed its last library

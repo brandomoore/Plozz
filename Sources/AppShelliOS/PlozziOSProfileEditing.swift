@@ -5,6 +5,49 @@ import SwiftUI
 
 extension EnvironmentValues {
     @Entry var hasVisibleSettingsNavigationEntry = false
+
+    var plozziOSUsesVerticalToolbar: Bool {
+        // SDK 27.1 introduced the native rail APIs; older SDKs keep their layout.
+        #if canImport(SwiftUI, _version: 8.0.85)
+        if #available(iOS 27.1, *) {
+            return toolbarVerticalEdge != nil
+        }
+        #endif
+        return false
+    }
+}
+
+struct PlozziOSSettingsToolbarItem: ToolbarContent {
+    @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
+    var horizontalPlacement: ToolbarItemPlacement = .topBarTrailing
+    let action: () -> Void
+
+    var body: some ToolbarContent {
+        #if canImport(SwiftUI, _version: 8.0.85)
+        if #available(iOS 27.1, *) {
+            item.axisBehavior(usesVerticalToolbar ? .verticalPreferred : .automatic)
+        } else {
+            item
+        }
+        #else
+        item
+        #endif
+    }
+
+    private var item: some ToolbarContent {
+        ToolbarItem(placement: placement) {
+            PlozziOSSettingsAvatarButton(action: action)
+        }
+    }
+
+    private var placement: ToolbarItemPlacement {
+        #if canImport(SwiftUI, _version: 8.0.85)
+        if #available(iOS 27.1, *), usesVerticalToolbar {
+            return .topBarPinnedTrailing
+        }
+        #endif
+        return horizontalPlacement
+    }
 }
 
 /// The settings entry point shown across the iOS app — Home, Search, Downloads

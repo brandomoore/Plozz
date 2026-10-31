@@ -52,14 +52,15 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             try await withNavigatedLibrary(style: style, heroItem: item) { root, window, model in
                 let controller = try XCTUnwrap(window.rootViewController)
                 let header = try XCTUnwrap(self.findController(NativeLibraryHeaderController.self, in: controller))
-                let headerFrame = header.view.convert(header.view.bounds, to: window)
                 let source = try XCTUnwrap(self.findSource(item.stablePresentationID, in: root))
                 var rowFrame: CGRect?
                 var previousLogo: CGRect?
                 for step in [-10, 0, 10] {
                     model.presentation.settings.logoSize = HeroLogoSize(rawValue: step)
-                    try await Task.sleep(for: .milliseconds(350))
-                    window.layoutIfNeeded()
+                    try await waitForHostedLayout(window)
+                    let navigationBottom = try XCTUnwrap(self.focusItems(in: header.host.view).compactMap {
+                        NavigationRowFocusRequester.frame(of: $0, relativeTo: window)?.maxY
+                    }.max())
                     let capture = self.capture(window, name: "library-logo-\(style)-\(step)", drawsHierarchy: true)
                     let request = VNRecognizeTextRequest()
                     request.recognitionLevel = .accurate
@@ -77,7 +78,8 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                             width: box.width * window.bounds.width, height: box.height * window.bounds.height
                         )
                     }
-                    XCTAssertGreaterThan(frame(badge).minY, headerFrame.maxY + 16)
+                    XCTAssertGreaterThan(frame(badge).minY, navigationBottom + 16,
+                                         "Measure clearance from the controls, excluding the header's bottom padding.")
                     XCTAssertGreaterThan(logo.minY, frame(badge).maxY + 10)
                     XCTAssertLessThan(logo.minY - frame(badge).maxY, 42,
                                       "The badge follows the fitted logo, not the top of its sizing slot.")

@@ -2,6 +2,333 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/067.4",
+      "version": "2026.10.30",
+      "marketingVersion": "2026.10.30",
+      "build": "67.4",
+      "releasedAt": "2026-10-30",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Choose whether to ask to resume or start over in Playback settings. Off by default.",
+            {
+              "text": "Browse multiple video libraries together with All Libraries, available in App navigation settings.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Spatial audio conversion for supported tracks on iOS/iPadOS 26 or later, with a rendering layout choice in Playback > Advanced.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Partially watched movies and episodes now resume immediately by default.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Navigation defaults to Home, Downloads, and Search. Add other pages in App navigation settings.",
+              "platforms": ["iOS"]
+            },
+            "Improved startup for WebDAV videos and disc images."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Fixed some Plex Live TV channels failing with a tuner unavailable error.",
+            "Fixed some WebDAV videos failing to start after a temporary delivery-server connection failure.",
+            "Fixed subtitle searches continuing after network-share playback was cancelled.",
+            {
+              "text": "Fixed duplicate navigation bars and Settings navigation on pages opened from More.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Fixed Playback Diagnostics not following the app theme.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/067.3",
+      "version": "2026.10.29",
+      "marketingVersion": "2026.10.24",
+      "build": "67.3",
+      "releasedAt": "2026-10-29",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Hide watch marks and card progress bars independently.",
+            "Choose labels for Home's Libraries row separately, or follow Home's default."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Home's Libraries row follows the library order in Navigation settings.",
+            "Server names appear below library names in Navigation settings.",
+            "Clearer label previews and row overrides in card settings.",
+            {
+              "text": "More compact card previews and native menus on smaller screens.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Shorter library tab names with icons matching each library's content.",
+              "platforms": ["iOS"]
+            },
+            "Playback errors suggest turning off Force transcoding when a forced conversion fails."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Fixed missing file names in version menus for some streaming sources.",
+            {
+              "text": "Fixed library names remaining visible when card labels are turned off.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/067.2",
+      "version": "2026.10.29",
+      "marketingVersion": "2026.10.24",
+      "build": "67.2",
+      "releasedAt": "2026-10-29",
+      "sections": [
+        {
+          "category": "Fixed",
+          "items": [
+            "Fixed unnecessary transcoding from Emby servers at Maximum quality."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/067.1",
+      "version": "2026.10.29",
+      "marketingVersion": "2026.10.24",
+      "build": "67.1",
+      "releasedAt": "2026-10-29",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Hide watched items from Recently Added in Home > Filtering."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Screen settings are organized into All screens, Home, Libraries, and Movie & show details."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Fixed shows taking too long to open from Home or staying stuck after a loading error.",
+            "Fixed blurry, overly zoomed artwork when using Go to Show.",
+            "Fixed subtitle text being clipped when its layout changes.",
+            {
+              "text": "Fixed Settings shifting vertically when opening or leaving subpages with Top Bar navigation.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Fixed the profile picker focusing Settings instead of your profile when returning to the app.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Fixed Home artwork being cut off beside side navigation or in landscape.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Fixed missing or misplaced profile buttons with side toolbars on iOS/iPadOS 27.1.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/067",
+      "version": "2026.10.29",
+      "marketingVersion": "2026.10.24",
+      "build": 67,
+      "releasedAt": "2026-10-29",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            {
+              "text": "With Automatically Sign In off, returning to browsing shows the profile picker immediately if any profile has a PIN, or after five minutes away with multiple profiles.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Choose a spatial audio layout for this Apple TV in Playback > Advanced (tvOS 26 or later).",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Open individual libraries directly from the app's tabs or sidebar, and choose their order and visibility in Navigation settings.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Automatically Sign In has its own section above the profile list.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Spatial audio avoids an extra lossy conversion on supported outputs; AirPlay remains lossy (tvOS 26 or later).",
+              "platforms": ["tvOS"]
+            },
+            "Enable sharing directly from Send Diagnostics, with privacy details available from the information button.",
+            "More detailed diagnostic reports for search, Jellyfin and Emby connections, and playback problems.",
+            "Image-based subtitle history is trimmed to limit memory growth during long playback."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Fixed some Jellyfin and Emby videos failing to start.",
+              "platforms": ["tvOS"]
+            },
+            "Removed the unintended bitrate limit on Jellyfin and Emby playback at Original quality.",
+            "Fixed Silo searches and library lists failing while loading more results.",
+            {
+              "text": "Fixed libraries missing from navigation after leaving Settings during a refresh.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Fixed a jump when opening or closing title details from Search with pinned navigation.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Fixed screen brightness changing when scrubbing through a video or Live TV.",
+              "platforms": ["iOS"]
+            },
+            "Improved recovery from frozen pictures or lost sound, including temporary video-decoder failures.",
+            "Fixed playback advancing after pausing during startup.",
+            "Fixed delayed buffering indicators during playback.",
+            "Fixed incorrect buffer readings while seeking.",
+            "Fixed buffer display and seeking within buffered sections of some AVI videos.",
+            "Fixed Live TV falling further behind after interruptions when using a fixed buffer duration.",
+            {
+              "text": "Corrected Match Frame Rate for true 24 fps videos.",
+              "platforms": ["tvOS"]
+            },
+            "Corrected frame timing in some Matroska videos.",
+            "Fixed out-of-order frames in some MP4 videos.",
+            "Automatic language selection now prefers the main soundtrack over equally matched commentary or audio-description tracks.",
+            "Fixed stretched HDR previews and outdated images when scrubbing quickly.",
+            "Fixed unnecessary startup waits on connection-limited servers and delayed recovery after dropped connections.",
+            "Fixed repeated buffering in some MP4 videos with many subtitle tracks.",
+            "Fixed missing pictures after some seeks in hardware-decoded VP9 videos.",
+            "Corrected picture metadata in hardware-decoded AV1 Dolby Vision playback.",
+            "Fixed stalls, brightness inconsistencies, edge-color errors and picture-alignment issues with Dolby Vision FEL enabled."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/066",
+      "version": "2026.10.28",
+      "marketingVersion": "2026.10.24",
+      "build": 66,
+      "releasedAt": "2026-10-28",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Filter your Watchlist by movies or TV shows, and sort by date added, release date or name.",
+            {
+              "text": "Open Settings directly from the profile picker.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "A refreshed design for intro, credit and other skipping settings.",
+            {
+              "text": "A custom top navigation bar with support for more items and more customization.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "App navigation stays available on the main Settings page and hides on subpages.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "The Settings profile button reveals \"Switch profile\" when focused.",
+              "platforms": ["tvOS"]
+            },
+            "Library and Watchlist sort and filter buttons show your current selections.",
+            "Jellyfin and Emby setup checks HTTPS and common server ports before sign-in.",
+            "The Version button appears only when more than one version is listed.",
+            {
+              "text": "Related audio controls are grouped together in Playback settings.",
+              "platforms": ["tvOS"]
+            },
+            "A message is now required when sending diagnostics."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Fixed Settings and library shortcuts becoming unreachable with many enabled libraries.",
+              "platforms": ["tvOS"]
+            },
+            "Fixed watched and unwatched actions for episodes opened from Home.",
+            "Fixed subtitle lines failing to appear or refresh during playback.",
+            {
+              "text": "Fixed a freeze when opening downloaded episodes on iOS 18.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/065.2",
+      "version": "2026.10.27",
+      "marketingVersion": "2026.10.24",
+      "build": "65.2",
+      "releasedAt": "2026-10-27",
+      "sections": [
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Libraries now appear automatically in the top navigation bar on Apple TV.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Fixed libraries appearing in Settings but missing from app navigation.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/065.1",
       "version": "2026.10.27",
       "marketingVersion": "2026.10.24",

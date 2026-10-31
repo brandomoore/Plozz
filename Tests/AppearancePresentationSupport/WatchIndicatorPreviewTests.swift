@@ -6,6 +6,19 @@ import XCTest
 
 @MainActor
 final class WatchIndicatorPreviewTests: XCTestCase {
+    func testHiddenPreviewRemovesMarksButPreservesCountAndProgressPixels() throws {
+        let size = CGSize(width: 412, height: 150)
+        let hidden = try render(.hidden, size: size, direction: .leftToRight, showsCount: true)
+        for mode in [WatchStatusIndicator.watched, .unwatched] {
+            let marked = try render(mode, size: size, direction: .leftToRight, showsCount: true)
+            XCTAssertNotEqual(UIImage(cgImage: hidden).pngData(), UIImage(cgImage: marked).pngData())
+            let middle = CGRect(x: size.width / 2 - 30, y: 0, width: 60, height: size.height)
+            XCTAssertEqual(try pixels(hidden, in: middle), try pixels(marked, in: middle))
+            let bottom = CGRect(x: 0, y: size.height * 0.7, width: size.width, height: size.height * 0.3)
+            XCTAssertEqual(try pixels(hidden, in: bottom), try pixels(marked, in: bottom))
+        }
+    }
+
     func testEpisodeCountOnlyChangesTheSeriesCornerInBothPreviewStyles() throws {
         for size in [CGSize(width: 135, height: 112), CGSize(width: 412, height: 150),
                      CGSize(width: 500, height: 248)] {

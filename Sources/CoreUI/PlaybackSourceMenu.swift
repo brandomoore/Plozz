@@ -325,7 +325,7 @@ private struct PlaybackSourceMenuPresentation: ViewModifier {
         PlaybackSourceMenuMetrics.panelHeight(
             page: state.page,
             sourceCount: sources.count,
-            versionCount: loadVersions == nil ? versions.count : max(2, versions.count),
+            versionCount: versions.count,
             actionCount: state.actions.count
         )
     }
@@ -534,7 +534,7 @@ struct PlaybackSourceMenuPanel: View {
     @ViewBuilder
     private var rootRows: some View {
         let hasServer = sources.count > 1
-        let hasVersion = versions.count > 1 || loadVersions != nil
+        let hasVersion = versions.count > 1
         if hasServer {
             drillInRow(
                 id: "root.servers",
@@ -854,7 +854,7 @@ struct PlaybackSourceMenuPanel: View {
         switch page {
         case .root:
             if sources.count > 1 { return "root.servers" }
-            if versions.count > 1 || loadVersions != nil { return "root.versions" }
+            if versions.count > 1 { return "root.versions" }
             return actions.first.map { "action.\($0.id)" }
         case .servers:
             let source = sources.first { $0.accountID == selectedSourceID } ?? sources.first
@@ -869,7 +869,7 @@ struct PlaybackSourceMenuPanel: View {
         PlaybackSourceMenuMetrics.panelHeight(
             page: page,
             sourceCount: sources.count,
-            versionCount: loadVersions == nil ? versions.count : max(2, versions.count),
+            versionCount: versions.count,
             actionCount: actions.count
         )
     }

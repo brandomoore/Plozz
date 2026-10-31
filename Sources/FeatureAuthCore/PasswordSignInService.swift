@@ -14,15 +14,18 @@ public struct PasswordSignInService: Sendable {
     private let server: MediaServer
     private let deviceID: String
     private let http: HTTPClient
+    private let diagnostics: ServerConnectionDiagnostics
 
     public init(
         server: MediaServer,
         deviceID: String,
-        http: HTTPClient = URLSessionHTTPClient()
+        http: HTTPClient = URLSessionHTTPClient(),
+        diagnostics: ServerConnectionDiagnostics = .shared
     ) {
         self.server = server
         self.deviceID = deviceID
         self.http = http
+        self.diagnostics = diagnostics
     }
 
     private var client: JellyfinClient {
@@ -37,6 +40,12 @@ public struct PasswordSignInService: Sendable {
     /// Authenticates against the server. Throws `.invalidCredentials` when the
     /// username/password is rejected, or any transport error otherwise.
     public func signIn(username: String, password: String) async throws -> UserSession {
+        try await diagnostics.capture(provider: server.provider, stage: .passwordSignIn, baseURL: server.baseURL) {
+            try await authenticate(username: username, password: password)
+        }
+    }
+
+    private func authenticate(username: String, password: String) async throws -> UserSession {
         let client = self.client
         let auth = try await client.authenticate(username: username, password: password)
         // Fetch the server's real identity/name (no auth required) — otherwise the

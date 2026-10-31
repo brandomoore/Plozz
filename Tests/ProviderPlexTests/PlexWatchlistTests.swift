@@ -77,6 +77,26 @@ final class PlexWatchlistTests: XCTestCase {
 
     // MARK: - watchlist() read
 
+    func testWatchlistDatesReachDestinationWithoutUsingLibraryAddedAt() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/library/sections/watchlist/all", json: """
+        {"MediaContainer":{"size":1,"Metadata":[
+          {"ratingKey":"g1","guid":"plex://movie/g1","type":"movie","title":"Movie",
+           "watchlistedAt":"1800000000","addedAt":1600000000,"originallyAvailableAt":"2023-11-14"}
+        ]}}
+        """)
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        let destination = try XCTUnwrap(PlexWatchlistDestination(provider: provider))
+        let entries = try await destination.fetchEntries()
+        let entry = try XCTUnwrap(entries.first)
+        XCTAssertEqual(entry.addedAt, Date(timeIntervalSince1970: 1_800_000_000))
+        XCTAssertEqual(entry.presentation?.releaseDate, Date(timeIntervalSince1970: 1_699_920_000))
+        let fields = stub.queryItems(forPathSuffix: "/library/sections/watchlist/all")?
+            .first { $0.name == "includeFields" }?.value?.split(separator: ",") ?? []
+        XCTAssertTrue(fields.contains("watchlistedAt"))
+        XCTAssertTrue(fields.contains("originallyAvailableAt"))
+    }
+
     func testWatchlistMapsItemsAsFavorited() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/library/sections/watchlist/all", json: """
@@ -92,6 +112,7 @@ final class PlexWatchlistTests: XCTestCase {
         XCTAssertFalse(
             items.first?.locallyValidatedPlayableSource ?? true
         )
+        XCTAssertNil(items.first?.watchlistAddedAt)
     }
 
     /// Regression: the watchlist READ must hit `discover.provider.plex.tv`, not

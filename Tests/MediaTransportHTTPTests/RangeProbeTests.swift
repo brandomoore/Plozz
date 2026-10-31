@@ -18,6 +18,45 @@ final class RangeProbeTests: XCTestCase {
 
     // MARK: - validateProbe
 
+    func testPrefetchProbeUsesABoundedPrefixWithoutRelaxingCacheOrEncoding() {
+        let request = RangeProbe.probeRequest(url: url, prefetch: true)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Range"), "bytes=0-262143")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept-Encoding"), "identity")
+        XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalAndRemoteCacheData)
+    }
+
+    func testPrefetchProbeRequiresTheEntireRequestedPrefixClampedOnlyAtEOF() throws {
+        for total in [1, 1000, RangeProbe.initialReadByteCount, 1_000_000] {
+            let length = min(total, RangeProbe.initialReadByteCount)
+            let headers = ["ETag": "\"strong\"", "Content-Range": "bytes 0-\(length - 1)/\(total)"]
+            let probe = try RangeProbe.validateProbe(
+                status: 206, headers: headers, bodyLength: length, resourceURL: url, prefetch: true
+            ).get()
+            XCTAssertEqual(probe.totalLength, Int64(total))
+            for wrongLength in [length - 1, length + 1] {
+                XCTAssertThrowsError(try RangeProbe.validateProbe(
+                    status: 206, headers: headers, bodyLength: wrongLength, resourceURL: url, prefetch: true
+                ).get())
+            }
+        }
+        for headers in [
+            ["ETag": "\"strong\"", "Content-Range": "bytes 0-1/1000000"],
+            ["ETag": "\"strong\"", "Content-Range": "bytes 1-262144/1000000"],
+            ["ETag": "W/\"weak\"", "Content-Range": "bytes 0-262143/1000000"],
+            ["Content-Range": "bytes 0-262143/1000000"],
+            ["ETag": "\"strong\"", "Content-Range": "bytes 0-262143/1000000", "Content-Encoding": "gzip"]
+        ] {
+            XCTAssertThrowsError(try RangeProbe.validateProbe(
+                status: 206, headers: headers, bodyLength: RangeProbe.initialReadByteCount,
+                resourceURL: url, prefetch: true
+            ).get())
+        }
+        XCTAssertThrowsError(try RangeProbe.validateProbe(
+            status: 200, headers: ["ETag": "\"strong\""], bodyLength: RangeProbe.initialReadByteCount,
+            resourceURL: url, prefetch: true
+        ).get())
+    }
+
     func testValidateProbeSucceedsOn206WithStrongETagAndMatchingContentRange() {
         let result = RangeProbe.validateProbe(
             status: 206,

@@ -354,7 +354,7 @@ struct MediaSourceInfo: Decodable {
 /// lets the server choose DirectPlay vs a seekable HLS transcode for this device.
 struct PlaybackInfoBody: Encodable {
     let UserId: String
-    let MaxStreamingBitrate: Int
+    let MaxStreamingBitrate: Int?
     let AutoOpenLiveStream: Bool
     let MediaSourceId: String?
     let EnableDirectPlay: Bool?

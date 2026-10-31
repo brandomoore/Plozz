@@ -494,6 +494,46 @@ final class JellyfinVersionsWatchlistRefreshTests: XCTestCase {
         )
     }
 
+    func testJellyfinAndEmbyWatchlistQueriesPreserveReleaseDatesAndUnknownFavoriteDates() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/Users/u1/Items", json: """
+            {"Items":[
+              {"Id":"movie","Name":"Alpha","Type":"Movie","PremiereDate":"2024-01-01T00:00:00Z","DateCreated":"2026-01-01T00:00:00Z"},
+              {"Id":"show","Name":"Zulu","Type":"Series","PremiereDate":"2023-01-01T00:00:00Z"},
+              {"Id":"undated","Name":"Oscar","Type":"Movie"}
+            ],"TotalRecordCount":3}
+            """)
+            let session = UserSession(
+                server: .init(id: "s", name: "Fixture", baseURL: URL(string: "http://host:8096")!, provider: kind),
+                userID: "u1", userName: "Viewer", deviceID: "fixture", accessToken: "TOKEN"
+            )
+            let provider = JellyfinProvider(session: session, accountID: kind.rawValue, http: stub)
+            let destination = try XCTUnwrap(MediaBrowserWatchlistDestination(provider: provider))
+            let entries = try await destination.fetchEntries()
+            XCTAssertEqual(entries.map(\.kind), [.movie, .series, .movie])
+            XCTAssertTrue(entries.allSatisfy { $0.addedAt == nil })
+            XCTAssertEqual(entries.first?.presentation?.releaseDate, Date(timeIntervalSince1970: 1_704_067_200))
+            let items = try entries.map { entry in
+                let presentation = try XCTUnwrap(entry.presentation)
+                return MediaItem(id: presentation.title, title: presentation.title, kind: entry.kind,
+                                 watchlistAddedAt: entry.addedAt, releaseDate: presentation.releaseDate,
+                                 sourceAccountID: provider.accountID)
+            }
+            XCTAssertEqual(WatchlistBrowsePreferences(filter: .shows).items(from: items).map(\.title), ["Zulu"])
+            XCTAssertEqual(WatchlistBrowsePreferences(filter: .movies).items(from: items).map(\.title), ["Alpha", "Oscar"])
+            XCTAssertEqual(WatchlistBrowsePreferences(sort: .init(field: .releaseDate, direction: .ascending))
+                .items(from: items).map(\.title), ["Zulu", "Alpha", "Oscar"])
+            XCTAssertEqual(WatchlistBrowsePreferences.default.items(from: items), items)
+            for entry in entries {
+                let owned = await destination.resolveLibraryCopy(for: entry)
+                XCTAssertEqual(owned?.source.providerKind, kind)
+                XCTAssertEqual(owned?.source.accountID, provider.accountID)
+                XCTAssertEqual(owned?.presentation?.releaseDate, entry.presentation?.releaseDate)
+            }
+        }
+    }
+
     func testWatchlistRejectsOverlappingPages() async throws {
         let stub = StubHTTPClient()
         stub.stubSequence(pathSuffix: "/Users/u1/Items", jsons: [

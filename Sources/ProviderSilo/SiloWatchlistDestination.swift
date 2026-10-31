@@ -33,6 +33,7 @@ public struct SiloWatchlistDestination: WatchlistLibraryResolving {
                     },
                     binding: binding, corroboratedProviderBinding: key,
                     presentation: .init(title: item.title, year: item.productionYear,
+                                        releaseDate: item.releaseDate,
                                         artworkURL: item.posterURL?.absoluteString,
                                         backdropURL: item.backdropURL?.absoluteString),
                     presentationAccountID: provider.accountID) else { throw WatchlistDestinationError.transient }

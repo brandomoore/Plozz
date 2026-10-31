@@ -184,13 +184,24 @@ prompt on first entry. iPhone and iPad retain their existing carousel layout.
 and Settings. Its illustrations omit navigation chrome, since Home layout and
 navigation style are independent choices.
 
-## Native navigation planning
+## Navigation planning
 
-Settings retains the last visible navigation shell while its style picker saves
-the profile's new preference immediately. Construct the replacement chrome only
-when leaving Settings: mounting a hidden, disabled native sidebar resets the
-picker's focus. Opening and closing Settings without changing style keeps the
-visited tabs and their state; a Settings-first launch does not mount hidden chrome.
+Settings is a normal destination in all three navigation shells. Its root keeps
+app navigation visible and available; categories and nested pages hide it.
+Root Back restores navigation focus, while child Back restores its Settings row.
+The top-bar root reserves foreground clearance without moving subpage headers.
+Chrome stays unavailable until a returning Settings page can receive focus.
+Custom chrome fades over 220 ms with a 12-point exit toward its screen edge;
+return uses the reverse motion. Reduce Motion keeps the fade without translation.
+Native detail-transition snapshots keep owning their animation without a second
+chrome transition. Pinned navigation moves its glass and controls together.
+The native sidebar does not honor toolbar visibility for this custom page stack,
+so its subpages use a full-screen presentation over the retained root.
+Settings retains the mounted shell while its style picker saves the profile's
+new preference immediately. Construct replacement chrome only after leaving
+Settings: reparenting its pages resets native focus, even during a root return.
+Ordinary Settings visits keep the mounted shell; Settings-first entry also
+constructs usable navigation, including when Settings is hidden from the top bar.
 Top-bar selection also prepares its nonpersistent library-navigation handoff
 before a style change, so the first render cannot temporarily dismiss Settings.
 
@@ -201,11 +212,62 @@ Recompute from current account visibility and profile layout when the shell
 updates, rather than retaining a cache that could expose removed libraries.
 
 Horizontal navigation offers individual libraries and All Libraries in the same
-profile-scoped arranger as the sidebars. These shortcuts start in Hidden to keep
-the top bar compact; Show opts them in using the existing saved visibility and
-order. Automatic hiding is never persisted as a manual Hide choice. Each tab
-retains its account-qualified destination and library root, so same-named
-libraries remain distinct and only the visible stack consumes pending routes.
+profile-scoped arranger as the sidebars. Newly discovered libraries appear
+automatically; explicit Hide choices and saved order remain unchanged.
+Top Bar is one glass surface using the pinned navigation's shared row style:
+idle items have no background, and focus and selection use the same treatment.
+Labels keep eight points between the icon and title, plus four points after the
+title to balance the compact focus capsule.
+Its scrolling list has no item cap and fades before the fixed profile area.
+The 68-point-high panel fits its contents and stays centered, growing only to
+75% of the page's title-safe width before scrolling. The Live TV guide and its loading
+skeleton retain those page keylines even when the bar is narrow. A single shared
+inner inset keeps the end focus capsule concentric with the panel instead of
+doubling its end margin.
+The profile icon sits inside the bar and is a button, not a destination: focus never opens the
+picker, and Select opens the existing profile flow. Settings is fixed at the
+right unless explicitly moved or hidden in the profile's arranger. Moving other
+items does not unpin it; Reset restores its default position. Settings also remains
+reachable through the picker's upper-right cog. Both vertical styles are unchanged.
+
+Horizontal focus moves immediately without changing or constructing pages,
+including after resting on a destination. Select opens the highlighted page and
+enters its content. Down enters the already-open page, not an unselected
+highlighted destination. There are no delayed page previews or native tab transitions.
+Only the selected page and the visited Live TV guide
+are mounted; walking twenty libraries must not retain twenty inactive grids.
+The guide retains its filters while inactive playback is stopped. Account-qualified
+destination IDs keep same-named libraries distinct. Content entry waits for
+presentation through the existing shared focus owner; Back returns to the
+selected navigation item. Detail pages hide the strip through `NavigationChromeModel`.
+While Settings owns the shell, hidden navigation cancels focus handoffs and
+cannot overwrite the selected Settings destination.
+The focus owner's exit direction defaults to Right for pinned navigation and
+is Down for the horizontal strip; Left/Right never trigger a page handoff there.
+Initial focus resolves the selected destination, including a scrolled-off library,
+before allowing neighboring controls. Live TV's first-use preview choice waits
+for explicit content entry; its presentation owns focus until the choice finishes.
+Full-bleed Live TV surfaces read the shared top-content inset for guide controls
+and loading placeholders without shrinking expanded playback.
+The common UIKit host propagates a real top safe area through nested stacks.
+Foreground begins below the bar with a 16-point gap. The bar scrolls vertically
+offscreen with Home, library grids, Showcase, Watchlist, Search, Music, and
+Settings; foreground no longer fades beneath fixed navigation. The existing
+root Back action resets the page to its top and focuses the selected destination,
+discarding deep-row return focus. Subpage Back still returns one level first.
+Showcase follows its native spring's painted viewport with a bounded display
+observer that stops at rest or teardown. Hero artwork stays full bleed; Live TV's
+bounded guide does not scroll the global bar.
+The host's safe area stays stable across detail transitions so returning content
+does not relayout under incoming remote input. Full-bleed detail surfaces ignore
+that safe area. Scrolling the bar does not change the safe area or detail depth.
+
+The profile-picker Settings request is a one-shot `ProfileFlowModel` intent,
+scoped to the active profile. A cancellable picker returns to its already-admitted
+profile; startup entry passes through the existing local, parental, and Plex
+identity gates. Cancellation and ordinary profile switches clear the request.
+`RootView` delivers it to `MainTabView`, which opens the existing Settings shell
+before settling ordinary startup selection.
 
 Home, Search, and Watchlist use shared, profile-scoped automatic visibility.
 Live-only IPTV opens Live TV; IPTV movies and series expose Home and Search.
@@ -213,6 +275,23 @@ Search also remains available for configured Seerr discovery, and Plex keeps its
 Home discovery surface. Library metadata comes from the existing bounded
 navigation snapshot and library discovery, not a channel/title scan. Failed
 accounts retain their last-known libraries; removed accounts cannot contribute.
+Initial navigation discovery, Settings library refreshes, and account-selection
+refreshes publish through one `LibraryDiscoveryModel` path to both navigation
+and Settings. Cancelled or changed-profile/credential results cannot publish,
+and an older request cannot overwrite a newer published answer. Cancelling a
+Settings refresh does not invalidate a pending shell refresh; each request clears
+only its own loading markers. Settings loading state stays observed only by its
+library detail pages.
+
+The iPhone/iPad shell (also used by the iPad app on Mac) includes discovered,
+enabled video libraries as native tab/sidebar destinations. Its navigation
+editor uses the same inventory and profile-scoped hide/order preferences.
+Library routes keep account-qualified identity and use the existing library
+browser; long lists use native overflow rather than dropping destinations.
+Mobile Libraries settings and navigation refresh through the same scoped
+discovery path, using `FeatureHomeCore.NavigationLibraryDiscovery` for the
+same supersession/cancellation protection as Apple TV. Disabled or removed
+accounts cannot contribute shortcuts, and refreshes preserve explicit hides.
 
 An untouched Watchlist appears when the profile's hydrated local/native union
 has items. Removing its last item does not evict its open page: it hides after
@@ -243,6 +322,12 @@ registering destinations. Home, Watchlist and library roots retain their sidebar
 clearance while details hide the rail; hiding chrome must not resize retained
 rows or grids. Pushed pages still receive the shell's zero inset and remain
 full-bleed. Native navigation roots keep their zero custom inset.
+
+`SearchTab` likewise applies `NavigationRailSearchRootInset` only to its root,
+before registering destinations. The native search field keeps room for the
+page button while the surrounding navigation stack stays full-screen and fixed
+during pushes and pops. Hiding pinned chrome must not change the stack's bounds
+or move the retained search field; pushed details have no search-header padding.
 
 `NavigationRailEdgeCatcher` passively observes arrow presses and indirect-touch
 swipes. Left at an unresolved content edge opens the sidebar; Right at an

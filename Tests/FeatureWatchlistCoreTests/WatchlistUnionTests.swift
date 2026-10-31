@@ -14,6 +14,104 @@ final class WatchlistUnionTests: XCTestCase {
     private let plex = WatchlistDestinationID(rawValue: "plex")!
     private let jellyfin = WatchlistDestinationID(rawValue: "jellyfin")!
 
+    func testDatesSurviveNativeCacheAndOwnedRetargeting() throws {
+        let alias = MediaAliasID()
+        let added = Date(timeIntervalSince1970: 1_800_000_000)
+        let released = Date(timeIntervalSince1970: 1_700_000_000)
+        let entry = try XCTUnwrap(NativeWatchlistEntry(
+            aliasID: alias, kind: .movie,
+            presentation: .init(title: "Movie", releaseDate: released), index: 0,
+            ownedSource: .init(accountID: "server", itemID: "owned", kind: .movie, providerKind: .plex),
+            ownedPresentation: .init(title: "Owned Movie"),
+            addedAt: added
+        ))
+        var native = NativeWatchlistView()
+        native.applySuccess(destinationID: plex, entries: [entry])
+        native = try JSONDecoder().decode(NativeWatchlistView.self, from: JSONEncoder().encode(native))
+        let union = WatchlistUnion(snapshot: .empty, nativeView: native, aliasSnapshot: .empty, enabledDestinationIDs: [plex])
+        for candidates in [[:], [alias: MediaItem(id: "discover", title: "Movie", kind: .movie, locallyValidatedPlayableSource: false)]] {
+            let resolved = try XCTUnwrap(WatchlistPresentationResolver.resolve(
+                union: union, aliasSnapshot: .empty, currentItemsByAliasID: candidates
+            ).first?.item)
+            XCTAssertEqual(resolved.id, "owned")
+            XCTAssertEqual(resolved.watchlistAliasID, alias)
+            XCTAssertEqual(resolved.watchlistAddedAt, added)
+            XCTAssertEqual(resolved.releaseDate, released)
+        }
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(entry)) as? [String: Any])
+        legacy.removeValue(forKey: "addedAt")
+        XCTAssertNil(try JSONDecoder().decode(
+            NativeWatchlistEntry.self, from: JSONSerialization.data(withJSONObject: legacy)
+        ).addedAt)
+    }
+
+    func testOnlyEnabledSourcesContributeDatesAndDuplicateAddsKeepEarliestDate() throws {
+        let alias = MediaAliasID()
+        let older = Date(timeIntervalSince1970: 1_700_000_000)
+        let newer = Date(timeIntervalSince1970: 1_800_000_000)
+        var native = NativeWatchlistView()
+        native.applySuccess(destinationID: plex, entries: [try XCTUnwrap(.init(aliasID: alias, kind: .movie, index: 0, addedAt: older))])
+        native.applySuccess(destinationID: jellyfin, entries: [try XCTUnwrap(.init(aliasID: alias, kind: .movie, index: 0, addedAt: newer))])
+        let both = WatchlistUnion(snapshot: .empty, nativeView: native, aliasSnapshot: .empty, enabledDestinationIDs: [plex, jellyfin])
+        XCTAssertEqual(both.orderedEntries.count, 1)
+        XCTAssertEqual(both.orderedEntries.first?.addedAt, older)
+        let one = WatchlistUnion(snapshot: .empty, nativeView: native, aliasSnapshot: .empty, enabledDestinationIDs: [jellyfin])
+        XCTAssertEqual(one.orderedEntries.first?.addedAt, newer)
+    }
+
+    func testLocalAddsKeepActionDateButLegacyImportsDoNotInventIt() throws {
+        let model = WatchlistModel()
+        let local = MediaAliasID()
+        let legacy = MediaAliasID()
+        let added = Date(timeIntervalSince1970: 1_800_000_000)
+        try model.activate(profileID: "dates")
+        try model.add(profileID: "dates", aliasID: local, kind: .movie, at: added)
+        try model.add(profileID: "dates", aliasID: legacy, kind: .series, origin: .legacyHomeSeed, at: added)
+        let union = model.union(profileID: "dates", nativeView: .empty, aliasSnapshot: .empty, enabledDestinationIDs: [])
+        XCTAssertEqual(union.orderedEntries.first { $0.aliasID == local }?.addedAt, added)
+        XCTAssertNil(union.orderedEntries.first { $0.aliasID == legacy }?.addedAt)
+    }
+
+    func testDuplicateNativeSourceSuppliesMissingReleaseDateWithoutReplacingPresentation() throws {
+        let alias = MediaAliasID()
+        let released = Date(timeIntervalSince1970: 1_700_000_000)
+        var native = NativeWatchlistView()
+        native.applySuccess(destinationID: jellyfin, entries: [try XCTUnwrap(.init(
+            aliasID: alias, kind: .movie, presentation: .init(title: "Preferred"), index: 0
+        ))])
+        native.applySuccess(destinationID: plex, entries: [try XCTUnwrap(.init(
+            aliasID: alias, kind: .movie, presentation: .init(title: "Fallback", releaseDate: released), index: 0
+        ))])
+        let both = WatchlistUnion(snapshot: .empty, nativeView: native, aliasSnapshot: .empty, enabledDestinationIDs: [plex, jellyfin])
+        XCTAssertEqual(both.orderedEntries.first?.presentation?.title, "Preferred")
+        XCTAssertEqual(both.orderedEntries.first?.presentation?.releaseDate, released)
+        let one = WatchlistUnion(snapshot: .empty, nativeView: native, aliasSnapshot: .empty, enabledDestinationIDs: [jellyfin])
+        XCTAssertNil(one.orderedEntries.first?.presentation?.releaseDate)
+    }
+
+    func testAliasReleaseDateReachesPlaceholderAndOwnedDateTakesPrecedence() throws {
+        let aliasDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let ownedDate = Date(timeIntervalSince1970: 1_700_100_000)
+        let record = try XCTUnwrap(MediaAliasRecord(kind: .movie, presentation: .init(
+            title: "Movie", year: 2023, releaseDate: aliasDate
+        )))
+        let aliases = MediaAliasSnapshot(records: [record])
+        for owned in [false, true] {
+            var native = NativeWatchlistView()
+            native.applySuccess(destinationID: plex, entries: [try XCTUnwrap(.init(
+                aliasID: record.id, kind: .movie, presentation: .init(title: "Movie", year: 2023), index: 0,
+                ownedSource: owned ? .init(accountID: "server", itemID: "owned", kind: .movie, providerKind: .plex) : nil,
+                ownedPresentation: owned ? .init(title: "Owned", releaseDate: ownedDate) : nil
+            ))])
+            let union = WatchlistUnion(snapshot: .empty, nativeView: native, aliasSnapshot: aliases, enabledDestinationIDs: [plex])
+            let item = try XCTUnwrap(WatchlistPresentationResolver.resolve(
+                union: union, aliasSnapshot: aliases, currentItemsByAliasID: [:]
+            ).first?.item)
+            XCTAssertEqual(item.releaseDate, owned ? ownedDate : aliasDate)
+            XCTAssertEqual(item.watchlistAliasID, record.id)
+        }
+    }
+
     func testTrackerAttributionSurvivesNativePersistenceAndRetractsOnDisconnect() throws {
         let tracker = try XCTUnwrap(WatchlistDestinationID(rawValue: "wetrakr"))
         let alias = MediaAliasID()

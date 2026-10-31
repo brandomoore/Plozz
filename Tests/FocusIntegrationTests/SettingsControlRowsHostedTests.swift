@@ -1,11 +1,50 @@
+import CoreModels
 import CoreUI
 @testable import FeatureSettings
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 
 @MainActor
 final class SettingsControlRowsHostedTests: XCTestCase {
+    func testProfileHintFitsWithoutChangingHeaderSize() throws {
+        for name in ["Alex", "Alexandria Morgan-Williams"] {
+            for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+                for focused in [false, true] {
+                    for scheme in [ColorScheme.light, .dark] {
+                        let renderer = ImageRenderer(content:
+                            SettingsFocusRow(isFocused: focused, size: .contained) {
+                                SettingsWorkspaceProfileLabel(profile: Profile(name: name))
+                            }
+                            .frame(width: 750)
+                            .background(scheme == .dark ? Color.black : Color.white)
+                            .environment(\.layoutDirection, direction)
+                            .environment(\.themePalette, scheme == .dark ? .dark : .light)
+                            .environment(\.colorScheme, scheme)
+                            .environment(\._accessibilityReduceMotion, true)
+                        )
+                        renderer.scale = 1
+                        let image = try XCTUnwrap(renderer.cgImage)
+                        XCTAssertEqual(image.width, 750)
+                        XCTAssertEqual(image.height, 100, "Focus changes must not move adjacent controls or rows.")
+                        let request = VNRecognizeTextRequest()
+                        request.recognitionLevel = .accurate
+                        request.recognitionLanguages = ["en-US"]
+                        try VNImageRequestHandler(cgImage: image).perform([request])
+                        let labels = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                        XCTAssertEqual(labels.contains("Switch profile"), focused, "\(labels)")
+                        XCTAssertTrue(labels.contains(name), "Keep the profile name readable: \(labels)")
+                        let attachment = XCTAttachment(image: UIImage(cgImage: image))
+                        attachment.name = "Profile hint \(name) \(direction) \(scheme) focused=\(focused)"
+                        attachment.lifetime = .keepAlways
+                        add(attachment)
+                    }
+                }
+            }
+        }
+    }
+
     func testNavigationAndMenuLabelsShareTheFormFocusHeight() throws {
         let labels: [AnyView] = [
             AnyView(SettingsRowLabel(icon: nil, title: "Manage channels")),

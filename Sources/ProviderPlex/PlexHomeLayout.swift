@@ -3,6 +3,69 @@ import CoreModels
 import CoreNetworking
 
 extension PlexProvider {
+    public func homeRowPage(_ feed: HomeRowFeed, startIndex: Int, limit: Int) async throws -> HomeRowPage {
+        guard startIndex >= 0, limit > 0, limit <= PageRequest.defaultLimit,
+              startIndex < Int.max - limit else { throw AppError.invalidResponse }
+        let key: String?
+        let libraryID: String?
+        switch feed {
+        case let .recommendation(library, _, browseID, _):
+            libraryID = library
+            if browseID.hasPrefix("hub:") {
+                let rawID = String(browseID.dropFirst(4))
+                let count = startIndex + limit + 1
+                let promoted = try await client.promotedHubs(sectionID: library, count: count)
+                let hubs: [PlexHub]
+                if promoted.contains(where: { ($0.hubIdentifier ?? $0.context) == rawID }) {
+                    hubs = promoted
+                } else {
+                    hubs = try await client.sectionHubs(sectionID: library, count: count)
+                }
+                guard let hub = hubs.first(where: { ($0.hubIdentifier ?? $0.context) == rawID }) else {
+                    throw AppError.notFound
+                }
+                let items = mappedServerHomeItems(hub, libraryID: library, limit: count)
+                guard items.count >= count || hub.more != true else { throw AppError.invalidResponse }
+                return .prefix(items, startIndex: startIndex, limit: limit)
+            }
+            key = browseID
+        case let .server(section, excluded, anchors):
+            guard section.libraryID.map({ !excluded.contains($0) }) ?? true else {
+                return .init(items: [], nextOffset: nil)
+            }
+            libraryID = section.libraryID
+            guard let libraryID, section.id != "plex:continueWatching" else {
+                return try await homeRowPrefixPage(feed, startIndex: startIndex, limit: limit)
+            }
+            let hubs = try await client.serverHomeHubs(sectionID: libraryID, count: 100)
+            guard let hub = Self.serverHomeSections(hubs, libraryID: libraryID).first(where: {
+                $0.0.id == section.id
+                    && Set(anchors).isSubset(of: Set(($0.1.Metadata ?? []).compactMap(\.ratingKey)))
+            })?.1 else { throw AppError.notFound }
+            key = PlexClient.homeShelfKey(hub.key)
+            if key == nil {
+                guard hub.more != true else { throw AppError.invalidResponse }
+                return .prefix(
+                    mappedServerHomeItems(hub, libraryID: libraryID, limit: 100),
+                    startIndex: startIndex, limit: limit
+                )
+            }
+        default:
+            return try await homeRowPrefixPage(feed, startIndex: startIndex, limit: limit)
+        }
+        guard let key else {
+            return try await homeRowPrefixPage(feed, startIndex: startIndex, limit: limit)
+        }
+        let page = try await client.homeShelfPage(key: key, startIndex: startIndex, limit: limit)
+        return HomeRowPage(
+            items: page.items.filter {
+                Self.isServerHomeVideo($0)
+                    && (libraryID == nil || ($0.librarySectionID.map { String($0) == libraryID } ?? true))
+            }.map { map(metadata: $0).taggingLibrary(libraryID) },
+            nextOffset: page.nextOffset
+        )
+    }
+
     public func serverHomeLayout() async throws -> ServerHomeLayout? {
         let libraries = try await client.sections()
         var layout = ServerHomeLayout(

@@ -28,7 +28,10 @@ public struct PlozzigenNetworkFileStreamProber: NetworkFileStreamProbing {
             HandoffDiagnostics.emit("shareProbe FAILED stage=resolve")
             return nil
         }
-        let reader = TransportIOReader(resolvedSource: resolved)
+        let reader = TransportIOReader(
+            resolvedSource: resolved,
+            discImageProbeEnabled: Self.formatHint(for: locator.relativePath) == nil
+        )
         return await Self.probe(
             reader: reader, relativePath: locator.relativePath, requirements: requirements
         )

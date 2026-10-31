@@ -14,6 +14,59 @@ import XCTest
 final class NativeLibraryCardHostedTests: XCTestCase {
     private var savedProviders = MetadataProviderSettings.default
 
+    func testLibraryCaptionsHonorHomeLibraryOverrideAcrossCardAndFocusStyles() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let library = AggregatedLibrary(
+            accountID: "fixture", accountName: "Viewer", serverName: "Server", providerKind: .jellyfin,
+            library: MediaLibrary(id: "movies", title: "Movies", kind: .movie)
+        )
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for style in CardStyle.allCases {
+            for focusStyle in CardFocusStyle.allCases {
+                var heights: [CardCaptionPreference: CGFloat] = [:]
+                for preset in [CardCaptionPreference.show, .hide, .recommended] {
+                    var activations = 0
+                    host.rootView = AnyView(
+                        LibraryCardView(aggregated: library, subtitle: "Server", action: { activations += 1 })
+                            .fixedSize(horizontal: false, vertical: true)
+                            .background(LibraryCardFrameProbe())
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .environment(\.plozzCardCaptionSettings, .init(
+                                preference: preset,
+                                overrides: [.home: preset == .hide, .homeLibraries: preset != .hide]
+                            ))
+                            .environment(\.plozzCardCaptionView, .home)
+                            .environment(\.plozzCardStyle, style)
+                            .environment(\.plozzCardFocusStyle, focusStyle)
+                    )
+                    host.view.layoutIfNeeded()
+                    try await Task.sleep(for: .milliseconds(150))
+                    host.view.layoutIfNeeded()
+                    heights[preset] = try XCTUnwrap(slotProbe(in: host.view)).bounds.height
+                    if focusStyle.usesSystemEffect {
+                        XCTAssertEqual(descendant(SystemPosterCaption.CaptionView.self, in: host.view) == nil,
+                                       preset == .hide)
+                        let poster = try XCTUnwrap(descendant(NativePosterButton.self, in: host.view))
+                        XCTAssertTrue(poster.accessibilityLabel?.contains("Movies") == true)
+                        poster.sendActions(for: .primaryActionTriggered)
+                        XCTAssertEqual(activations, 1)
+                    }
+                }
+                XCTAssertLessThan(try XCTUnwrap(heights[.hide]), try XCTUnwrap(heights[.show]) - 20)
+                XCTAssertEqual(try XCTUnwrap(heights[.show]), try XCTUnwrap(heights[.recommended]), accuracy: 1)
+            }
+        }
+    }
+
     override func setUp() async throws {
         try await super.setUp()
         let store = MetadataProviderSettingsStore()

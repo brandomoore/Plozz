@@ -19,6 +19,7 @@ public final class SearchViewModel {
     private let limit: Int
     private let debounce: Duration
     private let diagnostics: PerformanceDiagnostics
+    private let searchDiagnostics: SearchDiagnosticJournal
     /// Shared identity-index lookup folded into dedup so each result card carries
     /// its full cross-server source set even before the detail picker probes.
     private let identitySources: @Sendable (MediaItem) -> [MediaSourceRef]
@@ -51,7 +52,8 @@ public final class SearchViewModel {
         disabledLibraryKeys: @escaping () -> Set<String> = { [] },
         seerSearch: (@Sendable (String) async -> [MediaItem])? = nil,
         seerRequestAvailability: (@Sendable (MediaItem) async -> MediaRequestAvailability?)? = nil,
-        diagnostics: PerformanceDiagnostics = .shared
+        diagnostics: PerformanceDiagnostics = .shared,
+        searchDiagnostics: SearchDiagnosticJournal = .shared
     ) {
         self.accounts = accounts
         self.limit = limit
@@ -61,6 +63,7 @@ public final class SearchViewModel {
         self.seerSearch = seerSearch
         self.seerRequestAvailability = seerRequestAvailability
         self.diagnostics = diagnostics
+        self.searchDiagnostics = searchDiagnostics
     }
 
     deinit {
@@ -308,6 +311,7 @@ public final class SearchViewModel {
         // library the user turned off app-wide are excluded. Only accounts that
         // actually have a disabled library take the scoped path (see providers).
         let disabledKeys = disabledLibraryKeys()
+        let diagnosticSearch = searchDiagnostics.beginSearch()
         let results = await withTaskGroup(of: (Int, Result<[MediaItem], AppError>).self) { group in
             for (index, resolved) in accounts.enumerated() {
                 group.addTask {
@@ -316,15 +320,27 @@ public final class SearchViewModel {
                         let prefix = "\(accountID):"
                         return key.hasPrefix(prefix) ? String(key.dropFirst(prefix.count)) : nil
                     }
+                    let diagnostic = diagnosticSearch?.source(
+                        index: index, provider: resolved.provider.kind,
+                        limit: perAccountLimit, disabledLibraries: disabledForAccount.count
+                    )
                     do {
                         if let interactive = resolved.provider as? any InteractiveBrowseActivityReporting {
                             await interactive.noteInteractiveBrowseActivity()
                         }
-                        let hits = try await resolved.provider.search(query: query, limit: perAccountLimit, excludingLibraries: disabledForAccount)
+                        let hits = try await SearchDiagnosticJournal.$currentSource.withValue(diagnostic) {
+                            try await PerformanceDiagnostics.$provider.withValue(resolved.provider.kind) {
+                                try await resolved.provider.search(query: query, limit: perAccountLimit,
+                                                                   excludingLibraries: disabledForAccount)
+                            }
+                        }
+                        diagnostic?.finish(resultCount: hits.count)
                         return (index, .success(hits.map { $0.taggingSource(accountID) }))
                     } catch let error as AppError {
+                        diagnostic?.finish(error: error)
                         return (index, .failure(error))
                     } catch {
+                        diagnostic?.finish(error: error is CancellationError ? .cancelled : .unknown(""))
                         return (index, .failure(.unknown("")))
                     }
                 }

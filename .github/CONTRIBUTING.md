@@ -67,10 +67,13 @@ Fix episode detail entry
 
 Refs #177
 
-TestFlight-Fix: #177 [tvOS]
+TestFlight-Issue: 177 [tvOS]
 ```
 
 Use one trailer per fully resolved issue; partial work keeps only `Refs`.
+The trailer deliberately uses a numeric issue ID without `#` and no closing
+keyword. Do not use the old `TestFlight-Fix: #...` spelling: GitHub interprets
+that as an immediate closing reference even though it is inside a trailer.
 `iOS` includes iPhone and iPad. The hosted watcher records an `awaiting release`
 status and, after verifying tagged source and external TestFlight availability,
 publishes build-specific comments and closes both reports. It does not infer

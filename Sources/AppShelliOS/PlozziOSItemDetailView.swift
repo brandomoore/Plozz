@@ -194,6 +194,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     @State private var viewModel: ItemDetailViewModel
     @State private var isPageVisible = false
     @State private var playbackRequest: PlozziOSPlaybackRequest?
+    @State private var pendingResumeRequest: PlozziOSPlaybackRequest?
     @State private var downloadRecord: DownloadedMediaRecord?
     @State private var downloadError: String?
     @State private var requestError: LocalizedStringResource?
@@ -469,6 +470,17 @@ private struct PlozziOSCanonicalItemDetailView: View {
         } message: {
             if let error = viewModel.playbackInventoryRetryError { Text(error) }
         }
+        .resumePrompt(request: $pendingResumeRequest, mediaItem: { $0.item }) { request, position in
+            var request = request
+            request.startPosition = position
+            pendingResumeRequest = nil
+            playbackRequest = request
+        }
+        .onChange(of: appModel.profiles.activeProfileID) { _, _ in pendingResumeRequest = nil }
+        .onChange(of: appModel.isActiveProfileAuthorized) { _, authorized in
+            if !authorized { pendingResumeRequest = nil }
+        }
+        .onDisappear { pendingResumeRequest = nil }
         .plozziOSPlayerCover(
             item: $playbackRequest, orientation: appModel.settings.playback.settings.orientation
         ) { request, orientation in
@@ -998,25 +1010,35 @@ private struct PlozziOSCanonicalItemDetailView: View {
         // A series can't be played directly (see `playbackTarget`), so resolve
         // its next-up episode first. Every other kind plays as-is.
         guard item.kind == .series else {
-            playbackRequest = PlozziOSPlaybackRequest(
+            presentPlay(PlozziOSPlaybackRequest(
                 item: item,
                 startPosition: fromBeginning ? 0 : (item.resumePosition ?? 0),
                 versionPreferences: appModel.versionPreferences,
                 playlist: playlist
-            )
+            ))
             return
         }
         guard let provider = appModel.provider(for: item) else { return }
+        let profileID = appModel.profiles.activeProfileID
         Task { @MainActor in
             guard let episode = await HeroPlayTargetResolver.playbackTarget(
                 for: item,
                 provider: provider
-            ) else { return }
-            playbackRequest = PlozziOSPlaybackRequest(
+            ), !Task.isCancelled, appModel.profiles.activeProfileID == profileID,
+               appModel.isActiveProfileAuthorized else { return }
+            presentPlay(PlozziOSPlaybackRequest(
                 item: episode,
                 startPosition: fromBeginning ? 0 : (episode.resumePosition ?? 0),
                 versionPreferences: appModel.versionPreferences
-            )
+            ))
+        }
+    }
+
+    private func presentPlay(_ request: PlozziOSPlaybackRequest) {
+        if appModel.settings.playback.settings.shouldAskBeforeResuming(at: request.startPosition) {
+            pendingResumeRequest = request
+        } else {
+            playbackRequest = request
         }
     }
 
@@ -1399,7 +1421,7 @@ private struct PlozziOSSourceVersionControls: View {
                 .buttonStyle(.bordered)
             }
 
-            if versions.count > 1 || loadVersions != nil {
+            if versions.count > 1 {
                 Button {
                     isVersionPickerPresented = true
                 } label: {
@@ -1779,7 +1801,7 @@ struct PlozziOSInlineSeriesBrowser: View {
                     resolvedSeasonID = nil
                     railTargetID = nil
                 }
-                if !hasInteractedWithEpisodeBrowser,
+                if !hasInteractedWithEpisodeBrowser, initialEpisode == nil,
                    let series = viewModel.state.value?.item,
                    let seed = SeriesEpisodeEntry.openingSeed(
                        for: series, initialEpisode: initialEpisode,
@@ -1859,14 +1881,15 @@ struct PlozziOSInlineSeriesBrowser: View {
         // loaded empty array, which still publishes.
         guard let displayedEpisodes else { return }
         // An explicitly opened episode outranks the resume point.
-        let openingEpisode = initialEpisode ?? (initialSeasonID == nil ? viewModel.serverResumeEpisode : nil)
-        if let loaded = SeriesEpisodeEntry.episode(
-            matching: openingEpisode,
+        if let loaded = SeriesEpisodeEntry.resolvedOpeningEpisode(
+            initialEpisode: initialEpisode,
+            initialSeasonID: initialSeasonID,
+            resumeEpisode: viewModel.serverResumeEpisode,
             in: displayedEpisodes
         ) {
             resolvedSeasonID = selectedSeasonID
             railTargetID = loaded.id
-            onPlayTargetChange(DetailPlaybackSelection.applyingResumeItem(openingEpisode, to: loaded))
+            onPlayTargetChange(loaded)
             onHeroShowsSeriesChange(false)
             return
         }

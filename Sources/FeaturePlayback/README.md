@@ -46,6 +46,18 @@ bounded language-match/accessibility flags without track titles or URLs.
   sidecars, Plozzigen decoders, and `NativeSubtitleCueOutput` for native legible
   tracks. `SubtitleStyleRules` remains the reduced AVPlayer styling adapter
   for system-owned external presentation.
+  Live cue replacement compares timing and payload, not only cue IDs: revised
+  text, styling, placement, or bitmap frames reach both subtitle lanes even when
+  the decoder retains an ID. Unchanged active cues do not republish on clock
+  ticks; immutable bitmap identity is compared without reading pixels.
+  Core Text views are configured before their first measurement and measure
+  the current cue before UIKit updates, avoiding empty or stale line dimensions.
+  A per-cue cache keeps at most four measured layouts so speculative sizing
+  does not replace the glyph paths for the accepted view size. Zero-width
+  probes do not shape text; unchanged measurements and control-only repositioning
+  reuse cached paths. Configuration changes clear the cache.
+  These updates do not depend on pausing or revealing controls, and do not
+  change saved positioning, subtitle offsets, or cue end times.
 - **Native-only video assets** — when that engine is selected, tvOS feeds the resolved URL directly to
   AVPlayer even when sidecars are available. Track menus still use provider
   tracks; the owned overlay authorizes and fetches selected SRT/WebVTT sidecars.
@@ -144,6 +156,15 @@ engine/OS-owned. Actual background entry (Home, sleep, or switching apps) still
 checkpoints and suspends VOD and tears down live playback. Foreground recovery
 keeps its existing play/pause policy. iOS/iPadOS inactivity, PiP, AirPlay, and
 background-audio behavior are unchanged.
+
+Movie/episode loads explicitly select non-mixing `.playback` / `.moviePlayback`
+audio on tvOS and iOS/iPadOS, including when an engine instance is reused.
+Browsing trailers and theme music retain their non-interrupting mixing policy,
+but that process-wide setting must not carry into primary video playback.
+Plozzigen declares the category off-main before loading, preserves an existing
+playback route-sharing policy, and leaves activation to the engine. Muted or
+shared-session channel players do not claim this policy; live multiview keeps
+its existing ownership.
 
 Live source-reset recovery retains its three-attempt cap and 20-second minimum
 spacing. `LiveChannelRetuneBudget` replenishes attempts only after five minutes
@@ -390,6 +411,11 @@ the missing upstream file/release compatibility evidence.
 
 Skip behavior resolves the profile's master enablement and Movies/TV Shows/Anime
 selection through the same content classifier used for audio and subtitles.
+Each marker can override behavior and timing independently for those three
+content types; anime films and episodes both use the anime rules. Unedited
+content rules inherit the profile's shared default; saved legacy per-marker
+choices remain exceptions. **Use default** removes a selected exception without
+changing other content rules, so subsequent shared-default edits reach it again.
 Disabled categories do not present skip buttons, skip automatically, or request
 community markers. Server markers can still load for the independently enabled
 Up Next card. Each automatic marker uses its configured immediate or 1–30-second
@@ -677,6 +703,11 @@ on-demand and Live TV playback, including while Up Next is visible, but yield to
 menus, sheets, VoiceOver, external playback and inactive scenes. Multiview and
 inline Live TV do not adjust shared device outputs.
 
+Timeline scrubbing disables shortcuts and both level recognizers without
+deactivating the foreground playback session. Beginning or ending a seek must
+not restore saved brightness; restoration belongs to leaving foreground playback
+or dismissing the player. This applies to both on-demand and Live TV timelines.
+
 Level feedback is a 32-by-156-point monochrome vertical capsule, inset 8 points
 from the respective safe-area edge. It fills upward with
 the swipe, without revealing the timeline. Only the fill and 16-point native output icon
@@ -861,13 +892,20 @@ step, not the original recording's fidelity, resampling/downmixing, or the
 receiver's final output. In particular, stream-copy of a lossy source is not
 labelled lossless. The same shared rows follow live pipeline changes on both
 platforms, without changing audio selection or conversion behavior.
-On tvOS 26+, the profile's default-on **Spatial audio** choice requests a 7.1.4
-APAC intermediate bed for supported on-demand playback. This is lossy conversion,
-not a speaker inventory or bitstream passthrough. Saved Off choices survive.
+On tvOS and iOS/iPadOS 26+, the profile's default-on **Spatial audio** choice requests a
+device-selected intermediate bed for supported on-demand playback. It defaults
+to 9.1.6; Playback > Advanced offers all five engine layouts. The engine chooses
+24-bit PCM at load, or lossy APAC over AirPlay. Diagnostics label the actual
+rendered PCM pipeline **Rendered to PCM**, distinct from ordinary **Decoded to PCM**.
+This is not a speaker inventory or bitstream passthrough. DTS:X heights require
+7.1.4 or 9.1.6; other layouts retain channel playback. Saved Off choices survive.
 `PlayerViewModel` captures the active preference for initial and handoff loads;
-live streams, shared players, muted previews and other platforms stay off.
-The engine owns source eligibility and fallback. On tvOS 26+, software/FEL
-playback can use the same spatial-audio choice; other platforms keep channel PCM.
+live streams, shared players, muted previews and unsupported OS versions stay off.
+The engine owns source eligibility and fallback. On these supported platforms,
+software/FEL playback can use the same spatial-audio choice; older OS versions keep channel PCM.
+Both native and Plozzigen engines declare multichannel content to the audio session.
+Compatible AirPods use Apple's spatial rendering and head-tracking preferences;
+Plozz does not force either setting or require an AirPods-specific toggle.
 Stream-copy and software-decoding routes retain the engine's own labels.
 The software route's compressed E-AC-3/JOC renderer is also **No re-encoding**;
 it is not mislabeled as PCM or inferred from the source badge.
@@ -879,6 +917,10 @@ playback decisions. **System output** reads `AVAudioSession.renderingMode`, and
 Both refresh while diagnostics is open, on every playback engine. Unreported
 values are omitted, never inferred from the source, channel count, settings, or
 an older sample. No personal device names or route identifiers are collected.
+
+Mobile VOD and Live TV diagnostics inherit the app's shared sheet palette for
+both text and background. The TV video-overlay palette must not override mobile
+sheet content, including when the app is in Light mode.
 Descriptive output labels are localized; format and connection brands such as
 Dolby Atmos and AirPlay remain verbatim in both layouts.
 The system's rendering mode does not detect the physical speaker layout.
@@ -1308,6 +1350,11 @@ playback. Cellular and unclassified paths use the cellular policy; Wi-Fi and
 Ethernet retain their local/remote classification even when marked expensive.
 Connection changes reapply the relevant saved default. The player Quality sheet
 changes only the current video's rendition, not the saved preferences.
+When Force transcoding was selected, a failed converted stream or an explicit
+conversion refusal adds a hint to turn it off in Streaming quality. The actual
+error remains visible. Original/offline playback and unrelated preparation
+failures do not show the hint, nor does automatic compatibility recovery alone.
+The hint does not change settings or assert that forcing conversion caused the failure.
 Each picker also offers Custom: an independent resolution ceiling and integer
 total bitrate in Kbps. Plex/Jellyfin/Emby support 240p–2160p and reserve 128 Kbps
 for audio. Silo's native API supports 480p/720p/1080p/4K and H.264 conversion;
@@ -1435,6 +1482,16 @@ not decode unrelated library-item fields, whose wire types can differ here.
 Automatic recovery uses the observed/negotiated codec: a failed H.264
 conversion can request HEVC on a capable device; HEVC can fall back to H.264.
 There is one compatibility retry, not a loop through the same codec.
+Ordinary movie/episode playback, including TV callers without a quality selection,
+uses that same retry when a supported provider supplies server HLS and the stream
+fails compatibility checks or reaches the app's startup deadline without a
+stronger transport/refusal error. Initial negotiation stays unchanged. Only
+recovery enters managed conversion at Original quality, preserving the account,
+selected file, position, tracks, pause and speed. It stops the outgoing session
+before requesting a forced replacement; it never fetches an original file to
+bypass the server's conversion decision. Conversion can change HDR and audio.
+An unknown delivered codec gets the existing H.264 recovery, not an assumption
+that the original file's HEVC badge describes the failed rendition.
 The Plex H.264 fallback requests MPEG-TS at the unchanged budget.
 Confirmed missing or ended resources require a fresh user retry, not a codec change; retry
 never falls back to the uncapped original. Decision status and numeric codes are retained without

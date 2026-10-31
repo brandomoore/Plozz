@@ -8,6 +8,7 @@ public struct PlaybackFailureView<Actions: View>: View {
     private let message: LocalizedStringResource
     private let systemImage: String
     private let report: PlaybackDiagnosticReport?
+    private let recoveryHint: LocalizedStringResource?
     private let actions: Actions
     @State private var showsDetails = false
 
@@ -16,18 +17,22 @@ public struct PlaybackFailureView<Actions: View>: View {
         message: LocalizedStringResource,
         systemImage: String = "exclamationmark.triangle",
         report: PlaybackDiagnosticReport?,
+        recoveryHint: LocalizedStringResource? = nil,
         @ViewBuilder actions: () -> Actions
     ) {
         self.title = title
         self.message = message
         self.systemImage = systemImage
         self.report = report
+        self.recoveryHint = recoveryHint
         self.actions = actions()
     }
 
     public var body: some View {
         RecoveryScreen {
-            PlaybackFailureHeading(title: title, message: message, systemImage: systemImage)
+            PlaybackFailureHeading(
+                title: title, message: message, systemImage: systemImage, recoveryHint: recoveryHint
+            )
         } actions: { _ in
             PlaybackFailureDetailsButton(isAvailable: report != nil, showsDetails: $showsDetails)
             actions
@@ -45,6 +50,7 @@ private struct PlaybackFailureHeading: View {
     let title: LocalizedStringResource
     let message: LocalizedStringResource
     let systemImage: String
+    let recoveryHint: LocalizedStringResource?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -65,6 +71,13 @@ private struct PlaybackFailureHeading: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("playback-failure-message")
+            if let recoveryHint {
+                Text(recoveryHint)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("playback-failure-hint")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

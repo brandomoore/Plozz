@@ -190,6 +190,8 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// Stable Plozz identity used only for durable Watchlist presentation/focus.
     /// Provider addressing continues to use `id` and `sources`.
     public var watchlistAliasID: MediaAliasID?
+    /// When this title was added to Watchlist, not to a provider's library.
+    public var watchlistAddedAt: Date?
     /// Provider-owned folder route for inspecting this title's original files.
     /// Addressed on `sourceAccountID`, independently of playback source selection.
     public var fileBrowserContainerID: String?
@@ -526,6 +528,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         originalTitle: String? = nil,
         kind: MediaItemKind,
         watchlistAliasID: MediaAliasID? = nil,
+        watchlistAddedAt: Date? = nil,
         fileBrowserContainerID: String? = nil,
         overview: String? = nil,
         parentTitle: String? = nil,
@@ -595,6 +598,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         self.showsScheduledReleaseTime = showsScheduledReleaseTime
         self.id = id
         self.watchlistAliasID = watchlistAliasID
+        self.watchlistAddedAt = watchlistAddedAt
         self.fileBrowserContainerID = fileBrowserContainerID
         self.title = title
         self.originalTitle = originalTitle
@@ -677,6 +681,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// in sync with the custom `init(from:)` below.
     private enum CodingKeys: String, CodingKey {
         case id, watchlistAliasID, title, kind, overview, parentTitle, seasonNumber, episodeNumber, episodeNumberEnd, episodeOrdering
+        case watchlistAddedAt
         case fileBrowserContainerID, artworkLookupSubject
         case originalTitle, seriesSynopsis
         case productionYear, releaseDate, officialRating, genres, people, studios, tags, taglines
@@ -708,6 +713,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
             MediaAliasID.self,
             forKey: .watchlistAliasID
         )
+        watchlistAddedAt = try container.decodeIfPresent(Date.self, forKey: .watchlistAddedAt)
         fileBrowserContainerID = try container.decodeIfPresent(
             String.self,
             forKey: .fileBrowserContainerID

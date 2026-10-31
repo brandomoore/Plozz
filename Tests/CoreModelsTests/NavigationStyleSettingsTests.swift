@@ -3,6 +3,85 @@ import XCTest
 
 final class NavigationStyleSettingsStoreTests: XCTestCase {
     @MainActor
+    func testLibraryOrderingHintsTrackProfileArrangementAndDiscoveryWithoutHidingCards() {
+        let defaults = makeDefaults()
+        let layoutStore = NavigationLibraryLayoutStore(defaults: defaults, namespace: "viewer")
+        let libraries = ["first", "second", "new"].map { id in
+            AggregatedLibrary(
+                accountID: "server", accountName: "Viewer", serverName: "Server",
+                providerKind: .jellyfin, library: MediaLibrary(id: id, title: id, kind: .movie)
+            )
+        }
+        layoutStore.save(.init(order: [libraries[1].key], hiddenKeys: [libraries[1].key]))
+        let model = NavigationStyleSettingsModel(
+            store: NavigationStyleSettingsStore(defaults: defaults, namespace: "viewer"),
+            layoutStore: layoutStore
+        )
+        model.updateContentLibraries(libraries, accountIDs: ["server"], unreachableAccountIDs: [])
+        XCTAssertEqual(model.libraryOrderingKeys, [libraries[1].key] + libraries.map(\.key))
+        model.resetLibraryLayout()
+        XCTAssertEqual(model.libraryOrderingKeys, libraries.map(\.key))
+        model.applyLibrarySections(
+            .init(enabled: [libraries[2].key, libraries[0].key], disabled: [libraries[1].key]),
+            available: libraries.map(\.key)
+        )
+        XCTAssertEqual(Array(model.libraryOrderingKeys.prefix(3)),
+                       [libraries[2].key, libraries[0].key, libraries[1].key])
+        XCTAssertTrue(NavigationLibraryLayoutStore(defaults: defaults, namespace: "other").load().order.isEmpty)
+    }
+
+    @MainActor
+    func testHorizontalSettingsMoveHideResetAndProfileIsolation() throws {
+        let defaults = makeDefaults()
+        let layoutStore = NavigationLibraryLayoutStore(defaults: defaults, namespace: "viewer")
+        let model = NavigationStyleSettingsModel(
+            store: NavigationStyleSettingsStore(defaults: defaults, namespace: "viewer"),
+            layoutStore: layoutStore
+        )
+        model.style = .tabBar
+        let home = NavigationLibraryLayout.homeKey
+        let settings = NavigationLibraryLayout.settingsKey
+        let available = [home, settings]
+        XCTAssertTrue(model.requiredNavigationKeys.isEmpty)
+        XCTAssertTrue(model.libraryLayout.pinsSettingsInTopBar)
+        model.recordNavigationMove(of: home)
+        XCTAssertTrue(model.libraryLayout.pinsSettingsInTopBar)
+        model.recordNavigationMove(of: settings)
+        XCTAssertFalse(layoutStore.load().pinsSettingsInTopBar)
+        model.applyLibrarySections(.init(enabled: [home], disabled: [settings]), available: available)
+        XCTAssertEqual(model.librarySections(available: available).disabled, [settings])
+        model.style = .sidebar
+        #if os(iOS)
+        XCTAssertEqual(model.librarySections(available: available).enabled, [home])
+        #else
+        XCTAssertEqual(model.librarySections(available: available).enabled, available)
+        #endif
+        XCTAssertTrue(model.libraryLayout.hiddenKeys.contains(settings), "Vertical safety must preserve horizontal intent.")
+        model.style = .tabBar
+        XCTAssertEqual(model.librarySections(available: available).enabled, [home])
+        XCTAssertTrue(NavigationLibraryLayoutStore(defaults: defaults, namespace: "other").load().pinsSettingsInTopBar)
+        model.resetLibraryLayout()
+        XCTAssertTrue(layoutStore.load().pinsSettingsInTopBar)
+        XCTAssertEqual(model.librarySections(available: available).enabled, available)
+        model.applyLibrarySections(.init(enabled: [home], disabled: [settings]), available: available)
+        model.applyLibrarySections(.init(enabled: available, disabled: []), available: available)
+        XCTAssertTrue(model.libraryLayout.pinsSettingsInTopBar, "Hide then Show is not a move.")
+        model.recordNavigationMove(of: settings)
+        model.applyLibrarySections(.init(enabled: [settings, home], disabled: []), available: available)
+        model.applyLibrarySections(.init(enabled: available, disabled: []), available: available)
+        XCTAssertFalse(model.libraryLayout.pinsSettingsInTopBar, "Moving back to the end is still an explicit placement.")
+        let legacy = Data("""
+        {"order":["\(settings)","\(home)"],"hiddenKeys":[]}
+        """.utf8)
+        XCTAssertFalse(try JSONDecoder().decode(NavigationLibraryLayout.self, from: legacy).pinsSettingsInTopBar)
+        let hidden = NavigationLibraryLayout(hiddenKeys: Set(available))
+        let destinations = NavigationRailPlan.destinations(
+            visibleLibraries: [], layout: hidden, availableKeys: available
+        )
+        XCTAssertEqual(NavigationDestinationDefaults.topBar(destinations: destinations, layout: hidden), [.settings])
+    }
+
+    @MainActor
     func testOfflineStatusIsTransientAndDoesNotMislabelAuthenticationOrCancellation() {
         let model = NavigationStyleSettingsModel(
             store: NavigationStyleSettingsStore(defaults: makeDefaults()),
@@ -200,11 +279,7 @@ final class NavigationStyleSettingsStoreTests: XCTestCase {
             let sections = NavigationLibraryLayout.default
                 .resolvingAutomaticVisibility(hidden: hidden)
                 .sections(available: available, requiredEnabled: [])
-            XCTAssertEqual(sections.enabled, available.filter {
-                $0 != NavigationLibraryLayout.settingsKey
-                    && (hasWatchlist || $0 != NavigationLibraryLayout.watchlistKey)
-            })
-            XCTAssertLessThanOrEqual(sections.enabled.count, 5)
+            XCTAssertEqual(sections.enabled, NavigationDestinationDefaults.iOSDefaultVisibleKeys)
             XCTAssertTrue(NavigationDestinationDefaults.iPhoneOverflowKeys(visible: sections.enabled).isEmpty)
         }
         XCTAssertTrue(NavigationLibraryLayout.default
@@ -229,14 +304,14 @@ final class NavigationStyleSettingsStoreTests: XCTestCase {
         XCTAssertTrue(layout.hiddenKeys.isEmpty)
         XCTAssertTrue(layout.shownKeys.isEmpty)
         primary.save(layout)
-        XCTAssertEqual(sections(primary.load()).disabled, [NavigationLibraryLayout.settingsKey])
+        XCTAssertEqual(Set(sections(primary.load()).disabled), automatic)
 
         layout.apply(.init(enabled: available, disabled: []), available: available,
                      requiredEnabled: [], automaticallyHiddenKeys: automatic)
         primary.save(layout)
         XCTAssertTrue(primary.load().shownKeys.contains(NavigationLibraryLayout.settingsKey))
         XCTAssertEqual(sections(primary.load()).enabled, available)
-        XCTAssertEqual(sections(child.load()).disabled, [NavigationLibraryLayout.settingsKey])
+        XCTAssertEqual(Set(sections(child.load()).disabled), automatic)
 
         layout.apply(.init(enabled: available.filter { $0 != NavigationLibraryLayout.settingsKey },
                            disabled: [NavigationLibraryLayout.settingsKey]),
@@ -244,7 +319,7 @@ final class NavigationStyleSettingsStoreTests: XCTestCase {
         primary.save(layout)
         XCTAssertTrue(primary.load().hiddenKeys.contains(NavigationLibraryLayout.settingsKey))
         primary.save(.default)
-        XCTAssertEqual(sections(primary.load()).disabled, [NavigationLibraryLayout.settingsKey])
+        XCTAssertEqual(Set(sections(primary.load()).disabled), automatic)
         XCTAssertTrue(primary.load().hiddenKeys.isEmpty)
 
         let legacy = try JSONDecoder().decode(NavigationLibraryLayout.self, from: JSONEncoder().encode([

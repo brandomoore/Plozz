@@ -27,11 +27,14 @@ public extension EnvironmentValues {
         plozzWatchStatusIndicator = source.plozzWatchStatusIndicator
         plozzWatchIndicatorColor = source.plozzWatchIndicatorColor
         plozzShowsUnwatchedEpisodeCount = source.plozzShowsUnwatchedEpisodeCount
+        plozzShowsProgressBars = source.plozzShowsProgressBars
         plozzEpisodeCountBadgeStyle = source.plozzEpisodeCountBadgeStyle
         plozzSeerConnected = source.plozzSeerConnected
         plozzReduceTransparency = source.plozzReduceTransparency
         plozzNavigationStyle = source.plozzNavigationStyle
         plozzNavigationContentInset = source.plozzNavigationContentInset
+        plozzTopNavigationContentInsets = source.plozzTopNavigationContentInsets
+        plozzTopNavigationScroll = source.plozzTopNavigationScroll
         mediaRowHeaderTrailingInset = source.mediaRowHeaderTrailingInset
         plozzPinnedSidebarActive = source.plozzPinnedSidebarActive
         plozzPinnedSidebarInteraction = source.plozzPinnedSidebarInteraction

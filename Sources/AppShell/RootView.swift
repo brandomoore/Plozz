@@ -107,6 +107,9 @@ public struct RootView: View {
     /// lags ~1s behind tvOS's `displayDidSettle`). Injected into the environment so
     /// `PlayerView` can `engage()` it on exit; rendered as the topmost overlay here.
     @State private var displayVeil = DisplayVeilModel()
+    #if os(tvOS)
+    @State private var foregroundProtection = TVProfileForegroundState()
+    #endif
 
     /// Owns the opt-in crash reporter. Created once from the DSN baked into this
     /// build (empty ⇒ a true no-op). Started/stopped in response to the app-wide
@@ -209,6 +212,7 @@ public struct RootView: View {
         guard appState.profileFlow.pendingSetupProfile == nil else { return false }
         guard case .ready = appState.state else { return false }
         return !appState.profileFlow.isChoosingProfile
+            && !appState.profileFlow.isForegroundLocked
             && appState.profileFlow.pendingLockedProfile == nil
             && appState.profileFlow.pendingParentalSwitch == nil
             && appState.profileFlow.pendingIdentityAccountID == nil
@@ -258,7 +262,7 @@ public struct RootView: View {
         guard !showsStartupLogo else { return [] }
         var requests: [RootPresentationCoordinator.Destination] = []
         let flow = appState.profileFlow
-        if flow.pendingLockedProfile != nil || flow.pendingParentalSwitch != nil
+        if !flow.isForegroundLocked, flow.pendingLockedProfile != nil || flow.pendingParentalSwitch != nil
             || (flow.pendingSetupProfile == nil && !librarySelectionOwnsPlexPIN
                 && appState.plexHomeUsers.pendingPlexPINRequest != nil) {
             requests.append(.accessGate)
@@ -575,7 +579,8 @@ public struct RootView: View {
             // survives and the auth screen can behave as an overlay.
             if showsStartupLogo {
                 launchView
-            } else if appState.allowsStandalonePlayback && appState.profileFlow.isChoosingProfile {
+            } else if appState.allowsStandalonePlayback && appState.profileFlow.isChoosingProfile
+                && !appState.profileFlow.isForegroundLocked {
                 // Standalone can resume profile confirmation without a server.
                 // A remembered locked profile must still be selected/unlocked
                 // before its confirmation or editor can appear.
@@ -609,7 +614,7 @@ public struct RootView: View {
 
             case .ready:
                 ZStack {
-                if appState.profileFlow.isChoosingProfile {
+                if appState.profileFlow.isChoosingProfile && !appState.profileFlow.isForegroundLocked {
                     ProfileSelectionView(appState: appState, canCancel: appState.profileFlow.isProfileSelectionCancelable)
                         .transition(.opacity)
                 } else if showsMarkerPreview, !appState.profilesModel.activeProfile.isKids {
@@ -627,7 +632,7 @@ public struct RootView: View {
                     // what makes it recoverable: the tab bar stays, Home shows
                     // its own empty state, and Settings - which lists every
                     // household server regardless of what is switched on - is
-                    // still one press away.
+                    // still reachable through the profile picker.
                     let accounts = appState.accountsProviders.homeAccounts
                     let detailCache = detailCacheFactory.cache(
                         for: DetailSnapshotCacheScope(
@@ -802,6 +807,11 @@ public struct RootView: View {
                         },
                         onConfiguredIPTVPlaylist: {
                             _ = appState.recordSuccessfulIPTVSetup()
+                        },
+                        settingsEntryRequested: appState.profileFlow.pendingSettingsProfileID
+                            == appState.profilesModel.activeProfileID,
+                        onConsumeSettingsEntry: {
+                            appState.profileFlow.consumeSettingsEntry(for: appState.profilesModel.activeProfileID)
                         }
                     )
                     .id(rootScopeIdentity)
@@ -872,6 +882,7 @@ public struct RootView: View {
         .environment(\.plozzWatchStatusIndicator, appState.profileSettings.watchStatusIndicatorModel.indicator)
         .environment(\.plozzWatchIndicatorColor, appState.profileSettings.watchStatusIndicatorModel.color)
         .environment(\.plozzShowsUnwatchedEpisodeCount, appState.profileSettings.watchStatusIndicatorModel.showsUnwatchedEpisodeCount)
+        .environment(\.plozzShowsProgressBars, appState.profileSettings.watchStatusIndicatorModel.showsProgressBars)
         .environment(\.plozzEpisodeCountBadgeStyle, appState.profileSettings.watchStatusIndicatorModel.episodeCountStyle)
         // Read by the corner mark on a card whose title isn't in the library:
         // connected turns "not yours" into "you can ask for this". Injected here
@@ -896,6 +907,15 @@ public struct RootView: View {
         .environment(appState.profilesModel)
         .environment(glassPerformance)
         .environment(displayVeil)
+        #if os(tvOS)
+        .environment(\.tvProfileForegroundState, foregroundProtection)
+        .background(
+            TVProfileForegroundShield(flow: appState.profileFlow) { dismiss in
+                foregroundProfileGate(onUnlock: dismiss)
+            }
+            .frame(width: 0, height: 0)
+        )
+        #endif
         // Push the theme's effective scheme DOWN into the tree instead of forcing
         // it on the window via `preferredColorScheme`. A downward environment value
         // themes SwiftUI content (materials, text, symbols) without propagating up
@@ -996,6 +1016,21 @@ public struct RootView: View {
         )
         .background(
             ScenePhaseEffects(
+                onPhaseChange: { phase in
+                    #if os(tvOS)
+                    let externalDeparture = ExternalPlaybackRuntime.shared.consumeForegroundDeparture(
+                        forProfile: appState.profilesModel.activeProfileID
+                    )
+                    let shouldLock = foregroundProtection.shouldLock(
+                        after: phase,
+                        leavingForExternalPlayer: externalDeparture,
+                        delay: appState.profileFlow.foregroundReturnDelay
+                    )
+                    if shouldLock || (phase == .background && appState.profileFlow.isForegroundLocked) {
+                        appState.lockBrowsingForForegroundIfNeeded()
+                    }
+                    #endif
+                },
                 onBackgroundWorkAllowed: { allowed in
                     appState.mediaShare.setBackgroundWorkAllowed(allowed)
                     appState.accountsProviders.setTrackerHistorySyncForeground(allowed)
@@ -1042,6 +1077,20 @@ public struct RootView: View {
         .installNightShiftOverlay(appState.profileSettings.nightShiftModel)
         .modifier(ReducedMotion())
     }
+
+    #if os(tvOS)
+    private func foregroundProfileGate(onUnlock: @escaping () -> Void) -> some View {
+        ForegroundProfileGateView(appState: appState, onUnlock: onUnlock)
+        .environment(\.themePalette, resolvedPalette)
+        .environment(\.gradientBackgroundsEnabled, appState.profileSettings.themeModel.gradientEnabled)
+        .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
+        .environment(\.plozzReduceTransparency,
+            appState.profileSettings.transparencyModel.preference.reducesTransparency(
+                systemReduceTransparency: systemReduceTransparency
+            ))
+        .environment(appState.profilesModel)
+    }
+    #endif
 
     /// Keeps status reads inside the leaf view that renders them. Reading the
     /// observable phase at the app root would invalidate the entire app per tick.
@@ -1584,18 +1633,47 @@ private enum ProfileSetupStage {
     case lock
 }
 
+struct ForegroundProfileGateView: View {
+    let appState: AppState
+    let onUnlock: () -> Void
+    @Environment(\.themePalette) private var palette
+
+    var body: some View {
+        let flow = appState.profileFlow
+        ZStack {
+            AppBackground(palette: palette).ignoresSafeArea()
+            if flow.pendingLockedProfile != nil || flow.pendingParentalSwitch != nil
+                || appState.plexHomeUsers.pendingPlexPINRequest != nil {
+                ProfileAccessGateView(appState: appState, onCancel: flow.cancelForegroundProfileSelection)
+            } else {
+                ProfileSelectionView(appState: appState, canCancel: false)
+            }
+        }
+        .accessibilityIdentifier("profile.foregroundGate")
+        .onChange(of: flow.canFinishForegroundUnlock, initial: true) { _, ready in
+            if ready {
+                flow.finishForegroundUnlockIfReady()
+                if !flow.isForegroundLocked {
+                    onUnlock()
+                }
+            }
+        }
+    }
+}
+
 /// Persistent profile-entry gate: profile PIN first, Plex PIN second when needed.
 ///
-/// `expectsTwoPINs` is captured when the cover opens, before the profile switch
-/// clears `pendingLockedProfile`, so step 2 still knows it belongs to a chain.
+/// Captures the PIN chain before switching clears `pendingLockedProfile`.
 private struct ProfileAccessGateView: View {
     let appState: AppState
+    private let onCancel: (() -> Void)?
 
     @Environment(\.themePalette) private var palette
     @State private var expectsTwoPINs: Bool
 
-    init(appState: AppState) {
+    init(appState: AppState, onCancel: (() -> Void)? = nil) {
         self.appState = appState
+        self.onCancel = onCancel
         let profile = appState.profileFlow.pendingLockedProfile
         _expectsTwoPINs = State(initialValue:
             profile?.isLocked == true
@@ -1618,7 +1696,7 @@ private struct ProfileAccessGateView: View {
                     destination: target,
                     errorMessage: appState.profileFlow.parentalPINError,
                     onSubmit: { appState.profileFlow.submitParentalPIN($0) },
-                    onCancel: { appState.profileFlow.cancelParentalSwitch() }
+                    onCancel: { (onCancel ?? appState.profileFlow.cancelParentalSwitch)() }
                 )
                 .id("parental-pin")
                 .transition(.opacity)
@@ -1631,7 +1709,7 @@ private struct ProfileAccessGateView: View {
                         ? .init(current: 1, total: 2)
                         : nil,
                     onSubmit: { await appState.profileFlow.submitProfileLockPIN($0) },
-                    onCancel: { appState.profileFlow.cancelProfileLockPrompt() }
+                    onCancel: { (onCancel ?? appState.profileFlow.cancelProfileLockPrompt)() }
                 )
                 .id("profile-pin")
                 .transition(.opacity)
@@ -1645,7 +1723,7 @@ private struct ProfileAccessGateView: View {
                         : nil,
                     dismissOnSuccess: false,
                     onSubmit: { appState.plexHomeUsers.submitPlexPIN($0) },
-                    onCancel: { appState.plexHomeUsers.cancelPlexPIN() }
+                    onCancel: { (onCancel ?? appState.plexHomeUsers.cancelPlexPIN)() }
                 )
                 .id("plex-pin")
                 .transition(.opacity)
@@ -1821,6 +1899,7 @@ private struct FailureView: View {
 /// nothing to rebuild, where re-evaluating the app's root costs the whole tree —
 /// including a detail page's full subtree, measured at 800ms-1s on the Apple TV.
 private struct ScenePhaseEffects: View {
+    let onPhaseChange: (ScenePhase) -> Void
     let onBackgroundWorkAllowed: (Bool) -> Void
     let onBecameActive: () -> Void
 
@@ -1834,8 +1913,9 @@ private struct ScenePhaseEffects: View {
             .task(id: scenePhase) {
                 onBackgroundWorkAllowed(scenePhase == .active)
             }
-            .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active { onBecameActive() }
+            .onChange(of: scenePhase, initial: true) { oldPhase, newPhase in
+                onPhaseChange(newPhase)
+                if oldPhase != newPhase, newPhase == .active { onBecameActive() }
             }
     }
 }

@@ -12,6 +12,8 @@ final class PlaybackDiagnosticsAudioEncodingTests: XCTestCase {
             ("AAC → EAC3 bridge (timestamp correction)", "Lossy encoding"),
             ("TRUEHD Atmos → APAC 7.1.4", "Lossy encoding"),
             ("DTS:X → APAC 9.1.6", "Lossy encoding"),
+            ("TRUEHD Atmos → PCM 9.1.6", "Rendered to PCM"),
+            ("DTS:X → PCM 7.1.4", "Rendered to PCM"),
             ("Stream-copy (EAC3+JOC Atmos)", "No re-encoding"),
             ("EAC3 Atmos → renderer (compressed)", "No re-encoding"),
             ("Stream-copy (FLAC)", "No re-encoding"),

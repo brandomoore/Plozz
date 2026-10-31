@@ -138,7 +138,7 @@ public enum StreamingQuality: Hashable, CaseIterable, Codable, Sendable, Identif
 
 public struct CustomStreamingQuality: Hashable, Sendable {
     public static let supportedHeights = [240, 480, 720, 1080, 1440, 2160]
-    // Jellyfin/Emby's MaxStreamingBitrate is signed 32-bit bits per second.
+    // The shared custom ceiling must fit Jellyfin's signed-32-bit bitrate field.
     public static let maximumBitrateKbps = Int(Int32.max) / 1_000
     public let maximumHeight: Int
     /// Total audio + video budget, in decimal kilobits per second.

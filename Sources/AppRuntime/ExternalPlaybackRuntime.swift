@@ -98,6 +98,13 @@ public final class ExternalPlaybackRuntime {
     private let open: @MainActor (URL) async -> Bool
     private var processingTask: Task<Void, Never>?
     private var launchID = UUID()
+    @ObservationIgnored private var foregroundDepartureProfileID: String?
+
+    /// Only the next scene departure belongs to this handoff, not a later browsing session.
+    public func consumeForegroundDeparture(forProfile profileID: String) -> Bool {
+        defer { foregroundDepartureProfileID = nil }
+        return foregroundDepartureProfileID == profileID
+    }
 
     public var returnID: UUID? {
         guard let receipt, receipt.position != nil || receipt.failed else { return nil }
@@ -126,6 +133,7 @@ public final class ExternalPlaybackRuntime {
 
     /// Every new ordinary play intent supersedes an older external return.
     public func beginPlaybackIntent() {
+        foregroundDepartureProfileID = nil
         processingTask?.cancel()
         launchID = UUID()
         clearReceipt()
@@ -251,7 +259,9 @@ public final class ExternalPlaybackRuntime {
                     createdAt: Date()
                 ))
             }
+            foregroundDepartureProfileID = initial.profileID
             guard await open(link) else {
+                foregroundDepartureProfileID = nil
                 if receipt?.id == nonce { clearReceipt() }
                 throw ExternalPlayerError.unavailable
             }
@@ -259,6 +269,7 @@ public final class ExternalPlaybackRuntime {
             PlozzLog.playback.info("Opened external player.")
             return true
         } catch {
+            foregroundDepartureProfileID = nil
             if let streaming = provider as? any StreamingQualityProviding {
                 var cleanupRequest = request
                 if cleanupRequest.streamingSessionID == nil,

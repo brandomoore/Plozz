@@ -67,6 +67,7 @@ struct PlexMediaContainer: Decodable {
 /// Only the fields needed to build a `LibrarySection` and to identify/deduplicate
 /// a hub against the uniform base rows are modelled; unknown fields are ignored.
 struct PlexHub: Decodable {
+    let key: String?
     /// Stable, machine identifier for the hub, e.g. `"movie.recentlyadded.1"`,
     /// `"movie.genre.<id>"`, `"movie.similar.<id>"`, `"tv.startWatching"`. Used
     /// both as the `LibrarySection.id` and to filter out hubs that duplicate the
@@ -156,6 +157,7 @@ struct PlexMetadata: Decodable {
     /// it does not need the full metadata fetch.
     let originallyAvailableAt: String?
     let addedAt: Int?
+    @LenientInt var watchlistedAt: Int?
     let titleSort: String?
     let duration: Int?         // milliseconds
     let viewOffset: Int?       // milliseconds resumed-to

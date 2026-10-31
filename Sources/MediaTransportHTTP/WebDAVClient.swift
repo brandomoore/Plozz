@@ -109,24 +109,30 @@ public struct WebDAVClient: Sendable {
         )
     }
 
-    /// Establishes a GET validator and size with a bounded two-byte probe.
+    /// Establishes a GET validator and size with a bounded probe, optionally
+    /// retaining the first playback window instead of discarding two bytes.
     /// Same-origin hops remain root-bound; external HTTPS media hops use an
     /// isolated anonymous session. Its final URL lives only in the source lease.
+    /// Opt-in delivery connection failures let the owner revalidate DAV identity
+    /// before a bounded fresh opening; this client never retries the request.
     public func probeRange(
         root: WebDAVRoot,
         url: URL,
         sessionKey: TransportSessionKey,
         credential: WebDAVCredential,
-        trustPolicy: TrustPolicy
+        trustPolicy: TrustPolicy,
+        prefetch: Bool = false,
+        reportDeliveryConnectionFailure: Bool = false
     ) async throws -> RangeProbeResult {
         let (result, anonymous) = try await executeMediaGET(
-            requestBuilder: { RangeProbe.probeRequest(url: $0) },
+            requestBuilder: { RangeProbe.probeRequest(url: $0, prefetch: prefetch) },
             root: root,
             url: url,
             sessionKey: sessionKey,
             credential: credential,
             trustPolicy: trustPolicy,
-            maxResponseBytes: RangeProbe.probeByteCount
+            maxResponseBytes: prefetch ? RangeProbe.initialReadByteCount : RangeProbe.probeByteCount,
+            reportDeliveryConnectionFailure: reportDeliveryConnectionFailure
         )
         let (data, response) = (result.data, result.response)
         try validateAuthenticationStatus(response)
@@ -145,7 +151,8 @@ public struct WebDAVClient: Sendable {
             status: response.statusCode,
             headers: headers,
             bodyLength: data.count,
-            resourceURL: resourceURL
+            resourceURL: resourceURL,
+            prefetch: prefetch
         ) {
         case .success(let result):
             return RangeProbeResult(
@@ -153,7 +160,8 @@ public struct WebDAVClient: Sendable {
                 totalLength: result.totalLength,
                 resourceURL: result.resourceURL,
                 lastModified: result.lastModified,
-                usesAnonymousSession: anonymous
+                usesAnonymousSession: anonymous,
+                initialData: prefetch ? data : Data()
             )
         case .failure(let error):
             throw error
@@ -353,7 +361,8 @@ public struct WebDAVClient: Sendable {
         sessionKey: TransportSessionKey,
         credential: WebDAVCredential,
         trustPolicy: TrustPolicy,
-        maxResponseBytes: Int
+        maxResponseBytes: Int,
+        reportDeliveryConnectionFailure: Bool = false
     ) async throws -> (TransportDataResponse, Bool) {
         guard sessionKey.origin == root.origin else {
             throw TransportError.invalidOrigin(reason: "media root did not match session")
@@ -365,9 +374,14 @@ public struct WebDAVClient: Sendable {
             try Task.checkCancellation()
             let result: TransportDataResponse
             if anonymous {
-                result = try await executeAnonymousMediaGET(
-                    request: requestBuilder(currentURL), sourceKey: sessionKey, maxResponseBytes: maxResponseBytes
-                )
+                do {
+                    result = try await executeAnonymousMediaGET(
+                        request: requestBuilder(currentURL), sourceKey: sessionKey, maxResponseBytes: maxResponseBytes
+                    )
+                } catch TransportError.transport(let code)
+                    where reportDeliveryConnectionFailure && code == URLError.cannotConnectToHost.rawValue {
+                    throw TransportError.deliveryConnectionFailed
+                }
             } else {
                 let (data, response) = try await execute(
                     requestBuilder: requestBuilder, url: currentURL, sessionKey: sessionKey,

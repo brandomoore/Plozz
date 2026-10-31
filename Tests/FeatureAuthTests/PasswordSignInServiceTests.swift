@@ -1,9 +1,35 @@
 import XCTest
 import CoreModels
+import CoreNetworking
 @testable import FeatureAuthCore
 
 final class PasswordSignInServiceTests: XCTestCase {
     private let server = MediaServer(id: "s", name: "Home", baseURL: URL(string: "http://host:8096")!, provider: .jellyfin)
+
+    func testSignInRecordsRejectionAndSuccessWithoutCredentials() async throws {
+        let diagnostics = ServerConnectionDiagnostics()
+        let stub = StubHTTPClient()
+        stub.stubSequence(pathSuffix: "/Users/AuthenticateByName", responses: [
+            .init(status: 401, json: ""),
+            .init(status: 200, json: #"{"AccessToken":"private-token","ServerId":"srv","User":{"Id":"u1","Name":"private-user"}}"#)
+        ])
+        let service = PasswordSignInService(server: server, deviceID: "dev1", http: stub, diagnostics: diagnostics)
+        do {
+            _ = try await service.signIn(username: "private-user", password: "private-password")
+            XCTFail("Expected rejected credentials")
+        } catch {
+            XCTAssertEqual(error as? AppError, .invalidCredentials)
+        }
+        let session = try await service.signIn(username: "private-user", password: "private-password")
+        XCTAssertEqual(session.accessToken, "private-token")
+        let data = try JSONEncoder().encode(diagnostics.export(scope: DiagnosticExportScope()))
+        let report = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let facts = try XCTUnwrap(report["entries"] as? [[String: Any]]).compactMap { $0["facts"] as? [String: Any] }
+        XCTAssertEqual(facts.compactMap { $0["stage"] as? String }, ["passwordSignIn", "passwordSignIn"])
+        XCTAssertEqual(facts.compactMap { $0["outcome"] as? String }, ["failed", "succeeded"])
+        XCTAssertEqual(facts.first?["error"] as? String, "invalidCredentials")
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("private"))
+    }
 
     func testSignInBuildsSession() async throws {
         let stub = StubHTTPClient()

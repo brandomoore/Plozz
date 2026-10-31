@@ -5,6 +5,7 @@ import Observation
 @Observable
 final class StreamingPlaybackState {
     var options: StreamingPlaybackOptions?
+    var forceTranscodingSelected = false
     var error: StreamingQualityError?
     var failureReport: PlaybackDiagnosticReport?
     var preparation: StreamingPreparationPhase = .requesting

@@ -86,6 +86,7 @@ public struct MediaBrowserWatchlistDestination: WatchlistLibraryResolving {
                 presentation: MediaAliasPresentation(
                     title: item.title,
                     year: item.productionYear,
+                    releaseDate: item.releaseDate,
                     artworkURL: item.posterURL?.absoluteString,
                     backdropURL: item.backdropURL?.absoluteString
                 ),

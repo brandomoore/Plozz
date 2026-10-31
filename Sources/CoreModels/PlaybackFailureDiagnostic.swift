@@ -2,7 +2,7 @@ import Foundation
 
 /// Closed vocabulary only; never retain a URL, header, title, or error description.
 public struct PlaybackFailureDiagnostic: Codable, Equatable, Sendable {
-    public enum Layer: String, Codable, Sendable { case iptvProxy, liveEngine }
+    public enum Layer: String, Codable, Sendable { case iptvProxy, liveEngine, plexLiveTune }
     public enum Content: String, Codable, Sendable { case live, onDemand }
     public enum Stage: String, Codable, Sendable { case response, body, manifest, load, playback, audioSession }
     public enum Format: String, Codable, Sendable {

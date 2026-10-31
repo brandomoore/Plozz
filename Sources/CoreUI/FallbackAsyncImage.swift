@@ -579,15 +579,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         _isPreviewQuality = State(initialValue: prepared == nil && seeded == nil
             && (preparedPreview != nil || seededPreview != nil))
         _loadedKey = State(initialValue: prepared != nil || seeded?.index == references.startIndex
-            ? ArtworkResolveKey.make(
-                references: references,
-                variant: variant,
-                maxAspectRatio: maxAspectRatio,
-                pinIdentity: pinIdentity,
-                providerPolicyIdentity: providerPolicyIdentity,
-                prefersPrimaryReference: prefersPrimaryReference
-            )
-            : nil)
+            || preparedPreview != nil || seededPreview != nil ? memoKey : nil)
         _pinnedIdentity = State(initialValue: prepared != nil || seeded != nil
             || preparedPreview != nil || seededPreview != nil ? pinIdentity : nil)
         _displayedReference = State(
@@ -659,6 +651,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     }
 
     private func resolve() async {
+        guard !Task.isCancelled else { return }
         let key = taskKey
         let hasSamePriority = selectedPrimaryPriority == prefersPrimaryReference
         selectedPrimaryPriority = prefersPrimaryReference
@@ -679,11 +672,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             return
         }
         let isSameSubject = pinIdentity != nil && pinnedIdentity == pinIdentity && hasSamePriority
-        if isSameSubject, image != nil, !isPreviewQuality {
-            loadedKey = key
-            return
-        }
-        if isSameSubject, image != nil, isPreviewQuality,
+        if loadedKey == key, isSameSubject, image != nil, isPreviewQuality,
            let displayedReference {
             let loaded = await ArtworkImageCache.shared.image(for: displayedReference, variant: variant)
             guard !Task.isCancelled else { return }
@@ -765,8 +754,8 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         }
         #endif
         guard !Task.isCancelled else { return }
-        if image == nil, prefersOnlineArtwork, asyncFallbackURL != nil {
-            let firstVariant = previewVariant ?? variant
+        if prefersOnlineArtwork, asyncFallbackURL != nil {
+            let firstVariant = image == nil ? previewVariant ?? variant : variant
             if let firstPaint = await ArtworkFirstPaintResolver.resolve(
                 references: references,
                 prefersPrimaryReference: prefersPrimaryReference,
@@ -796,6 +785,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             image = loaded
             resolved = true
             isPreviewQuality = true
+            loadedKey = key
             pinnedIdentity = pinIdentity
             displayedReference = first
         }
@@ -809,7 +799,9 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         for attempt in 0..<ArtworkResolveRetry.maxAttempts {
             // 1) Try provider candidates in order, skipping any that are too wide.
             for reference in references {
+                guard !Task.isCancelled else { return }
                 guard let loaded = await ArtworkImageCache.shared.image(for: reference, variant: variant) else { continue }
+                guard !Task.isCancelled else { return }
                 guard Self.usableSize(loaded, maxAspectRatio: maxAspectRatio) != nil else { continue }
                 image = loaded
                 resolved = true
@@ -824,6 +816,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             // 2) Nothing usable from the provider — try the async fallback (TMDb).
             if let asyncFallbackURL,
                let url = await asyncFallbackURL() {
+                guard !Task.isCancelled else { return }
                 // Posterless cards have no direct `references`, so the progressive
                 // pass above has nothing to inspect. Once the fallback URL itself
                 // is known, give it the same cheap first frame as an ordinary
@@ -837,6 +830,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                     image = preview
                     resolved = true
                     isPreviewQuality = true
+                    loadedKey = key
                     pinnedIdentity = pinIdentity
                     displayedReference = .remote(url)
                 }
@@ -844,6 +838,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                     for: url,
                     variant: variant
                 ) {
+                    guard !Task.isCancelled else { return }
                     image = loaded
                     resolved = true
                     isPreviewQuality = false
@@ -874,6 +869,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         image = firstPaint.image
         resolved = true
         isPreviewQuality = firstPaint.variant != variant
+        loadedKey = key
         pinnedIdentity = pinIdentity
         displayedReference = firstPaint.reference
         onResolveReference?(firstPaint.reference)
@@ -884,6 +880,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             image = loaded
             isPreviewQuality = false
         }
+        guard !Task.isCancelled else { return }
         if !isPreviewQuality, let image {
             ArtworkSeedMemo.store(image, reference: firstPaint.reference, for: key)
         }

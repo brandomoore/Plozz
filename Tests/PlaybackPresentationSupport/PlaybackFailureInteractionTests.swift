@@ -40,7 +40,7 @@ final class PlaybackFailureInteractionTests: XCTestCase {
         #if os(tvOS)
         XCUIRemote.shared.press(.menu)
         #else
-        activate(app.buttons["Done"])
+        activate(app.buttons["playback-diagnostics-close"])
         #endif
         XCTAssertTrue(app.buttons["playback-failure-details"].waitForExistence(timeout: 5))
         activate(app.buttons["playback-failure-retry"])
@@ -81,7 +81,7 @@ final class PlaybackFailureInteractionTests: XCTestCase {
         capture("accessibility-rtl-top")
         activate(app.buttons["playback-failure-details"])
         XCTAssertTrue(app.staticTexts["playback-diagnostic-report"].waitForExistence(timeout: 5))
-        activate(app.buttons["Done"])
+        activate(app.buttons["playback-diagnostics-close"])
         activate(app.buttons["player-failed-back"])
         XCTAssertTrue(app.staticTexts["failure-fixture-closed"].waitForExistence(timeout: 5))
     }

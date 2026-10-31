@@ -249,16 +249,20 @@ final class AppAdmissionIntegrationTests: XCTestCase {
     }
 
     func testTopShelfDetailsWaitForAdmissionWithoutBecomingAPlayRequest() throws {
-        let harness = try makeHarness()
+        let harness = try makeHarness(profileSetupComplete: true)
+        harness.state.bootstrap()
         harness.state.handle(url: TopShelf.itemDeepLink(id: "1", accountID: "plex", action: .details))
+        XCTAssertNil(harness.state.pendingPlay.request)
+        XCTAssertFalse(harness.state.canEnterApp)
+        XCTAssertTrue(harness.state.enterStandalonePlayback())
         let request = try XCTUnwrap(harness.state.pendingPlay.request)
         XCTAssertEqual(request.reference, .init(id: "1", accountID: "plex", action: .details))
-        XCTAssertFalse(harness.state.canEnterApp)
         XCTAssertEqual(harness.state.pendingPlay.request, request)
     }
 
     func testTopShelfNewActionSupersedesEvenTheSameItemAndConsumesOnlyOnce() throws {
-        let harness = try makeHarness()
+        let harness = try makeHarness(profileSetupComplete: true, withAccount: true)
+        harness.state.bootstrap()
         let pending = harness.state.pendingPlay
         harness.state.handle(url: TopShelf.itemDeepLink(id: "1", accountID: "plex"))
         let play = try XCTUnwrap(pending.request)
@@ -374,6 +378,44 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         XCTAssertEqual(harness.state.state, .ready)
         XCTAssertEqual(harness.state.rootPresentationState, .ready)
         XCTAssertFalse(harness.state.presentsAccountSetupOverApp)
+    }
+
+    func testForegroundLockAlsoProtectsCancelableAccountSetup() throws {
+        let harness = try makeHarness(profileSetupComplete: true, withAccount: true)
+        harness.state.bootstrap()
+        var profile = harness.profiles.activeProfile
+        profile.lock = ProfileLock.make(pin: "2468", iterations: 1)
+        harness.profiles.update(profile)
+        harness.profiles.noteProfileUnlocked(profile.id)
+        harness.state.addAccount(provider: .iptv)
+        XCTAssertFalse(harness.state.isActiveProfileAuthorized)
+        harness.state.lockBrowsingForForegroundIfNeeded()
+        XCTAssertTrue(harness.state.profileFlow.isForegroundLocked)
+        harness.state.cancelAuthentication()
+        harness.state.profileFlow.cancelProfileSelection()
+        XCTAssertFalse(harness.state.isActiveProfileAuthorized)
+        XCTAssertTrue(harness.state.profileFlow.isChoosingProfile)
+    }
+
+    func testForegroundLockQueuesTopShelfAndRejectsAnInFlightConsumption() async throws {
+        let harness = try makeHarness(profileSetupComplete: true, withAccount: true)
+        harness.state.bootstrap()
+        var profile = harness.profiles.activeProfile
+        profile.lock = ProfileLock.make(pin: "2468", iterations: 1)
+        harness.profiles.update(profile)
+        harness.profiles.noteProfileUnlocked(profile.id)
+        harness.state.handle(url: TopShelf.itemDeepLink(id: "movie", accountID: "media-account"))
+        let inFlight = try XCTUnwrap(harness.state.pendingPlay.request)
+        harness.state.lockBrowsingForForegroundIfNeeded()
+        XCTAssertNil(harness.state.pendingPlay.request)
+        XCTAssertFalse(harness.state.pendingPlay.consume(inFlight))
+        harness.state.profileFlow.switchProfile(to: profile.id)
+        let accepted = await harness.state.profileFlow.submitProfileLockPIN("2468")
+        XCTAssertTrue(accepted)
+        XCTAssertNil(harness.state.pendingPlay.request, "Authorization includes dismissing the foreground gate.")
+        harness.state.profileFlow.finishForegroundUnlockIfReady()
+        XCTAssertEqual(harness.state.pendingPlay.request, inFlight)
+        XCTAssertTrue(harness.state.pendingPlay.consume(inFlight))
     }
 
     func testFirstIPTVAccountCompletesProfileSetupWithoutShowingTheSignedInShellEarly() throws {

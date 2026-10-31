@@ -563,9 +563,12 @@ targets:
     sources:
       - path: Tests/iOSPresentationTests
       - path: Tests/FocusIntegrationTests/PublicMetaDBCatalogHostedTests.swift
+      - path: Tests/EnginePlozzigenTests/SpatialAudioLayoutPreferenceTests.swift
+      - path: Tests/FeaturePlaybackTests/NativePlaybackLifecycleTests.swift
       - path: Tests/FeatureLiveTVCoreTests/LiveTVPlaybackCoordinatorTests.swift
       - path: Tests/FeatureLiveTVTests/LiveTVGuideRowLayoutTests.swift
       - path: Tests/CoreModelsTests/SettingsHydrationTests.swift
+      - path: Tests/CoreModelsTests/ResumeRewindSettingsTests.swift
       - path: Tests/CoreModelsTests/ProfileLockPresentationTests.swift
       - path: Tests/FeaturePlaybackTests/SubtitleOverlayGeometryTests.swift
       - path: Tests/FocusIntegrationTests/LiveTVSourcesRuntimeHostedTests.swift
@@ -587,6 +590,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.PresentationTests
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
+        # Spatial layout tests call the dynamic engine directly, not only through the app umbrella.
+        OTHER_LDFLAGS: "$(inherited) -framework AetherEngine"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PlozziOSPresentationHost.app/PlozziOSPresentationHost"
         BUNDLE_LOADER: "$(TEST_HOST)"
     dependencies:
