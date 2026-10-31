@@ -82,14 +82,15 @@ public enum TrackLabeling {
     }
 
     /// A short, human audio **format** hint from codec + channel layout, e.g.
-    /// "DTS 7.1", "Dolby TrueHD 5.1", "AAC Stereo", or "Dolby Atmos". Lets an
+    /// "DTS 7.1", "Dolby TrueHD Atmos", or "AAC Stereo". Lets an
     /// untagged track read as "Track 1 (DTS 7.1)" instead of a bare "Track 1".
     /// Returns `nil` only when neither codec nor channel count is known.
-    public static func audioFormatHint(codec: String?, channels: Int?, isAtmos: Bool) -> String? {  // l10n:content — composed brand/format hint ("Dolby Atmos", "DTS 7.1"), never translated
-        let codecName = audioCodecName(codec)
-        // Atmos is object-based; the bed channel count is misleading, so surface
-        // the format alone (matching how Plex/AppleTV present it).
-        if isAtmos { return "Dolby Atmos" }
+    public static func audioFormatHint(
+        codec: String?, channels: Int?, isAtmos: Bool, profile: String? = nil, isDTSX: Bool = false
+    ) -> String? {  // l10n:content — composed source-format names, never translated
+        let source = audioSourceFormat(codec: codec, profile: profile, isAtmos: isAtmos, isDTSX: isDTSX)
+        let codecName = source.name
+        if source.objectBased { return codecName }
         let layout = channelLayoutName(channels)
         switch (codecName, layout) {
         case let (codec?, layout?): return "\(codec) \(layout)"
@@ -99,6 +100,32 @@ public enum TrackLabeling {
         }
     }
 
+    private static func audioSourceFormat(
+        codec: String?, profile: String?, isAtmos: Bool, isDTSX: Bool
+    ) -> (name: String?, objectBased: Bool) { // l10n:content - encoded source-format names, not output capabilities.
+        let name = audioCodecName(codec)
+        let profile = (profile ?? "").lowercased()
+        let words = profile.split { !$0.isLetter && !$0.isNumber }
+        if name == "Dolby TrueHD" || name == "Dolby Digital+" || name == nil {
+            let atmos = isAtmos || words.contains("atmos")
+                || (name == "Dolby Digital+" && words.contains("joc"))
+            if atmos { return (name.map { "\($0) Atmos" } ?? "Dolby Atmos", true) }
+        }
+        if let name, ["DTS", "DTS-HD", "DTS-HD MA"].contains(name) {
+            let dtsx = isDTSX || ["dts:x", "dts-x", "dts x", "dtsx"].contains { profile.contains($0) }
+            let master = name == "DTS-HD MA" || words.contains("ma") || profile.contains("master audio")
+            let highResolution = words.contains("hra") || profile.contains("high resolution")
+            let base = master ? "DTS-HD MA" : highResolution ? "DTS-HD HRA"
+                : words.contains("hd") ? "DTS-HD" : name
+            if dtsx {
+                let spatial = words.contains("imax") ? "DTS:X IMAX" : "DTS:X"
+                return (base == "DTS" ? spatial : "\(base) + \(spatial)", true)
+            }
+            return (base, false)
+        }
+        return (name, false)
+    }
+
     /// Recognizable display name for a libavcodec/container audio codec token.
     private static func audioCodecName(_ codec: String?) -> String? {  // l10n:content — codec brand names ("Dolby Digital", "DTS", ...), never translated
         guard let token = codec?.lowercased(), !token.isEmpty else { return nil }
@@ -106,7 +133,9 @@ public enum TrackLabeling {
         case "ac3", "ac-3": return "Dolby Digital"
         case "eac3", "e-ac-3", "ec3", "ec-3": return "Dolby Digital+"
         case "truehd", "mlp": return "Dolby TrueHD"
-        case "dts", "dca", "dts-hd", "dtshd": return "DTS"
+        case "dts", "dca": return "DTS"
+        case "dts-hd", "dtshd": return "DTS-HD"
+        case "dca-ma", "dts-hd ma": return "DTS-HD MA"
         case "aac", "aac_latm": return "AAC"
         case "flac": return "FLAC"
         case "alac": return "ALAC"
@@ -209,8 +238,10 @@ public enum TrackLabeling {
         displayTitle: String,
         language: String?,
         codec: String? = nil,
+        profile: String? = nil,
         channels: Int? = nil,
         isAtmos: Bool = false,
+        isDTSX: Bool = false,
         isCommentary: Bool = false,
         trackID: Int,
         locale: Locale = .current
@@ -219,9 +250,13 @@ public enum TrackLabeling {
         let title = displayTitle.replacingOccurrences(
             of: #"\s*\(default\)\s*$"#, with: "", options: [.regularExpression, .caseInsensitive]
         ).trimmingCharacters(in: .whitespacesAndNewlines)
-        let format = audioFormatHint(codec: codec, channels: channels, isAtmos: isAtmos)
+        let source = audioSourceFormat(codec: codec, profile: profile, isAtmos: isAtmos, isDTSX: isDTSX)
+        let format = audioFormatHint(
+            codec: codec, channels: channels, isAtmos: isAtmos, profile: profile, isDTSX: isDTSX
+        )
         let generatedFormatTitle = isAudioFormatTitle(
-            title, languageName: languageNm, codec: codec, channels: channels, format: format
+            title, languageName: languageNm, codec: codec, channels: channels, format: format,
+            profile: source.name != audioCodecName(codec) ? profile : nil
         )
 
         let base: TrackLabel.Base
@@ -245,7 +280,7 @@ public enum TrackLabeling {
         let baseTitle: String
         if case .content(let value) = base { baseTitle = value } else { baseTitle = "" }
         if let format, !formatIsBase,
-           !audioTitleContainsFormat(baseTitle, codec: codec, channels: channels, isAtmos: isAtmos) {
+           !audioTitleContainsFormat(baseTitle, codec: codec, channels: channels, source: source) {
             qualifiers.append(.format(format))
         }
         // `audioFormatHint`/`channelLayoutName` say nothing for a channel count
@@ -254,7 +289,7 @@ public enum TrackLabeling {
         // would be an unlocalized number format. Surface it as its own
         // count-bearing qualifier instead, resolved into a real resource by the
         // caller, so the fact isn't silently dropped for the rare file that does.
-        if !isAtmos, channelLayoutName(channels) == nil, let channels, channels > 0 {
+        if !source.objectBased, channelLayoutName(channels) == nil, let channels, channels > 0 {
             qualifiers.append(.channelCount(channels))
         }
         if isCommentary, !baseTitle.localizedCaseInsensitiveContains("commentary") {
@@ -265,15 +300,20 @@ public enum TrackLabeling {
     }
 
     private static func audioTitleContainsFormat(
-        _ title: String, codec: String?, channels: Int?, isAtmos: Bool // l10n:content - provider track title and format facts.
+        _ title: String, codec: String?, channels: Int?,
+        source: (name: String?, objectBased: Bool) // l10n:content - provider track title and format facts.
     ) -> Bool {
         func contains(_ token: String) -> Bool {
             guard !token.isEmpty else { return false }
             let pattern = #"(?<![\p{L}\p{N}])"# + NSRegularExpression.escapedPattern(for: token)
                 + #"(?![\p{L}\p{N}])"#
-            return title.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+            let normalizedTitle = title.replacingOccurrences(
+                of: " + Dolby Atmos", with: " Atmos", options: .caseInsensitive
+            )
+            return normalizedTitle.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
         }
-        if isAtmos { return contains("Atmos") }
+        if source.objectBased { return source.name.map(contains) ?? false }
+        if let name = source.name, name != audioCodecName(codec), !contains(name) { return false }
         let codecs = [codec, audioCodecName(codec)].compactMap { $0 }.filter { !$0.isEmpty }
         var layouts = [channelLayoutName(channels)].compactMap { $0 }
         if channels == 1 { layouts.append("1.0") }
@@ -285,13 +325,15 @@ public enum TrackLabeling {
     /// Match only titles completely described by known format facts; never
     /// erase commentary, edition, or custom names because they contain a codec.
     private static func isAudioFormatTitle(
-        _ title: String, languageName: String?, codec: String?, channels: Int?, format: String? // l10n:content - provider track title and format facts.
+        _ title: String, languageName: String?, codec: String?, channels: Int?, format: String?,
+        profile: String? // l10n:content - provider track title and format facts.
     ) -> Bool {
         guard let format else { return false }
         func normalized(_ text: String) -> String {
             text.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "+" }
         }
         var candidates = [format]
+        if let profile, !profile.isEmpty { candidates.append(profile) }
         if let codec, !codec.isEmpty {
             let names = [codec, audioCodecName(codec)].compactMap { $0 }
             var layouts = [""]
@@ -299,6 +341,7 @@ public enum TrackLabeling {
             if channels == 1 { layouts.append("1.0") }
             if channels == 2 { layouts.append("2.0") }
             candidates += names.flatMap { name in layouts.map { name + " " + $0 } }
+            if format.contains("Atmos") { candidates.append("Dolby Atmos") }
         }
         if let languageName { candidates += candidates.map { languageName + " " + $0 } }
         let normalizedTitle = normalized(title)
@@ -387,9 +430,11 @@ public extension MediaTrack {
         var merged = self
         if merged.language == nil { merged.language = provider.language }
         if merged.codec == nil { merged.codec = provider.codec }
+        if merged.profile == nil { merged.profile = provider.profile }
         if merged.channels == nil { merged.channels = provider.channels }
         if !merged.isForced { merged.isForced = provider.isForced }
         if !merged.isAtmos { merged.isAtmos = provider.isAtmos }
+        if !merged.isDTSX { merged.isDTSX = provider.isDTSX }
         if !merged.isHearingImpaired { merged.isHearingImpaired = provider.isHearingImpaired }
         if !merged.isCommentary { merged.isCommentary = provider.isCommentary }
         // Only adopt the provider's title to replace a *generic* engine title,

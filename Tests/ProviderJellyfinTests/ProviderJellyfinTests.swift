@@ -100,6 +100,21 @@ final class JellyfinProviderMappingTests: XCTestCase {
         XCTAssertNil(JellyfinProvider.episodeOrdering(nil))
     }
 
+    func testAudioTrackMappingRetainsProfileAcrossJellyfinAndEmby() throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            var session = makeSession()
+            session.server.provider = kind
+            let provider = JellyfinProvider(session: session, http: StubHTTPClient())
+            let dto = try JSONDecoder.plozz.decode(MediaStreamDto.self, from: Data(
+                #"{"Index":3,"Type":"Audio","Codec":"dca","Profile":"MA + DTS:X IMAX","Channels":8,"Language":"en"}"#.utf8
+            ))
+            let track = provider.map(stream: dto)
+            XCTAssertEqual(track.id, 3)
+            XCTAssertEqual(track.profile, "MA + DTS:X IMAX")
+            XCTAssertEqual(track.channels, 8)
+        }
+    }
+
     func testSubtitleAccessibilitySurvivesFlagsAndContainerTitles() throws {
         let provider = JellyfinProvider(session: makeSession(), http: StubHTTPClient())
         for metadata in [

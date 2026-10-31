@@ -243,9 +243,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private func makeProbedSourceFacts(
         range: SourceDynamicRange
     ) -> EngineProbedSourceFacts {
-        let active = engine.activeAudioTrackIndex.flatMap { idx in
-            engine.audioTracks.first { $0.id == idx }
-        } ?? engine.audioTracks.first { $0.isDefault } ?? engine.audioTracks.first
+        let active = Self.activeSourceAudio(
+            from: engine.audioTracks, selectedID: engine.activeAudioTrackIndex
+        )
         let width = Int(engine.sourceVideoWidth)
         let height = Int(engine.sourceVideoHeight)
         return EngineProbedSourceFacts(
@@ -254,9 +254,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             videoHeight: height > 0 ? height : nil,
             videoDecoder: engine.activeVideoDecoder,
             audioCodec: active?.codec,
-            audioChannels: active.map(\.channels).flatMap { $0 > 0 ? $0 : nil },
-            audioIsAtmos: active?.isAtmos ?? false,
-            audioDecoder: engine.activeAudioDecoder
+            audioChannels: active?.channels,
+            audioIsAtmos: active?.profile?.localizedCaseInsensitiveContains("atmos") == true,
+            audioDecoder: engine.activeAudioDecoder,
+            activeAudioTrack: engine.videoRoute == .remoteBypass ? nil : active
         )
     }
 
@@ -2078,6 +2079,23 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         }
     }
 
+    nonisolated static func activeSourceAudio(
+        from tracks: [TrackInfo], selectedID: Int?
+    ) -> MediaSourceMetadata.AudioStream? {
+        guard let selectedID, let track = tracks.first(where: { $0.id == selectedID }) else { return nil }
+        return .init(
+            codec: track.codec,
+            profile: MediaSourceMetadata.audioProfile(
+                track.profile, displayTitles: [track.isAtmos ? "Atmos" : nil, track.isDTSX ? "DTS:X" : nil]
+            ),
+            channels: track.channels > 0 ? track.channels : nil,
+            channelLayout: track.channelLayout,
+            sampleRate: track.sampleRate > 0 ? track.sampleRate : nil,
+            bitrate: track.bitrate > 0 ? Int(exactly: track.bitrate) : nil,
+            language: track.language
+        )
+    }
+
     nonisolated static func selectableAudioTracks(from tracks: [TrackInfo], route: VideoRoute) -> [MediaTrack] {
         // Aether 7.22 publishes bypass tracks for diagnostics, not selection.
         guard route != .remoteBypass else { return [] }
@@ -2088,10 +2106,12 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 displayTitle: track.name,
                 language: track.language,
                 codec: track.codec,
+                profile: track.profile,
                 isDefault: track.isDefault,
                 isForced: track.isForced,
                 channels: track.channels > 0 ? track.channels : nil,
                 isAtmos: track.isAtmos,
+                isDTSX: track.isDTSX,
                 isHearingImpaired: track.isHearingImpaired,
                 isCommentary: track.isCommentary
             )

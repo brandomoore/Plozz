@@ -2768,6 +2768,9 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
             displayTitle: dto.DisplayTitle ?? dto.Language ?? dto.Codec ?? "Track \(dto.Index)",
             language: dto.Language,
             codec: dto.Codec,
+            profile: isSubtitle ? nil : MediaSourceMetadata.audioProfile(
+                dto.Profile, displayTitles: [dto.DisplayTitle, dto.Title]
+            ),
             isDefault: dto.IsDefault ?? false,
             isForced: dto.IsForced ?? false,
             channels: isSubtitle ? nil : dto.Channels,

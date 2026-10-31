@@ -274,6 +274,12 @@ Native and tvOS track menus share `TrackLabeling` and `TrackMenuBuilder`.
 Bare language titles no longer suppress known codec/channel facts, for example
 `English (Opus 5.1)`. Custom names and commentary are retained, existing format
 facts are not duplicated, and unknown formats are not invented.
+Audio labels retain per-track codec profiles and confirmed spatial-format flags:
+for example `Dolby TrueHD Atmos`, `Dolby Digital+ Atmos`, or
+`DTS-HD MA + DTS:X IMAX`. These identify the encoded source independently of
+device capabilities, spatial-rendering preferences, and the active output path.
+Plain channel audio keeps its codec and channel layout; unavailable profiles
+fall back to the known codec rather than inferring a richer format.
 The Aether adapter's native-bypass track list also retains observed media subtype
 and channel information from the already-playing asset, rather than manufacturing
 language-only tracks. Single tracks are exposed as metadata without offering a
@@ -859,6 +865,12 @@ presentation state and detaches the old player.
 Plozzigen's Audio **Processing** row samples Aether's active audio pipeline
 label, independently of source-video probe availability. `TRUEHD → FLAC
 bridge` or `TRUEHD → EAC3 bridge` identifies ordinary channel processing.
+For on-demand original-source playback, source audio diagnostics sample the
+confirmed active engine track on every tick, not the initial provider snapshot
+or a pending menu selection. Codec, profile, channels/layout, sample rate, and
+bitrate are replaced together; unavailable properties clear the previous track's
+values. Server-transcoded renditions and live-stream sampling retain their own
+metadata paths. Source-track refresh does not change Processing or Encoding.
 Both TV and mobile also show **Encoding**: **Lossless encoding** for an active
 FLAC bridge, **Lossy encoding** for EAC3 or APAC, **No re-encoding** for stream-copy,
 and **Decoded to PCM** for the software decoder. These display-only descriptions

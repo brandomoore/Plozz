@@ -29,6 +29,8 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
     /// hints in the track menu ("PGS", "SRT") and image-vs-text reasoning.
     /// `nil` when the provider/engine didn't report one.
     public var codec: String?
+    /// Per-track source profile, independent of the decoder or output route.
+    public var profile: String?
     public var isDefault: Bool
     public var isForced: Bool
     /// Audio channel count where known (`2` stereo, `6` 5.1, `8` 7.1). `nil` for
@@ -36,8 +38,9 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
     /// format hint ("5.1"/"7.1") in the track menu.
     public var channels: Int?
     /// `true` for Dolby Atmos audio (object-based; the channel count is just the
-    /// bed). When set, the menu shows "Dolby Atmos" instead of the bed layout.
+    /// bed). The menu retains the underlying codec and omits the bed layout.
     public var isAtmos: Bool
+    public var isDTSX: Bool
     /// `true` for hearing-impaired / SDH tracks (container disposition). A
     /// reliable signal that supersedes the title-text "SDH" heuristic.
     public var isHearingImpaired: Bool
@@ -68,10 +71,12 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
         displayTitle: String,
         language: String? = nil,
         codec: String? = nil,
+        profile: String? = nil,
         isDefault: Bool = false,
         isForced: Bool = false,
         channels: Int? = nil,
         isAtmos: Bool = false,
+        isDTSX: Bool = false,
         isHearingImpaired: Bool = false,
         isCommentary: Bool = false,
         deliverySource: SubtitleDeliverySource? = nil,
@@ -83,10 +88,12 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
         self.displayTitle = displayTitle
         self.language = language
         self.codec = codec
+        self.profile = profile
         self.isDefault = isDefault
         self.isForced = isForced
         self.channels = channels
         self.isAtmos = isAtmos
+        self.isDTSX = isDTSX
         self.isHearingImpaired = isHearingImpaired
         self.isCommentary = isCommentary
         self.deliverySource = deliverySource

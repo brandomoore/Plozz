@@ -56,8 +56,10 @@ enum TrackMenuBuilder {
                     displayTitle: track.displayTitle,
                     language: track.language,
                     codec: track.codec,
+                    profile: track.profile,
                     channels: track.channels,
                     isAtmos: track.isAtmos,
+                    isDTSX: track.isDTSX,
                     isCommentary: track.isCommentary,
                     trackID: track.id,
                     locale: locale

@@ -268,7 +268,65 @@ final class TrackLabelingTests: XCTestCase {
     }
 
     func testAudioFormatHintAtmosOverridesChannels() {
-        XCTAssertEqual(TrackLabeling.audioFormatHint(codec: "truehd", channels: 8, isAtmos: true), "Dolby Atmos")
+        XCTAssertEqual(TrackLabeling.audioFormatHint(codec: "truehd", channels: 8, isAtmos: true), "Dolby TrueHD Atmos")
+    }
+
+    func testDetailedSourceProfilesKeepUnderlyingCodecWithoutInferringOutput() {
+        let cases: [(String, String?, Bool, Bool, String)] = [
+            ("ac3", nil, false, false, "Dolby Digital 7.1"),
+            ("eac3", nil, false, false, "Dolby Digital+ 7.1"),
+            ("eac3", "E-AC-3 JOC", false, false, "Dolby Digital+ Atmos"),
+            ("eac3", nil, true, false, "Dolby Digital+ Atmos"),
+            ("truehd", nil, false, false, "Dolby TrueHD 7.1"),
+            ("truehd", "Dolby TrueHD + Dolby Atmos", false, false, "Dolby TrueHD Atmos"),
+            ("dca", nil, false, false, "DTS 7.1"),
+            ("dca", "DTS-HD HRA", false, false, "DTS-HD HRA 7.1"),
+            ("dca", "MA", false, false, "DTS-HD MA 7.1"),
+            ("DCA", "MA + DTS:X IMAX", false, false, "DTS-HD MA + DTS:X IMAX"),
+            ("dts", "DTS-HD MA + DTS:X", false, false, "DTS-HD MA + DTS:X"),
+            ("dca", "DTS-HD MA", false, true, "DTS-HD MA + DTS:X"),
+            ("dts", nil, false, true, "DTS:X"),
+            ("dts", "unrecognized", false, false, "DTS 7.1"),
+            ("aac", "LC", false, false, "AAC 7.1"),
+            ("pcm_s16le", nil, false, false, "PCM 7.1")
+        ]
+        for (codec, profile, atmos, dtsx, expected) in cases {
+            XCTAssertEqual(TrackLabeling.audioFormatHint(
+                codec: codec, channels: 8, isAtmos: atmos, profile: profile, isDTSX: dtsx
+            ), expected)
+        }
+    }
+
+    func testDetailedLabelsStayLanguageFirstAndDoNotDuplicateCompleteFormats() {
+        let locale = Locale(identifier: "en")
+        for title in ["English", "English Dolby TrueHD 7.1", "English Dolby Atmos", "English Dolby TrueHD + Dolby Atmos"] {
+            XCTAssertEqual(TrackLabeling.audioLabel(
+                displayTitle: title, language: "en", codec: "truehd",
+                profile: "Dolby TrueHD + Dolby Atmos", channels: 8, trackID: 1, locale: locale
+            ), TrackLabel(base: .content("English"), qualifiers: [.format("Dolby TrueHD Atmos")]))
+        }
+        XCTAssertEqual(TrackLabeling.audioLabel(
+            displayTitle: "English DTS 7.1 Commentary", language: "en", codec: "dca",
+            profile: "MA + DTS:X IMAX", channels: 8, isCommentary: true, trackID: 1, locale: locale
+        ), TrackLabel(base: .content("English DTS 7.1 Commentary"), qualifiers: [.format("DTS-HD MA + DTS:X IMAX")]))
+        XCTAssertEqual(TrackLabeling.audioLabel(
+            displayTitle: "English DTS-HD MA + DTS:X IMAX Commentary", language: "en", codec: "dca",
+            profile: "MA + DTS:X IMAX", channels: 8, isCommentary: true, trackID: 1, locale: locale
+        ), TrackLabel(base: .content("English DTS-HD MA + DTS:X IMAX Commentary")))
+        XCTAssertEqual(TrackLabeling.audioLabel(
+            displayTitle: "English Dolby TrueHD + Dolby Atmos Commentary", language: "en", codec: "truehd",
+            profile: "Dolby TrueHD + Dolby Atmos", channels: 8, isCommentary: true, trackID: 1, locale: locale
+        ), TrackLabel(base: .content("English Dolby TrueHD + Dolby Atmos Commentary")))
+    }
+
+    func testProviderEnrichmentPreservesPerTrackProfileAndConfirmedDTSX() {
+        let provider = MediaTrack(id: 3, kind: .audio, displayTitle: "English", codec: "dca",
+                                  profile: "MA + DTS:X IMAX", channels: 8, isDTSX: true)
+        var engine = MediaTrack(id: 3, kind: .audio, displayTitle: "Track 3", codec: "dca")
+        XCTAssertEqual(engine.enriched(withProvider: provider).profile, provider.profile)
+        XCTAssertTrue(engine.enriched(withProvider: provider).isDTSX)
+        engine.profile = "DTS-HD MA"
+        XCTAssertEqual(engine.enriched(withProvider: provider).profile, "DTS-HD MA")
     }
 
     func testAudioFormatHintPartialData() {
