@@ -105,6 +105,7 @@ final class SettingsInteractionTests: XCTestCase {
 
     func testSettingsSearchRevealsNestedSubtitleAndCardControls() {
         for (query, id) in [
+            ("theme", "theme"),
             ("make subtitles bigger", "subtitle-size"), ("show progress bars", "progress-bars"),
             ("remember subtitles per series", "subtitle-remember")
         ] {
@@ -121,6 +122,10 @@ final class SettingsInteractionTests: XCTestCase {
             result.tap()
             let target: XCUIElement
             switch id {
+            case "theme":
+                target = app.collectionViews.buttons.matching(NSPredicate(
+                    format: "label == %@ OR label BEGINSWITH %@", "Appearance", "Appearance,"
+                )).firstMatch
             case "subtitle-size": target = app.staticTexts["Text Size"].firstMatch
             case "subtitle-remember": target = app.switches["Remember subtitles per series"].firstMatch
             default: target = app.switches["progress-bars-toggle"].firstMatch
@@ -132,6 +137,11 @@ final class SettingsInteractionTests: XCTestCase {
                 XCTAssertLessThanOrEqual(target.frame.maxY, app.frame.maxY)
             }
             capture("settings-search-\(id)")
+            if id == "theme" {
+                target.tap()
+                XCTAssertTrue(app.buttons["Light"].waitForExistence(timeout: 3),
+                              "The highlighted picker must still accept taps.")
+            }
             app.terminate()
         }
     }

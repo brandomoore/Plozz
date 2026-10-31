@@ -39,6 +39,110 @@ final class NativeSettingsToggleTests: XCTestCase {
         try await verifyNativeSwitch(grouped: false)
     }
 
+    func testSearchHighlightCoversRowPaddingWithoutHighlightingNeighbors() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.overrideUserInterfaceStyle = .dark
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+
+        func capture() -> UIImage {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+        }
+
+        func red(_ image: UIImage, at point: CGPoint) throws -> Int {
+            let crop = try XCTUnwrap(image.cgImage?.cropping(to:
+                CGRect(x: point.x.rounded(.down), y: point.y.rounded(.down), width: 1, height: 1)))
+            var pixel = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return Int(pixel[0])
+        }
+
+        for width: CGFloat in [390, 834] {
+            for grouped in [true, false] {
+                let model = Model()
+                let request = SettingsSearchRequest(targetID: "target")
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 900)
+                window.rootViewController = UIHostingController(rootView:
+                    NavigationStack {
+                        List {
+                            if grouped {
+                                SettingsSectionGroup {
+                                    Toggle("Target", isOn: model.binding).settingsSearchAnchor("target")
+                                    Text("Neighbor")
+                                }
+                            } else {
+                                Toggle("Target", isOn: model.binding)
+                                    .settingsSearchAnchor("target")
+                                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                                Text("Neighbor")
+                            }
+                        }
+                        .settingsPageSurface(horizontalInset: 0)
+                    }
+                    .environment(request)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.gradientBackgroundsEnabled, false)
+                )
+                window.makeKeyAndVisible()
+                let deadline = ContinuousClock.now + .seconds(5)
+                while !request.revealed, ContinuousClock.now < deadline {
+                    try await settle(window)
+                }
+                XCTAssertTrue(request.revealed)
+                try await settle(window)
+                let control = try XCTUnwrap(listedSwitches(in: window).first)
+                let controlBounds = control.convert(control.bounds, to: window)
+                var ancestor = control.superview
+                while ancestor != nil && !(ancestor is UICollectionViewCell) {
+                    ancestor = ancestor?.superview
+                }
+                let cell = try XCTUnwrap(ancestor)
+                let cellBounds = cell.convert(cell.bounds, to: window)
+                let paddingPoints = [
+                    CGPoint(x: cellBounds.minX + 8, y: controlBounds.midY),
+                    CGPoint(x: cellBounds.maxX - 8, y: controlBounds.midY),
+                    CGPoint(x: cellBounds.midX, y: controlBounds.minY - 6),
+                    CGPoint(x: cellBounds.midX, y: controlBounds.maxY + 6)
+                ]
+                let neighbor = CGPoint(x: cellBounds.midX, y: controlBounds.maxY + 32)
+                let highlighted = capture()
+                let attachment = XCTAttachment(image: highlighted)
+                attachment.name = "search-row-highlight-\(grouped ? "group" : "native")-\(Int(width))"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                try await Task.sleep(for: .milliseconds(2200))
+                try await settle(window)
+                let normal = capture()
+                for point in paddingPoints {
+                    XCTAssertGreaterThan(
+                        try red(highlighted, at: point) - red(normal, at: point), 10,
+                        "Highlight must cover row padding at \(point), grouped=\(grouped), width=\(width)."
+                    )
+                }
+                XCTAssertEqual(try red(highlighted, at: neighbor), try red(normal, at: neighbor), accuracy: 3)
+                XCTAssertEqual(control.convert(control.bounds, to: window), controlBounds)
+                XCTAssertFalse(model.isOn)
+                XCTAssertEqual(model.writes, 0, "Revealing a search result must not activate its control.")
+            }
+        }
+    }
+
     func testAdaptiveCardSettingsKeepLabelsAndIndicatorsInFirstViewport() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

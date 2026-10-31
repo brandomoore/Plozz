@@ -40,6 +40,10 @@ below the toolbar. Scrolling past the heading shows the inline navigation title.
 TV uses the existing retained
 Settings page stack and native remote text entry. `SettingsSearchLanding` and
 `settingsSearchAnchor` reveal the existing control without changing its value.
+On mobile, the brief landing highlight covers the complete padded row, not just
+its label or picker. Grouped rows own the highlight and their corner clipping;
+standalone native List/Form rows use the native row background. The highlight
+does not intercept touches or change the setting.
 Native lazy List cells register their contained targets with
 `settingsSearchGroup`; the selected control is then revealed within that cell.
 Every indexed entry needs an available route and a matching control anchor.

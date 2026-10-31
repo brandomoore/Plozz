@@ -83,6 +83,10 @@ private struct SettingsSearchAnchor: ViewModifier {
     @Environment(\.themePalette) private var palette
     @FocusState private var focused: Bool
     @State private var highlighted = false
+    #if os(iOS)
+    @Environment(\.settingsSearchRowOwnsHighlight) private var rowOwnsHighlight
+    @State private var isNativeListRow = false
+    #endif
     #if os(tvOS)
     @Environment(\.settingsPageContext) private var page
     #endif
@@ -107,17 +111,26 @@ private struct SettingsSearchAnchor: ViewModifier {
             .background {
                 #if os(iOS)
                 if let request, request.targetID == id, !request.revealed {
-                    SettingsSearchNativeReveal {
+                    SettingsSearchNativeReveal { nativeListRow in
+                        isNativeListRow = nativeListRow
                         request.revealed = true
                         highlighted = true
                     }
                 }
-                if highlighted {
+                if highlighted, !rowOwnsHighlight, !isNativeListRow {
                     RoundedRectangle(cornerRadius: 8).fill(palette.accent.opacity(0.15))
+                        .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
                 #endif
             }
+            #if os(iOS)
+            .preference(key: SettingsSearchHighlightKey.self, value: highlighted)
+            .listRowBackground(
+                highlighted && isNativeListRow && !rowOwnsHighlight
+                    ? palette.accent.opacity(0.15) : nil
+            )
+            #endif
             .task(id: canReveal) {
                 #if os(tvOS)
                 guard canReveal, let request, request.targetID == id, !request.revealed else { return }
@@ -138,18 +151,64 @@ private struct SettingsSearchAnchor: ViewModifier {
 }
 
 #if os(iOS)
+private struct SettingsSearchRowOwnsHighlightKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private extension EnvironmentValues {
+    var settingsSearchRowOwnsHighlight: Bool {
+        get { self[SettingsSearchRowOwnsHighlightKey.self] }
+        set { self[SettingsSearchRowOwnsHighlightKey.self] = newValue }
+    }
+}
+
+private struct SettingsSearchHighlightKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = nextValue() || value
+    }
+}
+
+/// The row owner draws after padding, rather than expanding a control's bounds by guessed insets.
+struct SettingsSearchRowHighlight: ViewModifier {
+    let isFirst: Bool
+    let isLast: Bool
+    let cornerRadius: CGFloat
+    @Environment(\.themePalette) private var palette
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.settingsSearchRowOwnsHighlight, true)
+            .backgroundPreferenceValue(SettingsSearchHighlightKey.self) { highlighted in
+                if highlighted {
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: isFirst ? cornerRadius : 0,
+                        bottomLeadingRadius: isLast ? cornerRadius : 0,
+                        bottomTrailingRadius: isLast ? cornerRadius : 0,
+                        topTrailingRadius: isFirst ? cornerRadius : 0
+                    )
+                    .fill(palette.accent.opacity(0.15))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+            }
+            // A nested row consumes its highlight so an enclosing row cannot also light up.
+            .transformPreference(SettingsSearchHighlightKey.self) { $0 = false }
+    }
+}
+
 private struct SettingsSearchNativeReveal: UIViewRepresentable {
-    let onReveal: () -> Void
+    let onReveal: (Bool) -> Void
 
     func makeUIView(context: Context) -> RevealView { RevealView(onReveal: onReveal) }
     func updateUIView(_ view: RevealView, context: Context) { view.setNeedsLayout() }
 
     final class RevealView: UIView {
-        private let onReveal: () -> Void
+        private let onReveal: (Bool) -> Void
         private var revealed = false
         private var revealScheduled = false
 
-        init(onReveal: @escaping () -> Void) {
+        init(onReveal: @escaping (Bool) -> Void) {
             self.onReveal = onReveal
             super.init(frame: .zero)
             isUserInteractionEnabled = false
@@ -178,7 +237,11 @@ private struct SettingsSearchNativeReveal: UIViewRepresentable {
         private func revealControl() {
             guard !revealed, window != nil, bounds.height > 0 else { return }
             var ancestor = superview
+            var nativeListRow = false
             while let view = ancestor {
+                if view is UICollectionViewCell || view is UITableViewCell {
+                    nativeListRow = true
+                }
                 if let scroll = view as? UIScrollView {
                     let rect = convert(bounds, to: scroll)
                     let insets = scroll.adjustedContentInset
@@ -187,7 +250,7 @@ private struct SettingsSearchNativeReveal: UIViewRepresentable {
                     let offset = min(max(rect.midY - insets.top - visibleHeight / 2, -insets.top), maximum)
                     scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: offset), animated: false)
                     revealed = true
-                    DispatchQueue.main.async { [onReveal] in onReveal() }
+                    DispatchQueue.main.async { [onReveal, nativeListRow] in onReveal(nativeListRow) }
                     return
                 }
                 ancestor = view.superview
