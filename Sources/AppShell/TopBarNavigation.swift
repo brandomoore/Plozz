@@ -112,7 +112,10 @@ private struct TopBarNavigationContent: View {
                 .background {
                     NavigationContentFocusRequester(
                         request: contentRequest, onCompleted: contentFocused,
-                        returnFocus: returnFocus, restoresPreviousFocus: true
+                        returnFocus: returnFocus, restoresPreviousFocus: true,
+                        onDirectionalEntry: isShellActive && isNavigating
+                            && !chrome.isChromeHidden && !chrome.transitionSuppressesFocus
+                            ? { enterContent(current) } : nil
                     )
                     .padding(.top, TopBarNavigationMetrics.foregroundTop)
                 }

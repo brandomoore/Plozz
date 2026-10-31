@@ -11,6 +11,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
     let onCompleted: (UInt64, Bool) -> Void
     var returnFocus: ReturnFocus?
     var restoresPreviousFocus = false
+    var onDirectionalEntry: (() -> Void)?
 
     func makeUIView(context: Context) -> RequestView {
         let view = RequestView()
@@ -25,6 +26,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         view.onCompleted = onCompleted
         returnFocus?.marker = view
         view.returnFocus = restoresPreviousFocus ? returnFocus : nil
+        view.onDirectionalEntry = onDirectionalEntry
         view.request = request
     }
 
@@ -32,6 +34,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         view.request = nil
         view.onCompleted = nil
         view.returnFocus = nil
+        view.onDirectionalEntry = nil
     }
 
     @MainActor
@@ -82,6 +85,11 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         var isRightToLeft = false
         var onCompleted: ((UInt64, Bool) -> Void)?
         var returnFocus: ReturnFocus?
+        var onDirectionalEntry: (() -> Void)? {
+            didSet { updateDirectionalEntryOwner() }
+        }
+        private weak var directionalEntryOwner: NavigationRailFocusHostController?
+        private var pendingDirectionalEntry: UUID?
         var request: UInt64? {
             didSet {
                 guard request != oldValue else { return }
@@ -95,6 +103,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
+            updateDirectionalEntryOwner()
             updateObservation()
             if window == nil { stop() } else { schedule() }
         }
@@ -102,6 +111,38 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         override func layoutSubviews() {
             super.layoutSubviews()
             schedule()
+        }
+
+        private func updateDirectionalEntryOwner() {
+            let owner = window != nil && onDirectionalEntry != nil
+                ? NavigationRailFocusHostController.containing(self) : nil
+            if directionalEntryOwner !== owner {
+                if directionalEntryOwner?.directionalContentEntry === self {
+                    directionalEntryOwner?.directionalContentEntry = nil
+                }
+                directionalEntryOwner = owner
+            }
+            owner?.directionalContentEntry = self
+            if owner == nil { pendingDirectionalEntry = nil }
+        }
+
+        func scheduleDirectionalEntry() {
+            guard pendingDirectionalEntry == nil, onDirectionalEntry != nil, request == nil,
+                  let window, let system = UIFocusSystem.focusSystem(for: window),
+                  let source = system.focusedItem else { return }
+            let token = UUID()
+            pendingDirectionalEntry = token
+            // Leave UIKit's focus-validation stack before changing the shell gate.
+            DispatchQueue.main.async { [weak self, weak window, weak source] in
+                guard let self, self.pendingDirectionalEntry == token else { return }
+                self.pendingDirectionalEntry = nil
+                guard let window, self.window === window, let source,
+                      UIFocusSystem.focusSystem(for: window)?.focusedItem === source,
+                      self.directionalEntryOwner?.isNavigationFocused == true,
+                      self.request == nil else { return }
+                HeroFocusDiagnostics.emit("topbar.entry directional-down")
+                self.onDirectionalEntry?()
+            }
         }
 
         private func updateObservation() {

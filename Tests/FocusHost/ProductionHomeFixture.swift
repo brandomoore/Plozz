@@ -336,8 +336,40 @@ struct ProductionHomeFixture: View {
         guard let entry, let enter = entry.enter, let down else {
             print("TOP_BAR_ENTRY complete passed=false missingAction"); return
         }
+        guard let directionalEntry = owner.directionalContentEntry,
+              let directionalAction = directionalEntry.onDirectionalEntry else {
+            print("TOP_BAR_ENTRY complete passed=false missingDirectionalEntry"); return
+        }
+        var directionalCalls = 0
+        directionalEntry.onDirectionalEntry = { directionalCalls += 1 }
+        for heading: UIFocusHeading in [.left, .right, .up, []] {
+            guard owner.allowsFocusUpdate(heading: heading) else {
+                print("TOP_BAR_ENTRY complete passed=false blockedOtherDirection"); return
+            }
+        }
+        do { try await Task.sleep(for: .milliseconds(50)) }
+        catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+        guard directionalCalls == 0 else {
+            print("TOP_BAR_ENTRY complete passed=false otherDirectionEntered"); return
+        }
+        for _ in 0..<3 { _ = owner.allowsFocusUpdate(heading: .down) }
+        do { try await Task.sleep(for: .milliseconds(50)) }
+        catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+        guard directionalCalls == 1 else {
+            print("TOP_BAR_ENTRY complete passed=false duplicateDirectionalEntry"); return
+        }
+        _ = owner.allowsFocusUpdate(heading: .down)
+        directionalEntry.onDirectionalEntry = nil
+        do { try await Task.sleep(for: .milliseconds(50)) }
+        catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+        guard directionalCalls == 1, owner.directionalContentEntry == nil,
+              system.focusedItem === target else {
+            print("TOP_BAR_ENTRY complete passed=false staleDirectionalEntry"); return
+        }
+        directionalEntry.onDirectionalEntry = directionalAction
+        print("TOP_BAR_ENTRY directionalPolicy passed=true")
         for cycle in 0..<6 {
-            let nativePress = cycle.isMultiple(of: 2)
+            let input = ["directional-focus", "native-press", "entry-action"][cycle % 3]
             guard owner.requestFocus(to: target, using: system) else {
                 print("TOP_BAR_ENTRY complete passed=false navigationFocus")
                 return
@@ -345,7 +377,11 @@ struct ProductionHomeFixture: View {
             do { try await Task.sleep(for: .milliseconds(500)) }
             catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
             let started = CACurrentMediaTime()
-            if nativePress {
+            if input == "directional-focus" {
+                guard !owner.allowsFocusUpdate(heading: .down) else {
+                    print("TOP_BAR_ENTRY complete passed=false unownedDirectionalEntry"); return
+                }
+            } else if input == "native-press" {
                 guard down.canEnter() else { print("TOP_BAR_ENTRY complete passed=false rejectedDown"); return }
                 let press = HeroBoundaryProbePress(.downArrow)
                 down.pressesBegan([press], with: UIPressesEvent())
@@ -360,7 +396,7 @@ struct ProductionHomeFixture: View {
             }
             let elapsed = (CACurrentMediaTime() - started) * 1000
             let focused = stage.contains(system.focusedItem, in: stage.hero)
-            print("TOP_BAR_ENTRY cycle=\(cycle) nativePress=\(nativePress) elapsedMS=\(elapsed) heroFocus=\(focused)")
+            print("TOP_BAR_ENTRY cycle=\(cycle) input=\(input) elapsedMS=\(elapsed) heroFocus=\(focused)")
             guard focused, elapsed < 200, !down.canEnter() else {
                 print("TOP_BAR_ENTRY complete passed=false focusOrLatency"); return
             }

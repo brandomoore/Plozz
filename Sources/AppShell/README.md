@@ -253,11 +253,18 @@ before allowing neighboring controls. Live TV's first-use preview choice waits
 for explicit content entry; its presentation owns focus until the choice finishes.
 Physical Down starts entry in the bar's native press recognizer, while actual
 focus belongs to that bar, instead of waiting for SwiftUI's move-command delivery.
-Other directions remain native, and move commands retain the indirect-touch path.
-The debug production Home fixture's `--top-bar-entry-probe` alternates native
-press-began delivery and the shared entry action over six visits, requiring actual
-hero focus within 200 ms. The first visit exercises a cold native entry. This covers
-the recognizer-to-focus path, not physical remote transport or device frame pacing.
+Native downward focus proposals also start that same handoff: the shared owner
+must not merely veto geometry and wait for a later move command. This includes
+directional input that does not arrive as an arrow press. The callback runs on
+the next main turn, coalesces repeated proposals, and is cancelled if the shell
+closes entry or focus leaves its source. Other directions remain native, and
+SwiftUI move commands remain a fallback.
+The debug production Home fixture's `--top-bar-entry-probe` exercises the native
+directional gate, press-began delivery and shared entry action over six visits,
+requiring actual hero focus within 200 ms. It also checks repeated-proposal
+coalescing, cancellation and unrelated directions. The first visit exercises cold
+directional entry. This covers the gate/handler-to-focus path, not physical remote
+transport or device frame pacing.
 Full-bleed Live TV surfaces read the shared top-content inset for guide controls
 and loading placeholders without shrinking expanded playback.
 The common UIKit host propagates a real top safe area through nested stacks.
