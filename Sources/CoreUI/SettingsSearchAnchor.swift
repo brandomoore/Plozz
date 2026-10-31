@@ -157,11 +157,13 @@ private struct SettingsSearchAnchor: ViewModifier {
                 scroll?(id)
                 #endif
             }
+            #if os(iOS)
             .task(id: highlighted) {
                 guard highlighted else { return }
-                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                do { try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.duration)) } catch { return }
                 highlighted = false
             }
+            #endif
     }
 }
 
@@ -220,6 +222,24 @@ private struct SettingsSearchHighlightKey: PreferenceKey {
     }
 }
 
+enum SettingsSearchGlowMotion {
+    static let duration = 3.0
+
+    static func opacity(at time: Double) -> Double {
+        func eased(_ value: Double) -> Double {
+            let t = min(1, max(0, value))
+            return t * t * (3 - 2 * t)
+        }
+        return eased(time / 0.55) * eased((duration - time) / 0.9)
+    }
+
+    static func intensity(at position: Double, time: Double, phase: Double) -> Double {
+        let swell = 0.5 + 0.5 * cos(2 * .pi * (position - time * 0.29) + phase)
+        let ripple = 0.5 + 0.5 * sin(2 * .pi * (2 * position - time * 0.63) + phase * 1.7)
+        return 0.20 + 0.34 * swell + 0.16 * ripple
+    }
+}
+
 /// Mounted only for the landing cue; the inset glow never spills onto neighboring rows.
 struct SettingsSearchGlow<Outline: InsettableShape>: View {
     let shape: Outline
@@ -227,8 +247,14 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.scenePhase) private var scenePhase
-    @State private var angle = 0.0
-    @State private var opacity = 0.0
+    @State private var startedAt = Date()
+    @State private var finished = false
+    @State private var phase: Double
+
+    init(shape: Outline, phase: Double = .random(in: 0..<(2 * .pi))) {
+        self.shape = shape
+        _phase = State(initialValue: phase)
+    }
 
     private var animates: Bool {
         !reduceMotion && !reduceTransparency && scenePhase == .active
@@ -236,40 +262,50 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
 
     var body: some View {
         let neutral = palette.primaryText
-        // A periodic wave joins with matching brightness and slope, rather than a head and tail.
-        let halo = AngularGradient(
-            stops: (0...32).map { index in
-                let position = Double(index) / 32
-                return .init(
-                    color: neutral.opacity(0.45 + 0.18 * cos(position * 2 * .pi)),
-                    location: position
-                )
-            },
-            center: .center, angle: .degrees(angle)
-        )
-        shape.fill(neutral.opacity(0.10))
-            .overlay {
-                if animates {
-                    shape.strokeBorder(halo, lineWidth: 6)
-                        .blur(radius: 4)
-                    shape.strokeBorder(halo, lineWidth: 2)
-                        .blur(radius: 0.75)
-                } else {
-                    shape.strokeBorder(neutral.opacity(0.5), lineWidth: 1.5)
+        Group {
+            if animates {
+                GeometryReader { geometry in
+                    let bounds = CGRect(origin: .zero, size: geometry.size)
+                    let outline = shape.inset(by: 2).path(in: bounds)
+                    // Cache equal-distance contour pieces outside the frame-driven closure.
+                    let segments = (0..<192).map { index in
+                        outline.trimmedPath(from: CGFloat(index) / 192, to: CGFloat(index + 1) / 192)
+                    }
+                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: finished)) { timeline in
+                        let time = finished ? SettingsSearchGlowMotion.duration
+                            : timeline.date.timeIntervalSince(startedAt)
+                        Canvas { context, _ in
+                            context.opacity = SettingsSearchGlowMotion.opacity(at: time)
+                            context.fill(shape.path(in: bounds), with: .color(neutral.opacity(0.10)))
+                            let passes: [(CGFloat, CGFloat)] = [(7, 3), (2, 0.75)]
+                            for (width, blur) in passes {
+                                context.drawLayer { layer in
+                                    layer.addFilter(.blur(radius: blur))
+                                    for (index, segment) in segments.enumerated() {
+                                        let light = SettingsSearchGlowMotion.intensity(
+                                            at: (Double(index) + 0.5) / 192, time: time, phase: phase
+                                        )
+                                        layer.stroke(
+                                            segment, with: .color(neutral.opacity(light)),
+                                            style: StrokeStyle(lineWidth: width, lineCap: .butt)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
+            } else {
+                shape.fill(neutral.opacity(0.10))
+                    .overlay { shape.strokeBorder(neutral.opacity(0.5), lineWidth: 1.5) }
             }
+        }
             .clipShape(shape)
-            .opacity(animates ? opacity : 1)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-            .task(id: animates) {
-                angle = 0
-                opacity = 0
-                guard animates else { return }
-                withAnimation(.easeInOut(duration: 0.35)) { opacity = 1 }
-                withAnimation(.linear(duration: 1.95)) { angle = 150 }
-                do { try await Task.sleep(for: .milliseconds(1500)) } catch { return }
-                withAnimation(.easeInOut(duration: 0.45)) { opacity = 0 }
+            .task {
+                do { try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.duration)) } catch { return }
+                finished = true
             }
     }
 }

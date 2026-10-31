@@ -135,6 +135,27 @@ final class NativeSettingsToggleTests: XCTestCase {
         XCTAssertEqual(cards.artwork, original, "Restyling must not modify artwork preferences.")
     }
 
+    func testSearchGlowWavesHaveSmoothJoinsAndGradualEndpoints() {
+        for phase in stride(from: 0.0, through: 2 * .pi, by: .pi / 4) {
+            for time in stride(from: 0.0, through: SettingsSearchGlowMotion.duration, by: 0.1) {
+                let start = SettingsSearchGlowMotion.intensity(at: 0, time: time, phase: phase)
+                let end = SettingsSearchGlowMotion.intensity(at: 1, time: time, phase: phase)
+                XCTAssertEqual(start, end, accuracy: 0.000001)
+                let before = SettingsSearchGlowMotion.intensity(at: 1 - 0.0001, time: time, phase: phase)
+                let after = SettingsSearchGlowMotion.intensity(at: 0.0001, time: time, phase: phase)
+                XCTAssertEqual(start - before, after - end, accuracy: 0.000001,
+                               "Changing the starting phase must not expose a slope discontinuity.")
+            }
+        }
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0), 0)
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration), 0)
+        XCTAssertLessThan(SettingsSearchGlowMotion.opacity(at: 0.01), 0.002)
+        XCTAssertLessThan(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration - 0.01), 0.002)
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0.7), 1)
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 1.35), 1,
+                       "Spatial movement comparisons must not mistake a global fade for traveling waves.")
+    }
+
     func testSearchGlowMovesNeutrallyAndRespectsReducedEffects() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -177,7 +198,7 @@ final class NativeSettingsToggleTests: XCTestCase {
             let width: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 744 : 300
             window.frame = CGRect(x: 0, y: 0, width: width + 90, height: 400)
             window.rootViewController = UIHostingController(rootView:
-                SettingsSearchGlow(shape: RoundedRectangle(cornerRadius: 18))
+                SettingsSearchGlow(shape: RoundedRectangle(cornerRadius: 18), phase: 0)
                     .frame(width: width, height: 100)
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
                         model.controlBounds = $0
@@ -198,6 +219,8 @@ final class NativeSettingsToggleTests: XCTestCase {
             let first = capture()
             try await Task.sleep(for: .milliseconds(550))
             let second = capture()
+            try await Task.sleep(for: .milliseconds(650))
+            let third = capture()
             let edge: [CGPoint] = (1...9).flatMap { index -> [CGPoint] in
                 let x = bounds.minX + width * CGFloat(index) / 10
                 return [CGPoint(x: x, y: bounds.minY + 1), CGPoint(x: x, y: bounds.maxY - 2)]
@@ -213,6 +236,16 @@ final class NativeSettingsToggleTests: XCTestCase {
             if animates {
                 XCTAssertGreaterThan(movement, 40, "The light must visibly travel along the edge.")
                 let background = light ? 255 : 0
+                var brightened = 0
+                var dimmed = 0
+                for point in edge {
+                    let change = abs(try pixel(third, point)[0] - background)
+                        - abs(try pixel(second, point)[0] - background)
+                    if change > 8 { brightened += 1 }
+                    if change < -8 { dimmed += 1 }
+                }
+                XCTAssertGreaterThanOrEqual(brightened, 3, "Waves must travel during the fully visible interval, not just fade.")
+                XCTAssertGreaterThanOrEqual(dimmed, 3, "Travel must redistribute light along the outline, not pulse the whole row.")
                 let contrasts = try edge.map { abs(try pixel(second, $0)[0] - background) }
                 let weakest = try XCTUnwrap(contrasts.min())
                 let strongest = try XCTUnwrap(contrasts.max())
@@ -237,18 +270,18 @@ final class NativeSettingsToggleTests: XCTestCase {
                 XCTAssertEqual(try pixel(second, point)[0], light ? 255 : 0,
                                "Glow must stay inside the row, including its rounded corners.")
             }
-            for (name, image) in [("arrival", first), ("sweep", second)] {
+            for (name, image) in [("arrival", first), ("wave-first", second), ("wave-later", third)] {
                 let attachment = XCTAttachment(image: image)
                 attachment.name = "Search glow \(name) width=\(Int(width)) light=\(light) motion=\(reducedMotion) effects=\(reducedEffects) active=\(active)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }
-            try await Task.sleep(for: .milliseconds(1400))
+            try await Task.sleep(for: .milliseconds(1850))
             if animates {
                 let expired = capture()
                 for point in edge {
                     XCTAssertEqual(try pixel(expired, point)[0], light ? 255 : 0, accuracy: 2,
-                                   "The glow must finish fading before the two-second landing ends.")
+                                   "The glow must finish fading before the three-second landing ends.")
                 }
             }
             XCTAssertEqual(model.controlBounds, bounds, "Animation must not change row geometry.")
@@ -415,7 +448,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                 attachment.name = "search-row-highlight-\(layout)-\(kind)-\(Int(width))"
                 attachment.lifetime = .keepAlways
                 add(attachment)
-                try await Task.sleep(for: .milliseconds(2200))
+                try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.duration + 0.2))
                 try await settle(window)
                 let normal = capture()
                 let interior = CGPoint(
