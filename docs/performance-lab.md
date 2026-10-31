@@ -187,6 +187,15 @@ URL comparisons. This isolates synchronous admission/URL work, without network
 requests, image decoding, UI layout, or a claim about the duration of a reported
 device hang.
 
+`player-controls-hidden-clock` advances the mounted TV transport's playback and
+buffered positions 32 times at the production 250 ms cadence after hiding it.
+`player-controls-hidden-static` observes the same settled hierarchy without
+clock mutations; `player-controls-visible-clock` repeats the advancing workload
+with controls visible. Each eight-second sample verifies the completed updates
+and timeline collision-region visibility. These isolate clock-driven UI work
+without video decoding, network traffic, or thumbnail extraction. They measure
+app-process CPU, not second-generation Apple TV GPU cost or rendered frame pacing.
+
 `player-controls-reveal` mounts the production TV transport with sixteen audio
 tracks and thirty-two subtitle tracks, then shows and hides it four times per
 sample. `player-controls-reveal-contended` repeats the same interaction with a

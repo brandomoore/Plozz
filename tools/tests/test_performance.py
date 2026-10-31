@@ -166,6 +166,20 @@ class EvidenceTests(unittest.TestCase):
                 with self.assertRaises(performance.Failure):
                     performance.validate_report(incomplete, performance.SCENARIOS[name])
 
+    def test_controls_clock_scenarios_require_tv_and_complete_work_counters(self):
+        for name in ("player-controls-hidden-clock", "player-controls-hidden-static",
+                     "player-controls-visible-clock"):
+            self.assertEqual(performance.select(None, [name], "tvOS"), [name])
+            with self.assertRaisesRegex(performance.Failure, "not supported on iOS"):
+                performance.select(None, [name], "iOS")
+            sample = report(name=name)
+            performance.validate_report(sample, performance.SCENARIOS[name])
+            for counter in performance.SCENARIOS[name]["counters"]:
+                incomplete = copy.deepcopy(sample)
+                del incomplete["samples"][0]["counters"][counter]
+                with self.assertRaises(performance.Failure):
+                    performance.validate_report(incomplete, performance.SCENARIOS[name])
+
     def test_attachment_reader_checks_expected_set_and_paths(self):
         with tempfile.TemporaryDirectory() as path:
             folder = Path(path)

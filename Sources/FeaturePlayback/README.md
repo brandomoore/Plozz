@@ -560,6 +560,12 @@ Clock formatting follows the device locale/time-zone conventions. The clock only
 ticks while requested, and mobile label slots retain their width during scrubbing.
 Live TV retains its existing guide-based program times.
 
+The TV timeline isolates text measurement in `PlayerTimelineLabels`: unchanged
+display strings reuse their label view, while its geometry continues observing
+fractional playhead updates. Text, clock-mode, model-identity, and Dynamic Type
+changes still refresh the labels. Controls stay mounted and keep their existing
+reveal/fade behavior; hidden playback positions are not frozen.
+
 ## Mobile player orientation
 
 The iPhone full-screen on-demand and expanded Live TV players read the active profile's

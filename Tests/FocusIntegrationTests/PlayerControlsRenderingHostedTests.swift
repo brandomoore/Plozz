@@ -8,6 +8,61 @@ import XCTest
 
 @MainActor
 final class PlayerControlsRenderingHostedTests: XCTestCase {
+    func testUnchangedLabelsFollowFractionalProgressAndHiddenUpdates() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let model = PlayerControlsModel()
+        model.controlsVisible = true
+        model.duration = 10
+        model.currentSeconds = 3.6
+        window.rootViewController = UIHostingController(rootView:
+            PlayerTimelineTimes(model: model)
+                .frame(width: 1400, height: 60)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .background(.black)
+        )
+        window.makeKeyAndVisible()
+        func currentLabelX(in image: UIImage) throws -> CGFloat {
+            let label = try XCTUnwrap(try recognizedTimelineText(in: image, recognitionLevel: .fast).first {
+                $0.topCandidates(1).first?.string == "0:04"
+            })
+            return label.boundingBox.midX * window.bounds.width
+        }
+        let initial = try await captureTimeline(in: window, matching: "0:04.*0:06", recognitionLevel: .fast)
+        model.currentSeconds = 4.4
+        let advanced = try await captureTimeline(in: window, matching: "0:04.*0:06", recognitionLevel: .fast)
+        XCTAssertEqual(
+            try currentLabelX(in: advanced) - currentLabelX(in: initial), 112, accuracy: 8,
+            "Identical displayed strings must not freeze their live playhead position."
+        )
+        model.isScrubbing = true
+        model.scrubSeconds = 6.2
+        _ = try await captureTimeline(in: window, matching: "0:06.*0:04", recognitionLevel: .fast)
+        model.isScrubbing = false
+        model.controlsVisible = false
+        model.currentSeconds = 4.2
+        _ = try await captureTimeline(in: window, matching: "0:04.*0:06", recognitionLevel: .fast)
+        model.controlsVisible = true
+        let revealed = try await captureTimeline(in: window, matching: "0:04.*0:06", recognitionLevel: .fast)
+        XCTAssertEqual(
+            try currentLabelX(in: revealed) - currentLabelX(in: initial), 84, accuracy: 8,
+            "Reveal must use the latest position, not a frozen hidden snapshot."
+        )
+    }
+
     func testRemoteScanLevelRendersOnTheDirectionSideOfTheTimestamp() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),

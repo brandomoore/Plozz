@@ -192,10 +192,35 @@ struct PlayerTimelineTimes: View {
     }
 
     private func labels(clock: PlayerClockTimes?) -> some View {
+        PlayerTimelineLabels(
+            model: model,
+            curLabel: clock?.current ?? PlayerControls.timeLabel(model.displaySeconds),
+            remLabel: clock.map { $0.endTime ?? "--:--" }
+                ?? ("-" + PlayerControls.timeLabel(max(0, model.duration - model.displaySeconds))),
+            showsClock: clock != nil
+        )
+        .equatable()
+    }
+}
+
+/// Text measurement follows displayed strings, while the geometry below still
+/// observes every playhead update independently.
+struct PlayerTimelineLabels: View, Equatable {
+    let model: PlayerControlsModel
+    let curLabel: String
+    let remLabel: String
+    let showsClock: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.model === rhs.model && lhs.curLabel == rhs.curLabel
+            && lhs.remLabel == rhs.remLabel && lhs.showsClock == rhs.showsClock
+    }
+
+    var body: some View {
+        // An unchanged string still needs new metrics after a text-size change.
+        let _ = dynamicTypeSize
         let fadeGap: CGFloat = 16
-        let curLabel = clock?.current ?? PlayerControls.timeLabel(model.displaySeconds)
-        let remLabel = clock.map { $0.endTime ?? "--:--" }
-            ?? ("-" + PlayerControls.timeLabel(max(0, model.duration - model.displaySeconds)))
         let curW = PlayerControls.measuredTimeWidth(curLabel)
         let remW = PlayerControls.measuredTimeWidth(remLabel)
         return GeometryReader { geo in
@@ -218,7 +243,7 @@ struct PlayerTimelineTimes: View {
 
             Text(curLabel)
                 .accessibilityIdentifier("player-timeline-current-time")
-                .accessibilityLabel(clock == nil ? Text("Elapsed time") : Text("Current time"))
+                .accessibilityLabel(showsClock ? Text("Current time") : Text("Elapsed time"))
                 .accessibilityValue(Text(verbatim: curLabel))
                 .monospacedDigit()
                 .font(.callout.weight(.semibold))
@@ -240,7 +265,7 @@ struct PlayerTimelineTimes: View {
 
             Text(remLabel)
                 .accessibilityIdentifier("player-timeline-end-time")
-                .accessibilityLabel(clock == nil ? Text("Remaining time") : Text("Estimated end time"))
+                .accessibilityLabel(showsClock ? Text("Estimated end time") : Text("Remaining time"))
                 .accessibilityValue(Text(verbatim: remLabel))
                 .monospacedDigit()
                 .font(.callout.weight(.semibold))
