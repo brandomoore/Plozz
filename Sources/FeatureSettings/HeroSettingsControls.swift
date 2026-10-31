@@ -340,7 +340,8 @@ struct HeroSettingsScreen: View {
         if hero.allowsDiscovery {
             HeroSettingsGroup(
                 title: "Provider labels",
-                detail: "Show provider names on Discovery content. This does not change what appears."
+                detail: "Show provider names on Discovery content. This does not change what appears.",
+                searchTargets: ["hero-provider-labels"]
             ) {
                 Toggle("Show provider labels", isOn: $hero.settings.showsDiscoverySources)
                     .modifier(ViewCustomizationRowFocus(id: "hero-provider-labels"))
@@ -348,7 +349,8 @@ struct HeroSettingsScreen: View {
             }
             HeroSettingsGroup(
                 title: "Discovery providers",
-                detail: "Recommendations may include content outside your libraries. Seerr is only needed to request it."
+                detail: "Recommendations may include content outside your libraries. Seerr is only needed to request it.",
+                searchTargets: HeroDiscoverySource.allCases.map { "hero-discovery-\($0.rawValue)" }
             ) {
                 ForEach(HeroDiscoverySource.allCases) { source in
                     Toggle(isOn: discoveryBinding(source)) {
@@ -386,7 +388,8 @@ struct HeroSettingsScreen: View {
     private var randomLibraries: some View {
         @Bindable var hero = hero
         return HeroSettingsGroup(
-            detail: "Choose at least one library. All libraries includes new libraries added to Home."
+            detail: "Choose at least one library. All libraries includes new libraries added to Home.",
+            searchTargets: ["hero-all-libraries"]
         ) {
             if eligibleLibraries.isEmpty {
                 Text("No movie or TV libraries are enabled on Home.")
@@ -442,7 +445,10 @@ private struct HeroTitleSources: View {
             ViewPreferenceChoiceGroup(rowSize: .contained) {
                 Toggle(source.displayName, isOn: sourceBinding(source))
                     .modifier(ViewCustomizationRowFocus(id: "hero-source-\(source.rawValue)"))
-                    .settingsSearchAnchor("hero-source-\(source.rawValue)", fallbackFor: prerequisites(for: source))
+                    .settingsSearchAnchor(
+                        "hero-source-\(source.rawValue)",
+                        fallbackFor: hero.effectiveSettings.isEnabled(source) ? [] : dependentTargets(for: source)
+                    )
                 if hero.effectiveSettings.isEnabled(source) {
                     switch source {
                     case .featured:
@@ -462,6 +468,8 @@ private struct HeroTitleSources: View {
             #if os(tvOS)
             .toggleStyle(SettingsSwitchToggleStyle(flushLeading: false))
             .buttonStyle(SettingsFormButtonStyle())
+            #else
+            .settingsSearchGroup(["hero-source-\(source.rawValue)"] + dependentTargets(for: source))
             #endif
         }
         if !hero.allowsDiscovery {
@@ -482,8 +490,7 @@ private struct HeroTitleSources: View {
         )
     }
 
-    private func prerequisites(for source: HeroSourceKind) -> [String] {
-        guard !hero.effectiveSettings.isEnabled(source) else { return [] }
+    private func dependentTargets(for source: HeroSourceKind) -> [String] {
         switch source {
         case .randomFromLibrary: return ["hero-choose-libraries"] + SettingsSearchCatalog.targets(on: .heroLibraries)
         case .collection: return ["hero-choose-collections"] + SettingsSearchCatalog.targets(on: .heroCollections)

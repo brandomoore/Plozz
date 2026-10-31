@@ -21,6 +21,7 @@ final class NativeSettingsToggleTests: XCTestCase {
         var controlBounds = CGRect.zero
         var selection = 0
         var amount = 0.5
+        var searchRequest: SettingsSearchRequest?
 
         var binding: Binding<Bool> {
             Binding(
@@ -1369,6 +1370,93 @@ final class NativeSettingsToggleTests: XCTestCase {
             try await settle(window)
             XCTAssertFalse(background.settings.homeTrailerEnabled)
             XCTAssertEqual(listedSwitches(in: window).count, 1)
+        }
+    }
+
+    private struct SearchLandingProbe: View {
+        @Environment(SettingsSearchRequest.self) private var request: SettingsSearchRequest?
+        let model: Model
+
+        var body: some View {
+            Color.clear.onAppear { model.searchRequest = request }
+        }
+    }
+
+    func testHeroSourceSearchRevealsAndHighlightsOffscreenNativeRows() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        func capture() -> UIImage {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+        }
+        func pixels(_ image: UIImage) throws -> [UInt8] {
+            let cgImage = try XCTUnwrap(image.cgImage)
+            var bytes = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &bytes, width: cgImage.width, height: cgImage.height, bitsPerComponent: 8,
+                bytesPerRow: cgImage.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+            return bytes
+        }
+        for width: CGFloat in [390, 834] {
+            for (target, enabled) in [
+                ("hero-source-collection", false), ("hero-source-collection", true),
+                ("hero-choose-collections", false), ("hero-source-featured", true)
+            ] {
+                let model = Model()
+                let hero = HeroSettingsModel(store: InMemoryHeroSettingsStore())
+                let background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore())
+                hero.settings.sources = HeroSourceKind.allCases
+                hero.settings.setEnabled(.collection, enabled: enabled)
+                let original = hero.settings
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 360)
+                window.rootViewController = UIHostingController(rootView: NavigationStack {
+                    SettingsSearchLanding(targetID: target) {
+                        HeroSettingsScreen(page: .titles, libraries: [], accounts: [])
+                            .background { SearchLandingProbe(model: model) }
+                    }
+                }
+                .environment(hero)
+                .environment(background)
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.gradientBackgroundsEnabled, false)
+                .environment(\.scenePhase, .active)
+                .environment(\._accessibilityReduceMotion, false))
+                window.makeKeyAndVisible()
+                let deadline = ContinuousClock.now + .seconds(5)
+                while model.searchRequest?.revealed != true, ContinuousClock.now < deadline {
+                    try await settle(window)
+                }
+                XCTAssertEqual(model.searchRequest?.revealed, true,
+                               "\(target) must reveal even when its native section starts below the viewport.")
+                try await Task.sleep(for: .milliseconds(700))
+                let highlighted = capture()
+                let attachment = XCTAttachment(image: highlighted)
+                attachment.name = "\(target) search width=\(Int(width)) collectionsEnabled=\(enabled)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.duration + 0.2))
+                let before = try pixels(highlighted)
+                let after = try pixels(capture())
+                let changed = stride(from: 0, to: before.count, by: 4).filter {
+                    Int(before[$0]) - Int(after[$0]) > 10
+                }.count
+                XCTAssertGreaterThan(changed, 1000, "The revealed row must visibly highlight, not merely scroll.")
+                XCTAssertEqual(hero.settings, original, "Search must not enable Collections or change its selections.")
+            }
         }
     }
 

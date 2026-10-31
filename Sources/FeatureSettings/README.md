@@ -63,8 +63,10 @@ outline instead; TV continues to use native focus without this mobile effect.
 Grouped ownership is set before resolving SwiftUI subviews, so ScrollView rows
 do not also paint a smaller control highlight. Nested anchors preserve a child's
 active highlight, and nested row owners consume it without lighting up their parents.
-Native lazy List cells register their contained targets with
-`settingsSearchGroup`; the selected control is then revealed within that cell.
+Native lazy List cells and sections register their contained targets with
+`settingsSearchGroup`; the selected control is then revealed within that container.
+Hero source sections register both their toggle and dependent targets, so offscreen
+Collections and other sources can be created before their landing cue starts.
 Every indexed entry needs an available route and a matching control anchor.
 Disabled prerequisite controls can register dependent targets with `fallbackFor`;
 do not register the same target on a still-mounted disabled child.
