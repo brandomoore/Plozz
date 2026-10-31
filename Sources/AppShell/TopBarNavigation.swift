@@ -323,7 +323,8 @@ private struct TopBarScrollPosition: ViewModifier {
                     ? nil : NavigationChromeMotion.animation,
                 value: chromeHidden
             )
-            .offset(y: -scroll.offset)
+            // Finish hiding at the screen edge, not hundreds of points above it.
+            .offset(y: -scroll.visibleOffset(maximum: TopBarNavigationMetrics.foregroundTop))
             .disabled(scroll.offset >= TopBarNavigationMetrics.foregroundTop)
             .accessibilityHidden(chromeHidden || scroll.offset >= TopBarNavigationMetrics.foregroundTop)
     }

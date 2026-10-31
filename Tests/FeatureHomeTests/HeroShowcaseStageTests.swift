@@ -7,6 +7,65 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testTopNavigationSeparatesStageProgressFromItsFocusAndResetOffset() {
+        let navigation = TopNavigationScroll()
+        let source = UUID()
+        navigation.register(source: source, offset: 0) {}
+        for offset: CGFloat in [0, 320.5] {
+            for progress: CGFloat in [0, 0.25, 0.5, 0.75, 1] {
+                navigation.update(offset: offset, source: source, stageTransition: .init(offset: offset, progress: progress))
+                XCTAssertEqual(navigation.offset, offset)
+                XCTAssertEqual(navigation.visibleOffset(maximum: 124), progress * 124)
+            }
+        }
+        navigation.update(offset: 500, source: source, stageTransition: .init(offset: 320.5, progress: 1))
+        XCTAssertEqual(navigation.visibleOffset(maximum: 124), 124)
+        XCTAssertTrue(navigation.scrollToTop())
+        XCTAssertEqual(navigation.visibleOffset(maximum: 124), 0)
+        XCTAssertNil(navigation.stageTransition)
+        let replacement = UUID()
+        navigation.register(source: replacement, offset: 40) {}
+        navigation.update(offset: 320.5, source: source, stageTransition: .init(offset: 320.5, progress: 1))
+        navigation.unregister(source: source)
+        XCTAssertNil(navigation.stageTransition)
+        XCTAssertEqual(navigation.visibleOffset(maximum: 124), 40)
+        navigation.unregister(source: replacement)
+        XCTAssertEqual(navigation.visibleOffset(maximum: 124), 0)
+    }
+
+    func testStageNavigationBindingHandlesReducedMotionAndDeparture() {
+        let navigation = TopNavigationScroll()
+        let motion = HeroShowcaseScrollMotion()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let root = UIViewController()
+        window.rootViewController = root
+        window.isHidden = false
+        let scroll = UIScrollView(frame: window.bounds)
+        scroll.contentSize = CGSize(width: 1920, height: 3000)
+        root.view.addSubview(scroll)
+        let position = FocusHeroNativeScrollPosition.PositionView(frame: window.bounds)
+        position.navigation = navigation
+        scroll.addSubview(position)
+        position.bindShowcaseMotion(motion)
+        defer { position.stop(); motion.stopAnimations(); window.isHidden = true; window.rootViewController = nil }
+        for expanded in [false, true, false] {
+            motion.move(expanded: expanded, distance: 320.5, animated: true, reduceMotion: true)
+            XCTAssertEqual(navigation.offset, expanded ? 0 : 320.5)
+            XCTAssertEqual(navigation.visibleOffset(maximum: 124), expanded ? 0 : 124)
+            XCTAssertEqual(scroll.contentOffset.y, 0)
+        }
+        position.onReturnToTop = {
+            motion.move(expanded: true, distance: 320.5, animated: true, reduceMotion: false)
+        }
+        XCTAssertTrue(navigation.scrollToTop())
+        XCTAssertEqual(navigation.visibleOffset(maximum: 124), 0)
+        XCTAssertNil(navigation.stageTransition)
+        position.stop()
+        motion.move(expanded: false, distance: 400, animated: true, reduceMotion: false)
+        XCTAssertEqual(navigation.offset, 0)
+        XCTAssertNil(navigation.stageTransition)
+    }
+
     func testTopNavigationIncludesTheFeaturedStageWithoutMovingRowContent() {
         for rowOffset: CGFloat in [0, 180] {
             let navigation = TopNavigationScroll()

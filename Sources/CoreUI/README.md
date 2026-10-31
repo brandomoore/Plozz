@@ -23,6 +23,10 @@ top bar. `scrollsTopNavigation()` handles ordinary SwiftUI roots; native grids
 and Showcase report through their existing owners. Source tokens reject late
 callbacks from departed pages. Back resets the active owner to the page top;
 scroll updates invalidate only the bar's position, not the page builder.
+Stage transitions may report native presentation progress separately from the
+logical scroll offset. The bar uses that progress for its bounded offscreen
+travel, while focus admission and Back still use the full logical offset.
+Source changes and unregistering discard this presentation state.
 There is no top-navigation foreground mask. Native and pinned sidebars do not
 receive this coordinator and retain their existing behavior.
 

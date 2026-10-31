@@ -389,7 +389,27 @@ struct ProductionHomeFixture: View {
                 }
                 rowViews.append(contentsOf: view.subviews)
             }
-            for expanded in [false, true, false, true, false, true] {
+            let measuresTopBar = ProcessInfo.processInfo.arguments.contains("--top-bar-home")
+            var navigationViews: [UIView] = window.map { [$0] } ?? []
+            var navigationMarker: NavigationRowFocusRequester.RequestView?
+            var returnCue: HeroShowcaseReturnCue.CueView?
+            while let view = navigationViews.popLast() {
+                if let marker = view as? NavigationRowFocusRequester.RequestView {
+                    navigationMarker = marker
+                }
+                if let cue = view as? HeroShowcaseReturnCue.CueView { returnCue = cue }
+                navigationViews.append(contentsOf: view.subviews)
+            }
+            func presentedNavigationY() -> CGFloat? {
+                guard let layer = navigationMarker?.layer.presentation() else { return nil }
+                return layer.convert(CGPoint(x: layer.bounds.midX, y: layer.bounds.midY), to: nil).y
+            }
+            let visibleNavigationY = presentedNavigationY()
+            let moves: [(Bool, TimeInterval)] = [
+                (false, 0.7), (true, 0.7), (false, 0.7), (true, 0.7), (false, 0.7), (true, 0.7),
+                (false, 0.18), (true, 0.18), (false, 0.18), (true, 0.7)
+            ]
+            for (expanded, duration) in moves {
                 let press = HeroBoundaryProbePress(expanded ? .upArrow : .downArrow)
                 guard let recognizer = stage.view.gestureRecognizers?.first(where: {
                     $0.allowedPressTypes.contains(NSNumber(value: press.type.rawValue))
@@ -402,8 +422,32 @@ struct ProductionHomeFixture: View {
                 let heading: UIFocusHeading = expanded ? .up : .down
                 let blocked = !stage.allowsFocusUpdate(from: source, to: nil, heading: heading)
                 recognizer.pressesEnded([press], with: UIPressesEvent())
-                do { try await Task.sleep(for: .milliseconds(700)) }
-                catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                if measuresTopBar {
+                    let started = CACurrentMediaTime()
+                    var samples = 0
+                    var transitionSamples = 0
+                    var maximumError: CGFloat = 0
+                    repeat {
+                        do { try await Task.sleep(for: .milliseconds(16)) }
+                        catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                        guard let visibleNavigationY, let currentY = presentedNavigationY(),
+                              let rows = stage.rows.view.layer.presentation(),
+                              stage.state.motion.distance > 0 else {
+                            print("HERO_STAGE_PROBE missing presented navigation or stage"); return
+                        }
+                        let progress = min(1, max(0, 1 - rows.transform.m42 / stage.state.motion.distance))
+                        let expectedY = visibleNavigationY - progress * TopBarNavigationMetrics.foregroundTop
+                        maximumError = max(maximumError, abs(currentY - expectedY))
+                        samples += 1
+                        if progress > 0.05, progress < 0.95 { transitionSamples += 1 }
+                    } while CACurrentMediaTime() - started < duration
+                    let synchronized = maximumError < 16 && samples >= 6 && transitionSamples >= 3
+                    passed = passed && synchronized
+                    print("HERO_STAGE_MOTION expanded=\(expanded) maxError=\(maximumError) samples=\(samples) transitionSamples=\(transitionSamples) synchronized=\(synchronized)")
+                } else {
+                    do { try await Task.sleep(for: .seconds(duration)) }
+                    catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                }
                 let focused = stage.contains(system.focusedItem, in: expanded ? stage.hero : stage.rows)
                 passed = passed && blocked && focused && stage.state.isExpanded == expanded
                 if ProcessInfo.processInfo.arguments.contains("--top-bar-home") {
@@ -411,12 +455,40 @@ struct ProductionHomeFixture: View {
                     let correctVisibility = expanded ? offset == 0 : offset >= TopBarNavigationMetrics.foregroundTop
                     passed = passed && correctVisibility
                     print("HERO_STAGE_NAV expanded=\(expanded) offset=\(offset) correctVisibility=\(correctVisibility)")
-                    if !expanded {
+                    if !expanded, duration >= 0.7 {
+                        guard let returnCue, let window else {
+                            print("HERO_STAGE_PROBE missing return cue"); return
+                        }
+                        let cueY = returnCue.arrow.convert(returnCue.arrow.bounds, to: window).midY
+                        passed = passed && abs(cueY - 72) < 1
+                        print("HERO_STAGE_NAV cueY=\(cueY)")
                         do { try await Task.sleep(for: .seconds(1)) }
                         catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
                     }
                 }
                 print("HERO_STAGE_BOUNDARY expanded=\(expanded) blocksPendingEscape=\(blocked) correctFocus=\(focused)")
+            }
+            if measuresTopBar {
+                stage.present(expanded: false, focus: true)
+                do { try await Task.sleep(for: .milliseconds(700)) }
+                catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                guard let navigation, navigation.scrollToTop(), let visibleNavigationY else {
+                    print("HERO_STAGE_PROBE missing navigation reset"); return
+                }
+                do { try await Task.sleep(for: .milliseconds(80)) }
+                catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                let started = CACurrentMediaTime()
+                var maximumError: CGFloat = 0
+                repeat {
+                    guard let currentY = presentedNavigationY() else {
+                        print("HERO_STAGE_PROBE missing presented navigation after reset"); return
+                    }
+                    maximumError = max(maximumError, abs(currentY - visibleNavigationY))
+                    do { try await Task.sleep(for: .milliseconds(16)) }
+                    catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                } while CACurrentMediaTime() - started < 0.7
+                passed = passed && maximumError < 1 && stage.state.isExpanded
+                print("HERO_STAGE_NAV resetMaxError=\(maximumError)")
             }
             print("HERO_STAGE_PROBE complete passed=\(passed)")
             return

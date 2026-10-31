@@ -1091,6 +1091,17 @@ offset: entering even the first Showcase row moves the bar offscreen and removes
 it from focus, and returning to Spotlight reveals it. Back's return-to-top resets
 both the rows and featured stage. Standalone Showcase keeps its existing behavior,
 and this does not hide either sidebar.
+The bar travels only far enough to clear the screen and follows the stage's
+native presentation progress, including reversals, instead of starting another
+SwiftUI animation after the hero. Using the full stage distance would hide it
+early and reveal it late. The bounded display-link observer stops on completion,
+detach, or reduced-motion updates. The return chevron sits 72 points from the top in all navigation styles,
+without reserving space for the now-hidden Top Bar.
+Back still reveals navigation immediately, cancelling its frame follower so a
+later stage frame cannot hide the newly focused bar again.
+The navigation fixture samples the bar's rendered position against stage
+progress through full transitions and rapid reversals, as well as checking
+focus ownership, final visibility, and the chevron's screen position.
 The outgoing hero foreground, incoming Showcase details, and rows share one
 native scroll distance, easing, and start time. Their relative positions remain
 fixed throughout the move and rapid reversals; only their opacity changes as

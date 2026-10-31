@@ -18,13 +18,12 @@ final class HeroShowcaseState {
 }
 
 @MainActor
-final class HeroShowcaseScrollMotion {
+final class HeroShowcaseScrollMotion: NSObject {
     enum Surface: Hashable { case featured, featuredBackdrop, showcase, showcaseBackdrop, rows }
 
     static let backdropTravelFraction: CGFloat = 0.375
     static let duration: TimeInterval = 0.6
     static let timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0, 0.2, 1)
-    static let navigationAnimation = Animation.timingCurve(0.32, 0, 0.2, 1, duration: duration)
 
     private final class Target {
         weak var view: UIView?
@@ -38,6 +37,20 @@ final class HeroShowcaseScrollMotion {
     private(set) var distance: CGFloat = 0
     private var offset: CGFloat = 0
     private var reduceMotion = false
+    private weak var navigationPosition: FocusHeroNativeScrollPosition.PositionView?
+    private var navigationFrames: CADisplayLink?
+
+    func bindNavigation(_ position: FocusHeroNativeScrollPosition.PositionView) {
+        guard navigationPosition !== position else { return }
+        navigationPosition = position
+        reportNavigationFrame()
+    }
+
+    func unbindNavigation(_ position: FocusHeroNativeScrollPosition.PositionView) {
+        guard navigationPosition === position else { return }
+        navigationPosition = nil
+        stopNavigationFrames()
+    }
 
     func bind(_ view: UIView, to surface: Surface) {
         let target = Target(view: view)
@@ -56,6 +69,7 @@ final class HeroShowcaseScrollMotion {
     }
 
     func move(expanded: Bool, distance: CGFloat, animated: Bool, reduceMotion: Bool) {
+        let departure = navigationProgress
         self.distance = distance
         self.offset = expanded ? distance : 0
         self.reduceMotion = reduceMotion
@@ -86,6 +100,50 @@ final class HeroShowcaseScrollMotion {
             }
         }
         CATransaction.commit()
+        if animated, !reduceMotion, navigationPosition != nil {
+            navigationPosition?.updateNavigationOffset(distance - offset, progress: departure)
+            startNavigationFrames()
+        } else {
+            finishNavigation()
+        }
+    }
+
+    private var navigationProgress: CGFloat {
+        guard distance > 0 else { return 0 }
+        let position = targets[.rows]?.view?.layer.presentation()?.transform.m42 ?? offset
+        return min(1, max(0, 1 - position / distance))
+    }
+
+    private var targetNavigationProgress: CGFloat { distance > 0 && offset == 0 ? 1 : 0 }
+
+    @objc private func reportNavigationFrame() {
+        guard let target = targets[.rows], let view = target.view,
+              view.window != nil, navigationPosition != nil else {
+            finishNavigation()
+            return
+        }
+        let moving = target.keys.contains { view.layer.animation(forKey: $0) != nil }
+        navigationPosition?.updateNavigationOffset(
+            distance - offset, progress: moving ? navigationProgress : targetNavigationProgress
+        )
+        if moving { startNavigationFrames() } else { stopNavigationFrames() }
+    }
+
+    private func startNavigationFrames() {
+        guard navigationFrames == nil else { return }
+        let frames = CADisplayLink(target: self, selector: #selector(reportNavigationFrame))
+        navigationFrames = frames
+        frames.add(to: .main, forMode: .common)
+    }
+
+    private func stopNavigationFrames() {
+        navigationFrames?.invalidate()
+        navigationFrames = nil
+    }
+
+    func finishNavigation() {
+        stopNavigationFrames()
+        navigationPosition?.updateNavigationOffset(distance - offset, progress: targetNavigationProgress)
     }
 
     private func position(for surface: Surface) -> CGFloat {
@@ -100,6 +158,7 @@ final class HeroShowcaseScrollMotion {
     }
 
     func stopAnimations() {
+        finishNavigation()
         for target in targets.values {
             for key in target.keys { target.view?.layer.removeAnimation(forKey: key) }
             target.keys.removeAll()
@@ -204,13 +263,11 @@ struct HeroShowcaseFeaturedContent: View {
 struct HeroShowcaseReturnCue: UIViewRepresentable {
     let model: FocusHeroModel
     let rows: [FocusHeroRow]
-    let navigationStyle: NavigationStyle
     let isActive: Bool
 
     func makeUIView(context: Context) -> CueView { CueView() }
 
     func updateUIView(_ view: CueView, context: Context) {
-        view.top = max(72, FocusHeroLayout.columnTop(for: navigationStyle) - 18)
         view.setActive(isActive && model.activeIndex(in: rows) == 0)
     }
 

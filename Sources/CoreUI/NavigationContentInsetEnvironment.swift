@@ -34,7 +34,18 @@ private struct PlozzTopNavigationScrollKey: EnvironmentKey {
 /// The root scroll owner moves the custom top bar; detail chrome remains independent.
 @MainActor @Observable
 public final class TopNavigationScroll {
+    public struct StageTransition: Equatable {
+        public let offset: CGFloat
+        public let progress: CGFloat
+
+        public init(offset: CGFloat, progress: CGFloat) {
+            self.offset = offset
+            self.progress = min(1, max(0, progress))
+        }
+    }
+
     public private(set) var offset: CGFloat = 0
+    public private(set) var stageTransition: StageTransition?
     @ObservationIgnored private var source: UUID?
     @ObservationIgnored private var reset: (() -> Void)?
 
@@ -44,11 +55,19 @@ public final class TopNavigationScroll {
         self.source = source
         reset = scrollToTop
         self.offset = max(0, offset)
+        stageTransition = nil
     }
 
-    public func update(offset: CGFloat, source: UUID) {
+    public func update(offset: CGFloat, source: UUID, stageTransition: StageTransition? = nil) {
         guard self.source == source else { return }
         self.offset = max(0, offset)
+        self.stageTransition = stageTransition
+    }
+
+    public func visibleOffset(maximum: CGFloat) -> CGFloat {
+        guard let stageTransition else { return min(offset, maximum) }
+        let rows = max(0, offset - stageTransition.offset)
+        return min(maximum, rows + maximum * stageTransition.progress)
     }
 
     public func unregister(source: UUID) {
@@ -56,6 +75,7 @@ public final class TopNavigationScroll {
         self.source = nil
         reset = nil
         offset = 0
+        stageTransition = nil
     }
 
     /// Returns whether content moved, so navigation can discard its old deep-row focus.
@@ -64,6 +84,7 @@ public final class TopNavigationScroll {
         guard offset > 0, let reset else { return false }
         reset()
         offset = 0
+        stageTransition = nil
         return true
     }
 }
