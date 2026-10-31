@@ -159,7 +159,9 @@ final class NativeSettingsToggleTests: XCTestCase {
     }
 
     func testSearchArrivalPopBlendsIntoReflectionsWithoutExtendingCue() {
+        XCTAssertEqual(SettingsSearchGlowMotion.delay, 0.35)
         XCTAssertEqual(SettingsSearchGlowMotion.duration, 3)
+        XCTAssertEqual(SettingsSearchGlowMotion.lifetime, 3.35)
         XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0.16), 1)
         XCTAssertEqual(SettingsSearchGlowMotion.arrivalBoost(at: 0.16), 1)
         XCTAssertGreaterThan(SettingsSearchGlowMotion.arrivalBoost(at: 0.8), 0.6,
@@ -177,6 +179,16 @@ final class NativeSettingsToggleTests: XCTestCase {
             XCTAssertLessThan(before - after, 0.01,
                               "The longer blend must avoid the previous sharp mid-fade brightness drop.")
         }
+    }
+
+    func testSearchGlowHDRUsesTwentyPercentLinearHeadroom() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("HDR colors require iOS 26.") }
+        let emission = SettingsSearchGlowHDR.emission.resolveHDR(in: EnvironmentValues())
+        XCTAssertEqual(emission.linearRed, 1.2, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearGreen, 1.2, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearBlue, 1.2, accuracy: 0.0001)
+        XCTAssertEqual(emission.opacity, 1)
+        XCTAssertEqual(try XCTUnwrap(emission.headroom), 1.2, accuracy: 0.0001)
     }
 
     func testSearchReflectionsDriftGentlyAndIndependently() {
@@ -259,22 +271,29 @@ final class NativeSettingsToggleTests: XCTestCase {
                     .environment(\.plozzReduceTransparency, reducedEffects)
             )
             window.makeKeyAndVisible()
-            try await Task.sleep(for: .milliseconds(250))
+            let mountedAt = ContinuousClock.now
+            func captureFrame(at time: Double) async throws -> UIImage {
+                try await ContinuousClock().sleep(until: mountedAt.advanced(by: .seconds(time)))
+                return capture()
+            }
+            try await Task.sleep(for: .milliseconds(150))
             window.layoutIfNeeded()
             let bounds = model.controlBounds
             XCTAssertEqual(bounds.width, width)
-            let first = capture()
-            try await Task.sleep(for: .milliseconds(650))
-            let second = capture()
-            try await Task.sleep(for: .milliseconds(650))
-            let third = capture()
-            try await Task.sleep(for: .milliseconds(300))
-            let settled = capture()
+            let beforeStart = capture()
+            let first = try await captureFrame(at: SettingsSearchGlowMotion.delay + 0.25)
+            let second = try await captureFrame(at: SettingsSearchGlowMotion.delay + 0.9)
+            let third = try await captureFrame(at: SettingsSearchGlowMotion.delay + 1.55)
+            let settled = try await captureFrame(at: SettingsSearchGlowMotion.delay + 1.85)
             let edge: [CGPoint] = (1...9).flatMap { index -> [CGPoint] in
                 let x = bounds.minX + width * CGFloat(index) / 10
                 return [CGPoint(x: x, y: bounds.minY + 1), CGPoint(x: x, y: bounds.maxY - 2)]
             }
             var movement = 0
+            for point in edge + [CGPoint(x: bounds.midX, y: bounds.midY)] {
+                XCTAssertEqual(try pixel(beforeStart, point)[0], light ? 255 : 0, accuracy: 2,
+                               "The complete cue must initially be invisible, including accessibility fallbacks.")
+            }
             for point in edge {
                 let before = try pixel(first, point)
                 let after = try pixel(second, point)
@@ -340,16 +359,16 @@ final class NativeSettingsToggleTests: XCTestCase {
                                "The brighter arrival must also stay inside the row.")
             }
             for (name, image) in [
-                ("arrival", first), ("blending-first", second), ("blending-later", third), ("settled", settled)
+                ("waiting", beforeStart), ("arrival", first), ("blending-first", second),
+                ("blending-later", third), ("settled", settled)
             ] {
                 let attachment = XCTAttachment(image: image)
                 attachment.name = "Search glow \(name) width=\(Int(width)) light=\(light) motion=\(reducedMotion) effects=\(reducedEffects) active=\(active)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }
-            try await Task.sleep(for: .milliseconds(1350))
             if animates {
-                let expired = capture()
+                let expired = try await captureFrame(at: SettingsSearchGlowMotion.lifetime + 0.2)
                 for point in edge {
                     XCTAssertEqual(try pixel(expired, point)[0], light ? 255 : 0, accuracy: 2,
                                    "The glow must finish fading before the three-second landing ends.")
@@ -489,6 +508,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                     try await settle(window)
                 }
                 XCTAssertTrue(request.revealed)
+                try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.delay))
                 try await settle(window)
                 let controlBounds: CGRect
                 if layout == "hero-scroll" {
@@ -519,7 +539,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                 attachment.name = "search-row-highlight-\(layout)-\(kind)-\(Int(width))"
                 attachment.lifetime = .keepAlways
                 add(attachment)
-                try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.duration + 0.2))
+                try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.lifetime + 0.2))
                 try await settle(window)
                 let normal = capture()
                 let interior = CGPoint(
@@ -1487,7 +1507,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                 attachment.name = "\(target) search width=\(Int(width)) collectionsEnabled=\(enabled)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
-                try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.duration + 0.2))
+                try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.lifetime + 0.2))
                 let before = try pixels(highlighted)
                 let after = try pixels(capture())
                 let changed = stride(from: 0, to: before.count, by: 4).filter {

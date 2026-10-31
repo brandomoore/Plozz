@@ -198,15 +198,17 @@ final class SettingsInteractionTests: XCTestCase {
         field.typeText(query)
         let result = app.buttons["settings-search-result-\(id)"]
         XCTAssertTrue(result.waitForExistence(timeout: 5), app.debugDescription)
+        let viewport = app.frame
         result.tap()
+        // Capture before accessibility queries consume the short-lived cue.
+        let arrival = XCUIScreen.main.screenshot().image
         // A polling wait adds at least a second after XCTest's tap-idle wait,
         // which can consume the complete three-second cue on iPad.
         XCTAssertTrue(target.exists, app.debugDescription)
         let frame = target.frame.insetBy(dx: 0, dy: -8)
         XCTAssertFalse(frame.isEmpty)
-        let arrival = app.screenshot().image
-        Thread.sleep(forTimeInterval: 3.2)
-        let settled = app.screenshot().image
+        Thread.sleep(forTimeInterval: 3.6)
+        let settled = XCUIScreen.main.screenshot().image
         XCTAssertEqual(target.frame.insetBy(dx: 0, dy: -8), frame,
                        "Compare the same stationary row, not navigation or keyboard movement.")
         for (name, image) in [("arrival", arrival), ("settled", settled)] {
@@ -219,7 +221,8 @@ final class SettingsInteractionTests: XCTestCase {
             let format = UIGraphicsImageRendererFormat()
             format.scale = 1
             let cropped = UIGraphicsImageRenderer(size: frame.size, format: format).image { _ in
-                image.draw(at: CGPoint(x: -frame.minX, y: -frame.minY))
+                image.draw(in: CGRect(x: -frame.minX, y: -frame.minY,
+                                      width: viewport.width, height: viewport.height))
             }
             let cgImage = try XCTUnwrap(cropped.cgImage)
             var bytes = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
@@ -236,7 +239,7 @@ final class SettingsInteractionTests: XCTestCase {
         let brighter = stride(from: 0, to: before.count, by: 4).filter {
             Int(before[$0]) - Int(after[$0]) > 10
         }.count
-        XCTAssertGreaterThan(brighter, 500, "Search must visibly light the target in the real sheet, not merely reveal it.")
+        XCTAssertGreaterThan(brighter, 500, "Search must visibly light \(id) in the real sheet, not merely reveal it.")
     }
 
     func testProtectedSearchResultOpensAfterPINWithoutLosingTheDestination() {

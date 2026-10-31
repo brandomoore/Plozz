@@ -55,7 +55,8 @@ row installs a stable, binding-driven background before reveal: native List can
 retain an initially absent background during navigation even when the row's
 highlight state changes. Non-target rows retain their native background. The highlight
 does not intercept touches or change the setting.
-The three-second landing cue opens with a quick, soft brightness lift that blends
+The landing cue stays invisible for 0.35 seconds after reveal, then plays its
+full three-second animation. It opens with a quick, soft brightness lift that blends
 into two broad neutral reflections over the first 1.8 seconds. The brightness
 lift decays throughout their movement rather than ending as a separate flash. Each reflection
 drifts and changes strength independently, lighting the surface
@@ -66,7 +67,13 @@ A shared envelope eases the arrival in and gradually fades the entire cue out,
 without extending its duration. Its inset drawing stays within
 the row's corner shape, and its 30-fps timeline stops when the cue ends.
 Reduce Motion, reduced transparency/effects, and inactive scenes use a steady
-outline instead; TV continues to use native focus without this mobile effect.
+outline after the same delay instead; TV continues to use native focus without this mobile effect.
+On iOS/iPadOS 26 and later, animated dark-theme reflections use HDR emission at 1.2 times
+SDR white in linear light. The existing alpha field masks that emission without
+clipping it through the SDR Canvas. SwiftUI manages available display headroom
+and tone mapping; this does not change the screen-brightness setting or guarantee a measured
+20% display-output increase. Light themes, reduced effects and earlier OS versions
+retain their standard-range appearance.
 Grouped ownership is set before resolving SwiftUI subviews, so ScrollView rows
 do not also paint a smaller control highlight. Nested anchors preserve a child's
 active highlight, and nested row owners consume it without lighting up their parents.

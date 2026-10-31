@@ -162,7 +162,7 @@ private struct SettingsSearchAnchor: ViewModifier {
             #if os(iOS)
             .task(id: highlighted) {
                 guard highlighted else { return }
-                do { try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.duration)) } catch { return }
+                do { try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.lifetime)) } catch { return }
                 highlighted = false
             }
             #endif
@@ -225,7 +225,9 @@ private struct SettingsSearchHighlightKey: PreferenceKey {
 }
 
 enum SettingsSearchGlowMotion {
+    static let delay = 0.35
     static let duration = 3.0
+    static let lifetime = delay + duration
 
     static func opacity(at time: Double) -> Double {
         eased(time / 0.16) * eased((duration - time) / 0.9)
@@ -275,6 +277,7 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.scenePhase) private var scenePhase
     @State private var startedAt = Date()
+    @State private var waiting = true
     @State private var finished = false
     @State private var phase: Double
 
@@ -300,7 +303,7 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
                         (outline.strokedPath(StrokeStyle(lineWidth: 6)), 0.28, 3),
                         (outline.strokedPath(StrokeStyle(lineWidth: 1)), 0.50, 0.35)
                     ]
-                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: finished)) { timeline in
+                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: waiting || finished)) { timeline in
                         let time = finished ? SettingsSearchGlowMotion.duration
                             : timeline.date.timeIntervalSince(startedAt)
                         Canvas { context, _ in
@@ -334,6 +337,7 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
                                 }
                             }
                         }
+                        .modifier(SettingsSearchGlowHDR(enabled: !palette.isLight))
                     }
                 }
             } else {
@@ -341,13 +345,37 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
                     .overlay { shape.strokeBorder(neutral.opacity(0.5), lineWidth: 1.5) }
             }
         }
+            .opacity(waiting ? 0 : 1)
             .clipShape(shape)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .task {
+                do { try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.delay)) } catch { return }
+                startedAt = Date()
+                waiting = false
                 do { try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.duration)) } catch { return }
                 finished = true
             }
+    }
+}
+
+struct SettingsSearchGlowHDR: ViewModifier {
+    let enabled: Bool
+
+    @available(iOS 26.0, *)
+    static var emission: Color {
+        Color.white.exposureAdjust(log2(1.2))
+    }
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *), enabled {
+            // Keep the existing SDR alpha field; apply HDR after Canvas so it cannot clip the extra headroom.
+            Rectangle().fill(Self.emission)
+                .mask { content }
+                .allowedDynamicRange(.high)
+        } else {
+            content
+        }
     }
 }
 
