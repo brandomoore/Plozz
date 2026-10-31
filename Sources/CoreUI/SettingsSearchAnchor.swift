@@ -234,12 +234,15 @@ enum SettingsSearchGlowMotion {
     }
 
     static func waveCount(for size: CGSize) -> Int {
-        min(12, max(3, Int((2 * (size.width + size.height) / 180).rounded())))
+        min(10, max(3, Int((2 * (size.width + size.height) / 240).rounded())))
     }
 
     static func intensity(at position: Double, time: Double, phase: Double, waves: Int) -> Double {
-        let swell = 0.5 + 0.5 * sin(2 * .pi * (Double(waves) * position - time * 0.85) + phase)
-        let ripple = 0.5 + 0.5 * sin(2 * .pi * (Double(waves + 3) * position + time * 0.57) + phase * 1.7)
+        let drift = position - time * 0.32 / Double(waves)
+        // A periodic, monotonic warp broadens some crests and narrows others without creating a seam.
+        let varied = drift + 0.045 * sin(4 * .pi * drift + phase * 0.6)
+        let swell = 0.5 + 0.5 * sin(2 * .pi * Double(waves) * varied + phase)
+        let ripple = 0.5 + 0.5 * sin(2 * .pi * (Double(waves + 2) * varied + time * 0.12) + phase * 1.7)
         return 0.035 + 0.64 * swell * swell + 0.20 * ripple * ripple
     }
 }

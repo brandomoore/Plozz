@@ -54,8 +54,9 @@ does not intercept touches or change the setting.
 The three-second landing cue adds connected neutral waves that travel along the
 actual row perimeter, including wide tablet rows. Smooth overlapping waves start
 at a varied phase on each landing; nothing jumps or picks new random values between
-frames. Shorter sine-wave crests and dimmer troughs keep the movement visible;
-the number of waves scales with the row perimeter instead of stretching on iPad.
+frames. Broad sine-wave crests drift slowly above dimmer troughs; a smooth periodic
+warp varies their widths rather than spacing identical waves evenly. The number
+of waves scales with the row perimeter instead of stretching on iPad.
 A gradual shared envelope fades the cue in and out. Its inset drawing
 stays within the row's corner shape, and its 30-fps timeline stops when the cue ends.
 Reduce Motion, reduced transparency/effects, and inactive scenes use a steady

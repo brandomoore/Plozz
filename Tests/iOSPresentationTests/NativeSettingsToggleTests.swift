@@ -168,6 +168,38 @@ final class NativeSettingsToggleTests: XCTestCase {
                        "Spatial movement comparisons must not mistake a global fade for traveling waves.")
     }
 
+    func testSearchGlowWavesAreBroaderSlowerAndVaried() throws {
+        for (size, expectedWaves) in [(CGSize(width: 300, height: 100), 3),
+                                     (CGSize(width: 744, height: 100), 7)] {
+            let waves = SettingsSearchGlowMotion.waveCount(for: size)
+            XCTAssertEqual(waves, expectedWaves, "Broader waves must still scale with phone and tablet rows.")
+            let count = 2048
+            for phase in stride(from: 0.0, to: 2 * .pi, by: .pi / 2) {
+                let samples = (0..<count).map {
+                    SettingsSearchGlowMotion.intensity(at: Double($0) / Double(count), time: 0.7, phase: phase, waves: waves)
+                }
+                let starts = samples.indices.filter {
+                    samples[$0] > 0.4 && samples[($0 + count - 1) % count] <= 0.4
+                }
+                let widths = starts.map { start in
+                    (0..<count).prefix { samples[(start + $0) % count] > 0.4 }.count
+                }
+                let shortest = try XCTUnwrap(widths.min())
+                let longest = try XCTUnwrap(widths.max())
+                XCTAssertGreaterThan(Double(longest) / Double(shortest), 1.5,
+                                     "Crests must have visibly different widths, not just different brightness.")
+                let change = samples.indices.reduce(0.0) { total, index in
+                    let later = SettingsSearchGlowMotion.intensity(
+                        at: Double(index) / Double(count), time: 0.8, phase: phase, waves: waves
+                    )
+                    return total + abs(later - samples[index])
+                } / Double(count)
+                XCTAssertGreaterThan(change, 0.015, "The slower waves must still travel visibly.")
+                XCTAssertLessThan(change, 0.06, "Travel must remain gentle over a tenth of a second.")
+            }
+        }
+    }
+
     func testSearchGlowMovesNeutrallyAndRespectsReducedEffects() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
