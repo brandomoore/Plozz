@@ -51,14 +51,13 @@ On mobile, the brief landing highlight covers the complete padded row, not just
 its label or picker. Grouped rows own the highlight and their corner clipping;
 standalone native List/Form rows use the native row background. The highlight
 does not intercept touches or change the setting.
-The three-second landing cue adds connected neutral waves that travel along the
-actual row perimeter, including wide tablet rows. Smooth overlapping waves start
-at a varied phase on each landing; nothing jumps or picks new random values between
-frames. Broad sine-wave crests drift slowly above dimmer troughs; a smooth periodic
-warp varies their widths rather than spacing identical waves evenly. The number
-of waves scales with the row perimeter instead of stretching on iPad.
-A gradual shared envelope fades the cue in and out. Its inset drawing
-stays within the row's corner shape, and its 30-fps timeline stops when the cue ends.
+The three-second landing cue softly illuminates the row with two broad neutral
+reflections. Each drifts and changes strength independently, lighting the surface
+and fine portions of its edge rather than drawing a continuously illuminated rim.
+The light fields scale with the row, including wide tablet rows, and start at a
+varied phase on each landing; nothing picks new random values between frames.
+A gradual shared envelope fades the cue in and out. Its inset drawing stays within
+the row's corner shape, and its 30-fps timeline stops when the cue ends.
 Reduce Motion, reduced transparency/effects, and inactive scenes use a steady
 outline instead; TV continues to use native focus without this mobile effect.
 Grouped ownership is set before resolving SwiftUI subviews, so ScrollView rows

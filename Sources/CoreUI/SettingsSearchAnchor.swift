@@ -233,17 +233,30 @@ enum SettingsSearchGlowMotion {
         return eased(time / 0.55) * eased((duration - time) / 0.9)
     }
 
-    static func waveCount(for size: CGSize) -> Int {
-        min(10, max(3, Int((2 * (size.width + size.height) / 240).rounded())))
+    struct Reflection {
+        let center: CGPoint
+        let radius: CGFloat
+        let strength: Double
     }
 
-    static func intensity(at position: Double, time: Double, phase: Double, waves: Int) -> Double {
-        let drift = position - time * 0.32 / Double(waves)
-        // A periodic, monotonic warp broadens some crests and narrows others without creating a seam.
-        let varied = drift + 0.045 * sin(4 * .pi * drift + phase * 0.6)
-        let swell = 0.5 + 0.5 * sin(2 * .pi * Double(waves) * varied + phase)
-        let ripple = 0.5 + 0.5 * sin(2 * .pi * (Double(waves + 2) * varied + time * 0.12) + phase * 1.7)
-        return 0.035 + 0.64 * swell * swell + 0.20 * ripple * ripple
+    static func falloff(at distance: Double) -> Double {
+        let light = 0.5 + 0.5 * cos(.pi * min(1, max(0, distance)))
+        return light * light
+    }
+
+    static func reflections(at time: Double, phase: Double) -> [Reflection] {
+        [
+            Reflection(
+                center: CGPoint(x: 0.20 + time * 0.10 + 0.04 * sin(phase),
+                                y: 0.14 + 0.06 * sin(phase)),
+                radius: 0.82, strength: 0.72 + 0.10 * sin(time * 0.9 + phase)
+            ),
+            Reflection(
+                center: CGPoint(x: 0.82 - time * 0.06 + 0.04 * cos(phase),
+                                y: 0.90 + 0.06 * cos(phase)),
+                radius: 0.62, strength: 0.46 + 0.12 * cos(time * 0.7 + phase)
+            )
+        ]
     }
 }
 
@@ -273,41 +286,41 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
             if animates {
                 GeometryReader { geometry in
                     let bounds = CGRect(origin: .zero, size: geometry.size)
-                    let outline = shape.inset(by: 2).path(in: bounds)
-                    let waves = SettingsSearchGlowMotion.waveCount(for: geometry.size)
-                    // Cache equal-distance contour pieces outside the frame-driven closure.
-                    let segments = (0..<192).compactMap { index -> (path: Path, start: CGPoint, end: CGPoint, position: Double)? in
-                        let path = outline.trimmedPath(from: CGFloat(index) / 192, to: CGFloat(index + 1) / 192)
-                        var start: CGPoint?
-                        path.forEach { element in
-                            if case .move(to: let point) = element, start == nil { start = point }
-                        }
-                        guard let start, let end = path.currentPoint else { return nil }
-                        return (path, start, end, Double(index) / 192)
-                    }
+                    let surface = shape.path(in: bounds)
+                    let outline = shape.inset(by: 1.5).path(in: bounds)
+                    let passes: [(mask: Path, opacity: Double, blur: CGFloat)] = [
+                        (surface, 0.13, 0),
+                        (outline.strokedPath(StrokeStyle(lineWidth: 6)), 0.20, 3),
+                        (outline.strokedPath(StrokeStyle(lineWidth: 1)), 0.38, 0.35)
+                    ]
                     TimelineView(.animation(minimumInterval: 1.0 / 30, paused: finished)) { timeline in
                         let time = finished ? SettingsSearchGlowMotion.duration
                             : timeline.date.timeIntervalSince(startedAt)
                         Canvas { context, _ in
                             context.opacity = SettingsSearchGlowMotion.opacity(at: time)
-                            context.fill(shape.path(in: bounds), with: .color(neutral.opacity(0.10)))
-                            let passes: [(CGFloat, CGFloat)] = [(7, 3), (2, 0.75)]
-                            for (width, blur) in passes {
+                            context.fill(surface, with: .color(neutral.opacity(0.045)))
+                            let lights = SettingsSearchGlowMotion.reflections(at: time, phase: phase).map { reflection in
+                                let gradient = Gradient(stops: (0...24).map { index in
+                                    let distance = Double(index) / 24
+                                    return .init(
+                                        color: neutral.opacity(reflection.strength * SettingsSearchGlowMotion.falloff(at: distance)),
+                                        location: distance
+                                    )
+                                })
+                                return (reflection, gradient)
+                            }
+                            for pass in passes {
                                 context.drawLayer { layer in
-                                    layer.addFilter(.blur(radius: blur))
-                                    for segment in segments {
-                                        let startLight = SettingsSearchGlowMotion.intensity(
-                                            at: segment.position, time: time, phase: phase, waves: waves
-                                        )
-                                        let endLight = SettingsSearchGlowMotion.intensity(
-                                            at: segment.position + 1.0 / 192, time: time, phase: phase, waves: waves
-                                        )
-                                        layer.stroke(
-                                            segment.path, with: .linearGradient(
-                                                Gradient(colors: [neutral.opacity(startLight), neutral.opacity(endLight)]),
-                                                startPoint: segment.start, endPoint: segment.end
-                                            ),
-                                            style: StrokeStyle(lineWidth: width, lineCap: .butt)
+                                    layer.opacity = pass.opacity
+                                    if pass.blur > 0 { layer.addFilter(.blur(radius: pass.blur)) }
+                                    layer.clip(to: pass.mask)
+                                    // Paint the same broad light field through the surface and its fine edge.
+                                    layer.scaleBy(x: bounds.width, y: bounds.height)
+                                    for (reflection, gradient) in lights {
+                                        layer.fill(
+                                            Path(CGRect(x: 0, y: 0, width: 1, height: 1)),
+                                            with: .radialGradient(gradient, center: reflection.center,
+                                                                  startRadius: 0, endRadius: reflection.radius)
                                         )
                                     }
                                 }

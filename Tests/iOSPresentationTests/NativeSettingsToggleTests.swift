@@ -135,29 +135,18 @@ final class NativeSettingsToggleTests: XCTestCase {
         XCTAssertEqual(cards.artwork, original, "Restyling must not modify artwork preferences.")
     }
 
-    func testSearchGlowWavesHaveSmoothJoinsAndGradualEndpoints() {
-        for size in [CGSize(width: 300, height: 100), CGSize(width: 744, height: 100)] {
-            let waves = SettingsSearchGlowMotion.waveCount(for: size)
-            for phase in stride(from: 0.0, through: 2 * .pi, by: .pi / 4) {
-                for time in stride(from: 0.0, through: SettingsSearchGlowMotion.duration, by: 0.1) {
-                    let start = SettingsSearchGlowMotion.intensity(at: 0, time: time, phase: phase, waves: waves)
-                    let end = SettingsSearchGlowMotion.intensity(at: 1, time: time, phase: phase, waves: waves)
-                    XCTAssertEqual(start, end, accuracy: 0.000001)
-                    let before = SettingsSearchGlowMotion.intensity(at: 1 - 0.00001, time: time, phase: phase, waves: waves)
-                    let after = SettingsSearchGlowMotion.intensity(at: 0.00001, time: time, phase: phase, waves: waves)
-                    XCTAssertEqual(start - before, after - end, accuracy: 0.000001,
-                                   "Changing the starting phase must not expose a slope discontinuity.")
-                }
-            }
-            let samples = (0..<192).map {
-                SettingsSearchGlowMotion.intensity(at: Double($0) / 192, time: 0.7, phase: 0, waves: waves)
-            }
-            let peaks = samples.indices.filter {
-                samples[$0] > 0.5 && samples[$0] > samples[($0 + 191) % 192]
-                    && samples[$0] > samples[($0 + 1) % 192]
-            }
-            XCTAssertGreaterThanOrEqual(peaks.count, waves,
-                                        "Phone and tablet rows need multiple distinct, shorter waves.")
+    func testSearchReflectionHasSoftEdgesAndGradualEndpoints() {
+        XCTAssertEqual(SettingsSearchGlowMotion.falloff(at: 0), 1)
+        XCTAssertEqual(SettingsSearchGlowMotion.falloff(at: 1), 0)
+        XCTAssertEqual(SettingsSearchGlowMotion.falloff(at: 1.1), 0)
+        XCTAssertGreaterThan(SettingsSearchGlowMotion.falloff(at: 0.01), 0.999)
+        XCTAssertLessThan(SettingsSearchGlowMotion.falloff(at: 0.99), 0.000001)
+        for step in 1...100 {
+            XCTAssertLessThanOrEqual(
+                SettingsSearchGlowMotion.falloff(at: Double(step) / 100),
+                SettingsSearchGlowMotion.falloff(at: Double(step - 1) / 100),
+                "Each reflection must dissolve smoothly, without repeated bright bands."
+            )
         }
         XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0), 0)
         XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration), 0)
@@ -165,39 +154,31 @@ final class NativeSettingsToggleTests: XCTestCase {
         XCTAssertLessThan(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration - 0.01), 0.002)
         XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0.7), 1)
         XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 1.35), 1,
-                       "Spatial movement comparisons must not mistake a global fade for traveling waves.")
+                       "Spatial movement comparisons must not mistake a global fade for moving reflections.")
     }
 
-    func testSearchGlowWavesAreBroaderSlowerAndVaried() throws {
-        for (size, expectedWaves) in [(CGSize(width: 300, height: 100), 3),
-                                     (CGSize(width: 744, height: 100), 7)] {
-            let waves = SettingsSearchGlowMotion.waveCount(for: size)
-            XCTAssertEqual(waves, expectedWaves, "Broader waves must still scale with phone and tablet rows.")
-            let count = 2048
-            for phase in stride(from: 0.0, to: 2 * .pi, by: .pi / 2) {
-                let samples = (0..<count).map {
-                    SettingsSearchGlowMotion.intensity(at: Double($0) / Double(count), time: 0.7, phase: phase, waves: waves)
+    func testSearchReflectionsDriftGentlyAndIndependently() {
+        for phase in stride(from: 0.0, to: 2 * .pi, by: .pi / 4) {
+            for time in stride(from: 0.0, through: 2.9, by: 0.1) {
+                let before = SettingsSearchGlowMotion.reflections(at: time, phase: phase)
+                let after = SettingsSearchGlowMotion.reflections(at: time + 0.1, phase: phase)
+                XCTAssertEqual(before.count, 2, "Use a few broad reflections, not a repeating border pattern.")
+                for (first, last) in zip(before, after) {
+                    XCTAssertGreaterThan(first.radius, 0.6)
+                    XCTAssertGreaterThan(first.strength, 0)
+                    XCTAssertLessThan(first.strength, 1)
+                    XCTAssertLessThan(hypot(last.center.x - first.center.x, last.center.y - first.center.y), 0.015,
+                                      "Reflection movement must be gentle, without random frame-to-frame jumps.")
+                    XCTAssertLessThan(abs(last.strength - first.strength), 0.02)
                 }
-                let starts = samples.indices.filter {
-                    samples[$0] > 0.4 && samples[($0 + count - 1) % count] <= 0.4
-                }
-                let widths = starts.map { start in
-                    (0..<count).prefix { samples[(start + $0) % count] > 0.4 }.count
-                }
-                let shortest = try XCTUnwrap(widths.min())
-                let longest = try XCTUnwrap(widths.max())
-                XCTAssertGreaterThan(Double(longest) / Double(shortest), 1.5,
-                                     "Crests must have visibly different widths, not just different brightness.")
-                let change = samples.indices.reduce(0.0) { total, index in
-                    let later = SettingsSearchGlowMotion.intensity(
-                        at: Double(index) / Double(count), time: 0.8, phase: phase, waves: waves
-                    )
-                    return total + abs(later - samples[index])
-                } / Double(count)
-                XCTAssertGreaterThan(change, 0.015, "The slower waves must still travel visibly.")
-                XCTAssertLessThan(change, 0.06, "Travel must remain gentle over a tenth of a second.")
             }
         }
+        let first = SettingsSearchGlowMotion.reflections(at: 0.7, phase: 0)
+        let later = SettingsSearchGlowMotion.reflections(at: 1.35, phase: 0)
+        XCTAssertGreaterThan(later[0].center.x - first[0].center.x, 0.04)
+        XCTAssertLessThan(later[1].center.x - first[1].center.x, -0.02)
+        XCTAssertGreaterThan(later[0].strength, first[0].strength)
+        XCTAssertLessThan(later[1].strength, first[1].strength)
     }
 
     func testSearchGlowMovesNeutrallyAndRespectsReducedEffects() async throws {
@@ -278,24 +259,25 @@ final class NativeSettingsToggleTests: XCTestCase {
                                          "The search glow must remain neutral in both appearances.")
             }
             if animates {
-                XCTAssertGreaterThan(movement, 40, "The light must visibly travel along the edge.")
+                XCTAssertGreaterThan(movement, 40, "The reflection must gently appear across the row.")
                 let background = light ? 255 : 0
                 var brightened = 0
                 var dimmed = 0
                 for point in edge {
                     let change = abs(try pixel(third, point)[0] - background)
                         - abs(try pixel(second, point)[0] - background)
-                    if change > 8 { brightened += 1 }
-                    if change < -8 { dimmed += 1 }
+                    if change > 3 { brightened += 1 }
+                    if change < -3 { dimmed += 1 }
                 }
-                XCTAssertGreaterThanOrEqual(brightened, 3, "Waves must travel during the fully visible interval, not just fade.")
-                XCTAssertGreaterThanOrEqual(dimmed, 3, "Travel must redistribute light along the outline, not pulse the whole row.")
+                XCTAssertGreaterThanOrEqual(brightened, 3, "Reflections must move during the fully visible interval, not just fade.")
+                XCTAssertGreaterThanOrEqual(dimmed, 3, "Reflections must redistribute light, not pulse the whole row.")
                 let contrasts = try edge.map { abs(try pixel(second, $0)[0] - background) }
                 let weakest = try XCTUnwrap(contrasts.min())
                 let strongest = try XCTUnwrap(contrasts.max())
-                XCTAssertGreaterThan(weakest, 8, "Dim troughs must fade smoothly rather than cut off.")
+                XCTAssertLessThan(weakest, 20, "Unlit edges should blend into the surface, not form a continuous rim.")
+                XCTAssertLessThan(strongest, 140, "Fine edge reflections must not become a bright illuminated border.")
                 XCTAssertGreaterThan(Double(strongest) / Double(max(1, weakest)), 2.5,
-                                     "Smaller wave crests must stand out from the troughs, not form a uniform border.")
+                                     "Edge reflections must remain localized rather than evenly outlining the row.")
                 let center = CGPoint(x: bounds.midX, y: bounds.midY)
                 XCTAssertGreaterThan(
                     abs(try pixel(second, center)[0] - background),
@@ -306,7 +288,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                 let middle = try pixel(second, CGPoint(x: bounds.maxX - 2, y: bounds.midY))[0]
                 let below = try pixel(second, CGPoint(x: bounds.maxX - 2, y: bounds.midY + 1))[0]
                 XCTAssertEqual(Double(middle), Double(above + below) / 2, accuracy: 3,
-                               "Traveling waves may slope across the edge, but must not expose a brightness jump.")
+                               "Reflections may slope across the edge, but must not expose a brightness jump.")
             } else {
                 XCTAssertEqual(movement, 0, "Reduced effects and inactive scenes must use a steady outline.")
             }
@@ -315,7 +297,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                 XCTAssertEqual(try pixel(second, point)[0], light ? 255 : 0,
                                "Glow must stay inside the row, including its rounded corners.")
             }
-            for (name, image) in [("arrival", first), ("wave-first", second), ("wave-later", third)] {
+            for (name, image) in [("arrival", first), ("reflection-first", second), ("reflection-later", third)] {
                 let attachment = XCTAttachment(image: image)
                 attachment.name = "Search glow \(name) width=\(Int(width)) light=\(light) motion=\(reducedMotion) effects=\(reducedEffects) active=\(active)"
                 attachment.lifetime = .keepAlways
