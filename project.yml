@@ -569,6 +569,7 @@ targets:
       - path: Tests/CoreModelsTests/ProfileLockPresentationTests.swift
       - path: Tests/FeaturePlaybackTests/SubtitleOverlayGeometryTests.swift
       - path: Tests/FocusIntegrationTests/LiveTVSourcesRuntimeHostedTests.swift
+      - path: Tests/FocusIntegrationTests/DiagnosticRecordingStatusHostedTests.swift
       - path: Tests/FocusIntegrationTests/PINRequirementPresentationTests.swift
       - path: Tests/HomePresentationSupport
       - path: Tests/TestSupportPerformance

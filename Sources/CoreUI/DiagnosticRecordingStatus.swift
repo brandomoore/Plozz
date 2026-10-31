@@ -8,11 +8,16 @@ import CoreNetworking
 import notify
 
 enum DiagnosticRecordingPhase: String, CaseIterable {
-    case preparing, recording, finished, failed
+    case preparing, ready, recording, saving, finished, failed
 
     var notification: String { "\(Bundle.main.bundleIdentifier ?? "com.thatcube.Plozz").Diagnostics.\(rawValue)" }
     var acknowledgement: String { notification + ".visible" }
-    var lifetime: TimeInterval { self == .preparing ? 30 : self == .recording ? 15 : 8 }
+    var lifetime: TimeInterval {
+        switch self {
+        case .preparing, .ready, .recording, .saving: 15
+        case .finished, .failed: 8
+        }
+    }
 
     var text: LocalizedStringResource {
         switch self {
@@ -20,34 +25,41 @@ enum DiagnosticRecordingPhase: String, CaseIterable {
             LocalizedStringResource("Preparing recording - please wait", comment: "Diagnostic recording status. Wait before performing the action being recorded.")
         case .recording:
             LocalizedStringResource("Recording", comment: "Diagnostic recording status beside a red recording dot. Recording is active and the requested action can now be performed.")
+        case .ready:
+            LocalizedStringResource("Ready to record", comment: "Diagnostic recorder is ready and waiting for the user to confirm starting the capture.")
+        case .saving:
+            LocalizedStringResource("Saving recording", comment: "The diagnostic capture has stopped and is being saved and verified.")
         case .finished:
             LocalizedStringResource("Recording finished", comment: "Diagnostic recording has completed.")
         case .failed:
-            LocalizedStringResource("Recording stopped - do not repeat", comment: "Diagnostic recording stopped unexpectedly. Do not repeat the requested action until another recording is ready.")
+            LocalizedStringResource("Recording failed", comment: "The diagnostic recording could not start or did not produce a verified capture.")
         }
     }
 }
 
 @MainActor
 final class DiagnosticRecordingController {
-    private weak var window: UIWindow?
+    private weak var scene: UIWindowScene?
     private var tokens: [Int32] = []
     private var expiry: Task<Void, Never>?
+    private var acknowledgement: Task<Void, Never>?
+    private(set) var overlayWindow: UIWindow?
     private(set) var phase: DiagnosticRecordingPhase?
     private(set) var badge: UILabel?
 
     deinit {
         expiry?.cancel()
+        acknowledgement?.cancel()
         for token in tokens { notify_cancel(token) }
     }
 
     func attach(to window: UIWindow?) {
-        // UIKit removes the presenting view during a full-screen cover.
-        // The window and this receiver must outlive that temporary detachment.
-        guard let window else { return }
-        guard self.window !== window else { return }
+        // Full-screen presentation can detach the probe or replace its window.
+        // The receiver and non-key overlay belong to the scene, not that surface.
+        guard let scene = window?.windowScene else { return }
+        guard self.scene !== scene else { return }
         invalidate()
-        self.window = window
+        self.scene = scene
         for phase in DiagnosticRecordingPhase.allCases {
             var token: Int32 = 0
             let status = notify_register_dispatch(phase.notification, &token, .main) { [weak self] _ in
@@ -63,7 +75,7 @@ final class DiagnosticRecordingController {
     }
 
     func receive(_ phase: DiagnosticRecordingPhase) {
-        guard let window, window.windowScene?.activationState == .foregroundActive else { return }
+        guard let scene, scene.activationState == .foregroundActive else { return }
         expiry?.cancel()
         let changed = self.phase != phase
         self.phase = phase
@@ -74,6 +86,15 @@ final class DiagnosticRecordingController {
         if let badge {
             label = badge
         } else {
+            let window = DiagnosticRecordingWindow(windowScene: scene)
+            window.windowLevel = .alert + 1
+            window.backgroundColor = .clear
+            window.isUserInteractionEnabled = false
+            let host = UIViewController()
+            host.view.backgroundColor = .clear
+            host.view.isUserInteractionEnabled = false
+            window.rootViewController = host
+            overlayWindow = window
             label = UILabel()
             label.isUserInteractionEnabled = false
             label.accessibilityIdentifier = "diagnostic-recording-status"
@@ -87,17 +108,17 @@ final class DiagnosticRecordingController {
             label.textColor = .white
             label.layer.cornerRadius = 12
             label.clipsToBounds = true
-            label.layer.zPosition = 100_000
             label.translatesAutoresizingMaskIntoConstraints = false
-            window.addSubview(label)
+            host.view.addSubview(label)
             NSLayoutConstraint.activate([
-                label.topAnchor.constraint(equalTo: window.safeAreaLayoutGuide.topAnchor, constant: 16),
-                label.trailingAnchor.constraint(equalTo: window.safeAreaLayoutGuide.trailingAnchor, constant: -20),
-                label.leadingAnchor.constraint(greaterThanOrEqualTo: window.safeAreaLayoutGuide.leadingAnchor, constant: 20),
+                label.topAnchor.constraint(equalTo: host.view.safeAreaLayoutGuide.topAnchor, constant: 16),
+                label.trailingAnchor.constraint(equalTo: host.view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
+                label.leadingAnchor.constraint(greaterThanOrEqualTo: host.view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
                 label.widthAnchor.constraint(lessThanOrEqualToConstant: 600),
                 label.heightAnchor.constraint(greaterThanOrEqualToConstant: 64)
             ])
             badge = label
+            window.isHidden = false
         }
         if changed {
             let text = String(localized: phase.text) // l10n:content - UIKit status boundary; resolved when the diagnostic phase changes.
@@ -109,7 +130,8 @@ final class DiagnosticRecordingController {
             label.attributedText = status
             label.accessibilityLabel = text
             label.backgroundColor = UIColor(white: 0.12, alpha: 1)
-            window.layoutIfNeeded()
+            overlayWindow?.layoutIfNeeded()
+            overlayWindow?.rootViewController?.view.layoutIfNeeded()
         }
         label.layer.removeAnimation(forKey: "recording-expiry")
         label.layer.opacity = 1
@@ -122,9 +144,20 @@ final class DiagnosticRecordingController {
         fade.fillMode = .forwards
         fade.isRemovedOnCompletion = false
         label.layer.add(fade, forKey: "recording-expiry")
-        let status = notify_post(phase.acknowledgement)
-        if status != UInt32(NOTIFY_STATUS_OK) {
-            PlozzLog.boot("diagnostic recording acknowledgement failed: \(status)")
+        acknowledgement?.cancel()
+        acknowledgement = Task { [weak self, weak label] in
+            await Task.yield()
+            guard !Task.isCancelled, let self, let label,
+                  self.phase == phase, self.badge === label,
+                  let window = self.overlayWindow,
+                  window.windowScene?.activationState == .foregroundActive,
+                  !window.isHidden, window.alpha > 0, label.window === window,
+                  !label.bounds.isEmpty,
+                  window.bounds.contains(label.convert(label.bounds, to: window)) else { return }
+            let status = notify_post(phase.acknowledgement)
+            if status != UInt32(NOTIFY_STATUS_OK) {
+                PlozzLog.boot("diagnostic recording acknowledgement failed: \(status)")
+            }
         }
         expiry = Task { [weak self] in
             do {
@@ -139,8 +172,13 @@ final class DiagnosticRecordingController {
     }
 
     func clearBadge() {
+        acknowledgement?.cancel()
+        acknowledgement = nil
         badge?.removeFromSuperview()
         badge = nil
+        overlayWindow?.isHidden = true
+        overlayWindow?.rootViewController = nil
+        overlayWindow = nil
         phase = nil
     }
 
@@ -150,8 +188,14 @@ final class DiagnosticRecordingController {
         for token in tokens { notify_cancel(token) }
         tokens.removeAll()
         clearBadge()
-        window = nil
+        scene = nil
     }
+}
+
+private final class DiagnosticRecordingWindow: UIWindow {
+    override var canBecomeKey: Bool { false }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }
 }
 
 private struct DiagnosticRecordingInstaller: UIViewRepresentable {

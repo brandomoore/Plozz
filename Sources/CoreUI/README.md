@@ -6,6 +6,15 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+`diagnosticRecordingStatus()` installs the local-Debug recording indicator in a
+non-key, input-transparent window owned by the current scene. It stays above
+full-screen playback, sheets, and secondary app windows without taking remote
+focus or intercepting touches. Its acknowledgement follows mounted, in-bounds
+overlay layout; hosted tests check the composited scene rather than only the
+existence of a label. Heartbeats expire in the render server even during a
+main-thread stall. Preparation, ready, recording, saving, and terminal states
+are distinct; only the external recorder starts or verifies a capture.
+
 `PlaybackResumePrompt` owns the native Resume / Start Over dialog on both
 platforms. It retains the full pending playback request through the choice so
 source, version and playlist context are preserved; cancellation starts nothing.
