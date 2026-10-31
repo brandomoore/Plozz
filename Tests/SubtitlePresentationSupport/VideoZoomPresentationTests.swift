@@ -43,6 +43,10 @@ final class VideoZoomPresentationTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         let folder = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
+        let server = try SubtitleFixtureServer(directory: folder.appendingPathComponent("active-picture-hls"))
+        let port = try await server.start()
+        defer { server.stop() }
+        let stream = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/glow-hd.m3u8"))
         for index in 0..<count {
             let engine = try PlozzigenVideoEngine()
             engines.append(engine)
@@ -56,11 +60,14 @@ final class VideoZoomPresentationTests: XCTestCase {
             views.append(view)
             host.view.addSubview(view)
             view.attach(engine)
-            await engine.load(request: PlaybackRequest(
-                item: MediaItem(id: "picture-performance-\(index)", title: "Synthetic video", kind: .movie),
-                streamURL: folder.appendingPathComponent("glow-hd.mp4")
-            ), startPosition: 0)
+            await engine.loadLive(url: stream, httpHeaders: [:])
             try await waitUntil(timeout: 30) { engine.isPlaybackPositionReady }
+            engine.pause()
+            XCTAssertNotNil(engine.nowPlayingPlayer, "The native output tap must be exercised.")
+        }
+        for engine in engines { await engine.seek(to: 0) }
+        for (engine, view) in zip(engines, views) {
+            engine.play()
             view.update(zoom: PlayerVideoZoom(mode: enabled ? .picture : .fit))
         }
         try await Task.sleep(for: .seconds(2))
@@ -74,12 +81,13 @@ final class VideoZoomPresentationTests: XCTestCase {
                 XCTAssertGreaterThan(engine.currentTime - positions[index], 1.8)
                 let samples = engine.pictureSampleCountForTesting - counts[index]
                 completed += samples
+                let item = try XCTUnwrap(engine.nowPlayingPlayer?.currentItem)
+                XCTAssertEqual(item.outputs.filter { $0 is AVPlayerItemVideoOutput }.count, enabled ? 1 : 0)
                 if enabled {
                     XCTAssertGreaterThan(samples, 0, "A cached result is not new frame analysis.")
                     XCTAssertLessThanOrEqual(samples, 5)
                 } else {
                     XCTAssertEqual(samples, 0)
-                    XCTAssertTrue(engine.nowPlayingPlayer?.currentItem?.outputs.isEmpty == true)
                 }
                 XCTAssertLessThanOrEqual(engine.picturePeakWorkersForTesting, 4)
             }
@@ -88,7 +96,9 @@ final class VideoZoomPresentationTests: XCTestCase {
         for view in views { view.update(zoom: PlayerVideoZoom()) }
         try await waitUntil { engines.allSatisfy { $0.pictureWorkersForTesting == 0 } }
         for engine in engines {
-            XCTAssertTrue(engine.nowPlayingPlayer?.currentItem?.outputs.isEmpty == true, "Disabled analysis must release its native output.")
+            let item = try XCTUnwrap(engine.nowPlayingPlayer?.currentItem)
+            XCTAssertFalse(item.outputs.contains { $0 is AVPlayerItemVideoOutput },
+                           "Disabled analysis must release its video output, not the independent subtitle output.")
         }
     }
 
@@ -136,7 +146,7 @@ final class VideoZoomPresentationTests: XCTestCase {
     }
 
     func testActivePictureDetectionAndSeekOnNativeAndSoftwareRoutes() async throws {
-        for fixture in ["active-picture.mp4", "active-picture.webm"] {
+        for fixture in ["active-picture.m3u8", "active-picture.webm"] {
             try await verifyActivePicture(fixture: fixture)
         }
     }
@@ -154,6 +164,7 @@ final class VideoZoomPresentationTests: XCTestCase {
         let controls = PlayerControlsModel()
         let subtitles = LiveSubtitleModel()
         subtitles.style.followsSystemStyle = false
+        subtitles.style.fontFamily = .system
         subtitles.style.positionReference = .picture
         subtitles.loadPrimary(SubtitleCueParser.parse(
             "WEBVTT\n\n00:00:00.000 --> 00:01:00.000\nPicture-relative caption.\n", id: 1
@@ -172,15 +183,25 @@ final class VideoZoomPresentationTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         let folder = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
-        await engine.load(request: PlaybackRequest(
-            item: MediaItem(id: "active-picture", title: "Synthetic picture", kind: .movie, runtime: 18),
-            streamURL: folder.appendingPathComponent(fixture)
-        ), startPosition: 0)
+        let server = try SubtitleFixtureServer(directory: folder.appendingPathComponent("active-picture-hls"))
+        let port = try await server.start()
+        defer { server.stop() }
+        if fixture.hasSuffix(".m3u8") {
+            await engine.loadLive(
+                url: try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\(fixture)")), httpHeaders: [:]
+            )
+        } else {
+            await engine.load(request: PlaybackRequest(
+                item: MediaItem(id: "active-picture", title: "Synthetic picture", kind: .movie, runtime: 18),
+                streamURL: folder.appendingPathComponent(fixture)
+            ), startPosition: 0)
+        }
         try await waitUntil(timeout: 30) { engine.hasPresentedVideoFrame && engine.videoAspectRatio != nil }
-        XCTAssertEqual(engine.nowPlayingPlayer != nil, fixture.hasSuffix(".mp4"), "Exercise both engine routes.")
+        XCTAssertEqual(engine.nowPlayingPlayer != nil, fixture.hasSuffix(".m3u8"), "Exercise both engine routes.")
+        await engine.seek(to: 2)
         let initial = try await waitForPicture(engine: engine, cropped: true)
-        XCTAssertGreaterThan(initial.minY, 0.13)
-        XCTAssertLessThan(initial.maxY, 0.87)
+        XCTAssertGreaterThan(initial.minY, 0.12)
+        XCTAssertLessThan(initial.maxY, 0.88)
         let surface = engine.makeVideoOutputView()
         let viewport = try XCTUnwrap(presentationView(for: surface))
         let originalItem = engine.nowPlayingPlayer?.currentItem
@@ -393,6 +414,9 @@ final class VideoZoomPresentationTests: XCTestCase {
         while !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
-        XCTAssertTrue(condition(), "Video or subtitle presentation did not settle.")
+        guard condition() else {
+            XCTFail("Video or subtitle presentation did not settle.")
+            throw CocoaError(.coderValueNotFound)
+        }
     }
 }

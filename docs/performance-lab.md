@@ -16,6 +16,10 @@ python3 tools/performance.py list
 Use a simulator you own. Select an explicit platform and UUID; an iPad is an
 `iOS` simulator. The runner verifies platform, runtime build, and device type
 before booting, never selects a different simulator or discovers physical devices.
+The runner inherits `DEVELOPER_DIR`. If the selected toolchain cannot launch
+hosted tests, select a compatible installed Xcode for the lane rather than
+changing the global selection or resetting shared developer services. Keep the
+same toolchain for both sides of a comparison.
 
 ```sh
 export GIT_CONFIG_PARAMETERS="'safe.bareRepository=all'"
@@ -97,12 +101,20 @@ not GPU/render-server cost or physical-device energy and frame pacing.
 
 The `active-picture-1-enabled`, `active-picture-1-disabled`,
 `active-picture-4-enabled`, and `active-picture-4-disabled` scenarios use the same
-1080p30 `glow-hd.mp4` with one or four visible Aether-backed players. Each window
+1080p30 `glow-hd.mp4`, stream-copied to finite loopback HLS, with one or four
+visible Aether-backed native players. HLS exercises AVPlayer even on simulators
+that correctly reject hardware H.264 and route ordinary files to software.
+Players pause during setup and start together from zero. Each window
 requires advancing playback; enabled windows require new presentation-timestamp
 samples at no more than 2 Hz per player, and disabling must detach native output
 taps. The four-player case checks aggregate admission stays at or below four.
 These are app-process CPU/resident-memory comparisons, not GPU, physical-device
 energy, HDR, or four simultaneous 4K decoder benchmarks.
+The `active-picture-hls` fixtures are generated with FFmpeg `-c copy -f hls
+-hls_time 2 -hls_list_size 0 -hls_playlist_type vod -hls_segment_type fmp4` from
+`active-picture.mp4` and `glow-hd.mp4`; no video is re-encoded. Native SDR output
+materialization is included in the comparison, not bounded by the CPU sampler's
+2 Hz limit. Independent subtitle outputs are preserved when the video tap stops.
 
 The glow fixtures in `Tests/SubtitlePresentationSupport/Fixtures` are synthetic:
 `live-continuity-dim.mp4` is the first 30 seconds of `live-continuity.mp4`,

@@ -1094,7 +1094,7 @@ private final class SidecarTrackHost: SubtitleTrackControllerHost, SubtitleOverl
     #endif
 }
 
-private final class SubtitleFixtureServer: @unchecked Sendable {
+final class SubtitleFixtureServer: @unchecked Sendable {
     private let listener: NWListener
     private let files: [String: Data]
     private let queue = DispatchQueue(label: "SubtitleFixtureServer")

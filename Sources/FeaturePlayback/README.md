@@ -1045,7 +1045,11 @@ The hosted active-picture regression uses original `testsrc2` fixtures at
 from 14 seconds onward, with full-frame content between. The MP4 uses libx264,
 CRF 28 and yuv420p; its WebM counterpart uses libvpx-vp9, CRF 32. Tests require
 real native/software detection, forward/backward seeks, pause, and retained
-surface identity. The performance lab separately uses the existing 1080p fixture.
+surface identity. The native case serves the MP4 stream-copied as finite loopback
+HLS, avoiding an assumption that the simulator supports hardware H.264 decoding.
+Checks seek to a known starting position after loading so startup latency cannot
+consume the short test clip. The performance lab uses the existing 1080p fixture
+packaged the same way, with players paused until all have loaded.
 Hosted coverage includes synthetic 4:3 video and a 720x576 H.264 fixture with 64:45
 sample aspect (16:9 display), checking real native and software playback without
 changing the video layer, playback position, or subtitle text geometry.
