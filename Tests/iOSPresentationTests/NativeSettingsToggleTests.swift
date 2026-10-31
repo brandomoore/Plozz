@@ -181,14 +181,14 @@ final class NativeSettingsToggleTests: XCTestCase {
         }
     }
 
-    func testSearchGlowHDRUsesTwentyPercentLinearHeadroom() throws {
+    func testSearchGlowHDRUsesFiftyPercentLinearHeadroom() throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("HDR colors require iOS 26.") }
         let emission = SettingsSearchGlowHDR.emission.resolveHDR(in: EnvironmentValues())
-        XCTAssertEqual(emission.linearRed, 1.2, accuracy: 0.0001)
-        XCTAssertEqual(emission.linearGreen, 1.2, accuracy: 0.0001)
-        XCTAssertEqual(emission.linearBlue, 1.2, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearRed, 1.5, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearGreen, 1.5, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearBlue, 1.5, accuracy: 0.0001)
         XCTAssertEqual(emission.opacity, 1)
-        XCTAssertEqual(try XCTUnwrap(emission.headroom), 1.2, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(emission.headroom), 1.5, accuracy: 0.0001)
     }
 
     func testSearchReflectionsDriftGentlyAndIndependently() {
