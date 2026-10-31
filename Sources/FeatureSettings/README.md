@@ -84,6 +84,12 @@ changing layout still requires an explicit selection.
 Mobile customization menus reuse `SettingsMenuValue`, the value/chevron rendering
 used by `SettingsMenuLabel`. Playback details, per-view labels, and item-tap actions
 retain their native menus and adaptive labels without separate value pills.
+Artwork by view, label customization, and Hero subpages also use the shared
+mobile `SettingsPageList` surface and `SettingsSectionGroup` rows. They inherit
+the same page margins, headers, separators, corner radius, theme/gradient
+background, and toolbar treatment as other Settings destinations, rather than
+adding native inset-grouped styling or an opaque background. Lazy grouped
+artwork and label rows register their contained search targets.
 
 Playback > **Ask to resume or start over** is per-profile and off by default, including
 for existing profiles. TV and mobile resume partially watched movies and episodes

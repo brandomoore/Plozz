@@ -125,7 +125,6 @@ struct ViewCustomizationList<Content: View>: View {
     @Environment(SettingsDetailNavigation.self) private var detailNavigation: SettingsDetailNavigation?
     @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.themePalette) private var palette
     @FocusState private var focusedRow: String?
     @State private var hasEnteredList = false
     @State private var topFadeStrength: CGFloat = 0
@@ -226,18 +225,9 @@ struct ViewCustomizationList<Content: View>: View {
         .buttonStyle(SettingsFocusButtonStyle(size: .contained))
         .navigationTitle(Text(verbatim: ""))
         #else
-        List {
+        SettingsPageList {
             content()
-                .listRowBackground(palette.surface(.raised).fill)
-                .listRowSeparatorTint(palette.separator)
         }
-        .listStyle(.insetGrouped)
-        .toggleStyle(SettingsSwitchToggleStyle())
-        .scrollContentBackground(.hidden)
-        .background { palette.settingsBackground.ignoresSafeArea() }
-        .toolbarBackground(palette.settingsBackground, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarTitleDisplayMode(.inline)
         .navigationTitle(Text(title))
         #endif
     }

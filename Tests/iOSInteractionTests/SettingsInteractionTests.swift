@@ -1444,6 +1444,14 @@ final class SettingsInteractionTests: XCTestCase {
         let customize = app.buttons["artwork-customization"]
         reveal(customize)
         customize.tap()
+        let homeGroup = app.cells.containing(.button, identifier: "artwork-view-home").firstMatch
+        let librariesGroup = app.cells.containing(.button, identifier: "artwork-view-browse").firstMatch
+        XCTAssertTrue(homeGroup.waitForExistence(timeout: 3))
+        XCTAssertTrue(homeGroup.buttons["artwork-view-homeRows"].exists,
+                      "Artwork uses one shared Settings group for each section, not individual native rows.")
+        XCTAssertTrue(librariesGroup.buttons["artwork-view-recommended"].exists)
+        XCTAssertFalse(homeGroup.buttons["artwork-view-browse"].exists)
+        capture("artwork-shared-settings-surface")
         let browse = app.buttons["artwork-view-browse"]
         reveal(browse, fullyVisible: true)
         XCTAssertEqual(browse.value as? String, "Library")
@@ -1493,6 +1501,25 @@ final class SettingsInteractionTests: XCTestCase {
         reveal(recommended, towardTop: true)
         recommended.tap()
         XCTAssertTrue(recommended.isSelected, "The preset remains the reset for all customizations.")
+    }
+
+    func testArtworkSearchRevealsALowerGroupedRowWithoutChangingItsValue() {
+        launchNavigation(directPresentation: true)
+        app.buttons["fixture-open-settings"].tap()
+        let field = app.searchFields.firstMatch
+        if !field.waitForExistence(timeout: 2) { app.buttons["Search"].tap() }
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("downloads artwork")
+        let result = app.buttons["settings-search-result-artwork-view-downloads"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5), app.debugDescription)
+        result.tap()
+        let target = app.buttons["artwork-view-downloads"]
+        XCTAssertTrue(target.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(target.isHittable, "Search must reveal the row inside the lazy grouped cell.")
+        XCTAssertEqual(target.value as? String, "Library")
+        XCTAssertGreaterThanOrEqual(target.frame.minY, app.navigationBars["Artwork by view"].frame.maxY)
+        capture("artwork-search-grouped-downloads")
     }
 
     func testLabelMenuKeepsItsTitleInTheRowWithoutRepeatingIt() throws {
@@ -2176,7 +2203,9 @@ final class SettingsInteractionTests: XCTestCase {
     }
 
     func testNestedHeroSettingsNavigationKeepsProfileModels() {
-        openSettingsPage("Customize Home")
+        openSettingsPage("Screens & Navigation")
+        app.buttons["screens-home"].tap()
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
         app.buttons["home-section-hero"].tap()
         let sources = app.buttons["hero-settings-titles"]
         reveal(sources)

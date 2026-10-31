@@ -129,17 +129,25 @@ public struct ArtworkCustomizationView: View {
         }
     }
 
+    @ViewBuilder
     private func section(_ title: LocalizedStringResource, areas sectionAreas: [ArtworkArea]) -> some View {
+        let visibleAreas = sectionAreas.filter { areas.contains($0) }
+        let controls = ForEach(visibleAreas) { area in
+            ArtworkAreaChoices(area: area, settings: $cards.artwork)
+        }
+        #if os(tvOS)
         Section {
-            ForEach(sectionAreas.filter { areas.contains($0) }) { area in
-                ArtworkAreaChoices(area: area, settings: $cards.artwork)
-            }
+            controls
         } header: {
             Text(title)
-                #if os(tvOS)
                 .settingsSectionHeader()
-                #endif
         }
+        #else
+        SettingsSectionGroup(title) {
+            controls
+        }
+        .settingsSearchGroup(visibleAreas.map { "artwork-view-\($0.rawValue)" })
+        #endif
     }
 }
 

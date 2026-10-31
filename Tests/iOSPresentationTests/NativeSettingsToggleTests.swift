@@ -1,6 +1,6 @@
 #if os(iOS)
 import CoreModels
-import CoreUI
+@testable import CoreUI
 import FeatureProfiles
 @testable import FeaturePlayback
 @testable import FeatureSettings
@@ -41,6 +41,98 @@ final class NativeSettingsToggleTests: XCTestCase {
 
     func testSharedSettingsStyleUsesNativeSwitchesOnMobile() async throws {
         try await verifyNativeSwitch(grouped: false)
+    }
+
+    func testArtworkCustomizationUsesTheStandardSettingsPageAndGroups() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let suite = "ArtworkSurface-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let cards = CardStyleSettingsModel(store: CardStyleSettingsStore(defaults: defaults))
+        let original = cards.artwork
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+
+        func capture(_ content: some View, width: CGFloat, light: Bool, inherited: Bool) async throws -> UIImage {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 900)
+            window.overrideUserInterfaceStyle = light ? .light : .dark
+            window.rootViewController = UIHostingController(rootView:
+                content
+                    .environment(\.themePalette, light ? .light : .dark)
+                    .environment(\.colorScheme, light ? .light : .dark)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+                    .environment(\.dynamicTypeSize, .large)
+                    .environment(\.gradientBackgroundsEnabled, false)
+                    .environment(\.plozzDialogBackgroundOwned, inherited)
+                    .background(Color.purple)
+            )
+            window.makeKeyAndVisible()
+            try await Task.sleep(for: .milliseconds(350))
+            window.layoutIfNeeded()
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+        }
+
+        func pixels(_ image: UIImage) throws -> [UInt8] {
+            let cgImage = try XCTUnwrap(image.cgImage)
+            var bytes = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+            try bytes.withUnsafeMutableBytes { buffer in
+                let context = try XCTUnwrap(CGContext(
+                    data: buffer.baseAddress, width: cgImage.width, height: cgImage.height,
+                    bitsPerComponent: 8, bytesPerRow: cgImage.width * 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ))
+                context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+            }
+            return bytes
+        }
+
+        for width: CGFloat in [390, 834] {
+            for (light, inherited) in [(false, false), (true, false), (false, true)] {
+                let actual = try await capture(
+                    ArtworkCustomizationView(cards: cards), width: width, light: light, inherited: inherited
+                )
+                let reference = SettingsPageList {
+                    SettingsSectionGroup("Home") {
+                        ArtworkAreaChoices(area: .home, settings: .constant(original))
+                        ArtworkAreaChoices(area: .homeRows, settings: .constant(original))
+                    }
+                    SettingsSectionGroup("Libraries") {
+                        ForEach([ArtworkArea.recommended, .browse, .collections, .playlists]) { area in
+                            ArtworkAreaChoices(area: area, settings: .constant(original))
+                        }
+                    }
+                    SettingsSectionGroup("Across the app") {
+                        ForEach([ArtworkArea.continueWatching, .search, .watchlist, .details, .episodes,
+                                 .playback, .downloads]) { area in
+                            ArtworkAreaChoices(area: area, settings: .constant(original))
+                        }
+                    }
+                }
+                let expected = try await capture(reference, width: width, light: light, inherited: inherited)
+                let actualPixels = try pixels(actual)
+                let expectedPixels = try pixels(expected)
+                XCTAssertEqual(actualPixels.count, expectedPixels.count)
+                let differences = zip(actualPixels, expectedPixels).filter { abs(Int($0) - Int($1)) > 12 }.count
+                XCTAssertLessThan(Double(differences) / Double(actualPixels.count), 0.005,
+                                  "Artwork must inherit standard margins, row sizing, headers, surfaces and background.")
+                let attachment = XCTAttachment(image: actual)
+                attachment.name = "Artwork standard Settings \(Int(width)) light=\(light) inherited=\(inherited)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+        XCTAssertEqual(cards.artwork, original, "Restyling must not modify artwork preferences.")
     }
 
     func testSearchHighlightCoversRowPaddingWithoutHighlightingNeighbors() async throws {
