@@ -327,14 +327,17 @@ struct ProductionHomeFixture: View {
         }
         var views = [window as UIView]
         var entry: TopBarEntryProbe.Marker?
+        var down: TopBarDownPressRecognizer?
         while let view = views.popLast() {
-            if let found = view as? TopBarEntryProbe.Marker { entry = found; break }
+            if let found = view as? TopBarEntryProbe.Marker { entry = found }
+            if let found = view.gestureRecognizers?.compactMap({ $0 as? TopBarDownPressRecognizer }).first { down = found }
             views.append(contentsOf: view.subviews)
         }
-        guard let entry, let enter = entry.enter else {
+        guard let entry, let enter = entry.enter, let down else {
             print("TOP_BAR_ENTRY complete passed=false missingAction"); return
         }
-        for cycle in 0..<3 {
+        for cycle in 0..<6 {
+            let nativePress = cycle.isMultiple(of: 2)
             guard owner.requestFocus(to: target, using: system) else {
                 print("TOP_BAR_ENTRY complete passed=false navigationFocus")
                 return
@@ -342,7 +345,14 @@ struct ProductionHomeFixture: View {
             do { try await Task.sleep(for: .milliseconds(500)) }
             catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
             let started = CACurrentMediaTime()
-            enter()
+            if nativePress {
+                guard down.canEnter() else { print("TOP_BAR_ENTRY complete passed=false rejectedDown"); return }
+                let press = HeroBoundaryProbePress(.downArrow)
+                down.pressesBegan([press], with: UIPressesEvent())
+                down.pressesEnded([press], with: UIPressesEvent())
+            } else {
+                enter()
+            }
             while !stage.contains(system.focusedItem, in: stage.hero),
                   CACurrentMediaTime() - started < 5 {
                 do { try await Task.sleep(for: .milliseconds(10)) }
@@ -350,8 +360,10 @@ struct ProductionHomeFixture: View {
             }
             let elapsed = (CACurrentMediaTime() - started) * 1000
             let focused = stage.contains(system.focusedItem, in: stage.hero)
-            print("TOP_BAR_ENTRY cycle=\(cycle) elapsedMS=\(elapsed) heroFocus=\(focused)")
-            guard focused, elapsed < 500 else { print("TOP_BAR_ENTRY complete passed=false focusOrLatency"); return }
+            print("TOP_BAR_ENTRY cycle=\(cycle) nativePress=\(nativePress) elapsedMS=\(elapsed) heroFocus=\(focused)")
+            guard focused, elapsed < 200, !down.canEnter() else {
+                print("TOP_BAR_ENTRY complete passed=false focusOrLatency"); return
+            }
         }
         print("TOP_BAR_ENTRY complete passed=true")
     }
@@ -427,6 +439,8 @@ struct ProductionHomeFixture: View {
                     var samples = 0
                     var transitionSamples = 0
                     var maximumError: CGFloat = 0
+                    var targetChanges = 0
+                    var lastTarget = navigation?.stageTransition
                     repeat {
                         do { try await Task.sleep(for: .milliseconds(16)) }
                         catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
@@ -438,12 +452,16 @@ struct ProductionHomeFixture: View {
                         let progress = min(1, max(0, 1 - rows.transform.m42 / stage.state.motion.distance))
                         let expectedY = visibleNavigationY - progress * TopBarNavigationMetrics.foregroundTop
                         maximumError = max(maximumError, abs(currentY - expectedY))
+                        if navigation?.stageTransition != lastTarget {
+                            targetChanges += 1
+                            lastTarget = navigation?.stageTransition
+                        }
                         samples += 1
                         if progress > 0.05, progress < 0.95 { transitionSamples += 1 }
                     } while CACurrentMediaTime() - started < duration
-                    let synchronized = maximumError < 16 && samples >= 6 && transitionSamples >= 3
+                    let synchronized = maximumError < 1 && samples >= 6 && transitionSamples >= 3 && targetChanges <= 1
                     passed = passed && synchronized
-                    print("HERO_STAGE_MOTION expanded=\(expanded) maxError=\(maximumError) samples=\(samples) transitionSamples=\(transitionSamples) synchronized=\(synchronized)")
+                    print("HERO_STAGE_MOTION expanded=\(expanded) maxError=\(maximumError) samples=\(samples) transitionSamples=\(transitionSamples) targetChanges=\(targetChanges) synchronized=\(synchronized)")
                 } else {
                     do { try await Task.sleep(for: .seconds(duration)) }
                     catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }

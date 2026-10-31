@@ -1287,6 +1287,16 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
             reportNavigation(offset: isMoving ? scroller?.layer.presentation()?.bounds.origin.y ?? y : y)
         }
 
+        func animateNavigation(from progress: CGFloat, duration: TimeInterval, timingFunction: CAMediaTimingFunction, key: String) {
+            navigation?.animateStage(
+                from: progress, duration: duration, timingFunction: timingFunction, key: key, source: navigationScrollID
+            )
+        }
+
+        func stopNavigationAnimation() {
+            navigation?.stopStageAnimations(source: navigationScrollID)
+        }
+
         private func reportNavigation(offset: CGFloat) {
             navigation?.update(
                 offset: offset + navigationOffset, source: navigationScrollID,

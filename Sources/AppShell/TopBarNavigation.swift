@@ -143,10 +143,12 @@ private struct TopBarNavigationContent: View {
                 .padding(.leading, contentInsets.leading)
                 .padding(.trailing, contentInsets.trailing)
                 .padding(.top, TopBarNavigationMetrics.topMargin)
+                .focusScope(focusScope)
                 .disabled(!isShellActive || chrome.isChromeHidden || chrome.transitionSuppressesFocus)
                 .modifier(TopBarScrollPosition(
                     scroll: scroll, chromeHidden: chrome.isChromeHidden,
-                    suppressesFocus: chrome.transitionSuppressesFocus
+                    suppressesFocus: chrome.transitionSuppressesFocus,
+                    onDown: { enterContent(current) }
                 ))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -312,10 +314,11 @@ private struct TopBarScrollPosition: ViewModifier {
     let scroll: TopNavigationScroll
     let chromeHidden: Bool
     let suppressesFocus: Bool
+    let onDown: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
-        content
+        TopBarNativeScrollSurface(content: AnyView(content
             .opacity(chromeHidden ? 0 : 1)
             .offset(y: chromeHidden && !reduceMotion ? -NavigationChromeMotion.distance : 0)
             .animation(
@@ -323,11 +326,122 @@ private struct TopBarScrollPosition: ViewModifier {
                     ? nil : NavigationChromeMotion.animation,
                 value: chromeHidden
             )
-            // Finish hiding at the screen edge, not hundreds of points above it.
-            .offset(y: -scroll.visibleOffset(maximum: TopBarNavigationMetrics.foregroundTop))
             .disabled(scroll.offset >= TopBarNavigationMetrics.foregroundTop)
             .accessibilityHidden(chromeHidden || scroll.offset >= TopBarNavigationMetrics.foregroundTop)
+        ), scroll: scroll, onDown: chromeHidden || suppressesFocus ? nil : onDown)
     }
+}
+
+private struct TopBarNativeScrollSurface: UIViewControllerRepresentable {
+    let content: AnyView
+    let scroll: TopNavigationScroll
+    let onDown: (() -> Void)?
+
+    func makeUIViewController(context: Context) -> Controller {
+        Controller(content: hosted(context), scroll: scroll, onDown: onDown)
+    }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        if controller.scroll !== scroll {
+            controller.scroll.unbindMotionView(controller.host.view)
+            controller.scroll = scroll
+            scroll.bindMotionView(controller.host.view, maximumOffset: TopBarNavigationMetrics.foregroundTop)
+        }
+        controller.host.rootView = hosted(context)
+        controller.onDown = onDown
+    }
+
+    private func hosted(_ context: Context) -> AnyView {
+        AnyView(content.transformEnvironment(\.self) { target in
+            target.copyHostedPresentation(from: context.environment)
+            target.plozzReducePanelGlass = context.environment.plozzReducePanelGlass
+            target.plozzHDRDisplayActive = context.environment.plozzHDRDisplayActive
+        })
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiViewController: Controller, context: Context) -> CGSize? {
+        uiViewController.host.sizeThatFits(in: CGSize(
+            width: proposal.width ?? UIView.layoutFittingExpandedSize.width,
+            height: proposal.height ?? UIView.layoutFittingExpandedSize.height
+        ))
+    }
+
+    static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
+        controller.scroll.unbindMotionView(controller.host.view)
+    }
+
+    final class Controller: UIViewController {
+        let host: UIHostingController<AnyView>
+        var scroll: TopNavigationScroll
+        var onDown: (() -> Void)?
+
+        init(content: AnyView, scroll: TopNavigationScroll, onDown: (() -> Void)?) {
+            host = UIHostingController(rootView: content)
+            host.safeAreaRegions = []
+            self.scroll = scroll
+            self.onDown = onDown
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func loadView() {
+            view = UIView()
+            view.backgroundColor = .clear
+            addChild(host)
+            host.view.backgroundColor = .clear
+            view.addSubview(host.view)
+            host.didMove(toParent: self)
+            scroll.bindMotionView(host.view, maximumOffset: TopBarNavigationMetrics.foregroundTop)
+            let down = TopBarDownPressRecognizer()
+            down.canEnter = { [weak self] in self?.ownsFocus == true && self?.onDown != nil }
+            down.onDown = { [weak self] in self?.onDown?() }
+            view.addGestureRecognizer(down)
+        }
+
+        private var ownsFocus: Bool {
+            guard let item = UIFocusSystem.focusSystem(for: view)?.focusedItem else { return false }
+            var owner = NativeFocusRegion.owningController(of: item)
+            while let current = owner {
+                if current === host { return true }
+                owner = current.parent
+            }
+            return false
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            host.view.bounds = CGRect(origin: .zero, size: view.bounds.size)
+            host.view.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+        }
+    }
+}
+
+/// Down is an explicit page-entry command, not a geometric move within the bar.
+final class TopBarDownPressRecognizer: UIGestureRecognizer {
+    var canEnter: () -> Bool = { false }
+    var onDown: (() -> Void)?
+
+    init() {
+        super.init(target: nil, action: nil)
+        allowedPressTypes = [NSNumber(value: UIPress.PressType.downArrow.rawValue)]
+        allowedTouchTypes = []
+    }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+        guard presses.contains(where: { $0.type == .downArrow }), canEnter() else {
+            state = .failed
+            return
+        }
+        state = .began
+        HeroFocusDiagnostics.emit("topbar.entry native-down")
+        onDown?()
+    }
+
+    override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent) {}
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent) { state = .ended }
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent) { state = .cancelled }
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
 }
 
 private struct TopBarNavigationBar: View {

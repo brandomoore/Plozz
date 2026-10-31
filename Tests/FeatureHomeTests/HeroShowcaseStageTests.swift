@@ -7,6 +7,57 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testTopNavigationSharesNativeStageAnimationsWithoutFrameUpdates() throws {
+        let navigation = TopNavigationScroll()
+        let motion = HeroShowcaseScrollMotion()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let root = UIViewController()
+        window.rootViewController = root
+        window.isHidden = false
+        let rows = UIScrollView(frame: window.bounds)
+        rows.contentSize = CGSize(width: 1920, height: 3000)
+        root.view.addSubview(rows)
+        let bar = UIView(frame: CGRect(x: 0, y: 40, width: 700, height: 68))
+        root.view.addSubview(bar)
+        navigation.bindMotionView(bar, maximumOffset: 124)
+        let position = FocusHeroNativeScrollPosition.PositionView(frame: window.bounds)
+        position.navigation = navigation
+        rows.addSubview(position)
+        motion.bind(rows, to: .rows)
+        position.bindShowcaseMotion(motion)
+        motion.move(expanded: true, distance: 320.5, animated: false, reduceMotion: false)
+        defer {
+            position.stop()
+            motion.stopAnimations()
+            navigation.unbindMotionView(bar)
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        CATransaction.begin()
+        defer { CATransaction.commit() }
+        for expanded in [false, true, false] {
+            motion.move(expanded: expanded, distance: 320.5, animated: true, reduceMotion: false)
+            let key = try XCTUnwrap(rows.layer.animationKeys()?.last)
+            let animation = try XCTUnwrap(bar.layer.animation(forKey: key) as? CABasicAnimation)
+            XCTAssertEqual(animation.fromValue as? CGFloat, expanded ? -124 : 124)
+            XCTAssertEqual(animation.toValue as? CGFloat, 0)
+            XCTAssertEqual(animation.beginTime, 0)
+            XCTAssertEqual(animation.duration, HeroShowcaseScrollMotion.duration)
+            XCTAssertEqual(animation.timingFunction, HeroShowcaseScrollMotion.timingFunction)
+            XCTAssertTrue(animation.isAdditive)
+            XCTAssertEqual(bar.transform.ty, expanded ? 0 : -124)
+            XCTAssertEqual(navigation.stageTransition?.progress, expanded ? 0 : 1)
+            XCTAssertEqual(bar.layer.animationKeys()?.count, rows.layer.animationKeys()?.count)
+        }
+        motion.move(expanded: true, distance: 320.5, animated: true, reduceMotion: true)
+        XCTAssertNil(bar.layer.animationKeys())
+        XCTAssertEqual(bar.transform.ty, 0)
+        position.stop()
+        motion.move(expanded: false, distance: 320.5, animated: true, reduceMotion: false)
+        XCTAssertNil(bar.layer.animationKeys())
+        XCTAssertEqual(bar.transform.ty, 0)
+    }
+
     func testTopNavigationSeparatesStageProgressFromItsFocusAndResetOffset() {
         let navigation = TopNavigationScroll()
         let source = UUID()
@@ -31,6 +82,41 @@ final class HeroShowcaseStageTests: XCTestCase {
         XCTAssertEqual(navigation.visibleOffset(maximum: 124), 40)
         navigation.unregister(source: replacement)
         XCTAssertEqual(navigation.visibleOffset(maximum: 124), 0)
+    }
+
+    func testTopNavigationClearsNativeAnimationsWhenItsSourceOrSurfaceLeaves() {
+        let navigation = TopNavigationScroll()
+        let source = UUID()
+        let replacement = UUID()
+        let bar = UIView()
+        navigation.bindMotionView(bar, maximumOffset: 124)
+        navigation.register(source: source, offset: 320) {}
+        navigation.animateStage(
+            from: -1, duration: 0.6, timingFunction: HeroShowcaseScrollMotion.timingFunction,
+            key: "first", source: source
+        )
+        XCTAssertNotNil(bar.layer.animation(forKey: "first"))
+        navigation.register(source: replacement, offset: 40) {}
+        XCTAssertNil(bar.layer.animationKeys())
+        XCTAssertEqual(bar.transform.ty, -40)
+        navigation.animateStage(
+            from: -1, duration: 0.6, timingFunction: HeroShowcaseScrollMotion.timingFunction,
+            key: "stale", source: source
+        )
+        XCTAssertNil(bar.layer.animationKeys())
+        navigation.animateStage(
+            from: -1, duration: 0.6, timingFunction: HeroShowcaseScrollMotion.timingFunction,
+            key: "replacement", source: replacement
+        )
+        navigation.unbindMotionView(bar)
+        XCTAssertNil(bar.layer.animationKeys())
+        let newBar = UIView()
+        navigation.bindMotionView(newBar, maximumOffset: 124)
+        XCTAssertEqual(newBar.transform.ty, -40)
+        XCTAssertNil(newBar.layer.animationKeys())
+        navigation.unregister(source: replacement)
+        XCTAssertEqual(newBar.transform.ty, 0)
+        navigation.unbindMotionView(newBar)
     }
 
     func testStageNavigationBindingHandlesReducedMotionAndDeparture() {

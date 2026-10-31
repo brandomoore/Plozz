@@ -251,10 +251,13 @@ is Down for the horizontal strip; Left/Right never trigger a page handoff there.
 Initial focus resolves the selected destination, including a scrolled-off library,
 before allowing neighboring controls. Live TV's first-use preview choice waits
 for explicit content entry; its presentation owns focus until the choice finishes.
-The debug production Home fixture's `--top-bar-entry-probe` invokes the same
-entry action as Down and records time to actual hero focus over three visits,
-requiring each to finish within 500 ms. This isolates the handoff after command
-delivery; it does not measure remote-input latency on a physical Apple TV.
+Physical Down starts entry in the bar's native press recognizer, while actual
+focus belongs to that bar, instead of waiting for SwiftUI's move-command delivery.
+Other directions remain native, and move commands retain the indirect-touch path.
+The debug production Home fixture's `--top-bar-entry-probe` alternates native
+press-began delivery and the shared entry action over six visits, requiring actual
+hero focus within 200 ms. The first visit exercises a cold native entry. This covers
+the recognizer-to-focus path, not physical remote transport or device frame pacing.
 Full-bleed Live TV surfaces read the shared top-content inset for guide controls
 and loading placeholders without shrinking expanded playback.
 The common UIKit host propagates a real top safe area through nested stacks.
