@@ -51,6 +51,10 @@ On mobile, the brief landing highlight covers the complete padded row, not just
 its label or picker. Grouped rows own the highlight and their corner clipping;
 standalone native List/Form rows use the native row background. The highlight
 does not intercept touches or change the setting.
+The two-second landing cue adds a soft neutral edge glow that travels once around
+the row and fades away. Its inset drawing stays within the row's corner shape.
+Reduce Motion, reduced transparency/effects, and inactive scenes use a steady
+outline instead; TV continues to use native focus without this mobile effect.
 Grouped ownership is set before resolving SwiftUI subviews, so ScrollView rows
 do not also paint a smaller control highlight. Nested anchors preserve a child's
 active highlight, and nested row owners consume it without lighting up their parents.

@@ -135,6 +135,108 @@ final class NativeSettingsToggleTests: XCTestCase {
         XCTAssertEqual(cards.artwork, original, "Restyling must not modify artwork preferences.")
     }
 
+    func testSearchGlowMovesNeutrallyAndRespectsReducedEffects() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+
+        func capture() -> UIImage {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+        }
+
+        func pixel(_ image: UIImage, _ point: CGPoint) throws -> [Int] {
+            let crop = try XCTUnwrap(image.cgImage?.cropping(to:
+                CGRect(x: point.x.rounded(.down), y: point.y.rounded(.down), width: 1, height: 1)))
+            var bytes = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &bytes, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return bytes.prefix(3).map(Int.init)
+        }
+
+        for (light, reducedMotion, reducedEffects, active) in [
+            (false, false, false, true), (true, false, false, true),
+            (false, true, false, true), (false, false, true, true),
+            (false, false, false, false)
+        ] {
+            let model = Model()
+            let animates = !reducedMotion && !reducedEffects && active
+            window.frame = CGRect(x: 0, y: 0, width: 390, height: 400)
+            window.rootViewController = UIHostingController(rootView:
+                SettingsSearchGlow(shape: RoundedRectangle(cornerRadius: 18))
+                    .frame(width: 300, height: 100)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                        model.controlBounds = $0
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(light ? Color.white : .black)
+                    .environment(\.themePalette, light ? .light : .dark)
+                    .environment(\.colorScheme, light ? .light : .dark)
+                    .environment(\.scenePhase, active ? .active : .inactive)
+                    .environment(\._accessibilityReduceMotion, reducedMotion)
+                    .environment(\.plozzReduceTransparency, reducedEffects)
+            )
+            window.makeKeyAndVisible()
+            try await Task.sleep(for: .milliseconds(150))
+            window.layoutIfNeeded()
+            let bounds = model.controlBounds
+            XCTAssertEqual(bounds.width, 300)
+            let first = capture()
+            try await Task.sleep(for: .milliseconds(550))
+            let second = capture()
+            let edge = stride(from: 30.0, through: 270.0, by: 30).flatMap { x in
+                [CGPoint(x: bounds.minX + x, y: bounds.minY + 1),
+                 CGPoint(x: bounds.minX + x, y: bounds.maxY - 2)]
+            }
+            var movement = 0
+            for point in edge {
+                let before = try pixel(first, point)
+                let after = try pixel(second, point)
+                movement += abs(before[0] - after[0])
+                XCTAssertLessThanOrEqual((after.max() ?? 0) - (after.min() ?? 0), 2,
+                                         "The search glow must remain neutral in both appearances.")
+            }
+            if animates {
+                XCTAssertGreaterThan(movement, 40, "The light must visibly travel along the edge.")
+            } else {
+                XCTAssertEqual(movement, 0, "Reduced effects and inactive scenes must use a steady outline.")
+            }
+            for point in [CGPoint(x: bounds.minX - 1, y: bounds.midY),
+                          CGPoint(x: bounds.minX + 1, y: bounds.minY + 1)] {
+                XCTAssertEqual(try pixel(second, point)[0], light ? 255 : 0,
+                               "Glow must stay inside the row, including its rounded corners.")
+            }
+            for (name, image) in [("arrival", first), ("sweep", second)] {
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "Search glow \(name) light=\(light) motion=\(reducedMotion) effects=\(reducedEffects) active=\(active)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+            try await Task.sleep(for: .milliseconds(1400))
+            if animates {
+                let expired = capture()
+                for point in edge {
+                    XCTAssertEqual(try pixel(expired, point)[0], light ? 255 : 0, accuracy: 2,
+                                   "The glow must finish fading before the two-second landing ends.")
+                }
+            }
+            XCTAssertEqual(model.controlBounds, bounds, "Animation must not change row geometry.")
+        }
+    }
+
     func testSearchHighlightCoversRowPaddingWithoutHighlightingNeighbors() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -255,6 +357,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                     .environment(\.themePalette, .dark)
                     .environment(\.colorScheme, .dark)
                     .environment(\.gradientBackgroundsEnabled, false)
+                    .environment(\._accessibilityReduceMotion, true)
                     .environment(\.dynamicTypeSize, layout == "accessibility-scroll" ? .accessibility3 : .large)
                     .disabled(layout == "disabled-scroll")
                 )

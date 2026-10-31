@@ -86,7 +86,6 @@ private struct SettingsSearchAnchor: ViewModifier {
     var focusAction: (@MainActor () -> Void)?
     @Environment(SettingsSearchRequest.self) private var request: SettingsSearchRequest?
     @Environment(\.settingsSearchScroll) private var scroll
-    @Environment(\.themePalette) private var palette
     @FocusState private var focused: Bool
     @State private var highlighted = false
     #if os(iOS)
@@ -139,9 +138,7 @@ private struct SettingsSearchAnchor: ViewModifier {
                     }
                 }
                 if highlighted, !rowOwnsHighlight, !isNativeListRow {
-                    RoundedRectangle(cornerRadius: 8).fill(palette.accent.opacity(0.15))
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+                    SettingsSearchGlow(shape: RoundedRectangle(cornerRadius: 8))
                 }
                 #endif
             }
@@ -149,7 +146,7 @@ private struct SettingsSearchAnchor: ViewModifier {
             .transformPreference(SettingsSearchHighlightKey.self) { $0 = $0 || highlighted }
             .listRowBackground(
                 highlighted && isNativeListRow && !rowOwnsHighlight
-                    ? palette.accent.opacity(0.15) : nil
+                    ? SettingsSearchGlow(shape: Rectangle()) : nil
             )
             #endif
             .task(id: canReveal) {
@@ -223,26 +220,72 @@ private struct SettingsSearchHighlightKey: PreferenceKey {
     }
 }
 
+/// Mounted only for the landing cue; the inset glow never spills onto neighboring rows.
+struct SettingsSearchGlow<Outline: InsettableShape>: View {
+    let shape: Outline
+    @Environment(\.themePalette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var angle = 0.0
+    @State private var opacity = 1.0
+
+    private var animates: Bool {
+        !reduceMotion && !reduceTransparency && scenePhase == .active
+    }
+
+    var body: some View {
+        let neutral = palette.primaryText
+        let sweep = AngularGradient(
+            stops: [
+                .init(color: neutral.opacity(0.12), location: 0),
+                .init(color: neutral.opacity(0.12), location: 0.55),
+                .init(color: neutral.opacity(0.75), location: 0.78),
+                .init(color: neutral.opacity(0.12), location: 1)
+            ],
+            center: .center, angle: .degrees(angle)
+        )
+        shape.fill(neutral.opacity(0.10))
+            .overlay {
+                if animates {
+                    shape.strokeBorder(sweep, lineWidth: 5)
+                        .blur(radius: 3)
+                    shape.strokeBorder(sweep, lineWidth: 1.5)
+                } else {
+                    shape.strokeBorder(neutral.opacity(0.5), lineWidth: 1.5)
+                }
+            }
+            .clipShape(shape)
+            .opacity(opacity)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .task(id: animates) {
+                angle = 0
+                opacity = 1
+                guard animates else { return }
+                withAnimation(.linear(duration: 1.65)) { angle = 360 }
+                do { try await Task.sleep(for: .milliseconds(1650)) } catch { return }
+                withAnimation(.easeOut(duration: 0.3)) { opacity = 0 }
+            }
+    }
+}
+
 /// The row owner draws after padding, rather than expanding a control's bounds by guessed insets.
 struct SettingsSearchRowHighlight: ViewModifier {
     let isFirst: Bool
     let isLast: Bool
     let cornerRadius: CGFloat
-    @Environment(\.themePalette) private var palette
 
     func body(content: Content) -> some View {
         content
             .backgroundPreferenceValue(SettingsSearchHighlightKey.self) { highlighted in
                 if highlighted {
-                    UnevenRoundedRectangle(
+                    SettingsSearchGlow(shape: UnevenRoundedRectangle(
                         topLeadingRadius: isFirst ? cornerRadius : 0,
                         bottomLeadingRadius: isLast ? cornerRadius : 0,
                         bottomTrailingRadius: isLast ? cornerRadius : 0,
                         topTrailingRadius: isFirst ? cornerRadius : 0
-                    )
-                    .fill(palette.accent.opacity(0.15))
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                    ))
                 }
             }
             // A nested row consumes its highlight so an enclosing row cannot also light up.
