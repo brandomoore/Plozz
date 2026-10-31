@@ -118,6 +118,7 @@ final class LibraryCollectionModeTests: XCTestCase {
             XCTAssertEqual(requests.map(\.containerID), ["real-library", "real-library"])
             XCTAssertEqual(requests.map(\.kind), [.movie, .collection])
             XCTAssertEqual(requests.map(\.page.startIndex), [0, 0])
+            XCTAssertEqual(requests.map(\.page.collectionPresentation), [.serverDefault, .individualItems])
         }
     }
 
@@ -155,6 +156,7 @@ final class LibraryCollectionModeTests: XCTestCase {
         XCTAssertEqual(requestedLibraries, [["real-library"]])
         XCTAssertEqual(requestedHubs, ["real-library"])
         XCTAssertEqual(firstRequest?.page.sort.field, .dateAdded)
+        XCTAssertEqual(firstRequest?.page.collectionPresentation, .individualItems)
     }
 
     func testRepeatedHubIdentifiersRemainStableWhenAnEarlierHubDisappears() async throws {

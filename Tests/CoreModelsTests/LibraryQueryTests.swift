@@ -3,6 +3,26 @@ import Foundation
 import XCTest
 
 final class LibraryQueryTests: XCTestCase {
+    func testCollectionPresentationIsBrowseOnlyAndSurvivesPagination() {
+        let request = PageRequest(startIndex: 2, limit: 3, collectionPresentation: .serverDefault)
+        XCTAssertFalse(PageRequest().allowsServerCollections)
+        XCTAssertTrue(request.usesServerCollections(for: .movie))
+        for kind: MediaItemKind in [.series, .episode, .collection, .playlist, .folder, .unknown] {
+            XCTAssertFalse(request.usesServerCollections(for: kind))
+        }
+        XCTAssertEqual(request.next(), PageRequest(startIndex: 5, limit: 3, collectionPresentation: .serverDefault))
+        for field in SortField.allCases {
+            var sorted = request
+            sorted.sort.field = field
+            XCTAssertEqual(sorted.allowsServerCollections, field == .name)
+        }
+        for filters in [LibraryFilters(filter: .unwatched), .init(genre: "Drama"), .init(year: 2024)] {
+            var filtered = request
+            filtered.filters = filters
+            XCTAssertFalse(filtered.allowsServerCollections)
+        }
+    }
+
     func testEmptyRecordStorageEstimateContainsOnlyTheRecordStride() {
         let record = LibraryQueryRecord(MediaItem(id: "", title: "", kind: .movie))
         XCTAssertEqual(record.estimatedStorageBytes, MemoryLayout<LibraryQueryRecord>.stride)

@@ -705,6 +705,11 @@ public extension MediaProvider {
     }
 }
 
+public enum LibraryCollectionPresentation: Equatable, Sendable {
+    case individualItems
+    case serverDefault
+}
+
 /// A request for one page of a container's children.
 public struct PageRequest: Equatable, Sendable {
     /// Zero-based index of the first item to fetch.
@@ -715,17 +720,28 @@ public struct PageRequest: Equatable, Sendable {
     /// session share one descriptor; changing it restarts paging from index 0.
     public var sort: SortDescriptor
     public var filters: LibraryFilters
+    public var collectionPresentation: LibraryCollectionPresentation
+
+    public var allowsServerCollections: Bool {
+        collectionPresentation == .serverDefault && sort.field == .name && filters.isEmpty
+    }
+
+    public func usesServerCollections(for kind: MediaItemKind) -> Bool {
+        kind == .movie && allowsServerCollections
+    }
 
     public init(
         startIndex: Int = 0,
         limit: Int = PageRequest.defaultLimit,
         sort: SortDescriptor = .default,
-        filters: LibraryFilters = .all
+        filters: LibraryFilters = .all,
+        collectionPresentation: LibraryCollectionPresentation = .individualItems
     ) {
         self.startIndex = startIndex
         self.limit = limit
         self.sort = sort
         self.filters = filters
+        self.collectionPresentation = collectionPresentation
     }
 
     /// Default page size tuned for a tvOS 10-foot grid: large enough to fill the
@@ -734,7 +750,10 @@ public struct PageRequest: Equatable, Sendable {
 
     /// The request for the page that follows this one, preserving the sort order.
     public func next() -> PageRequest {
-        PageRequest(startIndex: startIndex + limit, limit: limit, sort: sort, filters: filters)
+        PageRequest(
+            startIndex: startIndex + limit, limit: limit, sort: sort, filters: filters,
+            collectionPresentation: collectionPresentation
+        )
     }
 }
 

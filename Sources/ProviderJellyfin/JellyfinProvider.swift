@@ -979,7 +979,8 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
                 startIndex: page.startIndex,
                 limit: page.limit,
                 sort: page.sort,
-                filters: page.filters
+                filters: page.filters,
+                useServerCollections: page.usesServerCollections(for: kind)
             )
             let items = response.Items.map(map(item:))
             PlozzLog.networking.info(

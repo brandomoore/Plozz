@@ -68,6 +68,10 @@ extension JellyfinProvider: MediaLibraryQueryProviding {
     }
 
     public func libraryQueryLetterIndex(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> [LibraryLetterIndexEntry] {
-        try await filteredLetterIndex(in: containerID, kind: kind, sort: page.sort, filters: page.filters)
+        if page.usesServerCollections(for: kind) {
+            // Released servers can apply name predicates before collapsing into differently named box sets.
+            return LibraryLetterIndex.deferredEntries(direction: page.sort.direction)
+        }
+        return try await filteredLetterIndex(in: containerID, kind: kind, sort: page.sort, filters: page.filters)
     }
 }

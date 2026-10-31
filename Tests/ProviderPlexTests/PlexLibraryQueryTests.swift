@@ -4,6 +4,102 @@ import XCTest
 @testable import ProviderPlex
 
 final class PlexLibraryQueryTests: XCTestCase {
+    func testBrowseFollowsServerCollectionPolicyWithoutRebuildingMembership() async throws {
+        let http = StubHTTPClient()
+        http.stubSequence(pathSuffix: "/library/sections/1/all", jsons: [
+            #"{"MediaContainer":{"totalSize":2,"Metadata":[{"ratingKey":"set","type":"collection","title":"Cuts","childCount":2}]}}"#,
+            #"{"MediaContainer":{"totalSize":2,"Metadata":[{"ratingKey":"movie","type":"movie","title":"Standalone","viewOffset":12000}]}}"#
+        ])
+        let source = provider(http)
+        let request = PageRequest(limit: 1, collectionPresentation: .serverDefault)
+        let first = try await source.items(in: "1", kind: .movie, page: request)
+        let second = try await source.items(in: "1", kind: .movie, page: request.next())
+        XCTAssertEqual(first.items.map(\.kind), [.collection])
+        XCTAssertEqual(first.items.map(\.id), ["set"])
+        XCTAssertEqual(second.items.map(\.id), ["movie"])
+        XCTAssertEqual(second.items.first?.resumePosition, 12)
+        XCTAssertEqual(first.totalCount, 2)
+        XCTAssertEqual(second.startIndex, 1)
+        XCTAssertEqual(second.totalCount, 2)
+        XCTAssertEqual(http.sentPaths, Array(repeating: "/library/sections/1/all", count: 2))
+        for query in http.sentQueryItems {
+            XCTAssertTrue(query.contains(.init(name: "includeCollections", value: "1")))
+            XCTAssertTrue(query.contains(.init(name: "includeOptionalElements", value: "Stream")))
+            XCTAssertFalse(query.contains { $0.name == "includeElements" })
+            XCTAssertTrue(query.contains(.init(name: "type", value: "1")))
+        }
+    }
+
+    func testOnlyUnfilteredNameSortedMovieBrowseIncludesCollections() async throws {
+        let http = StubHTTPClient()
+        http.stub(pathSuffix: "/library/sections/1/all",
+                  json: #"{"MediaContainer":{"totalSize":0,"Metadata":[]}}"#)
+        http.stub(pathSuffix: "/library/sections/1/genre",
+                  json: #"{"MediaContainer":{"Directory":[{"key":"42","title":"Drama"}]}}"#)
+        let source = provider(http)
+        let requests: [(MediaItemKind, PageRequest, String)] = [
+            (.movie, .init(), "0"),
+            (.movie, .init(collectionPresentation: .serverDefault), "1"),
+            (.movie, .init(sort: .init(field: .name, direction: .descending), collectionPresentation: .serverDefault), "1"),
+            (.movie, .init(sort: .init(field: .dateAdded, direction: .descending), collectionPresentation: .serverDefault), "0"),
+            (.movie, .init(filters: .init(filter: .unwatched), collectionPresentation: .serverDefault), "0"),
+            (.movie, .init(filters: .init(genre: "Drama"), collectionPresentation: .serverDefault), "0"),
+            (.movie, .init(filters: .init(year: 2024), collectionPresentation: .serverDefault), "0"),
+            (.series, .init(collectionPresentation: .serverDefault), "0"),
+            (.episode, .init(collectionPresentation: .serverDefault), "0")
+        ]
+        for (kind, request, expected) in requests {
+            _ = try await source.items(in: "1", kind: kind, page: request)
+            let query = try XCTUnwrap(http.queryItems(forPathSuffix: "/all"))
+            XCTAssertEqual(query.first { $0.name == "includeCollections" }?.value, expected)
+        }
+        _ = try await source.libraryQueryInventory(
+            in: "1", kind: .movie, page: .init(collectionPresentation: .serverDefault)
+        )
+        XCTAssertTrue(try XCTUnwrap(http.queryItems(forPathSuffix: "/all"))
+            .contains(.init(name: "includeCollections", value: "0")))
+    }
+
+    func testGroupedAlphabetResolvesActualMixedPagePositionsInBothDirections() async throws {
+        for direction: SortDirection in [.ascending, .descending] {
+            let http = StubHTTPClient()
+            let movie = #"{"ratingKey":"movie","type":"movie","title":"Apple"}"#
+            let collection = #"{"ratingKey":"set","type":"collection","title":"Zebra cuts"}"#
+            let rows = direction == .ascending ? [movie, collection] : [collection, movie]
+            http.stubSequence(pathSuffix: "/library/sections/1/all", jsons: rows.map {
+                #"{"MediaContainer":{"totalSize":2,"Metadata":["# + $0 + "]}}"
+            })
+            let source = provider(http)
+            let request = PageRequest(
+                sort: .init(field: .name, direction: direction), collectionPresentation: .serverDefault
+            )
+            let entries = try await source.libraryQueryLetterIndex(in: "1", kind: .movie, page: request)
+            XCTAssertEqual(entries, LibraryLetterIndex.deferredEntries(direction: direction))
+            XCTAssertTrue(http.sentPaths.isEmpty, "Do not scan a library just to show its alphabet rail.")
+            let position = try await source.libraryQueryLetterPosition(
+                in: "1", kind: .movie, letter: "Z", page: request
+            )
+            XCTAssertEqual(position, direction == .ascending ? 1 : 0)
+            XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/firstCharacter") })
+            XCTAssertTrue(http.sentQueryItems.allSatisfy {
+                $0.contains(.init(name: "includeCollections", value: "1"))
+            })
+        }
+    }
+
+    func testGroupedBrowseRejectsMissingNonemptyMetadata() async {
+        let http = StubHTTPClient()
+        http.stub(pathSuffix: "/library/sections/1/all", json: #"{"MediaContainer":{"size":1,"totalSize":1}}"#)
+        do {
+            _ = try await provider(http).items(
+                in: "1", kind: .movie, page: .init(collectionPresentation: .serverDefault)
+            )
+            XCTFail("Missing rows cannot become an empty grouped library.")
+        } catch {
+            XCTAssertEqual(error as? AppError, .invalidResponse)
+        }
+    }
+
     func testEpisodeInventoryRequestsPlexEpisodeType() async throws {
         let http = StubHTTPClient()
         http.stub(pathSuffix: "/library/sections/1/all", json: """

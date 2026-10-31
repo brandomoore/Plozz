@@ -441,6 +441,21 @@ reload, and failed-read recovery, not just successful HTTP responses.
 
 ## Collections
 
+Unfiltered, name-sorted movie Browse leaves native collection grouping
+unspecified, allowing the server's saved policy to govern the paged result.
+Jellyfin's released `Folder.CollapseBoxSetItems` uses
+`EnableGroupingMoviesIntoCollections` when `CollapseBoxSetItems` is absent.
+For Emby, the corresponding query override is `GroupItemsIntoCollections`;
+Plozz leaves it absent rather than inventing a preference or forcing it true.
+Other sorts, filters and compact inventories explicitly disable grouping with
+the provider's parameter. No administrator configuration read is needed.
+Mixed BoxSet/movie results retain server IDs, order, counts and member routes.
+Grouped A-Z navigation resolves against those actual pages on demand: released
+servers can apply name predicates to members before replacing them with a
+differently named BoxSet, making predicate counts invalid grid offsets.
+No library enumeration happens merely to display the alphabet rail, although
+a late-letter jump can read multiple cancellable pages.
+
 Jellyfin and Emby retain native `boxsets` libraries and `BoxSet` items. Both also
 advertise `.libraryCollections` for the shared Collections option inside a
 movie/TV library. `MediaProvider.collections(in:page:)` displays the authenticated

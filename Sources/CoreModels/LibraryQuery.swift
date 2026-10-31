@@ -503,7 +503,7 @@ extension MediaLibraryQueryProviding {
     public func libraryQueryLetterPosition(
         in containerID: String, kind: MediaItemKind, letter: String, page: PageRequest
     ) async throws -> Int? {
-        if page.filters.isEmpty {
+        if page.filters.isEmpty && !page.usesServerCollections(for: kind) {
             return try await letterPosition(
                 in: containerID, kind: kind, letter: letter, sort: page.sort)
         }
@@ -512,7 +512,8 @@ extension MediaLibraryQueryProviding {
                 try await items(
                     in: containerID, kind: kind,
                     page: PageRequest(
-                        startIndex: offset, limit: limit, sort: page.sort, filters: page.filters)
+                        startIndex: offset, limit: limit, sort: page.sort, filters: page.filters,
+                        collectionPresentation: page.collectionPresentation)
                 )
             },
             matches: { MediaItemSortOrder.alphabetBucket(for: $0) == letter }

@@ -199,6 +199,7 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Librar
         /// only meaningful for ONE ordering, so a changed sort has to throw it away.
         private var activeSort: CoreModels.SortDescriptor?
         private var activeFilters: LibraryFilters = .all
+        private var activeCollectionPresentation: LibraryCollectionPresentation = .individualItems
 
         func initialize(with sourceIDs: [String]) {
             guard offsets.isEmpty else { return }
@@ -214,10 +215,13 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Librar
         /// sort out of a buffer built for the old one — a sort menu that appears to
         /// do nothing, or worse, silently mixes two orderings.
         func prepare(for sort: CoreModels.SortDescriptor, sourceIDs: [String], force: Bool = false,
-                     filters: LibraryFilters = .all) {
-            guard force || activeSort != sort || activeFilters != filters else { return }
+                     filters: LibraryFilters = .all,
+                     collectionPresentation: LibraryCollectionPresentation = .individualItems) {
+            guard force || activeSort != sort || activeFilters != filters
+                || activeCollectionPresentation != collectionPresentation else { return }
             activeSort = sort
             activeFilters = filters
+            activeCollectionPresentation = collectionPresentation
             offsets = Dictionary(uniqueKeysWithValues: sourceIDs.map { ($0, 0) })
             totals.removeAll()
             exhausted.removeAll()
@@ -250,8 +254,9 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Librar
             merger.slice(from: start, limit: limit)
         }
 
-        func bufferedLetterPosition(_ letter: String, sort: CoreModels.SortDescriptor) -> Int? {
-            guard activeSort == sort else { return nil }
+        func bufferedLetterPosition(_ letter: String, page: PageRequest) -> Int? {
+            guard activeSort == page.sort, activeFilters == page.filters,
+                  activeCollectionPresentation == page.collectionPresentation else { return nil }
             return merger.mergedItems().firstIndex { MediaItemSortOrder.alphabetBucket(for: $0) == letter }
         }
 
@@ -608,11 +613,19 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Librar
 
     public func letterPosition(in containerID: String, kind: MediaItemKind, letter: String,
                                sort: CoreModels.SortDescriptor) async throws -> Int? {
-        guard sort.field == .name, LibraryLetterIndex.railLetters.contains(letter) else {
+        try await libraryQueryLetterPosition(
+            in: containerID, kind: kind, letter: letter, page: .init(sort: sort)
+        )
+    }
+
+    public func libraryQueryLetterPosition(
+        in containerID: String, kind: MediaItemKind, letter: String, page: PageRequest
+    ) async throws -> Int? {
+        guard page.sort.field == .name, LibraryLetterIndex.railLetters.contains(letter) else {
             throw AppError.invalidResponse
         }
         try Task.checkCancellation()
-        if let position = await cache.bufferedLetterPosition(letter, sort: sort) {
+        if let position = await cache.bufferedLetterPosition(letter, page: page) {
             try Task.checkCancellation()
             return position
         }
@@ -620,7 +633,9 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Librar
         // Already-browsed pages come from this provider's existing merge cache.
         return try await LibraryLetterIndex.findPosition(
             fetch: { [self] offset, limit in
-                try await loadPage(kind: kind, page: .init(startIndex: offset, limit: limit, sort: sort),
+                try await loadPage(kind: kind, page: .init(
+                    startIndex: offset, limit: limit, sort: page.sort, filters: page.filters,
+                    collectionPresentation: page.collectionPresentation),
                                    content: .titles, cache: cache, requiresAllSources: true)
             },
             matches: { MediaItemSortOrder.alphabetBucket(for: $0) == letter }
@@ -716,7 +731,8 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Librar
         // a half-reset cache or fold a page fetched under the old ordering.
         await cache.prepare(
             for: page.sort, sourceIDs: sourceIDs,
-            force: content == .collections && page.startIndex == 0, filters: page.filters
+            force: content == .collections && page.startIndex == 0, filters: page.filters,
+            collectionPresentation: page.collectionPresentation
         )
         /// Sources that have used up their in-fill retries and are being emitted
         /// past. Scoped per call so a blip never persists into the next request.
@@ -747,6 +763,7 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Librar
                     kind: kind,
                     sort: page.sort,
                     filters: page.filters,
+                    collectionPresentation: page.collectionPresentation,
                     limit: page.limit,
                     content: content,
                     cache: cache,
@@ -842,6 +859,7 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Librar
         kind: MediaItemKind,
         sort: CoreModels.SortDescriptor,
         filters: LibraryFilters,
+        collectionPresentation: LibraryCollectionPresentation,
         limit: Int,
         content: BrowseContent,
         cache: Cache,
@@ -860,7 +878,10 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Librar
                         return (source.sourceKey, source.accountID, nil, nil)
                     }
                     let offset = await cache.offset(for: source.sourceKey)
-                    let request = PageRequest(startIndex: offset, limit: chunkSize, sort: sort, filters: filters)
+                    let request = PageRequest(
+                        startIndex: offset, limit: chunkSize, sort: sort, filters: filters,
+                        collectionPresentation: collectionPresentation
+                    )
                     do {
                         let page: MediaPage
                         if content == .collections {

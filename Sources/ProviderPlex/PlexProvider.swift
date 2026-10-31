@@ -982,8 +982,12 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
             }
             let container = try await client.sectionItems(
                 sectionID: containerID, type: type, start: page.startIndex,
-                size: page.limit, sort: page.sort, filters: page.filters, genreID: genreID
+                size: page.limit, sort: page.sort, filters: page.filters, genreID: genreID,
+                includeCollections: page.usesServerCollections(for: kind)
             )
+            if page.usesServerCollections(for: kind) {
+                try Self.validateCollectionPage(container, startIndex: page.startIndex)
+            }
             let items = (container.Metadata ?? []).map(map(metadata:))
             let total = container.totalSize ?? container.size ?? (page.startIndex + items.count)
             PlozzLog.networking.info("Plex library browse: section=\(containerID) returned=\(items.count) total=\(total)")
