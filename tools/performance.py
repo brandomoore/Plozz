@@ -232,6 +232,16 @@ SCENARIOS = {
         "description": "The same notifications with bounded recording and completed encoding/persistence.",
         "counters": ["notifications", "retained", "discarded", "persistedBytes", "enqueueMicroseconds"],
     },
+    "player-card-first-visits": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "PlayerEpisodeArtworkHostedTests/testPerformancePlayerCardFirstVisits",
+        "file": "Tests/FocusIntegrationTests/PlayerEpisodeArtworkHostedTests.swift",
+        "description": "Fresh controls hierarchy per sample; first Info/Chapters/Cast visits with native focus and populated card checks, no video decoding.",
+        "counters": ["freshHierarchies", "firstVisits", "infoMaxMainActorGapMicroseconds",
+                     "chaptersFocusUpdateMicroseconds", "chaptersMaxMainActorGapMicroseconds",
+                     "castFocusUpdateMicroseconds", "castMaxMainActorGapMicroseconds"],
+        "timing": ["cpuMilliseconds"],
+    },
     "player-controls-cold-reveal": {
         "suite": "ui", "platforms": ["tvOS"],
         "test": "PlayerControlsRevealPerformanceTests/testPerformanceColdControlsReveal",

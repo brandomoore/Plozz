@@ -167,7 +167,7 @@ class EvidenceTests(unittest.TestCase):
                     performance.validate_report(incomplete, performance.SCENARIOS[name])
 
     def test_controls_clock_scenarios_require_tv_and_complete_work_counters(self):
-        for name in ("player-controls-cold-reveal", "player-controls-first-card",
+        for name in ("player-card-first-visits", "player-controls-cold-reveal", "player-controls-first-card",
                      "player-controls-hidden-clock", "player-controls-hidden-static",
                      "player-controls-visible-clock"):
             self.assertEqual(performance.select(None, [name], "tvOS"), [name])

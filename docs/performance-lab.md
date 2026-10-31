@@ -163,6 +163,25 @@ informational: allocator caches and framework lifetime make them unsuitable
 for a blanket byte threshold. Lifecycle scenarios additionally assert weak
 references actually release.
 
+`player-card-first-visits` prioritizes the first Info, Chapters and Cast opening
+in a fresh production-controls hierarchy for every sample, including the
+discarded warmup. It uses twenty local chapters and cast members, with no artwork
+URLs, network requests or video decoding. It checks actual native tab focus,
+rejects intermediate wrong-tab focus, and requires focusable content inside the
+card. The separate hosted
+`testProductionCardContentAndNativeEntryOnFirstVisits` checks rendered text and
+native entry into each card with both normal and reduced glass; an empty or
+obscured card must not count as a faster presentation.
+
+Each first opening records its largest 2 ms main-actor heartbeat gap. Chapters
+and Cast additionally record the synchronous native focus-update duration; that
+is not input-to-presented-frame latency. CPU covers the full hierarchy setup,
+first openings and teardown; fixed settling intervals dominate wall time.
+Framework, shader and process caches remain warm between samples, so this is a
+first visit per playback hierarchy, not repeated cold app launches or proof of
+second-generation Apple TV performance. Prefer this workload over repeated tab
+round trips when assessing first-use responsiveness.
+
 `native-poster-indicators` exercises the actual native-poster coordinator's
 foreground path: 72 completed overlays across 24 posters, three visible episode
 badges, and changing playback progress. Each sample uses cold geometry. The
