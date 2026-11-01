@@ -7,6 +7,7 @@ struct SettingsFormLayout: View {
     let rows: [SettingsSplitRow]
     var showsBack = false
     @Environment(SettingsNavigationModel.self) private var navigation: SettingsNavigationModel?
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
 
     var body: some View {
         ScrollView {
@@ -15,7 +16,7 @@ struct SettingsFormLayout: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                         SettingsFormRow(row: row, isEntry: index == 0)
-                            .disabled(index > 0 && navigation?.focusInDetail == false)
+                            .disabled(index > 0 && navigation?.focusInDetail == false && searchRequest == nil)
                             .padding(.top, rowSpacing(at: index))
                             .id(row.id)
                     }

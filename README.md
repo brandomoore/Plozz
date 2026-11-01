@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://testflight.apple.com/join/EKfReNMu"><img src="docs/assets/testflight-button.png" alt="Join the Plozz public beta on TestFlight" width="264" /></a>
+  <a href="https://apps.apple.com/app/plozz-player/id6782668147"><img src="docs/assets/app-store-badge.svg" alt="Download Plozz Player on the App Store" width="180" /></a>
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/brandomoore/Plozz/releases"><img src="https://img.shields.io/github/v/release/brandomoore/Plozz?include_prereleases&sort=date&display_name=release&label=TestFlight%20beta&color=orange&logo=apple" alt="Latest TestFlight beta" /></a>
+  <a href="https://github.com/brandomoore/Plozz/releases"><img src="https://img.shields.io/github/v/release/brandomoore/Plozz?include_prereleases&sort=date&display_name=release&label=Latest%20build&color=orange&logo=apple" alt="Latest GitHub build, including TestFlight releases" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License: GPL-3.0" /></a>
   <a href="https://www.apple.com/apple-tv-4k/"><img src="https://img.shields.io/badge/Platform-tvOS%20%C2%B7%20iOS%20%C2%B7%20iPadOS-black.svg?logo=apple" alt="Platform: tvOS, iOS, iPadOS" /></a>
   <a href="https://github.com/sponsors/brandomoore"><img src="https://img.shields.io/badge/Donate-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white" alt="Donate" /></a>
@@ -102,7 +102,7 @@ available when you want them.
   Library scans run while the app is active: normal passes skip unchanged
   folders, while a daily deep pass (or **Scan now**) rechecks all contents,
   including changes a server's folder timestamps cannot reveal.
-  (Share support is still evolving during the beta.)
+  (Share support is still evolving.)
 - **One merged library** — connect several servers and see one set of rows
   instead of picking a server first.
 - **Jump to a letter** — an A–Z menu for name-sorted individual and combined
@@ -324,16 +324,18 @@ If you're choosing between Apple TV media apps, here's where Plozz fits:
   for Apple TV, with Plex, Emby, Silo, and network shares available in the same
   app.
 
-Plozz is an independent project, not affiliated with these apps. It's still
-in [public beta](#getting-started), not a promise of feature-for-feature parity.
+Plozz is an independent project, not affiliated with these apps. These comparisons
+are not a promise of feature-for-feature parity.
 You bring your own media; server-side permissions and any provider subscription
 requirements still apply. Plozz replaces the player, not your media server.
 
 ## Getting started
 
-Plozz is in **public beta** on TestFlight.
-[**Join the beta**](https://testflight.apple.com/join/EKfReNMu) and it installs
-on your Apple TV, iPhone, and iPad.
+Download **[Plozz Player on the App Store](https://apps.apple.com/app/plozz-player/id6782668147)**
+for Apple TV, iPhone and iPad.
+
+To try upcoming changes, join the optional
+[TestFlight beta](https://testflight.apple.com/join/EKfReNMu).
 
 You'll need an Apple TV, iPhone, or iPad running tvOS/iOS/iPadOS 18 or later,
 plus a Jellyfin, Plex, Emby, or Silo server—or a network share—with your own

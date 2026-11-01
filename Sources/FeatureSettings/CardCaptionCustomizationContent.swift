@@ -74,14 +74,16 @@ struct CardCaptionCustomizationContent: View {
 
     init(
         settings: Binding<CardCaptionSettings>, style: CardStyle = .borderless,
-        scope: CardCaptionSettingsScope = .all, visibility: HomeLibraryVisibilityModel? = nil
+        scope: CardCaptionSettingsScope = .all, visibility: HomeLibraryVisibilityModel? = nil,
+        initialView: CardCaptionView? = nil
     ) {
         _settings = settings
         self.style = style
         self.scope = scope
         self.visibility = visibility
-        _selectedPage = State(initialValue: scope.pages[0])
-        _previewView = State(initialValue: scope.pages[0].firstControl)
+        let page = initialView.flatMap { view in scope.pages.first { $0.controls.contains(view) } } ?? scope.pages[0]
+        _selectedPage = State(initialValue: page)
+        _previewView = State(initialValue: initialView.flatMap { page.controls.contains($0) ? $0 : nil } ?? page.firstControl)
     }
 
     private var views: [CardCaptionView] { selectedPage.controls }
@@ -125,7 +127,7 @@ struct CardCaptionCustomizationContent: View {
         #else
         ViewCustomizationList(title: title, initialRowID: "") {
             if scope.pages.count > 1 {
-                Section {
+                SettingsSectionGroup {
                     ViewCustomizationMenu(
                         id: "card-label-page", title: "Page",
                         value: selectedPage.title, selection: $selectedPage
@@ -137,7 +139,7 @@ struct CardCaptionCustomizationContent: View {
                 }
             }
             defaultSection
-            Section {
+            SettingsSectionGroup {
                 CardLabelScopePreview(preview: preview(editing: previewView), style: style)
             }
             overrideSection
@@ -148,12 +150,18 @@ struct CardCaptionCustomizationContent: View {
 
     @ViewBuilder
     private var defaultSection: some View {
+        let defaultViews = views.filter { !$0.isRowOverride }
+        let controls = ForEach(defaultViews, id: \.self) { view in
+            labelControl(view)
+        }
+        #if os(tvOS)
         Section {
-            ForEach(views.filter { !$0.isRowOverride }, id: \.self) { view in
-                labelControl(view)
-            }
+            controls
+        }
+        #else
+        SettingsSectionGroup {
+            controls
         } footer: {
-            #if !os(tvOS)
             VStack(alignment: .leading, spacing: 4) {
                 if selectedPage != .detail && !selectedPage.hasOverrides {
                     Text(selectedPage.firstControl.cardLabelDetail)
@@ -163,24 +171,37 @@ struct CardCaptionCustomizationContent: View {
                         .accessibilityIdentifier("card-label-mixed-help")
                 }
             }
-            #endif
         }
+        .settingsSearchGroup(defaultViews.map { "card-label-view-\($0.rawValue)" })
+        #endif
     }
 
     @ViewBuilder
     private var overrideSection: some View {
         if selectedPage.hasOverrides {
-            Section {
-                ForEach(views.filter(\.isRowOverride), id: \.self) { view in
-                    labelControl(view)
-                }
-            } header: {
-                Text("Overrides", comment: "Card label settings that override the selected page's Default choice.")
-            } footer: {
+            let overrideViews = views.filter(\.isRowOverride)
+            let controls = ForEach(overrideViews, id: \.self) { view in
+                labelControl(view)
+            }
+            let footer = Group {
                 if let note = selectedPage.sharedRowNote {
                     Text(note)
                 }
             }
+            #if os(tvOS)
+            Section {
+                controls
+            } header: {
+                Text("Overrides", comment: "Card label settings that override the selected page's Default choice.")
+            } footer: {
+                footer
+            }
+            #else
+            SettingsSectionGroup(
+                "Overrides", content: { controls }, footer: { footer }
+            )
+            .settingsSearchGroup(overrideViews.map { "card-label-view-\($0.rawValue)" })
+            #endif
         }
     }
 

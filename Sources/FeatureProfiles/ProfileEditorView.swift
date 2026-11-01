@@ -142,7 +142,23 @@ public struct ProfileEditorView: View {
     @Environment(\.settingsPageBackButton) private var backButton
     #endif
 
-    fileprivate enum AvatarMode: Hashable { case symbol, emoji, photo }
+    fileprivate enum AvatarMode: Hashable {
+        case symbol, emoji, photo
+
+        var searchTarget: String {
+            switch self {
+            case .symbol: "profile-symbol"
+            case .emoji: "profile-emoji"
+            case .photo: "profile-photo"
+            }
+        }
+
+        var searchFallbacks: [String] {
+            [Self.symbol, .emoji, .photo].filter { $0 != self }.map(\.searchTarget)
+                + (self == .photo ? ["profile-color"] : [])
+                + (self == .emoji ? [] : ["profile-neutral-emoji"])
+        }
+    }
 
     /// Current tvOS version, so the emoji picker can hide glyphs the device is
     /// too old to render (they'd otherwise show as empty "tofu" boxes).
@@ -579,11 +595,12 @@ public struct ProfileEditorView: View {
                     }
                 }
             )
+            .settingsSearchAnchor("profile-avatar-mode", fallbackFor: avatarMode.searchFallbacks)
 
             switch avatarMode {
-            case .symbol: symbolCategoriesSection
-            case .emoji: emojiCategoriesSection
-            case .photo: photoSection
+            case .symbol: symbolCategoriesSection.settingsSearchAnchor("profile-symbol")
+            case .emoji: emojiCategoriesSection.settingsSearchAnchor("profile-emoji")
+            case .photo: photoSection.settingsSearchAnchor("profile-photo")
             }
         }
     }
@@ -805,6 +822,7 @@ public struct ProfileEditorView: View {
         ) {
             emojiColorIndex = nil
         }
+        .settingsSearchAnchor("profile-neutral-emoji", fallbackFor: emojiColorIndex == nil ? ["profile-color"] : [])
     }
 
     private func colorSwatch(_ index: Int, emojiMode: Bool) -> some View {
@@ -819,6 +837,7 @@ public struct ProfileEditorView: View {
         ) {
             if emojiMode { emojiColorIndex = index } else { colorIndex = index }
         }
+        .settingsSearchAnchor(isSelected ? "profile-color" : "profile-color-option-\(index)")
     }
 
     // MARK: Photos
@@ -978,7 +997,7 @@ private struct ProfileNameField: View {
             .textContentType(.name)
             .autocorrectionDisabled()
             .accessibilityLabel(Text("Profile name"))
-            .accessibilityIdentifier("profile-name-input")
+            .accessibilityIdentifier("profile-name-input").settingsSearchAnchor("profile-name")
     }
 }
 
@@ -1163,6 +1182,7 @@ fileprivate struct IOSProfileAvatarModePicker: View {
             Text("Symbol").tag(ProfileEditorView.AvatarMode.symbol)
         }
         .pickerStyle(.segmented)
+        .settingsSearchAnchor("profile-avatar-mode", fallbackFor: avatarMode.searchFallbacks)
     }
 }
 
@@ -1212,6 +1232,7 @@ fileprivate struct IOSProfileAvatarPicker: View {
             IOSProfileMoreCell(systemImage: "square.grid.2x2", label: "Browse all symbols") {
                 showingFullPicker = true
             }
+            .settingsSearchAnchor("profile-symbol")
             ForEach(fewSymbols, id: \.self) { symbol in
                 IOSProfileSymbolTile(
                     symbol: symbol,
@@ -1228,6 +1249,7 @@ fileprivate struct IOSProfileAvatarPicker: View {
             IOSProfileMoreCell(systemImage: "face.smiling", label: "Browse all emoji") {
                 showingFullPicker = true
             }
+            .settingsSearchAnchor("profile-emoji")
             ForEach(fewEmoji, id: \.self) { emoji in
                 IOSProfileEmojiTile(emoji: emoji, avatarEmoji: $avatarEmoji)
             }
@@ -1240,11 +1262,13 @@ fileprivate struct IOSProfileAvatarPicker: View {
         if photoCandidates.isEmpty {
             // Reuse the picker's empty-state hint (no "browse all" to open).
             IOSProfilePhotoPicker(photoCandidates: [], avatarImageURL: $avatarImageURL)
+                .settingsSearchAnchor("profile-photo")
         } else {
             HStack(spacing: Self.cellSpacing) {
                 IOSProfileMoreCell(systemImage: "photo.on.rectangle", label: "Browse all photos") {
                     showingFullPicker = true
                 }
+                .settingsSearchAnchor("profile-photo")
                 ForEach(fewPhotos) { candidate in
                     IOSProfileCompactPhotoTile(candidate: candidate, avatarImageURL: $avatarImageURL)
                 }
@@ -1549,8 +1573,10 @@ fileprivate struct IOSProfileColorSection: View {
                 IOSProfileMoreCell(systemImage: "paintpalette", label: "More colors") {
                     showingAllColors = true
                 }
+                .settingsSearchAnchor("profile-color")
                 if emojiMode {
                     IOSProfileNeutralSwatch(emojiColorIndex: $emojiColorIndex)
+                        .settingsSearchAnchor("profile-neutral-emoji")
                 }
                 ForEach(fewColorIndices(emojiMode: emojiMode), id: \.self) { index in
                     IOSProfileColorSwatch(

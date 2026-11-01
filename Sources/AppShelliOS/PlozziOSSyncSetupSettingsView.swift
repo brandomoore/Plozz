@@ -172,7 +172,7 @@ struct PlozziOSSyncSetupSettingsView: View {
                 )) {
                     Label("iCloud Sync", systemImage: "icloud")
                 }
-                .disabled(appModel.cloudSyncStatus.isRecovering)
+                .disabled(appModel.cloudSyncStatus.isRecovering).settingsSearchAnchor("icloud-sync")
                 if appModel.syncSetup.isEnabled {
                     HStack {
                         SyncStatusLine(provider: syncStatusProvider)

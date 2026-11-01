@@ -33,7 +33,8 @@ struct PresentationHostApp: App {
             Self.seedSyncBreakdown()
         }
         let model: PlozziOSAppModel
-        if ProcessInfo.processInfo.arguments.contains("--libraries-in-more") {
+        if ProcessInfo.processInfo.arguments.contains("--libraries-in-more")
+            || ProcessInfo.processInfo.arguments.contains("--streaming-settings-source") {
             let accounts = AccountStore(secureStore: InMemorySecureStore())
             let provider = CollectionSettingsProvider(
                 includesAllLibrariesFixture: ProcessInfo.processInfo.arguments.contains("--all-libraries-fixture")
@@ -382,7 +383,7 @@ private struct CollectionSettingsInteractionFixture: View {
     }
 }
 
-private struct CollectionSettingsProvider: MediaProvider, CapabilityReporting {
+private struct CollectionSettingsProvider: MediaProvider, CapabilityReporting, StreamingQualityProviding {
     var includesAllLibrariesFixture = false
     let kind: ProviderKind = .plex
     let capabilities: ProviderCapability = [.libraryCollections]
@@ -424,6 +425,11 @@ private struct CollectionSettingsProvider: MediaProvider, CapabilityReporting {
     func children(of itemID: String) async throws -> [MediaItem] { [] }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func playbackInfo(
+        for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
+        streaming: StreamingPlaybackOptions
+    ) async throws -> PlaybackRequest { throw AppError.notFound }
+    func releaseStreamingSession(_ request: PlaybackRequest) async {}
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
 }

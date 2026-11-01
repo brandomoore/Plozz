@@ -486,6 +486,380 @@ final class PlayerScrubInputTests: XCTestCase {
         XCTAssertFalse(model.isScrubbing)
     }
 
+    func testSwipeThumbnailsSlowDownDuringTraversalAndSpeedUpForPrecision() async throws {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        model.duration = 11_520
+        model.currentSeconds = 5_000
+        let extractor = PacedScrubExtractor(delay: .zero)
+        controller.configureScrubPreview(nil, authenticatedHTTPResolver: nil, generatedStills: extractor)
+        let pan = ScrubInputPan()
+        pan.phase = .began
+        pan.travel = CGPoint(x: 70, y: 0)
+        pan.speed = CGPoint(x: 3_500, y: 0)
+        controller.handlePan(pan)
+        pan.phase = .changed
+        var image = model.previewImage
+        var frameCounts: [Int] = []
+        for speed in [3_500.0, 400.0] {
+            var frames = 0
+            for _ in 0..<40 {
+                let previousPosition = model.scrubSeconds
+                pan.speed = CGPoint(x: speed, y: 0)
+                pan.travel.x += speed * 0.02
+                controller.handlePan(pan)
+                XCTAssertGreaterThan(model.scrubSeconds, previousPosition, "The playhead must never be throttled.")
+                try await Task.sleep(for: .milliseconds(20))
+                if let current = model.previewImage, current !== image {
+                    frames += 1
+                    image = current
+                }
+            }
+            frameCounts.append(frames)
+        }
+        XCTAssertLessThanOrEqual(frameCounts[0], 6)
+        XCTAssertGreaterThanOrEqual(frameCounts[1], 10)
+        XCTAssertGreaterThan(frameCounts[1], frameCounts[0] * 2)
+        XCTAssertTrue(recorder.targets.isEmpty)
+    }
+
+    func testDeferredSwipeThumbnailUsesTheLatestPositionWithoutMoreInput() async throws {
+        let (controller, model, _) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        let extractor = PacedScrubExtractor(delay: .zero)
+        controller.configureScrubPreview(nil, authenticatedHTTPResolver: nil, generatedStills: extractor)
+        let pan = ScrubInputPan()
+        pan.phase = .began
+        pan.travel = CGPoint(x: 70, y: 0)
+        pan.speed = CGPoint(x: 3_500, y: 0)
+        controller.handlePan(pan)
+        try await Task.sleep(for: .milliseconds(10))
+        let initialCount = extractor.starts
+        pan.phase = .changed
+        for x in [140.0, 210, 280] {
+            pan.travel.x = x
+            controller.handlePan(pan)
+        }
+        let finalCell = GeneratedScrubThumbnailLoader.cell(forSeconds: model.scrubSeconds)
+        try await Task.sleep(for: .milliseconds(300))
+        let finalImage = try XCTUnwrap(extractor.images[finalCell])
+        XCTAssertTrue(model.previewImage === finalImage)
+        XCTAssertEqual(extractor.starts, initialCount + 1, "Intermediate swipe positions must be coalesced.")
+    }
+
+    func testEndingSwipeSessionCancelsItsDeferredThumbnail() async throws {
+        for finish in 0..<4 {
+            let (controller, model, recorder) = makeInput()
+            defer { controller.viewDidDisappear(false) }
+            let extractor = PacedScrubExtractor(delay: .zero)
+            controller.configureScrubPreview(nil, authenticatedHTTPResolver: nil, generatedStills: extractor)
+            let pan = ScrubInputPan()
+            pan.phase = .began
+            pan.travel = CGPoint(x: 70, y: 0)
+            pan.speed = CGPoint(x: 3_500, y: 0)
+            controller.handlePan(pan)
+            try await Task.sleep(for: .milliseconds(10))
+            let initialCount = extractor.starts
+            pan.phase = .changed
+            pan.travel.x = 140
+            controller.handlePan(pan)
+            let target = model.scrubSeconds
+            switch finish {
+            case 0: controller.handleMenu()
+            case 1: controller.handleSelect()
+            case 2: controller.viewDidDisappear(false)
+            default: controller.configureScrubPreview(nil, authenticatedHTTPResolver: nil)
+            }
+            try await Task.sleep(for: .milliseconds(300))
+            XCTAssertEqual(extractor.starts, initialCount)
+            if finish != 2 { XCTAssertNil(model.previewImage) }
+            XCTAssertEqual(recorder.targets, finish == 1 ? [target] : [])
+        }
+    }
+
+    func testFlickBridgedSwipeKeepsItsPreviewCadenceAndLatestTarget() async throws {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        let extractor = PacedScrubExtractor(delay: .zero)
+        controller.configureScrubPreview(nil, authenticatedHTTPResolver: nil, generatedStills: extractor)
+        let pan = ScrubInputPan()
+        pan.phase = .began
+        pan.travel = CGPoint(x: 70, y: 0)
+        pan.speed = CGPoint(x: 3_500, y: 0)
+        controller.handlePan(pan)
+        try await Task.sleep(for: .milliseconds(10))
+        let firstImage = try XCTUnwrap(model.previewImage)
+        pan.phase = .ended
+        controller.handlePan(pan)
+        pan.phase = .began
+        controller.handlePan(pan)
+        let finalCell = GeneratedScrubThumbnailLoader.cell(forSeconds: model.scrubSeconds)
+        try await Task.sleep(for: .milliseconds(10))
+        XCTAssertTrue(model.previewImage === firstImage, "A new flick must not bypass the existing cadence.")
+        try await Task.sleep(for: .milliseconds(300))
+        let finalImage = try XCTUnwrap(extractor.images[finalCell])
+        XCTAssertTrue(model.previewImage === finalImage)
+        XCTAssertTrue(model.isScrubbing)
+        XCTAssertTrue(recorder.targets.isEmpty)
+    }
+
+    func testHoldingAfterASwipeDoesNotInheritItsThumbnailPacing() async throws {
+        let (controller, model, _) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        model.currentSeconds = 3_600
+        let extractor = PacedScrubExtractor(delay: .zero)
+        controller.configureScrubPreview(nil, authenticatedHTTPResolver: nil, generatedStills: extractor)
+        let pan = ScrubInputPan()
+        pan.phase = .began
+        pan.travel = CGPoint(x: 70, y: 0)
+        pan.speed = CGPoint(x: 3_500, y: 0)
+        controller.handlePan(pan)
+        pan.phase = .changed
+        pan.travel.x = 140
+        controller.handlePan(pan)
+        controller.advanceRemoteScan(forward: true)
+        for _ in 1..<8 { controller.handleRight() }
+        let initialCount = extractor.completions
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertGreaterThanOrEqual(extractor.completions - initialCount, 6)
+        XCTAssertEqual(model.skipGesture.scanLevel, 8)
+    }
+
+    func testHoldStartsPreviewAndReleaseKeepsScanningWithoutSeeking() {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        model.isPaused = false
+        let hold = ScrubInputHold()
+        hold.allowedPressTypes = [NSNumber(value: UIPress.PressType.rightArrow.rawValue)]
+        hold.phase = .began
+        controller.handleSeekHold(hold)
+        XCTAssertTrue(model.isScrubbing)
+        XCTAssertTrue(model.isPaused)
+        XCTAssertTrue(model.controlsVisible)
+        XCTAssertEqual(model.skipGesture.scanLevel, 1)
+        hold.phase = .ended
+        controller.handleSeekHold(hold)
+        controller.advanceRemoteScan(elapsed: 1)
+        XCTAssertEqual(model.scrubSeconds, 108)
+        XCTAssertTrue(recorder.targets.isEmpty)
+        controller.handleRight()
+        XCTAssertEqual(model.skipGesture.scanLevel, 2)
+        controller.advanceRemoteScan(elapsed: 1)
+        XCTAssertEqual(model.scrubSeconds, 132)
+        controller.handleLeft()
+        XCTAssertEqual(model.skipGesture.scanLevel, 1)
+        controller.handleLeft()
+        XCTAssertEqual(model.skipGesture.scanLevel, -1)
+        controller.advanceRemoteScan(elapsed: 1)
+        XCTAssertEqual(model.scrubSeconds, 124)
+        controller.handleSelect()
+        XCTAssertEqual(recorder.targets, [124])
+        XCTAssertFalse(model.isScrubbing)
+        XCTAssertFalse(model.isPaused)
+        XCTAssertEqual(model.skipGesture.scanLevel, 0)
+    }
+
+    func testRealScanTimerKeepsDeliveringThumbnailsThroughEverySpeed() async throws {
+        for forward in [false, true] {
+            let (controller, model, recorder) = makeInput()
+            defer { controller.viewDidDisappear(false) }
+            model.currentSeconds = 3_600
+            let extractor = PacedScrubExtractor(delay: .milliseconds(80))
+            controller.configureScrubPreview(nil, authenticatedHTTPResolver: nil, generatedStills: extractor)
+            let hold = ScrubInputHold()
+            hold.allowedPressTypes = [NSNumber(value: (forward
+                ? UIPress.PressType.rightArrow : .leftArrow).rawValue)]
+            hold.phase = .began
+            controller.handleSeekHold(hold)
+            hold.phase = .ended
+            controller.handleSeekHold(hold)
+            for level in 1...8 {
+                if level > 1 {
+                    if forward { controller.handleRight() } else { controller.handleLeft() }
+                }
+                let before = extractor.completions
+                try await Task.sleep(for: .milliseconds(400))
+                XCTAssertEqual(model.skipGesture.scanLevel, forward ? level : -level)
+                XCTAssertGreaterThan(extractor.completions, before, "Level \(level) must deliver during motion.")
+                XCTAssertNotNil(model.previewImage)
+                XCTAssertTrue(recorder.targets.isEmpty, "Scanning must not repeatedly seek the playback engine.")
+            }
+            let target = model.scrubSeconds
+            controller.handleSelect()
+            XCTAssertEqual(recorder.targets, [target])
+            XCTAssertFalse(model.isScrubbing)
+            XCTAssertNil(model.previewImage)
+            XCTAssertEqual(extractor.maxInFlight, 1)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(extractor.inFlight, 0)
+        }
+    }
+
+    func testScanSelectPreservesPauseAndPlayPauseResumes() {
+        for playPause in [false, true] {
+            let (controller, model, recorder) = makeInput()
+            defer { controller.viewDidDisappear(false) }
+            controller.advanceRemoteScan(forward: false)
+            controller.advanceRemoteScan(elapsed: 1)
+            if playPause { controller.handlePlayPause() } else { controller.handleSelect() }
+            XCTAssertEqual(recorder.targets, [92])
+            XCTAssertEqual(model.isPaused, !playPause)
+            XCTAssertFalse(model.isScrubbing)
+            XCTAssertEqual(model.skipGesture.scanLevel, 0)
+        }
+    }
+
+    func testScanPlayPauseDoesNotPauseAnOriginallyPlayingSession() {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        model.isPaused = false
+        controller.advanceRemoteScan(forward: true)
+        controller.advanceRemoteScan(elapsed: 1)
+        controller.handlePlayPause()
+        XCTAssertEqual(recorder.targets, [108])
+        XCTAssertFalse(model.isPaused)
+    }
+
+    func testScanCancellationRestoresPlaybackWithoutSeeking() {
+        for interruption in [false, true] {
+            let (controller, model, recorder) = makeInput()
+            defer { controller.viewDidDisappear(false) }
+            model.isPaused = false
+            controller.advanceRemoteScan(forward: false)
+            controller.advanceRemoteScan(elapsed: 1)
+            if interruption { controller.interruptRemoteScan() } else { controller.handleMenu() }
+            controller.advanceRemoteScan(elapsed: 10)
+            XCTAssertTrue(recorder.targets.isEmpty)
+            XCTAssertEqual(model.currentSeconds, 100)
+            XCTAssertFalse(model.isPaused)
+            XCTAssertFalse(model.isScrubbing)
+            XCTAssertEqual(model.skipGesture.scanLevel, 0)
+        }
+    }
+
+    func testScanStopsAtBoundaryAndCanReverseWithoutLosingPosition() {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        controller.advanceRemoteScan(forward: false)
+        controller.advanceRemoteScan(elapsed: 20)
+        XCTAssertEqual(model.scrubSeconds, 0)
+        XCTAssertEqual(model.skipGesture.scanLevel, 0)
+        XCTAssertTrue(model.isScrubbing)
+        XCTAssertTrue(recorder.targets.isEmpty)
+        controller.handleRight()
+        controller.advanceRemoteScan(elapsed: 1)
+        XCTAssertEqual(model.scrubSeconds, 8)
+        controller.handleSelect()
+        XCTAssertEqual(recorder.targets, [8])
+    }
+
+    func testScanBeginsAtLatestPendingSeekAndCancelsFlickCommit() async throws {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        model.pendingSeekTarget = 300
+        let pan = ScrubInputPan()
+        pan.phase = .began
+        pan.travel = CGPoint(x: 50, y: 0)
+        pan.speed = CGPoint(x: 2000, y: 0)
+        controller.handlePan(pan)
+        XCTAssertGreaterThan(model.scrubSeconds, 300)
+        pan.phase = .ended
+        controller.handlePan(pan)
+        let preview = model.scrubSeconds
+        controller.advanceRemoteScan(forward: true)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertTrue(model.isScrubbing)
+        XCTAssertGreaterThan(model.scrubSeconds, preview)
+        XCTAssertTrue(recorder.targets.isEmpty)
+    }
+
+    func testHorizontalSwipeTakesOverFromScanAndCommitsOnLift() {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        controller.advanceRemoteScan(forward: true)
+        controller.advanceRemoteScan(elapsed: 1)
+        let pan = ScrubInputPan()
+        pan.phase = .began
+        pan.travel = CGPoint(x: 50, y: 0)
+        controller.handlePan(pan)
+        XCTAssertEqual(model.skipGesture.scanLevel, 0)
+        pan.phase = .ended
+        controller.handlePan(pan)
+        XCTAssertFalse(model.isScrubbing)
+        XCTAssertEqual(recorder.targets.count, 1)
+        XCTAssertGreaterThan(recorder.targets[0], 108)
+    }
+
+    func testStationaryContactDoesNotCommitAnActiveScan() async throws {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        controller.advanceRemoteScan(forward: true)
+        let pan = ScrubInputPan()
+        pan.phase = .began
+        controller.handlePan(pan)
+        pan.phase = .ended
+        controller.handlePan(pan)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertTrue(model.isScrubbing)
+        XCTAssertTrue(recorder.targets.isEmpty)
+    }
+
+    func testShortClicksStillSkipAndInvalidDurationCannotScan() {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        controller.handleRight()
+        controller.handleLeft()
+        XCTAssertEqual(recorder.targets, [110, 100])
+        XCTAssertFalse(model.isScrubbing)
+        for duration in [0, Double.infinity, Double.nan] {
+            model.duration = duration
+            controller.advanceRemoteScan(forward: true)
+            XCTAssertFalse(model.isScrubbing)
+            XCTAssertEqual(model.skipGesture.scanLevel, 0)
+        }
+    }
+
+    #if os(tvOS)
+    func testTouchpadEdgeHoldUsesTheSameScanAndCenterHoldDoesNot() throws {
+        let (controller, model, _) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        let pan = try XCTUnwrap(controller.view.gestureRecognizers?.compactMap {
+            $0 as? PlayerSurfacePanGestureRecognizer
+        }.first)
+        let holds = controller.view.gestureRecognizers?.compactMap { $0 as? UILongPressGestureRecognizer } ?? []
+        XCTAssertEqual(holds.count, 3)
+        XCTAssertTrue(holds.allSatisfy { $0.minimumPressDuration == 0.4 && $0.allowedTouchTypes.isEmpty })
+        let selectHold = try XCTUnwrap(holds.first {
+            $0.allowedPressTypes.contains(NSNumber(value: UIPress.PressType.select.rawValue))
+        })
+        pan.click.selectBegan(position: nil)
+        XCTAssertFalse(controller.gestureRecognizerShouldBegin(selectHold))
+        pan.click.selectBegan(position: .init(x: -0.9, y: 0))
+        XCTAssertTrue(controller.gestureRecognizerShouldBegin(selectHold))
+        let hold = ScrubInputHold()
+        hold.allowedPressTypes = selectHold.allowedPressTypes
+        hold.phase = .began
+        controller.handleSeekHold(hold)
+        XCTAssertEqual(model.skipGesture.scanLevel, -1)
+        XCTAssertTrue(pan.click.suppressesPan)
+        hold.phase = .cancelled
+        controller.handleSeekHold(hold)
+        XCTAssertFalse(model.isScrubbing)
+        XCTAssertEqual(model.skipGesture.scanLevel, 0)
+    }
+    #endif
+
+    func testTeardownStopsTheScanTask() async throws {
+        let (controller, model, recorder) = makeInput()
+        controller.advanceRemoteScan(forward: true)
+        controller.viewDidDisappear(false)
+        let preview = model.scrubSeconds
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(model.scrubSeconds, preview)
+        XCTAssertEqual(model.skipGesture.scanLevel, 0)
+        XCTAssertTrue(recorder.targets.isEmpty)
+    }
+
     private func makeInput() -> (PlayerInputViewController, PlayerControlsModel, ScrubInputRecorder) {
         let model = PlayerControlsModel()
         model.duration = 7200
@@ -518,8 +892,17 @@ private final class ScrubInputPan: UIPanGestureRecognizer {
         get { phase }
         set { phase = newValue }
     }
+
     override func translation(in view: UIView?) -> CGPoint { travel }
     override func velocity(in view: UIView?) -> CGPoint { speed }
+}
+
+private final class ScrubInputHold: UILongPressGestureRecognizer {
+    var phase: UIGestureRecognizer.State = .possible
+    override var state: UIGestureRecognizer.State {
+        get { phase }
+        set { phase = newValue }
+    }
 }
 #endif
 

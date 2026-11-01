@@ -1079,7 +1079,7 @@ let package = Package(
         ),
         .testTarget(
             name: "FeaturePlaybackTests",
-            dependencies: ["FeaturePlayback", "CoreModels", "CoreUI"]
+            dependencies: ["FeaturePlayback", "CoreModels", "CoreUI", "TestSupportPerformance", "TestSupportNetworking"]
         ),
         .testTarget(
             name: "ProviderPlaybackIntegrationTests",

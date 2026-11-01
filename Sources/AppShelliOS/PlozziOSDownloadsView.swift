@@ -753,11 +753,11 @@ struct PlozziOSDownloadSettingsView: View {
     var body: some View {
         List {
             SettingsSectionGroup("Network") {
-                Toggle("Allow Cellular Downloads", isOn: $model.allowsCellular)
+                Toggle("Allow Cellular Downloads", isOn: $model.allowsCellular).settingsSearchAnchor("downloads-cellular")
                 Toggle(
                     "Pause in Low Data Mode",
                     isOn: $model.pausesOnLowDataMode
-                )
+                ).settingsSearchAnchor("downloads-low-data")
             } footer: {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(
@@ -771,6 +771,8 @@ struct PlozziOSDownloadSettingsView: View {
                     }
                 }
             }
+
+            .settingsSearchGroup(["downloads-cellular", "downloads-low-data"])
 
             SettingsSectionGroup("Download Speed") {
                 Picker(
@@ -794,7 +796,12 @@ struct PlozziOSDownloadSettingsView: View {
                     Text("25 Mbps").tag(25)
                     Text("50 Mbps").tag(50)
                     Text("Custom").tag(-1)
-                }
+                }.settingsSearchAnchor(
+                    "downloads-speed",
+                    fallbackFor: (model.maximumDownloadMegabitsPerSecond == nil ? ["downloads-background"] : [])
+                        + ([nil, 5, 10, 25, 50].contains(model.maximumDownloadMegabitsPerSecond)
+                            ? ["downloads-custom-speed"] : [])
+                )
                 if let limit = model.maximumDownloadMegabitsPerSecond,
                    ![5, 10, 25, 50].contains(limit) {
                     Stepper(
@@ -806,7 +813,7 @@ struct PlozziOSDownloadSettingsView: View {
                             }
                         ),
                         in: 1...1_000
-                    )
+                    ).settingsSearchAnchor("downloads-custom-speed")
                 }
                 if model.maximumDownloadMegabitsPerSecond != nil {
                     Picker(
@@ -820,7 +827,7 @@ struct PlozziOSDownloadSettingsView: View {
                                 CappedDownloadBackgroundBehavior
                                     .continueAtFullSpeed
                             )
-                    }
+                    }.settingsSearchAnchor("downloads-background")
                 }
             } footer: {
                 if model.maximumDownloadMegabitsPerSecond == nil {
@@ -832,6 +839,7 @@ struct PlozziOSDownloadSettingsView: View {
                     )
                 }
             }
+            .settingsSearchGroup(["downloads-speed", "downloads-custom-speed", "downloads-background"])
 
             SettingsSectionGroup("Download Quality") {
                 Picker("Default Quality", selection: $model.downloadQuality) {
@@ -854,32 +862,35 @@ struct PlozziOSDownloadSettingsView: View {
                         )
                         .tag(model.downloadQuality)
                     }
-                }
+                }.settingsSearchAnchor(
+                    "downloads-quality",
+                    fallbackFor: model.downloadQuality == .original ? ["downloads-resolution", "downloads-bitrate"] : []
+                )
                 Toggle(
                     "Ask Before Downloading",
                     isOn: $model.asksBeforeDownloading
-                )
+                ).settingsSearchAnchor("downloads-confirm")
                 Toggle(
                     "Include All Audio Tracks",
                     isOn: $model.includesAllAudioTracks
-                )
+                ).settingsSearchAnchor("downloads-audio")
                 Toggle(
                     "Include Text Subtitles When Supported",
                     isOn: $model.includesTextSubtitleTracks
-                )
+                ).settingsSearchAnchor("downloads-subtitles")
                 if case .constrained(let constraint) = model.downloadQuality {
                     Stepper(
                         "Maximum Resolution: \(constraint.maximumHeight)p",
                         value: qualityHeightBinding(constraint),
                         in: 144...2_160,
                         step: 120
-                    )
+                    ).settingsSearchAnchor("downloads-resolution")
                     Stepper(
                         "Video Bitrate: \(Double(constraint.maximumVideoBitrateBps) / 1_000_000, specifier: "%.1f") Mbps",
                         value: qualityBitrateBinding(constraint),
                         in: 500_000...100_000_000,
                         step: 500_000
-                    )
+                    ).settingsSearchAnchor("downloads-bitrate")
                 }
             } footer: {
                 if model.downloadQuality == .original {
@@ -892,25 +903,30 @@ struct PlozziOSDownloadSettingsView: View {
                     )
                 }
             }
+            .settingsSearchGroup([
+                "downloads-quality", "downloads-confirm", "downloads-audio", "downloads-subtitles",
+                "downloads-resolution", "downloads-bitrate"
+            ])
 
             SettingsSectionGroup("Notifications") {
                 Toggle(
                     "Standalone Download Completed",
                     isOn: $model.notifiesOnStandaloneCompletion
-                )
+                ).settingsSearchAnchor("downloads-notify-one")
                 Toggle(
                     "Batch Completed",
                     isOn: $model.notifiesOnBatchCompletion
-                )
+                ).settingsSearchAnchor("downloads-notify-batch")
                 Toggle(
                     "Download Failed",
                     isOn: $model.notifiesOnFailure
-                )
+                ).settingsSearchAnchor("downloads-notify-failure")
             } footer: {
                 Text(
                     "Batch notifications summarize a season or show instead of notifying for every episode."
                 )
             }
+            .settingsSearchGroup(["downloads-notify-one", "downloads-notify-batch", "downloads-notify-failure"])
 
             PlozziOSDownloadManagementSettings(
                 model: model, pendingBulkDeletion: $pendingBulkDeletion

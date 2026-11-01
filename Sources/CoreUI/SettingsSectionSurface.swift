@@ -1,6 +1,22 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+public struct SettingsMenuValue: View {
+    private let value: Text
+
+    public init(_ value: Text) { self.value = value }
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            value
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption.weight(.semibold))
+                .accessibilityHidden(true)
+        }
+        .foregroundStyle(.primary)
+    }
+}
+
 public struct SettingsMenuLabel: View {
     private let title: LocalizedStringResource
     private let value: Text
@@ -17,13 +33,7 @@ public struct SettingsMenuLabel: View {
 
     public var body: some View {
         LabeledContent {
-            HStack(spacing: 8) {
-                value
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .accessibilityHidden(true)
-            }
-            .foregroundStyle(.primary)
+            SettingsMenuValue(value)
         } label: {
             Text(title)
         }
@@ -116,6 +126,7 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
     }
 
     public var body: some View {
+        let cornerRadius: CGFloat = 18
         VStack(alignment: .leading, spacing: 4) {
             if title != nil || accessory != nil {
                 HStack(alignment: .firstTextBaseline) {
@@ -142,6 +153,13 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
                             .contentShape(Rectangle())
+                            #if os(iOS)
+                            .modifier(SettingsSearchRowHighlight(
+                                isFirst: subview.id == subviews.first?.id,
+                                isLast: subview.id == subviews.last?.id,
+                                cornerRadius: cornerRadius
+                            ))
+                            #endif
                         if subview.id != subviews.last?.id {
                             Rectangle()
                                 .fill(palette.separator)
@@ -151,6 +169,10 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                     }
                 }
             }
+            #if os(iOS)
+            // Subviews resolve their environment before the per-row modifiers are applied.
+            .environment(\.settingsSearchRowOwnsHighlight, true)
+            #endif
             .buttonStyle(SettingsSectionButtonStyle())
             .labelStyle(SettingsIconLabelStyle())
             #if os(tvOS)
@@ -161,7 +183,7 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
             // cell's primary action, stealing taps from sibling controls.
             .pickerStyle(.menu)
             #endif
-            .settingsGroupSurface(cornerRadius: 18)
+            .settingsGroupSurface(cornerRadius: cornerRadius)
 
             footer
                 #if os(tvOS)
