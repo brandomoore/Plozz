@@ -2173,8 +2173,8 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/FeatureSettings/CardAppearanceControls.swift|CardAppearanceControls|episodeCountStyleMenu|SettingsMenuRow|title": {
-      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+    "Sources/FeatureSettings/CardAppearanceControls.swift|CardAppearanceControls|episodeCountStyleMenu.picker|Picker|Text(title)": {
+      "reason": "Options feed the anchored tvOS menu trigger or the directly anchored mobile picker; search must not enter unopened menu options.",
       "covered_by": [
         "episode-count-style"
       ],
@@ -2413,8 +2413,8 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/FeatureSettings/NightShiftDetailView.swift|NightShiftScheduleControl|locationMenu|SettingsMenuRow|\"Location\"": {
-      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+    "Sources/FeatureSettings/NightShiftDetailView.swift|NightShiftScheduleControl|locationMenu|Picker|\"Location\"": {
+      "reason": "Options belong to the anchored visible Location menu trigger; search must not enter unopened menu options.",
       "covered_by": [
         "circadian-region"
       ],

@@ -266,8 +266,9 @@ private struct NightShiftScheduleControl: View {
                     Text(region.name).tag(region.id)
                 }
             }
-            .pickerStyle(.inline).settingsSearchAnchor("circadian-region")
+            .pickerStyle(.inline)
         }
+        .settingsSearchAnchor("circadian-region")
     }
 
     /// A ±15-minute clock stepper that wraps around midnight, reusing the shared

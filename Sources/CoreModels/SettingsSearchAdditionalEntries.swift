@@ -266,7 +266,7 @@ extension SettingsSearchCatalog {
               keywords: "what is new changelog updates startup new versions"),
     ] + RatingSource.allCases.map { source in
         .init("rating-source-\(source.rawValue)", page: .detailRatingSources,
-              title: "\(source.displayName)",
+              title: .verbatim(source.displayName),
               keywords: "review scores rating sources enable disable critics community",
               platform: .mobile)
     }

@@ -164,7 +164,7 @@ extension SettingsRoute {
         switch self {
         case .searchResult(let id):
             return SettingsSearchCatalog.entry(id: id).map {
-                $0.page == .subtitleStyle || $0.page == .liveSubtitleStyle
+                $0.page == .subtitleStyle || $0.page == .liveSubtitleStyle || $0.page == .profileAppearance
             } == true
         case .subtitleStyle, .profileAppearance, .profileLockSetup, .parentalPINSetup:
             return true

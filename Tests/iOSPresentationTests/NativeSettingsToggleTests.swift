@@ -1523,6 +1523,59 @@ final class NativeSettingsToggleTests: XCTestCase {
         }
     }
 
+    func testSubtitleSearchRevealsOffscreenNativeFormRowsWithoutEditing() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width: CGFloat in [390, 834] {
+            for (target, title) in [("style-opacity", "Overall Opacity"), ("style-hdr", "HDR Brightness")] {
+                let controls = PlayerControlsModel()
+                controls.subtitlesRenderHDR = true
+                let original = controls.subtitleStyle
+                var writes = 0
+                let context = SubtitleStyleEditingContext(
+                    controls: controls,
+                    style: Binding(
+                        get: { controls.subtitleStyle },
+                        set: { controls.subtitleStyle = $0; writes += 1 }
+                    ),
+                    secondaryPreview: .constant(false)
+                )
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 480)
+                window.rootViewController = UIHostingController(rootView: NavigationStack {
+                    MobileSubtitleStyleEditor(viewModel: context)
+                }.environment(\.locale, Locale(identifier: "en_US")))
+                window.makeKeyAndVisible()
+                try await settle(window)
+                let before = try captureText(window, name: "subtitle-before-search-\(target)-\(Int(width))")
+                XCTAssertFalse(before.contains(title), "The regression target must start outside the viewport.")
+
+                let model = Model()
+                window.rootViewController = UIHostingController(rootView: NavigationStack {
+                    SettingsSearchLanding(targetID: target) {
+                        MobileSubtitleStyleEditor(viewModel: context)
+                            .background { SearchLandingProbe(model: model) }
+                    }
+                }.environment(\.locale, Locale(identifier: "en_US")))
+                let deadline = ContinuousClock.now + .seconds(5)
+                while model.searchRequest?.revealed != true, ContinuousClock.now < deadline {
+                    try await settle(window)
+                }
+                XCTAssertEqual(model.searchRequest?.revealed, true, target)
+                let after = try captureText(window, name: "subtitle-search-\(target)-\(Int(width))")
+                XCTAssertTrue(after.contains(title), after)
+                XCTAssertEqual(controls.subtitleStyle, original)
+                XCTAssertEqual(writes, 0)
+            }
+        }
+    }
+
     func testHeroSourceSearchRevealsAndHighlightsOffscreenGroups() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

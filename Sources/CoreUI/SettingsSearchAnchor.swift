@@ -38,9 +38,7 @@ public struct SettingsSearchLanding<Content: View>: View {
                     guard !request.hasMountedAnchor else { return }
                     #endif
                     proxy.scrollTo("settings-search-group", anchor: .center)
-                    #if os(tvOS)
                     proxy.scrollTo(request.targetID, anchor: .center)
-                    #endif
                 }
         }
     }

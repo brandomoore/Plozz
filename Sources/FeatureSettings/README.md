@@ -83,9 +83,14 @@ do not also paint a smaller control highlight. Nested anchors preserve a child's
 active highlight, and nested row owners consume it without lighting up their parents.
 Native lazy List cells and sections register their contained targets with
 `settingsSearchGroup`; the selected control is then revealed within that container.
+Ungrouped native Form rows bootstrap directly through their target ID, so a
+subtitle control below the viewport can mount before its native reveal runs.
+TV search anchors belong to visible menu triggers, not their unopened options.
 Hero source groups register both their toggle and dependent targets, so offscreen
 Collections and other sources can be created before their landing cue starts.
 Every indexed entry needs an available route and a matching control anchor.
+Search labels distinguish localized app copy from verbatim provider names;
+indexing resolves resources for the current locale without translating brands.
 Disabled prerequisite controls can register dependent targets with `fallbackFor`;
 do not register the same target on a still-mounted disabled child.
 TV controls with their own focus binding pass `focusAction` to use that owner.

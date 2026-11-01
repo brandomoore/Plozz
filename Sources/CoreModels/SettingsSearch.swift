@@ -1,5 +1,20 @@
 import Foundation
 
+public enum SettingsSearchLabel: Sendable {
+    case localized(LocalizedStringResource)
+    case verbatim(String)
+
+    public func resolved(locale: Locale) -> String {
+        switch self {
+        case .localized(var resource):
+            resource.locale = locale
+            return String(localized: resource) // l10n:content - Search tokenization and breadcrumb joining resolve existing resources for the current locale.
+        case .verbatim(let value):
+            return value
+        }
+    }
+}
+
 public enum SettingsSearchQualityNetwork: String, CaseIterable, Sendable {
     case local, remote, cellular
 
@@ -45,7 +60,12 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
     case liveTVGuide, liveTVVisibility, profileAppearance, profileSettings, accountLibraries, seerr
     case releaseNotes
 
-    public var path: [LocalizedStringResource] {
+    public var path: [SettingsSearchLabel] {
+        if self == .seerr { return [.verbatim("Seerr")] }
+        return localizedPath.map(SettingsSearchLabel.localized)
+    }
+
+    private var localizedPath: [LocalizedStringResource] {
         switch self {
         case .playback: ["Playback"]
         case .subtitles: ["Subtitles"]
@@ -91,7 +111,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .profileAppearance: ["Profiles", "Appearance"]
         case .profileSettings: ["Profiles", "Manage profile"]
         case .accountLibraries: ["Libraries"]
-        case .seerr: ["Seerr"]
+        case .seerr: []
         case .detail: ["Screens & Navigation", "Movie & show details"]
         case .liveTV: ["Live TV"]
         case .language: ["Language"]
@@ -147,7 +167,7 @@ public struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
 
     public let id: String
     public let page: SettingsSearchPage
-    public let title: LocalizedStringResource
+    public let title: SettingsSearchLabel
     public let keywords: LocalizedStringResource
     public let platform: Platform?
     public let minimumOSVersion: Int
@@ -161,6 +181,22 @@ public struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
 
     public init(
         _ id: String, page: SettingsSearchPage, title: LocalizedStringResource,
+        keywords: LocalizedStringResource, platform: Platform? = nil, minimumOSVersion: Int = 0,
+        requiresAdultProfile: Bool = false, anchorID: String? = nil,
+        subtitlePage: SettingsSearchSubtitlePage = .appearance, skipKind: MediaSegment.Kind? = nil,
+        contentCategory: SubtitleContentCategory? = nil, qualityNetwork: SettingsSearchQualityNetwork? = nil,
+        preferredQueries: [LocalizedStringResource] = []
+    ) {
+        self.init(
+            id, page: page, title: .localized(title), keywords: keywords, platform: platform,
+            minimumOSVersion: minimumOSVersion, requiresAdultProfile: requiresAdultProfile,
+            anchorID: anchorID, subtitlePage: subtitlePage, skipKind: skipKind,
+            contentCategory: contentCategory, qualityNetwork: qualityNetwork, preferredQueries: preferredQueries
+        )
+    }
+
+    public init(
+        _ id: String, page: SettingsSearchPage, title: SettingsSearchLabel,
         keywords: LocalizedStringResource, platform: Platform? = nil, minimumOSVersion: Int = 0,
         requiresAdultProfile: Bool = false, anchorID: String? = nil,
         subtitlePage: SettingsSearchSubtitlePage = .appearance, skipKind: MediaSegment.Kind? = nil,
@@ -194,14 +230,14 @@ public struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
     public static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
     public func hash(into hasher: inout Hasher) { hasher.combine(id) }
 
-    public var path: [LocalizedStringResource] {
+    public var path: [SettingsSearchLabel] {
         destinationPath(on: platform ?? .television)
     }
 
-    public func destinationPath(on platform: Platform) -> [LocalizedStringResource] {
-        destinationPage(on: platform).path + (subtitlePage == .appearance ? [] : [subtitlePage.title])
-            + (skipKind.map { [$0.settingsTitle] } ?? [])
-            + (qualityNetwork.map { [$0.title] } ?? [])
+    public func destinationPath(on platform: Platform) -> [SettingsSearchLabel] {
+        destinationPage(on: platform).path + (subtitlePage == .appearance ? [] : [.localized(subtitlePage.title)])
+            + (skipKind.map { [.localized($0.settingsTitle)] } ?? [])
+            + (qualityNetwork.map { [.localized($0.title)] } ?? [])
     }
 
     public func destinationPage(on platform: Platform) -> SettingsSearchPage {
@@ -233,17 +269,15 @@ public struct SettingsSearchIndex {
         self.locale = locale
         documents = entries.map { entry in
             func resolve(_ resource: LocalizedStringResource) -> String {
-                var localized = resource
-                localized.locale = locale
-                return String(localized: localized)
+                SettingsSearchLabel.localized(resource).resolved(locale: locale)
             }
-            let title = Self.normalize(resolve(entry.title), locale: locale)
+            let title = Self.normalize(entry.title.resolved(locale: locale), locale: locale)
             let aliases = Self.normalize(resolve(entry.keywords), locale: locale)
             let preferredQueries = entry.preferredQueries.map { Self.normalize(resolve($0), locale: locale) }
             let path = (
                 entry.destinationPath(on: .phone) + entry.destinationPath(on: .television)
-                    + (entry.contentCategory.map { [$0.displayName] } ?? [])
-            ).map(resolve).joined(separator: " ")
+                    + (entry.contentCategory.map { [.localized($0.displayName)] } ?? [])
+            ).map { $0.resolved(locale: locale) }.joined(separator: " ")
             return Document(
                 entry: entry, title: title,
                 words: Self.tokens(
@@ -605,7 +639,7 @@ public enum SettingsSearchCatalog {
               keywords: "hero banner carousel featured content source include exclude enable disable",
               requiresAdultProfile: source == .featured)
     } + HeroDiscoverySource.allCases.map { source in
-        .init("hero-discovery-\(source.rawValue)", page: .heroDiscovery, title: "\(source.displayName)",
+        .init("hero-discovery-\(source.rawValue)", page: .heroDiscovery, title: .verbatim(source.displayName),
               keywords: "discovery suggestions recommendations provider enable disable",
               requiresAdultProfile: true)
     }

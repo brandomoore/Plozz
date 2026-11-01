@@ -10,6 +10,57 @@ import XCTest
 
 @MainActor
 final class ArtworkSettingsHostedTests: XCTestCase {
+    func testProfileSearchUsesTheSameFullWidthDetailAsDirectNavigation() {
+        XCTAssertTrue(SettingsRoute.profileAppearance(profileID: "adult").usesFullScreenDetail)
+        let entries = SettingsSearchCatalog.entries(on: .television, isKids: false)
+            .filter { $0.page == .profileAppearance }
+        XCTAssertFalse(entries.isEmpty)
+        for entry in entries {
+            XCTAssertTrue(SettingsRoute.searchResult(entry.id).usesFullScreenDetail, entry.id)
+        }
+        XCTAssertFalse(SettingsRoute.searchResult("display-size").usesFullScreenDetail)
+    }
+
+    func testSearchFocusesClosedLocationAndEpisodeCountMenusWithoutChangingValues() async throws {
+        let suite = "SearchMenuTriggers.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let nightShift = NightShiftSettingsModel(store: NightShiftSettingsStore(defaults: defaults))
+        nightShift.settings.isEnabled = true
+        nightShift.settings.scheduleMode = .solar
+        let originalNightShift = nightShift.settings
+        let indicators = WatchStatusIndicatorSettingsModel(store: WatchStatusIndicatorSettingsStore(defaults: defaults))
+        indicators.showsUnwatchedEpisodeCount = true
+        let originalCountStyle = indicators.episodeCountStyle
+        let cards = makeCards(defaults: defaults)
+        func assertFocusedLabel(_ title: String, in window: UIWindow) throws {
+            let labels = try collectionLabelFrames(in: window, matchingText: title)
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let focused = try nativeFocusedFrame(system, in: window)
+            XCTAssertTrue(labels.contains { focused.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) },
+                          "\(title): focused \(focused), labels \(labels)")
+        }
+        try await withScreen(content:
+            SettingsSearchLanding(targetID: "circadian-region") {
+                NightShiftDetailView(model: nightShift)
+            }
+            .frame(width: SettingsFormMetrics.pageWidth)
+        ) { window in
+            try assertFocusedLabel(nightShift.region.name, in: window)
+            XCTAssertEqual(nightShift.settings, originalNightShift)
+        }
+        try await withScreen(content:
+            SettingsSearchLanding(targetID: "episode-count-style") {
+                CardAppearanceControls(cards: cards, watchIndicator: indicators)
+            }
+            .frame(width: SettingsFormMetrics.pageWidth)
+        ) { window in
+            try assertFocusedLabel(String(localized: indicators.episodeCountStyle.displayName), in: window)
+            XCTAssertEqual(indicators.episodeCountStyle, originalCountStyle)
+            XCTAssertTrue(indicators.showsUnwatchedEpisodeCount)
+        }
+    }
+
     func testSubtitleSearchFocusesVisibleMenuOrAvailabilityWithoutChangingValues() async throws {
         let suite = "SubtitleSearchHosted.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

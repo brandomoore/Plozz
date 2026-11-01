@@ -7,6 +7,28 @@ final class SettingsSearchTests: XCTestCase {
         entries: SettingsSearchCatalog.entries, locale: Locale(identifier: "en_US")
     )
 
+    func testProviderNamesRemainVerbatimAndSearchableInEveryLocale() throws {
+        let names = HeroDiscoverySource.allCases.map { ("hero-discovery-\($0.rawValue)", $0.displayName) }
+            + RatingSource.allCases.map { ("rating-source-\($0.rawValue)", $0.displayName) }
+        for locale in ["en_US", "fr", "ar"].map(Locale.init(identifier:)) {
+            let localizedIndex = SettingsSearchIndex(entries: SettingsSearchCatalog.entries, locale: locale)
+            for (id, name) in names {
+                let entry = try XCTUnwrap(SettingsSearchCatalog.entry(id: id))
+                guard case .verbatim(let value) = entry.title else {
+                    return XCTFail("\(id) must not send a provider name through a translation key.")
+                }
+                XCTAssertEqual(value, name)
+                XCTAssertEqual(entry.title.resolved(locale: locale), name)
+                XCTAssertTrue(localizedIndex.results(for: name).contains { $0.id == id }, "\(id): \(name)")
+            }
+            XCTAssertEqual(SettingsSearchPage.seerr.path.map { $0.resolved(locale: locale) }, ["Seerr"])
+        }
+        let theme = try XCTUnwrap(SettingsSearchCatalog.entry(id: "theme"))
+        guard case .localized = theme.title else {
+            return XCTFail("App-owned copy must retain its localized resource.")
+        }
+    }
+
     func testPlainLanguageAndPlayerTerminologyFindEquivalentControls() {
         let queries = [
             "make subtitles bigger": "subtitle-size",

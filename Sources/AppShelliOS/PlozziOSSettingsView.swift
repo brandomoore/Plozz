@@ -651,7 +651,7 @@ private struct PlozziOSSettingsSplitView: View {
                     }
                 }
             }
-            .navigationTitle("")
+            .navigationTitle(Text(verbatim: ""))
             .modifier(PlozziOSSettingsSearch(
                 appModel: appModel, isShowingDestination: selection?.isSearchResult == true
             ) { selection = .search($0.id) })
@@ -1281,7 +1281,7 @@ private struct PlozziOSSettingsCompactMenu: View {
             titleDisplayMode: .inline,
             horizontalInset: 16
         )
-        .navigationTitle(isHeaderCollapsed ? "Settings" : "")
+        .navigationTitle(isHeaderCollapsed ? Text("Settings") : Text(verbatim: ""))
         .modifier(PlozziOSSettingsSearch(
             appModel: appModel, isShowingDestination: searchSelection != nil
         ) { searchSelection = $0 })

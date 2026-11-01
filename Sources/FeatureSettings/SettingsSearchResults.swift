@@ -80,11 +80,9 @@ public struct SettingsSearchResults: View {
     private func resultLabel(_ entry: SettingsSearchEntry) -> some View {
         Label {
             VStack(alignment: .leading, spacing: 4) {
-                Text(entry.title).font(.body)
+                title(entry.title).font(.body)
                 Text(verbatim: entry.destinationPath(on: platform).map {
-                    var resource = $0
-                    resource.locale = locale
-                    return String(localized: resource)
+                    $0.resolved(locale: locale)
                 }.joined(separator: " › "))
                 #if os(tvOS)
                 .font(.caption)
@@ -102,6 +100,13 @@ public struct SettingsSearchResults: View {
         .padding(.vertical, 10)
         #endif
         .contentShape(Rectangle())
+    }
+
+    private func title(_ label: SettingsSearchLabel) -> Text {
+        switch label {
+        case .localized(let resource): Text(resource)
+        case .verbatim(let value): Text(verbatim: value)
+        }
     }
 }
 

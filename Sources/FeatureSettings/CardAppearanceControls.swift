@@ -147,16 +147,18 @@ public struct CardAppearanceControls: View {
                     .tag(style)
                     .accessibilityIdentifier("episode-count-style-\(style.rawValue)")
             }
-        } label: { Text(title) }.settingsSearchAnchor("episode-count-style")
+        } label: { Text(title) }
         #if os(tvOS)
         return SettingsMenuRow(title: title, value: Text(watchIndicator.episodeCountStyle.displayName)) {
             picker.pickerStyle(.inline)
         }
         .accessibilityIdentifier("episode-count-style")
+        .settingsSearchAnchor("episode-count-style")
         #else
         return picker
             .pickerStyle(.menu)
             .accessibilityIdentifier("episode-count-style")
+            .settingsSearchAnchor("episode-count-style")
         #endif
     }
 }
