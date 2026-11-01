@@ -364,7 +364,7 @@ struct SettingsSearchGlowHDR: ViewModifier {
 
     @available(iOS 26.0, *)
     static var emission: Color {
-        Color.white.exposureAdjust(log2(1.5))
+        Color.white.exposureAdjust(log2(2))
     }
 
     func body(content: Content) -> some View {

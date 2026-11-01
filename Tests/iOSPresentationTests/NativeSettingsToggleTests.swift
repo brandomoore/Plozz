@@ -181,14 +181,14 @@ final class NativeSettingsToggleTests: XCTestCase {
         }
     }
 
-    func testSearchGlowHDRUsesFiftyPercentLinearHeadroom() throws {
+    func testSearchGlowHDRUsesDoubleLinearHeadroom() throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("HDR colors require iOS 26.") }
         let emission = SettingsSearchGlowHDR.emission.resolveHDR(in: EnvironmentValues())
-        XCTAssertEqual(emission.linearRed, 1.5, accuracy: 0.0001)
-        XCTAssertEqual(emission.linearGreen, 1.5, accuracy: 0.0001)
-        XCTAssertEqual(emission.linearBlue, 1.5, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearRed, 2, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearGreen, 2, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearBlue, 2, accuracy: 0.0001)
         XCTAssertEqual(emission.opacity, 1)
-        XCTAssertEqual(try XCTUnwrap(emission.headroom), 1.5, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(emission.headroom), 2, accuracy: 0.0001)
     }
 
     func testSearchReflectionsDriftGentlyAndIndependently() {
@@ -253,11 +253,13 @@ final class NativeSettingsToggleTests: XCTestCase {
             (false, false, false, false)
         ] {
             let model = Model()
+            var appearedAt: ContinuousClock.Instant?
             let animates = !reducedMotion && !reducedEffects && active
             let width: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 744 : 300
             window.frame = CGRect(x: 0, y: 0, width: width + 90, height: 400)
             window.rootViewController = UIHostingController(rootView:
                 SettingsSearchGlow(shape: RoundedRectangle(cornerRadius: 18), phase: 0)
+                    .onAppear { appearedAt = .now }
                     .frame(width: width, height: 100)
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
                         model.controlBounds = $0
@@ -271,12 +273,16 @@ final class NativeSettingsToggleTests: XCTestCase {
                     .environment(\.plozzReduceTransparency, reducedEffects)
             )
             window.makeKeyAndVisible()
-            let mountedAt = ContinuousClock.now
+            let appearanceDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while appearedAt == nil && ContinuousClock.now < appearanceDeadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let mountedAt = try XCTUnwrap(appearedAt, "Measure the cue from its appearance, not window creation.")
             func captureFrame(at time: Double) async throws -> UIImage {
                 try await ContinuousClock().sleep(until: mountedAt.advanced(by: .seconds(time)))
                 return capture()
             }
-            try await Task.sleep(for: .milliseconds(150))
+            try await ContinuousClock().sleep(until: mountedAt.advanced(by: .milliseconds(150)))
             window.layoutIfNeeded()
             let bounds = model.controlBounds
             XCTAssertEqual(bounds.width, width)
