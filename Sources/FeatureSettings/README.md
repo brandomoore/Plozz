@@ -71,11 +71,11 @@ without extending its duration. Its inset drawing stays within
 the row's corner shape, and its 30-fps timeline stops when the cue ends.
 Reduce Motion, reduced transparency/effects, and inactive scenes use a steady
 outline after the same delay instead; TV continues to use native focus without this mobile effect.
-On iOS/iPadOS 26 and later, animated dark-theme reflections use HDR emission at 2 times
+On iOS/iPadOS 26 and later, animated dark-theme reflections use HDR emission at 2.25 times
 SDR white in linear light. The existing alpha field masks that emission without
 clipping it through the SDR Canvas. SwiftUI manages available display headroom
 and tone mapping; this does not change the screen-brightness setting or guarantee a measured
-100% display-output increase. Light themes, reduced effects and earlier OS versions
+125% display-output increase. Light themes, reduced effects and earlier OS versions
 retain their standard-range appearance.
 Grouped ownership is set before resolving SwiftUI subviews, so ScrollView rows
 do not also paint a smaller control highlight. Nested anchors preserve a child's

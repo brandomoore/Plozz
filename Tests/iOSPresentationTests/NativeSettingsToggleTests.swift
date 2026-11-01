@@ -181,14 +181,14 @@ final class NativeSettingsToggleTests: XCTestCase {
         }
     }
 
-    func testSearchGlowHDRUsesDoubleLinearHeadroom() throws {
+    func testSearchGlowHDRUsesExpectedLinearHeadroom() throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("HDR colors require iOS 26.") }
         let emission = SettingsSearchGlowHDR.emission.resolveHDR(in: EnvironmentValues())
-        XCTAssertEqual(emission.linearRed, 2, accuracy: 0.0001)
-        XCTAssertEqual(emission.linearGreen, 2, accuracy: 0.0001)
-        XCTAssertEqual(emission.linearBlue, 2, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearRed, 2.25, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearGreen, 2.25, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearBlue, 2.25, accuracy: 0.0001)
         XCTAssertEqual(emission.opacity, 1)
-        XCTAssertEqual(try XCTUnwrap(emission.headroom), 2, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(emission.headroom), 2.25, accuracy: 0.0001)
     }
 
     func testSearchGlowHDRSurvivesCanvasMaskCompositing() throws {
@@ -212,7 +212,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                 space: space, bitmapInfo: CGBitmapInfo.floatComponents.rawValue
                     | CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
             ))
-            XCTAssertTrue(context.setEDRTargetHeadroom(2))
+            XCTAssertTrue(context.setEDRTargetHeadroom(2.25))
             context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
             return pixel
         }
@@ -220,8 +220,8 @@ final class NativeSettingsToggleTests: XCTestCase {
             let standard = try renderedPixel(hdr: false, opacity: opacity)
             let hdr = try renderedPixel(hdr: true, opacity: opacity)
             XCTAssertGreaterThan(standard[0], 0)
-            XCTAssertGreaterThan(hdr[0], standard[0] * 1.8,
-                                 "HDR emission must survive the mask at opacity \(opacity): SDR=\(standard), HDR=\(hdr)")
+            XCTAssertEqual(hdr[0], standard[0] * 2.25, accuracy: 0.01,
+                           "HDR emission must survive the mask at opacity \(opacity): SDR=\(standard), HDR=\(hdr)")
             XCTAssertEqual(hdr[0], hdr[1], accuracy: 0.001)
             XCTAssertEqual(hdr[1], hdr[2], accuracy: 0.001)
             if opacity == 1 { XCTAssertGreaterThan(hdr[0], 1.5) }
