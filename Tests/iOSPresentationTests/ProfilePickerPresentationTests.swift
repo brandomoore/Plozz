@@ -169,6 +169,18 @@ final class ProfilePickerPresentationTests: XCTestCase {
         XCTAssertGreaterThan(progress.completed, progress.settled * 95 / 100)
     }
 
+    func testProfilesArrivingDuringHeadingStillJoinTheCascade() async throws {
+        let progress = try await measureProductionEntrance(
+            count: 6, isSwitcher: false, size: .init(width: 768, height: 1024),
+            profilesArriveDuringHeading: true
+        )
+        XCTAssertEqual(progress.headingPhase, 0, "Newly materialized profiles must still start hidden.")
+        XCTAssertGreaterThan(progress.cascading, 1_000)
+        XCTAssertLessThan(progress.cascading, progress.settled * 9 / 10,
+                          "Startup updates must not skip the remaining avatars' entrance.")
+        XCTAssertGreaterThan(progress.completed, progress.settled * 95 / 100)
+    }
+
     func testLaunchObserverWaitsForItsWindowAndWarmSwitcherStartsImmediately() {
         var launchStarts = 0
         let launch = ProfilePickerPresentationObserver.Observer(startsDuringPresentation: false) {
@@ -203,6 +215,24 @@ final class ProfilePickerPresentationTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(100))
             XCTAssertEqual(starts, 0)
         }
+    }
+
+    func testObserverCanBecomeReadyAfterPresentationBegins() {
+        var starts = 0
+        let observer = ProfilePickerPresentationObserver.Observer(
+            startsDuringPresentation: true, isReady: false
+        ) {
+            starts += 1
+        }
+        observer.loadViewIfNeeded()
+        observer.viewIsAppearing(false)
+        observer.viewDidAppear(false)
+        XCTAssertEqual(starts, 0)
+        observer.isReady = true
+        XCTAssertEqual(starts, 1)
+        observer.isReady = true
+        XCTAssertEqual(starts, 1, "Readiness updates must not replay the entrance.")
+        observer.cancelPendingEntrance()
     }
 
     func testPerformanceProfilePickerEntrance() async throws {
@@ -322,7 +352,7 @@ final class ProfilePickerPresentationTests: XCTestCase {
                 Color.white.frame(width: 100, height: 100)
                     .modifier(PlozziOSProfilePickerEntrance(
                         isPresented: false, position: 15, profileCount: 16,
-                        reduceMotion: true, startDelay: PlozziOSProfilePickerEntrance.headingDuration
+                        reduceMotion: true
                     ))
             }
                 .padding(20)
@@ -411,7 +441,7 @@ final class ProfilePickerPresentationTests: XCTestCase {
 
     private func measureProductionEntrance(
         count: Int, isSwitcher: Bool, size: CGSize = .init(width: 390, height: 844),
-        asRoot: Bool = false
+        asRoot: Bool = false, profilesArriveDuringHeading: Bool = false
     ) async throws -> (
         initial: Int, headingPhase: Int, headingProgress: Double, cascading: Int, completed: Int, settled: Int
     ) {
@@ -419,9 +449,10 @@ final class ProfilePickerPresentationTests: XCTestCase {
             Profile(id: "motion-\($0)", name: "Viewer \($0)", avatarSymbol: "person.fill", colorIndex: 0)
         }
         var result = (initial: 0, headingPhase: 0, headingProgress: 0.0, cascading: 0, completed: 0, settled: 0)
-        let content = PlozziOSProfilePickerView(
-            profiles: profiles, activeProfileID: profiles[0].id, onSelect: { _ in },
-            onCancel: isSwitcher ? {} : nil
+        let model = PickerArrivalFixtureModel()
+        model.profiles = profilesArriveDuringHeading ? Array(profiles.prefix(2)) : profiles
+        let content = PickerArrivalFixture(
+            model: model, activeProfileID: profiles[0].id, isSwitcher: isSwitcher
         )
             .environment(\.themePalette, .pureBlack)
             .environment(\.gradientBackgroundsEnabled, false)
@@ -441,6 +472,10 @@ final class ProfilePickerPresentationTests: XCTestCase {
             if asRoot { window.layoutIfNeeded() }
             let entering = self.capture(window, name: "production-picker-entering", afterUpdates: asRoot)
             let start = ContinuousClock.now
+            if profilesArriveDuringHeading {
+                try await Task.sleep(until: start.advanced(by: .milliseconds(100)), clock: .continuous)
+                model.profiles = profiles
+            }
             try await Task.sleep(until: start.advanced(by: .milliseconds(200)), clock: .continuous)
             let heading = self.capture(window, name: "production-picker-heading", afterUpdates: false)
             try await Task.sleep(
@@ -614,6 +649,24 @@ final class ProfilePickerPresentationTests: XCTestCase {
 @MainActor @Observable
 private final class PickerMotionFixtureModel {
     var isPresented = false
+}
+
+@MainActor @Observable
+private final class PickerArrivalFixtureModel {
+    var profiles: [Profile] = []
+}
+
+private struct PickerArrivalFixture: View {
+    let model: PickerArrivalFixtureModel
+    let activeProfileID: String
+    let isSwitcher: Bool
+
+    var body: some View {
+        PlozziOSProfilePickerView(
+            profiles: model.profiles, activeProfileID: activeProfileID,
+            onSelect: { _ in }, onCancel: isSwitcher ? {} : nil
+        )
+    }
 }
 
 private struct PickerMotionFixture: View {
