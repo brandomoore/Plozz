@@ -216,7 +216,9 @@ struct PresentationHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--diagnostics-sharing-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--search-keyboard-fixture") {
+                SearchKeyboardInteractionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--diagnostics-sharing-fixture") {
                 DiagnosticsSharingFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--source-settings") {
                 SourceOnboardingFixture()

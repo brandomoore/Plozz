@@ -60,6 +60,11 @@ Settings navigation entry displays the active profile avatar. Search keeps a
 local avatar only when that navigation entry is not visible, including compact
 layouts where Settings is under More.
 
+On iPhone and iPad, the mobile screen owns the input's native SwiftUI focus.
+Tapping the content below the header dismisses the keyboard without clearing the
+query or consuming result/retry actions; scrolling results dismisses it
+interactively. Tapping the input or its clear button keeps editing available.
+
 - `SearchViewModel.swift` — the debounced fan-out / merge loop.
 - `SearchDeduplicator.swift` + `SearchPolicy.swift` — the pure logic
   pieces (test these without a simulator).
