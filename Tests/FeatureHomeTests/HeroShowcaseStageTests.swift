@@ -10,6 +10,56 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testRecreatedStageRestoresItsRetainedCollapsedPresentation() {
+        let state = HeroShowcaseState()
+        state.setExpanded(false)
+        let stage = HeroShowcaseStage.Controller(
+            state: state, hero: AnyView(Button("Hero") {}),
+            showcase: AnyView(Text("Showcase")), rows: AnyView(Button("Row") {})
+        )
+        stage.loadViewIfNeeded()
+        defer { stage.stopAnimations() }
+        XCTAssertEqual(stage.hero.view.alpha, 0)
+        XCTAssertFalse(stage.hero.view.isUserInteractionEnabled)
+        XCTAssertTrue(stage.hero.view.accessibilityElementsHidden)
+        XCTAssertEqual(stage.showcase.view.alpha, 1)
+        XCTAssertFalse(stage.showcase.view.accessibilityElementsHidden)
+        XCTAssertTrue(stage.rows.view.isUserInteractionEnabled)
+        XCTAssertFalse(stage.rows.view.accessibilityElementsHidden)
+        XCTAssertTrue(stage.preferredFocusEnvironments.first === stage.rows)
+    }
+
+    func testHeroMountedWhileSuspendedResumesAutoAdvanceOnReturn() async throws {
+        try await assertSuspendedHeroResumes(addSecondItemAfterMount: false)
+    }
+
+    func testHeroBecomingPageableWhileSuspendedResumesAutoAdvanceOnReturn() async throws {
+        try await assertSuspendedHeroResumes(addSecondItemAfterMount: true)
+    }
+
+    private func assertSuspendedHeroResumes(addSecondItemAfterMount: Bool) async throws {
+        let model = StageDwellModel()
+        model.hasSecondItem = !addSecondItemAfterMount
+        let host = UIHostingController(rootView: StageDwellFixture(model: model))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true; window.rootViewController = nil }
+        host.view.layoutIfNeeded()
+        if addSecondItemAfterMount {
+            try await Task.sleep(for: .milliseconds(100))
+            model.hasSecondItem = true
+        }
+        try await Task.sleep(for: .milliseconds(1300))
+        XCTAssertEqual(model.itemID, "first")
+        model.suspended = false
+        let deadline = ContinuousClock.now + .seconds(3)
+        while model.itemID != "second", ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertEqual(model.itemID, "second")
+    }
+
     func testScrollPositionRetainsRequestedMotionAcrossAttachmentAndRemount() {
         let navigation = TopNavigationScroll()
         let motion = HeroShowcaseScrollMotion()
@@ -916,6 +966,40 @@ private struct StageEnvironmentReader: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UIView { UIView() }
     func updateUIView(_ uiView: UIView, context: Context) { read(context.environment) }
+}
+
+@MainActor
+@Observable
+private final class StageDwellModel {
+    var suspended = true
+    var hasSecondItem = true
+    var itemID: String?
+}
+
+private struct StageDwellFixture: View {
+    let model: StageDwellModel
+    @Namespace private var focus
+    @State private var trailer = HeroTrailerController()
+    @State private var recede = HomeHeroRecedeModel()
+
+    var body: some View {
+        var settings = HeroSettings.default
+        settings.autoAdvance = true
+        settings.autoAdvanceSeconds = 1
+        var background = HeroBackgroundSettings.default
+        background.homeTrailerEnabled = false
+        let items = [MediaItem(id: "first", title: "First", kind: .movie)]
+            + (model.hasSecondItem ? [MediaItem(id: "second", title: "Second", kind: .movie)] : [])
+        return HomeHeroView(
+            items: items,
+            settings: settings, backgroundSettings: background,
+            trailerController: trailer, trailerResolver: { _ in nil },
+            isFrontmost: true, spoilerSettings: .default, navigationStyle: .rail,
+            focusScope: focus, onSelect: { _ in }, onPlay: { _ in },
+            onPinnedItemsChanged: { model.itemID = $0.first },
+            recedeModel: recede, showcaseSuspended: model.suspended
+        )
+    }
 }
 
 private struct StageFeaturedArtwork: View {

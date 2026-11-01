@@ -436,9 +436,12 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
                 view.addSubview(host.view)
                 host.didMove(toParent: self)
             }
-            showcase.view.alpha = 0
+            hero.view.alpha = state.isExpanded ? 1 : 0
+            hero.view.isUserInteractionEnabled = state.isExpanded
+            hero.view.accessibilityElementsHidden = !state.isExpanded
+            showcase.view.alpha = state.isExpanded ? 0 : 1
             showcase.view.isUserInteractionEnabled = false
-            showcase.view.accessibilityElementsHidden = true
+            showcase.view.accessibilityElementsHidden = state.isExpanded
             rows.view.isUserInteractionEnabled = !state.isExpanded
             rows.view.accessibilityElementsHidden = state.isExpanded
             state.motion.bind(rows.view, to: .rows)

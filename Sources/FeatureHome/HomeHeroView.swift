@@ -815,7 +815,11 @@ struct HomeHeroView: View {
         // the user was looking at it. Instead, real remote input pauses it (see
         // `noteInteraction`), so it never pages out from under an interacting user.
         .task(id: autoAdvanceKey) {
-            guard settings.autoAdvance, items.count > 1, !pausedForRows else { return }
+            guard settings.autoAdvance, items.count > 1 else { return }
+            if pausedForRows {
+                pauseWhileReceded()
+                return
+            }
             // Paused (user is interacting): schedule no fire at all. The gauge is
             // frozen at `pausedAt`; resuming bumps `runEpoch` to reschedule here.
             guard pausedAt == nil, !trailerController.isPaused else { return }
