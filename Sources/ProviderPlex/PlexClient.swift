@@ -432,17 +432,19 @@ public struct PlexClient: Sendable {
     private func decodeStreamEnriched<T: Decodable>(
         _ type: T.Type,
         path: String,
-        query: [URLQueryItem]
+        query: [URLQueryItem],
+        preservingContainers: Bool = false
     ) async throws -> T {
+        let streamParameter = preservingContainers ? "includeOptionalElements" : "includeElements"
         let enriched = Endpoint(
             path: path,
-            queryItems: query + [URLQueryItem(name: "includeElements", value: "Stream")],
+            queryItems: query + [URLQueryItem(name: streamParameter, value: "Stream")],
             headers: headers
         )
         do {
             return try await decode(T.self, enriched)
         } catch AppError.invalidResponse {
-            PlozzLog.networking.error("Plex rejected includeElements=Stream on \(path); retrying lean")
+            PlozzLog.networking.error("Plex rejected \(streamParameter)=Stream on \(path); retrying lean")
             let lean = Endpoint(path: path, queryItems: query, headers: headers)
             return try await decode(T.self, lean)
         }
@@ -715,18 +717,21 @@ public struct PlexClient: Sendable {
         size: Int,
         sort: CoreModels.SortDescriptor,
         filters: LibraryFilters = .all,
-        genreID: String? = nil
+        genreID: String? = nil,
+        includeCollections: Bool = false
     ) async throws -> PlexMediaContainer {
         var query = containerQuery(start: start, size: size)
         if let type {
             query.append(URLQueryItem(name: "type", value: String(type)))
         }
         query.append(URLQueryItem(name: "sort", value: try Self.sortQuery(for: sort)))
+        query.append(URLQueryItem(name: "includeCollections", value: includeCollections ? "1" : "0"))
         query += try Self.libraryFilterQuery(filters, genreID: genreID)
         return try await decodeStreamEnriched(
             PlexMediaContainerResponse.self,
             path: "/library/sections/\(sectionID)/all",
-            query: query
+            query: query,
+            preservingContainers: includeCollections
         ).MediaContainer
     }
 
@@ -1093,6 +1098,7 @@ public struct PlexClient: Sendable {
         if let type {
             query.append(URLQueryItem(name: "type", value: String(type)))
         }
+        query.append(URLQueryItem(name: "includeCollections", value: "0"))
         let endpoint = Endpoint(
             path: "/library/sections/\(sectionID)/firstCharacter",
             queryItems: query,

@@ -3,6 +3,8 @@ import XCTest
 import UIKit
 import CoreModels
 @testable import FeaturePlayback
+@testable import TestSupportNetworking
+@testable import TestSupportPerformance
 
 @MainActor
 final class ScrubPreviewLoaderTests: XCTestCase {
@@ -306,6 +308,329 @@ final class ScrubPreviewLoaderTests: XCTestCase {
         XCTAssertEqual(extractor.requestedSeconds.count, 91)
     }
 
+    func testCoordinatorFinishesCurrentFrameThenDecodesOnlyLatestPosition() async throws {
+        let first = expectation(description: "first extraction")
+        let latest = expectation(description: "latest extraction")
+        let published = expectation(description: "both useful frames published")
+        published.expectedFulfillmentCount = 2
+        let extractor = ControlledScrubStillExtractor()
+        extractor.onStart = { seconds in
+            if seconds == 10 { first.fulfill() }
+            else if seconds == 30 { latest.fulfill() }
+            else { XCTFail("Obsolete position decoded: \(seconds)") }
+        }
+        let coordinator = try XCTUnwrap(ScrubPreviewCoordinator(source: nil, generatedStills: extractor))
+        defer { coordinator.clear() }
+        let red = makeSolidCGImage(color: .red)
+        let blue = makeSolidCGImage(color: .blue)
+        coordinator.onImageChange = { if $0 != nil { published.fulfill() } }
+        coordinator.update(for: 10)
+        await fulfillment(of: [first], timeout: 2)
+        coordinator.update(for: 20)
+        coordinator.update(for: 30)
+        extractor.finish(at: 10, with: red)
+        await fulfillment(of: [latest], timeout: 2)
+        XCTAssertTrue(coordinator.image === red)
+        extractor.finish(at: 30, with: blue)
+        await fulfillment(of: [published], timeout: 2)
+        XCTAssertTrue(coordinator.image === blue)
+        XCTAssertEqual(extractor.requestedSeconds, [10, 30])
+        XCTAssertEqual(extractor.maxInFlight, 1)
+        XCTAssertEqual(extractor.cancellations, 0)
+    }
+
+    func testCoordinatorDoesNotPublishAcrossAReversal() async throws {
+        let first = expectation(description: "forward extraction")
+        let reversed = expectation(description: "reversed extraction")
+        let delivered = expectation(description: "reversed image")
+        let extractor = ControlledScrubStillExtractor()
+        extractor.onStart = { seconds in
+            if seconds == 100 { first.fulfill() }
+            else if seconds == 80 { reversed.fulfill() }
+            else { XCTFail("Unexpected extraction: \(seconds)") }
+        }
+        let coordinator = try XCTUnwrap(ScrubPreviewCoordinator(source: nil, generatedStills: extractor))
+        defer { coordinator.clear() }
+        let blue = makeSolidCGImage(color: .blue)
+        coordinator.onImageChange = { image in
+            if let image {
+                XCTAssertTrue(image === blue, "A forward frame must not overwrite the reversed preview.")
+                delivered.fulfill()
+            }
+        }
+        coordinator.update(for: 100)
+        await fulfillment(of: [first], timeout: 2)
+        coordinator.update(for: 120)
+        coordinator.update(for: 80)
+        extractor.finish(at: 100, with: makeSolidCGImage(color: .red))
+        await fulfillment(of: [reversed], timeout: 2)
+        XCTAssertNil(coordinator.image)
+        extractor.finish(at: 80, with: blue)
+        await fulfillment(of: [delivered], timeout: 2)
+        XCTAssertEqual(extractor.requestedSeconds, [100, 80])
+    }
+
+    func testCachedFrameCannotBeOverwrittenByAnOlderExtraction() async throws {
+        let warm = expectation(description: "cache warmup")
+        let cached = expectation(description: "cached frame")
+        let slow = expectation(description: "slow extraction")
+        let obsolete = expectation(description: "obsolete publication")
+        obsolete.isInverted = true
+        let extractor = ControlledScrubStillExtractor()
+        extractor.onStart = { seconds in
+            if seconds == 0 { warm.fulfill() } else { slow.fulfill() }
+        }
+        let coordinator = try XCTUnwrap(ScrubPreviewCoordinator(source: nil, generatedStills: extractor))
+        defer { coordinator.clear() }
+        let red = makeSolidCGImage(color: .red)
+        coordinator.onImageChange = { if $0 != nil { cached.fulfill() } }
+        coordinator.update(for: 0)
+        await fulfillment(of: [warm], timeout: 2)
+        extractor.finish(at: 0, with: red)
+        await fulfillment(of: [cached], timeout: 2)
+        coordinator.onImageChange = { if $0 !== red { obsolete.fulfill() } }
+        coordinator.update(for: 100)
+        await fulfillment(of: [slow], timeout: 2)
+        XCTAssertTrue(coordinator.update(for: 0))
+        extractor.finish(at: 100, with: makeSolidCGImage(color: .blue))
+        await fulfillment(of: [obsolete], timeout: 0.1)
+        XCTAssertTrue(coordinator.image === red)
+        coordinator.onImageChange = nil
+        XCTAssertTrue(coordinator.update(for: 100), "Suppressed completions still populate the cache.")
+    }
+
+    func testClearCancelsExtractionWithoutOverlappingItsReplacement() async throws {
+        let first = expectation(description: "old extraction")
+        let replacement = expectation(description: "replacement extraction")
+        let delivered = expectation(description: "replacement image")
+        let extractor = ControlledScrubStillExtractor()
+        extractor.onStart = { seconds in
+            if seconds == 100 { first.fulfill() } else { replacement.fulfill() }
+        }
+        let coordinator = try XCTUnwrap(ScrubPreviewCoordinator(source: nil, generatedStills: extractor))
+        defer { coordinator.clear() }
+        coordinator.update(for: 100)
+        await fulfillment(of: [first], timeout: 2)
+        coordinator.clear()
+        let blue = makeSolidCGImage(color: .blue)
+        coordinator.onImageChange = { image in
+            if let image {
+                XCTAssertTrue(image === blue)
+                delivered.fulfill()
+            }
+        }
+        coordinator.update(for: 200)
+        XCTAssertEqual(extractor.requestedSeconds, [100])
+        extractor.finish(at: 100, with: makeSolidCGImage(color: .red))
+        await fulfillment(of: [replacement], timeout: 2)
+        XCTAssertNil(coordinator.image)
+        extractor.finish(at: 200, with: blue)
+        await fulfillment(of: [delivered], timeout: 2)
+        XCTAssertEqual(extractor.requestedSeconds, [100, 200])
+        XCTAssertEqual(extractor.maxInFlight, 1)
+        XCTAssertEqual(extractor.cancellations, 1)
+    }
+
+    func testImageCallbackCanClearAndImmediatelyStartAnotherPreview() async throws {
+        let first = expectation(description: "first extraction")
+        let replacement = expectation(description: "replacement extraction")
+        let delivered = expectation(description: "replacement image")
+        let extractor = ControlledScrubStillExtractor()
+        extractor.onStart = { seconds in
+            if seconds == 10 { first.fulfill() } else { replacement.fulfill() }
+        }
+        let coordinator = try XCTUnwrap(ScrubPreviewCoordinator(source: nil, generatedStills: extractor))
+        defer { coordinator.clear() }
+        let red = makeSolidCGImage(color: .red)
+        let blue = makeSolidCGImage(color: .blue)
+        coordinator.onImageChange = { [weak coordinator] image in
+            if image === red {
+                coordinator?.clear()
+                coordinator?.update(for: 20)
+            } else if image === blue {
+                delivered.fulfill()
+            }
+        }
+        coordinator.update(for: 10)
+        await fulfillment(of: [first], timeout: 2)
+        extractor.finish(at: 10, with: red)
+        await fulfillment(of: [replacement], timeout: 2)
+        extractor.finish(at: 20, with: blue)
+        await fulfillment(of: [delivered], timeout: 2)
+        XCTAssertTrue(coordinator.image === blue)
+        XCTAssertEqual(extractor.requestedSeconds, [10, 20])
+    }
+
+    func testTransientMissKeepsTheLastUsefulPreview() async throws {
+        let first = expectation(description: "initial extraction")
+        let delivered = expectation(description: "initial image")
+        let miss = expectation(description: "unavailable extraction")
+        let blank = expectation(description: "transient blank")
+        blank.isInverted = true
+        let extractor = ControlledScrubStillExtractor()
+        extractor.onStart = { seconds in
+            if seconds == 0 { first.fulfill() } else { miss.fulfill() }
+        }
+        let coordinator = try XCTUnwrap(ScrubPreviewCoordinator(source: nil, generatedStills: extractor))
+        defer { coordinator.clear() }
+        let red = makeSolidCGImage(color: .red)
+        coordinator.onImageChange = { if $0 != nil { delivered.fulfill() } }
+        coordinator.update(for: 0)
+        await fulfillment(of: [first], timeout: 2)
+        extractor.finish(at: 0, with: red)
+        await fulfillment(of: [delivered], timeout: 2)
+        coordinator.onImageChange = { if $0 == nil { blank.fulfill() } }
+        coordinator.update(for: 100)
+        await fulfillment(of: [miss], timeout: 2)
+        extractor.finish(at: 100, with: nil)
+        await fulfillment(of: [blank], timeout: 0.1)
+        XCTAssertTrue(coordinator.image === red)
+        XCTAssertTrue(coordinator.isAvailable)
+        coordinator.onImageChange = nil
+    }
+
+    func testInFlightExtractionDoesNotRetainTheCoordinator() async throws {
+        let started = expectation(description: "extraction started")
+        let extractor = ControlledScrubStillExtractor()
+        extractor.onStart = { _ in started.fulfill() }
+        var coordinator = ScrubPreviewCoordinator(source: nil, generatedStills: extractor)
+        weak var weakCoordinator = coordinator
+        coordinator?.update(for: 10)
+        await fulfillment(of: [started], timeout: 2)
+        coordinator = nil
+        XCTAssertNil(weakCoordinator)
+        extractor.finish(at: 10, with: nil)
+    }
+
+    func testMissingPlexBIFFallsBackWithoutStarvingDuringMotion() async throws {
+        let server = try LoopbackHTTPServer { _ in .init(status: 404) }
+        let url = try await server.start().appendingPathComponent("indexes/hd")
+        do {
+            let extractor = PacedScrubExtractor(delay: .milliseconds(80))
+            let coordinator = try XCTUnwrap(ScrubPreviewCoordinator(
+                source: .plexBIF(resource: .publicURL(try SecretFreeURLSource(url: url))), generatedStills: extractor
+            ))
+            defer { coordinator.clear() }
+            var motionFrames = 0
+            coordinator.onImageChange = { if $0 != nil { motionFrames += 1 } }
+            for sample in 0..<24 {
+                coordinator.update(for: Double(sample * 50))
+                try await Task.sleep(for: .milliseconds(33))
+            }
+            XCTAssertGreaterThan(motionFrames, 2)
+            let deadline = ContinuousClock.now + .seconds(1)
+            while coordinator.image !== extractor.images[575], ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            XCTAssertNotNil(coordinator.image)
+            XCTAssertTrue(coordinator.image === extractor.images[575])
+            XCTAssertTrue(coordinator.isAvailable)
+            XCTAssertEqual(extractor.maxInFlight, 1)
+            XCTAssertEqual(extractor.cancellations, 0)
+            let requests = await server.requests
+            XCTAssertEqual(requests.count, 1, "A missing BIF must not be fetched on every input.")
+            coordinator.onImageChange = nil
+            await server.stop()
+        } catch {
+            await server.stop()
+            throw error
+        }
+    }
+
+    func testPerformancePlexBIFScan() async throws {
+        try PerformanceProbe.requireEnabled()
+        let colors = (0..<64).map { index -> UIColor in
+            let red = CGFloat(32 + (index % 4) * 64) / 255
+            let green = CGFloat(32 + ((index / 4) % 4) * 64) / 255
+            let blue = CGFloat(32 + (index / 16) * 64) / 255
+            return UIColor(red: red, green: green, blue: blue, alpha: 1)
+        }
+        let frames = colors.map { makeJPEGData(color: $0, size: 320) }
+        let data = try makeBIFData(frameIntervalMs: 2_000, frames: (0...3_600).map { frames[$0 % 64] })
+        let server = try LoopbackHTTPServer { _ in .init(body: data, delay: .milliseconds(100)) }
+        let url = try await server.start().appendingPathComponent("indexes/hd")
+        do {
+            try await PerformanceProbe.measure(self, scenario: "seek-plex-bif") {
+                let initialRequests = await server.requests.count
+                let coordinator = try XCTUnwrap(ScrubPreviewCoordinator(
+                    source: .plexBIF(resource: .publicURL(try SecretFreeURLSource(url: url)))
+                ))
+                defer { coordinator.clear() }
+                var inputs = 0
+                var stages = 0
+                var framesDuringMotion = 0
+                var moving = true
+                var firstFrameMicroseconds = 0
+                let began = ContinuousClock.now
+                coordinator.onImageChange = { image in
+                    guard image != nil else { return }
+                    if firstFrameMicroseconds == 0 {
+                        let elapsed = began.duration(to: .now).components
+                        firstFrameMicroseconds = Int(elapsed.seconds * 1_000_000 + elapsed.attoseconds / 1_000_000_000_000)
+                    }
+                    if moving { framesDuringMotion += 1 }
+                }
+                for _ in 0..<2 {
+                    for direction in [-1, 1] {
+                        for level in 1...8 {
+                            var position: TimeInterval = 3_600
+                            let before = framesDuringMotion
+                            moving = true
+                            for _ in 0..<8 {
+                                position = RemoteSeekScan.position(
+                                    from: position, level: direction * level, elapsed: 0.033, duration: 7_200
+                                )
+                                coordinator.update(for: position)
+                                inputs += 1
+                                try await Task.sleep(for: .milliseconds(33))
+                            }
+                            moving = false
+                            let expected = Int(position / 2) % 64
+                            let deadline = ContinuousClock.now + .seconds(1)
+                            while !self.matchesBIFColor(coordinator.image, index: expected),
+                                  ContinuousClock.now < deadline {
+                                try await Task.sleep(for: .milliseconds(5))
+                            }
+                            XCTAssertTrue(self.matchesBIFColor(coordinator.image, index: expected),
+                                          "BIF preview must match the final target, not an earlier frame.")
+                            XCTAssertEqual(coordinator.image?.width, 320)
+                            XCTAssertGreaterThan(framesDuringMotion, before)
+                            stages += 1
+                        }
+                    }
+                }
+                coordinator.onImageChange = nil
+                let requests = await server.requests.count - initialRequests
+                XCTAssertEqual(requests, 1, "Cold load plus warm rescrubbing must reuse one BIF download.")
+                XCTAssertEqual(inputs, 256)
+                XCTAssertEqual(stages, 32)
+                XCTAssertLessThan(firstFrameMicroseconds, 500_000)
+                return ["inputSamples": inputs, "stages": stages, "motionFrames": framesDuringMotion,
+                        "httpRequests": requests, "bifBytes": data.count,
+                        "firstFrameMicroseconds": firstFrameMicroseconds]
+            }
+            await server.stop()
+        } catch {
+            await server.stop()
+            throw error
+        }
+    }
+
+    private func matchesBIFColor(_ image: CGImage?, index: Int) -> Bool {
+        guard let image else { return false }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let drawn = pixel.withUnsafeMutableBytes { bytes -> Bool in
+            guard let context = CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        let expected = [32 + (index % 4) * 64, 32 + ((index / 4) % 4) * 64, 32 + (index / 16) * 64]
+        return drawn && zip(pixel.prefix(3), expected).allSatisfy { abs(Int($0) - $1) <= 8 }
+    }
+
     func testCoordinatorNeedsServerPreviewsOrGeneratedStills() {
         XCTAssertNil(ScrubPreviewCoordinator(source: nil))
         XCTAssertNotNil(ScrubPreviewCoordinator(
@@ -377,11 +702,13 @@ final class ScrubPreviewLoaderTests: XCTestCase {
         return data
     }
 
-    private func makeJPEGData(color: UIColor) -> Data {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
+    private func makeJPEGData(color: UIColor, size: CGFloat = 8) -> Data {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size * 9 / 16), format: format)
         let image = renderer.image { context in
             color.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+            context.fill(CGRect(x: 0, y: 0, width: size, height: size * 9 / 16))
         }
         return image.jpegData(compressionQuality: 0.9) ?? Data()
     }
@@ -515,6 +842,37 @@ private final class SuspendedScrubStillExtractor: ScrubStillExtracting {
         let current = waiters
         waiters.removeAll()
         current.forEach { $0.resume(returning: image) }
+    }
+}
+
+@MainActor
+private final class ControlledScrubStillExtractor: ScrubStillExtracting {
+    var onStart: ((TimeInterval) -> Void)?
+    private var waiters: [TimeInterval: CheckedContinuation<CGImage?, Never>] = [:]
+    private(set) var requestedSeconds: [TimeInterval] = []
+    private var inFlight = 0
+    private(set) var maxInFlight = 0
+    private(set) var cancellations = 0
+
+    func thumbnail(atSeconds seconds: TimeInterval, maxWidth: Int) async -> CGImage? {
+        requestedSeconds.append(seconds)
+        inFlight += 1
+        maxInFlight = max(maxInFlight, inFlight)
+        defer { inFlight -= 1 }
+        let image = await withCheckedContinuation { continuation in
+            waiters[seconds] = continuation
+            onStart?(seconds)
+        }
+        if Task.isCancelled { cancellations += 1 }
+        return image
+    }
+
+    func finish(at seconds: TimeInterval, with image: CGImage?) {
+        guard let waiter = waiters.removeValue(forKey: seconds) else {
+            XCTFail("No extraction pending at \(seconds)")
+            return
+        }
+        waiter.resume(returning: image)
     }
 }
 

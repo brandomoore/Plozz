@@ -50,6 +50,7 @@ deploy the website Worker or synchronize routes for a target-only update.
 
 ## Publishing note
 
-`APP_STORE_URL` in `src/worker.js` is empty until Plozz is published; the `/pair`
-page adapts its copy. Set it to the App Store (or public TestFlight) URL and
-redeploy once available.
+`APP_STORE_URL` in `src/worker.js` points to the released Plozz Player listing:
+`https://apps.apple.com/app/plozz-player/id6782668147`. The `/pair` fallback
+uses the App Store, not the optional TestFlight beta. Keep it aligned with the
+main README and the website's primary install buttons.

@@ -7,6 +7,24 @@ an empty provider feed from local curation without recording media or account ID
 Home rows, item detail, series/season experience, and the online-trailer
 fallback when the user's server has no attached trailer.
 
+## Inline library collections
+
+Movie Browse follows the server's collection presentation automatically under
+All + Name sorting, without a new setting or toolbar control. The shared
+`PageRequest.collectionPresentation` opts only library title browsing into this
+behavior; background indexing, recommendations, filtered/sorted inventories and
+collection members continue to request individual items. Provider adapters own
+their native policy; unsupported sources do not infer collections from titles.
+Existing collection cards open the same paged member route on TV and mobile.
+
+Combined libraries merge each source's native mixed result. Collection identity
+stays account-scoped, even for two users on one physical server, and title-index
+membership cannot combine curated collections. A hidden member in one source
+does not hide an independently returned movie from another. Aggregate buffers
+include collection presentation in their query identity. Grouped A-Z targets
+use actual page positions, not individual-movie counts; no eager member scan or
+library scan is added to ordinary paging.
+
 ## Browsing Home rows
 
 Media rows have a title-chevron action on iPhone/iPad and a trailing **See all**

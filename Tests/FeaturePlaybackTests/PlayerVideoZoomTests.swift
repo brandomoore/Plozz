@@ -12,9 +12,46 @@ final class PlayerVideoZoomTests: XCTestCase {
     func testZoomModeCopyUsesFamiliarNamesAndIdentifiesTheDefaultWithoutDescriptions() {
         XCTAssertEqual(PlayerVideoZoom().mode, .fit)
         XCTAssertEqual(PlayerVideoZoom.Mode.allCases.map { String(localized: $0.title) },
-                       ["Normal", "Crop", "Stretch", "Custom"])
+                       ["Normal", "Crop", "Stretch", "Custom", "Auto-crop black bars"])
         XCTAssertEqual(PlayerVideoZoom.Mode.allCases.map { String(localized: $0.menuTitle) },
-                       ["Normal (Default)", "Crop", "Stretch", "Custom"])
+                       ["Normal (Default)", "Crop", "Stretch", "Custom", "Auto-crop black bars"])
+    }
+
+    func testPictureFitUsesUniformScaleAndAsymmetricTranslation() throws {
+        let normalized = CGRect(x: 0.05, y: 0.1, width: 0.8, height: 0.65)
+        for (bounds, insets) in safeAreaCases {
+            let safe = bounds.inset(by: insets)
+            let zoom = PlayerVideoZoom(mode: .picture)
+            let video = try XCTUnwrap(zoom.videoRect(
+                in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: normalized
+            ))
+            let active = VideoActivePictureGeometry.map(normalized, into: video)
+            XCTAssertEqual(active.midX, safe.midX, accuracy: 0.001)
+            XCTAssertEqual(active.midY, safe.midY, accuracy: 0.001)
+            XCTAssertTrue(safe.insetBy(dx: -0.001, dy: -0.001).contains(active))
+            XCTAssertEqual(video.width / video.height, 16 / 9, accuracy: 0.001)
+            let scale = zoom.scaleFactors(in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: normalized)
+            XCTAssertEqual(scale.dx, scale.dy)
+            XCTAssertLessThanOrEqual(scale.dx, 2)
+        }
+    }
+
+    func testUnknownAndUnsafePictureGeometryUseNormalWithoutChangingManualModes() {
+        for invalid: CGRect? in [nil, .zero, CGRect(x: 0, y: 0, width: 0.01, height: 0.01),
+                                 CGRect(x: 0, y: 0, width: Double.nan, height: 1)] {
+            XCTAssertEqual(PlayerVideoZoom(mode: .picture).videoRect(in: television, aspectRatio: 16 / 9, activePicture: invalid),
+                           PlayerVideoZoom().videoRect(in: television, aspectRatio: 16 / 9))
+        }
+        for mode in [PlayerVideoZoom.Mode.fit, .fill, .stretch, .custom] {
+            let zoom = PlayerVideoZoom(mode: mode)
+            XCTAssertEqual(zoom.videoRect(in: television, aspectRatio: 16 / 9, activePicture: CGRect(x: 0, y: 0.1, width: 1, height: 0.8)),
+                           zoom.videoRect(in: television, aspectRatio: 16 / 9))
+        }
+        let model = PlayerVideoZoomModel()
+        XCTAssertFalse(model.availableModes.contains(.picture))
+        model.supportsActivePicture = true
+        XCTAssertTrue(model.availableModes.contains(.picture))
+        XCTAssertEqual(model.settings.mode, .fit)
     }
 
     func testStretchFillsWithoutCroppingUnlikeTheProportionalModes() throws {

@@ -83,6 +83,7 @@ struct AppLanguagePicker: View {
         ) {
             languageOptions
         }
+        .settingsSearchAnchor("language")
         #else
         Menu {
             languageOptions
@@ -90,6 +91,7 @@ struct AppLanguagePicker: View {
             menuLabel
         }
         .menuStyle(.button)
+        .settingsSearchAnchor("language")
         #endif
     }
 

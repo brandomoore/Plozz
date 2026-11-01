@@ -1,10 +1,129 @@
 # FeatureSettings
 
-Mobile customization lists apply the shared native switch style to both standard
-sections and grouped cards. Enabled switches keep the system green appearance
-instead of inheriting the page's monochrome navigation tint.
+Mobile customization choice groups use the same Settings cards and content
+insets, including contained groups such as Hero content sources. TV row sizing
+does not select a different mobile section style. Enabled switches keep the
+system green appearance instead of inheriting the page's monochrome navigation tint.
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
+
+## Settings search
+
+Settings search is local: queries are neither saved nor sent to a service or log.
+The shared `SettingsSearchCatalog` indexes profile and device preferences,
+including Home/Hero, artwork and labels, playback and subtitles, libraries,
+Live TV, downloads, profile appearance, sync, metadata, diagnostics and startup.
+Results use the current platform's destination and retain their query on Back.
+Protected destinations retain their normal profile/PIN checks; search never
+selects a server, library or user, enables a prerequisite, or submits an editor.
+Unavailable controls lead to their existing prerequisite or availability message.
+On mobile, custom quality keeps its normal modal editor: Cancel discards the draft, Apply
+updates only the selected network, and either action returns to the search.
+
+Matching prioritizes exact titles, then prefixes, related terms, and bounded
+spelling corrections. This is a curated synonym index, not a general-purpose
+language model. Do not promise arbitrary semantic understanding or add aliases
+for capabilities a control does not provide.
+
+The initial cross-player terminology comes from the
+[Infuse settings reference](https://support.firecore.com/hc/en-us/articles/360015608854-Settings-Overview)
+and Kodi's [video](https://kodi.wiki/view/Settings/Player/Videos) and
+[subtitle](https://kodi.wiki/view/Settings/Player/Subtitles) references:
+continuous playback, streaming cache, forward/backward skip, skip steps,
+background playback, landscape lock, gesture control, poster titles, external
+ratings, and subtitle position. These are discoverability terms, not claims of
+feature parity. In particular, audio passthrough is not an alias for lossless
+conversion; display refresh-rate matching is not an alias for transition fades;
+subtitle placement is distinct from audio/subtitle timing.
+
+iPhone on iOS 26 and later uses the system search toolbar item in the bottom
+bar; iPad keeps the native search field visible in the Settings sidebar without a
+redundant Settings heading. Detail pages retain their titles. Earlier iPhone
+systems use SwiftUI's native search placement. Mobile results use plain native List rows,
+with shared title/breadcrumb keylines and no additional result-container inset.
+On iPhone, returning from a result restores the query and keyboard. Dismissing
+the keyboard leaves the query visible and clearable; it does not end search.
+The compact Settings root places its large heading inside the scrolling content,
+below the toolbar. Scrolling past the heading shows the inline navigation title.
+TV uses the existing retained
+Settings page stack and native remote text entry. `SettingsSearchLanding` and
+`settingsSearchAnchor` reveal the existing control without changing its value.
+On mobile, the brief landing highlight covers the complete padded row, not just
+its label or picker. Grouped rows own the highlight and their corner clipping;
+standalone native List/Form rows use the native row background. The searched
+row installs a stable, binding-driven background before reveal: native List can
+retain an initially absent background during navigation even when the row's
+highlight state changes. Non-target rows retain their native background. The highlight
+does not intercept touches or change the setting.
+The landing cue stays invisible for 0.35 seconds after reveal, then plays its
+full 3.9-second animation. It opens with a quick, soft brightness lift that blends
+into two broad neutral reflections over the first 1.8 seconds. Dark appearances
+use a stronger arrival, surface reflection and fine edge so the cue is visibly
+brighter even without HDR display headroom; light appearances retain their
+existing contrast. The brightness
+lift decays throughout their movement rather than ending as a separate flash. Each reflection
+drifts and changes strength independently, lighting the surface
+and fine portions of its edge rather than drawing a continuously illuminated rim.
+The light fields scale with the row, including wide tablet rows, and start at a
+varied phase on each landing; nothing picks new random values between frames.
+A shared envelope preserves the initial 2.1 seconds, then fades the entire cue out
+over 1.8 seconds with a smooth, flat-ended curve. The full lifetime, including
+the invisible pause, is 4.25 seconds. Its inset drawing stays within
+the row's corner shape, and its 30-fps timeline stops when the cue ends.
+Reduce Motion, reduced transparency/effects, and inactive scenes use a steady
+outline after the same delay instead; TV continues to use native focus without this mobile effect.
+On iOS/iPadOS 26 and later, animated dark-theme reflections use HDR emission at 2.25 times
+SDR white in linear light. The existing alpha field masks that emission without
+clipping it through the SDR Canvas. SwiftUI manages available display headroom
+and tone mapping; this does not change the screen-brightness setting or guarantee a measured
+125% display-output increase. Light themes, reduced effects and earlier OS versions
+retain their standard-range appearance.
+Grouped ownership is set before resolving SwiftUI subviews, so ScrollView rows
+do not also paint a smaller control highlight. Nested anchors preserve a child's
+active highlight, and nested row owners consume it without lighting up their parents.
+Native lazy List cells and sections register their contained targets with
+`settingsSearchGroup`; the selected control is then revealed within that container.
+Ungrouped native Form rows bootstrap directly through their target ID, so a
+subtitle control below the viewport can mount before its native reveal runs.
+TV search anchors belong to visible menu triggers, not their unopened options.
+Hero source groups register both their toggle and dependent targets, so offscreen
+Collections and other sources can be created before their landing cue starts.
+Every indexed entry needs an available route and a matching control anchor.
+Search labels distinguish localized app copy from verbatim provider names;
+indexing resolves resources for the current locale without translating brands.
+Disabled prerequisite controls can register dependent targets with `fallbackFor`;
+do not register the same target on a still-mounted disabled child.
+TV controls with their own focus binding pass `focusAction` to use that owner.
+Search waits for native layout before requesting focus, including native menus
+whose focusable view is not ready when the initial SwiftUI task begins.
+
+Run `tools/check-settings-search.sh` when changing Settings. Its SwiftSyntax
+inventory independently discovers controls in Settings/Preferences files and
+reachable components, including custom input call sites and nested menus.
+The checked-in `tools/settings-search-coverage.json` records individually reviewed
+navigation, credential, contextual-content and preview exclusions. Exclusions
+have exact control keys/counts; reusable renderer and presentation boundaries
+also retain their control structure. A new control, arbitrary uncatalogued
+anchor, missing destination anchor, stale exclusion or changed boundary fails.
+Review a failure rather than accepting the current inventory as a new baseline.
+Runtime navigation, provider access, lazy reveal and native focus still require
+behavioral tests; static coverage is not proof that a screen works.
+
+Searching for Hero, a Home banner, carousel, or spotlight opens the full Home
+Hero page at **Show hero**, ahead of the incidental movie/show Background match.
+This remains available when Hero is off and does not enable it automatically.
+On TV with Showcase selected, search instead focuses the Hero layout choice;
+changing layout still requires an explicit selection.
+
+Mobile customization menus reuse `SettingsMenuValue`, the value/chevron rendering
+used by `SettingsMenuLabel`. Playback details, per-view labels, and item-tap actions
+retain their native menus and adaptive labels without separate value pills.
+Artwork by view, label customization, and Hero subpages also use the shared
+mobile `SettingsPageList` surface and `SettingsSectionGroup` rows. They inherit
+the same page margins, headers, separators, corner radius, theme/gradient
+background, and toolbar treatment as other Settings destinations, rather than
+adding native inset-grouped styling or an opaque background. Lazy grouped
+artwork and label rows register their contained search targets.
 
 Playback > **Ask to resume or start over** is per-profile and off by default, including
 for existing profiles. TV and mobile resume partially watched movies and episodes

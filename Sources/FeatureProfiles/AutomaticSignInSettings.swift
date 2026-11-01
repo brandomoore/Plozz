@@ -35,7 +35,7 @@ public struct AutomaticSignInToggle: View {
                 }
             }
         }
-        .accessibilityIdentifier("profiles.automaticallySignIn")
+        .accessibilityIdentifier("profiles.automaticallySignIn").settingsSearchAnchor("automatic-sign-in")
     }
 }
 

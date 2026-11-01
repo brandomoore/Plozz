@@ -127,6 +127,31 @@ final class AudioMenuAvailabilityTests: XCTestCase {
 /// exclusion, engine-dual vs sidecar sourcing) that used to be buried in
 /// `PlayerViewModel.loadTrackOptions`.
 final class TrackMenuBuilderTests: XCTestCase {
+    func testNativeAndTVAudioLabelsRetainDetailedSourceProfiles() {
+        let tracks = [
+            MediaTrack(id: 1, kind: .audio, displayTitle: "English", language: "en", codec: "truehd",
+                       profile: "Dolby TrueHD + Dolby Atmos", channels: 8),
+            MediaTrack(id: 2, kind: .audio, displayTitle: "English", language: "en", codec: "dca",
+                       profile: "MA + DTS:X IMAX", channels: 8),
+            MediaTrack(id: 3, kind: .audio, displayTitle: "English", language: "en", codec: "eac3",
+                       channels: 6, isAtmos: true),
+            MediaTrack(id: 4, kind: .audio, displayTitle: "English", language: "en", codec: "dca",
+                       profile: "DTS-HD MA", channels: 8, isDTSX: true)
+        ]
+        let formats = ["Dolby TrueHD Atmos", "DTS-HD MA + DTS:X IMAX", "Dolby Digital+ Atmos", "DTS-HD MA + DTS:X"]
+        for selectedID in [1, 2, 4] {
+            let options = TrackMenuBuilder.audioOptions(
+                tracks: tracks, selectedID: selectedID, preferred: [], locale: .init(identifier: "en")
+            )
+            XCTAssertEqual(options.map(\.nativeTitle), formats.map { "English (\($0))" })
+            XCTAssertEqual(options.filter(\.isSelected).map(\.id), [selectedID])
+            for (option, format) in zip(options, formats) {
+                XCTAssertEqual(option.title,
+                               Text(verbatim: "English") + Text(verbatim: " (") + Text(verbatim: format) + Text(verbatim: ")"))
+            }
+        }
+    }
+
     func testNativeSubtitleLabelsIncludeOffLanguageAndAccessibilityFacts() {
         let options = TrackMenuBuilder.subtitleOptions(
             tracks: [.init(id: 9, kind: .subtitle, displayTitle: "English", language: "en",

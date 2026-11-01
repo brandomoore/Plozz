@@ -62,9 +62,9 @@ struct PlozziOSStreamingSettings: View {
     var body: some View {
         SettingsSectionGroup("Streaming quality") {
             if hasCompatibleServer {
-                StreamingQualityPicker(title: "Local network", selection: $settings.local, support: support)
-                StreamingQualityPicker(title: "Remote Wi-Fi / Ethernet", selection: $settings.remote, support: support)
-                StreamingQualityPicker(title: "Cellular", selection: $settings.cellular, support: support)
+                StreamingQualityPicker(title: "Local network", selection: $settings.local, support: support).settingsSearchAnchor("quality-local")
+                StreamingQualityPicker(title: "Remote Wi-Fi / Ethernet", selection: $settings.remote, support: support).settingsSearchAnchor("quality-remote")
+                StreamingQualityPicker(title: "Cellular", selection: $settings.cellular, support: support).settingsSearchAnchor("quality-cellular")
                 Button(action: onShowAdvanced) {
                     HStack {
                         Text("Advanced")
@@ -81,12 +81,21 @@ struct PlozziOSStreamingSettings: View {
                 }
                 .disabled(true)
                 .accessibilityIdentifier("streaming-unavailable")
+                .settingsSearchAnchor(
+                    "streaming-unavailable",
+                    fallbackFor: ["quality-local", "quality-remote", "quality-cellular"]
+                        + SettingsSearchCatalog.targets(on: .streamingAdvanced)
+                )
             }
         } footer: {
             if !hasCompatibleServer {
                 Text("Unavailable for network shares.")
             }
         }
+        .settingsSearchGroup(
+            ["quality-local", "quality-remote", "quality-cellular"]
+                + SettingsSearchCatalog.targets(on: .streamingAdvanced)
+        )
     }
 }
 
@@ -117,9 +126,9 @@ struct PlozziOSAdvancedStreamingSettings: View {
                 }
                 .accessibilityLabel("Transcoding codec")
                 .accessibilityValue(Text(settings.codec.title))
-                .accessibilityIdentifier("streaming-codec")
+                .accessibilityIdentifier("streaming-codec").settingsSearchAnchor("quality-codec")
                 Toggle("Force transcoding", isOn: $settings.forceTranscoding)
-                    .accessibilityIdentifier("streaming-force-transcoding")
+                    .accessibilityIdentifier("streaming-force-transcoding").settingsSearchAnchor("quality-force")
             } footer: {
                 if !support.codecs.contains(settings.codec) {
                     Text("Choose a supported codec.")
@@ -179,14 +188,17 @@ struct StreamingQualityPicker: View {
     }
 }
 
-private struct StreamingCustomQualityEditor: View {
+struct StreamingCustomQualityEditor: View {
     let apply: (StreamingQuality) -> Void
     let support: StreamingQualitySupport
     @Environment(\.dismiss) private var dismiss
     @State private var draft: StreamingQualityDraft
     @State private var applicationError: LocalizedStringResource?
 
-    init(quality: StreamingQuality, support: StreamingQualitySupport, apply: @escaping (StreamingQuality) -> Void) {
+    init(
+        quality: StreamingQuality, support: StreamingQualitySupport,
+        apply: @escaping (StreamingQuality) -> Void
+    ) {
         self.apply = apply
         self.support = support
         _draft = State(initialValue: StreamingQualityDraft(quality: quality))
@@ -203,12 +215,12 @@ private struct StreamingCustomQualityEditor: View {
                         if !support.heights.contains(draft.maximumHeight) {
                             Text(verbatim: "\(draft.maximumHeight)p").tag(draft.maximumHeight).disabled(true)
                         }
-                    }
+                    }.settingsSearchAnchor("quality-custom-height")
                     LabeledContent("Total bitrate (Kbps)") {
                         TextField("Kbps", text: $draft.bitrateKbps)
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
-                            .accessibilityLabel("Total bitrate in Kbps")
+                            .accessibilityLabel("Total bitrate in Kbps").settingsSearchAnchor("quality-custom-bitrate")
                     }
                     if let message = validationMessage {
                         Text(message).foregroundStyle(.red)

@@ -6,11 +6,197 @@ import Observation
 import SwiftUI
 import TVUIKit
 import UIKit
+import Vision
 import XCTest
 
 @MainActor
 final class PlayerEpisodeArtworkHostedTests: XCTestCase {
     private var savedProviders = MetadataProviderSettings.default
+
+    func testProductionCardTabsDoNotRestoreAnEarlierNativeFocusTarget() async throws {
+        _ = try await exerciseCardTabs(measuring: false)
+    }
+
+    func testPerformancePlayerCardFirstVisits() async throws {
+        try await PerformanceProbe.measure(self, scenario: "player-card-first-visits") {
+            try await self.exerciseCardTabs(measuring: true)
+        }
+    }
+
+    func testProductionCardContentAndNativeEntryOnFirstVisits() async throws {
+        _ = try await exerciseCardTabs(measuring: false, checkingContent: true)
+    }
+
+    private func exerciseCardTabs(measuring: Bool, checkingContent: Bool = false) async throws -> [String: Int] {
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for reducedGlass in measuring ? [false] : [false, true] {
+            let player = PlayerViewModel(provider: EpisodeRowProvider(), itemID: "card-tabs")
+            let model = PlayerControlsModel()
+            model.title = "Card tab focus"
+            model.duration = 3600
+            model.currentSeconds = 600
+            model.engineCapabilities = [.playbackSpeed]
+            model.controlsVisible = true
+            model.infoCard.chapters = (0..<20).map { .init(start: Double($0) * 120, title: "Chapter \($0)") }
+            model.infoCard.cast = (0..<20).map { .init(id: "person-\($0)", name: "Person \($0)") }
+            let host = CardTabFocusHost(rootView:
+                PlayerControls(model: model, player: player, palette: .dark, actions: .init(), onExitToSurface: {})
+                    .environment(\.plozzReducePanelGlass, reducedGlass)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+                    .background(.black)
+            )
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            window.layoutIfNeeded()
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            try await waitUntil { model.subtitleLayout.frame(for: .timeline) != nil }
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            var largestGap = Duration.zero
+            let heartbeat: Task<Void, Error>? = measuring ? Task {
+                var last = ContinuousClock.now
+                while !Task.isCancelled {
+                    try await Task.sleep(for: .milliseconds(2))
+                    let now = ContinuousClock.now
+                    largestGap = max(largestGap, last.duration(to: now))
+                    last = now
+                }
+            } : nil
+            defer { heartbeat?.cancel() }
+            await Task.yield()
+            model.controlBar.entry = .info
+            model.controlBar.settled = false
+            model.controlBarVisible = true
+            try await waitUntil { model.controlBar.focusArmed }
+            try await Task.sleep(for: .milliseconds(600))
+            model.controlBar.settled = true
+            let firstInfoGap = largestGap
+            let recorder = CardTabFocusRecorder(window: window, model: model)
+            defer { NotificationCenter.default.removeObserver(recorder) }
+            if measuring {
+                try await Task.sleep(for: .milliseconds(50))
+                window.layoutIfNeeded()
+                var targets: [String: any UIFocusItem] = [:]
+                for tab in ["info", "chapters", "cast"] {
+                    let frame = try XCTUnwrap(model.subtitleLayout.frame(for: .tab(tab)))
+                    targets[tab] = try XCTUnwrap(cardTabFocusItems(in: window).first {
+                        guard let bounds = cardTabFocusFrame($0, in: window) else { return false }
+                        return frame.contains(CGPoint(x: bounds.midX, y: bounds.midY))
+                    })
+                }
+                XCTAssertTrue(system.focusedItem === targets["info"])
+                XCTAssertTrue(model.controlBar.infoCardOpen)
+                XCTAssertNotNil(model.subtitleLayout.frame(for: .card))
+                func microseconds(_ duration: Duration) -> Int {
+                    let parts = duration.components
+                    return Int(parts.seconds * 1_000_000 + parts.attoseconds / 1_000_000_000_000)
+                }
+                var counters = [
+                    "freshHierarchies": 1, "firstVisits": 3,
+                    "infoMaxMainActorGapMicroseconds": microseconds(firstInfoGap)
+                ]
+                for tab in ["chapters", "cast"] {
+                    let item = try XCTUnwrap(targets[tab])
+                    recorder.tabs = []
+                    await Task.yield()
+                    largestGap = .zero
+                    let start = ContinuousClock.now
+                    host.target = item
+                    system.requestFocusUpdate(to: host)
+                    system.updateFocusIfNeeded()
+                    host.target = nil
+                    counters["\(tab)FocusUpdateMicroseconds"] = microseconds(start.duration(to: .now))
+                    XCTAssertTrue(system.focusedItem === item)
+                    try await Task.sleep(for: .milliseconds(200))
+                    counters["\(tab)MaxMainActorGapMicroseconds"] = microseconds(largestGap)
+                    XCTAssertTrue(system.focusedItem === item)
+                    XCTAssertTrue(recorder.tabs.allSatisfy { $0 == tab })
+                    let card = try XCTUnwrap(model.subtitleLayout.frame(for: .card))
+                    XCTAssertTrue(cardTabFocusItems(in: window).contains {
+                        guard let bounds = cardTabFocusFrame($0, in: window) else { return false }
+                        return card.contains(CGPoint(x: bounds.midX, y: bounds.midY))
+                    }, "First visit must build focusable \(tab) content, not an empty stage.")
+                }
+                heartbeat?.cancel()
+                _ = await heartbeat?.result
+                return counters
+            }
+            for pause in checkingContent ? [300] : [20, 100, 300] {
+                for tab in ["info", "chapters", "cast", "chapters", "info"] {
+                    window.layoutIfNeeded()
+                    let frame = try XCTUnwrap(model.subtitleLayout.frame(for: .tab(tab)), "Missing \(tab) frame")
+                    let item = try XCTUnwrap(cardTabFocusItems(in: window).first {
+                        guard let bounds = cardTabFocusFrame($0, in: window) else { return false }
+                        return frame.contains(CGPoint(x: bounds.midX, y: bounds.midY))
+                    }, "Missing native target for \(tab)")
+                    recorder.tabs = []
+                    host.target = item
+                    system.requestFocusUpdate(to: host)
+                    system.updateFocusIfNeeded()
+                    host.target = nil
+                    XCTAssertTrue(system.focusedItem === item, "The native move must reach \(tab).")
+                    try await Task.sleep(for: .milliseconds(pause))
+                    XCTAssertTrue(system.focusedItem === item, "Focus must stay on \(tab), not bounce after content changes.")
+                    XCTAssertTrue(recorder.tabs.allSatisfy { $0 == tab },
+                                  "Native focus bounced while entering \(tab): \(recorder.tabs)")
+                    if checkingContent {
+                        let card = try XCTUnwrap(model.subtitleLayout.frame(for: .card))
+                        let contentTarget = try XCTUnwrap(cardTabFocusItems(in: window).first {
+                            guard let bounds = cardTabFocusFrame($0, in: window) else { return false }
+                            return card.contains(CGPoint(x: bounds.midX, y: bounds.midY))
+                        })
+                        host.target = contentTarget
+                        system.requestFocusUpdate(to: host)
+                        system.updateFocusIfNeeded()
+                        host.target = nil
+                        try await Task.sleep(for: .milliseconds(200))
+                        XCTAssertTrue(system.focusedItem === contentTarget,
+                                      "The first \(tab) content must accept and retain native focus.")
+                        let image = DetailTransitionSnapshot.image(of: window)
+                        let recognition = VNRecognizeTextRequest()
+                        recognition.recognitionLevel = .accurate
+                        recognition.recognitionLanguages = ["en-US"]
+                        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([recognition])
+                        let text = (recognition.results ?? [])
+                            .compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                        let expected = ["info": "Now Playing", "chapters": "Chapter 5", "cast": "Person 1"]
+                        XCTAssertTrue(text.contains(try XCTUnwrap(expected[tab])), "Missing \(tab) content: \(text)")
+                        let attachment = XCTAttachment(image: image)
+                        attachment.name = "\(tab) content - \(reducedGlass ? "reduced" : "native glass")"
+                        attachment.lifetime = .keepAlways
+                        add(attachment)
+                        host.target = item
+                        system.requestFocusUpdate(to: host)
+                        system.updateFocusIfNeeded()
+                        host.target = nil
+                        try await Task.sleep(for: .milliseconds(100))
+                        XCTAssertTrue(system.focusedItem === item)
+                    }
+                }
+            }
+            let finalFocus = system.focusedItem
+            try await Task.sleep(for: .milliseconds(500))
+            XCTAssertTrue(system.focusedItem === finalFocus, "No queued restoration may outlive the last tab move.")
+            XCTAssertTrue(recorder.tabs.allSatisfy { $0 == "info" })
+            let image = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+            image.name = "Stable card tab focus - \(reducedGlass ? "reduced" : "native glass")"
+            image.lifetime = .keepAlways
+            add(image)
+        }
+        return [:]
+    }
 
     override func setUp() async throws {
         try await super.setUp()
@@ -974,6 +1160,68 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
         }
         XCTFail("Timed out waiting for the episode row.", file: file, line: line)
         throw EpisodeArtworkFixtureError.focusTimeout
+    }
+}
+
+@MainActor
+private final class CardTabFocusHost<Content: View>: UIHostingController<Content> {
+    weak var target: (any UIFocusEnvironment)?
+    override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+        target.map { [$0] } ?? super.preferredFocusEnvironments
+    }
+}
+
+@MainActor
+private func cardTabFocusFrame(_ item: any UIFocusItem, in window: UIWindow) -> CGRect? {
+    var environment: (any UIFocusEnvironment)? = item
+    while let current = environment {
+        if let container = current.focusItemContainer {
+            return container.coordinateSpace.convert(item.frame, to: window)
+        }
+        environment = current.parentFocusEnvironment
+    }
+    return nil
+}
+
+@MainActor
+private func cardTabFocusItems(in window: UIWindow) -> [any UIFocusItem] {
+    var containers: [any UIFocusItemContainer] = [window]
+    var seen = Set<ObjectIdentifier>()
+    var items: [ObjectIdentifier: any UIFocusItem] = [:]
+    while let container = containers.popLast() {
+        guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
+        for item in container.focusItems(in: container.coordinateSpace.convert(window.bounds, from: window)) {
+            if let child = item.focusItemContainer { containers.append(child) }
+            if let view = item as? UIView { containers.append(view) }
+            if item.canBecomeFocused, !(item is UIScrollView) { items[ObjectIdentifier(item)] = item }
+        }
+    }
+    return Array(items.values)
+}
+
+@MainActor
+private final class CardTabFocusRecorder: NSObject {
+    var tabs: [String] = []
+    weak var window: UIWindow?
+    let model: PlayerControlsModel
+
+    init(window: UIWindow, model: PlayerControlsModel) {
+        self.window = window
+        self.model = model
+        super.init()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(record(_:)), name: UIFocusSystem.didUpdateNotification, object: nil
+        )
+    }
+
+    @objc private func record(_ notification: Notification) {
+        guard let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
+            as? UIFocusUpdateContext, let item = context.nextFocusedItem, let window,
+              let frame = cardTabFocusFrame(item, in: window) else { return }
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        for tab in ["info", "chapters", "cast"] where model.subtitleLayout.frame(for: .tab(tab))?.contains(center) == true {
+            tabs.append(tab)
+        }
     }
 }
 

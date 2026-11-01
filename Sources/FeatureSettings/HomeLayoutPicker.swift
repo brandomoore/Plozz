@@ -34,10 +34,20 @@ struct HomeLayoutPicker: View {
                     textSize: option == .carousel ? homeTextSize : showcaseTextSize,
                     action: { layout = option }
                 )
+                .settingsSearchAnchor(
+                    option == .carousel && layout == .followsFocus ? "hero-enabled" : "home-layout-\(option.rawValue)",
+                    fallbackFor: fallbackTargets(for: option)
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+    }
+
+    private func fallbackTargets(for option: HeroStyle) -> [String] {
+        if option == layout { return ["home-layout"] }
+        if option == .carousel { return SettingsSearchCatalog.carouselHeroTargets }
+        return ["showcase-logo-size", "showcase-text-size", "showcase-discovery-row"]
     }
 }
 

@@ -3,6 +3,7 @@
 import argparse
 import collections
 from contextlib import contextmanager
+from datetime import datetime
 import fcntl
 import json
 import os
@@ -20,6 +21,8 @@ from urllib.parse import unquote, urlparse
 
 
 ROOT = Path(__file__).resolve().parent.parent
+READINESS_SECONDS = 45
+FINALIZATION_SECONDS = 600
 
 
 def duration(value):
@@ -68,7 +71,7 @@ def validate_unbound_runner(path):
         raise RuntimeError("Refusing an app-bound runner: current Plozz must not be replaced or relaunched.")
 
 
-def sample_summary(path, pid):
+def sample_summary(path, pid, window=None):
     root = ET.parse(path).getroot()
     ids = {e.get("id"): e for e in root.iter() if e.get("id")}
 
@@ -94,11 +97,13 @@ def sample_summary(path, pid):
         if stamp is None or not stamp.text:
             continue
         seconds = int(stamp.text) / 1e9
+        if window is not None and not window[0] <= seconds <= window[1]:
+            continue
         times.append(seconds)
         threads[thread.get("fmt", "unknown")] += 1
         bins[int(seconds // 5) * 5] += 1
     if not times:
-        raise RuntimeError(f"No CPU samples for the verified app PID {pid}; capture is not verified.")
+        raise RuntimeError(f"No CPU samples for the verified app PID {pid} in the capture window; capture is not verified.")
     return {
         "count": len(times), "firstSeconds": min(times), "lastSeconds": max(times),
         "threads": dict(threads), "fiveSecondBins": dict(sorted(bins.items())),
@@ -190,12 +195,15 @@ class Capture:
         if self.args.no_indicator:
             print("On-device indicator explicitly disabled.", flush=True)
             return
-        names = [part for phase in ["preparing", "recording", "finished", "failed"]
+        names = [part         for phase in ["preparing", "ready", "recording", "saving", "finished", "failed"]
                  for part in ["--name", self.args.bundle_id + ".Diagnostics." + phase + ".visible"]]
+        observer_limit = self.args.time_limit + self.args.start_timeout + 3 * (
+            READINESS_SECONDS + FINALIZATION_SECONDS
+        ) + 60
         observer, self.observer_log = self.launch([
             "xcrun", "devicectl", "device", "notification", "observe", "--device", self.device,
-            *names, "--session-timeout", str(self.args.time_limit + 800),
-            "--timeout", str(self.args.time_limit + 820),
+            *names, "--session-timeout", str(observer_limit),
+            "--timeout", str(observer_limit + 20),
         ], "indicator-observer")
         deadline = time.monotonic() + 15
         while "observation started" not in text(self.observer_log).lower():
@@ -242,6 +250,9 @@ class Capture:
     def record(self, pid, input_runner, input_log, input_notification):
         instrument = (["--template", self.args.template] if self.args.template
                       else ["--template", "Blank", "--instrument", "Time Profiler"])
+        wait_for_start = not self.args.auto_start and input_notification is None
+        start_budget = self.args.start_timeout if wait_for_start else 0
+        recorder_limit = self.args.time_limit + READINESS_SECONDS + start_budget + 20
         for attempt in range(1, 4):
             self.status("preparing")
             ready = "com.thatcube.Plozz.TraceReady." + uuid.uuid4().hex
@@ -251,11 +262,12 @@ class Capture:
             target = ["--attach", self.args.attach or str(pid)] if self.args.template else ["--all-processes"]
             recorder, log = self.launch([
                 "xcrun", "xctrace", "record", "--device", self.device, *instrument, *target,
-                "--time-limit", f"{self.args.time_limit}s", "--notify-tracing-started", ready,
+                "--time-limit", f"{recorder_limit}s", "--notify-tracing-started", ready,
                 "--output", str(trace), "--no-prompt",
             ], f"recorder-{attempt}")
             self.recorder = recorder
-            deadline = time.monotonic() + 25
+            deadline = time.monotonic() + READINESS_SECONDS
+            next_heartbeat = time.monotonic() + 4
             confirmed = None
             while recorder.poll() is None and not failed_recording(text(log)):
                 if listener.poll() == 0 and ready in text(listener_log):
@@ -264,26 +276,36 @@ class Capture:
                         break
                 if time.monotonic() >= deadline:
                     break
+                if time.monotonic() >= next_heartbeat:
+                    self.status("preparing")
+                    next_heartbeat = time.monotonic() + 4
                 time.sleep(0.1)
             usable = (confirmed is not None and time.monotonic() - confirmed >= 5
                       and recorder.poll() is None and not failed_recording(text(log)))
             if not usable:
                 print(f"Attempt {attempt} was not ready; no input sent.", flush=True)
+                self.status("failed")
                 if recorder.poll() is None and not failed_recording(text(log)):
                     recorder.send_signal(signal.SIGINT)
-                try:
-                    recorder.wait(timeout=120)
-                except subprocess.TimeoutExpired as error:
-                    raise RuntimeError("Failed attempt did not finalize; preserving raw files, no input sent.") from error
+                self.finalize(recorder, "failed")
+                if self.report.get("finalizationTimedOut"):
+                    raise RuntimeError("Failed attempt did not finalize; preserving raw files, no input sent.")
                 if listener.poll() is None:
                     listener.terminate()
                     listener.wait(timeout=5)
                 continue
+            if wait_for_start:
+                self.wait_for_start(recorder, log, attempt)
             self.status("recording", acknowledge=True)
             if recorder.poll() is not None or failed_recording(text(log)):
                 raise RuntimeError("Recording stopped during the visible acknowledgement; no input sent.")
             print("RECORDING ACTIVE — on-device status acknowledged." if not self.args.no_indicator
                   else "RECORDING ACTIVE — indicator opted out.", flush=True)
+            window_start = time.monotonic()
+            self.report.update(
+                captureWindowStartedEpoch=time.time(),
+                captureWindowStartAfterReadySeconds=window_start - confirmed,
+            )
             if input_notification:
                 if input_runner.poll() is not None:
                     raise RuntimeError("Remote driver expired before recording became ready; no input sent.")
@@ -295,27 +317,31 @@ class Capture:
                 self.report["inputDeliveryUncertain"] = False
                 self.report["inputConfirmationEpoch"] = time.time()
             next_heartbeat = time.monotonic() + 4
-            finalizing = False
-            deadline = time.monotonic() + self.args.time_limit + 600
+            deadline = window_start + self.args.time_limit
             while recorder.poll() is None:
                 contents = text(log)
                 ended = failed_recording(contents) or any(
                     marker in contents for marker in ["Reached specified time limit", "Stopping recording",
                                                        "Recording completed", "Saving output"]
                 )
-                if ended and not finalizing:
-                    finalizing = True
-                    self.status("failed" if failed_recording(contents) else "finished")
-                    print("Recording stopped; allowing up to ten minutes for finalization.", flush=True)
-                if not finalizing and time.monotonic() >= next_heartbeat:
+                if ended or time.monotonic() >= deadline:
+                    break
+                if time.monotonic() >= next_heartbeat:
                     self.status("recording")
                     next_heartbeat = time.monotonic() + 4
-                if time.monotonic() > deadline:
-                    self.report["finalizationTimedOut"] = True
-                    self.stop(recorder)
-                    break
                 time.sleep(0.2)
-            self.status("failed" if failed_recording(text(log)) else "finished")
+            covered = time.monotonic() - window_start
+            self.report.update(
+                captureWindowSeconds=covered,
+                captureWindowCompleted=covered >= self.args.time_limit and not failed_recording(text(log)),
+                captureWindowEndedEpoch=time.time(),
+            )
+            phase = "saving" if self.report["captureWindowCompleted"] else "failed"
+            self.status(phase)
+            if recorder.poll() is None and not failed_recording(text(log)):
+                recorder.send_signal(signal.SIGINT)
+            print("Capture window ended; saving and verification may take up to ten minutes.", flush=True)
+            self.finalize(recorder, phase)
             if input_runner:
                 if input_runner.wait(timeout=90):
                     raise RuntimeError("Remote input observation failed; see remote.log.")
@@ -327,6 +353,49 @@ class Capture:
             self.report["trace"] = str(trace)
             return trace, instrument
         raise RuntimeError("Three recordings failed readiness. No input sent.")
+
+    def wait_for_start(self, recorder, recorder_log, attempt):
+        name = "com.thatcube.Plozz.TraceStart." + uuid.uuid4().hex
+        listener, log = self.launch(["notifyutil", "-1", name], f"start-{attempt}")
+        self.status("ready", acknowledge=True)
+        self.report["startNotification"] = name
+        (self.output / "ready.json").write_text(json.dumps({
+            "startNotification": name, "requestedSeconds": self.args.time_limit,
+            "expiresAtEpoch": time.time() + self.args.start_timeout,
+        }, indent=2) + "\n")
+        print(f"READY — waiting for your start confirmation. Run: notifyutil -p {name}", flush=True)
+        deadline = time.monotonic() + self.args.start_timeout
+        next_heartbeat = time.monotonic() + 4
+        try:
+            while listener.poll() is None:
+                if recorder.poll() is not None or failed_recording(text(recorder_log)):
+                    raise RuntimeError("Recorder stopped while waiting for your start confirmation; no input sent.")
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("Start confirmation timed out; no capture window or input was started.")
+                if time.monotonic() >= next_heartbeat:
+                    self.status("ready")
+                    next_heartbeat = time.monotonic() + 4
+                time.sleep(0.1)
+            if listener.poll() != 0 or name not in text(log):
+                raise RuntimeError("Start listener failed; no capture window or input was started.")
+            if recorder.poll() is not None or failed_recording(text(recorder_log)):
+                raise RuntimeError("Recorder stopped before start confirmation could be accepted; no input sent.")
+            self.report["startConfirmedEpoch"] = time.time()
+        finally:
+            (self.output / "ready.json").unlink(missing_ok=True)
+
+    def finalize(self, recorder, phase):
+        deadline = time.monotonic() + FINALIZATION_SECONDS
+        next_heartbeat = time.monotonic() + 4
+        while recorder.poll() is None:
+            if time.monotonic() >= deadline:
+                self.report["finalizationTimedOut"] = True
+                self.stop(recorder)
+                return
+            if time.monotonic() >= next_heartbeat:
+                self.status(phase)
+                next_heartbeat = time.monotonic() + 4
+            time.sleep(0.2)
 
     def verify(self, trace, instrument, pid):
         toc = self.output / "toc.xml"
@@ -350,15 +419,30 @@ class Capture:
         actual = float(root.findtext(".//summary/duration", "0"))
         self.report.update(actualSeconds=actual, startDate=root.findtext(".//summary/start-date"),
                            endReason=root.findtext(".//summary/end-reason"))
-        if actual < self.args.time_limit - 2 or self.report.get("disconnected"):
+        minimum = self.args.time_limit + self.report.get("captureWindowStartAfterReadySeconds", 0) - 2
+        if (actual < minimum or self.report.get("disconnected")
+                or not self.report.get("captureWindowCompleted", False)):
             raise RuntimeError("Recording did not cover its requested duration; evidence is incomplete.")
+        try:
+            started = datetime.fromisoformat(self.report["startDate"].replace("Z", "+00:00"))
+            if started.tzinfo is None:
+                raise ValueError("Trace start has no timezone")
+            window = (
+                self.report["captureWindowStartedEpoch"] - started.timestamp(),
+                self.report["captureWindowEndedEpoch"] - started.timestamp(),
+            )
+        except (KeyError, TypeError, AttributeError, ValueError) as error:
+            raise RuntimeError("Cannot align the confirmed capture window with the trace timeline.") from error
+        if window[0] < 0 or window[1] - window[0] < self.args.time_limit - 1 or actual < window[1] - 2:
+            raise RuntimeError("Trace timeline does not cover the confirmed capture window.")
+        self.report["captureWindowTraceSeconds"] = {"start": window[0], "end": window[1]}
         if not self.args.template or self.args.template == "Time Profiler":
             samples = self.output / "cpu-samples.xml"
             schema = "time-sample" if root.find('.//table[@schema="time-sample"]') is not None else "time-profile"
             self.run(["xcrun", "xctrace", "export", "--input", str(trace), "--xpath",
                       f'/trace-toc/run[@number="1"]/data/table[@schema="{schema}"]',
                       "--output", str(samples)], "export-samples", timeout=180)
-            self.report["samples"] = sample_summary(samples, pid)
+            self.report["samples"] = sample_summary(samples, pid, window=window)
         else:
             raise RuntimeError("Trace retained, but automatic data verification only supports CPU captures.")
         self.report["verified"] = True
@@ -385,6 +469,7 @@ class Capture:
         self.prepare_indicator()
         trace, instrument = self.record(pid, runner, log, notification)
         self.verify(trace, instrument, pid)
+        self.status("finished")
 
     def stop(self, process):
         try:
@@ -405,7 +490,7 @@ class Capture:
             if self.recorder and self.recorder.poll() is None:
                 self.recorder.send_signal(signal.SIGINT)
                 try:
-                    self.recorder.wait(timeout=120)
+                    self.recorder.wait(timeout=FINALIZATION_SECONDS)
                 except subprocess.TimeoutExpired:
                     self.stop(self.recorder)
             for process in reversed(self.owned):
@@ -413,6 +498,7 @@ class Capture:
                     self.stop(process)
             for handle in self.handles:
                 handle.close()
+            (self.output / "ready.json").unlink(missing_ok=True)
             (self.output / "report.json").write_text(json.dumps(self.report, indent=2) + "\n")
         finally:
             if self.lock:
@@ -430,6 +516,10 @@ def main():
     parser.add_argument("--bundle-id", default="com.thatcube.Plozz")
     parser.add_argument("--output-dir", default=os.environ.get("PLOZZ_TRACE_DIR", ".build/device-traces"))
     parser.add_argument("--no-indicator", action="store_true", help="Explicit opt-out for older/release builds.")
+    parser.add_argument("--auto-start", action="store_true",
+                        help="Start the capture window immediately after recording readiness; otherwise wait for explicit confirmation.")
+    parser.add_argument("--start-timeout", type=duration, default=300,
+                        help="Maximum wait for start confirmation, in seconds or minutes (default: 300s).")
     parser.add_argument("--press-focused", metavar="EXACT_LABEL",
                         help="tvOS: verify this focused button, then send exactly one Select after readiness.")
     args = parser.parse_args()
