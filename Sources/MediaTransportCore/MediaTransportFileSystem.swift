@@ -88,6 +88,16 @@ public protocol MediaTransportPreparingFileSystem: MediaTransportFileSystem {
     func revalidatePreparedSource(for locator: NetworkFileLocator) async throws
 }
 
+/// Optional incremental lane. Opening establishes the exact validated source;
+/// additional warming uses a borrowed source and may be interrupted for Play.
+/// The legacy prepareSource contract remains fully warmed and unchanged.
+public protocol MediaTransportPreparationWarmingFileSystem: MediaTransportPreparingFileSystem {
+    func openPreparationSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease
+    func warmPreparedSource(
+        for locator: NetworkFileLocator, source: any MediaTransportByteSource
+    ) async throws
+}
+
 public extension MediaTransportFileSystem {
     func statForOpening(relativePath: String) async throws -> RemoteFileEntry {
         try await stat(relativePath: relativePath)

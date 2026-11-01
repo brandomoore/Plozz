@@ -260,6 +260,475 @@ private final class CappedTransportByteSource: TransportByteSource, @unchecked S
     func shutdown() async {}
 }
 
+private final class PipelineTransportByteSource: TransportByteSource, @unchecked Sendable {
+    enum Rejection: Error, Sendable { case validator, authentication, truncation }
+    enum Response: Sendable { case normal, short(Int), empty, oversized, rejected(Rejection) }
+    let byteSize: Int64
+    let preferredReadSize = 32 * 1024 * 1024
+    private let lock = NSLock()
+    private var reads: [(offset: Int64, length: Int)] = []
+    private var active = 0
+    private var peak = 0
+    private var shutdowns = 0
+    private let gates: [Int64: AsyncReadGate]
+    private let response: @Sendable (Int64) -> Response
+    private let onStart: @Sendable (Int64) -> Void
+    private let onFinish: @Sendable (Int64) -> Void
+
+    init(
+        byteSize: Int64 = 64 * 1024 * 1024,
+        gates: [Int64: AsyncReadGate] = [:],
+        response: @escaping @Sendable (Int64) -> Response = { _ in .normal },
+        onStart: @escaping @Sendable (Int64) -> Void = { _ in },
+        onFinish: @escaping @Sendable (Int64) -> Void = { _ in }
+    ) {
+        self.byteSize = byteSize
+        self.gates = gates
+        self.response = response
+        self.onStart = onStart
+        self.onFinish = onFinish
+    }
+
+    var readLog: [(offset: Int64, length: Int)] { lock.withLock { reads } }
+    var peakActive: Int { lock.withLock { peak } }
+    var shutdownCount: Int { lock.withLock { shutdowns } }
+
+    static func bytes(at offset: Int64, count: Int) -> Data {
+        var data = Data(count: count)
+        data.withUnsafeMutableBytes { raw in
+            let bytes = raw.bindMemory(to: UInt8.self)
+            var index = 0
+            while index < count {
+                let position = offset + Int64(index)
+                let end = min(count, index + 1024 - Int(position % 1024))
+                bytes.baseAddress!.advanced(by: index).update(
+                    repeating: UInt8((position / 1024) % 251), count: end - index
+                )
+                index = end
+            }
+        }
+        return data
+    }
+
+    func read(at offset: Int64, length: Int) async throws -> Data {
+        let firstAtOffset = lock.withLock {
+            let first = !reads.contains { $0.offset == offset }
+            reads.append((offset, length))
+            active += 1
+            peak = max(peak, active)
+            return first
+        }
+        if firstAtOffset { onStart(offset) }
+        defer {
+            lock.withLock { active -= 1 }
+            onFinish(offset)
+        }
+        // Intentionally ignores cancellation until the gate opens. Reader
+        // cancellation must wake consumers without releasing network capacity.
+        if let gate = gates[offset] { await gate.reachAndWait() }
+        switch response(offset) {
+        case .rejected(let error): throw error
+        case .empty: return Data()
+        case .oversized: return Self.bytes(at: offset, count: length + 1)
+        case .short(let cap): return Self.bytes(at: offset, count: min(length, cap, Int(byteSize - offset)))
+        case .normal: return Self.bytes(at: offset, count: min(length, Int(byteSize - offset)))
+        }
+    }
+
+    func finishReads() { gates.values.forEach { $0.open() } }
+    func shutdown() async { lock.withLock { shutdowns += 1 } }
+}
+
+private final class PipelineReadResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: (result: Int32, data: Data)?
+    var result: (result: Int32, data: Data)? { lock.withLock { value } }
+    func store(_ result: (result: Int32, data: Data)) { lock.withLock { value = result } }
+}
+
+final class TransportIOReaderRangePipelineTests: XCTestCase {
+    private let mib = 1024 * 1024
+    private let enabledEnvironment = ["PLOZZ_WEBDAV_RANGE_PIPELINE": "1"]
+
+    func testPipelineRequiresExplicitHTTPTransportAndExactDebugFlag() async {
+        let schemes: [String?] = [nil, "http", "https", "HTTP", "smb", "nfs", "sftp", "ftp", "file", "webdav"]
+        for scheme in schemes {
+            for flag in [nil, "1", "true", "0"] as [String?] {
+                for prepared in [false, true] {
+                    for disc in [false, true] {
+                        let source = SparseTransportByteSource(preferredReadSize: 32 * mib)
+                        let environment = flag.map { ["PLOZZ_WEBDAV_RANGE_PIPELINE": $0] } ?? [:]
+                        let reader = TransportIOReader(
+                            source: source, readAheadWindow: 4 * mib, usesPreparedSource: prepared,
+                            discImageProbeEnabled: disc, transportScheme: scheme, environment: environment
+                        )
+                        #if DEBUG
+                        let expected = ["http", "https"].contains(scheme?.lowercased() ?? "") && flag == "1"
+                        #else
+                        let expected = false
+                        #endif
+                        XCTAssertEqual(reader.usesRangePipeline, expected)
+                        reader.close()
+                        await reader.waitForFinalShutdown()
+                    }
+                }
+            }
+        }
+    }
+
+    func testDisabledAndReleasePoliciesKeepOriginalRequestSizes() async {
+        for scheme in ["https", "smb"] {
+            let source = SparseTransportByteSource(preferredReadSize: 32 * mib)
+            let reader = TransportIOReader(
+                source: source, readAheadWindow: 4 * mib, transportScheme: scheme,
+                environment: scheme == "smb" ? enabledEnvironment : [:]
+            )
+            XCTAssertEqual(read(reader, count: 12 * mib).result, Int32(12 * mib))
+            reader.close()
+            await reader.waitForFinalShutdown()
+            XCTAssertEqual(source.readLog.map(\.length), [12 * mib])
+        }
+        #if !DEBUG
+        let source = SparseTransportByteSource(preferredReadSize: 32 * mib)
+        let reader = TransportIOReader(
+            source: source, readAheadWindow: 4 * mib, transportScheme: "https", environment: enabledEnvironment
+        )
+        XCTAssertEqual(read(reader, count: 12 * mib).result, Int32(12 * mib))
+        reader.close()
+        await reader.waitForFinalShutdown()
+        XCTAssertEqual(source.readLog.map(\.length), [12 * mib])
+        #endif
+    }
+
+    #if DEBUG
+    private func makeReader(
+        _ source: any TransportByteSource, prepared: Bool = false, disc: Bool = false
+    ) -> TransportIOReader {
+        TransportIOReader(
+            source: source, readAheadWindow: 4 * mib, usesPreparedSource: prepared,
+            discImageProbeEnabled: disc, transportScheme: "https", environment: enabledEnvironment
+        )
+    }
+
+    private func waitForCapacityWaiter(_ reader: TransportIOReader) async {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while (reader.rangePipelineStatistics?.waitingReaders ?? 0) == 0, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertGreaterThan(reader.rangePipelineStatistics?.waitingReaders ?? 0, 0)
+    }
+
+    func testBlockedSuccessorDoesNotHoldFirstValidatedBytes() async {
+        let successor = AsyncReadGate()
+        let successorStarted = expectation(description: "successor started")
+        let firstReturned = expectation(description: "first complete response returned")
+        let source = PipelineTransportByteSource(
+            gates: [Int64(mib): successor],
+            onStart: { if $0 == 1_048_576 { successorStarted.fulfill() } }
+        )
+        let reader = makeReader(source)
+        defer { reader.close(); source.finishReads() }
+        let result = PipelineReadResult()
+        let first = Task.detached {
+            let value = read(reader, count: 1_048_576)
+            result.store(value)
+            firstReturned.fulfill()
+        }
+        await fulfillment(of: [successorStarted, firstReturned], timeout: 2)
+        XCTAssertEqual(result.result?.result, Int32(mib))
+        XCTAssertEqual(result.result?.data, PipelineTransportByteSource.bytes(at: 0, count: mib))
+        XCTAssertEqual(source.readLog.count, 2)
+        source.finishReads()
+        await first.value
+        reader.close()
+        await reader.waitForFinalShutdown()
+    }
+
+    func testSuccessorMayFinishFirstButCannotChangeByteOrder() async {
+        let firstGate = AsyncReadGate()
+        let firstStarted = expectation(description: "first response blocked")
+        let successorFinished = expectation(description: "successor completed")
+        let source = PipelineTransportByteSource(
+            gates: [0: firstGate],
+            onStart: { if $0 == 0 { firstStarted.fulfill() } },
+            onFinish: { if $0 == 1_048_576 { successorFinished.fulfill() } }
+        )
+        let reader = makeReader(source)
+        defer { reader.close(); source.finishReads() }
+        let result = PipelineReadResult()
+        let first = Task.detached { result.store(read(reader, count: 1_048_576)) }
+        await fulfillment(of: [firstStarted, successorFinished], timeout: 2)
+        XCTAssertNil(result.result, "The later range cannot satisfy the earlier offset")
+        source.finishReads()
+        await first.value
+        XCTAssertEqual(result.result?.data, PipelineTransportByteSource.bytes(at: 0, count: mib))
+        XCTAssertEqual(read(reader, count: 257).data, PipelineTransportByteSource.bytes(at: Int64(mib), count: 257))
+        XCTAssertEqual(source.readLog.filter { $0.offset == Int64(mib) }.count, 1)
+        reader.close()
+        await reader.waitForFinalShutdown()
+    }
+
+    func testRejectedOversizedAndPrematureEmptyResponsesExposeNoBytesOrRetries() async {
+        let failures: [PipelineTransportByteSource.Response] = [
+            .rejected(.validator), .rejected(.authentication), .rejected(.truncation), .oversized, .empty
+        ]
+        for failure in failures {
+            let source = PipelineTransportByteSource(response: { _ in failure })
+            let reader = makeReader(source)
+            for _ in 0..<2 {
+                let result = read(reader, count: 32)
+                XCTAssertEqual(result.result, -1)
+                XCTAssertTrue(result.data.isEmpty)
+            }
+            XCTAssertEqual(reader.seek(offset: 0, whence: SEEK_SET), 0)
+            XCTAssertEqual(read(reader, count: 1).result, -1)
+            XCTAssertEqual(source.readLog.count, 1)
+            reader.close()
+            await reader.waitForFinalShutdown()
+        }
+    }
+
+    func testSpeculativeFailureIsTerminalRatherThanAReadRetry() async {
+        let gate = AsyncReadGate()
+        let failed = expectation(description: "speculative rejection returned")
+        let source = PipelineTransportByteSource(
+            gates: [Int64(mib): gate],
+            response: { $0 == 1_048_576 ? .rejected(.truncation) : .normal },
+            onFinish: { if $0 == 1_048_576 { failed.fulfill() } }
+        )
+        let reader = makeReader(source)
+        defer { reader.close(); source.finishReads() }
+        XCTAssertEqual(read(reader, count: mib).result, Int32(mib))
+        source.finishReads()
+        await fulfillment(of: [failed], timeout: 2)
+        XCTAssertEqual(read(reader, count: 32).result, -1)
+        XCTAssertEqual(read(reader, count: 32).result, -1)
+        XCTAssertEqual(source.readLog.filter { $0.offset == Int64(mib) }.count, 1)
+        reader.close()
+        await reader.waitForFinalShutdown()
+    }
+
+    func testPositiveShortBoundariesReturnImmediatelyForColdAndPreparedSources() async {
+        for prepared in [false, true] {
+            let source = PipelineTransportByteSource(byteSize: 4096, response: { _ in .short(1000) })
+            let reader = makeReader(source, prepared: prepared)
+            XCTAssertEqual(read(reader, count: 256).data, PipelineTransportByteSource.bytes(at: 0, count: 256))
+            XCTAssertEqual(source.readLog.count, 1)
+            XCTAssertEqual(read(reader, count: 4096).result, 744)
+            XCTAssertEqual(source.readLog.count, 1)
+            XCTAssertEqual(read(reader, count: 4096).data, PipelineTransportByteSource.bytes(at: 1000, count: 1000))
+            XCTAssertEqual(source.readLog.count, 2)
+            XCTAssertEqual(read(reader, count: 4096).result, 1000)
+            XCTAssertEqual(read(reader, count: 4096).result, 1000)
+            XCTAssertEqual(read(reader, count: 4096).result, 96)
+            XCTAssertEqual(read(reader, count: 1).result, 0)
+            XCTAssertEqual(source.readLog.count, 5)
+            reader.close()
+            await reader.waitForFinalShutdown()
+        }
+    }
+
+    func testShortBoundaryBeforeQueuedSuccessorFillsGapWithoutOverlap() async {
+        let gate = AsyncReadGate()
+        let source = PipelineTransportByteSource(
+            gates: [Int64(mib): gate],
+            response: { $0 == 0 ? .short(524_288) : .normal }
+        )
+        let reader = makeReader(source, prepared: true)
+        defer { reader.close(); source.finishReads() }
+        XCTAssertEqual(read(reader, count: mib).data, PipelineTransportByteSource.bytes(at: 0, count: mib / 2))
+        XCTAssertEqual(read(reader, count: mib).data, PipelineTransportByteSource.bytes(at: Int64(mib / 2), count: mib / 2))
+        let gap = source.readLog.first { $0.offset == Int64(mib / 2) }
+        XCTAssertEqual(gap?.length, mib / 2)
+        source.finishReads()
+        XCTAssertEqual(read(reader, count: 31).data, PipelineTransportByteSource.bytes(at: Int64(mib), count: 31))
+        XCTAssertEqual(source.readLog.filter { $0.offset == Int64(mib) }.count, 1)
+        reader.close()
+        await reader.waitForFinalShutdown()
+    }
+
+    func testCancellationWakesConsumerBeforeResponsesDrainAndRejectsLateBytes() async {
+        let firstGate = AsyncReadGate()
+        let secondGate = AsyncReadGate()
+        let bothStarted = expectation(description: "two responses outstanding")
+        bothStarted.expectedFulfillmentCount = 2
+        let cancelled = expectation(description: "consumer woke on cancellation")
+        let source = PipelineTransportByteSource(
+            gates: [0: firstGate, Int64(mib): secondGate],
+            onStart: { if $0 == 0 || $0 == 1_048_576 { bothStarted.fulfill() } }
+        )
+        let reader = makeReader(source)
+        defer { reader.close(); source.finishReads() }
+        let result = PipelineReadResult()
+        let task = Task.detached {
+            result.store(read(reader, count: 1_048_576))
+            cancelled.fulfill()
+        }
+        await fulfillment(of: [bothStarted], timeout: 2)
+        reader.cancel()
+        await fulfillment(of: [cancelled], timeout: 2)
+        XCTAssertEqual(result.result?.result, -1)
+        XCTAssertEqual(reader.seek(offset: 0, whence: SEEK_CUR), 0)
+        XCTAssertEqual(reader.rangePipelineStatistics?.slots, 2, "Cancelled responses still own capacity")
+        source.finishReads()
+        await task.value
+        reader.close()
+        await reader.waitForFinalShutdown()
+        XCTAssertEqual(source.shutdownCount, 1)
+    }
+
+    func testSeekRejectsOldEpochWithoutOversubscribingCancelledResponses() async {
+        let bothStarted = expectation(description: "old epoch responses")
+        bothStarted.expectedFulfillmentCount = 2
+        let oldReturned = expectation(description: "old read invalidated")
+        let source = PipelineTransportByteSource(
+            gates: [0: AsyncReadGate(), Int64(mib): AsyncReadGate()],
+            onStart: { if $0 == 0 || $0 == 1_048_576 { bothStarted.fulfill() } }
+        )
+        let reader = makeReader(source)
+        defer { reader.close(); source.finishReads() }
+        let oldResult = PipelineReadResult()
+        let oldRead = Task.detached {
+            oldResult.store(read(reader, count: 1_048_576))
+            oldReturned.fulfill()
+        }
+        await fulfillment(of: [bothStarted], timeout: 2)
+        XCTAssertEqual(reader.seek(offset: 32 * Int64(mib), whence: SEEK_SET), 32 * Int64(mib))
+        await fulfillment(of: [oldReturned], timeout: 2)
+        XCTAssertEqual(oldResult.result?.result, -1)
+        let newRead = Task.detached { read(reader, count: 257) }
+        await waitForCapacityWaiter(reader)
+        XCTAssertEqual(reader.rangePipelineStatistics?.slots, 2)
+        XCTAssertEqual(source.readLog.count, 2, "Cancelled responses must finish before new admission")
+        source.finishReads()
+        await oldRead.value
+        let newResult = await newRead.value
+        XCTAssertEqual(newResult.data, PipelineTransportByteSource.bytes(at: 32 * Int64(mib), count: 257))
+        XCTAssertEqual(reader.seek(offset: 0, whence: SEEK_CUR), 32 * Int64(mib) + 257)
+        XCTAssertLessThanOrEqual(source.peakActive, 2)
+        reader.close()
+        await reader.waitForFinalShutdown()
+    }
+
+    func testCloneTreeSharesResponseAndMemoryLimitsAndKeepsCursorOwnership() async throws {
+        let started = expectation(description: "full shared window budget")
+        started.expectedFulfillmentCount = 2
+        let source = PipelineTransportByteSource(
+            gates: [0: AsyncReadGate(), 8 * Int64(mib): AsyncReadGate()],
+            onStart: { if $0 == 0 || $0 == 8_388_608 { started.fulfill() } }
+        )
+        let reader = makeReader(source)
+        let clone = try XCTUnwrap(reader.makeIndependentReader() as? TransportIOReader)
+        let descendant = try XCTUnwrap(clone.makeIndependentReader() as? TransportIOReader)
+        defer { reader.closeAllReaders(); source.finishReads() }
+        XCTAssertTrue(clone.usesRangePipeline)
+        XCTAssertTrue(descendant.usesRangePipeline)
+        let originalRead = Task.detached { read(reader, count: 8_388_608) }
+        await fulfillment(of: [started], timeout: 2)
+        XCTAssertEqual(clone.rangePipelineStatistics?.reservedBytes, 16 * mib)
+        XCTAssertEqual(descendant.rangePipelineStatistics?.peakActiveRequests, 2)
+        XCTAssertEqual(clone.seek(offset: 32 * Int64(mib), whence: SEEK_SET), 32 * Int64(mib))
+        let cloneRead = Task.detached { read(clone, count: 257) }
+        await waitForCapacityWaiter(clone)
+        XCTAssertEqual(source.readLog.count, 2, "Clones share, rather than multiply, response admission")
+        source.finishReads()
+        let first = await originalRead.value
+        let cloned = await cloneRead.value
+        XCTAssertEqual(first.result, 8_388_608)
+        XCTAssertEqual(cloned.data, PipelineTransportByteSource.bytes(at: 32 * Int64(mib), count: 257))
+        XCTAssertEqual(descendant.seek(offset: 0, whence: SEEK_CUR), 0)
+        XCTAssertLessThanOrEqual(source.peakActive, 2)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(reader.rangePipelineStatistics).peakReservedBytes, 16 * mib)
+        reader.close()
+        XCTAssertEqual(source.shutdownCount, 0, "Closing one cursor must not close its clones")
+        XCTAssertEqual(read(descendant, count: 31).data, PipelineTransportByteSource.bytes(at: 0, count: 31))
+        reader.closeAllReaders()
+        await reader.waitForFinalShutdown()
+        XCTAssertEqual(source.shutdownCount, 1)
+        XCTAssertEqual(read(clone, count: 1).result, -1)
+        XCTAssertEqual(read(descendant, count: 1).result, -1)
+    }
+
+    func testSmallProbeRetentionHasOneBoundAcrossClonesAndSeeks() async throws {
+        let source = PipelineTransportByteSource()
+        let reader = makeReader(source, disc: true)
+        let clone = try XCTUnwrap(reader.makeIndependentReader() as? TransportIOReader)
+        defer { reader.closeAllReaders() }
+        for index in 0..<12 {
+            let candidate = index.isMultiple(of: 2) ? reader : clone
+            XCTAssertEqual(candidate.seek(offset: Int64(index * mib), whence: SEEK_SET), Int64(index * mib))
+            XCTAssertEqual(read(candidate, count: 256 * 1024).result, 256 * 1024)
+        }
+        let stats = try XCTUnwrap(reader.rangePipelineStatistics)
+        XCTAssertLessThanOrEqual(stats.probeBytes, 2 * mib)
+        XCTAssertLessThanOrEqual(stats.slots, 2)
+        XCTAssertLessThanOrEqual(stats.reservedBytes, 16 * mib)
+        XCTAssertEqual(stats.peakActiveRequests, 1, "Scattered probes must not speculate")
+        reader.closeAllReaders()
+        await reader.waitForFinalShutdown()
+    }
+
+    func testCloseAllWakesEachCursorButWaitsForOutstandingResponsesToDrain() async throws {
+        let started = expectation(description: "both independent cursors started")
+        started.expectedFulfillmentCount = 2
+        let returned = expectation(description: "both reads stopped")
+        returned.expectedFulfillmentCount = 2
+        let source = PipelineTransportByteSource(
+            gates: [0: AsyncReadGate(), 8 * Int64(mib): AsyncReadGate()],
+            onStart: { if $0 == 0 || $0 == 8_388_608 { started.fulfill() } }
+        )
+        let reader = makeReader(source)
+        let clone = try XCTUnwrap(reader.makeIndependentReader())
+        defer { reader.closeAllReaders(); source.finishReads() }
+        XCTAssertEqual(clone.seek(offset: 8 * Int64(mib), whence: SEEK_SET), 8 * Int64(mib))
+        let first = Task.detached {
+            let result = read(reader, count: 32)
+            returned.fulfill()
+            return result
+        }
+        let second = Task.detached {
+            let result = read(clone, count: 32)
+            returned.fulfill()
+            return result
+        }
+        await fulfillment(of: [started], timeout: 2)
+        reader.closeAllReaders()
+        await fulfillment(of: [returned], timeout: 2)
+        XCTAssertEqual(source.shutdownCount, 0)
+        XCTAssertNil(clone.makeIndependentReader())
+        source.finishReads()
+        let firstResult = await first.value
+        let secondResult = await second.value
+        XCTAssertEqual(firstResult.result, -1)
+        XCTAssertEqual(secondResult.result, -1)
+        await reader.waitForFinalShutdown()
+        XCTAssertEqual(source.shutdownCount, 1)
+        XCTAssertLessThanOrEqual(source.peakActive, 2)
+    }
+
+    func testCachedSeeksEOFSizeAndOverflowKeepTheCursorContract() async {
+        let source = PipelineTransportByteSource(byteSize: 4096)
+        let reader = makeReader(source)
+        XCTAssertEqual(read(reader, count: 32).data, PipelineTransportByteSource.bytes(at: 0, count: 32))
+        XCTAssertEqual(reader.seek(offset: 1027, whence: SEEK_SET), 1027)
+        XCTAssertEqual(read(reader, count: 17).data, PipelineTransportByteSource.bytes(at: 1027, count: 17))
+        XCTAssertEqual(reader.seek(offset: 0, whence: 65_536), 4096)
+        XCTAssertEqual(reader.seek(offset: 0, whence: SEEK_CUR), 1044)
+        XCTAssertEqual(reader.seek(offset: -16, whence: SEEK_END), 4080)
+        XCTAssertEqual(read(reader, count: 32).data, PipelineTransportByteSource.bytes(at: 4080, count: 16))
+        XCTAssertEqual(read(reader, count: 1).result, 0)
+        XCTAssertEqual(source.readLog.count, 1)
+        XCTAssertEqual(reader.seek(offset: Int64.max, whence: SEEK_SET), Int64.max)
+        XCTAssertEqual(reader.seek(offset: 1, whence: SEEK_CUR), -1)
+        XCTAssertEqual(reader.seek(offset: -1, whence: SEEK_SET), -1)
+        XCTAssertEqual(reader.seek(offset: 0, whence: SEEK_CUR), Int64.max)
+        XCTAssertEqual(read(reader, count: 1).result, 0)
+        reader.close()
+        await reader.waitForFinalShutdown()
+    }
+    #endif
+}
+
 final class TransportIOReaderReadAheadTests: XCTestCase {
     private func reachReadAhead(_ reader: TransportIOReader) {
         XCTAssertEqual(read(reader, count: 8 * 1024 * 1024).result, 8 * 1024 * 1024)

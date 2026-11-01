@@ -81,33 +81,40 @@ private final class PreparationAuthorization: @unchecked Sendable {
     var callCount: Int { lock.withLock { callCountStorage } }
 }
 
-private final class PreparingFileSystem: MediaTransportPreparingFileSystem, @unchecked Sendable {
+private final class PreparingFileSystem: MediaTransportPreparationWarmingFileSystem, @unchecked Sendable {
     private let lock = NSLock()
     private let base = FakeFileSystem()
     private var prepared: [FakeByteSource] = []
     private var opened: [FakeByteSource] = []
     private var revalidationCountStorage = 0
     private var revalidationError: MediaTransportError?
+    private var incrementalOpenCountStorage = 0
+    private var warmCountStorage = 0
     let prepareError: MediaTransportError?
     let afterOpenGate: AsyncTestGate?
     let revalidationGate: AsyncTestGate?
     let preparedByteSource: (any MediaTransportByteSource)?
+    let warmer: (@Sendable (any MediaTransportByteSource) async throws -> Void)?
 
     init(
         prepareError: MediaTransportError? = nil,
         afterOpenGate: AsyncTestGate? = nil,
         revalidationGate: AsyncTestGate? = nil,
-        preparedByteSource: (any MediaTransportByteSource)? = nil
+        preparedByteSource: (any MediaTransportByteSource)? = nil,
+        warmer: (@Sendable (any MediaTransportByteSource) async throws -> Void)? = nil
     ) {
         self.prepareError = prepareError
         self.afterOpenGate = afterOpenGate
         self.revalidationGate = revalidationGate
         self.preparedByteSource = preparedByteSource
+        self.warmer = warmer
     }
 
     var preparedSources: [FakeByteSource] { lock.withLock { prepared } }
     var openCount: Int { lock.withLock { opened.count } }
     var revalidationCount: Int { lock.withLock { revalidationCountStorage } }
+    var incrementalOpenCount: Int { lock.withLock { incrementalOpenCountStorage } }
+    var warmCount: Int { lock.withLock { warmCountStorage } }
 
     func rejectRevalidation(_ error: MediaTransportError) {
         lock.withLock { revalidationError = error }
@@ -133,6 +140,18 @@ private final class PreparingFileSystem: MediaTransportPreparingFileSystem, @unc
         }
     }
 
+    func openPreparationSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease {
+        lock.withLock { incrementalOpenCountStorage += 1 }
+        return try await prepareSource(for: locator)
+    }
+
+    func warmPreparedSource(
+        for locator: NetworkFileLocator, source: any MediaTransportByteSource
+    ) async throws {
+        lock.withLock { warmCountStorage += 1 }
+        try await warmer?(source)
+    }
+
     func openSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease {
         let source = FakeByteSource(data: Data([1, 2, 3, 4]))
         lock.withLock { opened.append(source) }
@@ -152,11 +171,15 @@ private final class PreparationProbeSource: MediaTransportPreparationFinalizingB
     let underlying = FakeByteSource(data: Data([1, 2, 3, 4]))
     let cancelledRead = XCTestExpectation(description: "borrowed read cancelled")
     let gate: AsyncTestGate?
+    let readError: MediaTransportError?
     private let lock = NSLock()
     private var readCountStorage = 0
     private var finishedReadCountsStorage: [Int] = []
 
-    init(gate: AsyncTestGate? = nil) { self.gate = gate }
+    init(gate: AsyncTestGate? = nil, readError: MediaTransportError? = nil) {
+        self.gate = gate
+        self.readError = readError
+    }
     var byteSize: Int64 { underlying.byteSize }
     var readCount: Int { lock.withLock { readCountStorage } }
     var finishedReadCounts: [Int] { lock.withLock { finishedReadCountsStorage } }
@@ -169,6 +192,7 @@ private final class PreparationProbeSource: MediaTransportPreparationFinalizingB
         lock.withLock { readCountStorage += 1 }
         return try await withTaskCancellationHandler {
             await gate?.wait()
+            if let readError { throw readError }
             return try await underlying.read(at: offset, length: length)
         } onCancel: {
             self.cancelledRead.fulfill()
@@ -196,12 +220,14 @@ private final class PreparationSession: MediaTransportSession, @unchecked Sendab
 
 private final class PreparationAdmission: @unchecked Sendable {
     let arbiter = MediaIOArbiter(accountID: "account")
+    let didAcquire = XCTestExpectation(description: "playback admission requested")
     private let lock = NSLock()
     private var countStorage = 0
     var count: Int { lock.withLock { countStorage } }
 
     func acquire() async throws -> MediaIOPlaybackLease {
         lock.withLock { countStorage += 1 }
+        didAcquire.fulfill()
         return try await arbiter.acquirePlayback()
     }
 }
@@ -287,6 +313,367 @@ private actor PreparationPositionRecorder {
 }
 
 final class PreparationTests: XCTestCase {
+    func testPendingHandoffDrainsBorrowBeforeSealingAndTransfersSameSource() async throws {
+        let gate = AsyncTestGate()
+        let source = PreparationProbeSource(gate: gate)
+        let captured = PreparationBorrowRecorder()
+        let fileSystem = PreparingFileSystem(preparedByteSource: source)
+        let f = try await PreparationFixture.make(fileSystem: fileSystem, sourcePreparer: { _, _, borrowed in
+            await captured.record(borrowed)
+            _ = try await borrowed.read(at: 0, length: 4)
+        })
+        let handle = try f.resolver.beginPreparation(f.locator)
+        await gate.waitUntilEntered()
+        XCTAssertNil(handle.warmupOutcome)
+        XCTAssertEqual(f.admission.count, 0)
+        handle.requestPlaybackHandoff()
+        await fulfillment(of: [source.cancelledRead], timeout: 2)
+        let playing = Task { try await f.resolver.resolve(f.locator) }
+        await fulfillment(of: [f.admission.didAcquire], timeout: 2)
+        XCTAssertEqual(fileSystem.openCount, 0)
+        XCTAssertTrue(source.finishedReadCounts.isEmpty)
+        XCTAssertEqual(source.underlying.shutdownCount, 0)
+
+        gate.open()
+        try await handle.waitUntilReady()
+        let played = try await playing.value
+        XCTAssertEqual(handle.warmupOutcome, .interruptedForPlayback)
+        XCTAssertTrue(handle.wasConsumed)
+        XCTAssertTrue(played.wasPrepared)
+        XCTAssertEqual(fileSystem.incrementalOpenCount, 1)
+        XCTAssertEqual(fileSystem.revalidationCount, 1)
+        XCTAssertEqual(source.finishedReadCounts, [1])
+        let borrowed = await captured.source
+        do {
+            _ = try await XCTUnwrap(borrowed).read(at: 0, length: 1)
+            XCTFail("sealed borrow admitted a new read")
+        } catch let error as MediaTransportError {
+            XCTAssertEqual(error, .cancelled)
+        }
+        let cursor = try XCTUnwrap(played.sourceLease.makeCursor())
+        let bytes = try await cursor.read(at: 0, length: 4)
+        XCTAssertEqual(bytes, Data([1, 2, 3, 4]))
+        handle.cancel()
+        XCTAssertEqual(source.underlying.shutdownCount, 0)
+        cursor.close()
+        await played.waitForFinalShutdown()
+        await played.waitForFinalShutdown()
+        XCTAssertEqual(source.underlying.shutdownCount, 1)
+        let allowed = await f.admission.arbiter.permitsBackgroundWork()
+        XCTAssertTrue(allowed)
+        let next = try await f.resolver.resolve(f.locator)
+        XCTAssertFalse(next.wasPrepared)
+        await next.waitForFinalShutdown()
+    }
+
+    func testPendingHandoffBeforeOpeningFinishesSkipsOptionalWarming() async throws {
+        let gate = AsyncTestGate()
+        let fileSystem = PreparingFileSystem(afterOpenGate: gate)
+        let f = try await PreparationFixture.make(fileSystem: fileSystem, sourcePreparer: { _, _, _ in
+            XCTFail("handoff before warming must skip the callback")
+        })
+        let resolver: any MediaTransportNetworkFileResolving = f.resolver
+        let handle = try resolver.beginPreparation(f.locator)
+        await gate.waitUntilEntered()
+        handle.requestPlaybackHandoff()
+        XCTAssertEqual(f.admission.count, 0)
+        XCTAssertNil(handle.warmupOutcome)
+        gate.open()
+        try await handle.waitUntilReady()
+        XCTAssertEqual(handle.warmupOutcome, .interruptedForPlayback)
+        XCTAssertEqual(fileSystem.warmCount, 0)
+        let played = try await resolver.resolve(f.locator)
+        XCTAssertTrue(played.wasPrepared)
+        XCTAssertEqual(fileSystem.openCount, 0)
+        await played.waitForFinalShutdown()
+    }
+
+    func testPendingTicketWithoutHandoffCompletesBothWarmersAndForwardsPosition() async throws {
+        for position in [0.0, 600] {
+            let source = PreparationProbeSource()
+            let fileSystem = PreparingFileSystem(preparedByteSource: source, warmer: { borrowed in
+                _ = try await borrowed.read(at: 0, length: 1)
+            })
+            let f = try await PreparationFixture.make(fileSystem: fileSystem, sourcePreparer: { _, received, borrowed in
+                XCTAssertEqual(received, position)
+                XCTAssertEqual(source.readCount, 1)
+                _ = try await borrowed.read(at: 1, length: 1)
+            })
+            let resolver: any MediaTransportNetworkFileResolving = f.resolver
+            let handle = try resolver.beginPreparation(f.locator, startPosition: position)
+            try await handle.waitUntilReady()
+            XCTAssertEqual(handle.warmupOutcome, .completed)
+            handle.requestPlaybackHandoff()
+            XCTAssertEqual(handle.warmupOutcome, .completed)
+            XCTAssertEqual(fileSystem.warmCount, 1)
+            XCTAssertEqual(source.finishedReadCounts, [2])
+            XCTAssertEqual(f.admission.count, 0)
+            let played = try await resolver.resolve(f.locator)
+            XCTAssertTrue(played.wasPrepared)
+            await played.waitForFinalShutdown()
+        }
+    }
+
+    func testLegacyPrepareAndPendingPlayStillWaitForCompleteWarmup() async throws {
+        let gate = AsyncTestGate()
+        let fileSystem = PreparingFileSystem(warmer: { _ in
+            XCTFail("legacy prepare must not use the incremental filesystem lane")
+        })
+        let f = try await PreparationFixture.make(fileSystem: fileSystem, sourcePreparer: { _, _, _ in
+            await gate.wait()
+            XCTAssertFalse(Task.isCancelled)
+        })
+        let preparing = Task { try await f.resolver.prepare(f.locator) }
+        await gate.waitUntilEntered()
+        let playing = Task { try await f.resolver.resolve(f.locator) }
+        await fulfillment(of: [f.admission.didAcquire], timeout: 2)
+        XCTAssertEqual(fileSystem.openCount, 0)
+        gate.open()
+        let handle = try await preparing.value
+        let played = try await playing.value
+        XCTAssertEqual(handle.warmupOutcome, .completed)
+        XCTAssertEqual(fileSystem.incrementalOpenCount, 0)
+        XCTAssertEqual(fileSystem.warmCount, 0)
+        handle.requestPlaybackHandoff()
+        await played.waitForFinalShutdown()
+    }
+
+    func testResolveAutomaticallyInterruptsOnlyExactPendingPlaybackTicket() async throws {
+        let gate = AsyncTestGate()
+        let source = PreparationProbeSource(gate: gate)
+        let fileSystem = PreparingFileSystem(preparedByteSource: source)
+        let f = try await PreparationFixture.make(fileSystem: fileSystem, sourcePreparer: { _, _, borrowed in
+            _ = try await borrowed.read(at: 0, length: 4)
+        })
+        let handle = try f.resolver.beginPreparation(f.locator)
+        await gate.waitUntilEntered()
+        let probe = try await f.resolver.withoutPlaybackAdmission().resolve(f.locator)
+        XCTAssertFalse(probe.wasPrepared)
+        await probe.waitForFinalShutdown()
+        let other = try PreparationFixture.locator(key: f.key, path: "other.mkv")
+        let different = try await f.resolver.resolve(other)
+        XCTAssertFalse(different.wasPrepared)
+        await different.waitForFinalShutdown()
+        XCTAssertNil(handle.warmupOutcome)
+        let playing = Task { try await f.resolver.resolve(f.locator) }
+        await fulfillment(of: [source.cancelledRead], timeout: 2)
+        gate.open()
+        let played = try await playing.value
+        XCTAssertTrue(handle.wasConsumed)
+        XCTAssertEqual(handle.warmupOutcome, .interruptedForPlayback)
+        await played.waitForFinalShutdown()
+    }
+
+    func testInterruptedReadFailureSurvivesCallbackCancellationTranslation() async throws {
+        for failure in [
+            MediaTransportError.authentication(reason: "revoked"),
+            .sourceChanged(reason: "changed"), .trust(reason: "changed"), .transport(code: -1004),
+        ] {
+            let gate = AsyncTestGate()
+            let source = PreparationProbeSource(gate: gate, readError: failure)
+            let fileSystem = PreparingFileSystem(preparedByteSource: source)
+            let f = try await PreparationFixture.make(fileSystem: fileSystem, sourcePreparer: { _, _, borrowed in
+                do { _ = try await borrowed.read(at: 0, length: 4) }
+                catch { throw CancellationError() }
+            })
+            let handle = try f.resolver.beginPreparation(f.locator)
+            await gate.waitUntilEntered()
+            let playing = Task { try await f.resolver.resolve(f.locator) }
+            await fulfillment(of: [source.cancelledRead], timeout: 2)
+            gate.open()
+            do {
+                _ = try await playing.value
+                XCTFail("a real transport failure was masked as partial success")
+            } catch let error as MediaTransportError {
+                XCTAssertEqual(error, failure)
+            }
+            do {
+                try await handle.waitUntilReady()
+                XCTFail("failed preparation became ready")
+            } catch let error as MediaTransportError {
+                XCTAssertEqual(error, failure)
+            }
+            XCTAssertNil(handle.warmupOutcome)
+            XCTAssertFalse(handle.wasConsumed)
+            XCTAssertTrue(source.finishedReadCounts.isEmpty)
+            XCTAssertEqual(source.underlying.shutdownCount, 1)
+            XCTAssertEqual(fileSystem.openCount, 0)
+        }
+    }
+
+    func testPendingFailureBeforePlayIsNotSilentlyTurnedIntoColdSuccess() async throws {
+        let failure = MediaTransportError.protocolViolation(reason: "probe failed")
+        let fileSystem = PreparingFileSystem()
+        let f = try await PreparationFixture.make(fileSystem: fileSystem, sourcePreparer: { _, _, _ in
+            throw failure
+        })
+        let handle = try f.resolver.beginPreparation(f.locator)
+        do { try await handle.waitUntilReady(); XCTFail("failure became ready") }
+        catch let error as MediaTransportError { XCTAssertEqual(error, failure) }
+        do { _ = try await f.resolver.resolve(f.locator); XCTFail("failure became a cold miss") }
+        catch let error as MediaTransportError { XCTAssertEqual(error, failure) }
+        XCTAssertEqual(fileSystem.openCount, 0)
+        XCTAssertFalse(handle.wasConsumed)
+        let retry = try await f.resolver.resolve(f.locator)
+        XCTAssertFalse(retry.wasPrepared)
+        XCTAssertEqual(fileSystem.openCount, 1)
+        await retry.waitForFinalShutdown()
+    }
+
+    func testPendingHandoffRetainsFreshAuthorizationIdentityAndRetirementFences() async throws {
+        for boundary in 0..<3 {
+            let gate = AsyncTestGate()
+            let fileSystem = PreparingFileSystem()
+            let f = try await PreparationFixture.make(fileSystem: fileSystem, sourcePreparer: { _, _, _ in
+                await gate.wait()
+            })
+            let handle = try f.resolver.beginPreparation(f.locator)
+            await gate.waitUntilEntered()
+            handle.requestPlaybackHandoff()
+            gate.open()
+            try await handle.waitUntilReady()
+            let failure: MediaTransportError
+            switch boundary {
+            case 0:
+                failure = .authentication(reason: "revoked")
+                f.authorization.reject(failure)
+            case 1:
+                failure = .sourceChanged(reason: "DAV identity changed")
+                fileSystem.rejectRevalidation(failure)
+            default:
+                failure = .cancelled
+                await f.registry.retire(accountID: f.key.accountID, credentialRevision: f.key.credentialRevision)
+            }
+            do { _ = try await f.resolver.resolve(f.locator); XCTFail("boundary bypassed") }
+            catch let error as MediaTransportError { XCTAssertEqual(error, failure) }
+            XCTAssertFalse(handle.wasConsumed)
+            XCTAssertEqual(fileSystem.openCount, 0)
+            await fulfillment(of: [try XCTUnwrap(fileSystem.preparedSources.first).didShutdown], timeout: 2)
+        }
+    }
+
+    func testFailedPendingTicketExpiresWithoutKeepingAnOpenSource() async throws {
+        let fileSystem = PreparingFileSystem()
+        let f = try await PreparationFixture.make(fileSystem: fileSystem, sourcePreparer: { _, _, _ in
+            throw MediaTransportError.sourceChanged(reason: "changed")
+        })
+        let handle = try f.resolver.beginPreparation(f.locator)
+        do { try await handle.waitUntilReady(); XCTFail("failed source became ready") }
+        catch let error as MediaTransportError {
+            XCTAssertEqual(error, .sourceChanged(reason: "changed"))
+        }
+        XCTAssertEqual(fileSystem.preparedSources[0].shutdownCount, 1)
+        f.clock.advance(by: .seconds(30))
+        let played = try await f.resolver.resolve(f.locator)
+        XCTAssertFalse(played.wasPrepared)
+        XCTAssertFalse(handle.wasConsumed)
+        XCTAssertEqual(fileSystem.openCount, 1)
+        await played.waitForFinalShutdown()
+    }
+
+    func testPendingHandleDeinitCancelsAndDrainsOnlyItsBorrower() async throws {
+        let gate = AsyncTestGate()
+        let source = PreparationProbeSource(gate: gate)
+        let f = try await PreparationFixture.make(
+            fileSystem: PreparingFileSystem(preparedByteSource: source),
+            sourcePreparer: { _, _, borrowed in _ = try await borrowed.read(at: 0, length: 1) }
+        )
+        var handle: MediaTransportPreparation? = try f.resolver.beginPreparation(f.locator)
+        await gate.waitUntilEntered()
+        XCTAssertNotNil(handle)
+        handle = nil
+        await fulfillment(of: [source.cancelledRead], timeout: 2)
+        XCTAssertEqual(source.underlying.shutdownCount, 0)
+        gate.open()
+        await fulfillment(of: [source.underlying.didShutdown], timeout: 2)
+        XCTAssertEqual(source.underlying.shutdownCount, 1)
+        XCTAssertTrue(source.finishedReadCounts.isEmpty)
+    }
+
+    func testPendingReplacementAndOldHandoffCannotAffectNewGeneration() async throws {
+        let gate = AsyncTestGate()
+        let fileSystem = PreparingFileSystem()
+        let f = try await PreparationFixture.make(fileSystem: fileSystem, sourcePreparer: { _, position, _ in
+            if position == 600 { await gate.wait() }
+        })
+        let first = try f.resolver.beginPreparation(f.locator, startPosition: 600)
+        await gate.waitUntilEntered()
+        first.requestPlaybackHandoff()
+        let second = try f.resolver.beginPreparation(f.locator)
+        do { try await first.waitUntilReady(); XCTFail("superseded ticket became ready") }
+        catch let error as MediaTransportError { XCTAssertEqual(error, .cancelled) }
+        XCTAssertEqual(fileSystem.preparedSources.count, 1)
+        first.requestPlaybackHandoff()
+        gate.open()
+        try await second.waitUntilReady()
+        XCTAssertEqual(second.warmupOutcome, .completed)
+        XCTAssertEqual(fileSystem.preparedSources[0].shutdownCount, 1)
+        first.cancel()
+        let played = try await f.resolver.resolve(f.locator)
+        XCTAssertTrue(second.wasConsumed)
+        await played.waitForFinalShutdown()
+    }
+
+    func testCancelledOrTimedOutPendingHandoffStillDrainsBeforeColdOpen() async throws {
+        for timeout in [false, true] {
+            let gate = AsyncTestGate()
+            let source = PreparationProbeSource(gate: gate)
+            let fileSystem = PreparingFileSystem(preparedByteSource: source)
+            let f = try await PreparationFixture.make(fileSystem: fileSystem, sourcePreparer: { _, _, borrowed in
+                _ = try await borrowed.read(at: 0, length: 4)
+            })
+            let handle = try f.resolver.beginPreparation(f.locator)
+            await gate.waitUntilEntered()
+            handle.requestPlaybackHandoff()
+            await fulfillment(of: [source.cancelledRead], timeout: 2)
+            if timeout {
+                let ready = await waitUntil { f.clock.waiting(for: .seconds(30)) }
+                XCTAssertTrue(ready)
+                f.clock.advance(by: .seconds(30))
+            } else {
+                handle.cancel()
+            }
+            do { try await handle.waitUntilReady(); XCTFail("cancelled ticket became ready") }
+            catch let error as MediaTransportError { XCTAssertEqual(error, timeout ? .timeout : .cancelled) }
+            let playing = Task { try await f.resolver.resolve(f.locator) }
+            await fulfillment(of: [f.admission.didAcquire], timeout: 2)
+            XCTAssertEqual(fileSystem.openCount, 0)
+            XCTAssertEqual(source.underlying.shutdownCount, 0)
+            gate.open()
+            let played = try await playing.value
+            XCTAssertFalse(played.wasPrepared)
+            XCTAssertEqual(source.underlying.shutdownCount, 1)
+            XCTAssertTrue(source.finishedReadCounts.isEmpty)
+            XCTAssertNil(handle.warmupOutcome)
+            await played.waitForFinalShutdown()
+        }
+    }
+
+    func testPendingTicketRejectsUnsupportedAndInvalidRequests() async throws {
+        let fileSystem = PreparingFileSystem()
+        let f = try await PreparationFixture.make(fileSystem: fileSystem)
+        let resolvers: [any MediaTransportNetworkFileResolving] = [
+            f.resolver, NonPreparingResolver(), f.resolver.withoutPlaybackAdmission(),
+        ]
+        for resolver in resolvers {
+            for position in [-1, Double.nan, .infinity, -.infinity] {
+                XCTAssertThrowsError(try resolver.beginPreparation(f.locator, startPosition: position)) {
+                    XCTAssertEqual($0 as? MediaTransportError, .invalidInput(reason: "invalid preparation start position"))
+                }
+            }
+        }
+        for resolver in resolvers.dropFirst() {
+            XCTAssertThrowsError(try resolver.beginPreparation(f.locator)) {
+                guard let error = $0 as? MediaTransportError, case .unsupportedCapability = error else {
+                    return XCTFail("expected unsupported capability, got \($0)")
+                }
+            }
+        }
+        XCTAssertEqual(f.authorization.callCount, 0)
+        XCTAssertEqual(f.admission.count, 0)
+        XCTAssertTrue(fileSystem.preparedSources.isEmpty)
+    }
+
     func testPreparationDeadlineAndUnclaimedLifetimeAreThirtySeconds() {
         let timing = MediaTransportPreparationTiming()
         XCTAssertEqual(MediaTransportPreparationTiming.defaultTimeout, .seconds(30))

@@ -483,6 +483,32 @@ final class DetailPlaybackPreparationTests: XCTestCase {
         await fulfillment(of: [secondCancelled], timeout: 1)
     }
 
+    func testPlayBeforePreparationCompletesCancelsAndDiscardsLateReservation() async throws {
+        let started = expectation(description: "Preparation in flight")
+        let discarded = expectation(description: "Late reservation discarded")
+        let gate = Gate()
+        let coordinator = DetailPlaybackPreparationCoordinator(
+            dwell: {},
+            prepare: { _, _, _ in
+                started.fulfill()
+                await gate.wait()
+                XCTAssertTrue(Task.isCancelled)
+                return .init { discarded.fulfill() }
+            }
+        )
+        defer { coordinator.invalidate() }
+        let item = movie()
+        coordinator.update(
+            candidate: try XCTUnwrap(DetailPlaybackPreparationCandidate(item)),
+            environment: environment(), isActive: true
+        )
+        await fulfillment(of: [started], timeout: 1)
+        coordinator.handoff(item)
+        coordinator.stop()
+        await gate.open()
+        await fulfillment(of: [discarded], timeout: 1)
+    }
+
     func testStartOverHandoffSurvivesDisappearanceButNotAuthorizationRevocation() async throws {
         let ready = expectation(description: "Ready")
         let cancelled = expectation(description: "Revoked handoff cancelled")
@@ -509,6 +535,89 @@ final class DetailPlaybackPreparationTests: XCTestCase {
         XCTAssertEqual(cancellationsBeforeRevocation, 0)
         // A live scope change must invalidate even an already-handed-off reservation.
         coordinator.update(candidate: candidate, environment: .disabled, isActive: false)
+        await fulfillment(of: [cancelled], timeout: 1)
+    }
+
+    func testReturnedPendingTicketReceivesHandoffOnceAndSurvivesDisappearance() async throws {
+        let returned = expectation(description: "Pending ticket returned")
+        let handoff = expectation(description: "Pending warming interrupted")
+        handoff.assertForOverFulfill = true
+        let cancelled = expectation(description: "Pending ownership revoked")
+        let counter = CancellationCounter()
+        let coordinator = DetailPlaybackPreparationCoordinator(
+            dwell: {},
+            prepare: { _, _, _ in
+                returned.fulfill()
+                return .init(
+                    cancel: { await counter.record(); cancelled.fulfill() },
+                    requestPlaybackHandoff: { handoff.fulfill() }
+                )
+            }
+        )
+        let item = movie()
+        let candidate = try XCTUnwrap(DetailPlaybackPreparationCandidate(item))
+        coordinator.update(candidate: candidate, environment: environment(), isActive: true)
+        await fulfillment(of: [returned], timeout: 1)
+        coordinator.handoff(item)
+        coordinator.handoff(item)
+        coordinator.stop()
+        await fulfillment(of: [handoff], timeout: 1)
+        let count = await counter.count
+        XCTAssertEqual(count, 0)
+        coordinator.update(candidate: candidate, environment: .disabled, isActive: false)
+        await fulfillment(of: [cancelled], timeout: 1)
+    }
+
+    func testShellForwardsHandoffOnlyToCurrentReservation() async {
+        let firstCancelled = expectation(description: "Old shell ticket cancelled")
+        let secondCancelled = expectation(description: "Current shell ticket cancelled")
+        let handoff = expectation(description: "Current shell handoff")
+        let ownership = DetailPlaybackPreparationOwnership()
+        let first = ownership.retain(
+            .init(
+                cancel: { firstCancelled.fulfill() },
+                requestPlaybackHandoff: { XCTFail("Stale wrapper forwarded handoff") }
+            ),
+            scope: scope("account")
+        )
+        let second = ownership.retain(
+            .init(
+                cancel: { secondCancelled.fulfill() },
+                requestPlaybackHandoff: { handoff.fulfill() }
+            ),
+            scope: scope("account")
+        )
+        await first.requestPlaybackHandoff()
+        await first.cancel()
+        await second.requestPlaybackHandoff()
+        await fulfillment(of: [firstCancelled, handoff], timeout: 1)
+        ownership.validate(using: .disabled)
+        await fulfillment(of: [secondCancelled], timeout: 1)
+        await second.requestPlaybackHandoff()
+    }
+
+    func testMismatchedPlayCancelsPendingTicketWithoutRequestingHandoff() async throws {
+        let returned = expectation(description: "Pending ticket returned")
+        let cancelled = expectation(description: "Mismatched ticket cancelled")
+        let coordinator = DetailPlaybackPreparationCoordinator(
+            dwell: {},
+            prepare: { _, _, _ in
+                returned.fulfill()
+                return .init(
+                    cancel: { cancelled.fulfill() },
+                    requestPlaybackHandoff: { XCTFail("Different source requested handoff") }
+                )
+            }
+        )
+        let item = movie()
+        coordinator.update(
+            candidate: try XCTUnwrap(DetailPlaybackPreparationCandidate(item)),
+            environment: environment(), isActive: true
+        )
+        await fulfillment(of: [returned], timeout: 1)
+        var other = item
+        other.id = "different"
+        coordinator.handoff(other)
         await fulfillment(of: [cancelled], timeout: 1)
     }
 

@@ -9,6 +9,11 @@ public protocol MediaTransportNetworkFileResolving: Sendable {
     func prepare(
         _ locator: NetworkFileLocator, startPosition: Double
     ) async throws -> MediaTransportPreparation
+    /// Opt-in pending ticket. Only this lane permits intentional interruption
+    /// of optional warming; opening and final playback validation still finish.
+    func beginPreparation(
+        _ locator: NetworkFileLocator, startPosition: Double
+    ) throws -> MediaTransportPreparation
 
     /// The same resolver, but WITHOUT playback admission.
     ///
@@ -30,6 +35,19 @@ public extension MediaTransportNetworkFileResolving {
 
     func prepare(_ locator: NetworkFileLocator) async throws -> MediaTransportPreparation {
         throw MediaTransportError.unsupportedCapability("network-file preparation")
+    }
+
+    func beginPreparation(_ locator: NetworkFileLocator) throws -> MediaTransportPreparation {
+        try beginPreparation(locator, startPosition: 0)
+    }
+
+    func beginPreparation(
+        _ locator: NetworkFileLocator, startPosition: Double
+    ) throws -> MediaTransportPreparation {
+        guard startPosition.isFinite, startPosition >= 0 else {
+            throw MediaTransportError.invalidInput(reason: "invalid preparation start position")
+        }
+        throw MediaTransportError.unsupportedCapability("interruptible network-file preparation")
     }
 
     /// Preserve existing zero-position implementations without claiming they
@@ -174,16 +192,40 @@ public struct MediaTransportNetworkFileResolver: MediaTransportNetworkFileResolv
     public func prepare(
         _ locator: NetworkFileLocator, startPosition: Double = 0
     ) async throws -> MediaTransportPreparation {
+        try validatePreparationPosition(startPosition)
+        return try await preparation.prepare(
+            locator, operation: preparationOperation(locator, startPosition: startPosition)
+        )
+    }
+
+    public func beginPreparation(
+        _ locator: NetworkFileLocator, startPosition: Double = 0
+    ) throws -> MediaTransportPreparation {
+        try validatePreparationPosition(startPosition)
+        let warmup = MediaTransportPreparationWarmup()
+        return try preparation.begin(
+            locator, warmup: warmup,
+            operation: preparationOperation(locator, startPosition: startPosition, warmup: warmup)
+        )
+    }
+
+    private func validatePreparationPosition(_ startPosition: Double) throws {
         guard startPosition.isFinite, startPosition >= 0 else {
             throw MediaTransportError.invalidInput(reason: "invalid preparation start position")
         }
         guard usesPlaybackAdmission else {
             throw MediaTransportError.unsupportedCapability("preparation without playback admission")
         }
+    }
+
+    private func preparationOperation(
+        _ locator: NetworkFileLocator, startPosition: Double,
+        warmup: MediaTransportPreparationWarmup? = nil
+    ) -> @Sendable () async throws -> MediaTransportPreparedResource {
         let registry = registry
         let provider = sessionKeyProvider
         let sourcePreparer = sourcePreparer
-        return try await preparation.prepare(locator) {
+        return {
             let key = try await Self.validatedKey(for: locator, provider: provider)
             guard ["http", "https"].contains(key.endpoint.transportIdentifier) else {
                 throw MediaTransportError.unsupportedCapability("network-file preparation transport")
@@ -196,11 +238,25 @@ public struct MediaTransportNetworkFileResolver: MediaTransportNetworkFileResolv
                     throw MediaTransportError.unsupportedCapability("filesystem preparation")
                 }
                 try Task.checkCancellation()
-                let source = try await fileSystem.prepareSource(for: locator)
+                let incremental = warmup == nil ? nil
+                    : fileSystem as? any MediaTransportPreparationWarmingFileSystem
+                let source: MediaTransportSourceLease
+                if let incremental {
+                    source = try await incremental.openPreparationSource(for: locator)
+                } else {
+                    source = try await fileSystem.prepareSource(for: locator)
+                }
                 let prepared = MediaTransportPreparedResource(source: source, session: session)
                 resource = prepared
                 try Task.checkCancellation()
-                if let sourcePreparer {
+                if let warmup, incremental != nil || sourcePreparer != nil {
+                    let borrowed = try source.makePreparationBorrow()
+                    try await warmup.run(borrowed: borrowed) {
+                        try await incremental?.warmPreparedSource(for: locator, source: borrowed)
+                        try Task.checkCancellation()
+                        try await sourcePreparer?(locator, startPosition, borrowed)
+                    }
+                } else if let sourcePreparer {
                     let borrowed = try source.makePreparationBorrow()
                     do {
                         try await withTaskCancellationHandler {

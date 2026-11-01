@@ -114,9 +114,20 @@ public struct DetailPlaybackPreparationScope: Hashable, Sendable {
 /// The transport owns its TTL and exact-key claim. Feature code only owns cancellation.
 public struct DetailPlaybackPreparationReservation: Sendable {
     public let cancel: @Sendable () async -> Void
+    public let requestPlaybackHandoff: @Sendable () async -> Void
 
     public init(cancel: @escaping @Sendable () async -> Void) {
         self.cancel = cancel
+        self.requestPlaybackHandoff = {}
+    }
+
+    /// Opt-in pending tickets can stop warming while retaining source ownership.
+    public init(
+        cancel: @escaping @Sendable () async -> Void,
+        requestPlaybackHandoff: @escaping @Sendable () async -> Void
+    ) {
+        self.cancel = cancel
+        self.requestPlaybackHandoff = requestPlaybackHandoff
     }
 }
 
@@ -205,9 +216,10 @@ final class DetailPlaybackPreparationOwnership {
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
             self?.cancel(id: id)
         }
-        return DetailPlaybackPreparationReservation { [weak self] in
-            await self?.cancel(id: id)
-        }
+        return DetailPlaybackPreparationReservation(
+            cancel: { [weak self] in await self?.cancel(id: id) },
+            requestPlaybackHandoff: { [weak self] in await self?.requestPlaybackHandoff(id: id) }
+        )
     }
 
     func validate(using environment: DetailPlaybackPreparationEnvironment) {
@@ -217,6 +229,11 @@ final class DetailPlaybackPreparationOwnership {
 
     private func cancel(id: UUID) {
         if self.id == id { cancel() }
+    }
+
+    private func requestPlaybackHandoff(id: UUID) async {
+        guard self.id == id else { return }
+        await reservation?.requestPlaybackHandoff()
     }
 
     private func cancel() {
@@ -318,14 +335,17 @@ public final class DetailPlaybackPreparationCoordinator {
         }
     }
 
-    /// Preserve only a completed exact match across the cover/resume/version gate.
-    /// In-flight work is cancelled; the player's ordinary resolver still admits and claims.
+    /// Preserve an exact returned reservation across the cover/resume/version gate.
+    /// Legacy in-flight calls are still cancelled. An opt-in pending ticket can
+    /// stop warming; the player's ordinary resolver still admits and claims.
     public func handoff(_ item: MediaItem) {
-        guard key?.candidate.matchesHandoff(item) == true, reservation != nil else {
+        guard key?.candidate.matchesHandoff(item) == true, let reservation else {
             invalidate()
             return
         }
+        guard !handedOff else { return }
         handedOff = true
+        Task { await reservation.requestPlaybackHandoff() }
         task?.cancel()
         task = nil
         deadline?.cancel()

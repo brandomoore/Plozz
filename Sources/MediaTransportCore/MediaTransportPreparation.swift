@@ -1,27 +1,124 @@
 import CoreModels
 import Foundation
 
+/// Describes optional warming, not decoded coverage or playback readiness.
+public enum MediaTransportPreparationWarmupOutcome: Sendable, Equatable {
+    case completed
+    case interruptedForPlayback
+}
+
 /// Keep this handle only while the initiating detail/profile context is valid.
 /// Cancellation (including deinitialization) affects only this reservation, never
 /// a replacement or a source already claimed by playback.
 public final class MediaTransportPreparation: Sendable {
     private let cancellation: @Sendable () -> Void
     private let consumption: @Sendable () -> Bool
+    private let handoff: @Sendable () -> Void
+    private let readiness: @Sendable () async throws -> Void
+    private let outcome: @Sendable () -> MediaTransportPreparationWarmupOutcome?
 
     init(
         cancellation: @escaping @Sendable () -> Void,
-        consumption: @escaping @Sendable () -> Bool
+        consumption: @escaping @Sendable () -> Bool,
+        handoff: @escaping @Sendable () -> Void,
+        readiness: @escaping @Sendable () async throws -> Void,
+        outcome: @escaping @Sendable () -> MediaTransportPreparationWarmupOutcome?
     ) {
         self.cancellation = cancellation
         self.consumption = consumption
+        self.handoff = handoff
+        self.readiness = readiness
+        self.outcome = outcome
     }
 
     /// True only after a fully revalidated source was transferred to resolve().
     /// This does not claim the engine opened a cursor or playback began.
     public var wasConsumed: Bool { consumption() }
 
+    /// Nil until the source has successfully drained and sealed. Historical
+    /// evidence only: an expired or consumed reservation cannot be claimed again.
+    public var warmupOutcome: MediaTransportPreparationWarmupOutcome? { outcome() }
+
+    /// Only pending tickets from beginPreparation can interrupt warming.
+    /// This does not cancel opening, acquire playback admission or claim a source.
+    public func requestPlaybackHandoff() { handoff() }
+
+    /// Waits for successful sealing, including an intentional interrupted warmup.
+    /// Does not claim the source. Cancellation cancels this ticket's generation.
+    public func waitUntilReady() async throws { try await readiness() }
+
     public func cancel() { cancellation() }
     deinit { cancellation() }
+}
+
+/// Cancels only the optional borrower. The preparation worker keeps the original
+/// source/session ownership and joins both callback and reads before publication.
+final class MediaTransportPreparationWarmup: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requested = false
+    private var finished = false
+    private var task: Task<Void, Error>?
+    private var borrowed: MediaTransportPreparationBorrow?
+    private var outcomeStorage: MediaTransportPreparationWarmupOutcome = .completed
+
+    var outcome: MediaTransportPreparationWarmupOutcome { lock.withLock { outcomeStorage } }
+
+    func requestPlaybackHandoff() {
+        let current = lock.withLock { () -> (Task<Void, Error>?, MediaTransportPreparationBorrow?) in
+            guard !finished else { return (nil, nil) }
+            requested = true
+            return (task, borrowed)
+        }
+        current.0?.cancel()
+        current.1?.close()
+    }
+
+    private func cancelBorrower() {
+        let current = lock.withLock { (task, borrowed) }
+        current.0?.cancel()
+        current.1?.close()
+    }
+
+    func run(
+        borrowed: MediaTransportPreparationBorrow,
+        operation: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        let work = lock.withLock { () -> Task<Void, Error>? in
+            guard !requested else { return nil }
+            let work = Task.detached(priority: .utility) {
+                try Task.checkCancellation()
+                try await operation()
+            }
+            self.task = work
+            self.borrowed = borrowed
+            return work
+        }
+        let result: Result<Void, Error> = await withTaskCancellationHandler {
+            let result = await work?.result ?? .success(())
+            await borrowed.shutdown()
+            return result
+        } onCancel: {
+            self.cancelBorrower()
+        }
+        let interrupted = lock.withLock {
+            finished = true
+            task = nil
+            self.borrowed = nil
+            outcomeStorage = requested ? .interruptedForPlayback : .completed
+            return requested
+        }
+        // A callback may translate a read failure to cancellation or swallow it.
+        // Preserve the actual transport failure observed by the borrowed source.
+        if let failure = borrowed.firstFailure { throw failure }
+        if case .failure(let error) = result {
+            guard interrupted, isPreparationCancellation(error) else { throw error }
+        }
+        try Task.checkCancellation()
+    }
+}
+
+func isPreparationCancellation(_ error: Error) -> Bool {
+    error is CancellationError || (error as? MediaTransportError) == .cancelled
 }
 
 fileprivate final class PreparationConsumption: @unchecked Sendable {
@@ -147,6 +244,7 @@ final class MediaTransportPreparationCoordinator: @unchecked Sendable {
         var error: Error?
         var expired = false
         var claimed = false
+        var outcome: MediaTransportPreparationWarmupOutcome?
         let consumption = PreparationConsumption()
     }
 
@@ -157,6 +255,7 @@ final class MediaTransportPreparationCoordinator: @unchecked Sendable {
         let drained: Task<Void, Never>
         let ready: PreparationSignal<Result<Void, Error>>
         let status: Status
+        let warmup: MediaTransportPreparationWarmup?
         var timer: Task<Void, Never>?
         var resource: MediaTransportPreparedResource?
         var expiresAt: ContinuousClock.Instant?
@@ -180,6 +279,16 @@ final class MediaTransportPreparationCoordinator: @unchecked Sendable {
         _ locator: NetworkFileLocator,
         operation: @escaping @Sendable () async throws -> MediaTransportPreparedResource
     ) async throws -> MediaTransportPreparation {
+        let handle = try begin(locator, operation: operation)
+        try await handle.waitUntilReady()
+        return handle
+    }
+
+    func begin(
+        _ locator: NetworkFileLocator,
+        warmup: MediaTransportPreparationWarmup? = nil,
+        operation: @escaping @Sendable () async throws -> MediaTransportPreparedResource
+    ) throws -> MediaTransportPreparation {
         try Task.checkCancellation()
         let (id, ready, status) = lock.withLock {
             cancelLocked(error: MediaTransportError.cancelled)
@@ -197,7 +306,10 @@ final class MediaTransportPreparationCoordinator: @unchecked Sendable {
                     await resource.waitForDisposition()
                 }
             }
-            entry = Entry(id: id, locator: locator, work: work, drained: drained, ready: ready, status: status)
+            entry = Entry(
+                id: id, locator: locator, work: work, drained: drained, ready: ready,
+                status: status, warmup: warmup
+            )
             entry?.timer = timer(after: timing.timeout, id: id, error: .timeout)
             Task { [weak self] in
                 let result = await work.result
@@ -209,20 +321,24 @@ final class MediaTransportPreparationCoordinator: @unchecked Sendable {
             }
             return (id, ready, status)
         }
-        return try await withTaskCancellationHandler {
-            try await ready.wait().get()
-            try Task.checkCancellation()
-            try lock.withLock {
-                if let error = status.error { throw error }
-            }
-            let consumption = status.consumption
-            return MediaTransportPreparation(
-                cancellation: { [self] in cancel(id: id) },
-                consumption: { consumption.wasConsumed }
-            )
-        } onCancel: {
-            self.cancel(id: id)
-        }
+        let consumption = status.consumption
+        return MediaTransportPreparation(
+            cancellation: { [self] in cancel(id: id) },
+            consumption: { consumption.wasConsumed },
+            handoff: { [self] in requestPlaybackHandoff(id: id) },
+            readiness: { [self] in
+                try await withTaskCancellationHandler {
+                    try await ready.wait().get()
+                    try Task.checkCancellation()
+                    try lock.withLock {
+                        if let error = status.error { throw error }
+                    }
+                } onCancel: {
+                    self.cancel(id: id)
+                }
+            },
+            outcome: { [self] in lock.withLock { status.outcome } }
+        )
     }
 
     /// Taking a reservation is single-use. The caller now owns cleanup through
@@ -241,8 +357,33 @@ final class MediaTransportPreparationCoordinator: @unchecked Sendable {
             try Task.checkCancellation()
             return nil
         }
+        requestPlaybackHandoff(id: candidate.id)
         return try await withTaskCancellationHandler {
-            try await candidate.ready.wait().get()
+            do {
+                try await candidate.ready.wait().get()
+            } catch {
+                // A failed pending ticket carries its observed error to the
+                // first exact Play, rather than turning into a silent cold miss.
+                let expired = lock.withLock {
+                    if let expiry = candidate.expiresAt, timing.now() >= expiry {
+                        if entry?.id == candidate.id {
+                            cancelLocked(error: MediaTransportError.cancelled, expired: true)
+                        }
+                        return true
+                    }
+                    if entry?.id == candidate.id {
+                        entry?.timer?.cancel()
+                        entry = nil
+                    }
+                    return candidate.status.expired
+                }
+                if expired {
+                    await candidate.drained.value
+                    try Task.checkCancellation()
+                    return nil
+                }
+                throw error
+            }
             try Task.checkCancellation()
             let claimed = try lock.withLock { () throws -> MediaTransportPreparedResource? in
                 if candidate.status.expired || candidate.status.claimed { return nil }
@@ -283,6 +424,13 @@ final class MediaTransportPreparationCoordinator: @unchecked Sendable {
         }
     }
 
+    private func requestPlaybackHandoff(id: UUID) {
+        let warmup = lock.withLock {
+            entry?.id == id ? entry?.warmup : nil
+        }
+        warmup?.requestPlaybackHandoff()
+    }
+
     private func cancelLocked(error: Error, expired: Bool = false) {
         guard let current = entry else { return }
         entry = nil
@@ -305,15 +453,26 @@ final class MediaTransportPreparationCoordinator: @unchecked Sendable {
             switch result {
             case .success(let resource):
                 resource.trackConsumption(current.status.consumption)
+                current.status.outcome = current.warmup?.outcome ?? .completed
                 current.resource = resource
                 current.expiresAt = timing.now().advanced(by: timing.lifetime)
                 current.timer = timer(after: timing.lifetime, id: id, error: .cancelled, expired: true)
                 entry = current
                 current.ready.resolve(.success(()))
             case .failure(let error):
-                entry = nil
                 current.status.error = error
                 cancelledDrain = current.drained
+                if current.warmup != nil {
+                    // Resource-free and bounded; cancellation/supersession or
+                    // the first claim removes this failed pending ticket.
+                    current.expiresAt = timing.now().advanced(by: timing.lifetime)
+                    current.timer = timer(
+                        after: timing.lifetime, id: id, error: .cancelled, expired: true
+                    )
+                    entry = current
+                } else {
+                    entry = nil
+                }
                 current.ready.resolve(.failure(error))
             }
         }

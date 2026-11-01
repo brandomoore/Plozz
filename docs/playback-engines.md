@@ -181,6 +181,55 @@ across Play requests, and detail preparation still does no sidecar discovery.
 Other share transports retain opening-stat metadata; their directory-listing and
 file-stat representations need not carry the same precision or completeness.
 
+The opt-in hosted `testExplicitLocalISOPlaybackWithLatency` uses a synthetic ISO
+staged in the owned test host's caches directory, selected by
+`PLOZZ_WEBDAV_LOCAL_ISO_FIXTURE` (a filename only). The optional
+`PLOZZ_WEBDAV_LOCAL_START_POSITION` selects a nonnegative resume position.
+Its loopback-only server reads bounded chunks from the file rather than retaining
+the whole image. GET responses wait 250 ms before headers and 10 ms before each
+64 KiB body chunk (6.25 MiB/s nominal per connection, before scheduling overhead).
+The test requires the actual `localHLS` route and enough duration for both
+minute-long continuity windows; software fallback does not satisfy this workload.
+Request counts and sent body bytes expose extra I/O. This is a controlled
+per-connection delivery model, not shared-link bandwidth or physical-device proof.
+The companion `testExplicitLocalContainerPlaybackWithLatency` accepts an MP4 or
+MKV filename through `PLOZZ_WEBDAV_LOCAL_CONTAINER_FIXTURE`, under the same
+delivery schedule and continuity checks, without forcing a particular engine
+route. The reported route remains part of the evidence. I/O snapshots at Play,
+first render and teardown separate startup requests/bytes from later playback.
+`playToFirstRenderedFrameSeconds` includes provider work before engine load;
+`startupSeconds` additionally requires at least 0.5 seconds of clock advancement.
+Set `PLOZZ_WEBDAV_AGGREGATE_BANDWIDTH=1` for concurrent-read comparisons.
+One shared pacer then grants a body-chunk slot every 10 ms across all responses,
+instead of granting that rate to each connection. A slot carries at most 64 KiB;
+short metadata/final chunks conservatively consume a full slot. Header latency
+remains per response. Keep this mode identical for baseline and candidate:
+additional connections must not manufacture additional source bandwidth.
+
+For an early-Play scenario, set `PLOZZ_WEBDAV_DETAIL_PREPARATION=1` and
+`PLOZZ_WEBDAV_DETAIL_PLAY_DELAY_SECONDS` to `2` or `3`. The hosted benchmark
+uses the production detail coordinator, including its 750 ms dwell, and invokes
+the normal handoff without waiting for preparation to complete. Its timer starts
+at that Play action, including cancellation/drain and ordinary provider work.
+It reports readiness at Play and actual reservation consumption; an incomplete
+preparation cannot be relabeled as a prepared start. The sub-three-second
+assertion applies even when Play falls back to a cold open. This models the
+already-resolved detail's lifecycle, not full UI navigation, artwork loading or
+physical remote/touch input. Runs without the delay still wait for complete
+preparation and must not be used as evidence for this early-Play scenario.
+The experimental hosted-only `PLOZZ_WEBDAV_EARLY_HANDOFF=1` mode additionally
+uses a pending preparation ticket and requests interruption of optional warming
+at Play. Ticket registration is not readiness: the benchmark snapshots the
+warmup outcome before handoff and reports the sealed outcome and actual
+consumption after resolution. Interrupted warming must never be reported as
+complete native coverage. Normal app shells still use the completed-reservation
+path until this experiment is validated.
+The separate DEBUG-only `PLOZZ_WEBDAV_RANGE_PIPELINE=1` experiment requires an
+explicit configured HTTP(S) transport scheme at reader creation. The hosted
+benchmark supplies its actual endpoint scheme; a missing scheme leaves the
+normal path unchanged. Compare this separately and together with early handoff,
+using the same aggregate bandwidth cap rather than per-connection throughput.
+
 Related upstream designs separate request sizing from buffered consumption:
 [FFmpeg HTTP](https://github.com/FFmpeg/FFmpeg/blob/b7e835e06913e4374a4567003fe8c75cebfffb98/libavformat/http.c)
 supports separate initial/steady request sizes and short-seek read-ahead;

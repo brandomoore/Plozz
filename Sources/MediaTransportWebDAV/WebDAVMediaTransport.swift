@@ -134,7 +134,7 @@ final class WebDAVMediaTransportSession: MediaTransportSession, @unchecked Senda
     func isHealthy() async -> Bool { true }
 }
 
-final class WebDAVMediaTransportFileSystem: MediaTransportPreparingFileSystem, @unchecked Sendable {
+final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFileSystem, @unchecked Sendable {
     static let maximumSmallFileSize = 16 * 1_024 * 1_024
 
     private let client: WebDAVClient
@@ -304,6 +304,26 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparingFileSystem, @
             maximumCachedBytes: (container == "iso" ? 64 : 40) * 1024 * 1024
         )
         return MediaTransportSourceLease(source: prepared)
+    }
+
+    func openPreparationSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease {
+        let source = try await openByteSource(for: locator)
+        let isDisc = (locator.relativePath as NSString).pathExtension.lowercased() == "iso"
+        return MediaTransportSourceLease(
+            source: source.allowingPreparation(maximumCachedBytes: (isDisc ? 64 : 40) * 1024 * 1024)
+        )
+    }
+
+    func warmPreparedSource(
+        for locator: NetworkFileLocator, source: any MediaTransportByteSource
+    ) async throws {
+        let container = (locator.relativePath as NSString).pathExtension.lowercased()
+        // The native disc probe discovers ISO extents; do not put a speculative
+        // multi-megabyte prefix ahead of its first useful metadata read.
+        guard container != "iso" else { return }
+        try await WebDAVByteSource.warmOpeningBytes(
+            source: source, includeTail: ["mp4", "m4v", "mov", "mkv", "webm"].contains(container)
+        )
     }
 
     func revalidatePreparedSource(for locator: NetworkFileLocator) async throws {

@@ -126,6 +126,39 @@ final class WebDAVByteSource: MediaTransportPreparationFinalizingByteSource, @un
         )
     }
 
+    func allowingPreparation(maximumCachedBytes: Int) -> WebDAVByteSource {
+        WebDAVByteSource(
+            client: client, representation: representation, sessionKey: sessionKey,
+            credential: credential, trustPolicy: trustPolicy,
+            preparedRanges: representation.initialData.isEmpty
+                ? [] : [PreparedRange(offset: 0, data: representation.initialData)],
+            maximumCachedBytes: maximumCachedBytes
+        )
+    }
+
+    static func warmOpeningBytes(source: any MediaTransportByteSource, includeTail: Bool) async throws {
+        let tailWindow: Int64 = 4 * 1024 * 1024
+        let prefixEnd = min(source.byteSize, includeTail ? 2 * tailWindow : tailWindow)
+        var windows: [Range<Int64>] = [0..<prefixEnd]
+        if includeTail, source.byteSize > prefixEnd {
+            windows.append(max(prefixEnd, source.byteSize - tailWindow)..<source.byteSize)
+        }
+        for window in windows {
+            var offset = window.lowerBound
+            while offset < window.upperBound {
+                try Task.checkCancellation()
+                // Commit complete responses incrementally, never a partial body
+                // of a larger HTTP range. Short cached reads are normal here.
+                let length = Int(min(1024 * 1024, window.upperBound - offset))
+                let data = try await source.read(at: offset, length: length)
+                guard !data.isEmpty, data.count <= length else {
+                    throw MediaTransportError.protocolViolation(reason: "invalid preparation read length")
+                }
+                offset += Int64(data.count)
+            }
+        }
+    }
+
     func read(at offset: Int64, length: Int) async throws -> Data {
         guard offset >= 0, length > 0 else {
             throw MediaTransportError.invalidInput(reason: "invalid WebDAV byte range")
@@ -150,8 +183,10 @@ final class WebDAVByteSource: MediaTransportPreparationFinalizingByteSource, @un
                 url: resourceURL, start: offset, end: end, representation: representation,
                 sessionKey: sessionKey, credential: credential, trustPolicy: trustPolicy
             )
-            try Task.checkCancellation()
+            // A completed, validated response remains useful if Play interrupts
+            // its borrower immediately afterwards. Sealing still rejects writes.
             preparedCache?.insert(data, at: offset)
+            try Task.checkCancellation()
             return data
         } catch {
             throw mapWebDAVError(error)

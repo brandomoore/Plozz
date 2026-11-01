@@ -347,6 +347,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     private let engine: AEEngine
     private let networkFileResolver: (any MediaTransportNetworkFileResolving)?
+    private let networkFileTransportScheme: @MainActor (NetworkFileLocator) -> String?
     private let authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)?
     private let readAheadPreference: @MainActor () -> PlaybackReadAhead
     private let liveBufferPreference: @MainActor () -> LivePlaybackBuffer
@@ -380,6 +381,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public init(
         networkFileResolver: (any MediaTransportNetworkFileResolving)? = nil,
+        // NetworkFileLocator intentionally carries no endpoint. The app supplies
+        // its configured scheme; absent identity keeps the experiment disabled.
+        networkFileTransportScheme: @escaping @MainActor (NetworkFileLocator) -> String? = { _ in nil },
         authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)? = nil,
         readAheadPreference: @escaping @MainActor () -> PlaybackReadAhead = { .default },
         liveBufferPreference: @escaping @MainActor () -> LivePlaybackBuffer = { .default },
@@ -393,6 +397,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         // safe for a host that owns it — which we do.
         engine.deactivatesAudioSessionOnStop = true
         self.networkFileResolver = networkFileResolver
+        self.networkFileTransportScheme = networkFileTransportScheme
         self.authenticatedHTTPResolver = authenticatedHTTPResolver
         self.readAheadPreference = readAheadPreference
         self.liveBufferPreference = liveBufferPreference
@@ -540,7 +545,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 let formatHint = Self.networkFileFormatHint(for: locator)
                 let reader = TransportIOReader(
                     resolvedSource: resolvedSource,
-                    discImageProbeEnabled: formatHint == nil
+                    discImageProbeEnabled: formatHint == nil,
+                    transportScheme: TransportIOReader.rangePipelineRequested() ? networkFileTransportScheme(locator) : nil
                 )
                 activeTransportReader = reader
                 let source = MediaSource.custom(reader, formatHint: formatHint)

@@ -7,6 +7,22 @@ import MediaTransportCore
 @testable import TestSupportPerformance
 import XCTest
 
+private actor WebDAVPreparationGate {
+    private var isOpen = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 /// Hermetic coverage for the WebDAV media-transport adapter, driving the full
 /// request/response path through a stub `URLProtocol` (no real network). Trust
 /// pinning against a live TLS handshake is covered at the primitive level
@@ -403,6 +419,186 @@ final class WebDAVMediaTransportTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.requests(for: url).last?.value(forHTTPHeaderField: "Range"), "bytes=0-1")
         lease.close()
         await lease.waitForFinalShutdown()
+    }
+
+    func testIncrementalOrdinaryHandoffKeepsOnlyCompletedValidatedRanges() async throws {
+        for path in ["Movie.mp4", "Movie.mkv"] {
+            let revision = CredentialRevision()
+            let url = URL(string: "https://nas.example.com/dav/movies/\(path)")!
+            let total = 20 * 1024 * 1024
+            let first = RangeProbe.initialReadByteCount
+            let chunk = 1024 * 1024
+            let pending = expectation(description: "Next complete HTTP range pending")
+            queueStat(size: total, relativePath: path)
+            queueReadHalf(url: url, offset: 0, length: first, total: total)
+            queueReadHalf(url: url, offset: first, length: chunk, total: total, byte: 7)
+            queueReadHalf(
+                url: url, offset: first + chunk, length: chunk, total: total, byte: 8,
+                delay: .seconds(60), onRequest: { _ in pending.fulfill() }
+            )
+            let key = try makeKey(revision: revision, role: .playback)
+            let registry = MediaTransportResolverRegistry(adapter: makeAdapter())
+            let resolver = MediaTransportNetworkFileResolver(registry: registry, sessionKeyProvider: { _ in key })
+            addTeardownBlock { await registry.retire(accountID: key.accountID, credentialRevision: revision) }
+            let locator = try strongETagLocator(relativePath: path, size: Int64(total), revision: revision)
+            let handle = try resolver.beginPreparation(locator)
+            await fulfillment(of: [pending], timeout: 2)
+            XCTAssertNil(handle.warmupOutcome)
+            handle.requestPlaybackHandoff()
+            try await handle.waitUntilReady()
+            XCTAssertEqual(handle.warmupOutcome, .interruptedForPlayback)
+            queueStat(size: total, relativePath: path)
+            let played = try await resolver.resolve(locator)
+            XCTAssertTrue(played.wasPrepared)
+            XCTAssertTrue(handle.wasConsumed)
+            let cursor = try XCTUnwrap(played.sourceLease.makeCursor())
+            let head = try await cursor.read(at: Int64(first), length: 1_000)
+            XCTAssertEqual(head, Data(repeating: 7, count: 1_000))
+            let boundary = try await cursor.read(at: Int64(first + chunk - 16), length: 32)
+            XCTAssertEqual(boundary, Data(repeating: 7, count: 16))
+            for _ in 0..<2 {
+                queueReadHalf(url: url, offset: first + chunk, length: 100, total: total, byte: 9)
+                let bytes = try await cursor.read(at: Int64(first + chunk), length: 100)
+                XCTAssertEqual(bytes, Data(repeating: 9, count: 100))
+            }
+            let gets = StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }
+            XCTAssertEqual(gets.count, 5, "The cancelled response is absent; sealed playback reads do not grow the cache")
+            XCTAssertTrue(gets.dropFirst().allSatisfy {
+                $0.value(forHTTPHeaderField: "If-Match") == "\"strong-1\""
+            })
+            XCTAssertEqual(StubURLProtocol.requests(for: url).filter { $0.httpMethod == "PROPFIND" }.count, 2)
+            cursor.close()
+            await played.waitForFinalShutdown()
+        }
+    }
+
+    func testIncrementalMalformedResponseCannotPublishOrBecomeColdSuccess() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let total = 20 * 1024 * 1024
+        let first = RangeProbe.initialReadByteCount
+        let chunk = 1024 * 1024
+        queueStat(size: total)
+        queueReadHalf(url: url, offset: 0, length: first, total: total)
+        StubURLProtocol.queue(
+            StubResponse(
+                statusCode: 206,
+                headers: ["ETag": "\"strong-1\"", "Content-Range": "bytes \(first)-\(first + chunk - 1)/\(total)"],
+                body: Data(repeating: 7, count: chunk - 1)
+            ), for: url
+        )
+        let key = try makeKey(revision: revision, role: .playback)
+        let registry = MediaTransportResolverRegistry(adapter: makeAdapter())
+        let resolver = MediaTransportNetworkFileResolver(registry: registry, sessionKeyProvider: { _ in key })
+        addTeardownBlock { await registry.retire(accountID: key.accountID, credentialRevision: revision) }
+        let locator = try strongETagLocator(size: Int64(total), revision: revision)
+        let handle = try resolver.beginPreparation(locator)
+        var observed: MediaTransportError?
+        do {
+            try await handle.waitUntilReady()
+            XCTFail("An incomplete HTTP response cannot become a prepared range")
+        } catch let error as MediaTransportError {
+            observed = error
+            guard case .sourceChanged = error else { return XCTFail("\(error)") }
+        }
+        handle.requestPlaybackHandoff()
+        do { _ = try await resolver.resolve(locator); XCTFail("Failed warmup silently opened cold") }
+        catch let error as MediaTransportError { XCTAssertEqual(error, observed) }
+        XCTAssertFalse(handle.wasConsumed)
+        XCTAssertNil(handle.warmupOutcome)
+        XCTAssertEqual(StubURLProtocol.requests(for: url).map(\.httpMethod), ["PROPFIND", "GET", "GET"])
+    }
+
+    func testIncrementalDiscWarmsDiscoveredRangesWithoutBlindPrefixOrTail() async throws {
+        let revision = CredentialRevision()
+        let path = "Movie.iso"
+        let url = URL(string: "https://nas.example.com/dav/movies/\(path)")!
+        let total = 20 * 1024 * 1024
+        let offset = 9 * 1024 * 1024
+        let gate = WebDAVPreparationGate()
+        let warmed = expectation(description: "Discovered disc range fully validated")
+        queueStat(size: total, relativePath: path)
+        queueReadHalf(url: url, offset: 0, length: RangeProbe.initialReadByteCount, total: total)
+        queueReadHalf(url: url, offset: offset, length: 100, total: total, byte: 7)
+        let key = try makeKey(revision: revision, role: .playback)
+        let registry = MediaTransportResolverRegistry(adapter: makeAdapter())
+        let resolver = MediaTransportNetworkFileResolver(
+            registry: registry,
+            sourcePreparer: { _, position, source in
+                XCTAssertEqual(position, 600)
+                let data = try await source.read(at: Int64(offset), length: 100)
+                XCTAssertEqual(data, Data(repeating: 7, count: 100))
+                warmed.fulfill()
+                await gate.wait()
+                try Task.checkCancellation()
+            },
+            sessionKeyProvider: { _ in key }
+        )
+        addTeardownBlock { await registry.retire(accountID: key.accountID, credentialRevision: revision) }
+        let locator = try strongETagLocator(relativePath: path, size: Int64(total), revision: revision)
+        let handle = try resolver.beginPreparation(locator, startPosition: 600)
+        await fulfillment(of: [warmed], timeout: 2)
+        handle.requestPlaybackHandoff()
+        await gate.open()
+        try await handle.waitUntilReady()
+        queueStat(size: total, relativePath: path)
+        let played = try await resolver.resolve(locator)
+        let cursor = try XCTUnwrap(played.sourceLease.makeCursor())
+        let bytes = try await cursor.read(at: Int64(offset), length: 100)
+        XCTAssertEqual(bytes, Data(repeating: 7, count: 100))
+        XCTAssertEqual(handle.warmupOutcome, .interruptedForPlayback)
+        XCTAssertTrue(handle.wasConsumed)
+        XCTAssertEqual(StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }.count, 2)
+        cursor.close()
+        await played.waitForFinalShutdown()
+    }
+
+    func testIncrementalSmallOrdinarySourceCanFinishWarmingWithoutHandoff() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        queueStat()
+        queueReadHalf(url: url, offset: 0, length: 2, total: 1_000)
+        queueReadHalf(url: url, offset: 0, length: 1_000, total: 1_000)
+        let key = try makeKey(revision: revision, role: .playback)
+        let registry = MediaTransportResolverRegistry(adapter: makeAdapter())
+        let resolver = MediaTransportNetworkFileResolver(registry: registry, sessionKeyProvider: { _ in key })
+        addTeardownBlock { await registry.retire(accountID: key.accountID, credentialRevision: revision) }
+        let locator = try strongETagLocator(revision: revision)
+        let handle = try resolver.beginPreparation(locator)
+        try await handle.waitUntilReady()
+        XCTAssertEqual(handle.warmupOutcome, .completed)
+        queueStat()
+        let played = try await resolver.resolve(locator)
+        let cursor = try XCTUnwrap(played.sourceLease.makeCursor())
+        let bytes = try await cursor.read(at: 900, length: 200)
+        XCTAssertEqual(bytes.count, 100)
+        XCTAssertEqual(StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }.count, 2)
+        cursor.close()
+        await played.waitForFinalShutdown()
+    }
+
+    func testIncrementalHandoffStillRejectsChangedDAVIdentity() async throws {
+        let revision = CredentialRevision()
+        let path = "Movie.iso"
+        let url = URL(string: "https://nas.example.com/dav/movies/\(path)")!
+        let total = 20 * 1024 * 1024
+        queueStat(size: total, relativePath: path)
+        queueReadHalf(url: url, offset: 0, length: RangeProbe.initialReadByteCount, total: total)
+        let key = try makeKey(revision: revision, role: .playback)
+        let registry = MediaTransportResolverRegistry(adapter: makeAdapter())
+        let resolver = MediaTransportNetworkFileResolver(registry: registry, sessionKeyProvider: { _ in key })
+        addTeardownBlock { await registry.retire(accountID: key.accountID, credentialRevision: revision) }
+        let locator = try strongETagLocator(relativePath: path, size: Int64(total), revision: revision)
+        let handle = try resolver.beginPreparation(locator)
+        try await handle.waitUntilReady()
+        handle.requestPlaybackHandoff()
+        queueStat(etag: "\"changed\"", size: total, relativePath: path)
+        do { _ = try await resolver.resolve(locator); XCTFail("Handoff bypassed current DAV identity") }
+        catch let error as MediaTransportError {
+            guard case .sourceChanged = error else { return XCTFail("\(error)") }
+        }
+        XCTAssertFalse(handle.wasConsumed)
+        XCTAssertEqual(StubURLProtocol.requests(for: url).map(\.httpMethod), ["PROPFIND", "GET", "PROPFIND"])
     }
 
     func testPreparedSourceRetainsOnlyBoundedValidatedOpeningRanges() async throws {

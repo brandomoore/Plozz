@@ -229,6 +229,7 @@ final class MediaTransportPreparationBorrow: MediaTransportByteSource, @unchecke
     private var cursor: MediaTransportSourceCursor?
     private var reads = 0
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var failure: Error?
 
     fileprivate init(cursor: MediaTransportSourceCursor, preferredReadSize: Int) {
         self.cursor = cursor
@@ -237,6 +238,8 @@ final class MediaTransportPreparationBorrow: MediaTransportByteSource, @unchecke
     }
 
     deinit { close() }
+
+    var firstFailure: Error? { lock.withLock { failure } }
 
     func read(at offset: Int64, length: Int) async throws -> Data {
         let cursor = try lock.withLock {
@@ -256,7 +259,16 @@ final class MediaTransportPreparationBorrow: MediaTransportByteSource, @unchecke
             }
             waiters.forEach { $0.resume() }
         }
-        return try await cursor.read(at: offset, length: length)
+        do {
+            return try await cursor.read(at: offset, length: length)
+        } catch {
+            if !isPreparationCancellation(error) {
+                lock.withLock {
+                    if failure == nil { failure = error }
+                }
+            }
+            throw error
+        }
     }
 
     func close() {
