@@ -82,8 +82,8 @@ let package = Package(
         // Powers the native HLS-fMP4 remux path for MKV → DoVi + Atmos + seek.
         // See docs/playback-engines.md for integration and fork corrections.
         //
-        // Pinned to the playback-corrected fork integrating upstream 7.51.0
-        // (263dc11579274e83458bd3839715caf99f3d8969). This retains Plozz's
+        // Pinned to the playback-corrected fork integrating upstream 7.53.1
+        // (0839aeee18dd0818c5c307a3c5ecba8ea3161b22). This retains Plozz's
         // AAC timing, ASS duration, dynamic linkage, frame/cache APIs and privacy manifest.
         //
         // Everything the old `plozz-pin-*` stack existed for is upstream
@@ -243,9 +243,12 @@ let package = Package(
         // 7.51.0 includes route-selected lossless PCM spatial beds from 7.50.0.
         // The fork retains Plozz's timing, subtitle, diagnostics and linkage fixes.
         // Shared SDR/HDR active-picture measurements include host-owned native players.
+        // 7.53.1 corrects remote-HLS buffering, short forward seeks and tvOS MetalFX
+        // availability. FFmpegBuild 3.11.1 adds AV1 forward-keyframe detection.
+        // Audio shaping and low-resolution upscaling remain opt-in and disabled.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "feb41e58fb88ce7e693947f2148dbd0ea1df8483",
+            revision: "3e3635dd0fd082fe2f172a13f8536817dfde597f",
             traits: [
                 "TrueHDObjectAudio", "DTSXObjectAudio",
                 "DualLayerDolbyVision", "DolbyVisionStillReshaping",
