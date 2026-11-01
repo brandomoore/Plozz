@@ -414,15 +414,25 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/c1ce4cf48bad416e6be5230032a2b7f332e833d8)
-at commit `c1ce4cf48bad416e6be5230032a2b7f332e833d8`, integrating upstream
-**7.51.0** (`a877941bd3402d5f531edad0cbe4c9b33eefa856`).
-Playback diagnostics show `AetherEngine v7.51.0`, read from the linked engine
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/3c035a3f62d7cb40e2cad93d28c7296746d94174)
+at commit `3c035a3f62d7cb40e2cad93d28c7296746d94174`, integrating upstream
+**7.53.1** (`0839aeee18dd0818c5c307a3c5ecba8ea3161b22`).
+Playback diagnostics show `AetherEngine v7.53.1`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in
 attributions because the upstream version does not identify Plozz's patches.
 The 7.51.0 integration includes 7.50.0's 24-bit PCM spatial-bed output with
-route-selected APAC for AirPlay. FFmpegBuild 3.10.1, LibDovi 2.1.0 and
-LibTrueHD 3.1.0 remain unchanged in the resolved graph.
+route-selected APAC for AirPlay. The 7.53.1 update advances FFmpegBuild to
+3.11.1; LibDovi 2.1.0 and LibTrueHD 3.1.0 remain unchanged.
+It corrects the remote-HLS buffered frontier, uses measured producer throughput
+for short forward seeks, bounds bitmap subtitle retention after backward seeks,
+and supports HLS byte-range segments. The fork preserves AAC timing compensation,
+ASS duration handling, dynamic linkage and active-picture APIs, including seam
+invalidation in the upstream weak-session callback.
+It also retains bounded position-aware WebDAV preparation, video servicing
+during source reads, and active-picture cleanup compatible with older runtimes.
+New audio shaping and low-resolution SDR upscaling remain disabled by default.
+The engine uses upstream's single privacy manifest, including local-media file
+timestamps; FFmpeg's applicable frameworks now carry their own manifests.
 The update retains overlapped VOD/HDR preparation and adds the upstream
 subtitle, HLG, chapter-timing, bounded-loading and cache fixes. Bitmap subtitle
 OCR is armed only for a native rendition used by PiP, AirPlay or an external
@@ -506,7 +516,7 @@ LibDTSX **1.0.1**. Upstream 7.36.0 added another object-audio rendering path, co
 spatial speaker positions and a tvOS spatial-output activator for receivers that need it.
 It also includes live-replay recovery, software-video recovery after a screen lock,
 and the intervening 7.35.x playback fixes; these are upstream changes, not new
-Plozz-specific implementations. The current pin uses FFmpegBuild **3.10.1**
+Plozz-specific implementations. The current pin uses FFmpegBuild **3.11.1**
 and LibDovi **2.1.x**, with LibTrueHD **3.1.0** enabled in Plozz and LibDTSX
 removed. It also includes
 single-connection spatial-audio probe safeguards and system-composited Dolby Vision
@@ -701,7 +711,7 @@ on iOS/iPadOS. Enabling the option is not evidence that a particular file took
 the route or that a physical display applied its metadata. The engine logs
 `DV P7 dual-layer route: taken` or the reason it was not taken; actual picture
 and HDMI output require a suitable physical-device sample.
-See the pinned [FEL design and evidence](https://github.com/brandomoore/AetherEngine/blob/c1ce4cf48bad416e6be5230032a2b7f332e833d8/docs/dolby-vision-fel.md).
+See the pinned [FEL design and evidence](https://github.com/brandomoore/AetherEngine/blob/3c035a3f62d7cb40e2cad93d28c7296746d94174/docs/dolby-vision-fel.md).
 
 ## Remote AV1 Matroska startup
 
