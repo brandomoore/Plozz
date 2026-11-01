@@ -327,6 +327,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   resolve; the full request still keys resolution and memoization. Changed
   subjects, accounts, languages, artwork policies or conflicting lookup facts
   clear the old logo immediately. A completed miss returns to the text fallback.
+  Detail pages on iOS/iPadOS and tvOS keep that text invisible during the initial
+  logo lookup and decoding, rather than flashing it before the logo arrives.
+  Titles with no logo sources show text immediately; cached logos also paint immediately.
 
 - **Setup presentation** — `ConnectionCodeView` shares the readable monospaced
   code panel across server sign-in and device pairing. `SetupCodeComparisonView`

@@ -9,6 +9,43 @@ import XCTest
 
 @MainActor
 final class HeroLogoContinuityTests: XCTestCase {
+    func testDetailNeverShowsTextWhileItsFirstLogoIsLoading() async throws {
+        for style: HeroArtworkStyle in [.landscape, .compactPortrait] {
+            for findsLogo in [true, false] {
+                let fixture = try Fixture()
+                defer { fixture.close() }
+                let url = try fixture.seedLogo()
+                let item = MediaItem(id: UUID().uuidString, title: "Movie title", kind: .movie)
+                let lookup = LookupGate()
+                defer { lookup.release(nil) }
+                fixture.host.rootView = AnyView(DetailMetadataFixture(
+                    state: SubjectState(item: item), root: item, style: style,
+                    fallback: HeroLogoFallback(for: item) { await lookup.resolve() }
+                ))
+                try await waitUntil { lookup.calls == 1 }
+                XCTAssertFalse(try fixture.hasTitleText(), "Text is a failed-lookup fallback, not a loading placeholder.")
+                XCTAssertFalse(try fixture.hasRedLogo())
+                lookup.release(findsLogo ? url : nil)
+                if findsLogo {
+                    try await waitUntil { try fixture.hasRedLogo() }
+                    XCTAssertFalse(try fixture.hasTitleText())
+                } else {
+                    try await waitUntil { try fixture.hasTitleText() }
+                    XCTAssertFalse(try fixture.hasRedLogo())
+                }
+            }
+        }
+    }
+
+    func testDetailWithoutLogoSourcesShowsItsTitle() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let item = MediaItem(id: UUID().uuidString, title: "Movie title", kind: .movie)
+        fixture.host.rootView = AnyView(DetailMetadataFixture(state: SubjectState(item: item), root: item))
+        try await waitUntil { try fixture.hasTitleText() }
+        XCTAssertFalse(try fixture.hasRedLogo())
+    }
+
     func testArtworkPolicyChangesAndRemovedIdentityCannotRetainALogo() {
         let original = MediaItem(
             id: "movie", title: "Movie", kind: .movie, productionYear: 2020,
@@ -148,11 +185,14 @@ final class HeroLogoContinuityTests: XCTestCase {
     private struct DetailMetadataFixture: View {
         let state: SubjectState
         let root: MediaItem
+        var style: HeroArtworkStyle = .landscape
+        var fallback: HeroLogoFallback? = nil
         var body: some View {
             PlozziOSHeroMetadata(
-                presentation: HeroPresentation(item: state.item, artworkStyle: .landscape, surface: .detail),
-                style: .landscape, mode: .detail,
-                fallbackPresentation: HeroPresentation(item: root, artworkStyle: .landscape, surface: .detail),
+                presentation: HeroPresentation(item: state.item, artworkStyle: style, surface: .detail),
+                style: style, mode: .detail,
+                fallbackPresentation: HeroPresentation(item: root, artworkStyle: style, surface: .detail),
+                logoFallback: fallback,
                 content: .identity
             )
             .environment(\.themePalette, .dark)
@@ -234,6 +274,14 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
 
         func hasRedLogo() throws -> Bool {
+            try hasVisiblePixels { $0 > 180 && $1 < 70 && $2 < 70 }
+        }
+
+        func hasTitleText() throws -> Bool {
+            try hasVisiblePixels { $0 > 180 && $1 > 180 && $2 > 180 }
+        }
+
+        private func hasVisiblePixels(_ matches: (UInt8, UInt8, UInt8) -> Bool) throws -> Bool {
             window.layoutIfNeeded()
             let format = UIGraphicsImageRendererFormat()
             format.scale = 1
@@ -252,7 +300,7 @@ final class HeroLogoContinuityTests: XCTestCase {
                 context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
             }
             return stride(from: 0, to: bytes.count, by: 4).filter {
-                bytes[$0] > 180 && bytes[$0 + 1] < 70 && bytes[$0 + 2] < 70
+                matches(bytes[$0], bytes[$0 + 1], bytes[$0 + 2])
             }.count > 300
         }
 
