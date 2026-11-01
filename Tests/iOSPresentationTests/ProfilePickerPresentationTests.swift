@@ -106,7 +106,7 @@ final class ProfilePickerPresentationTests: XCTestCase {
         XCTAssertEqual(PlozziOSProfilePickerEntrance.delay(at: 17, profileCount: 16), 0.51, accuracy: 0.001)
         XCTAssertEqual(PlozziOSProfilePickerEntrance.duration, 0.45)
         XCTAssertEqual(PlozziOSProfilePickerEntrance.headingDuration, 0.45)
-        XCTAssertEqual(PlozziOSProfilePickerEntrance.initialScale, 0.96)
+        XCTAssertEqual(PlozziOSProfilePickerEntrance.initialScale, 0.3)
         XCTAssertEqual(PlozziOSProfilePickerEntrance.initialOffset, 8)
         let model = PickerMotionFixtureModel()
         try await withWindow(
@@ -120,10 +120,15 @@ final class ProfilePickerPresentationTests: XCTestCase {
             let first = try self.brightness(entering, x: 70, y: 70)
             let last = try self.brightness(entering, x: 70, y: 190)
             XCTAssertGreaterThan(first, last + 20, "The first tile must lead the later tile.")
+            XCTAssertGreaterThan(
+                first, try self.brightness(entering, x: 30, y: 70) + 20,
+                "The tile must grow into its final bounds rather than only fade at full size."
+            )
             try await Task.sleep(for: .seconds(2))
             let settled = self.capture(window, name: "picker-motion-settled")
             XCTAssertGreaterThan(try self.brightness(settled, x: 70, y: 70), 245)
             XCTAssertGreaterThan(try self.brightness(settled, x: 70, y: 190), 245)
+            XCTAssertGreaterThan(try self.brightness(settled, x: 30, y: 70), 245)
             XCTAssertLessThan(try self.brightness(settled, x: 17, y: 70), 5)
         }
         let reduced = PickerMotionFixtureModel()

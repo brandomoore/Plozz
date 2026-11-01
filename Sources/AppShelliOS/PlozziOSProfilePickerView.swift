@@ -601,7 +601,7 @@ struct PlozziOSProfilePickerEntrance: ViewModifier {
     let reduceMotion: Bool
     @State private var isInteractive = false
 
-    static let initialScale: CGFloat = 0.96
+    static let initialScale: CGFloat = 0.3
     static let initialOffset: CGFloat = 8
     static let duration: TimeInterval = 0.45
     static let headingDuration: TimeInterval = 0.45
