@@ -379,7 +379,7 @@ private struct PlozziOSProfilePickerGrid: View {
     }
 }
 
-private struct ProfilePickerPresentationObserver: UIViewControllerRepresentable {
+struct ProfilePickerPresentationObserver: UIViewControllerRepresentable {
     let startsDuringPresentation: Bool
     let onAppear: () -> Void
 
@@ -392,9 +392,17 @@ private struct ProfilePickerPresentationObserver: UIViewControllerRepresentable 
         controller.onAppear = onAppear
     }
 
+    static func dismantleUIViewController(_ controller: Observer, coordinator: ()) {
+        controller.cancelPendingEntrance()
+    }
+
     final class Observer: UIViewController {
         var startsDuringPresentation: Bool
         var onAppear: () -> Void
+        private var hasStarted = false
+        private var isPresented = false
+        private var displayLink: CADisplayLink?
+        private var displayedFrames = 0
 
         init(startsDuringPresentation: Bool, onAppear: @escaping () -> Void) {
             self.startsDuringPresentation = startsDuringPresentation
@@ -411,12 +419,66 @@ private struct ProfilePickerPresentationObserver: UIViewControllerRepresentable 
 
         override func viewIsAppearing(_ animated: Bool) {
             super.viewIsAppearing(animated)
-            if startsDuringPresentation { onAppear() }
+            if startsDuringPresentation { startEntrance() }
         }
 
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
-            if !startsDuringPresentation { onAppear() }
+            isPresented = true
+            guard !startsDuringPresentation, !hasStarted else { return }
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(sceneDidActivate),
+                name: UIScene.didActivateNotification, object: nil
+            )
+            scheduleAfterFirstFrame()
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            cancelPendingEntrance()
+        }
+
+        func cancelPendingEntrance() {
+            isPresented = false
+            displayLink?.invalidate()
+            displayLink = nil
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        @objc private func sceneDidActivate(_ notification: Notification) {
+            guard let scene = notification.object as? UIWindowScene,
+                  scene === view.window?.windowScene else { return }
+            scheduleAfterFirstFrame()
+        }
+
+        private func scheduleAfterFirstFrame() {
+            guard isPresented, !hasStarted, displayLink == nil,
+                  let window = view.window, !window.isHidden,
+                  window.windowScene?.activationState == .foregroundActive else { return }
+            displayedFrames = 0
+            let link = CADisplayLink(target: self, selector: #selector(frameWillDisplay))
+            displayLink = link
+            link.add(to: .main, forMode: .common)
+        }
+
+        @objc private func frameWillDisplay() {
+            guard isPresented, let window = view.window, !window.isHidden,
+                  window.windowScene?.activationState == .foregroundActive else {
+                displayLink?.invalidate()
+                displayLink = nil
+                return
+            }
+            // A display-link callback precedes drawing. Let one frame commit
+            // the hidden starting state before starting the entrance clock.
+            displayedFrames += 1
+            if displayedFrames == 2 { startEntrance() }
+        }
+
+        private func startEntrance() {
+            guard !hasStarted else { return }
+            hasStarted = true
+            cancelPendingEntrance()
+            onAppear()
         }
     }
 }
@@ -477,10 +539,11 @@ struct PlozziOSProfilePickerHeadingEntrance: ViewModifier {
         let isVisible = isPresented || !isLaunch || reduceMotion
         content
             .opacity(isVisible ? 1 : 0)
-            .offset(y: isVisible ? 0 : 4)
+            .scaleEffect(isVisible ? 1 : 0.97)
+            .offset(y: isVisible ? 0 : 14)
             .animation(
                 !isLaunch || reduceMotion ? nil
-                    : .easeOut(duration: PlozziOSProfilePickerEntrance.headingDuration),
+                    : .smooth(duration: PlozziOSProfilePickerEntrance.headingDuration),
                 value: isPresented
             )
             .accessibilityHidden(!isVisible)
@@ -498,7 +561,7 @@ struct PlozziOSProfilePickerEntrance: ViewModifier {
     static let initialScale: CGFloat = 0.96
     static let initialOffset: CGFloat = 8
     static let duration: TimeInterval = 0.45
-    static let headingDuration: TimeInterval = 0.3
+    static let headingDuration: TimeInterval = 0.45
     static func delay(at position: Int, profileCount: Int) -> TimeInterval {
         let interval = min(0.09, 0.45 / Double(max(1, profileCount - 1)))
         return Double(max(0, position)) * interval

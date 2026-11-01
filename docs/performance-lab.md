@@ -79,8 +79,8 @@ rendered frame pacing or physical-device network latency.
 
 `mobile-profile-picker-entrance` mounts the production sixteen-profile touch
 picker in an iPad-sized window. It verifies the heading appears before avatars,
-a visible stagger, and substantially settled avatars within 1.3 seconds (300 ms
-for the heading, then one second for the cascade). CPU measurements include
+a visible stagger, and substantially settled avatars within 1.5 seconds (450 ms
+for the heading, then one second for the cascade, after the starting frame). CPU measurements include
 hosting, native presentation, rendered captures, and heading recognition.
 This is repeated fresh-view presentation, not a cold process launch, connected
 startup workload, GPU measurement, or physical-device frame-pacing verdict.

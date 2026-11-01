@@ -166,8 +166,11 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   its same-profile presentation until dismissal before rebuilding covered content;
   a different active profile still invalidates that presentation. A proposed
   binding is still saved only after authentication succeeds.
-- **Visible mobile entrance.** Launch waits for native presentation to finish,
-  reveals the heading with a 300 ms fade/lift, then starts the avatar cascade;
+- **Visible mobile entrance.** Launch waits for native presentation, an active
+  window scene, and a committed starting frame before beginning its animation
+  clock. A short-lived display link stops after that frame; it is cancelled when
+  the picker leaves. The heading uses a 450 ms fade/lift/scale, then the avatar
+  cascade starts;
   the cancellable in-app switcher starts during presentation instead of adding
   another pause afterward. Overlapping 450 ms native smooth springs use a subtle
   lift and 90 ms between profiles for households of up to six. Larger households
@@ -175,7 +178,7 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   continue the same cadence. All visual starts share one presentation transaction,
   rather than waiting on separate task wake-ups; tasks only admit input when
   each tile starts appearing, including the launch-only heading delay. Sixteen
-  profiles should settle within one second of the cascade (1.3 seconds at launch).
+  profiles should settle within one second of the cascade (about 1.5 seconds at launch).
   Never clamp later delays into a batch. Reduce Motion reveals everything
   immediately; newly realized offscreen cells do not wait through earlier slots.
   The launch-only staging does not defer startup or authorization work. Avatars
