@@ -322,6 +322,10 @@ does not become a relative stream. Malformed extended entries remain skipped,
 and HLS segments/renditions never become individual channels. `#EXTGRP` supplies
 persistent default groups until changed or cleared, while an entry's
 `group-title` overrides those defaults for that entry.
+Standalone duplicate rows retain additional category memberships when their
+full stream address and accepted headers match. Their existing ID, first-entry
+metadata and skipped-row accounting remain unchanged; headers are never combined.
+Account category rows and distinct-delivery identity rules are unchanged.
 
 Playlist `user-agent`/`referrer` attributes (including HTTP-prefixed aliases),
 `#EXTVLCOPT`, and URL pipe headers share the same bounded header validation.
@@ -367,27 +371,44 @@ deadline. Cancellation, authentication, certificates, blocked redirects, missing
 endpoints, size limits and XML parse errors are not retried. Failed body transfers
 restart from byte zero; incomplete responses are never cached. Native Xtream
 API fallback selection is unchanged.
-Confirmed XMLTV 404s are reused only within the current provider's refresh,
+Confirmed XMLTV 404s, malformed guides and transport byte-limit failures are reused
+only within the current provider's refresh,
 across its channel/window batches. Every new refresh can retry immediately;
-neither another account nor a later refresh inherits those failures. Diagnostics
-distinguish a reused failure from a new HTTP request. Successful document caching
+neither another account nor a later refresh inherits those failures. Parser size
+failures are not memoized: they may depend on the selected channels' retention
+budget rather than the whole document. Diagnostics distinguish a reused failure
+from a new HTTP request. Successful document caching
 retains one account-scoped response per provider instance for at most 60 seconds,
-honoring shorter max-age, no-cache and no-store. Bodies up to 16 MiB remain in
-memory; larger permitted bodies (up to the existing 256 MiB download limit) use an unlinked temporary
-file mapping. Expiry and teardown release the cache without requiring another
+honoring shorter max-age, no-cache and no-store. Both account and standalone guide
+downloads spool through 64 KiB buffers into unlinked temporary files, then expose
+immutable file-backed data to the existing streaming parser. Partial downloads
+are reclaimed on failure, cancellation or process termination. Expiry and teardown
+release the account response cache without requiring another
 request. This avoids downloading a large guide again for each channel batch;
-matching and parsing still run separately for each batch. Initial download
-assembly still uses Data. Backing failures are logged and leave a valid response
-uncached rather than failing its guide import.
+matching and parsing still run separately for each batch. A storage failure fails
+the import rather than falling back to an unbounded in-memory download.
 Rejected XMLTV documents are evicted from the response cache in both account and
 standalone source paths, so the next refresh can fetch corrected data rather than
 replay cached HTML, malformed XML or an oversized expanded document.
+
+Account-backed guide aggregation continues through independently failing configured
+XMLTV sources. Valid listings, including native Xtream listings obtained before a
+failed XMLTV fallback, reach the feature layer as an explicitly incomplete result.
+Only channels with new listings replace their saved window; missing channels keep
+their last-good data. The window remains failed and retryable rather than becoming
+fresh or successfully empty. Cancellation and authorization failures remain terminal,
+and publication still rechecks the active profile and source authorization.
 
 The bounded-retry comparison used
 [Kodi IPTV Simple's XMLTV loader](https://github.com/kodi-pvr/pvr.iptvsimple/blob/f4071e16c747e1a13d4710e249cb03ff11204f17/src/iptvsimple/Epg.cpp)
 and [Jellyfin's XMLTV download/cache handling](https://github.com/jellyfin/jellyfin/blob/5b385862fb97201d954a6ac7c9c745d791a738fa/src/Jellyfin.LiveTv/Listings/XmlTvListingsProvider.cs).
 Plozz retains its own credential boundaries, cancellation behavior, strict parser,
 resource limits and visible failures rather than copying broad fallback policies.
+The large-guide comparison also inspected
+[Lume's file-backed transport](https://github.com/bilipp/Lume/blob/36d2df31616a6f58cee679b220a0412173b762bf/Lume/Services/Network/M3UClient.swift)
+and [guide ingestion](https://github.com/bilipp/Lume/blob/36d2df31616a6f58cee679b220a0412173b762bf/Lume/Services/Sync/EPGSyncManager.swift).
+Plozz extends its own temporary-file and streaming-parser infrastructure; it does
+not copy upstream code or adopt global cache deletion or success-on-partial-failure.
 
 XMLTV accepts minute- or second-precision programme timestamps, compact and
 colon-separated numeric timezone offsets, and the unambiguous UTC/GMT/Z labels.
@@ -1532,7 +1553,16 @@ prefer a schedule with upcoming listings, then the source order shown above.
 An unavailable refresh retains that source's last good data for current channels.
 Source changes fence late network/parse results before reloading.
 
-Compressed input, expanded XML, retained text and program counts are bounded.
+Each guide allows at most 256 MiB of gzip input, 2 GiB of expanded/plain XML,
+100,000 channel declarations and 4,000,000 programme elements. Byte limits apply
+while downloading/decompressing, not just after allocation. Gzip integrity and
+every concatenated member are validated; truncated members and trailing garbage
+fail the import. Expanded XML is streamed, never assembled in memory or written
+as a second full temporary copy.
+Optional descriptions are retained only for requested listings and shortened at
+a valid Unicode boundary to the existing 16 KiB field budget. Diagnostics count
+shortened descriptions; an unrelated channel's long synopsis cannot discard a
+valid schedule. Required titles, identifiers and structural validation remain strict.
 The combined in-memory guide cache is also capped at 250,000 programs and
 32 MiB of program title/subtitle text. Sequential feed loading limits transient
 memory. Two streaming XML passes discover channel metadata before retaining

@@ -26,6 +26,7 @@ actor IPTVClient {
     private final class GuideRefreshState {
         weak var scope: ServerLiveTVGuideRefreshScope?
         var missingURLs = Set<URL>()
+        var rejectedURLs: [URL: LiveTVSourceImportError] = [:]
 
         init(scope: ServerLiveTVGuideRefreshScope) { self.scope = scope }
     }
@@ -676,21 +677,25 @@ actor IPTVClient {
         }
     }
 
+    private func currentGuideRefresh() -> GuideRefreshState? {
+        guideRefreshes = guideRefreshes.filter { $0.value.scope != nil }
+        guard let scope = ServerLiveTVGuideRefreshScope.current else { return nil }
+        let key = ObjectIdentifier(scope)
+        let state = guideRefreshes[key] ?? GuideRefreshState(scope: scope)
+        guideRefreshes[key] = state
+        return state
+    }
+
     func guideData(from url: URL) async throws -> Data {
         try Task.checkCancellation()
-        guideRefreshes = guideRefreshes.filter { $0.value.scope != nil }
-        let refresh: GuideRefreshState?
-        if let scope = ServerLiveTVGuideRefreshScope.current {
-            let key = ObjectIdentifier(scope)
-            let state = guideRefreshes[key] ?? GuideRefreshState(scope: scope)
-            guideRefreshes[key] = state
-            refresh = state
-        } else {
-            refresh = nil
-        }
+        let refresh = currentGuideRefresh()
         if refresh?.missingURLs.contains(url) == true {
-            IPTVGuideDiagnostics.request?.reuseMissingGuide()
+            IPTVGuideDiagnostics.request?.reuseGuideFailure()
             throw AppError.notFound
+        }
+        if let failure = refresh?.rejectedURLs[url] {
+            IPTVGuideDiagnostics.request?.reuseGuideFailure()
+            throw failure
         }
         do {
             var attempt = 0
@@ -715,6 +720,10 @@ actor IPTVClient {
             try Task.checkCancellation()
             refresh?.missingURLs.insert(url)
             throw AppError.notFound
+        } catch LiveTVSourceImportError.guideTooLarge {
+            try Task.checkCancellation()
+            refresh?.rejectedURLs[url] = .guideTooLarge
+            throw LiveTVSourceImportError.guideTooLarge
         }
     }
 
@@ -737,7 +746,11 @@ actor IPTVClient {
         return Double(1 << attempt)
     }
 
-    func discardInvalidGuideData(from url: URL) {
+    func discardInvalidGuideData(from url: URL, failure: LiveTVSourceImportError) {
+        guard failure == .invalidGuide || failure == .guideTooLarge else { return }
+        // Parser size failures can depend on the selected channels/window's
+        // retained rows. They must not reject another batch using the same URL.
+        if failure == .invalidGuide { currentGuideRefresh()?.rejectedURLs[url] = failure }
         guard cachedGuide?.url == url else { return }
         clearGuideCache()
     }
@@ -754,19 +767,35 @@ actor IPTVClient {
             receivedResponse: receivedResponse
         )
         defer { bytes.task.cancel() }
-        let limit = 256 * 1_024 * 1_024
+        let limit = XMLTVResourceLimits.expandedBytes
         guard response.expectedContentLength <= limit else { throw LiveTVSourceImportError.guideTooLarge }
-        var data = Data()
+        let writer = try TemporaryMappedData.Writer(maximumBytes: limit)
+        var buffer = Data()
+        buffer.reserveCapacity(65_536)
+        var received = 0
+        var payloadLimit = limit
         defer {
-            IPTVHTTP.performanceMetrics?.record(bytes: data.count)
-            IPTVGuideDiagnostics.request?.consumed(data.count)
+            IPTVHTTP.performanceMetrics?.record(bytes: received)
+            IPTVGuideDiagnostics.request?.consumed(received)
         }
         for try await byte in bytes {
-            guard data.count < limit else { throw LiveTVSourceImportError.guideTooLarge }
-            data.append(byte)
-            if data.count.isMultiple(of: 65_536) { try Task.checkCancellation() }
+            guard received < payloadLimit else { throw LiveTVSourceImportError.guideTooLarge }
+            buffer.append(byte)
+            received += 1
+            if received == 2, buffer.starts(with: [0x1f, 0x8b]) {
+                payloadLimit = XMLTVResourceLimits.compressedBytes
+                guard response.expectedContentLength <= payloadLimit else {
+                    throw LiveTVSourceImportError.guideTooLarge
+                }
+            }
+            if buffer.count == 65_536 {
+                try writer.append(buffer)
+                buffer.removeAll(keepingCapacity: true)
+            }
         }
         try Task.checkCancellation()
+        try writer.append(buffer)
+        let data = try writer.finish()
         let directives = (response.value(forHTTPHeaderField: "Cache-Control") ?? "").lowercased()
             .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         let maxAge = directives.first { $0.hasPrefix("max-age=") }
@@ -774,22 +803,15 @@ actor IPTVClient {
         let duration = min(60, maxAge.flatMap { $0.isFinite ? max(0, $0) : nil } ?? 60)
         clearGuideCache()
         if duration > 0, !directives.contains("no-store"), !directives.contains("no-cache") {
-            do {
-                let retained = data.count <= 16 * 1_024 * 1_024
-                    ? data : try TemporaryMappedData.store(data)
-                cachedGuide = (url, retained, Date().addingTimeInterval(duration))
-                let generation = guideCacheGeneration
-                guideCacheExpiry = Task { [weak self] in
-                    do { try await Task.sleep(for: .seconds(duration)) }
-                    catch is CancellationError { return }
-                    catch {
-                        PlozzLog.networking.error("IPTV guide cache expiry wait failed")
-                    }
-                    await self?.expireGuideCache(generation: generation)
+            cachedGuide = (url, data, Date().addingTimeInterval(duration))
+            let generation = guideCacheGeneration
+            guideCacheExpiry = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(duration)) }
+                catch is CancellationError { return }
+                catch {
+                    PlozzLog.networking.error("IPTV guide cache expiry wait failed")
                 }
-            } catch let error as NSError where error.domain == NSPOSIXErrorDomain {
-                // Caching is optional; a spool failure must not discard a valid downloaded guide.
-                PlozzLog.networking.error("IPTV guide cache backing failed code=\(error.code)")
+                await self?.expireGuideCache(generation: generation)
             }
         }
         try Task.checkCancellation()

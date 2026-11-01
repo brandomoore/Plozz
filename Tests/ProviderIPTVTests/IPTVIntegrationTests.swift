@@ -849,11 +849,16 @@ final class IPTVIntegrationTests: XCTestCase {
                 )
                 XCTFail("A successful native row does not make the whole mixed batch complete.")
             } catch {
-                switch status {
-                case 401: XCTAssertEqual(error as? IPTVError, .authentication)
-                case 429:
-                    guard case AppError.rateLimited = error else { return XCTFail("Expected the original rate limit.") }
-                default: XCTAssertEqual(error as? IPTVError, .httpStatus(status))
+                if status == 401 {
+                    XCTAssertEqual(error as? IPTVError, .authentication)
+                } else {
+                    let partial = try XCTUnwrap(error as? ServerLiveTVPartialGuideError)
+                    XCTAssertEqual(Set(partial.programmes.map(\.channelID)), ["live:10"])
+                    if status == 429 {
+                        guard case AppError.rateLimited = partial.failure else {
+                            return XCTFail("Expected the original rate limit.")
+                        }
+                    } else { XCTAssertEqual(partial.failure as? IPTVError, .httpStatus(status)) }
                 }
             }
             let channels = try await provider.cachedLiveTVCatalog()
@@ -864,6 +869,43 @@ final class IPTVIntegrationTests: XCTestCase {
             XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/prefix/xmltv.php" }.count,
                            [429, 503].contains(status) ? 3 : 1,
                            "Transient failures retry the same fallback endpoint, without selecting another source.")
+            await provider.teardown()
+        }
+    }
+
+    func testMalformedGuideDoesNotDiscardOtherConfiguredGuideListingsInEitherOrder() async throws {
+        let broken = try XCTUnwrap(URL(string: "https://cdn.test/broken.xml"))
+        let working = try XCTUnwrap(URL(string: "https://cdn.test/working.xml"))
+        for brokenFirst in [true, false] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { request in
+                if request.url == broken { return (200, [:], Data("<html/>".utf8)) }
+                if request.url == working { return (200, [:], Data("<tv/>".utf8)) }
+                if request.url?.query?.contains("action=get_live_streams") == true {
+                    return (200, [:], Data(#"[{"stream_id":10,"name":"News"},{"stream_id":11,"name":"Sports"}]"#.utf8))
+                }
+                return try Self.xtream(request)
+            }
+            let urls = brokenFirst ? [broken, working] : [working, broken]
+            let provider = try await makeXtreamGuideProvider(
+                guideURL: urls[0], additionalGuideURLs: [urls[1]]
+            ) { data, _, _, from, to in
+                guard data == Data("<tv/>".utf8) else { throw LiveTVSourceImportError.invalidGuide }
+                return [.init(id: "valid", channelID: "live:10", title: "Valid", startDate: from, endDate: to)]
+            }
+            do {
+                _ = try await provider.liveTVGuide(
+                    channelIDs: ["live:10", "live:11"], from: Date(timeIntervalSince1970: 100),
+                    to: Date(timeIntervalSince1970: 500)
+                )
+                XCTFail("Incomplete guide coverage must retain its failure.")
+            } catch {
+                let partial = try XCTUnwrap(error as? ServerLiveTVPartialGuideError)
+                XCTAssertEqual(partial.programmes.map(\.title), ["Valid"])
+                XCTAssertEqual(partial.failure as? LiveTVSourceImportError, .invalidGuide)
+            }
+            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url == broken || $0.url == working }.count, 2)
+            XCTAssertFalse(IPTVFixture.state.requests.contains { $0.url?.path == "/prefix/xmltv.php" })
             await provider.teardown()
         }
     }

@@ -40,6 +40,18 @@ public final class ServerLiveTVGuideRefreshScope: Sendable {
     public init() {}
 }
 
+/// Usable listings from an incomplete request. Consumers must retain the failure
+/// and must not interpret omitted channels as successfully empty coverage.
+public struct ServerLiveTVPartialGuideError: Error, Sendable {
+    public let programmes: [ServerLiveTVProgramme]
+    public let failure: any Error
+
+    public init(programmes: [ServerLiveTVProgramme], failure: any Error) {
+        self.programmes = programmes
+        self.failure = failure
+    }
+}
+
 public struct ServerLiveTVCatalogSnapshot: Sendable {
     public let channels: [ServerLiveTVChannel]
     public let supportsGuide: Bool

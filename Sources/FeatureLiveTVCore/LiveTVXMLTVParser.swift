@@ -39,10 +39,10 @@ public struct LiveTVGuideImport: Codable, Sendable {
 }
 
 public struct LiveTVXMLTVParser: Sendable {
-    public static let maximumCompressedBytes = 32 * 1_024 * 1_024
-    public static let maximumExpandedBytes = 256 * 1_024 * 1_024
-    public static let maximumGuideChannels = 20_000
-    public static let maximumPrograms = 2_000_000
+    public static let maximumCompressedBytes = XMLTVResourceLimits.compressedBytes
+    public static let maximumExpandedBytes = XMLTVResourceLimits.expandedBytes
+    public static let maximumGuideChannels = 100_000
+    public static let maximumPrograms = 4_000_000
     public static let maximumTextLength = 16_384
     public static let maximumRetainedPrograms = 250_000
     public static let maximumRetainedTextBytes = 32 * 1_024 * 1_024
@@ -247,6 +247,8 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
     private var currentTextPriority = 2
     private var selectedTextPriorities: [String: Int] = [:]
     private var text = ""
+    private var truncatedDescription = false
+    private var truncatedDescriptions = 0
     private var sawTV = false
     private var closedTV = false
     private var depth = 0
@@ -323,6 +325,11 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
         }
         if Task.isCancelled {
             throw LiveTVSourceImportError.cancelled
+        }
+        if truncatedDescriptions > 0 {
+            PlozzLog.networking.info(
+                "XMLTV_PARSE pass=programmes outcome=succeeded truncatedDescriptions=\(truncatedDescriptions)"
+            )
         }
         return LiveTVGuideImport(
             programs: programs,
@@ -500,6 +507,22 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
         guard currentElement != nil else { return }
+        if currentElement == "desc" {
+            guard currentProgram != nil, !truncatedDescription else { return }
+            var remaining = LiveTVXMLTVParser.maximumTextLength - text.utf8.count
+            if string.utf8.count > remaining {
+                truncatedDescription = true
+                truncatedDescriptions += 1
+                // Optional prose must not invalidate an otherwise usable schedule.
+                for scalar in string.unicodeScalars {
+                    let size = String(scalar).utf8.count
+                    guard size <= remaining else { break }
+                    text.unicodeScalars.append(scalar)
+                    remaining -= size
+                }
+                return
+            }
+        }
         guard text.utf8.count + string.utf8.count <= LiveTVXMLTVParser.maximumTextLength else {
             error = .guideTooLarge
             parser.abortParsing()
@@ -667,6 +690,7 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
     }
 
     private func beginText(for elementName: String, language: String? = nil) {
+        truncatedDescription = false
         currentElement = elementName
         currentElementDepth = depth - 1
         let language = language?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1032,6 +1056,10 @@ private final class BoundedGzipInputStream: InputStream {
         guard !reachedEnd else { return false }
 
         while output.isEmpty && !reachedEnd && failure == nil {
+            if Task.isCancelled {
+                failure = .cancelled
+                break
+            }
             if zstream.avail_in == 0 {
                 let count = compressedStream.read(input, maxLength: 64 * 1_024)
                 guard count > 0 else {
@@ -1059,7 +1087,27 @@ private final class BoundedGzipInputStream: InputStream {
                 output = Array(chunk.prefix(produced))
             }
             if status == Z_STREAM_END {
-                reachedEnd = true
+                if zstream.avail_in == 0 {
+                    let count = compressedStream.read(input, maxLength: 64 * 1_024)
+                    if count < 0 {
+                        failure = .invalidGuide
+                    } else if count == 0 {
+                        reachedEnd = true
+                    } else {
+                        zstream.next_in = input
+                        zstream.avail_in = uInt(count)
+                    }
+                }
+                if !reachedEnd, failure == nil {
+                    let next = zstream.next_in
+                    let available = zstream.avail_in
+                    guard inflateReset2(&zstream, 15 + 16) == Z_OK else {
+                        failure = .invalidGuide
+                        break
+                    }
+                    zstream.next_in = next
+                    zstream.avail_in = available
+                }
             } else if status != Z_OK {
                 failure = .invalidGuide
             }
