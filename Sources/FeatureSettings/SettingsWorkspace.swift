@@ -59,7 +59,7 @@ struct SettingsWorkspace<Sidebar: View, Detail: View>: View {
             }
         }
         .reportsNavigationDepth(
-            max(navigation.pages.pages.count, navigation.pages.isTransitioning ? 1 : 0),
+            max(navigation.pages.pages.count, navigation.pages.isTransitioning || navigation.isSearching ? 1 : 0),
             to: chrome
         )
     }

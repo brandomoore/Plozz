@@ -3,12 +3,63 @@ import Vision
 
 @MainActor
 final class SettingsWorkspaceRemoteTests: XCTestCase {
+    func testInlineSearchKeepsQueryAndReturnsToCardInPinnedNavigation() throws {
+        for style in ["rail", "sidebar"] {
+            let app = try launchSettings(style: style, syncEnabled: false)
+            defer { app.terminate() }
+            let search = app.textFields["settings-section-search"]
+            try focus(search, in: app)
+            XCTAssertFalse(app.buttons["settings-search-result-theme"].exists,
+                           "Focusing the card alone must not replace Settings.")
+            XCUIRemote.shared.press(.select)
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+            let a = app.keys["a"]
+            XCTAssertTrue(a.waitForExistence(timeout: 5))
+            XCTAssertGreaterThan(a.frame.height, app.keys["b"].frame.height,
+                                 "The native keyboard must visibly focus its initial key.")
+            XCUIRemote.shared.press(.select)
+            for _ in 0..<20 { XCUIRemote.shared.press(.right) }
+            XCTAssertGreaterThan(app.keys["u"].frame.height, app.keys["v"].frame.height)
+            XCUIRemote.shared.press(.select)
+            try focus(app.buttons["search"], in: app)
+            XCUIRemote.shared.press(.select)
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+            XCTAssertEqual(search.value as? String, "au")
+            XCTAssertFalse(app.buttons["settings-category-back"].exists)
+            let autoplay = app.buttons["settings-search-result-autoplay-next-episode"]
+            try focus(autoplay, in: app)
+            capture("settings-search-\(style)-query", in: app)
+            XCUIRemote.shared.press(.select)
+            XCTAssertTrue(app.switches["Autoplay next episode"].waitForExistence(timeout: 5))
+            XCUIRemote.shared.press(.menu)
+            let restored = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in self.hasFocus(autoplay) }, object: nil
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 5), .completed, app.debugDescription)
+            XCTAssertEqual(search.value as? String, "au")
+            XCUIRemote.shared.press(.menu)
+            XCTAssertTrue(section("playback", in: app).waitForExistence(timeout: 5))
+            XCTAssertEqual(search.value as? String, "Search settings")
+            XCTAssertTrue(hasFocus(search), "Back must restore the search field, not leave Settings.")
+            XCTAssertFalse(app.keyboards.firstMatch.exists)
+            capture("settings-search-\(style)-restored", in: app)
+        }
+    }
+
     func testSearchSuggestionLandsOnSubtitleSizeAndRestoresResultFocus() throws {
         let app = try launchSettings(style: "tabBar", syncEnabled: false)
         defer { app.terminate() }
-        let search = section("search", in: app)
+        let search = app.textFields["settings-section-search"]
         try focus(search, in: app)
+        capture("settings-search-top-card", in: app)
         XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5),
+                      "One Select must open native text entry, not another page. \(app.debugDescription)")
+        capture("settings-search-first-press-keyboard", in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["settings-category-back"].exists)
+        XCTAssertFalse(section("playback", in: app).exists)
         let result = app.buttons["settings-search-result-subtitle-size"]
         XCTAssertTrue(result.waitForExistence(timeout: 5), app.debugDescription)
         try focus(result, in: app)
@@ -47,6 +98,16 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [themeFocused], timeout: 5), .completed, app.debugDescription)
         capture("settings-search-theme", in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(theme.waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(section("playback", in: app).waitForExistence(timeout: 5))
+        let returnedToField = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in self.hasFocus(search) }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [returnedToField], timeout: 5), .completed, app.debugDescription)
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "Returning to the card must not reopen the keyboard.")
+        capture("settings-search-back-to-cards", in: app)
     }
 
     func testProfileHintAnimatesWithinStableSettingsHeader() throws {
