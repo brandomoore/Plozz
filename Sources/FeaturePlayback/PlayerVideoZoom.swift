@@ -13,7 +13,7 @@ public struct PlayerVideoZoom: Equatable, Sendable {
             case .fill: "Crop"
             case .stretch: "Stretch"
             case .custom: "Custom"
-            case .picture: "Fit picture"
+            case .picture: "Auto-crop black bars"
             }
         }
 

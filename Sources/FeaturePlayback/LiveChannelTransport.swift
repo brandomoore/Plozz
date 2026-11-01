@@ -2641,12 +2641,6 @@ private struct LiveChannelTrackPanel: View {
                 .padding(.horizontal, 18)
                 .padding(.top, 18)
             let rows = rows
-            if kind == .playback, model.videoZoom.supportsActivePicture {
-                Text("Detects borders. May crop edges.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 18)
-            }
             #if os(tvOS)
             if rows.count > Self.rowsBeforeScrolling {
                 ScrollView { rowStack(rows) }

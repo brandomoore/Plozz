@@ -1026,7 +1026,8 @@ artwork boundary through that same zoom/stretch geometry before moving a region.
 Zoom belongs to the current player session, not a global/profile preference.
 A new VOD player or a different live channel starts at Normal. PiP and AirPlay retain
 their system-owned presentation rather than inheriting this local viewport crop.
-Both production playback engines offer opt-in **Fit picture**. A shared, cancellable
+Both production playback engines offer opt-in **Auto-crop black bars**, with no
+menu subtext. A shared, cancellable
 AetherEngine analysis measures encoded borders in SDR, HDR10/HDR10+, HLG, and
 Dolby Vision output, using existing frames
 and no additional decoder or stream. It scales and translates the original surface

@@ -33,8 +33,7 @@ struct PlaybackOptionsPane: View {
                 PlayerMenuRowStack(rows: zoom.availableModes.filter { $0 != .custom }.map { mode in
                     PlayerControls.TrackRow(
                         id: Self.modeSlot(mode), header: nil, title: Text(mode.menuTitle),
-                        subtitle: mode == .picture
-                            ? Text("Detects borders. May crop edges.") : nil,
+                        subtitle: nil,
                         isSelected: zoom.settings.mode == mode, isToggle: false,
                         action: {
                             zoom.settings.mode = mode

@@ -21,9 +21,6 @@ public enum PlayerZoomMenu {
                 model.settings.mode = mode
                 if mode == .custom { onCustomZoom() }
             }
-            if mode == .picture {
-                action.subtitle = String(localized: "Detects borders. May crop edges.", locale: locale)
-            }
             return action
         }
         return UIMenu(
@@ -42,11 +39,6 @@ struct PlayerZoomSettingsRows: View {
             ForEach(model.availableModes, id: \.self) { mode in
                 Text(mode.menuTitle).tag(mode)
             }
-        }
-        if model.settings.mode == .picture {
-            Text("Detects borders. May crop edges.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
         }
         if model.settings.mode == .custom {
             Stepper(value: Binding(

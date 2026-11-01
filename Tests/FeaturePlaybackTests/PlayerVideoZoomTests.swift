@@ -12,9 +12,9 @@ final class PlayerVideoZoomTests: XCTestCase {
     func testZoomModeCopyUsesFamiliarNamesAndIdentifiesTheDefaultWithoutDescriptions() {
         XCTAssertEqual(PlayerVideoZoom().mode, .fit)
         XCTAssertEqual(PlayerVideoZoom.Mode.allCases.map { String(localized: $0.title) },
-                       ["Normal", "Crop", "Stretch", "Custom", "Fit picture"])
+                       ["Normal", "Crop", "Stretch", "Custom", "Auto-crop black bars"])
         XCTAssertEqual(PlayerVideoZoom.Mode.allCases.map { String(localized: $0.menuTitle) },
-                       ["Normal (Default)", "Crop", "Stretch", "Custom", "Fit picture"])
+                       ["Normal (Default)", "Crop", "Stretch", "Custom", "Auto-crop black bars"])
     }
 
     func testPictureFitUsesUniformScaleAndAsymmetricTranslation() throws {
