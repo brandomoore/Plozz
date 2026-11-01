@@ -51,7 +51,9 @@ settings cards fade into suggestions/results in the same scrolling column;
 Reduce Motion skips the fade. Dismissing the keyboard leaves search available,
 and Back from the results clears the query and restores the settings cards and
 search-field focus. Result destinations use the existing retained Settings page
-stack, preserving the query and selected result on return. Profile or
+stack, preserving the query and selected result on return. Native sidebar
+full-screen dismissal retains the source row and restores its focus only after
+the cover finishes dismissing, rather than resetting focus to the search field. Profile or
 authorization changes clear search along with the page stack.
 TV result buttons use `SettingsFormButtonStyle` for the standard row height and
 content insets inside the focus highlight, with `SettingsIconLabelStyle` keeping
