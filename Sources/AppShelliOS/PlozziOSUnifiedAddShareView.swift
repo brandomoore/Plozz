@@ -22,16 +22,19 @@ struct PlozziOSUnifiedAddShareView: View {
     @Environment(\.themePalette) private var palette
     let appModel: PlozziOSAppModel
     let embedsNavigationStack: Bool
+    private let onComplete: (() -> Void)?
     @State private var viewModel = UnifiedAddShareModel()
     @State private var wired = false
     @State private var saveError: String?
 
     init(
         appModel: PlozziOSAppModel,
-        embedsNavigationStack: Bool = true
+        embedsNavigationStack: Bool = true,
+        onComplete: (() -> Void)? = nil
     ) {
         self.appModel = appModel
         self.embedsNavigationStack = embedsNavigationStack
+        self.onComplete = onComplete
     }
 
     var body: some View {
@@ -59,7 +62,7 @@ struct PlozziOSUnifiedAddShareView: View {
                         subpath: draft.subpath,
                         libraryConfiguration: draft.libraryConfiguration
                     ) {
-                        dismiss()
+                        finish()
                     } else {
                         saveError = appModel.accountError
                             ?? "Couldn’t save this SMB share."
@@ -74,7 +77,7 @@ struct PlozziOSUnifiedAddShareView: View {
                         displayName: config.displayName,
                         libraryConfiguration: config.libraryConfiguration
                     ) {
-                        dismiss()
+                        finish()
                     } else {
                         saveError = appModel.accountError
                             ?? "Couldn’t save this WebDAV share."
@@ -113,7 +116,7 @@ struct PlozziOSUnifiedAddShareView: View {
                         )
                     }
                     if saved {
-                        dismiss()
+                        finish()
                     } else {
                         saveError = appModel.accountError
                             ?? "Couldn’t save this network share."
@@ -123,6 +126,10 @@ struct PlozziOSUnifiedAddShareView: View {
             viewModel.startScan()
         }
         .onDisappear { viewModel.stopScan() }
+    }
+
+    private func finish() {
+        if let onComplete { onComplete() } else { dismiss() }
     }
 
     @ViewBuilder

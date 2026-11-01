@@ -51,8 +51,14 @@ public struct IPTVSignInView: View {
                 .plozzActionButton(role: .secondary)
                 .accessibilityIdentifier("iptv-cancel")
             }
+            #if os(iOS)
+            .controlSize(.large)
+            .frame(maxWidth: 640)
+            .padding(20)
+            #else
             .frame(maxWidth: 840)
             .padding(32)
+            #endif
             .frame(maxWidth: .infinity)
         }
         .environment(\.colorScheme, palette.isLight ? .light : .dark)

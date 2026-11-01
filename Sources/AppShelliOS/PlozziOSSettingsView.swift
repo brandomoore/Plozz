@@ -114,7 +114,7 @@ struct PlozziOSSettingsView: View {
         ) {
             AddServerView(
                 appModel: appModel,
-                initialProvider: iptvSetup == nil ? addUserServer?.provider ?? .jellyfin : .iptv,
+                initialProvider: iptvSetup == nil ? addUserServer?.provider : .iptv,
                 initialAddress: addUserServer?.baseURL.absoluteString ?? "",
                 initialIPTVPlaylist: iptvSetup?.playlist, initialIPTVAccount: iptvSetup?.account,
                 initialIPTVMode: iptvSetup?.mode ?? .playlist

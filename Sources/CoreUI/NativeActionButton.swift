@@ -15,6 +15,7 @@ public extension View {
 private struct NativeActionButtonModifier: ViewModifier {
     let prominence: ActionButtonProminence
     @Environment(\.themePalette) private var palette
+    @Environment(\.isEnabled) private var isEnabled
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -34,7 +35,8 @@ private struct NativeActionButtonModifier: ViewModifier {
     private func primary(_ content: Content) -> some View {
         #if os(iOS)
         // Native prominent buttons assume white ink even when the theme's tint is white.
-        let button = content.tint(palette.accent).foregroundStyle(palette.onAccent)
+        let button = content.tint(palette.accent)
+            .foregroundStyle(isEnabled ? palette.onAccent : palette.secondaryText)
         #else
         let button = content
         #endif

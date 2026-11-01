@@ -61,6 +61,18 @@ public struct SiloSignInView: View {
         .padding(.top, 60)
         .padding(.bottom, 40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #elseif os(iOS)
+        ScrollView {
+            VStack(spacing: 28) {
+                header
+                content
+                cancelButton
+            }
+            .frame(maxWidth: 640)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .settingsPageSurface(horizontalInset: 20)
         #else
         GeometryReader { geometry in
             ScrollView {
@@ -81,7 +93,13 @@ public struct SiloSignInView: View {
 
     private var header: some View {
         VStack(spacing: 14) {
-            if !isChoosingProfile { ProviderBrandMark(provider: .silo, size: 80) }
+            if !isChoosingProfile {
+                #if os(tvOS)
+                ProviderBrandMark(provider: .silo, size: 80)
+                #else
+                ProviderBrandMark(provider: .silo, size: 72)
+                #endif
+            }
             OnboardingHeader(
                 Text(title),
                 subtitle: isChoosingProfile ? Text("Choose your user on \(server.name).") : nil
@@ -91,9 +109,18 @@ public struct SiloSignInView: View {
 
     private var cancelButton: some View {
         Button(role: .cancel, action: cancel) {
+            #if os(tvOS)
             Text("Cancel").frame(minWidth: 200)
+            #else
+            Text("Cancel").frame(maxWidth: .infinity)
+            #endif
         }
+        #if os(tvOS)
         .buttonStyle(.bordered)
+        #else
+        .plozzActionButton(role: .secondary)
+        .controlSize(.large)
+        #endif
         .focused($focused, equals: .cancel)
     }
 
@@ -157,13 +184,37 @@ public struct SiloSignInView: View {
                     .frame(maxWidth: 400)
                     .onSubmit { model.submitPIN(profile) }
                 if let error = model.pinError { Text(error).foregroundStyle(.red) }
-                Button("Continue") { model.submitPIN(profile) }
+                Button {
+                    model.submitPIN(profile)
+                } label: {
+                    Text("Continue")
+                        #if os(iOS)
+                        .frame(maxWidth: .infinity)
+                        #endif
+                }
+                    #if os(tvOS)
                     .buttonStyle(.borderedProminent)
                     .foregroundStyle(palette.onAccent)
+                    #else
+                    .plozzActionButton()
+                    .controlSize(.large)
+                    #endif
                     .focused($focused, equals: .confirm)
                     .disabled(model.pin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button("Choose another profile") { model.chooseAnotherProfile() }
+                Button {
+                    model.chooseAnotherProfile()
+                } label: {
+                    Text("Choose another profile")
+                        #if os(iOS)
+                        .frame(maxWidth: .infinity)
+                        #endif
+                }
+                    #if os(tvOS)
                     .buttonStyle(.bordered)
+                    #else
+                    .plozzActionButton(role: .secondary)
+                    .controlSize(.large)
+                    #endif
                     .focused($focused, equals: .profiles)
             }
         case .expired:
@@ -172,17 +223,41 @@ public struct SiloSignInView: View {
                     .foregroundStyle(.secondary)
                 Text("Get a new code to continue. No server has been added.")
                     .multilineTextAlignment(.center)
-                Button("Get a new code") { model.start() }
+                Button {
+                    model.start()
+                } label: {
+                    Text("Get a new code")
+                        #if os(iOS)
+                        .frame(maxWidth: .infinity)
+                        #endif
+                }
+                    #if os(tvOS)
                     .buttonStyle(.borderedProminent)
                     .foregroundStyle(palette.onAccent)
+                    #else
+                    .plozzActionButton()
+                    .controlSize(.large)
+                    #endif
                     .focused($focused, equals: .retry)
             }
         case let .error(message):
             VStack(spacing: 20) {
                 Text(message).multilineTextAlignment(.center)
-                Button("Try Again") { model.retry() }
+                Button {
+                    model.retry()
+                } label: {
+                    Text("Try Again")
+                        #if os(iOS)
+                        .frame(maxWidth: .infinity)
+                        #endif
+                }
+                    #if os(tvOS)
                     .buttonStyle(.borderedProminent)
                     .foregroundStyle(palette.onAccent)
+                    #else
+                    .plozzActionButton()
+                    .controlSize(.large)
+                    #endif
                     .focused($focused, equals: .retry)
             }
         }
@@ -233,10 +308,11 @@ private struct SiloPairingCard: View {
                     openURL(approvalURL) { accepted in browserFailed = !accepted }
                 } label: {
                     Label("Open Silo to approve", systemImage: "arrow.up.forward.app")
-                        .foregroundStyle(palette.onAccent)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .plozzActionButton()
                 .controlSize(.large)
                 if browserFailed {
                     Text("The browser couldn't open. Use the address below or scan the code with another device.")
@@ -255,7 +331,7 @@ private struct SiloPairingCard: View {
                     .padding(.vertical, 12)
                 }
             }
-            .frame(maxWidth: 520)
+            .frame(maxWidth: .infinity)
             #endif
         }
         .onChange(of: approvalURL) { _, _ in browserFailed = false }
