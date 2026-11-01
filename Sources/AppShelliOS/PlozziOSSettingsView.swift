@@ -1523,7 +1523,7 @@ private struct PlozziOSSettingsSearchDestination: View {
             )
         case .navigation: PlozziOSNavigationSettingsView(appModel: appModel)
         case .home, .hero, .heroContent, .heroRatings, .heroTrailers, .heroDiscovery,
-             .heroLibraries, .heroCollections, .homeRows, .homeFiltering, .homeLabels, .continueWatching:
+             .heroLibraries, .heroCollections, .homeRows, .homeRowStyle, .homeFiltering, .homeLabels, .continueWatching:
             PlozziOSHomeSettingsView(
                 hero: appModel.settings.hero, heroBackground: appModel.settings.heroBackground,
                 cards: appModel.settings.cardStyle, visibility: appModel.settings.homeVisibility,

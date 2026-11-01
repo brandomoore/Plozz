@@ -27,30 +27,38 @@ struct PlozziOSHomeSkeletonRail: View {
     var showsCaption: Bool = CardCaptionSettings.default.showsLabels
     /// Matches Continue Watching's narrower, deeper series-artwork card shape.
     var showsSeriesArtwork: Bool = false
+    var isLibraryRow = false
 
     var body: some View {
         PlozziOSHomeRailLayout { rail(metrics: $0) }
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
-        PlozziOSMediaSection(title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0) {
+        PlozziOSMediaSection(title: title, artworkInset: !isLibraryRow && cardStyle == .framed ? metrics.cardInset : 0) {
             ScrollView(.horizontal) {
                 // Deliberately NOT lazy: the placeholders are cheap, and a lazy
                 // stack would only materialise the ones already on screen — the
                 // opposite of what a "never show a blank row" placeholder is for.
                 HStack(
                     alignment: .top,
-                    spacing: PlozziOSMediaRailLayout.stackSpacing(
+                    spacing: isLibraryRow ? PlozziOSMediaRailLayout.visibleSpacing : PlozziOSMediaRailLayout.stackSpacing(
                         metrics: metrics,
                         cardStyle: cardStyle
                     )
                 ) {
                     ForEach(0..<cardCount, id: \.self) { _ in
-                        SkeletonCardView(
-                            style: style == .landscape ? .landscape : .poster,
-                            showsCaption: showsCaption,
-                            showsSeriesArtwork: showsSeriesArtwork
-                        )
+                        if isLibraryRow {
+                            PlozziOSHomeLibraryCard(
+                                library: nil, artworkSource: nil,
+                                width: metrics.density.iOSHomeLibraryWidth(horizontalSizeClass: horizontalSizeClass)
+                            )
+                            .environment(\.plozzCardCaptionSettings, CardCaptionSettings(showsLabels: showsCaption))
+                        } else {
+                            SkeletonCardView(
+                                style: style == .landscape ? .landscape : .poster,
+                                showsCaption: showsCaption,
+                                showsSeriesArtwork: showsSeriesArtwork
+                            )
                             .frame(
                                 width: metrics.cardSlotWidth(
                                     for: style,
@@ -58,12 +66,14 @@ struct PlozziOSHomeSkeletonRail: View {
                                     showsSeriesArtwork: showsSeriesArtwork
                                 )
                             )
+                        }
                     }
                 }
             }
             .contentMargins(
                 .horizontal,
-                PlozziOSMediaRailLayout.artworkAlignedInset(
+                isLibraryRow ? PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
+                : PlozziOSMediaRailLayout.artworkAlignedInset(
                     PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
                     metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
@@ -88,6 +98,7 @@ struct PlozziOSHomeSkeletonScreen: View {
     let heroActive: Bool
     var logoSize: HeroLogoSize = .default
     var showsPosterCaptions: Bool = CardCaptionSettings.default.showsLabels
+    var showsLibraryCaptions: Bool = CardCaptionSettings.default.showsLabels
     var continueWatchingLayout: ContinueWatchingCardLayout = .landscape
     var continueWatchingShowsSeriesArtwork = true
     var continueWatchingShowsCaption = false
@@ -107,7 +118,9 @@ struct PlozziOSHomeSkeletonScreen: View {
                 showsSeriesArtwork: continueWatchingShowsSeriesArtwork
             )
             PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster, showsCaption: showsPosterCaptions)
-            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster, showsCaption: showsPosterCaptions)
+            PlozziOSHomeSkeletonRail(
+                title: Text(verbatim: " "), style: .landscape, showsCaption: showsLibraryCaptions, isLibraryRow: true
+            )
         }
         .scrollDisabled(true)
         .accessibilityLabel("Loading Home")

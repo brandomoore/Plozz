@@ -1598,6 +1598,45 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         #endif
     }
 
+    func testRowStyleShowsShowcaseFirstAndEditsRatingsInline() throws {
+        #if targetEnvironment(simulator)
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--view-customization-fixture", "--preview-row-style", "--preview-ratings-off",
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
+        ]
+        app.launch()
+        defer { app.terminate() }
+        let showcase = app.buttons["home-rows-showcase"]
+        let classic = app.buttons["home-rows-classic"]
+        XCTAssertTrue(showcase.waitForExistence(timeout: 5))
+        XCTAssertLessThan(showcase.frame.minX, classic.frame.minX)
+        XCTAssertTrue(showcase.isSelected)
+        let ratings = app.switches["hero-ratings"]
+        let age = app.switches["hero-common-sense-age"]
+        XCTAssertTrue(ratings.exists)
+        XCTAssertFalse(app.buttons["hero-settings-ratings"].exists)
+        XCTAssertFalse(age.exists)
+        try focus(ratings, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(age.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Maximum ratings shown"].exists)
+        XCTAssertTrue(showcase.exists, "Editing ratings must stay on the Row style page.")
+        try focus(classic, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertFalse(ratings.exists)
+        try focus(showcase, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(age.waitForExistence(timeout: 5), "Changing row style must preserve ratings.")
+        try focus(ratings, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(age.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(showcase.exists)
+        #else
+        throw XCTSkip("Simulator-only Settings review.")
+        #endif
+    }
+
     func testHomeSectionEditorKeepsHeroFixedAndUsesNativeBack() throws {
         #if targetEnvironment(simulator)
         let app = try launchSettings()
@@ -1610,25 +1649,43 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         XCTAssertTrue(hero.waitForExistence(timeout: 5), app.debugDescription)
         try focus(hero, in: app)
         XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.staticTexts["Home layout"].waitForExistence(timeout: 5))
-        try focus(app.buttons["Showcase"], in: app)
+        XCTAssertTrue(app.staticTexts["Hero"].waitForExistence(timeout: 5))
+        let heroOn = app.buttons["home-hero-on"]
+        let heroOff = app.buttons["home-hero-off"]
+        XCTAssertTrue(heroOn.waitForExistence(timeout: 5))
+        XCTAssertTrue(heroOff.exists)
+        XCTAssertEqual(heroOn.label, "On")
+        XCTAssertEqual(heroOff.label, "Off")
+        try focus(heroOff, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(heroOff.isSelected)
+        XCTAssertFalse(heroOn.isSelected)
+        XCUIRemote.shared.press(.menu)
+        waitForEnabled(hero)
+        XCTAssertEqual(hero.label, "Hero")
+        XCTAssertEqual(hero.value as? String, "Off")
+        let rows = app.buttons["home-row-style"]
+        try focus(rows, in: app)
+        XCUIRemote.shared.press(.select)
+        try focus(app.buttons["home-rows-classic"], in: app)
         XCUIRemote.shared.press(.select)
         XCUIRemote.shared.press(.menu)
         waitForEnabled(hero)
-        XCTAssertEqual(hero.label, "Layout")
-        XCTAssertEqual(hero.value as? String, "Showcase")
+        XCTAssertEqual(rows.value as? String, "Classic")
+        XCTAssertEqual(hero.value as? String, "Off")
         XCTAssertFalse(app.staticTexts["Pinned at top"].exists)
         try focus(hero, in: app)
         XCUIRemote.shared.press(.select)
-        try focus(app.buttons["Fullscreen Hero"], in: app)
+        XCTAssertTrue(heroOff.isSelected)
+        try focus(heroOn, in: app)
         XCUIRemote.shared.press(.select)
-        let enabledHero = app.switches["hero-enabled"]
-        try focus(enabledHero, in: app)
-        if enabledHero.value as? String != "1" { XCUIRemote.shared.press(.select) }
+        XCTAssertTrue(heroOn.isSelected)
+        XCTAssertFalse(heroOff.isSelected)
         XCUIRemote.shared.press(.menu)
         waitForEnabled(hero)
-        XCTAssertEqual(hero.label, "Layout")
-        XCTAssertEqual(hero.value as? String, "Hero")
+        XCTAssertEqual(hero.label, "Hero")
+        XCTAssertEqual(hero.value as? String, "On")
+        XCTAssertEqual(rows.value as? String, "Classic")
         XCTAssertFalse(app.staticTexts["Pinned at top"].exists)
         capture("home-hero-pin", in: app)
         try openHomeSections(in: app)
@@ -3002,8 +3059,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
     private func completeAppearanceChoices(in app: XCUIApplication) throws {
         for title in [
             "Choose theme for this profile",
-            "Choose navigation for this profile",
-            "Choose Home layout for this profile"
+            "Choose navigation for this profile"
         ] {
             if app.staticTexts[title].waitForExistence(timeout: 2) {
                 try focus(app.buttons["Continue"], in: app)

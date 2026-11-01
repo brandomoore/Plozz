@@ -89,7 +89,6 @@ struct NewProfileAppearanceFlowView: View {
     private enum Stage {
         case theme
         case navigation
-        case homeLayout
     }
 
     var body: some View {
@@ -116,23 +115,6 @@ struct NewProfileAppearanceFlowView: View {
             case .navigation:
                 SelectNavigationStyleView(
                     appState: appState,
-                    onContinue: {
-                        withAnimation(
-                            OnboardingPageMotion.animation(reduceMotion: reduceMotion)
-                        ) {
-                            stage = .homeLayout
-                        }
-                    }
-                )
-                .transition(
-                    OnboardingPageMotion.transition(
-                        direction: .forward,
-                        reduceMotion: reduceMotion
-                    )
-                )
-            case .homeLayout:
-                SelectHomeLayoutView(
-                    hero: appState.profileSettings.heroSettingsModel,
                     onContinue: onComplete
                 )
                 .transition(

@@ -7,6 +7,23 @@ an empty provider feed from local curation without recording media or account ID
 Home rows, item detail, series/season experience, and the online-trailer
 fallback when the user's server has no attached trailer.
 
+## Mobile Home loading geometry
+
+Home measures its viewport once and shares that width with loaded and skeleton
+rails, so newly mounted rows do not first lay out at a fallback poster size.
+Browse headings keep their native 44-point touch target without enlarging the
+row. Library placeholders use the library card's own layout; featured collection
+placeholders use the featured row's card size.
+
+The vertical stack remains eager to avoid estimated-height changes. Stable
+`HomeRowID` content-coordinate frames preserve the first surviving visible row
+when loading inserts or removes rows above it. Empty rows disappear rather than
+leaving gaps. Scroll geometry is retained in a non-observable owner, not published
+through the full Home view every frame; a new Home model resets the scroll scope.
+At the top, Home stays at the top. Viewport resizing is not treated as a row
+insertion. This does not promise a fixed total height before the server's row
+inventory is known, or prove physical-device frame pacing.
+
 ## Inline library collections
 
 Movie Browse follows the server's collection presentation automatically under
@@ -30,7 +47,7 @@ library scan is added to ordinary paging.
 Media rows have a title-chevron action on iPhone/iPad and a trailing **See all**
 card on Apple TV. The TV action is a separate native control, not a synthetic
 media item, and follows the rail's poster, landscape, or featured geometry.
-Both TV Home layouts retain the complete `HomePresentationRow` source when
+All TV Home layouts retain the complete `HomePresentationRow` source when
 opening the shared browser. Libraries and Live TV keep their existing navigation.
 Browse actions appear only when the feed confirms additional eligible titles
 beyond the Home preview, not merely because the preview reaches its limit.
@@ -1084,6 +1101,119 @@ resolved heroes use the same row-recede geometry. The `PLZBOOT` row-ready events
 data from completion of the entire Home load.
 
 ## Showcase
+
+The default **Hero + Showcase** Home presentation keeps the featured carousel above
+the same Showcase rows. Its native stage preserves the three hosting trees:
+the featured hero, Showcase details/artwork, and the row viewport. Down admits
+the first row before animating its viewport into place; Up from that row restores
+the existing hero action and slide, without a separate arrow-button focus stop.
+Each hosted root anchors its content at the top leading edge. The featured host
+uses symmetric horizontal viewport insets so its screen-wide backdrop stays
+centered on the display, including under pinned navigation's asymmetric row
+viewport. The Showcase host extends to the physical right edge while preserving
+its leading details inset. The row host retains its original bounds.
+Focus ownership includes SwiftUI virtual items and nested native controls,
+not only UIView-backed controls.
+While featured content loads, its full-size skeleton remains a native focus
+target so Down can still enter already-loaded rows and Up can return.
+The peeking rows are not eligible for focus while the featured hero is active,
+so first entry cannot collapse it. Boundary-only press and indirect-swipe
+recognizers request the other host even when its hidden content provides no
+geometric focus candidate; deeper-row and horizontal navigation remain native.
+While a boundary handoff waits for the current focus transaction to finish,
+further proposals in that direction remain blocked. They must not focus
+navigation before the deferred request can restore the hero or enter the rows.
+With Top Bar navigation, the featured stage contributes to the navigation scroll
+offset: entering even the first Showcase row moves the bar offscreen and removes
+it from focus, and returning to the hero reveals it. Back's return-to-top resets
+both the rows and featured stage. With the native Sidebar, the first Showcase row
+also includes the hidden hero's distance in its real scroll offset, balanced by
+matching content padding so card placement does not change. Native Home chrome
+therefore disappears on the first Down, not the second row, and reappears only
+when returning to the hero. The boundary handoff keeps Up directed at the hero
+instead of the native Home control. Standalone Showcase keeps its existing
+first-row behavior, and the Pinned Sidebar is unchanged.
+The bar travels only far enough to clear the screen and receives an additive
+native translation in the stage's own animation transaction, including reversals.
+There is no display-link-to-SwiftUI follower or independent SwiftUI animation.
+Using the full stage distance would hide it early and reveal it late.
+Detach and reduced-motion updates clear owned animations. The return chevron sits 48 points from the top in all navigation styles,
+without reserving space for the now-hidden Top Bar.
+Back still reveals navigation immediately, cancelling its remaining translations.
+The row scroll bridge retains its requested stage motion across temporary detach
+and reattachment, rebinding only while mounted; it does not depend on a later
+SwiftUI update to restore navigation. Featured and Showcase artwork reporters
+take ownership only while their respective stage is active, so returning to
+the featured hero republishes its displayed-image palette.
+The navigation fixture samples the bar's rendered position against stage
+progress through full transitions and rapid reversals, as well as checking
+focus ownership, final visibility, and the chevron's screen position. It requires
+less than one point of phase error and at most one navigation-state target change
+per transition, so a frame-following implementation cannot pass merely by reaching
+the correct final position.
+The same probe supports native Sidebar with `--native-sidebar-home` and
+`--held-home-artwork`: a controlled dark backdrop lets it check painted Home
+chrome, not just accessibility presence. It verifies repeated first-row/hero
+returns, rapid reversals, actual native focus and stable card placement.
+The outgoing hero foreground, incoming Showcase details, and rows share one
+native scroll distance, easing, and start time. Their relative positions remain
+fixed throughout the move and rapid reversals; only their opacity changes as
+the old details give way to the new. Both artwork planes travel at 37.5% of
+the foreground speed (about 120 points at the standard peek distance): the
+featured image rises out while the first Showcase image rises into place from
+below, reversing together on return. Their nested foregrounds compensate for
+that parent movement so their total travel still matches the rows. The
+transition uses a 0.6-second cubic easing `(0.32, 0, 0.2, 1)` with a gradual
+start and longer deceleration, shared by movement and crossfade. This timing
+is specific to the Hero boundary; ordinary Showcase row transitions are
+unchanged and keep their artwork pinned. The return chevron lives outside the
+moving hosts and stays stationary.
+The incoming image includes top overscan equal to its travel, keeping its upper
+edge offscreen throughout the transition. This adds a modest aspect-fill crop
+only to the hybrid's Showcase backdrop; standalone layouts and Reduce Motion
+retain the original image bounds.
+Two stable foreground hosts let the compositor move them without per-frame
+SwiftUI state updates; artwork drift reuses the existing scene hosts rather
+than adding another renderer or loading another image. The other Home layouts
+do not create these hosts. Scroll and crossfade animations use the shared
+transaction's default start time, not a wall-clock timestamp captured before
+layout and focus work. Cold first-entry work therefore cannot use up their
+duration before that transaction is submitted.
+Reduce Motion omits foreground and artwork travel and snaps the rows.
+A shallow, text-free up chevron sits at the screen's horizontal center, 48 points
+from the top. It fades in only after two seconds on the first row when arriving
+upward from a deeper row. Coming down from the hero never shows it, and leaving
+before the delay ends cancels it. It fades away after three seconds of visibility;
+ordinary updates within the row do not restart it. Leaving Home, returning to the
+hero, or detaching the cue clears its arrival history.
+It is informational, never an additional focus stop. Deeper rows retain ordinary navigation.
+Row translation uses additive compositor animations so reversing direction retains
+the in-flight motion. Artwork planes crossfade; Reduce Motion uses the same
+destinations without animation. Carousel dwell and trailers suspend while rows
+are active. Settings exposes Hero independently from Classic/Showcase row
+style. Fresh profiles use both Hero and Showcase; saved styles and disabled
+heroes retain their previous behavior. Blobs without a style field keep the old
+carousel layout rather than adopting the new-profile default.
+
+The production Home fixture's `--hero-showcase-focus-probe` records initial
+native focus and invokes the same boundary handoff used by remote input. It
+checks the actual `UIFocusSystem.focusedItem` in the running app scene, not only
+the requested destination. This is separate from physical press/swipe delivery
+and presented-frame measurements in the remote test suite.
+`--hero-showcase-navigation-probe` first changes destinations and returns Home
+through pinned or top-bar navigation, then supplies presses to the boundary
+recognizer and checks actual focus while rejecting escape during each queued
+handoff. It covers focus ordering, not physical remote delivery or geometry.
+The separate `--hero-showcase-geometry-probe` directly changes presentation
+without requesting focus and verifies the artwork's physical screen edges.
+Use it with `--pinned-home`, `--native-sidebar-home`, and `--top-bar-home` to
+capture initial hero, Showcase, and returned hero geometry. Its pass is not a
+remote-input or focus pass.
+Add `--hero-showcase-delayed-commit` to either probe to hold the first
+transition's outer transaction for half a second, then require intermediate
+scroll and opacity values after submission. This controlled regression
+reproduces the early-clock skip; it does not measure the cause or duration of
+physical-device first-entry work.
 
 Episode-backed Home heroes use a separately scoped `MediaSeriesSynopsis` fetched
 from the authenticated parent-series record. The server's series tagline/synopsis

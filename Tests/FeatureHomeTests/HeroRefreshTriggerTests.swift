@@ -5,6 +5,35 @@ import XCTest
 @testable import FeatureHome
 
 final class HeroRefreshTriggerTests: XCTestCase {
+    @MainActor
+    func testHeroShowcaseCuratesTheFullHeroRatherThanOnlyDiscovery() {
+        var settings = HeroSettings.default
+        settings.style = .heroShowcase
+        settings.sources = [.watchlist, .randomFromLibrary]
+        settings.showsDiscoverRow = false
+        XCTAssertEqual(HomeView.curationSettings(for: settings), settings)
+        XCTAssertTrue(settings.followsFocus)
+    }
+
+    @MainActor
+    func testHeroShowcaseStillExcludesWatchedFeaturedTitles() {
+        var settings = HeroSettings.default
+        settings.style = .heroShowcase
+        settings.sources = [.featured]
+        settings.hideWatched = true
+        var item = MediaItem(id: "watched-featured", title: "Watched", kind: .movie)
+        item.isPlayed = true
+        item.hasBeenPlayed = true
+        let runtime = HomeHeroRuntimeState()
+        runtime.cachedItems = [item]
+        runtime.cachedKey = .init(settings: settings)
+        let key = HeroRecomputeKey(content: .init(), settings: settings, randomLibraries: [])
+        XCTAssertTrue(HomeHeroDisplayResolver.resolve(
+            runtime: runtime, key: key, settings: settings,
+            continueWatching: [], watchlist: [], curator: HeroCurator()
+        ).isEmpty)
+    }
+
     func testKidsPolicyDisablesShowcaseDiscoveryAndRejectsPreviouslyLoadedSlides() {
         var settings = HeroSettings.default
         settings.style = .followsFocus

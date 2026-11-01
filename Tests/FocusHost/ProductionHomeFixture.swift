@@ -2,7 +2,7 @@ import CoreModels
 import CoreUI
 import AVFoundation
 import notify
-import FeatureHome
+@testable import FeatureHome
 import FeatureHomeCore
 import FeatureSearch
 import MetadataKit
@@ -56,11 +56,22 @@ struct ProductionHomeFixture: View {
                 Group {
                     if isPinned {
                         NavigationRailShell(
-                            profile: profile, entries: [], destinations: [.home, .search, .settings],
+                            profile: profile, entries: [], destinations: [.home, .watchlist, .search, .settings],
                             selection: $selection, onOpenProfileSwitcher: {},
                             chrome: fixture.chrome,
-                            content: ProductionHomeContent(fixture: fixture, path: $path, libraryPath: $libraryPath, isPinned: true),
-                            contentDestination: .home
+                            content: Group {
+                                if selection == .watchlist {
+                                    NavigationStack {
+                                        WatchlistBrowseView(
+                                            viewModel: fixture.model, visibility: fixture.visibility.visibility,
+                                            onSelect: { _ in }
+                                        )
+                                    }
+                                } else {
+                                    ProductionHomeContent(fixture: fixture, path: $path, libraryPath: $libraryPath, isPinned: true)
+                                }
+                            },
+                            contentDestination: selection
                         )
                     } else if isNativeSidebar {
                         TabView(selection: Binding(
@@ -155,6 +166,66 @@ struct ProductionHomeFixture: View {
                         ProductionHomeContent(fixture: fixture, path: $path, libraryPath: $libraryPath, isPinned: false)
                     }
                 }
+                .environment(\.openWatchlist, { selection = .watchlist })
+                .task {
+                    guard ProcessInfo.processInfo.arguments.contains("--top-bar-entry-probe") else { return }
+                    do { try await Task.sleep(for: .seconds(3)) }
+                    catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+                    await Self.probeTopBarEntry()
+                }
+                .task {
+                    guard ProcessInfo.processInfo.arguments.contains("--hero-showcase-navigation-probe"),
+                          isPinned || isNativeSidebar || ProcessInfo.processInfo.arguments.contains("--top-bar-home") else { return }
+                    do {
+                        try await Task.sleep(for: .seconds(3))
+                        selection = .settings
+                        try await Task.sleep(for: .seconds(2))
+                        selection = .home
+                        try await Task.sleep(for: .seconds(3))
+                        if ProcessInfo.processInfo.arguments.contains("--pending-featured-hero"),
+                           !fixture.runtime.items.isEmpty || !fixture.runtime.cachedItems.isEmpty {
+                            print("HERO_STAGE_PROBE complete passed=false pendingHeroAlreadyLoaded")
+                            return
+                        }
+                        await Self.probeHeroShowcaseFocus()
+                    } catch {
+                        print("HERO_STAGE_PROBE navigation cancelled: \(error)")
+                    }
+                }
+                .task {
+                    guard ProcessInfo.processInfo.arguments.contains("--watchlist-entry-probe"),
+                          isPinned || ProcessInfo.processInfo.arguments.contains("--top-bar-home") else { return }
+                    do {
+                        try await Task.sleep(for: .seconds(3))
+                        selection = .watchlist
+                        try await Task.sleep(for: .seconds(3))
+                        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                            .flatMap(\.windows).first(where: \.isKeyWindow)
+                        let focused = window.flatMap { UIFocusSystem.focusSystem(for: $0)?.focusedItem }
+                        var views: [UIView] = window.map { [$0] } ?? []
+                        var enteredGrid = false
+                        while let view = views.popLast() {
+                            if let region = view as? NavigationEntryFocusRegionView,
+                               region.preference == .content, let focused, let window,
+                               let frame = NavigationRowFocusRequester.frame(of: focused, relativeTo: window) {
+                                enteredGrid = enteredGrid || view.convert(view.bounds, to: window).contains(CGPoint(x: frame.midX, y: frame.midY))
+                            }
+                            views.append(contentsOf: view.subviews)
+                        }
+                        print("WATCHLIST_ENTRY_PROBE selected=\(selection.storageValue) focusedType=\(focused.map { String(describing: type(of: $0)) } ?? "nil") enteredGrid=\(enteredGrid)")
+                        try await Task.sleep(for: .seconds(1))
+                        selection = .home
+                        try await Task.sleep(for: .seconds(3))
+                        let returned = window.flatMap { UIFocusSystem.focusSystem(for: $0)?.focusedItem }
+                        let returnFrame = returned.flatMap { item in
+                            window.flatMap { NavigationRowFocusRequester.frame(of: item, relativeTo: $0) }
+                        }
+                        let returnedVisible = window.map { $0.bounds.intersects(returnFrame ?? .null) } ?? false
+                        print("WATCHLIST_ENTRY_PROBE complete enteredGrid=\(enteredGrid) returnedVisible=\(returnedVisible)")
+                    } catch {
+                        print("WATCHLIST_ENTRY_PROBE failed: \(error)")
+                    }
+                }
                 .overlay(alignment: .topTrailing) {
                     VStack {
                         Text("Production Home ready")
@@ -220,6 +291,16 @@ struct ProductionHomeFixture: View {
             fixture = await ProductionHomeState.load()
         }
         .task {
+            guard ProcessInfo.processInfo.arguments.contains("--hero-showcase-focus-probe")
+                || ProcessInfo.processInfo.arguments.contains("--hero-showcase-geometry-probe") else { return }
+            do {
+                try await Task.sleep(for: .seconds(3))
+                await Self.probeHeroShowcaseFocus()
+            } catch {
+                print("HERO_STAGE_PROBE cancelled: \(error)")
+            }
+        }
+        .task {
             guard ProcessInfo.processInfo.arguments.contains("--home-hitch-positive-control") else { return }
             for _ in 0..<200 {
                 do { try await Task.sleep(for: .milliseconds(450)) }
@@ -231,9 +312,504 @@ struct ProductionHomeFixture: View {
     }
 
     @MainActor
+    private static func probeTopBarEntry() async {
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .flatMap(\.windows).first(where: \.isKeyWindow),
+              let system = UIFocusSystem.focusSystem(for: window) else {
+            print("TOP_BAR_ENTRY complete passed=false missingWindow")
+            return
+        }
+        var controllers = window.rootViewController.map { [$0] } ?? []
+        var owner: NavigationRailFocusHostController?
+        var stage: HeroShowcaseStage.Controller?
+        while let controller = controllers.popLast() {
+            if let found = controller as? NavigationRailFocusHostController { owner = found }
+            if let found = controller as? HeroShowcaseStage.Controller { stage = found }
+            controllers.append(contentsOf: controller.children)
+        }
+        guard let stage, let owner, let target = system.focusedItem else {
+            print("TOP_BAR_ENTRY complete passed=false missingHeroOrNavigation"); return
+        }
+        let diagnosticsWereEnabled = HeroFocusDiagnostics.isEnabled
+        HeroFocusDiagnostics.setEnabled(false)
+        defer { HeroFocusDiagnostics.setEnabled(diagnosticsWereEnabled) }
+        func hasPresentedHeroHighlight() -> Bool {
+            guard let heroView = stage.hero.viewIfLoaded else { return false }
+            var views = [heroView]
+            while let view = views.popLast() {
+                guard !view.isHidden, (view.layer.presentation()?.opacity ?? view.layer.opacity) > 0.9 else { continue }
+                if view is HeroForegroundPillView,
+                   let layer = view.layer.presentation(), layer.transform.m11 > 1.04 { return true }
+                views.append(contentsOf: view.subviews)
+            }
+            return false
+        }
+        var views = [window as UIView]
+        var entry: TopBarEntryProbe.Marker?
+        var down: TopBarDownPressRecognizer?
+        while let view = views.popLast() {
+            if let found = view as? TopBarEntryProbe.Marker { entry = found }
+            if let found = view.gestureRecognizers?.compactMap({ $0 as? TopBarDownPressRecognizer }).first { down = found }
+            views.append(contentsOf: view.subviews)
+        }
+        guard let entry, let enter = entry.enter, let down else {
+            print("TOP_BAR_ENTRY complete passed=false missingAction"); return
+        }
+        guard let directionalEntry = owner.directionalContentEntry,
+              let directionalAction = directionalEntry.onDirectionalEntry else {
+            print("TOP_BAR_ENTRY complete passed=false missingDirectionalEntry"); return
+        }
+        var directionalCalls = 0
+        directionalEntry.onDirectionalEntry = { directionalCalls += 1 }
+        for heading: UIFocusHeading in [.left, .right, .up, []] {
+            guard owner.allowsFocusUpdate(heading: heading) else {
+                print("TOP_BAR_ENTRY complete passed=false blockedOtherDirection"); return
+            }
+        }
+        do { try await Task.sleep(for: .milliseconds(50)) }
+        catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+        guard directionalCalls == 0 else {
+            print("TOP_BAR_ENTRY complete passed=false otherDirectionEntered"); return
+        }
+        for _ in 0..<3 { _ = owner.allowsFocusUpdate(heading: .down) }
+        do { try await Task.sleep(for: .milliseconds(50)) }
+        catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+        guard directionalCalls == 1 else {
+            print("TOP_BAR_ENTRY complete passed=false duplicateDirectionalEntry"); return
+        }
+        _ = owner.allowsFocusUpdate(heading: .down)
+        directionalEntry.onDirectionalEntry = nil
+        do { try await Task.sleep(for: .milliseconds(50)) }
+        catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+        guard directionalCalls == 1, owner.directionalContentEntry == nil,
+              system.focusedItem === target else {
+            print("TOP_BAR_ENTRY complete passed=false staleDirectionalEntry"); return
+        }
+        directionalEntry.onDirectionalEntry = directionalAction
+        print("TOP_BAR_ENTRY directionalPolicy passed=true")
+        for cycle in 0..<6 {
+            let input = ["directional-focus", "native-press", "entry-action"][cycle % 3]
+            guard owner.requestFocus(to: target, using: system) else {
+                print("TOP_BAR_ENTRY complete passed=false navigationFocus")
+                return
+            }
+            do { try await Task.sleep(for: .milliseconds(500)) }
+            catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+            guard !hasPresentedHeroHighlight() else {
+                print("TOP_BAR_ENTRY complete passed=false staleHeroHighlight"); return
+            }
+            let journalStarted = ProcessInfo.processInfo.systemUptime
+            let started = CACurrentMediaTime()
+            if input == "directional-focus" {
+                guard !owner.allowsFocusUpdate(heading: .down) else {
+                    print("TOP_BAR_ENTRY complete passed=false unownedDirectionalEntry"); return
+                }
+            } else if input == "native-press" {
+                guard down.canEnter() else { print("TOP_BAR_ENTRY complete passed=false rejectedDown"); return }
+                let press = HeroBoundaryProbePress(.downArrow)
+                down.pressesBegan([press], with: UIPressesEvent())
+                down.pressesEnded([press], with: UIPressesEvent())
+            } else {
+                enter()
+            }
+            while !stage.contains(system.focusedItem, in: stage.hero),
+                  CACurrentMediaTime() - started < 5 {
+                do { try await Task.sleep(for: .milliseconds(10)) }
+                catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+            }
+            let elapsed = (CACurrentMediaTime() - started) * 1000
+            let focused = stage.contains(system.focusedItem, in: stage.hero)
+            while !hasPresentedHeroHighlight(), CACurrentMediaTime() - started < 5 {
+                do { try await Task.sleep(for: .milliseconds(10)) }
+                catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
+            }
+            let highlightElapsed = (CACurrentMediaTime() - started) * 1000
+            let journalStages = Set(HandoffDiagnostics.persistentPlaybackLogText().split(separator: "\n").compactMap { line -> String? in
+                guard line.contains(" navigation.entry ") else { return nil }
+                let fields = line.split(separator: " ")
+                guard let timeField = fields.first(where: { $0.hasPrefix("uptime=") }),
+                      let uptime = Double(timeField.dropFirst("uptime=".count)), uptime >= journalStarted,
+                      let stageField = fields.first(where: { $0.hasPrefix("stage=") }) else { return nil }
+                return String(stageField.dropFirst("stage=".count))
+            })
+            let expectedStages: Set<String> = [
+                "content-requested", "request-installed", "frame-ready", "layout-ready",
+                "selection-ready", "native-request", "native-accepted",
+                "hero-focusstate", "hero-highlight-applied"
+            ]
+            let journalComplete = expectedStages.isSubset(of: journalStages)
+            print("TOP_BAR_ENTRY cycle=\(cycle) input=\(input) elapsedMS=\(elapsed) highlightMS=\(highlightElapsed) heroFocus=\(focused) journalComplete=\(journalComplete)")
+            guard focused, elapsed < 200, highlightElapsed < 350, journalComplete, !down.canEnter() else {
+                print("TOP_BAR_ENTRY complete passed=false focusOrLatency"); return
+            }
+        }
+        print("TOP_BAR_ENTRY complete passed=true")
+    }
+
+    @MainActor
     private static func blockForHitchControl() {
         Thread.sleep(forTimeInterval: 0.12)
     }
+
+    @MainActor
+    private static func probeHeroShowcaseFocus() async {
+        let geometryOnly = ProcessInfo.processInfo.arguments.contains("--hero-showcase-geometry-probe")
+        print("HERO_STAGE_PROBE mode=\(geometryOnly ? "geometry-only" : "native-focus")")
+        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows).first(where: \.isKeyWindow)
+        var controllers = window?.rootViewController.map { [$0] } ?? []
+        var stage: HeroShowcaseStage.Controller?
+        while let controller = controllers.popLast() {
+            if let candidate = controller as? HeroShowcaseStage.Controller { stage = candidate; break }
+            controllers.append(contentsOf: controller.children)
+        }
+        guard let stage, let system = UIFocusSystem.focusSystem(for: stage.view) else {
+            print("HERO_STAGE_PROBE missing stage or focus system")
+            return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--pending-featured-hero") {
+            print("HERO_STAGE_PENDING rowsReady=\(stage.canEnterRows()) heroFocus=\(stage.contains(system.focusedItem, in: stage.hero))")
+        }
+        if ProcessInfo.processInfo.arguments.contains("--hero-showcase-navigation-probe") {
+            let measuresNativeSidebar = ProcessInfo.processInfo.arguments.contains("--native-sidebar-home")
+            if measuresNativeSidebar {
+                guard ProcessInfo.processInfo.arguments.contains("--held-home-artwork") else {
+                    print("HERO_STAGE_PROBE missing controlled backdrop for native visibility"); return
+                }
+                stage.present(expanded: true, focus: true)
+                do { try await Task.sleep(for: .milliseconds(700)) }
+                catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+            }
+            var passed = stage.state.isExpanded && stage.contains(system.focusedItem, in: stage.hero)
+            print("HERO_STAGE_PROBE navigation-entry heroFocus=\(passed)")
+            func nativeSidebarIsPainted() -> Bool? {
+                guard let window else { return nil }
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                guard let full = image.cgImage else { return nil }
+                let scale = CGFloat(full.width) / window.bounds.width
+                guard let crop = full.cropping(to: CGRect(
+                    x: 20 * scale, y: 20 * scale, width: 480 * scale, height: 140 * scale
+                )) else { return nil }
+                var bytes = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+                return bytes.withUnsafeMutableBytes { buffer -> Bool? in
+                    guard let context = CGContext(
+                        data: buffer.baseAddress, width: crop.width, height: crop.height,
+                        bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                        space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+                    ) else { return nil }
+                    context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+                    return stride(from: 0, to: buffer.count, by: 4).filter {
+                        min(buffer[$0], buffer[$0 + 1], buffer[$0 + 2]) > 160
+                    }.count > 100
+                }
+            }
+            if measuresNativeSidebar {
+                let visible = nativeSidebarIsPainted()
+                passed = passed && visible == true
+                print("HERO_STAGE_NATIVE initialVisible=\(String(describing: visible))")
+            }
+            var rowViews = [stage.rows.view!]
+            var navigation: TopNavigationScroll?
+            while let view = rowViews.popLast() {
+                if let position = view as? FocusHeroNativeScrollPosition.PositionView {
+                    navigation = position.navigation
+                    break
+                }
+                rowViews.append(contentsOf: view.subviews)
+            }
+            let measuresTopBar = ProcessInfo.processInfo.arguments.contains("--top-bar-home")
+            var navigationViews: [UIView] = window.map { [$0] } ?? []
+            var navigationMarker: NavigationRowFocusRequester.RequestView?
+            var returnCue: HeroShowcaseReturnCue.CueView?
+            while let view = navigationViews.popLast() {
+                if let marker = view as? NavigationRowFocusRequester.RequestView {
+                    navigationMarker = marker
+                }
+                if let cue = view as? HeroShowcaseReturnCue.CueView { returnCue = cue }
+                navigationViews.append(contentsOf: view.subviews)
+            }
+            func presentedNavigationY() -> CGFloat? {
+                guard let layer = navigationMarker?.layer.presentation() else { return nil }
+                return layer.convert(CGPoint(x: layer.bounds.midX, y: layer.bounds.midY), to: nil).y
+            }
+            let visibleNavigationY = presentedNavigationY()
+            var firstRowFrame: CGRect?
+            var firstRowLabel: String?
+            let moves: [(Bool, TimeInterval)] = [
+                (false, 0.7), (true, 0.7), (false, 0.7), (true, 0.7), (false, 0.7), (true, 0.7),
+                (false, 0.18), (true, 0.18), (false, 0.18), (true, 0.7)
+            ]
+            for (expanded, duration) in moves {
+                let press = HeroBoundaryProbePress(expanded ? .upArrow : .downArrow)
+                guard let recognizer = stage.view.gestureRecognizers?.first(where: {
+                    $0.allowedPressTypes.contains(NSNumber(value: press.type.rawValue))
+                }), stage.gestureRecognizer(recognizer, shouldReceive: press) else {
+                    print("HERO_STAGE_PROBE missing eligible boundary recognizer")
+                    return
+                }
+                recognizer.pressesBegan([press], with: UIPressesEvent())
+                let source = system.focusedItem
+                let heading: UIFocusHeading = expanded ? .up : .down
+                let blocked = !stage.allowsFocusUpdate(from: source, to: nil, heading: heading)
+                recognizer.pressesEnded([press], with: UIPressesEvent())
+                if measuresTopBar {
+                    let started = CACurrentMediaTime()
+                    var samples = 0
+                    var transitionSamples = 0
+                    var maximumError: CGFloat = 0
+                    var targetChanges = 0
+                    var lastTarget = navigation?.stageTransition
+                    repeat {
+                        do { try await Task.sleep(for: .milliseconds(16)) }
+                        catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                        guard let visibleNavigationY, let currentY = presentedNavigationY(),
+                              let rows = stage.rows.view.layer.presentation(),
+                              stage.state.motion.distance > 0 else {
+                            print("HERO_STAGE_PROBE missing presented navigation or stage"); return
+                        }
+                        let progress = min(1, max(0, 1 - rows.transform.m42 / stage.state.motion.distance))
+                        let expectedY = visibleNavigationY - progress * TopBarNavigationMetrics.foregroundTop
+                        maximumError = max(maximumError, abs(currentY - expectedY))
+                        if navigation?.stageTransition != lastTarget {
+                            targetChanges += 1
+                            lastTarget = navigation?.stageTransition
+                        }
+                        samples += 1
+                        if progress > 0.05, progress < 0.95 { transitionSamples += 1 }
+                    } while CACurrentMediaTime() - started < duration
+                    let synchronized = maximumError < 1 && samples >= 6 && transitionSamples >= 3 && targetChanges <= 1
+                    passed = passed && synchronized
+                    print("HERO_STAGE_MOTION expanded=\(expanded) maxError=\(maximumError) samples=\(samples) transitionSamples=\(transitionSamples) targetChanges=\(targetChanges) synchronized=\(synchronized)")
+                } else {
+                    do { try await Task.sleep(for: .seconds(duration)) }
+                    catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                }
+                let focused = stage.contains(system.focusedItem, in: expanded ? stage.hero : stage.rows)
+                passed = passed && blocked && focused && stage.state.isExpanded == expanded
+                if measuresNativeSidebar, duration >= 0.7 {
+                    if !expanded {
+                        print("HERO_STAGE_NATIVE settling painted=\(String(describing: nativeSidebarIsPainted()))")
+                        do { try await Task.sleep(for: .milliseconds(300)) }
+                        catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                    }
+                    let visible = nativeSidebarIsPainted()
+                    let correctVisibility = visible == expanded
+                    passed = passed && correctVisibility
+                    print("HERO_STAGE_NATIVE expanded=\(expanded) painted=\(String(describing: visible)) correctVisibility=\(correctVisibility)")
+                    if !expanded, let focused = system.focusedItem, let window,
+                       let frame = NavigationRowFocusRequester.frame(of: focused, relativeTo: window) {
+                        let label = (focused as? NSObject)?.accessibilityLabel
+                        let stableRow = firstRowFrame.map { abs($0.midY - frame.midY) < 1 } ?? true
+                        let sameCard = firstRowLabel.map { $0 == label } ?? true
+                        if firstRowFrame == nil { firstRowFrame = frame; firstRowLabel = label }
+                        passed = passed && stableRow && sameCard
+                        print("HERO_STAGE_NATIVE rowStable=\(stableRow) sameCard=\(sameCard) rowY=\(frame.midY)")
+                    }
+                }
+                if ProcessInfo.processInfo.arguments.contains("--top-bar-home") {
+                    let offset = navigation?.offset ?? -1
+                    let correctVisibility = expanded ? offset == 0 : offset >= TopBarNavigationMetrics.foregroundTop
+                    passed = passed && correctVisibility
+                    print("HERO_STAGE_NAV expanded=\(expanded) offset=\(offset) correctVisibility=\(correctVisibility)")
+                    if !expanded, duration >= 0.7 {
+                        guard let returnCue, let window else {
+                            print("HERO_STAGE_PROBE missing return cue"); return
+                        }
+                        let cueY = returnCue.arrow.convert(returnCue.arrow.bounds, to: window).midY
+                        let cueHidden = returnCue.arrow.alpha == 0 && !returnCue.isEligible
+                        passed = passed && abs(cueY - 48) < 1 && cueHidden
+                        print("HERO_STAGE_NAV cueY=\(cueY) hiddenAfterHeroDescent=\(cueHidden)")
+                        do { try await Task.sleep(for: .seconds(1)) }
+                        catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                    }
+                }
+                print("HERO_STAGE_BOUNDARY expanded=\(expanded) blocksPendingEscape=\(blocked) correctFocus=\(focused)")
+            }
+            if measuresTopBar {
+                stage.present(expanded: false, focus: true)
+                do { try await Task.sleep(for: .milliseconds(700)) }
+                catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                guard let navigation, navigation.scrollToTop(), let visibleNavigationY else {
+                    print("HERO_STAGE_PROBE missing navigation reset"); return
+                }
+                do { try await Task.sleep(for: .milliseconds(80)) }
+                catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                let started = CACurrentMediaTime()
+                var maximumError: CGFloat = 0
+                repeat {
+                    guard let currentY = presentedNavigationY() else {
+                        print("HERO_STAGE_PROBE missing presented navigation after reset"); return
+                    }
+                    maximumError = max(maximumError, abs(currentY - visibleNavigationY))
+                    do { try await Task.sleep(for: .milliseconds(16)) }
+                    catch { print("HERO_STAGE_PROBE cancelled: \(error)"); return }
+                } while CACurrentMediaTime() - started < 0.7
+                passed = passed && maximumError < 1 && stage.state.isExpanded
+                print("HERO_STAGE_NAV resetMaxError=\(maximumError)")
+            }
+            print("HERO_STAGE_PROBE complete passed=\(passed)")
+            return
+        }
+        var foreground: UIView?
+        var foregroundViews = [stage.hero.view!]
+        while let view = foregroundViews.popLast() {
+            if view is HeroDirectionalPressMonitor.InstallerView { foreground = view; break }
+            foregroundViews.append(contentsOf: view.subviews)
+        }
+        let foregroundOrigin = foreground.map { $0.convert($0.bounds, to: stage.view) }
+        var cue: HeroShowcaseReturnCue.CueView?
+        var cueViews: [UIView] = window.map { [$0] } ?? []
+        while let view = cueViews.popLast() {
+            if let candidate = view as? HeroShowcaseReturnCue.CueView { cue = candidate; break }
+            cueViews.append(contentsOf: view.subviews)
+        }
+        func cueIsStationary() -> Bool {
+            guard let cue, let window else { return false }
+            let frame = cue.arrow.convert(cue.arrow.bounds, to: window)
+            return abs(frame.midX - window.bounds.midX) < 1 && abs(frame.midY - cue.top) < 1
+        }
+        var showcaseForeground: UIView?
+        var showcaseArtwork: UIView?
+        var showcaseControllers = stage.showcase.children
+        while let controller = showcaseControllers.popLast() {
+            if let surface = controller as? HeroShowcaseForegroundSurface.Controller,
+               surface.surface == .showcase { showcaseForeground = surface.host.view; break }
+            showcaseControllers.append(contentsOf: controller.children)
+        }
+        func report(_ phase: String, expanded: Bool) -> Bool {
+            let focused = system.focusedItem
+            var artworkFillsScreen = false
+            var showcaseReachesScreenEdge = false
+            var foregroundInPlace = false
+            if let foreground, let foregroundOrigin {
+                let frame = foreground.convert(foreground.bounds, to: stage.view)
+                let lift = foregroundOrigin.minY - frame.minY
+                let expected: CGFloat = expanded || UIAccessibility.isReduceMotionEnabled ? 0 : stage.state.motion.distance
+                foregroundInPlace = abs(lift - expected) < 1
+                print("HERO_STAGE_FOREGROUND \(phase) frame=\(frame) lift=\(lift) passed=\(foregroundInPlace)")
+            }
+            if let window {
+                print("HERO_STAGE_GEOMETRY \(phase) window=\(window.bounds) stage=\(stage.view.convert(stage.view.bounds, to: window)) hero=\(stage.hero.view.convert(stage.hero.view.bounds, to: window)) safe=\(stage.hero.view.safeAreaInsets)")
+                for host in [stage.hero, stage.showcase] {
+                    var views = [host.view!]
+                    while let view = views.popLast() {
+                        if String(describing: type(of: view)) == "HeroWipeContainerView" {
+                            let frame = view.convert(view.bounds, to: window)
+                            if host === stage.hero {
+                                let expectedY: CGFloat = expanded || UIAccessibility.isReduceMotionEnabled
+                                    ? 0 : -stage.state.motion.distance * HeroShowcaseScrollMotion.backdropTravelFraction
+                                artworkFillsScreen = abs(frame.maxX - window.bounds.maxX) < 1
+                                    && abs(frame.minX - window.bounds.minX) < 1
+                                    && abs(frame.minY - window.bounds.minY - expectedY) < 1
+                                print("HERO_STAGE_ART \(phase) frame=\(frame) fullWidth=\(artworkFillsScreen)")
+                            } else {
+                                showcaseArtwork = view
+                                let expectedY: CGFloat = expanded || UIAccessibility.isReduceMotionEnabled
+                                    ? 0 : -stage.state.motion.distance * HeroShowcaseScrollMotion.backdropTravelFraction
+                                let reachesEdge = abs(frame.maxX - window.bounds.maxX) < 1
+                                    && abs(frame.minY - window.bounds.minY - expectedY) < 1
+                                showcaseReachesScreenEdge = reachesEdge
+                                print("HERO_STAGE_SHOWCASE_ART \(phase) frame=\(frame) reachesEdge=\(reachesEdge)")
+                            }
+                        }
+                        views.append(contentsOf: view.subviews)
+                    }
+                }
+            }
+            let correct = stage.state.isExpanded == expanded
+                && (geometryOnly || stage.contains(focused, in: expanded ? stage.hero : stage.rows))
+                && artworkFillsScreen
+                && showcaseReachesScreenEdge
+                && foregroundInPlace
+                && cueIsStationary()
+            print("HERO_STAGE_PROBE \(phase) expanded=\(stage.state.isExpanded) heroFocus=\(stage.contains(focused, in: stage.hero)) rowsFocus=\(stage.contains(focused, in: stage.rows)) focusedType=\(focused.map { String(describing: type(of: $0)) } ?? "nil") passed=\(correct)")
+            return correct
+        }
+        var passed = report("initial", expanded: true)
+        let delayedCommit = ProcessInfo.processInfo.arguments.contains("--hero-showcase-delayed-commit")
+        var firstMove = true
+        if geometryOnly {
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+        }
+        for expanded in geometryOnly ? [false, true] : [false, true, false, true, false, true] {
+            let delayThisMove = delayedCommit && firstMove
+            firstMove = false
+            if delayThisMove {
+                // Model cold layout/focus work before the run loop submits its transaction.
+                CATransaction.begin()
+                stage.present(expanded: expanded, focus: !geometryOnly)
+                Thread.sleep(forTimeInterval: 0.5)
+                CATransaction.commit()
+                print("HERO_STAGE_COLD_COMMIT injectedDelay=0.5")
+            } else if geometryOnly {
+                stage.present(expanded: expanded, focus: false)
+            } else {
+                stage.beginBoundaryMove(expanded ? .up : .down)
+            }
+            for sample in 1...6 {
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+                if let foreground, let foregroundOrigin {
+                    let foregroundFrame: CGRect
+                    if let layer = foreground.layer.presentation(), let parent = stage.view.layer.presentation() {
+                        foregroundFrame = layer.convert(layer.bounds, to: parent)
+                    } else {
+                        foregroundFrame = foreground.convert(foreground.bounds, to: stage.view)
+                    }
+                    let lift = foregroundOrigin.minY - foregroundFrame.minY
+                    let rowLayer = stage.rows.view.layer.presentation() ?? stage.rows.view.layer
+                    let rowY = rowLayer.transform.m42
+                    let backdropY = (stage.hero.view.layer.presentation() ?? stage.hero.view.layer).transform.m42
+                    let showcaseBackdropY = (stage.showcase.view.layer.presentation() ?? stage.showcase.view.layer).transform.m42
+                    let opacity = stage.hero.view.layer.presentation()?.opacity ?? stage.hero.view.layer.opacity
+                    let showcaseY = showcaseForeground.map {
+                        ($0.layer.presentation() ?? $0.layer).transform.m42 + showcaseBackdropY
+                    }
+                    let error = abs(lift + rowY - stage.state.motion.distance)
+                    let expectedBackdropY = -lift * HeroShowcaseScrollMotion.backdropTravelFraction
+                    let synchronized = UIAccessibility.isReduceMotionEnabled
+                        || (error < 1 && showcaseY.map { abs($0 - rowY) < 1 } == true
+                            && abs(backdropY - expectedBackdropY) < 1
+                            && abs(showcaseBackdropY - rowY * HeroShowcaseScrollMotion.backdropTravelFraction) < 1)
+                    var coversTop = false
+                    if let showcaseArtwork, let window {
+                        let frame: CGRect
+                        if let layer = showcaseArtwork.layer.presentation(), let parent = window.layer.presentation() {
+                            frame = layer.convert(layer.bounds, to: parent)
+                        } else {
+                            frame = showcaseArtwork.convert(showcaseArtwork.bounds, to: window)
+                        }
+                        coversTop = frame.minY <= window.bounds.minY + 1
+                            && abs(frame.maxX - window.bounds.maxX) < 1
+                    }
+                    passed = synchronized && cueIsStationary() && coversTop && passed
+                    if delayThisMove && sample == 1 && !UIAccessibility.isReduceMotionEnabled {
+                        let stillAnimating = rowY > 1 && rowY < stage.state.motion.distance - 1
+                            && opacity > 0 && opacity < 1
+                        passed = stillAnimating && passed
+                        print("HERO_STAGE_COLD_COMMIT rowY=\(rowY) opacity=\(opacity) stillAnimating=\(stillAnimating)")
+                    }
+                    print("HERO_STAGE_MOTION expanded=\(expanded) sample=\(sample) lift=\(lift) rowY=\(rowY) showcaseY=\(String(describing: showcaseY)) backdropY=\(backdropY) showcaseBackdropY=\(showcaseBackdropY) opacity=\(opacity) scrollError=\(error) synchronized=\(synchronized) cueStationary=\(cueIsStationary()) coversTop=\(coversTop)")
+                }
+            }
+            passed = report(expanded ? "up" : "down", expanded: expanded) && passed
+            if geometryOnly {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            }
+        }
+        print("HERO_STAGE_PROBE complete passed=\(passed)")
+    }
+}
+
+private final class HeroBoundaryProbePress: UIPress {
+    private let pressedType: UIPress.PressType
+    init(_ type: UIPress.PressType) {
+        pressedType = type
+        super.init()
+    }
+    override var type: UIPress.PressType { pressedType }
 }
 
 private struct ProductionHomeContent: View {
@@ -472,10 +1048,16 @@ private final class ProductionHomeState {
         var settings = heroSettings.settings
         settings.isEnabled = !ProcessInfo.processInfo.arguments.contains("--hero-disabled-home")
         settings.sources = [.continueWatching, .recentlyAdded]
+        if ProcessInfo.processInfo.arguments.contains("--pending-featured-hero") {
+            settings.sources = [.featured]
+            settings.setEnabled(.featured, enabled: true)
+        }
         settings.autoAdvance = false
         settings.trailersEnabled = false
         // Settings persist between launches, so every launch picks its layout.
-        settings.style = ProcessInfo.processInfo.arguments.contains("--immersive-home") ? .followsFocus : .carousel
+        settings.style = ProcessInfo.processInfo.arguments.contains("--hero-showcase-home")
+            ? .heroShowcase
+            : ProcessInfo.processInfo.arguments.contains("--immersive-home") ? .followsFocus : .carousel
         settings.showsDiscoverRow = ProcessInfo.processInfo.arguments.contains("--showcase-discover-fixture")
         heroSettings.settings = settings
         background.settings.homeTrailerEnabled = false
@@ -490,7 +1072,8 @@ private final class ProductionHomeState {
     }
 
     func featuredContent(limit: Int) async -> [MediaItem] {
-        guard ProcessInfo.processInfo.arguments.contains("--showcase-discover-fixture") else { return [] }
+        guard ProcessInfo.processInfo.arguments.contains("--showcase-discover-fixture")
+                || ProcessInfo.processInfo.arguments.contains("--pending-featured-hero") else { return [] }
         let items = await provider.featuredContent(limit: limit)
         discoveryLoad.isReady = true
         return items
@@ -679,7 +1262,12 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
     func waitForResumePublication() async { await resumePublicationGate.wait() }
 
     func featuredContent(limit: Int) async -> [MediaItem] {
-        await discoverGate.wait()
+        // A cancelled curation must not release the next pending-Hero request.
+        let gate = ProcessInfo.processInfo.arguments.contains("--pending-featured-hero")
+            ? ProductionHomeRowsGate(notificationKey: "PLOZZ_HOME_DISCOVER_RELEASE_NOTIFICATION")
+            : discoverGate
+        await gate.wait()
+        guard !Task.isCancelled else { return [] }
         return Array((rowCount..<(rowCount * 2)).prefix(limit).map(movie))
     }
 

@@ -924,7 +924,7 @@ public struct SettingsView: View {
         case .allScreens: authorizedDestination(for: .allScreens)
         case .navigation: authorizedDestination(for: .navigationLayout)
         case .home, .hero, .heroContent, .heroRatings, .heroTrailers, .heroDiscovery,
-             .heroLibraries, .heroCollections, .homeRows, .homeFiltering, .homeLabels, .continueWatching:
+             .heroLibraries, .heroCollections, .homeRows, .homeRowStyle, .homeFiltering, .homeLabels, .continueWatching:
             HomeRowsSettingsView(
                 libraries: librariesStore.state.value ?? [], accounts: homeRowAccounts, visibility: homeVisibility,
                 spoilerSettings: spoilers.settings, searchPage: page

@@ -169,25 +169,25 @@ registry.
 
 ## Appearance onboarding
 
-Apple TV first-run and new-profile setup share Theme, Navigation, and Home Layout
-choices in that order. Each selection writes to the active profile's existing
-settings model. Continue or Menu accepts the current selection; profile setup
-is not complete until Home Layout is accepted.
+Apple TV first-run and new-profile setup share Theme then Navigation. Continue
+or Menu on Navigation completes appearance setup, including the durable profile
+resume marker and Plex identity reconciliation. There is no Home layout setup
+step or upgrade introduction. Existing navigation introductions remain available.
 
-Existing installations receive a device-local, one-time Home Layout chooser
-after any pending navigation introduction and before release notes. The current
-layout is preselected; dismissing does not reset it or change other profiles.
-Finishing setup also completes these introductions, preventing a duplicate
-prompt on first entry. iPhone and iPad retain their existing carousel layout.
-
-`CoreUI.HomeLayoutOptionCard` supplies the same names and previews to onboarding
-and Settings. Its illustrations omit navigation chrome, since Home layout and
-navigation style are independent choices.
+Fresh profiles use the hero above Showcase rows. Settings > Home exposes
+Hero and Row style independently, backed by the existing profile-scoped
+hero settings. Existing saved layouts are preserved, including older blobs with
+no style field, which still decode as Classic rows with their saved hero choice.
+iPhone and iPad retain their existing carousel presentation.
 
 ## Navigation planning
 
 Settings is a normal destination in all three navigation shells. Its root keeps
 app navigation visible and available; categories and nested pages hide it.
+In the custom pinned and top-bar shells, programmatic destination changes,
+including Home's Watchlist See all action,
+use the same rendered-presentation focus handoff as navigation selections.
+An already pending handoff is preserved, including Back's navigation-focus target.
 Root Back restores navigation focus, while child Back restores its Settings row.
 The top-bar root reserves foreground clearance without moving subpage headers.
 Chrome stays unavailable until a returning Settings page can receive focus.
@@ -237,8 +237,12 @@ highlighted destination. There are no delayed page previews or native tab transi
 Only the selected page and the visited Live TV guide
 are mounted; walking twenty libraries must not retain twenty inactive grids.
 The guide retains its filters while inactive playback is stopped. Account-qualified
-destination IDs keep same-named libraries distinct. Content entry waits for
-presentation through the existing shared focus owner; Back returns to the
+destination IDs keep same-named libraries distinct. A changed destination waits for
+presentation through the existing shared focus owner. Entering the page already
+on screen skips that redundant presentation fence, but still crosses the
+focus-eligibility render commit. After successful entry, moving back to the
+bar does not disable and rebuild the page's controls; new destinations and
+profiles reset that admission. Back returns to the
 selected navigation item. Detail pages hide the strip through `NavigationChromeModel`.
 While Settings owns the shell, hidden navigation cancels focus handoffs and
 cannot overwrite the selected Settings destination.
@@ -247,6 +251,31 @@ is Down for the horizontal strip; Left/Right never trigger a page handoff there.
 Initial focus resolves the selected destination, including a scrolled-off library,
 before allowing neighboring controls. Live TV's first-use preview choice waits
 for explicit content entry; its presentation owns focus until the choice finishes.
+Physical Down starts entry in the bar's native press recognizer, while actual
+focus belongs to that bar, instead of waiting for SwiftUI's move-command delivery.
+Native downward focus proposals also start that same handoff: the shared owner
+must not merely veto geometry and wait for a later move command. This includes
+directional input that does not arrive as an arrow press. The callback runs on
+the next main turn, coalesces repeated proposals, and is cancelled if the shell
+closes entry or focus leaves its source. Other directions remain native, and
+SwiftUI move commands remain a fallback.
+The debug production Home fixture's `--top-bar-entry-probe` exercises the native
+directional gate, press-began delivery and shared entry action over six visits,
+requiring actual hero focus within 200 ms and the visible pill's presentation-layer
+selection scale above 1.04 within 350 ms (the final scale is 1.06). It first
+checks that no stale selected pill remains after returning to navigation.
+It also checks repeated-proposal
+coalescing, cancellation and unrelated directions. The first visit exercises cold
+directional entry. This covers the gate/handler-to-focus path, not physical remote
+transport or device frame pacing.
+Debug builds also retain low-frequency `navigation.entry` milestones in the
+existing bounded playback journal. Static stage names and event-time monotonic
+uptime distinguish input delivery, render admission, layout, target selection,
+native focus acceptance, SwiftUI focus-state delivery and highlight application
+without requiring a diagnostic relaunch. Highlight application is a view update,
+not proof that the compositor has presented it; the fixture measures that separately.
+Release builds do not persist these milestones.
+The entry probe verifies the journal milestones with verbose focus logging disabled.
 Full-bleed Live TV surfaces read the shared top-content inset for guide controls
 and loading placeholders without shrinking expanded playback.
 The common UIKit host propagates a real top safe area through nested stacks.

@@ -42,8 +42,16 @@ public struct FeaturedMediaRow: View {
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzRowTitleTightening) private var titleTightening
+    @Environment(\.themePalette) private var palette
     private var onBrowse: (() -> Void)?
     private var usesRowBrowsing = false
+    private var isLoading = false
+
+    public func loading(_ loading: Bool) -> Self {
+        var copy = self
+        copy.isLoading = loading
+        return copy
+    }
 
     #if os(iOS)
     private var onSelectArtwork: ((MediaItem, MediaArtworkZoomSource) -> Void)?
@@ -102,7 +110,7 @@ public struct FeaturedMediaRow: View {
         )
     }
     private var candidate: MediaItem? {
-        guard isActive, scenePhase == .active, !reduceMotion,
+        guard !isLoading, isActive, scenePhase == .active, !reduceMotion,
               settings.homeTrailerEnabled, !controller.isPlaybackSuppressed,
               television || (priority != nil && isSettled) else { return nil }
         let id = television ? focusedID : (selectedID ?? items.first?.stablePresentationID)
@@ -147,13 +155,28 @@ public struct FeaturedMediaRow: View {
             }
             .padding(.horizontal, inset)
             #endif
-            if items.isEmpty {
+            if items.isEmpty && !isLoading {
                 Text("No titles in this collection.")
                     .plozzForeground(.secondary)
                     .padding(.leading, inset + (television ? navigationContentInset : 0))
                     .padding(.trailing, inset)
             }
-            if !items.isEmpty || onBrowse != nil {
+            if isLoading {
+                ScrollView(.horizontal) {
+                    HStack(spacing: cardSpacing) {
+                        ForEach(0..<3, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: 24)
+                                .fill(palette.fill)
+                                .frame(width: size.width, height: size.height)
+                        }
+                    }
+                    .padding(.vertical, television ? metrics.railShadowClearance : 4)
+                }
+                .contentMargins(.horizontal, inset, for: .scrollContent)
+                .scrollDisabled(true)
+                .shimmering()
+                .accessibilityHidden(true)
+            } else if !items.isEmpty || onBrowse != nil {
                 rail
             }
         }
