@@ -115,6 +115,13 @@ The `active-picture-hls` fixtures are generated with FFmpeg `-c copy -f hls
 `active-picture.mp4` and `glow-hd.mp4`; no video is re-encoded. Native SDR output
 materialization is included in the comparison, not bounded by the CPU sampler's
 2 Hz limit. Independent subtitle outputs are preserved when the video tap stops.
+Native analysis requests 320x180 output while retaining the original display
+canvas separately. This reduces the requested analysis surface, not necessarily
+AVFoundation's internal decode/render allocations. In an isolated tvOS simulator
+four-player pair, enabled analysis added approximately 16 MiB resident memory;
+CPU medians were 935 versus 952 ms per 2.3-second window, within the measured
+dispersion. These are one controlled SDR comparison, not a hardware or HDR
+performance guarantee.
 
 The glow fixtures in `Tests/SubtitlePresentationSupport/Fixtures` are synthetic:
 `live-continuity-dim.mp4` is the first 30 seconds of `live-continuity.mp4`,

@@ -150,18 +150,16 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     #endif
 
     public func sampleActivePicture() async -> VideoActivePictureState {
-        switch await engine.sampleActivePicture() {
-        case .unknown(.unsupportedColor), .unknown(.unsupportedGeometry): return .unsupported
-        case .unknown: return .unavailable
-        case .measured(let observation):
-            #if DEBUG
+        let state = await engine.sampleActivePicture()
+        #if DEBUG
+        if case .measured(let observation) = state {
             if lastPictureTimeForTesting != observation.presentationTime {
                 lastPictureTimeForTesting = observation.presentationTime
                 pictureSampleCountForTesting += 1
             }
-            #endif
-            return .measured(normalizedRect: observation.normalizedRect, displaySize: observation.displaySize)
         }
+        #endif
+        return VideoActivePictureState(engineState: state)
     }
 
     public func stopActivePictureAnalysis() { engine.stopActivePictureAnalysis() }

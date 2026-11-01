@@ -2642,7 +2642,7 @@ private struct LiveChannelTrackPanel: View {
                 .padding(.top, 18)
             let rows = rows
             if kind == .playback, model.videoZoom.supportsActivePicture {
-                Text("Detects borders when supported. Changing edge content may be cropped.")
+                Text("Detects borders. May crop edges.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 18)

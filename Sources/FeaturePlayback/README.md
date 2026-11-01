@@ -1026,19 +1026,30 @@ artwork boundary through that same zoom/stretch geometry before moving a region.
 Zoom belongs to the current player session, not a global/profile preference.
 A new VOD player or a different live channel starts at Normal. PiP and AirPlay retain
 their system-owned presentation rather than inheriting this local viewport crop.
-Plozzigen also offers opt-in **Fit picture**. A shared, cancellable engine analysis
-measures encoded borders on supported SDR NV12/BGRA output, using existing frames
+Both production playback engines offer opt-in **Fit picture**. A shared, cancellable
+AetherEngine analysis measures encoded borders in SDR, HDR10/HDR10+, HLG, and
+Dolby Vision output, using existing frames
 and no additional decoder or stream. It scales and translates the original surface
 uniformly, including asymmetric borders, and caps automatic magnification at 2x.
 Unknown, stale, unsupported or invalid measurements use Normal. Sparse detection
 can miss changing edge content; fitting is best effort, not a guarantee against
-clipping tickers or burned-in captions. HDR/Dolby Vision analysis and rotated
-native output remain unsupported. The separate NativeVideoEngine does not offer
-encoded-border fitting. Multiview keeps its original slots and defaults; visible
+clipping tickers or burned-in captions. Dark or uninformative frames cannot
+establish a crop. Native quarter-turn rotation and mirroring map measurements
+into the upright display canvas after clean-aperture/sample-aspect correction.
+Multiview keeps its original slots and defaults; visible
 panes share the engine's bounded four-session analysis admission.
-Native SDR analysis requests CPU-readable NV12 from the existing AVPlayer item.
+Native analysis requests CPU-readable NV12 for SDR, P010 for PQ/HLG, and
+converted half-float RGB for Dolby Vision or unknown source color. It does not
+interpret a Profile 5/10 IPT base layer as ordinary PQ luma or change playback
+color settings. Output selection follows source color, not the panel-clamped
+playback badge, including on SDR displays. `NativeVideoEngine` receives the shared analyzer from both app
+composition roots; its default/test initializer remains explicitly unsupported
+without injection. Load, seek, teardown and PiP release or invalidate analysis.
 AVFoundation may materialize/decompress that output; the 2 Hz analysis limit
-does not bound system-side output cost. Disabling analysis releases the tap.
+does not bound system-side output cost. HDR and particularly half-float outputs
+can require larger surfaces internally. The tap requests only 320x180 pixels;
+its original display canvas is retained separately and size changes invalidate
+pending results. Disabling analysis releases only its owned tap.
 
 The hosted active-picture regression uses original `testsrc2` fixtures at
 320x180/24 fps for 18 seconds: 28-pixel top/bottom bars before 8 seconds and
@@ -1053,6 +1064,21 @@ packaged the same way, with players paused until all have loaded.
 Hosted coverage includes synthetic 4:3 video and a 720x576 H.264 fixture with 64:45
 sample aspect (16:9 display), checking real native and software playback without
 changing the video layer, playback position, or subtitle text geometry.
+The rotated fixture is a stream copy of `active-picture.mp4`, produced with
+FFmpeg `-display_rotation 90 -i active-picture.mp4 -map 0:v:0 -c copy
+active-picture-rotated.mp4`. Native analysis must retain the original upright
+aspect and crop axis while returning buffers no larger than 320x180.
+
+The optional `testLocalPictureRelativePGSStaysInsideMeasuredPicture` hosted
+test accepts an authorized local HDR clip through `PLOZZ_PICTURE_MEDIA_REPRO`
+(`TEST_RUNNER_PLOZZ_PICTURE_MEDIA_REPRO` when invoking xcodebuild). It verifies
+decoded dialogue bitmap geometry and actual painted caption bounds against
+the measured picture, then verifies that clearing the overlay removes that text.
+Media and captures stay outside source control. Validation covered real SDR,
+HDR10 and Dolby Vision Profiles 5/8 on macOS, including 4K HDR10 and Profile 8,
+and real HDR10/PGS presentation on both simulators. HLG has pixel-buffer
+regressions, not real-source playback evidence; simulator/macOS results do not
+establish physical-device HDR output or energy use.
 
 ## Subtitle appearance
 

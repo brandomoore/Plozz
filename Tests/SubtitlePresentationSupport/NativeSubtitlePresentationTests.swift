@@ -218,6 +218,88 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         try await waitUntil { subtitles.primary.isEmpty }
     }
 
+    func testLocalPictureRelativePGSStaysInsideMeasuredPicture() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PLOZZ_PICTURE_MEDIA_REPRO"] else {
+            throw XCTSkip("Requires an explicitly supplied local HDR video with dialogue PGS.")
+        }
+        let engine = try PlozzigenVideoEngine()
+        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let model = LiveSubtitleModel()
+        model.style.followsSystemStyle = false
+        model.style.positionReference = .picture
+        model.beginLiveFeed()
+        engine.onSubtitleCues = { model.updateLiveCues($0) }
+        let window = try await mount(engine, subtitles: model)
+        defer { engine.stop(); window.isHidden = true; window.rootViewController = nil }
+        let url = path.hasPrefix("cache:")
+            ? try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+                .appendingPathComponent(String(path.dropFirst("cache:".count)))
+            : URL(fileURLWithPath: path)
+        let handle = try FileHandle(forReadingFrom: url)
+        try handle.close()
+        await engine.load(request: request(url, tracks: []), startPosition: 0)
+        try await waitUntil(timeout: 30) { engine.isPlaybackPositionReady }
+        let track = try XCTUnwrap(engine.subtitleTracks.first { $0.codec?.lowercased().contains("pgs") == true })
+        engine.selectSubtitleTrack(track)
+        try await waitUntil(timeout: 30) { model.primary.contains(where: \.isImage) && model.activePictureRect != nil }
+        engine.pause()
+        engine.onSubtitleCues = nil
+        try await Task.sleep(for: .milliseconds(300))
+        let picture = try XCTUnwrap(model.activePictureRect).intersection(window.bounds)
+        let video = try XCTUnwrap(model.videoRect)
+        let images = model.primary.compactMap { cue -> SubtitleImage? in
+            guard case .image(let image) = cue.body else { return nil }
+            return image
+        }
+        let offsets = SubtitleOverlayGeometry.pictureBitmapOffsets(
+            images: images, style: model.style, video: video, reference: picture,
+            bounds: window.bounds, controls: [], sourceAspectRatio: engine.videoAspectRatio.map { CGFloat($0) }
+        )
+        XCTAssertFalse(offsets.isEmpty, "Real dialogue PGS must use picture-relative placement.")
+        for (index, offset) in offsets {
+            let frame = SubtitleOverlayGeometry.bitmapRect(
+                normalizedRect: images[index].normalizedRect, canvasSize: images[index].canvasSize,
+                videoRect: video, sourceAspectRatio: engine.videoAspectRatio.map { CGFloat($0) }
+            ).offsetBy(dx: 0, dy: offset)
+            XCTAssertGreaterThanOrEqual(frame.minY, picture.minY - 1)
+            XCTAssertLessThanOrEqual(frame.maxY, picture.maxY + 1)
+        }
+        func capture() -> UIImage {
+            UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+        }
+        func text(in image: UIImage) throws -> [(String, CGRect)] {
+            let recognition = VNRecognizeTextRequest()
+            recognition.recognitionLevel = .accurate
+            recognition.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([recognition])
+            return (recognition.results ?? []).compactMap { observation in
+                guard let text = observation.topCandidates(1).first?.string else { return nil }
+                let box = observation.boundingBox
+                return (text, CGRect(
+                    x: box.minX * window.bounds.width, y: (1 - box.maxY) * window.bounds.height,
+                    width: box.width * window.bounds.width, height: box.height * window.bounds.height
+                ))
+            }
+        }
+        let visible = capture()
+        let rendered = try text(in: visible)
+        model.updateLiveCues([])
+        try await Task.sleep(for: .milliseconds(300))
+        let background = Set(try text(in: capture()).map(\.0))
+        let captions = rendered.filter { !background.contains($0.0) }
+        XCTAssertFalse(captions.isEmpty, "Actual painted PGS text must disappear when the subtitle overlay is cleared.")
+        for (_, frame) in captions {
+            XCTAssertGreaterThanOrEqual(frame.minY, picture.minY - 2)
+            XCTAssertLessThanOrEqual(frame.maxY, picture.maxY + 2)
+        }
+        let attachment = XCTAttachment(image: visible)
+        attachment.name = "Real HDR picture-relative PGS"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testLocalEmbeddedASSKeepsAuthoredGraphicsThroughSeekAndOff() async throws {
         guard let path = ProcessInfo.processInfo.environment["PLOZZ_ASS_MEDIA_REPRO"] else {
             throw XCTSkip("Requires an explicitly supplied local ASS media fixture.")

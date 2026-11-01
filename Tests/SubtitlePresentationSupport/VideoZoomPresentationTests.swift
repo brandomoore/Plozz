@@ -151,7 +151,11 @@ final class VideoZoomPresentationTests: XCTestCase {
         }
     }
 
-    private func verifyActivePicture(fixture: String) async throws {
+    func testSeparateNativeEngineDetectsPictureAndPositionsCaptions() async throws {
+        try await verifyActivePicture(fixture: "active-picture.m3u8", separateNative: true)
+    }
+
+    private func verifyActivePicture(fixture: String, separateNative: Bool = false) async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
         }
@@ -159,8 +163,14 @@ final class VideoZoomPresentationTests: XCTestCase {
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
-        let engine = try PlozzigenVideoEngine()
-        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let engine: any VideoEngine
+        if separateNative {
+            engine = NativeVideoEngine(startsMuted: true, activePictureAnalyzer: PlozzigenNativePictureAnalyzer())
+        } else {
+            let aether = try PlozzigenVideoEngine()
+            aether.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+            engine = aether
+        }
         let controls = PlayerControlsModel()
         let subtitles = LiveSubtitleModel()
         subtitles.style.followsSystemStyle = false
@@ -187,9 +197,15 @@ final class VideoZoomPresentationTests: XCTestCase {
         let port = try await server.start()
         defer { server.stop() }
         if fixture.hasSuffix(".m3u8") {
-            await engine.loadLive(
-                url: try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\(fixture)")), httpHeaders: [:]
-            )
+            let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\(fixture)"))
+            if let aether = engine as? PlozzigenVideoEngine {
+                await aether.loadLive(url: url, httpHeaders: [:])
+            } else {
+                await engine.load(request: PlaybackRequest(
+                    item: MediaItem(id: "native-picture", title: "Synthetic picture", kind: .movie, runtime: 18),
+                    streamURL: url, sourceMetadata: .init(video: .init(codec: "h264", videoRange: "SDR"))
+                ), startPosition: 0)
+            }
         } else {
             await engine.load(request: PlaybackRequest(
                 item: MediaItem(id: "active-picture", title: "Synthetic picture", kind: .movie, runtime: 18),
@@ -223,6 +239,9 @@ final class VideoZoomPresentationTests: XCTestCase {
         await engine.seek(to: 2)
         _ = try await waitForPicture(engine: engine, cropped: true)
         engine.pause()
+        // Consume the final displayed frame before checking paused evidence lifetime.
+        _ = await engine.sampleActivePicture()
+        try await Task.sleep(for: .milliseconds(600))
         let paused = await engine.sampleActivePicture()
         try await Task.sleep(for: .seconds(2.2))
         let stillPaused = await engine.sampleActivePicture()
@@ -267,6 +286,14 @@ final class VideoZoomPresentationTests: XCTestCase {
         try await verify(engine: engine, fixture: "four-three.mp4", expectedAspect: 4 / 3)
     }
 
+    func testNativePictureAnalysisPreservesAnamorphicAndRotatedDisplayGeometry() async throws {
+        let fixtures: [(String, Double)] = [("anamorphic.mp4", 16 / 9), ("active-picture-rotated.mp4", 9 / 16)]
+        for (fixture, aspect) in fixtures {
+            let engine = NativeVideoEngine(startsMuted: true, activePictureAnalyzer: PlozzigenNativePictureAnalyzer())
+            try await verify(engine: engine, fixture: fixture, expectedAspect: aspect, analyzePicture: true)
+        }
+    }
+
     #if os(iOS)
     func testNativeSafeAreaFittingKeepsPlaybackAndOrdinarySubtitleLayoutStable() async throws {
         try await verify(engine: NativeVideoEngine(), fitsInsideSafeArea: true)
@@ -281,7 +308,7 @@ final class VideoZoomPresentationTests: XCTestCase {
 
     private func verify(
         engine: any VideoEngine, fixture: String = "embedded.mp4", expectedAspect: Double? = nil,
-        fitsInsideSafeArea: Bool = false
+        fitsInsideSafeArea: Bool = false, analyzePicture: Bool = false
     ) async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
@@ -324,6 +351,31 @@ final class VideoZoomPresentationTests: XCTestCase {
         try await waitUntil(timeout: 30) { engine.hasPresentedVideoFrame && engine.videoAspectRatio != nil }
         if let expectedAspect {
             XCTAssertEqual(try XCTUnwrap(engine.videoAspectRatio), expectedAspect, accuracy: 0.0001)
+        }
+        if analyzePicture {
+            await engine.seek(to: fixture.contains("rotated") ? 2 : 0)
+            let deadline = ContinuousClock.now + .seconds(7)
+            var measured = false
+            while ContinuousClock.now < deadline {
+                if case let .measured(rect, display) = await engine.sampleActivePicture() {
+                    XCTAssertEqual(display.width / display.height, try XCTUnwrap(expectedAspect), accuracy: 0.0001)
+                    if fixture.contains("rotated") {
+                        XCTAssertLessThan(rect.width, 0.9)
+                        XCTAssertEqual(rect.height, 1, accuracy: 0.02)
+                    }
+                    measured = true
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(500))
+            }
+            XCTAssertTrue(measured, "Resized analysis must retain the original display canvas.")
+            let player = try XCTUnwrap(engine.nowPlayingPlayer)
+            let output = try XCTUnwrap(player.currentItem?.outputs.compactMap { $0 as? AVPlayerItemVideoOutput }.first)
+            var displayed = CMTime.invalid
+            let buffer = try XCTUnwrap(output.copyPixelBuffer(forItemTime: player.currentTime(), itemTimeForDisplay: &displayed))
+            XCTAssertLessThanOrEqual(CVPixelBufferGetWidth(buffer), 320)
+            XCTAssertLessThanOrEqual(CVPixelBufferGetHeight(buffer), 180)
+            engine.stopActivePictureAnalysis()
         }
         engine.pause()
         let player = engine.nowPlayingPlayer

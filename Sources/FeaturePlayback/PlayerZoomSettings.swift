@@ -22,7 +22,7 @@ public enum PlayerZoomMenu {
                 if mode == .custom { onCustomZoom() }
             }
             if mode == .picture {
-                action.subtitle = String(localized: "Detects borders when supported. Changing edge content may be cropped.", locale: locale)
+                action.subtitle = String(localized: "Detects borders. May crop edges.", locale: locale)
             }
             return action
         }
@@ -42,11 +42,11 @@ struct PlayerZoomSettingsRows: View {
             ForEach(model.availableModes, id: \.self) { mode in
                 Text(mode.menuTitle).tag(mode)
             }
-            if model.settings.mode == .picture {
-                Text("Detects borders when supported. Changing edge content may be cropped.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+        }
+        if model.settings.mode == .picture {
+            Text("Detects borders. May crop edges.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
         if model.settings.mode == .custom {
             Stepper(value: Binding(

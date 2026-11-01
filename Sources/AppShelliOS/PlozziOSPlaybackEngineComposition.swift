@@ -14,7 +14,8 @@ enum PlozziOSPlaybackEngineComposition {
             makeNative: {
                 NativeVideoEngine(
                     style: $0,
-                    authenticatedHTTPResolver: authenticatedHTTPResolver
+                    authenticatedHTTPResolver: authenticatedHTTPResolver,
+                    activePictureAnalyzer: PlozzigenNativePictureAnalyzer()
                 )
             },
             makePlozzigen: {

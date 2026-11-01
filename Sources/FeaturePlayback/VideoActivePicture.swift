@@ -1,4 +1,11 @@
-import CoreGraphics
+import AVFoundation
+import CoreModels
+
+@MainActor
+public protocol NativeVideoActivePictureAnalyzing: AnyObject {
+    func sample(player: AVPlayer, generation: UInt64, dynamicRange: SourceDynamicRange?) async -> VideoActivePictureState
+    func stop()
+}
 
 public enum VideoActivePictureState: Equatable, Sendable {
     case unsupported

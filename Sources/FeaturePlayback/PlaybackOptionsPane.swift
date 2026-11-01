@@ -34,7 +34,7 @@ struct PlaybackOptionsPane: View {
                     PlayerControls.TrackRow(
                         id: Self.modeSlot(mode), header: nil, title: Text(mode.menuTitle),
                         subtitle: mode == .picture
-                            ? Text("Detects borders when supported. Changing edge content may be cropped.") : nil,
+                            ? Text("Detects borders. May crop edges.") : nil,
                         isSelected: zoom.settings.mode == mode, isToggle: false,
                         action: {
                             zoom.settings.mode = mode
