@@ -10,6 +10,7 @@ struct LiveTVServerSetupView: View {
     @State private var probe: LiveTVServerProbeModel
     @State private var saveFailed = false
     @SettingsPageDismiss private var dismiss
+    @Environment(NavigationStyleSettingsModel.self) private var navigation: NavigationStyleSettingsModel?
 
     init(
         sources: LiveTVSourceManagementModel,
@@ -90,6 +91,7 @@ struct LiveTVServerSetupView: View {
                         } else if probe.canAdd {
                             do {
                                 try sources.addServer(probe.checkedChoice())
+                                navigation?.showsLiveTV = true
                                 dismiss()
                             } catch {
                                 saveFailed = true

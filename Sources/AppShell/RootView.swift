@@ -894,6 +894,7 @@ public struct RootView: View {
         // Injected so deep settings screens can read household profile
         // state without another argument on an already ~60-argument chain.
         .environment(appState.profilesModel)
+        .environment(appState.profileSettings.navigationStyleModel)
         .environment(glassPerformance)
         .environment(displayVeil)
         #if os(tvOS)

@@ -11,6 +11,15 @@ management, guide/search, Multiview, playback and profile-scoped iCloud sync. Ex
 profile authorization, parental approval, account, source and persistence gates
 remain in force.
 
+Successful playlist setup (including free channels), adding an IPTV account,
+or explicitly adding a media server's Live TV source shows Live TV in the active
+profile's navigation. Other destinations, their order, and other profiles are
+unchanged. Ordinary account reconnection does not undo a later manual Hide.
+Playlist sign-in imports the channel catalog, not the XMLTV guide; listings load
+separately when Live TV requests them. A quick sign-in therefore does not confirm
+that a guide has downloaded or matched channels. Sources shows guide loading
+and failures independently of channel availability.
+
 Source setup explains that viewers must have authorization for their channels
 and that Plozz does not provide TV content or channel subscriptions.
 

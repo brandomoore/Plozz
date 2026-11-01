@@ -103,6 +103,11 @@ public final class NavigationStyleSettingsModel {
         set { setDestination(newValue, key: NavigationLibraryLayout.musicKey) }
     }
 
+    public var showsLiveTV: Bool {
+        get { resolvedLibraryLayout.isVisible(NavigationLibraryLayout.liveTVKey) }
+        set { setDestination(newValue, key: NavigationLibraryLayout.liveTVKey) }
+    }
+
     private let store: NavigationStyleSettingsStoring
     private let layoutStore: NavigationLibraryLayoutStoring
     private let librariesSnapshotStore: (any NavigationLibrariesSnapshotStoring)?

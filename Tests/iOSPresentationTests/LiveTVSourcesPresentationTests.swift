@@ -3,6 +3,7 @@ import CoreModels
 import CoreUI
 import FeatureAuth
 @testable import FeatureLiveTV
+@testable import FeatureLiveTVCore
 import SwiftUI
 import UIKit
 import Vision
@@ -10,6 +11,44 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesPresentationTests: XCTestCase {
+    func testAccountSourceShowsGuideLoadingAfterChannelsAreReady() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        window.rootViewController = host
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let source = LiveTVServerSource(id: "fixture", name: "Live channels", accountID: "account")
+        for phase in [LiveTVImportPhase.loading, .loaded] {
+            var status = LiveTVServerSourceStatus(source: source)
+            status.phase = .loaded
+            status.channelCount = 12_073
+            status.availability = .init(status: .available, channelCount: 12_073, supportsGuide: true)
+            status.guidePhase = phase
+            host.rootView = AnyView(
+                LiveTVServerSourceSummary(source: source, status: status)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.white)
+                    .environment(\.colorScheme, .light)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+            )
+            try await settle(window)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(snapshot(window).cgImage)).perform([request])
+            let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            XCTAssertEqual(text.contains("Loading guide"), phase == .loading, text)
+            XCTAssertTrue(text.contains("channels"), text)
+        }
+    }
+
     func testSourceOverflowUsesMeasuredRowsAndDirectionalSharedFade() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)

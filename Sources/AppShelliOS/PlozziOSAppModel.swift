@@ -77,10 +77,12 @@ final class PlozziOSAppModel {
     }
 
     /// Call only after a user-requested playlist/free-channel setup succeeds.
-    /// This records admission without changing first-run setup or navigation.
+    /// Records admission and reveals Live TV without changing the current destination.
     @discardableResult
     func recordSuccessfulIPTVSetup() -> Bool {
-        appAdmission.recordStandaloneChoice(isAvailable: Self.isStandalonePlaybackAvailable)
+        let accepted = appAdmission.recordStandaloneChoice(isAvailable: Self.isStandalonePlaybackAvailable)
+        if accepted { settings.navigation.showsLiveTV = true }
+        return accepted
     }
 
     private struct HeroTrailerCacheEntry {
@@ -2700,6 +2702,7 @@ final class PlozziOSAppModel {
             let isFirstRun = existingIDs.isEmpty
                 && !profiles.firstRunProfileSetupComplete
             var addedAccounts: [Account] = []
+            var addedLiveTV = false
             for session in sessions {
                 let registration = try accountStore.registerAuthenticatedSession(session)
                 let account = registration.account
@@ -2707,6 +2710,7 @@ final class PlozziOSAppModel {
                 clearRemovalTombstone(for: account.id)
                 if registration.previousAccount == nil || activateIPTVAccount {
                     try accountsProviders.includeIPTVAccountInActiveProfile(account)
+                    addedLiveTV = addedLiveTV || account.server.provider == .iptv
                 }
                 if registration.previousAccount == nil {
                     addedAccounts.append(account)
@@ -2719,6 +2723,7 @@ final class PlozziOSAppModel {
                 }
             } ?? false
             accountError = nil
+            if addedLiveTV { settings.navigation.showsLiveTV = true }
             reloadAccountsAndCrashContext()
             selectNewlyAddedUserIfNeeded(from: addedAccounts)
             identityIndex.warmIdentityIndex()

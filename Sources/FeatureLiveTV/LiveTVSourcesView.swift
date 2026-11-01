@@ -1273,7 +1273,7 @@ private struct LiveTVPlaylistSourceEditor: View {
     }
 }
 
-private struct LiveTVServerSourceSummary: View {
+struct LiveTVServerSourceSummary: View {
     let source: LiveTVServerSource
     let status: LiveTVServerSourceStatus?
 
@@ -1291,6 +1291,10 @@ private struct LiveTVServerSourceSummary: View {
                     ProgressView("Loading channels")
                 } else {
                     Text("Ready to load").font(.caption)
+                }
+                if status.guidePhase == .loading {
+                    ProgressView("Loading guide")
+                        .accessibilityIdentifier("live-tv-source-guide-loading-\(source.id)")
                 }
             }
         }

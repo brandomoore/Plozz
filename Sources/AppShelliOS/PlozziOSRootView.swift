@@ -336,6 +336,7 @@ public struct PlozziOSRootView: View {
             palette: resolvedPalette
         )
         .environment(appModel)
+        .environment(appModel.settings.navigation)
         .environment(heroTrailerController)
         .themeMusicScope(
             controller: themeMusicController,

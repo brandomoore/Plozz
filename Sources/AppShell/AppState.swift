@@ -108,10 +108,12 @@ public final class AppState {
     }
 
     /// Call only after a user-requested playlist/free-channel setup succeeds.
-    /// This records admission without changing the session or navigation.
+    /// Records admission and reveals Live TV without changing the current destination.
     @discardableResult
     public func recordSuccessfulIPTVSetup() -> Bool {
-        appAdmission.recordStandaloneChoice(isAvailable: Self.isStandalonePlaybackAvailable)
+        let accepted = appAdmission.recordStandaloneChoice(isAvailable: Self.isStandalonePlaybackAvailable)
+        if accepted { profileSettings.navigationStyleModel.showsLiveTV = true }
+        return accepted
     }
 
     /// Provider chosen for the add-account flow currently in progress, so that
@@ -1689,6 +1691,9 @@ public final class AppState {
             registration = try accountsProviders.accountStore.registerAuthenticatedSession(session)
             if registration.previousAccount == nil || activateIPTVAccount {
                 try accountsProviders.includeIPTVAccountInActiveProfile(registration.account)
+                if registration.account.server.provider == .iptv {
+                    profileSettings.navigationStyleModel.showsLiveTV = true
+                }
             }
         } catch {
             PlozzLog.auth.error("Unable to save authenticated account")
