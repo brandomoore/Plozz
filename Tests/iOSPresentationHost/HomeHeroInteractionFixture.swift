@@ -165,6 +165,14 @@ struct HomeHeroInteractionFixture: View {
                 )
             } rows: {
                 Text("Below the hero").accessibilityIdentifier("hero-following-row")
+                if ProcessInfo.processInfo.arguments.contains("--poster-home-card") {
+                    PlozziOSHomeMediaCard(
+                        item: HeroInteractionProvider.slides[0], isLandscape: false,
+                        interaction: .openDetail, provider: HeroInteractionProvider(kind: .jellyfin)
+                    )
+                    .frame(width: 150)
+                    .accessibilityIdentifier("home-poster")
+                }
                 Color.clear.frame(height: 1_200)
             }
             .overlay(alignment: .topTrailing) {

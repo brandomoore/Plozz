@@ -188,7 +188,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     /// subview because a `navigationDestination` is hosted by the stack, so it
     /// inherits the STACK's environment — the router has to be read where the page
     /// itself is declared.
-    @Environment(\.mediaItemNavigator) private var itemNavigator
+    @Environment(\.mediaItemArtworkNavigator) private var artworkItemNavigator
     @State private var viewModel: ItemDetailViewModel
     @State private var isPageVisible = false
     @State private var playbackRequest: PlozziOSPlaybackRequest?
@@ -632,7 +632,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     PlozziOSRelatedSection(
                         entries: entries,
                         inset: pageInset,
-                        onSelect: { itemNavigator?($0) }
+                        onSelect: { item, source in artworkItemNavigator?(item, source) }
                     )
                 }
 

@@ -217,6 +217,17 @@ public struct MediaRowView: View {
     /// the moment it takes focus, which is the symptom this exists to prevent.
     private var focusLiftAllowance: CGFloat { 28 }
     private let onSelect: (MediaItem) -> Void
+    #if os(iOS)
+    private var onSelectArtwork: ((MediaItem, MediaArtworkZoomSource) -> Void)?
+
+    public func artworkNavigation(
+        _ action: ((MediaItem, MediaArtworkZoomSource) -> Void)?
+    ) -> Self {
+        var copy = self
+        copy.onSelectArtwork = action
+        return copy
+    }
+    #endif
     private let onPlay: ((MediaItem) -> Void)?
     /// When `true`, selecting a card starts playback immediately, so its cards
     /// show the resume chip (play glyph + progress bar + time). Threaded to
@@ -873,6 +884,15 @@ public struct MediaRowView: View {
         } else {
             card(for: item)
         }
+        #elseif os(iOS)
+        MediaArtworkZoomButton(id: item.stablePresentationID) { source in
+            if let onSelectArtwork {
+                onSelectArtwork(item, source)
+            } else {
+                onSelect(item)
+            }
+        } label: { card(for: item) }
+            .buttonStyle(.plain)
         #else
         Button { onSelect(item) } label: { card(for: item) }
             // Plain, so the card keeps its own colours and chrome.

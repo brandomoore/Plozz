@@ -32,6 +32,18 @@ public struct FeaturedMediaRow: View {
     private var onBrowse: (() -> Void)?
     private var usesRowBrowsing = false
 
+    #if os(iOS)
+    private var onSelectArtwork: ((MediaItem, MediaArtworkZoomSource) -> Void)?
+
+    public func artworkNavigation(
+        _ action: @escaping (MediaItem, MediaArtworkZoomSource) -> Void
+    ) -> Self {
+        var copy = self
+        copy.onSelectArtwork = action
+        return copy
+    }
+    #endif
+
     public func browsingRow(_ action: (() -> Void)?) -> Self {
         var copy = self
         copy.onBrowse = action
@@ -211,6 +223,14 @@ public struct FeaturedMediaRow: View {
             .padding(.vertical, television ? metrics.railShadowClearance : 4)
         }
         #if os(iOS)
+        .mediaItemArtworkNavigator { item, source in
+            coordinator.stop()
+            if let onSelectArtwork {
+                onSelectArtwork(item, source)
+            } else {
+                onSelect(item)
+            }
+        }
         .contentMargins(.horizontal, inset, for: .scrollContent)
         #endif
         .scrollIndicators(.hidden)
@@ -236,6 +256,9 @@ private struct FeaturedMediaCard: View {
     let onSelect: () -> Void
     @PlozzCardFocus private var focused: Bool
     @Environment(\.plozzCardFocusStyle) private var focusStyle
+    #if os(iOS)
+    @Environment(\.mediaItemArtworkNavigator) private var artworkNavigator
+    #endif
 
     private func artwork(usesNativeClipping: Bool = false) -> FeaturedCardArtwork<some View> {
         FeaturedCardArtwork(
@@ -253,9 +276,16 @@ private struct FeaturedMediaCard: View {
             .mediaItemContextMenu(for: item)
             .onChange(of: focused) { _, value in onFocus(value) }
         #else
-        Button(action: onSelect) {
+        MediaArtworkZoomButton(id: item.stablePresentationID) { source in
+            if let artworkNavigator {
+                artworkNavigator(item, source)
+            } else {
+                onSelect()
+            }
+        } label: {
             artwork()
                 .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .mediaArtworkZoomSource(cornerRadius: 20)
         }
             .buttonStyle(.plain)
             .mediaItemContextMenu(for: item)

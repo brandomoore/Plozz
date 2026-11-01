@@ -16,7 +16,7 @@ struct PlozziOSRelatedSection: View {
 
     let entries: [RelatedEntry]
     var inset: CGFloat
-    var onSelect: (MediaItem) -> Void
+    var onSelect: (MediaItem, MediaArtworkZoomSource) -> Void
 
     var body: some View {
         if !items.isEmpty {
@@ -33,8 +33,8 @@ struct PlozziOSRelatedSection: View {
                         )
                     ) {
                         ForEach(items, id: \.stablePresentationID) { item in
-                            Button {
-                                onSelect(item)
+                            MediaArtworkZoomButton(id: item.stablePresentationID) { source in
+                                onSelect(item, source)
                             } label: {
                                 PlozziOSPosterCard(
                                     item: item,

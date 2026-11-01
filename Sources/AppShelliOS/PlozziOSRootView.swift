@@ -1991,7 +1991,7 @@ private struct PlozziOSDestinationView: View {
 }
 
 struct PlozziOSWatchlistLandingView: View {
-    @Environment(\.mediaItemNavigator) private var navigateToItem
+    @Environment(\.mediaItemArtworkNavigator) private var navigateToItem
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
     let appModel: PlozziOSAppModel
@@ -2103,8 +2103,8 @@ struct PlozziOSWatchlistLandingView: View {
                 )) { element in
                     switch element {
                     case .item(let item):
-                        Button {
-                            navigateToItem?(item)
+                        MediaArtworkZoomButton(id: item.stablePresentationID) { source in
+                            navigateToItem?(item, source)
                         } label: {
                             PlozziOSPosterCard(
                                 item: item,

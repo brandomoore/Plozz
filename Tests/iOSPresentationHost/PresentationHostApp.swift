@@ -219,6 +219,8 @@ struct PresentationHostApp: App {
                 DiagnosticsSharingFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--source-settings") {
                 SourceOnboardingFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--poster-zoom-fixture") {
+                PosterZoomFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--featured-card-fixture") {
                 FeaturedCardInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--collection-settings-fixture") {

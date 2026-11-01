@@ -394,8 +394,20 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   It starts when the native page appears, without a cover, window
   input guard, artwork wait, or custom Back handler. Leaving cancels the reveal;
   returning to an existing page does not replay it. Reduce Motion shows everything
-  immediately. iOS/iPadOS navigation is unchanged.
-- **Retained cinematic transition infrastructure** — the zoom implementation and
+  immediately.
+- **Mobile artwork navigation** — iOS/iPadOS poster detail links use the system
+  interactive zoom transition. `MediaArtworkZoomLink`, its value-based variant,
+  and `MediaArtworkZoomButton` give each card occurrence its own namespace.
+  `PosterCardView` registers the final artwork bounds and corner radius after
+  layout for framed/borderless, portrait/landscape, and Continue Watching cards;
+  captions, padding, density, and user-selected aspect ratios do not become
+  guessed transition geometry. Featured cards register their own artwork.
+  Home, library/recommendation/collection grids, search, watchlist, related
+  titles, and filmography carry the originating source into their destination.
+  Plain menu/deep-link navigation, folders, playback actions, and the Home hero retain their existing
+  behavior. iOS owns the gesture, cancellation, return animation, and Reduce
+  Motion treatment; no drag recognizer or per-frame layout state is installed.
+- **Retained tvOS cinematic transition infrastructure** — the custom zoom implementation and
   its focused fixtures remain available for future work, but no production shell
   enables it. TV browse stacks install
   `cinematicDetailNavigation(path:)` on the stack so its destinations inherit it.
