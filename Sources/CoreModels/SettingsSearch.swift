@@ -53,7 +53,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
     case playback, subtitles, subtitleStyle, theme, cards, artwork, circadian
     case allScreens, navigation, home, hero, detail, liveTV, language
     case heroContent, heroRatings, heroTrailers, heroDiscovery, heroLibraries, heroCollections
-    case homeRows, homeFiltering, homeLabels, continueWatching, libraries, cardLabels
+    case homeRows, homeRowStyle, homeFiltering, homeLabels, continueWatching, libraries, cardLabels
     case externalPlayer, skipMarkers, liveSubtitleStyle, musicPlayer, topShelf
     case downloads, profiles, sync, metadata, diagnostics, trackers, liveTVSources
     case playbackAdvanced, streamingAdvanced, metadataDiagnostics, detailRatingSources
@@ -85,6 +85,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .heroLibraries: ["Screens & Navigation", "Home", "Hero", "Random libraries"]
         case .heroCollections: ["Screens & Navigation", "Home", "Hero", "Collections"]
         case .homeRows: ["Screens & Navigation", "Home", "Rows"]
+        case .homeRowStyle: ["Screens & Navigation", "Home", "Row style"]
         case .homeFiltering: ["Screens & Navigation", "Home", "Filtering"]
         case .homeLabels: ["Screens & Navigation", "Home", "Card labels"]
         case .continueWatching: ["Screens & Navigation", "Home", "Rows", "Continue Watching"]
@@ -125,7 +126,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .subtitles, .subtitleStyle, .liveSubtitleStyle: "captions.bubble"
         case .theme, .cards, .artwork, .circadian, .cardLabels: "paintpalette"
         case .allScreens, .navigation, .home, .hero, .detail, .heroContent, .heroRatings,
-             .heroTrailers, .heroDiscovery, .heroLibraries, .heroCollections, .homeRows,
+             .heroTrailers, .heroDiscovery, .heroLibraries, .heroCollections, .homeRows, .homeRowStyle,
              .homeFiltering, .homeLabels, .continueWatching, .libraries, .musicPlayer, .topShelf, .detailRatingSources,
              .accountLibraries:
             "rectangle.3.group"
@@ -575,8 +576,10 @@ public enum SettingsSearchCatalog {
         }
 
     private static let homeEntries: [SettingsSearchEntry] = [
-        .init("home-layout", page: .hero, title: "Home layout",
-              keywords: "hero carousel fullscreen showcase spotlight banner featured", platform: .television),
+        .init("home-layout", page: .homeRowStyle, title: "Row style",
+              keywords: "home layout classic showcase rows shelves", platform: .television),
+        .init("home-row-style", page: .home, title: "Row style",
+              keywords: "home layout classic showcase rows shelves", platform: .television),
         .init("hero-logo-size", page: .hero, title: "Logo size",
               keywords: "hero banner title logo bigger smaller"),
         .init("hero-text-size", page: .hero, title: "Text size",
@@ -609,11 +612,17 @@ public enum SettingsSearchCatalog {
               keywords: "hero random library sources choose include exclude"),
         .init("hero-choose-collections", page: .heroContent, title: "Choose collections",
               keywords: "hero collections playlists selected titles"),
-        .init("showcase-logo-size", page: .hero, title: "Logo size",
+        .init("showcase-logo-size", page: .homeRowStyle, title: "Logo size",
               keywords: "showcase spotlight title logo bigger smaller", platform: .television),
-        .init("showcase-text-size", page: .hero, title: "Text size",
+        .init("showcase-text-size", page: .homeRowStyle, title: "Text size",
               keywords: "showcase spotlight synopsis description font bigger smaller", platform: .television),
-        .init("showcase-discovery-row", page: .hero, title: "Discovery row",
+        .init("showcase-ratings", page: .homeRowStyle, title: "Show ratings",
+              keywords: "showcase row review scores stars ratings", platform: .television),
+        .init("showcase-age", page: .homeRowStyle, title: "Show Common Sense age",
+              keywords: "showcase row family guidance children recommended age", platform: .television),
+        .init("showcase-rating-count", page: .homeRowStyle, title: "Maximum ratings shown",
+              keywords: "showcase row review scores number limit", platform: .television),
+        .init("showcase-discovery-row", page: .homeRowStyle, title: "Discovery row",
               keywords: "showcase discover recommendations suggestions", platform: .television,
               requiresAdultProfile: true),
         .init("home-rows", page: .home, title: "Rows",

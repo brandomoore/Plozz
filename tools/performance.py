@@ -418,6 +418,13 @@ SCENARIOS = {
         "description": "Update a production mobile Continue Watching rail 24 times with 180 episodes across twelve synthetic source identities and cached artwork.",
         "counters": ["rootUpdates", "items", "accounts", "seriesSourceBuilds"],
     },
+    "mobile-home-loading-scroll": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeLoadingLayoutTests/testPerformanceLoadingWhileScrolling",
+        "file": "Tests/iOSPresentationTests/HomeLoadingLayoutTests.swift",
+        "description": "Replace eight production Home skeleton rails during animated vertical scrolling; verify completed loading, scroll targets, and stable page height.",
+        "counters": ["loadedRows", "scrollTargets", "itemsPerRow", "maximumPageHeightChangePoints"],
+    },
     "mobile-preference-sync": {
         "suite": "ui",
         "platforms": ["iOS"],

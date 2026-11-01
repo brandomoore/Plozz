@@ -367,7 +367,8 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             .padding(20)
         } inspect: { window in
             let labels = try await self.capture(window, name: "Home browse title chevron")
-            XCTAssertTrue(labels.contains { $0.0.contains("Library picks") })
+            XCTAssertTrue(labels.map(\.0).joined(separator: " ").contains("Library picks"),
+                          "The heading remains readable when accessible text wraps onto multiple lines.")
             XCTAssertFalse(labels.contains { $0.0.contains("See all") })
             XCTAssertGreaterThanOrEqual(headingFrame.height, 44)
             XCTAssertLessThanOrEqual(headingFrame.width, 350)

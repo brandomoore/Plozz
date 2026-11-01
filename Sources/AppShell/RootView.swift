@@ -230,7 +230,7 @@ public struct RootView: View {
     }
 
     private var nextFeatureIntroduction: FeatureIntroduction? {
-        [.navigationStyles, .homeLayout].first {
+        [.navigationStyles].first {
             featureIntroductionStore.needsPresentation($0)
         }
     }
@@ -377,10 +377,6 @@ public struct RootView: View {
                 switch introduction {
                 case .navigationStyles:
                     SelectNavigationStyleView(appState: appState) { dismissFeatureIntroduction(introduction) }
-                case .homeLayout:
-                    SelectHomeLayoutView(hero: appState.profileSettings.heroSettingsModel) {
-                        dismissFeatureIntroduction(introduction)
-                    }
                 default:
                     EmptyView()
                 }
@@ -1111,7 +1107,6 @@ private enum OnboardingPage: Equatable {
     case selectSeerr
     case selectTheme
     case selectNavigation
-    case selectHomeLayout
 
     init(
         step: OnboardingStep,
@@ -1135,8 +1130,6 @@ private enum OnboardingPage: Equatable {
             self = .selectTheme
         case .selectNavigation:
             self = .selectNavigation
-        case .selectHomeLayout:
-            self = .selectHomeLayout
         }
     }
 
@@ -1150,7 +1143,6 @@ private enum OnboardingPage: Equatable {
         case .selectSeerr: 5
         case .selectTheme: 6
         case .selectNavigation: 7
-        case .selectHomeLayout: 8
         }
     }
 
@@ -1172,8 +1164,6 @@ private enum OnboardingPage: Equatable {
             "selectTheme"
         case .selectNavigation:
             "selectNavigation"
-        case .selectHomeLayout:
-            "selectHomeLayout"
         }
     }
 }
@@ -1436,14 +1426,9 @@ private struct OnboardingPageContent: View {
         case .selectNavigation:
             SelectNavigationStyleView(
                 appState: appState,
-                onContinue: { appState.finishNavigationSelection() }
-            )
-        case .selectHomeLayout:
-            SelectHomeLayoutView(
-                hero: appState.profileSettings.heroSettingsModel,
                 onContinue: {
                     onAppearanceSelected?()
-                    appState.finishHomeLayoutSelection()
+                    appState.finishNavigationSelection()
                 }
             )
         }
@@ -1588,11 +1573,6 @@ private struct ProfileSetupFlowView: View {
         case .navigation:
             SelectNavigationStyleView(
                 appState: appState,
-                onContinue: { stage = .homeLayout }
-            )
-        case .homeLayout:
-            SelectHomeLayoutView(
-                hero: appState.profileSettings.heroSettingsModel,
                 onContinue: {
                     appState.completeProfileAppearanceSetup(for: profile.id)
                     onAppearanceSelected()
@@ -1624,7 +1604,6 @@ private enum ProfileSetupStage {
     case seerr
     case theme
     case navigation
-    case homeLayout
     case lock
 }
 

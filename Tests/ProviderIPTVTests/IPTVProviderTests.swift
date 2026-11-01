@@ -270,6 +270,65 @@ final class IPTVProviderTests: XCTestCase {
         ))
     }
 
+    func testGuideRedirectAllowsOnlyStandardSameHostHTTPSUpgradeWithURLCredentials() throws {
+        let origin = try XCTUnwrap(URL(string: "http://provider.example/guide?token=fixture-secret"))
+        var original = URLRequest(url: origin)
+        original.setValue("Bearer fixture-token", forHTTPHeaderField: "Authorization")
+        original.setValue("session=fixture-cookie", forHTTPHeaderField: "Cookie")
+        original.setValue("private", forHTTPHeaderField: "X-Guide-Key")
+        var next = original
+        next.url = URL(string: "https://provider.example/guide.xml?token=fixture-secret")
+        let upgraded = try XCTUnwrap(IPTVRedirectPolicy.request(
+            next, previous: origin, original: original, scope: .guide
+        ))
+        XCTAssertEqual(upgraded.url, next.url)
+        for header in ["Authorization", "Cookie", "X-Guide-Key"] {
+            XCTAssertNil(upgraded.value(forHTTPHeaderField: header))
+        }
+        XCTAssertNil(IPTVRedirectPolicy.request(next, previous: origin, original: original),
+                     "Account authentication/catalogue redirect policy is unchanged")
+        let secure = try XCTUnwrap(upgraded.url)
+        next.url = URL(string: "https://provider.example/final.xml?token=fixture-secret")
+        XCTAssertNotNil(IPTVRedirectPolicy.request(next, previous: secure, original: original, scope: .guide))
+        for destination in [
+            "https://other.example/guide?token=fixture-secret",
+            "https://provider.example:8443/guide?token=fixture-secret",
+            "http://provider.example/guide?token=fixture-secret"
+        ] {
+            next.url = URL(string: destination)
+            XCTAssertNil(IPTVRedirectPolicy.request(next, previous: secure, original: original, scope: .guide))
+        }
+        var nonstandard = original
+        nonstandard.url = URL(string: "http://provider.example:8080/guide?token=fixture-secret")
+        next.url = secure
+        XCTAssertNil(IPTVRedirectPolicy.request(
+            next, previous: nonstandard.url, original: nonstandard, scope: .guide
+        ))
+        XCTAssertNil(IPTVRedirectPolicy.request(
+            next, previous: URL(string: "https://other.example/return"), original: original, scope: .guide
+        ), "A redirect through another host must not inherit the same-host upgrade exception")
+    }
+
+    func testGuideRedirectDiagnosticsContainOnlyBoundedReasons() throws {
+        let original = URLRequest(url: try XCTUnwrap(URL(string: "https://provider.example/guide?token=fixture-secret")))
+        for (destination, reason) in [
+            ("http://provider.example/guide", "downgrade"),
+            ("https://other.example/fixture-secret", "credentials"),
+            ("file:///private/guide.xml", "invalidDestination")
+        ] {
+            let diagnostic = IPTVGuideDiagnostics.Request()
+            let next = URLRequest(url: try XCTUnwrap(URL(string: destination)))
+            XCTAssertNil(IPTVRedirectPolicy.request(
+                next, previous: original.url, original: original, scope: .guide, diagnostic: diagnostic
+            ))
+            let summary = diagnostic.summary(rows: nil, error: LiveTVSourceImportError.redirectBlocked)
+            XCTAssertTrue(summary.contains("redirects=1 redirectBlocked=\(reason)"))
+            for value in ["provider.example", "other.example", "fixture-secret", "/private/"] {
+                XCTAssertFalse(summary.contains(value))
+            }
+        }
+    }
+
     func testDiscardedImportDoesNotReplaceVisibleRecordsForAnotherConnection() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

@@ -206,6 +206,21 @@ extension SettingsRoute {
 public final class SettingsNavigationModel {
     #if os(tvOS)
     let pages = SettingsPageNavigation<SettingsRoute>()
+    var searchQuery = ""
+    private(set) var isSearching = false
+
+    func beginSearch() {
+        select(.search)
+        isSearching = true
+    }
+
+    func endSearch() {
+        searchQuery = ""
+        isSearching = false
+        select(.search)
+        returnToSidebar()
+    }
+
     var path: [SettingsRoute] {
         get { pages.routes }
         set { pages.routes = newValue }
@@ -292,6 +307,10 @@ public final class SettingsNavigationModel {
 
     func resetForProfile() {
         resetPages()
+        #if os(tvOS)
+        searchQuery = ""
+        isSearching = false
+        #endif
         section = .playback
         appearanceRowID = nil
         returnToSidebar()

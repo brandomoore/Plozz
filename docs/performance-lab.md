@@ -89,6 +89,15 @@ hosting, native presentation, rendered captures, and heading recognition.
 This is repeated fresh-view presentation, not a cold process launch, connected
 startup workload, GPU measurement, or physical-device frame-pacing verdict.
 
+`mobile-home-loading-scroll` replaces eight production skeleton rails with
+20-item media rails while UIKit animates the production Home vertical scroll
+view. It requires all rows to finish, the final scroll destination to be reached,
+and no page-height change. It uses synthetic items without remote artwork:
+this is loading-layout and app-process CPU evidence, not provider/network,
+image-decoding, full Home startup, or presented-frame/FPS evidence.
+`HomeLoadingLayoutTests` separately checks empty-row removal, insertion, content
+insets, library/featured placeholders, and existing heading geometry.
+
 `mobile-home-rail-prefetch` updates the real mobile Continue Watching rail 24
 times with the same 180 metadata-rich episodes across twelve synthetic account
 identities. Artwork is preloaded into the test cache and online providers are

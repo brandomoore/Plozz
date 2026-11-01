@@ -352,7 +352,21 @@ automatically, including guides hosted on another server, scheme, or port.
 Each guide is requested at its declared address without copying the playlist's
 query credentials. Account headers stay scoped to their configured origin;
 the standalone source loader does not share cookies or stored HTTP credentials.
-Guide redirects retain their existing transport safeguards.
+Guide redirects reject HTTPS downgrades and copied credentials on other hosts.
+An account-backed XMLTV request may retain URL credentials when upgrading from
+HTTP port 80 to HTTPS port 443 on the same host; headers are still stripped.
+This exception does not change login, catalogue or playback redirect policy.
+Guide diagnostics record redirect counts and a bounded rejection reason
+(`invalidDestination`, `downgrade`, or `credentials`), never destinations or secrets.
+
+Account-backed XMLTV downloads retry transient timeouts, lost connections,
+connection failures and HTTP 408/429/500/502/503/504 responses at most twice,
+with one- and two-second backoff. A valid `Retry-After` takes priority; waits over
+ten seconds are returned as failures rather than retried ahead of the server's
+deadline. Cancellation, authentication, certificates, blocked redirects, missing
+endpoints, size limits and XML parse errors are not retried. Failed body transfers
+restart from byte zero; incomplete responses are never cached. Native Xtream
+API fallback selection is unchanged.
 Confirmed XMLTV 404s are reused only within the current provider's refresh,
 across its channel/window batches. Every new refresh can retry immediately;
 neither another account nor a later refresh inherits those failures. Diagnostics
@@ -365,6 +379,16 @@ request. This avoids downloading a large guide again for each channel batch;
 matching and parsing still run separately for each batch. Initial download
 assembly still uses Data. Backing failures are logged and leave a valid response
 uncached rather than failing its guide import.
+Rejected XMLTV documents are evicted from the response cache in both account and
+standalone source paths, so the next refresh can fetch corrected data rather than
+replay cached HTML, malformed XML or an oversized expanded document.
+
+The bounded-retry comparison used
+[Kodi IPTV Simple's XMLTV loader](https://github.com/kodi-pvr/pvr.iptvsimple/blob/f4071e16c747e1a13d4710e249cb03ff11204f17/src/iptvsimple/Epg.cpp)
+and [Jellyfin's XMLTV download/cache handling](https://github.com/jellyfin/jellyfin/blob/5b385862fb97201d954a6ac7c9c745d791a738fa/src/Jellyfin.LiveTv/Listings/XmlTvListingsProvider.cs).
+Plozz retains its own credential boundaries, cancellation behavior, strict parser,
+resource limits and visible failures rather than copying broad fallback policies.
+
 XMLTV accepts minute- or second-precision programme timestamps, compact and
 colon-separated numeric timezone offsets, and the unambiguous UTC/GMT/Z labels.
 Absent zones mean UTC. Calendar and offset validation remains strict; coarser

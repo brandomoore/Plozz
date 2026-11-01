@@ -2,6 +2,7 @@ import CoreModels
 import CoreNetworking
 import CryptoKit
 import Foundation
+import os
 
 actor IPTVClient {
     private static let playlistCatalogScope = "playlist-v5"
@@ -692,7 +693,24 @@ actor IPTVClient {
             throw AppError.notFound
         }
         do {
-            return try await downloadGuideData(from: url)
+            var attempt = 0
+            while true {
+                let retryAfter = OSAllocatedUnfairLock<TimeInterval?>(initialState: nil)
+                do {
+                    return try await downloadGuideData(from: url) { response in
+                        let delay = HTTPDate.retryAfter(response.value(forHTTPHeaderField: "Retry-After"))
+                        retryAfter.withLock { $0 = delay }
+                    }
+                } catch {
+                    try Task.checkCancellation()
+                    guard let delay = Self.guideRetryDelay(
+                        after: error, attempt: attempt, retryAfter: retryAfter.withLock({ $0 })
+                    ) else { throw error }
+                    attempt += 1
+                    PlozzLog.networking.info("IPTV_GUIDE event=retry attempt=\(attempt) delaySeconds=\(delay)")
+                    try await Task.sleep(for: .seconds(delay))
+                }
+            }
         } catch AppError.notFound {
             try Task.checkCancellation()
             refresh?.missingURLs.insert(url)
@@ -700,12 +718,41 @@ actor IPTVClient {
         }
     }
 
-    private func downloadGuideData(from url: URL) async throws -> Data {
+    static func guideRetryDelay(after error: any Error, attempt: Int, retryAfter: TimeInterval?) -> TimeInterval? {
+        guard (0..<2).contains(attempt) else { return nil }
+        let transient: Bool
+        switch error {
+        case AppError.rateLimited: transient = true
+        case IPTVError.httpStatus(let status): transient = [408, 500, 502, 503, 504].contains(status)
+        default:
+            let error = error as NSError
+            transient = error.domain == NSURLErrorDomain
+                && [NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorCannotConnectToHost].contains(error.code)
+        }
+        guard transient else { return nil }
+        if let retryAfter {
+            guard retryAfter.isFinite, retryAfter <= 10 else { return nil }
+            return max(1, retryAfter)
+        }
+        return Double(1 << attempt)
+    }
+
+    func discardInvalidGuideData(from url: URL) {
+        guard cachedGuide?.url == url else { return }
+        clearGuideCache()
+    }
+
+    private func downloadGuideData(
+        from url: URL, receivedResponse: @escaping @Sendable (HTTPURLResponse) -> Void
+    ) async throws -> Data {
         if let cachedGuide, cachedGuide.url == url, cachedGuide.expires > Date() {
             IPTVGuideDiagnostics.request?.cacheHit(bytes: cachedGuide.data.count)
             return cachedGuide.data
         }
-        let (bytes, response) = try await http.bytes(url: url, headers: credential.guideHeaders(for: url))
+        let (bytes, response) = try await http.bytes(
+            url: url, headers: credential.guideHeaders(for: url), guideRequest: true,
+            receivedResponse: receivedResponse
+        )
         defer { bytes.task.cancel() }
         let limit = 256 * 1_024 * 1_024
         guard response.expectedContentLength <= limit else { throw LiveTVSourceImportError.guideTooLarge }

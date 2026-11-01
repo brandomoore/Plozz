@@ -290,6 +290,40 @@ final class LiveTVSourceLoaderTests: XCTestCase {
         XCTAssertEqual(result.channels.first?.streamURL, url)
     }
 
+    func testMalformedGuideDoesNotPoisonTheResponseCache() async throws {
+        for indexed in [false, true] {
+            let url = fixtureURL()
+            LoaderProtocol.state.register(url, [
+                .init(status: 200, headers: ["Cache-Control": "max-age=3600", "ETag": "invalid"],
+                      body: Data("<html>login</html>".utf8)),
+                .init(status: 200, headers: ["Cache-Control": "max-age=3600"], body: Data("<tv/>".utf8))
+            ])
+            defer { LoaderProtocol.state.remove(url) }
+            let fixture = try CacheFixture()
+            defer { fixture.removeOwnedFiles() }
+            let loader = loader()
+            func load() async throws -> LiveTVGuideImport {
+                if indexed {
+                    return try await loader.loadIndexedGuide(
+                        from: url, sourceID: "guide", channels: [], now: Date(),
+                        cache: fixture.cache, lookbackDays: 1, lookaheadDays: 7
+                    )
+                }
+                return try await loader.loadGuide(from: url, channels: [], now: Date())
+            }
+            do {
+                _ = try await load()
+                XCTFail("An HTML response is not a valid guide")
+            } catch { XCTAssertEqual(error as? LiveTVSourceImportError, .invalidGuide) }
+            _ = try await load()
+            _ = try await load()
+            let requests = LoaderProtocol.state.requests(url)
+            XCTAssertEqual(requests.count, 2, "indexed: \(indexed)")
+            XCTAssertNil(requests.last?.value(forHTTPHeaderField: "If-None-Match"),
+                         "Rejected bytes must not be revalidated as usable XMLTV")
+        }
+    }
+
     private func loader() -> LiveTVSourceLoader {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LoaderProtocol.self]

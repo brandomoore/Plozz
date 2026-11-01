@@ -67,8 +67,6 @@ final class SessionStateMachineTests: XCTestCase {
         m.apply(.themeSelected, allowsStandalonePlayback: true)
         XCTAssertEqual(m.state, .onboarding(.selectNavigation, canReturnToApp: true))
         m.apply(.navigationSelected, allowsStandalonePlayback: true)
-        XCTAssertEqual(m.state, .onboarding(.selectHomeLayout, canReturnToApp: true))
-        m.apply(.homeLayoutSelected, allowsStandalonePlayback: true)
         XCTAssertEqual(m.state, .ready)
     }
 
@@ -148,8 +146,6 @@ final class SessionStateMachineTests: XCTestCase {
         m.apply(.themeSelected)
         XCTAssertEqual(m.state, .onboarding(.selectNavigation, canReturnToApp: true))
         m.apply(.navigationSelected)
-        XCTAssertEqual(m.state, .onboarding(.selectHomeLayout, canReturnToApp: true))
-        m.apply(.homeLayoutSelected)
         XCTAssertEqual(m.state, .ready)
     }
 
@@ -163,16 +159,14 @@ final class SessionStateMachineTests: XCTestCase {
         XCTAssertEqual(m.state, .onboarding(.confirmProfile, canReturnToApp: true))
     }
 
-    func testHomeLayoutCannotSkipEarlierAppearanceChoices() {
-        let steps: [OnboardingStep] = [.selectTheme, .selectNavigation]
+    func testNavigationCannotSkipEarlierAppearanceChoices() {
+        let steps: [OnboardingStep] = [.confirmProfile, .selectSeerr, .selectTheme]
         for step in steps {
             let state = SessionState.onboarding(step, canReturnToApp: true)
-            XCTAssertEqual(SessionStateMachine.reduce(state: state, event: .homeLayoutSelected), state)
+            XCTAssertEqual(SessionStateMachine.reduce(state: state, event: .navigationSelected), state)
         }
-        var machine = SessionStateMachine(state: .onboarding(.selectHomeLayout, canReturnToApp: true))
+        var machine = SessionStateMachine(state: .onboarding(.selectNavigation, canReturnToApp: true))
         machine.apply(.navigationSelected)
-        XCTAssertEqual(machine.state, .onboarding(.selectHomeLayout, canReturnToApp: true))
-        machine.apply(.homeLayoutSelected)
         XCTAssertEqual(machine.state, .ready)
     }
 

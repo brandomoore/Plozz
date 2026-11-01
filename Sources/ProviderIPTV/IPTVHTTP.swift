@@ -51,6 +51,7 @@ final class IPTVHTTP: Sendable {
 
     func bytes(
         url: URL, headers: [String: String], method: String = "GET",
+        guideRequest: Bool = false,
         receivedResponse: (@Sendable (HTTPURLResponse) -> Void)? = nil
     ) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
         try Task.checkCancellation()
@@ -64,15 +65,18 @@ final class IPTVHTTP: Sendable {
         diagnostic?.willRequest()
         let guideDiagnostic = IPTVGuideDiagnostics.request
         guideDiagnostic?.requesting()
+        let guideDelegate = guideRequest ? IPTVRedirects(
+            sensitiveValues: redirects.sensitiveValues, scope: .guide, diagnostic: guideDiagnostic
+        ) : nil
         let id = UUID()
         // URLSession.bytes creates its native task asynchronously. Fence that
         // entire startup, not just a cancellation check before calling it.
         let task = try lifecycle.withLock { state in
             guard !state.closed else { throw CancellationError() }
-            let task = RequestTask { [session, request] in
+            let task = RequestTask { [session, request, guideDelegate] in
                 try Task.checkCancellation()
                 Self.performanceMetrics?.requested()
-                let result = try await session.bytes(for: request)
+                let result = try await session.bytes(for: request, delegate: guideDelegate)
                 if Task.isCancelled {
                     result.0.task.cancel()
                     throw CancellationError()
@@ -190,10 +194,15 @@ final class IPTVPerformanceMetrics: @unchecked Sendable {
 private final class IPTVRedirects: NSObject, URLSessionTaskDelegate, Sendable {
     let sensitiveValues: [String]
     let scope: IPTVRedirectPolicy.Scope
+    let diagnostic: IPTVGuideDiagnostics.Request?
 
-    init(sensitiveValues: [String], scope: IPTVRedirectPolicy.Scope) {
+    init(
+        sensitiveValues: [String], scope: IPTVRedirectPolicy.Scope,
+        diagnostic: IPTVGuideDiagnostics.Request? = nil
+    ) {
         self.sensitiveValues = sensitiveValues
         self.scope = scope
+        self.diagnostic = diagnostic
     }
 
     func urlSession(
@@ -204,24 +213,27 @@ private final class IPTVRedirects: NSObject, URLSessionTaskDelegate, Sendable {
     ) {
         completionHandler(IPTVRedirectPolicy.request(
             request, previous: response.url, original: task.originalRequest, sensitiveValues: sensitiveValues,
-            scope: scope
+            scope: scope, diagnostic: diagnostic
         ))
     }
 }
 
 enum IPTVRedirectPolicy {
-    enum Scope: Sendable { case account, playback }
+    enum Scope: Sendable { case account, playback, guide }
 
     static func request(
         _ request: URLRequest, previous: URL?, original: URLRequest?, sensitiveValues: [String] = [],
-        scope: Scope = .account
+        scope: Scope = .account, diagnostic: IPTVGuideDiagnostics.Request? = nil
     ) -> URLRequest? {
+        diagnostic?.redirected()
         guard let next = request.url, let previous,
               LiveTVPlaylistSource.isSupportedURL(next) else {
+            diagnostic?.blockedRedirect(.invalidDestination)
             return nil
         }
         guard scope == .playback
             || !(previous.scheme?.lowercased() == "https" && next.scheme?.lowercased() != "https") else {
+            diagnostic?.blockedRedirect(.downgrade)
             return nil
         }
         if IPTVCredential.sameOrigin(previous, next),
@@ -235,7 +247,17 @@ enum IPTVRedirectPolicy {
             url: original?.url ?? previous, headers: original?.allHTTPHeaderFields ?? [:]
         )
         let destination = next.absoluteString.removingPercentEncoding ?? next.absoluteString
-        guard scope == .playback || !secrets.contains(where: { !$0.isEmpty && destination.contains($0) }) else {
+        let source = original?.url ?? previous
+        let secureGuideUpgrade = scope == .guide
+            && source.scheme?.lowercased() == "http" && (source.port ?? 80) == 80
+            && next.scheme?.lowercased() == "https" && (next.port ?? 443) == 443
+            && source.host?.lowercased() == next.host?.lowercased()
+            && (IPTVCredential.sameOrigin(source, previous) || IPTVCredential.sameOrigin(previous, next))
+        // A standard-port HTTPS upgrade on the same host can retain URL credentials.
+        // It still strips headers, and never authorizes another host or a downgrade.
+        guard scope == .playback || secureGuideUpgrade
+            || !secrets.contains(where: { !$0.isEmpty && destination.contains($0) }) else {
+            diagnostic?.blockedRedirect(.credentials)
             return nil
         }
         var clean = URLRequest(url: next)
