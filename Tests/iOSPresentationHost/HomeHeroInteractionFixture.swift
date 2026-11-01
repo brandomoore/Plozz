@@ -165,6 +165,20 @@ struct HomeHeroInteractionFixture: View {
                 )
             } rows: {
                 Text("Below the hero").accessibilityIdentifier("hero-following-row")
+                if ProcessInfo.processInfo.arguments.contains("--poster-home-menu") {
+                    PlozziOSHomeMediaCard(
+                        item: HeroInteractionProvider.slides[1], isLandscape: true,
+                        interaction: .play, showsSeriesArtwork: true,
+                        provider: HeroInteractionProvider(kind: .emby)
+                    )
+                    .frame(width: 300)
+                    .accessibilityIdentifier("home-menu-poster")
+                    PlozziOSInlineEpisodeEntry(
+                        episode: HeroInteractionProvider.slides[1],
+                        episodes: [HeroInteractionProvider.slides[1]],
+                        onPlay: { _, _ in playCount += 1 }
+                    )
+                }
                 if ProcessInfo.processInfo.arguments.contains("--poster-home-card") {
                     PlozziOSHomeMediaCard(
                         item: HeroInteractionProvider.slides[0], isLandscape: false,
@@ -192,6 +206,8 @@ struct HomeHeroInteractionFixture: View {
                 }
             }
             .navigationTitle(usesNativeChrome ? "" : "Home fixture")
+            .plozziOSItemNavigation(appModel: appModel)
+            .plozziOSRailPlay { _ in playCount += 1 }
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar(usesVerticalToolbar ? .visible : .automatic, for: .navigationBar)
@@ -258,7 +274,10 @@ private final class HeroInteractionActions: MediaItemActionHandling {
     var watchlistCount = 0
 
     func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] {
-        [.addToWatchlist]
+        if ProcessInfo.processInfo.arguments.contains("--poster-home-menu"), item.kind == .episode {
+            return [.goToSeason, .goToEpisode]
+        }
+        return [.addToWatchlist]
     }
 
     func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {

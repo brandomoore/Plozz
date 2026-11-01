@@ -225,6 +225,9 @@ public struct PosterCardView: View {
                 }
             }
             #endif
+            #if os(iOS)
+            .mediaArtworkZoomOrigin(id: item.stablePresentationID)
+            #endif
     }
 
     private var usesNativePoster: Bool {

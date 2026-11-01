@@ -321,6 +321,13 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   The bottom reflection and minimum dissolve span remain intact; trailers keep
   their full-stage presentation. Landscape and tvOS heroes are unchanged.
 
+  Detail title artwork stays attached to the page's root title, not its Play
+  episode, on both compact and regular-width mobile layouts. A visible logo
+  remains while additive metadata or artwork references for the same subject
+  resolve; the full request still keys resolution and memoization. Changed
+  subjects, accounts, languages, artwork policies or conflicting lookup facts
+  clear the old logo immediately. A completed miss returns to the text fallback.
+
 - **Setup presentation** — `ConnectionCodeView` shares the readable monospaced
   code panel across server sign-in and device pairing. `SetupCodeComparisonView`
   keeps both devices' confirmation copy and code treatment consistent while
@@ -404,7 +411,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   guessed transition geometry. Featured cards register their own artwork.
   Home, library/recommendation/collection grids, search, watchlist, related
   titles, and filmography carry the originating source into their destination.
-  Plain menu/deep-link navigation, folders, playback actions, and the Home hero retain their existing
+  Card menus share that origin for Go to Show, Go to Episode, and Go to Movie,
+  including direct-play posters and inline episode artwork. Menu navigation
+  waits for dismissal before opening the destination. Source-less menus,
+  deep links, folders, playback actions, and the Home hero retain their existing
   behavior. iOS owns the gesture, cancellation, return animation, and Reduce
   Motion treatment; no drag recognizer or per-frame layout state is installed.
 - **Retained tvOS cinematic transition infrastructure** — the custom zoom implementation and

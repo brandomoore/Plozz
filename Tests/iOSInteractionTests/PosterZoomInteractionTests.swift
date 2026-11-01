@@ -101,6 +101,76 @@ final class PosterZoomInteractionTests: XCTestCase {
         }
     }
 
+    func testCardMenusZoomToShowAndEpisodeWithoutStartingPlayback() {
+        for directPlay in [false, true] {
+            launch(extra: ["--episode-menu"] + (directPlay ? ["--direct-play"] : []))
+            let card = app.buttons["zoom-card-1"]
+            reveal(card)
+            if directPlay {
+                card.tap()
+                XCTAssertEqual(app.staticTexts["zoom-play-count"].label, "1")
+            }
+            let playCount = app.staticTexts["zoom-play-count"].label
+            for (action, kind) in [("Go to Show", "series"), ("Go to Episode", "episode")] {
+                card.press(forDuration: 1)
+                let menuAction = app.buttons[action]
+                XCTAssertTrue(menuAction.waitForExistence(timeout: 5), app.debugDescription)
+                menuAction.tap()
+                XCTAssertTrue(app.staticTexts["zoom-detail"].waitForExistence(timeout: 5))
+                XCTAssertEqual(app.staticTexts["zoom-detail"].label, "menu-\(kind)")
+                swipeBack(to: 0.13)
+                XCTAssertTrue(app.staticTexts["zoom-detail"].wait(for: \.isHittable, toEqual: true, timeout: 5))
+                swipeBack(to: 0.9)
+                XCTAssertTrue(card.wait(for: \.isHittable, toEqual: true, timeout: 5))
+                XCTAssertEqual(app.staticTexts["zoom-play-count"].label, playCount)
+            }
+        }
+    }
+
+    func testFeaturedMenuUsesArtworkButSourceLessMenuUsesPlainNavigation() {
+        launch(extra: ["--featured"])
+        let featured = app.scrollViews.matching(identifier: "zoom-featured-row").firstMatch.buttons.firstMatch
+        XCTAssertTrue(featured.waitForExistence(timeout: 10))
+        featured.press(forDuration: 1)
+        app.buttons["Go to Movie"].tap()
+        XCTAssertTrue(app.staticTexts["zoom-detail"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["zoom-detail"].label, "menu-movie")
+        swipeBack(to: 0.9)
+        XCTAssertTrue(featured.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        let plain = app.staticTexts["zoom-plain-menu"]
+        reveal(plain)
+        plain.press(forDuration: 1)
+        app.buttons["Go to Movie"].tap()
+        XCTAssertTrue(app.staticTexts["zoom-detail"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["zoom-detail"].label, "plain-movie")
+        tapBack()
+        XCTAssertTrue(plain.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    }
+
+    func testProductionContinueWatchingAndInlineEpisodeMenusKeepTheirDestination() {
+        app.launchArguments = ["--home-hero-fixture", "--poster-home-menu"]
+        app.launch()
+        let poster = app.buttons["home-menu-poster"]
+        reveal(poster)
+        for (action, subject) in [("Go to Show", "series"), ("Go to Episode", "episode")] {
+            poster.press(forDuration: 1)
+            XCTAssertTrue(app.buttons[action].waitForExistence(timeout: 5), app.debugDescription)
+            app.buttons[action].tap()
+            XCTAssertTrue(app.staticTexts["Details for \(subject) from emby"].waitForExistence(timeout: 10), app.debugDescription)
+            swipeBack(to: 0.9)
+            XCTAssertTrue(poster.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        }
+        let more = app.buttons["More actions for Hero Episode"]
+        reveal(more)
+        more.tap()
+        XCTAssertTrue(app.buttons["Go to Episode"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["Go to Episode"].tap()
+        XCTAssertTrue(app.staticTexts["Details for episode from emby"].waitForExistence(timeout: 10), app.debugDescription)
+        swipeBack(to: 0.9)
+        XCTAssertTrue(more.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        XCTAssertEqual(app.staticTexts["hero-play-count"].label, "0")
+    }
+
     func testNestedValueProgrammaticAndPlainNavigation() {
         launch()
         let first = app.buttons["zoom-card-0"]

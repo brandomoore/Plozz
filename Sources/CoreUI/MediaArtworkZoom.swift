@@ -103,7 +103,7 @@ public extension EnvironmentValues {
     }
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     var mediaArtworkZoomSource: MediaArtworkZoomSource? {
         get { self[MediaArtworkZoomSourceKey.self] }
         set { self[MediaArtworkZoomSourceKey.self] = newValue }
@@ -111,6 +111,11 @@ private extension EnvironmentValues {
 }
 
 public extension View {
+    /// Gives menu-only artwork an origin, or preserves its enclosing link's origin.
+    func mediaArtworkZoomOrigin(id: String) -> some View {
+        modifier(MediaArtworkZoomOrigin(id: id))
+    }
+
     func mediaArtworkZoomDestination(_ source: MediaArtworkZoomSource) -> some View {
         navigationTransition(.zoom(sourceID: source.id, in: source.namespace))
             .environment(\.mediaArtworkZoomSource, nil)
@@ -124,6 +129,19 @@ public extension View {
         _ action: @escaping @MainActor (MediaItem, MediaArtworkZoomSource) -> Void
     ) -> some View {
         environment(\.mediaItemArtworkNavigator, action)
+    }
+}
+
+private struct MediaArtworkZoomOrigin: ViewModifier {
+    let id: String
+    @Environment(\.mediaArtworkZoomSource) private var inheritedSource
+    @Namespace private var namespace
+
+    func body(content: Content) -> some View {
+        content.environment(
+            \.mediaArtworkZoomSource,
+            inheritedSource ?? MediaArtworkZoomSource(id: id, namespace: namespace)
+        )
     }
 }
 

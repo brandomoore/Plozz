@@ -4,6 +4,19 @@ import CoreUI
 import FeatureHomeCore
 import SwiftUI
 
+#if os(iOS)
+private struct FeaturedArtworkSelectionKey: EnvironmentKey {
+    static let defaultValue: ((MediaItem, MediaArtworkZoomSource) -> Void)? = nil
+}
+
+private extension EnvironmentValues {
+    var featuredArtworkSelection: ((MediaItem, MediaArtworkZoomSource) -> Void)? {
+        get { self[FeaturedArtworkSelectionKey.self] }
+        set { self[FeaturedArtworkSelectionKey.self] = newValue }
+    }
+}
+#endif
+
 public struct FeaturedMediaRow: View {
     private let title: Text
     private let items: [MediaItem]
@@ -223,14 +236,14 @@ public struct FeaturedMediaRow: View {
             .padding(.vertical, television ? metrics.railShadowClearance : 4)
         }
         #if os(iOS)
-        .mediaItemArtworkNavigator { item, source in
+        .environment(\.featuredArtworkSelection, { item, source in
             coordinator.stop()
             if let onSelectArtwork {
                 onSelectArtwork(item, source)
             } else {
                 onSelect(item)
             }
-        }
+        })
         .contentMargins(.horizontal, inset, for: .scrollContent)
         #endif
         .scrollIndicators(.hidden)
@@ -257,7 +270,7 @@ private struct FeaturedMediaCard: View {
     @PlozzCardFocus private var focused: Bool
     @Environment(\.plozzCardFocusStyle) private var focusStyle
     #if os(iOS)
-    @Environment(\.mediaItemArtworkNavigator) private var artworkNavigator
+    @Environment(\.featuredArtworkSelection) private var artworkNavigator
     #endif
 
     private func artwork(usesNativeClipping: Bool = false) -> FeaturedCardArtwork<some View> {
@@ -286,9 +299,9 @@ private struct FeaturedMediaCard: View {
             artwork()
                 .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .mediaArtworkZoomSource(cornerRadius: 20)
+                .mediaItemContextMenu(for: item)
         }
             .buttonStyle(.plain)
-            .mediaItemContextMenu(for: item)
         #endif
     }
 

@@ -10,10 +10,21 @@ struct PosterZoomFixture: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrollOffset: CGFloat = 0
     @State private var selection: MediaArtworkZoomRoute<String>?
+    @State private var plainSelection: String?
+    @State private var playCount = 0
     @State private var trailers = HeroTrailerController()
     @State private var featured = FeaturedTrailerCoordinator()
     private let arguments = ProcessInfo.processInfo.arguments
-    private let item = MediaItem(id: "duplicate", title: "Same movie", kind: .movie)
+    private var item: MediaItem {
+        if arguments.contains("--episode-menu") {
+            return MediaItem(
+                id: "duplicate", title: "Same episode", kind: .episode,
+                parentTitle: "Same show", seasonNumber: 2, episodeNumber: 3,
+                seriesID: "show", seasonID: "season", sourceAccountID: "server"
+            )
+        }
+        return MediaItem(id: "duplicate", title: "Same movie", kind: .movie)
+    }
 
     private var shape: String {
         arguments.first { $0.hasPrefix("--shape=") }?.replacingOccurrences(of: "--shape=", with: "") ?? "portrait"
@@ -57,10 +68,16 @@ struct PosterZoomFixture: View {
                         ScrollView(.horizontal) {
                             HStack(alignment: .top, spacing: 16) {
                                 Color.clear.frame(width: 20)
-                                MediaArtworkZoomLink(id: item.stablePresentationID) {
-                                    detail("row-\(row)")
-                                } label: {
-                                    poster
+                                Group {
+                                    if arguments.contains("--direct-play") {
+                                        Button { playCount += 1 } label: { poster }
+                                    } else {
+                                        MediaArtworkZoomLink(id: item.stablePresentationID) {
+                                            detail("row-\(row)")
+                                        } label: {
+                                            poster
+                                        }
+                                    }
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("zoom-card-\(row)")
@@ -84,6 +101,9 @@ struct PosterZoomFixture: View {
                     NavigationLink("Plain entry") {
                         detail("plain")
                     }
+                    Text("Menu without artwork")
+                        .mediaItemContextMenu(for: item)
+                        .accessibilityIdentifier("zoom-plain-menu")
                     Color.clear.frame(height: 300)
                 }
             }
@@ -101,6 +121,11 @@ struct PosterZoomFixture: View {
             .navigationDestination(for: MediaArtworkZoomRoute<String>.self) { route in
                 detail(route.value).mediaArtworkZoomDestination(route.source)
             }
+            .navigationDestination(item: $plainSelection) { detail($0) }
+            .mediaItemNavigator { plainSelection = "plain-\($0.kind.rawValue)" }
+            .mediaItemArtworkNavigator { target, source in
+                selection = .init(value: "menu-\(target.kind.rawValue)", source: source)
+            }
         }
         .overlay(alignment: .bottomTrailing) {
             VStack {
@@ -108,10 +133,13 @@ struct PosterZoomFixture: View {
                     .accessibilityIdentifier("zoom-motion-preference")
                 Text(verbatim: "\(scrollOffset)")
                     .accessibilityIdentifier("zoom-scroll-offset")
+                Text(verbatim: "\(playCount)")
+                    .accessibilityIdentifier("zoom-play-count")
             }
             .allowsHitTesting(false)
         }
         .environment(\.themePalette, .dark)
+        .mediaItemActionHandler(MenuActions())
         .environment(\.plozzMetrics, metrics)
         .environment(\.plozzCardStyle, cardStyle)
         .environment(\.plozzCardCaptionSettings, CardCaptionSettings(preference: arguments.contains("--no-captions") ? .hide : .show))
@@ -149,5 +177,12 @@ struct PosterZoomFixture: View {
         }
         .navigationTitle("Details")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private final class MenuActions: MediaItemActionHandling {
+        func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] {
+            item.kind == .episode ? [.goToSeason, .goToEpisode] : [.goToMovie]
+        }
+        func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {}
     }
 }

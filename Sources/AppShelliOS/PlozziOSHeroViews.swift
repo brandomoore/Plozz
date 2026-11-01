@@ -2029,7 +2029,7 @@ struct PlozziOSDetailHeroForeground: View {
                 },
                 subjectTitle: presentsEpisodeStill ? item.title : nil,
                 scheduleLine: scheduleLine,
-                logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: item),
+                logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: rootItem),
                 usesCompactDetailLayout: style == .compactPortrait,
                 content: style == .compactPortrait && !presentsEpisodeStill ? .information : .all,
                 detailPageSettings: appModel.settings.detailPage.settings,
@@ -2542,7 +2542,7 @@ struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
     }
 }
 
-private struct PlozziOSHeroMetadata: View {
+struct PlozziOSHeroMetadata: View {
     enum Mode {
         case home
         case detail
@@ -2663,7 +2663,7 @@ private struct PlozziOSHeroMetadata: View {
                             ? availableWidth : PlozziOSPageLayout.heroLogoMaxWidth(for: style)
                     )
                     HeroLogoArtwork(
-                        references: presentation.logoReferences,
+                        references: titlePresentation.logoReferences,
                         asyncFallbackURL: logoFallback,
                         displayedArtworkID: displayedArtworkID ?? presentation.itemID,
                         maxWidth: logoBox.width,
@@ -2671,13 +2671,13 @@ private struct PlozziOSHeroMetadata: View {
                         presentationPolicy: mode == .home ? .whenResolved : .whenReady,
                         alignment: style == .compactPortrait ? .center : .leading
                     ) {
-                        Text(presentation.title)
+                        Text(titlePresentation.title)
                             .font(textScale == 1 ? .largeTitle : .system(size: titleFontSize * textScale))
                             .fontWeight(.bold)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(2)
                     }
-                    .accessibilityLabel(Text(presentation.title))
+                    .accessibilityLabel(Text(titlePresentation.title))
                     .accessibilityAddTraits(.isHeader)
                 }
             }
@@ -2774,6 +2774,11 @@ private struct PlozziOSHeroMetadata: View {
 
     private var rootPresentation: HeroPresentation {
         fallbackPresentation ?? presentation
+    }
+
+    // The Play episode supplies episode facts, not a new identity for the show.
+    private var titlePresentation: HeroPresentation {
+        mode == .detail ? rootPresentation : presentation
     }
 
     private var metadataFont: Font {
