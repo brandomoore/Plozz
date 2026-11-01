@@ -861,7 +861,9 @@ final class IPTVIntegrationTests: XCTestCase {
             XCTAssertEqual(IPTVFixture.state.requests.filter {
                 $0.url?.query?.contains("action=get_simple_data_table") == true
             }.count, 2)
-            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/prefix/xmltv.php" }.count, 1)
+            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/prefix/xmltv.php" }.count,
+                           [429, 503].contains(status) ? 3 : 1,
+                           "Transient failures retry the same fallback endpoint, without selecting another source.")
             await provider.teardown()
         }
     }
@@ -1122,7 +1124,9 @@ final class IPTVIntegrationTests: XCTestCase {
                 }
             }
             XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url == missing }.count, 1)
-            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/prefix/xmltv.php" }.count, 1)
+            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/prefix/xmltv.php" }.count,
+                           [429, 503].contains(status) ? 3 : 1,
+                           "Transient failures retry the same recovery endpoint; malformed XML and auth do not.")
             XCTAssertFalse(IPTVFixture.state.requests.contains { $0.url?.query?.contains("get_simple_data_table") == true })
             await provider.teardown()
         }

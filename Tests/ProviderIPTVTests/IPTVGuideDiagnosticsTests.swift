@@ -152,6 +152,25 @@ final class IPTVGuideDiagnosticsTests: XCTestCase {
         XCTAssertTrue(entries.contains { $0.contains("operations=2000 omitted=1994 fallbackEmpty=2000") })
     }
 
+    func testRejectedGuideIsNotReusedOnTheNextRefresh() async throws {
+        let provider = try await provider(explicit: true) { data, _, _, _, _ in
+            guard data == Data("<tv/>".utf8) else { throw LiveTVSourceImportError.invalidGuide }
+            return []
+        }
+        IPTVFixture.state.reset()
+        IPTVFixture.state.handler = { _ in
+            let body = IPTVFixture.state.requests.count == 1 ? "<html>login</html>" : "<tv/>"
+            return (200, ["Cache-Control": "max-age=60"], Data(body.utf8))
+        }
+        do {
+            _ = try await load(provider)
+            XCTFail("Malformed guides must fail, not become an empty guide")
+        } catch { XCTAssertEqual(error as? LiveTVSourceImportError, .invalidGuide) }
+        _ = try await load(provider)
+        _ = try await load(provider)
+        XCTAssertEqual(IPTVFixture.state.requests.count, 2, "Discard rejected bytes, but retain the valid replacement")
+    }
+
     func testRepeatedMissingExplicitGuideReportsReusedFailureWithoutInventingRequests() async throws {
         let provider = try await provider(explicit: true)
         IPTVFixture.state.reset()

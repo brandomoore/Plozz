@@ -421,6 +421,10 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
             diagnostics.record(request, endpoint: .xmltv, rows: programmes.count)
             return programmes
         } catch {
+            if let failure = error as? LiveTVSourceImportError,
+               failure == .invalidGuide || failure == .guideTooLarge {
+                await client.discardInvalidGuideData(from: url)
+            }
             diagnostics.record(request, endpoint: .xmltv, error: error)
             throw error
         }

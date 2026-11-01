@@ -75,10 +75,15 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
             }
             return try parser.parseXML(data: data, channels: channels, now: now)
         }
-        return try await withTaskCancellationHandler {
-            try await task.value
-        } onCancel: {
-            task.cancel()
+        do {
+            return try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+        } catch {
+            discardInvalidGuideResponse(error, from: url)
+            throw error
         }
     }
 
@@ -107,11 +112,22 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
             try await cache.removeDownloadedGuide(sourceID: sourceID, sourceURL: url)
             return result
         }
-        return try await cache.importGuide(
-            data: response.data, sourceID: sourceID, channels: channels,
-            provider: LiveTVGuideSource.provider(for: url), now: now,
-            lookbackDays: lookbackDays, lookaheadDays: lookaheadDays, sourceURL: url
-        )
+        do {
+            return try await cache.importGuide(
+                data: response.data, sourceID: sourceID, channels: channels,
+                provider: LiveTVGuideSource.provider(for: url), now: now,
+                lookbackDays: lookbackDays, lookaheadDays: lookaheadDays, sourceURL: url
+            )
+        } catch {
+            discardInvalidGuideResponse(error, from: url)
+            throw error
+        }
+    }
+
+    private func discardInvalidGuideResponse(_ error: any Error, from url: URL) {
+        guard let failure = error as? LiveTVSourceImportError,
+              failure == .invalidGuide || failure == .guideTooLarge else { return }
+        responses.removeValue(forKey: url)
     }
 
     private func download(
