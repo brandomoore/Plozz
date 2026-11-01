@@ -30,7 +30,7 @@ struct SettingsWorkspace<Sidebar: View, Detail: View>: View {
             onRootBack: nil,
             fullWidthDestination: \.usesFullScreenDetail,
             presentsSubpagesFullScreen: navigationStyle == .sidebar,
-            onSubpagesDismiss: navigation.returnToSidebar
+            onSubpagesDismiss: navigation.restoreCategoryFocus
         ) {
             sidebar()
                 .padding(.top, topNavigationInsets.top)
@@ -55,11 +55,11 @@ struct SettingsWorkspace<Sidebar: View, Detail: View>: View {
             if navigation.isCategoryOpen || !navigation.path.isEmpty {
                 navigation.enterDetail()
             } else {
-                navigation.returnToSidebar()
+                navigation.restoreCategoryFocus()
             }
         }
         .reportsNavigationDepth(
-            max(navigation.pages.pages.count, navigation.pages.isTransitioning ? 1 : 0),
+            max(navigation.pages.pages.count, navigation.pages.isTransitioning || navigation.isSearching ? 1 : 0),
             to: chrome
         )
     }

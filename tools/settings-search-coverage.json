@@ -428,7 +428,7 @@
       "kind": "presentation",
       "reason": "The transient search query is not a persisted preference.",
       "controls": {
-        "Sources/FeatureSettings/SettingsSearchResults.swift|SettingsSearchTelevisionView|body|TextField|\"Search settings\"": 1
+        "Sources/FeatureSettings/SettingsSearchResults.swift|SettingsSearchTelevisionView|searchCard|TextField|\"Search settings\"": 1
       }
     },
     "SettingsSplitLayout": {

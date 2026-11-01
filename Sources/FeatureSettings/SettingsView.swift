@@ -369,55 +369,7 @@ public struct SettingsView: View {
 
     public var body: some View {
         SettingsWorkspace(navigation: navigation) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    SettingsSectionButton(
-                        title: Text("Search settings"), icon: "magnifyingglass", route: .search
-                    )
-                    // The active profile's own container comes FIRST. Almost
-                    // everything anyone opens Settings to change is in here —
-                    // playback, appearance, trackers — while the device-shared
-                    // section is servers and profile management, which is setup
-                    // you do once. Ordering by "what belongs to the whole Apple
-                    // TV" put the rarely-touched half at the top and pushed the
-                    // rest below it. Switching profiles swaps everything inside
-                    // this container at once.
-                    profileContainer
-
-                    // Then what every profile shares, regardless of who is using
-                    // it — unless a Kids Profile is active, in which case the
-                    // whole section is withheld. Every destructive control in the
-                    // app lives in there (remove server, delete profile, sign out
-                    // of everything), and a child's profile is deliberately left
-                    // unlocked, so without this the lock on the grown-ups'
-                    // profiles could simply be routed around.
-                    // The parent-controlled group sits between the child's own
-                    // settings and the withheld household section.
-                    if showsParentalControlsSection {
-                        parentalControlsSection
-                    }
-
-                    // No household section on a Kids Profile. There used to be a
-                    // card here explaining its absence, but it was a second
-                    // "Kids Profile" heading that did nothing — and once
-                    // Parental Controls exists, a missing shared section needs no
-                    // caption.
-                    if !activeProfile.isKids {
-                        everyoneSection
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("About").settingsSectionHeader()
-                            .padding(.horizontal, SettingsFormMetrics.headingInset)
-                        aboutAndSignOut
-                    }
-                }
-                .padding(.horizontal, SettingsFormMetrics.pageInset)
-                .padding(.top, SettingsFormMetrics.pageTopInset)
-                .padding(.bottom, SettingsFormMetrics.pageBottomInset)
-            }
-            .scrollClipDisabled()
-            .scrollsTopNavigation(onReturnToTop: { navigation.select(.playback) })
+            settingsRoot
         } detail: { route in
             destination(for: route)
         }
@@ -441,6 +393,50 @@ public struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes every Plex and Jellyfin sign-in on this Apple TV. You'll need to sign in again.")
+        }
+    }
+
+    private var settingsRoot: some View {
+        SettingsSearchTelevisionView(isKids: activeProfile.isKids) {
+            VStack(alignment: .leading, spacing: 28) {
+                // The active profile's own container comes FIRST. Almost
+                // everything anyone opens Settings to change is in here —
+                // playback, appearance, trackers — while the device-shared
+                // section is servers and profile management, which is setup
+                // you do once. Ordering by "what belongs to the whole Apple
+                // TV" put the rarely-touched half at the top and pushed the
+                // rest below it. Switching profiles swaps everything inside
+                // this container at once.
+                profileContainer
+
+                // Then what every profile shares, regardless of who is using
+                // it — unless a Kids Profile is active, in which case the
+                // whole section is withheld. Every destructive control in the
+                // app lives in there (remove server, delete profile, sign out
+                // of everything), and a child's profile is deliberately left
+                // unlocked, so without this the lock on the grown-ups'
+                // profiles could simply be routed around.
+                // The parent-controlled group sits between the child's own
+                // settings and the withheld household section.
+                if showsParentalControlsSection {
+                    parentalControlsSection
+                }
+
+                // No household section on a Kids Profile. There used to be a
+                // card here explaining its absence, but it was a second
+                // "Kids Profile" heading that did nothing — and once
+                // Parental Controls exists, a missing shared section needs no
+                // caption.
+                if !activeProfile.isKids {
+                    everyoneSection
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("About").settingsSectionHeader()
+                        .padding(.horizontal, SettingsFormMetrics.headingInset)
+                    aboutAndSignOut
+                }
+            }
         }
     }
 
@@ -965,7 +961,7 @@ public struct SettingsView: View {
     private func authorizedDestination(for route: SettingsRoute) -> some View {
         switch route {
         case .search:
-            SettingsSearchTelevisionView(isKids: activeProfile.isKids)
+            settingsRoot
         case .searchResult(let id):
             if let entry = SettingsSearchCatalog.entry(id: id),
                entry.isAvailable(on: .television, isKids: activeProfile.isKids) {

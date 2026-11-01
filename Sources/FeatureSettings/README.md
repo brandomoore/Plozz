@@ -45,8 +45,20 @@ On iPhone, returning from a result restores the query and keyboard. Dismissing
 the keyboard leaves the query visible and clearable; it does not end search.
 The compact Settings root places its large heading inside the scrolling content,
 below the toolbar. Scrolling past the heading shows the inline navigation title.
-TV uses the existing retained
-Settings page stack and native remote text entry. `SettingsSearchLanding` and
+TV has a native search field in its own card at the top of Settings. Selecting
+it opens remote text entry immediately, without pushing a search page. The
+settings cards fade into suggestions/results in the same scrolling column;
+Reduce Motion skips the fade. Dismissing the keyboard leaves search available,
+and Back from the results clears the query and restores the settings cards and
+search-field focus. Result destinations use the existing retained Settings page
+stack, preserving the query and selected result on return. Native sidebar
+full-screen dismissal retains the source row and restores its focus only after
+the cover finishes dismissing, rather than resetting focus to the search field. Profile or
+authorization changes clear search along with the page stack.
+TV result buttons use `SettingsFormButtonStyle` for the standard row height and
+content insets inside the focus highlight, with `SettingsIconLabelStyle` keeping
+titles aligned across different symbols. Result labels add no extra padding.
+`SettingsSearchLanding` and
 `settingsSearchAnchor` reveal the existing control without changing its value.
 On mobile, the brief landing highlight covers the complete padded row, not just
 its label or picker. Grouped rows own the highlight and their corner clipping;

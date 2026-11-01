@@ -34,23 +34,23 @@ public struct SettingsSearchResults: View {
             ContentUnavailableView.search(text: query)
         } else {
             #if os(tvOS)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if isEmptyQuery {
-                        Text("Suggestions").font(.headline).foregroundStyle(.secondary)
-                    }
-                    ForEach(results) { entry in
-                        SettingsPageActionLink { source in
-                            onSelect(entry, source)
-                        } label: {
-                            resultLabel(entry)
-                        }
-                        .buttonStyle(SettingsFocusButtonStyle(size: .contained))
-                        .accessibilityIdentifier("settings-search-result-\(entry.id)")
-                    }
+            VStack(alignment: .leading, spacing: 16) {
+                if isEmptyQuery {
+                    Text("Suggestions").font(.headline).foregroundStyle(.secondary)
                 }
-                .padding(20)
+                ForEach(results) { entry in
+                    SettingsPageActionLink { source in
+                        onSelect(entry, source)
+                    } label: {
+                        resultLabel(entry)
+                    }
+                    .buttonStyle(SettingsFormButtonStyle())
+                    .accessibilityIdentifier("settings-search-result-\(entry.id)")
+                }
             }
+            .padding(SettingsFormMetrics.groupInset)
+            .labelStyle(SettingsIconLabelStyle())
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("settings-search-results")
             #else
             List {
@@ -96,9 +96,6 @@ public struct SettingsSearchResults: View {
         } icon: {
             Image(systemName: entry.page.symbol)
         }
-        #if os(tvOS)
-        .padding(.vertical, 10)
-        #endif
         .contentShape(Rectangle())
     }
 
@@ -111,23 +108,68 @@ public struct SettingsSearchResults: View {
 }
 
 #if os(tvOS)
-struct SettingsSearchTelevisionView: View {
+struct SettingsSearchTelevisionView<Content: View>: View {
     var isKids = false
-    @State private var query = ""
+    @ViewBuilder var content: () -> Content
     @Environment(SettingsNavigationModel.self) private var navigation
+    @Environment(\.settingsPageContext) private var page
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            SettingsPageHeader("Search settings")
-            TextField("Search settings", text: $query)
-                .autocorrectionDisabled()
-                .accessibilityIdentifier("settings-search-field")
-            SettingsSearchResults(query: query, platform: .television, isKids: isKids) { entry, source in
-                navigation.pages.push(.searchResult(entry.id), sourceID: source)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                searchCard
+
+                if navigation.isSearching {
+                    searchResults.transition(.opacity)
+                } else {
+                    content()
+                        .transition(.opacity)
+                }
+            }
+            .padding(.horizontal, SettingsFormMetrics.pageInset)
+            .padding(.top, SettingsFormMetrics.pageTopInset)
+            .padding(.bottom, SettingsFormMetrics.pageBottomInset)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: navigation.isSearching)
+        }
+        .scrollClipDisabled()
+        .scrollsTopNavigation(onReturnToTop: {
+            navigation.select(navigation.isSearching ? .search : .playback)
+        })
+        .onExitCommand(perform: navigation.isSearching && page?.isCurrent == true ? { navigation.endSearch() } : nil)
+    }
+
+    private var searchResults: some View {
+        SettingsSearchResults(
+            query: navigation.searchQuery, platform: .television, isKids: isKids
+        ) { entry, source in
+            navigation.pages.push(.searchResult(entry.id), sourceID: source)
+        }
+        .background {
+            NativeFocusRegionObserver(isEnabled: page?.isCurrent == true) {
+                navigation.focusInDetail = false
+                navigation.restoringSidebar = false
+                navigation.enteringDetail = false
             }
         }
-        .padding(.horizontal, SettingsFormMetrics.pageInset)
-        .padding(.top, SettingsFormMetrics.pageTopInset)
+    }
+
+    private var searchCard: some View {
+        @Bindable var navigation = navigation
+        return HStack(spacing: PlozzTheme.Spacing.medium) {
+            Image(systemName: "magnifyingglass")
+                .accessibilityHidden(true)
+            TextField("Search settings", text: $navigation.searchQuery, onEditingChanged: { editing in
+                if editing { navigation.beginSearch() }
+            })
+            .autocorrectionDisabled()
+            .submitLabel(.search)
+            .settingsCategoryFocus(.search)
+        }
+        .padding(SettingsFormMetrics.groupInset)
+        .settingsGroupSurface(cornerRadius: PlozzTheme.Metrics.mediumCardCornerRadius)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("settings-search-card")
     }
 }
 #endif

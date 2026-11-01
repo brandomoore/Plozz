@@ -31,7 +31,10 @@ public enum MediaSourceDisplayName {
             of: #"^[^/?&#\\:\s=]+\s*="#, options: .regularExpression
         ) != nil
         guard isQueryOnly || value.contains("?") || value.contains("://")
-                || value.hasPrefix("//") || value.hasPrefix("file:") else { return value }
+                || value.hasPrefix("//") || value.hasPrefix("file:") else {
+            guard let component = basename(value), !isOpaqueComponent(component) else { return nil }
+            return value
+        }
         // Raw line breaks make Foundation re-escape existing percent sequences.
         // Remove display wrapping before decoding, never decode the result twice.
         let locator = value.components(separatedBy: .newlines).joined()
@@ -40,7 +43,7 @@ public enum MediaSourceDisplayName {
         }
         if !components.path.hasSuffix("/"),
            let fileName = basename(components.path),
-           !(fileName as NSString).pathExtension.isEmpty {
+           hasMediaExtension(fileName) {
             return fileName
         }
         return queryFileName(from: components)
@@ -56,7 +59,7 @@ public enum MediaSourceDisplayName {
             guard let value = nonempty(item.value),
                   !value.hasPrefix("//"), !value.contains("?"),
                   value.rangeOfCharacter(from: .controlCharacters) == nil,
-                  let fileName = basename(value) else { return nil }
+                  let fileName = basename(value), !isOpaqueComponent(fileName) else { return nil }
             let windowsPath = value.range(of: #"^[A-Za-z]:[\\/]"#, options: .regularExpression) != nil
             guard URLComponents(string: value)?.scheme == nil || windowsPath else { return nil }
             candidates.insert(fileName)
@@ -204,9 +207,29 @@ public enum MediaSourceDisplayName {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    private static func isOpaqueComponent(_ value: String) -> Bool {
+        // Preserve real filenames, Unicode and prose. Only long, unbroken
+        // identifier-shaped components are excluded from display.
+        guard !hasMediaExtension(value) else { return false }
+        let unwrapped = value.components(separatedBy: .newlines).joined()
+        guard unwrapped.utf8.count >= 64,
+              unwrapped.range(of: #"^[A-Za-z0-9_.=\-]+$"#, options: .regularExpression) != nil else {
+            return false
+        }
+        return unwrapped.split(separator: ".").contains { segment in
+            guard segment.utf8.count >= 64 else { return false }
+            return segment.allSatisfy(\.isHexDigit)
+                || (segment.contains(where: \.isUppercase)
+                    && segment.contains(where: \.isLowercase)
+                    && segment.contains(where: \.isNumber))
+        }
+    }
+
     private static func hasMediaExtension(_ value: String) -> Bool {
         ["mkv", "mp4", "m4v", "avi", "mov", "wmv", "ts", "m2ts", "mts",
-         "webm", "mpg", "mpeg", "vob", "iso", "strm", "flv"]
+         "webm", "mpg", "mpeg", "vob", "iso", "strm", "flv", "m2t", "3gp", "3g2",
+         "ogv", "asf", "rm", "rmvb", "mp3", "m4a", "m4b", "aac", "flac", "wav",
+         "aif", "aiff", "ogg", "oga", "opus", "wma", "mka", "m3u", "m3u8", "mpd"]
             .contains((value as NSString).pathExtension.lowercased())
     }
 }

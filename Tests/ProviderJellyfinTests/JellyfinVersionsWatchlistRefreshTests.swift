@@ -421,6 +421,31 @@ final class JellyfinVersionsWatchlistRefreshTests: XCTestCase {
         XCTAssertEqual(sources[0].Path, path)
     }
 
+    func testSignedPathComponentUsesReadableSourceDescriptionWithoutChangingPlaybackIdentity() throws {
+        let token = String(repeating: "Ab7_xQ4-", count: 20) + "." + String(repeating: "Cd8_Rs5-", count: 6)
+        let path = "https://media.example/stream/\(token)"
+        let sources = try JSONDecoder.plozz.decode([MediaSourceInfo].self, from: Data("""
+        [
+          {"Id":"remote","IsRemote":true,"Name":"1080p\\n📁 Episode.S02E01.1080p.WEB-DL.mkv","Path":"\(path)",
+           "Size":3700000000,"MediaStreams":[
+             {"Index":0,"Type":"Video","Codec":"h264","Height":1080},
+             {"Index":1,"Type":"Audio","Codec":"aac","Channels":2}
+           ]},
+          {"Id":"local","Path":"/movies/Film.mkv"}
+        ]
+        """.utf8))
+        let versions = JellyfinProvider.versions(from: sources)
+        XCTAssertNil(versions[0].fileName)
+        XCTAssertNil(versions[0].sourceMetadata?.fileName)
+        XCTAssertEqual(MediaVersion.PickerPresentation(versions[0]).releaseName, "Episode.S02E01.1080p.WEB-DL.mkv")
+        XCTAssertEqual(versions[0].resolutionLabel, "1080p")
+        XCTAssertEqual(versions[0].audioFormatLabel, "AAC Stereo")
+        XCTAssertEqual(versions[0].sizeBytes, 3_700_000_000)
+        XCTAssertEqual(versions[0].playbackMediaSourceID, "remote")
+        XCTAssertEqual(sources[0].Path, path)
+        XCTAssertEqual(versions[1].fileName, "Film.mkv")
+    }
+
     // MARK: - Feature B: Favorites-backed watchlist
 
     func testSetWatchlistedPostsFavorite() async throws {
