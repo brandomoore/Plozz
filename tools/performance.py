@@ -36,6 +36,16 @@ HOME_HOST_FITTING_COUNTERS = [
     "hostFittingMaxNanoseconds", "hostFittingReentrantCalls",
 ]
 SCENARIOS = {
+    **{
+        f"active-picture-{players}-{state}": {
+            "suite": "ui",
+            "test": f"VideoZoomPresentationTests/testPerformance{'FourPictures' if players == 4 else 'Picture'}{state.title()}",
+            "file": "Tests/SubtitlePresentationSupport/VideoZoomPresentationTests.swift",
+            "description": f"Play {players} visible 1080p30 streams with active-picture analysis {state}; require advancing playback, bounded fresh samples and released output taps.",
+            "counters": ["players", "samples", "windowMilliseconds"],
+        }
+        for players in (1, 4) for state in ("enabled", "disabled")
+    },
     "seek-plex-bif": {
         "suite": "network", "target": "FeaturePlaybackTests",
         "test": "ScrubPreviewLoaderTests/testPerformancePlexBIFScan",

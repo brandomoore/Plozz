@@ -6643,6 +6643,7 @@
     },
     "%@ subtitles are rendered as images and can’t be restyled." : {
       "comment" : "Secondary text in the iOS player subtitle Appearance section when the selected subtitle track is bitmap-based. %@ is the subtitle format name, such as PGS or VobSub.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -6864,6 +6865,7 @@
     },
     "%@ subtitles can't be restyled" : {
       "comment" : "Headline on the tvOS subtitle style screen when the current subtitle track is bitmap-based and styling controls are unavailable. %@ is the subtitle format name.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -155807,6 +155809,226 @@
         }
       }
     },
+    "Auto-crop black bars" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "قصّ الأشرطة السوداء تلقائيًا"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Автоматично изрязване на черни ленти"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Retalla les bandes negres automàticament"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automaticky oříznout černé pruhy"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beskær sorte bjælker automatisk"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Schwarze Balken automatisch entfernen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αυτόματη περικοπή μαύρων λωρίδων"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Recorte automático de barras negras"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "برش خودکار نوارهای سیاه"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mustien palkkien automaattinen rajaus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suppression automatique des bandes noires"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "חיתוך אוטומטי של פסים שחורים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "काली पट्टियाँ अपने आप काटें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatski obreži crne trake"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fekete sávok automatikus levágása"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pangkas pita hitam otomatis"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ritaglia automaticamente le bande nere"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "黒帯を自動トリミング"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "검은 여백 자동 자르기"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pangkas jalur hitam secara automatik"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beskjær svarte felt automatisk"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zwarte balken automatisch wegsnijden"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatyczne przycinanie czarnych pasów"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Recorte automático de barras pretas"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Decupează automat benzile negre"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Автообрезка чёрных полос"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automaticky orezať čierne pásy"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Samodejno obreži črne pasove"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatsko isecanje crnih traka"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beskär svarta fält automatiskt"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ครอบตัดแถบดำอัตโนมัติ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Siyah şeritleri otomatik kırp"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Автообрізання чорних смуг"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tự động cắt bỏ dải đen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自动裁剪黑边"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自動裁切黑邊"
+          }
+        }
+      }
+    },
     "Automatic" : {
       "localizations" : {
         "ar" : {
@@ -170359,6 +170581,666 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "左下"
+          }
+        }
+      }
+    },
+    "Bottom of screen" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "أسفل الشاشة"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Долу на екрана"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Part inferior de la pantalla"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spodní okraj obrazovky"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nederst på skærmen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Unterer Bildschirmrand"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Κάτω μέρος της οθόνης"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Parte inferior de la pantalla"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پایین صفحه"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Näytön alareuna"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bas de l’écran"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "תחתית המסך"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "स्क्रीन का निचला किनारा"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dno zaslona"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Képernyő alja"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bawah layar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fondo dello schermo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "画面の下端"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "화면 하단"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bawah skrin"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nederst på skjermen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Onderkant scherm"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dół ekranu"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Parte inferior da tela"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Marginea de jos a ecranului"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Нижний край экрана"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spodný okraj obrazovky"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spodnji rob zaslona"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Donja ivica ekrana"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skärmens nederkant"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ขอบล่างของหน้าจอ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ekranın alt kenarı"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Нижній край екрана"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mép dưới màn hình"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "屏幕底部"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "螢幕底部"
+          }
+        }
+      }
+    },
+    "Bottom of video" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "أسفل الفيديو"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Долу на видеото"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Part inferior del vídeo"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spodní okraj videa"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nederst i videoen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Unterer Videorand"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Κάτω μέρος του βίντεο"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Parte inferior del vídeo"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پایین ویدیو"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Videon alareuna"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bas de la vidéo"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "תחתית הווידאו"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "वीडियो का निचला किनारा"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dno videozapisa"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Videó alja"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bawah video"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fondo del video"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "映像の下端"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "영상 하단"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bawah video"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nederst i videobildet"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Onderkant videobeeld"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dół obrazu"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Parte inferior do vídeo"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Marginea de jos a imaginii video"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Нижний край видео"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spodný okraj videa"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spodnji rob videa"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Donja ivica videa"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Videons nederkant"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ขอบล่างของภาพวิดีโอ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Video görüntüsünün alt kenarı"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Нижній край відео"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mép dưới khung hình"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "视频画面底部"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "影片畫面底部"
+          }
+        }
+      }
+    },
+    "Bottom of video moves lower captions, not artwork. Image subtitles keep their original font and color." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يحرّك خيار «أسفل الفيديو» ترجمات الحوار المعروضة في الأسفل، وليس الرسومات ذات المواضع الثابتة. تحتفظ الترجمات القائمة على الصور النقطية بخطها ولونها الأصليين."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "„Долу на видеото“ премества субтитрите с диалог в долната част, но не и графичните елементи с фиксирана позиция. Субтитрите във вид на изображения запазват оригиналния си шрифт и цвят."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "«Part inferior del vídeo» mou els subtítols de diàleg de la part inferior, no els elements gràfics de posició fixa. Els subtítols en format d'imatge conserven el tipus de lletra i el color originals."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Volba „Spodní okraj videa“ posouvá dolní dialogové titulky, nikoli pevně umístěnou grafiku. Obrazové titulky si zachovají původní písmo a barvu."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "»Nederst i videoen« flytter de nederste dialogundertekster, men ikke grafik med fast placering. Billedbaserede undertekster bevarer deres oprindelige skrifttype og farve."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "„Unterer Videorand“ verschiebt unten angezeigte Dialoguntertitel, nicht jedoch fest platzierte Grafiken. Bildbasierte Untertitel behalten ihre ursprüngliche Schriftart und Farbe."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Η επιλογή «Κάτω μέρος του βίντεο» μετακινεί τους υπότιτλους που εμφανίζονται χαμηλά, όχι τα γραφικά. Οι υπότιτλοι σε μορφή εικόνας διατηρούν την αρχική γραμματοσειρά και το χρώμα τους."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La opción «Parte inferior del vídeo» mueve los subtítulos de la zona inferior, no los gráficos. Los subtítulos en formato de imagen conservan su fuente y color originales."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "گزینهٔ «پایین ویدیو» زیرنویس‌های بخش پایینی تصویر را جابه‌جا می‌کند، نه عناصر گرافیکی را. زیرنویس‌های تصویری فونت و رنگ اصلی خود را حفظ می‌کنند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "”Videon alareuna” siirtää alhaalla olevia tekstityksiä, ei grafiikkaa. Kuvapohjaisten tekstitysten alkuperäinen fontti ja väri säilyvät."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’option « Bas de la vidéo » déplace les sous-titres affichés en bas, pas les éléments graphiques. Les sous-titres au format image conservent leur police et leur couleur d’origine."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "האפשרות ״תחתית הווידאו״ מזיזה את הכתוביות שבתחתית, ולא את הגרפיקה. כתוביות מבוססות תמונה שומרות על הגופן והצבע המקוריים שלהן."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“वीडियो का निचला किनारा” नीचे के सबटाइटल खिसकाता है, स्थिर ग्राफ़िक्स नहीं। चित्र-आधारित सबटाइटल के मूल फ़ॉन्ट और रंग बने रहते हैं।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "„Dno videozapisa” pomiče titlove pri dnu, ne fiksnu grafiku. Slikovni titlovi zadržavaju izvorni font i boju."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A „Videó alja” az alsó feliratokat mozgatja, nem a rögzített grafikát. A képalapú feliratok megőrzik eredeti betűtípusukat és színüket."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“Bawah video” menggeser takarir di bagian bawah, bukan elemen grafis tetap. Takarir berbasis gambar tetap memakai jenis huruf dan warna aslinya."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "«Fondo del video» sposta i sottotitoli situati in basso, non la grafica fissa. I sottotitoli bitmap mantengono il carattere e il colore originali."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "「映像の下端」は下部の字幕を移動し、固定の画像要素は動かしません。画像字幕の元のフォントと色は変わりません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "‘영상 하단’은 하단의 대사 자막만 이동하며 고정된 그래픽은 이동하지 않습니다. 이미지 자막의 원래 글꼴과 색상은 유지됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“Bawah video” mengalihkan sari kata di bahagian bawah, bukan grafik tetap. Sari kata imej mengekalkan fon dan warna asalnya."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "«Nederst i videobildet» flytter undertekster i den nedre delen av bildet, men ikke fast grafikk. Bildebaserte undertekster beholder opprinnelig skrifttype og farge."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "‘Onderkant videobeeld’ verplaatst ondertitels onder in beeld, maar geen vaste grafische elementen. Beeldgebaseerde ondertitels behouden hun oorspronkelijke lettertype en kleur."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opcja „Dół obrazu” przesuwa napisy w dolnej części obrazu, ale nie stałe elementy graficzne. Napisy graficzne zachowują oryginalną czcionkę i kolor."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“Parte inferior do vídeo” move as legendas na parte inferior da imagem, mas não os elementos gráficos fixos. Legendas em formato de imagem mantêm a fonte e a cor originais."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "„Marginea de jos a imaginii video” mută subtitrările din partea de jos, nu elementele grafice. Subtitrările bitmap își păstrează fontul și culoarea originale."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "«Нижний край видео» перемещает нижние субтитры, но не графику. Субтитры в виде изображений сохраняют исходные шрифт и цвет."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "„Spodný okraj videa“ posúva titulky v spodnej časti obrazu, nie grafiku. Bitmapové titulky si zachovávajú pôvodné písmo a farbu."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "»Spodnji rob videa« premakne spodnje podnapise, ne pa grafike. Slikovni podnapisi ohranijo izvirno pisavo in barvo."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "„Donja ivica videa“ pomera titlove pri dnu slike, ali ne i grafiku. Titlovi u obliku slike zadržavaju originalni font i boju."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "”Videons nederkant” flyttar undertexter längst ned, inte grafiken. Bildbaserade undertexter behåller sitt ursprungliga typsnitt och sin färg."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“ขอบล่างของภาพวิดีโอ” จะย้ายเฉพาะคำบรรยายด้านล่าง ไม่ย้ายองค์ประกอบกราฟิกที่อยู่กับที่ คำบรรยายแบบภาพจะคงแบบอักษรและสีเดิม"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“Video görüntüsünün alt kenarı” alt kısımdaki altyazıları taşır, sabit görsel öğeleri taşımaz. Görüntü tabanlı altyazılar özgün yazı tipini ve rengini korur."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "«Нижній край відео» переміщує нижні субтитри, але не закріплені графічні елементи. Растрові субтитри зберігають оригінальний шрифт і колір."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“Mép dưới khung hình” di chuyển phụ đề phía dưới, không di chuyển đồ họa cố định. Phụ đề dạng ảnh giữ nguyên phông chữ và màu sắc."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“视频画面底部”只移动下方字幕，不移动固定图形。位图字幕保留原有字体和颜色。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "「影片畫面底部」只移動下方字幕，不移動固定圖形。點陣圖字幕保留原有字型和顏色。"
           }
         }
       }
@@ -480111,6 +480993,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "移至首位"
+          }
+        }
+      }
+    },
+    "Moves lower dialogue without changing image size or fixed artwork." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يحرّك ترجمات الحوار المعروضة في الأسفل دون تغيير حجم صور الترجمة، مع إبقاء الرسومات ذات المواضع الثابتة كما هي."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Премества субтитрите с диалог в долната част, без да променя размера на изображенията им или да засяга графичните елементи с фиксирана позиция."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mou els subtítols de diàleg de la part inferior sense canviar la mida de les imatges dels subtítols ni alterar els elements gràfics de posició fixa."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Posouvá dolní dialogové titulky, ale nemění velikost obrázků titulků ani pevně umístěnou grafiku."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Flytter de nederste dialogundertekster uden at ændre underteksternes billedstørrelse eller påvirke grafik med fast placering."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verschiebt unten angezeigte Dialoguntertitel, ohne die Bildgröße der Untertitel oder fest platzierte Grafiken zu verändern."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Μετακινεί τους υπότιτλους διαλόγου που εμφανίζονται χαμηλά, χωρίς να αλλάζει το μέγεθός τους ή τα σταθερά γραφικά."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mueve los subtítulos de diálogo de la zona inferior sin cambiar su tamaño ni los gráficos fijos."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "زیرنویس‌های گفت‌وگو در پایین تصویر را بدون تغییر اندازهٔ آن‌ها یا عناصر گرافیکی ثابت جابه‌جا می‌کند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Siirtää alhaalla näkyviä repliikkejä muuttamatta tekstityskuvien kokoa tai kiinteää grafiikkaa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Déplace les sous-titres de dialogue affichés en bas sans modifier leur taille ni les éléments graphiques fixes."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מזיז את כתוביות הדיאלוג שבתחתית בלי לשנות את גודלן או את הגרפיקה הקבועה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "चित्र का आकार या स्थिर ग्राफ़िक्स बदले बिना नीचे के संवादों के सबटाइटल खिसकाता है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pomiče titlove dijaloga pri dnu bez promjene veličine slike ili fiksne grafike."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Az alsó párbeszédfeliratokat mozgatja, a képméret és a rögzített grafika módosítása nélkül."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Menggeser teks dialog di bawah tanpa mengubah ukuran gambar atau elemen grafis tetap."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sposta i sottotitoli di dialogo presenti in basso senza ridimensionare l’immagine o modificare la grafica fissa."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "画像のサイズや固定の画像要素を変えずに、下部の会話字幕を移動します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "자막 이미지의 크기나 고정된 그래픽을 변경하지 않고 하단의 대사 자막을 이동합니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mengalihkan sari kata dialog di bahagian bawah tanpa mengubah saiz imej sari kata atau grafik tetap."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Flytter dialogundertekster nederst i bildet uten å endre undertekstenes størrelse eller fast grafikk."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verplaatst dialoogondertitels onder in beeld zonder hun grootte of vaste grafische elementen te wijzigen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Przesuwa napisy dialogowe w dolnej części obrazu bez zmiany ich rozmiaru ani stałych elementów graficznych."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Move as legendas de diálogo na parte inferior sem redimensioná-las nem alterar os elementos gráficos fixos."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mută subtitrările de dialog din partea de jos fără a redimensiona imaginea sau a muta elementele grafice fixe."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Перемещает диалоговые субтитры внизу без изменения размера изображения или положения фиксированной графики."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Posúva dialógové titulky v spodnej časti obrazu bez zmeny veľkosti obrázka či polohy pevne umiestnenej grafiky."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Premakne podnapise dialoga v spodnjem delu brez spreminjanja velikosti slike ali položaja nepremičnih grafičnih elementov."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pomera titlove dijaloga pri dnu bez promene veličine slike ili položaja fiksnih grafičkih elemenata."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Flyttar dialogtext längst ned utan att ändra bildens storlek eller flytta fasta grafiska element."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ย้ายคำบรรยายบทสนทนาด้านล่างโดยไม่เปลี่ยนขนาดภาพคำบรรยายหรือองค์ประกอบกราฟิกที่อยู่กับที่"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Altyazı görüntüsünün boyutunu veya sabit görsel öğeleri değiştirmeden alt kısımdaki diyalog altyazılarını taşır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Переміщує нижні субтитри діалогів, не змінюючи розмір зображення субтитрів чи закріплені графічні елементи."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Di chuyển phụ đề hội thoại phía dưới mà không thay đổi kích thước ảnh phụ đề hay đồ họa cố định."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "移动下方对白字幕，不改变字幕图像大小，也不改动固定图形。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "移動下方對白字幕，不改變字幕圖像大小，也不改動固定圖形。"
           }
         }
       }
@@ -798502,6 +799604,7 @@
       }
     },
     "Subtitle position" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -864609,6 +865712,7 @@
     },
     "They're rendered as images by the source, so font, color, size and position controls don't apply." : {
       "comment" : "Explains why subtitle styling is unavailable for image-based (bitmap) subtitles.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -950501,6 +951605,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "垂直內距（Plozz）"
+          }
+        }
+      }
+    },
+    "Vertical offset" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الإزاحة الرأسية"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Вертикално отместване"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Desplaçament vertical"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Svislý posun"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lodret forskydning"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vertikaler Versatz"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Κατακόρυφη μετατόπιση"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Desplazamiento vertical"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "جابه‌جایی عمودی"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pystysiirtymä"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Décalage vertical"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "היסט אנכי"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "लंबवत खिसकाव"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Okomiti pomak"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Függőleges eltolás"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pergeseran vertikal"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spostamento verticale"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "上下位置の調整"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "세로 위치 조정"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Anjakan menegak"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vertikal forskyvning"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verticale verschuiving"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Przesunięcie pionowe"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deslocamento vertical"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deplasare verticală"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Смещение по вертикали"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvislý posun"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Navpični odmik"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vertikalni pomeraj"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vertikal förskjutning"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ระยะเลื่อนแนวตั้ง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dikey kaydırma"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Вертикальне зміщення"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Độ lệch dọc"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "垂直偏移"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "垂直位移"
           }
         }
       }
@@ -1103903,6 +1105227,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "字幕外觀 自訂 樣式"
+          }
+        }
+      }
+    },
+    "subtitles captions bottom of screen bottom of video picture black bars letterbox" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ترجمة ترجمات تسميات توضيحية أسفل الشاشة أسفل الفيديو صورة أشرطة سوداء حواف سوداء عرض عريض"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "субтитри надписи диалог долу на екрана долу на видеото картина черни ленти черни ивици широкоекранен формат letterbox"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "subtítols transcripció text en pantalla part inferior de la pantalla part inferior del vídeo imatge bandes negres franges negres format panoràmic letterbox"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "titulky popisky dialog spodní okraj obrazovky spodní okraj videa obraz černé pruhy černé okraje širokoúhlý formát letterbox"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "undertekster tekstning dialogtekster nederst på skærmen nederst i videoen billede sorte bjælker sorte kanter letterbox"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Untertitel Dialogtexte Bilduntertitel unterer Bildschirmrand unterer Videorand Videobild schwarze Balken schwarze Ränder Letterbox"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "υπότιτλοι λεζάντες κάτω μέρος της οθόνης κάτω μέρος του βίντεο εικόνα μαύρες λωρίδες οριζόντιες μπάρες"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "subtítulos subtitulado parte inferior de la pantalla parte inferior del vídeo imagen barras negras franjas negras arriba y abajo"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "زیرنویس کپشن پایین صفحه پایین ویدیو تصویر نوارهای سیاه نوارهای بالا و پایین"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tekstitys tekstitykset näytön alareuna videon alareuna kuva mustat palkit ylä- ja alapalkit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sous-titres sous-titrage bas de l’écran bas de la vidéo image bandes noires bandes horizontales"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "כתוביות כיתובים תחתית המסך תחתית הווידאו תמונה פסים שחורים פסים עליונים ותחתונים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "सबटाइटल उपशीर्षक कैप्शन स्क्रीन का निचला किनारा वीडियो का निचला किनारा चित्र काली पट्टियाँ लेटरबॉक्स"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "titlovi podnaslovi dno zaslona dno videozapisa slika crne trake letterbox"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "feliratok képaláírások képernyő alja videó alja kép fekete sávok letterbox"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "subtitel subtitle takarir teks bawah layar bawah video gambar pita hitam letterbox"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sottotitoli didascalie fondo dello schermo fondo del video immagine bande nere letterbox"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕 キャプション 画面の下端 映像の下端 映像 黒帯 レターボックス"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "자막 캡션 화면 하단 영상 하단 영상 영역 검은 여백 검은 띠 레터박스"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sari kata kapsyen bawah skrin bawah video gambar imej jalur hitam bar hitam letterbox"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "undertekster teksting nederst på skjermen nederst i videobildet nederst i videoen bilde svarte felt svarte striper letterbox"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ondertitels ondertiteling bijschriften onderkant scherm onderkant videobeeld onderkant video beeld zwarte balken zwarte randen letterbox"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "napisy podpisy dół ekranu dół obrazu dół wideo obraz czarne pasy czarne paski letterbox"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "legendas legendagem parte inferior da tela parte inferior do vídeo imagem barras pretas faixas pretas letterbox"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "subtitrări subtitrări descriptive marginea de jos a ecranului marginea de jos a imaginii video imagine benzi negre letterbox"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "субтитры скрытые субтитры нижний край экрана нижний край видео изображение чёрные полосы леттербокс"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "titulky skryté titulky spodný okraj obrazovky spodný okraj videa obraz čierne pásy letterbox"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "podnapisi podnapisi za gluhe in naglušne spodnji rob zaslona spodnji rob videa slika črni pasovi letterbox"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "titlovi skriveni titlovi donja ivica ekrana donja ivica videa slika crne trake letterbox"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "undertexter textning skärmens nederkant videons nederkant bild svarta fält letterbox"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "คำบรรยาย ซับไตเติล ขอบล่างของหน้าจอ ขอบล่างของภาพวิดีโอ ภาพ แถบดำ แถบดำบนล่าง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "altyazı açıklamalı altyazı ekranın alt kenarı video görüntüsünün alt kenarı görüntü siyah şeritler üst ve alt siyah bantlar"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "субтитри підписи нижній край екрана нижній край відео зображення чорні смуги чорні смуги зверху й знизу"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "phụ đề chú thích mép dưới màn hình mép dưới khung hình video hình ảnh dải đen viền đen trên dưới"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕 隐藏式字幕 屏幕底部 视频画面底部 画面 黑边 上下黑边"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕 隱藏式字幕 螢幕底部 影片畫面底部 畫面 黑邊 上下黑邊"
           }
         }
       }

@@ -1055,9 +1055,9 @@ changes.
 
 The picker labels Normal as the default; concise names follow Infuse's Zoom Mode
 terminology. Crop enlarges proportionally, Stretch fills both axes without
-preserving proportions, and Custom scales relative to Normal. `VideoPresentationView`
-transforms and clips only the stable video surface, without restarting playback,
-changing the engine layer's gravity, or processing frames.
+preserving proportions, and Custom scales relative to Normal. For these manual
+modes, `VideoPresentationView` transforms and clips only the stable video surface,
+without restarting playback, changing the engine layer's gravity, or processing frames.
 The subtitle overlay uses the same displayed-video rectangle for source-positioned
 and bitmap cues, including both axes under Stretch; ordinary text size, screen
 position, and transport geometry stay independent. Plozzigen uses the software
@@ -1069,11 +1069,75 @@ artwork boundary through that same zoom/stretch geometry before moving a region.
 Zoom belongs to the current player session, not a global/profile preference.
 A new VOD player or a different live channel starts at Normal. PiP and AirPlay retain
 their system-owned presentation rather than inheriting this local viewport crop.
+Both production playback engines offer opt-in **Auto-crop black bars**, with no
+menu subtext. A shared, cancellable
+AetherEngine analysis measures encoded borders in SDR, HDR10/HDR10+, HLG, and
+Dolby Vision output, using existing frames
+and no additional decoder or stream. It scales and translates the original surface
+uniformly, including asymmetric borders, and caps automatic magnification at 2x.
+Unknown, stale, unsupported or invalid measurements use Normal. Sparse detection
+can miss changing edge content; fitting is best effort, not a guarantee against
+clipping tickers or burned-in captions. Dark or uninformative frames cannot
+establish a crop. Native quarter-turn rotation and mirroring map measurements
+into the upright display canvas after clean-aperture/sample-aspect correction.
+Multiview keeps its original slots and defaults; visible
+panes share the engine's bounded four-session analysis admission.
+Native analysis requests CPU-readable NV12 for SDR, P010 for PQ/HLG, and
+converted half-float RGB for Dolby Vision or unknown source color. It does not
+interpret a Profile 5/10 IPT base layer as ordinary PQ luma or change playback
+color settings. Output selection follows source color, not the panel-clamped
+playback badge, including on SDR displays. `NativeVideoEngine` receives the shared analyzer from both app
+composition roots; its default/test initializer remains explicitly unsupported
+without injection. Load, seek, teardown and PiP release or invalidate analysis.
+AVFoundation may materialize/decompress that output; the 2 Hz analysis limit
+does not bound system-side output cost. HDR and particularly half-float outputs
+can require larger surfaces internally. The tap requests only 320x180 pixels;
+its original display canvas is retained separately and size changes invalidate
+pending results. Disabling analysis releases only its owned tap.
+
+The hosted active-picture regression uses original `testsrc2` fixtures at
+320x180/24 fps for 18 seconds: 28-pixel top/bottom bars before 8 seconds and
+from 14 seconds onward, with full-frame content between. The MP4 uses libx264,
+CRF 28 and yuv420p; its WebM counterpart uses libvpx-vp9, CRF 32. Tests require
+real native/software detection, forward/backward seeks, pause, and retained
+surface identity. The native case serves the MP4 stream-copied as finite loopback
+HLS, avoiding an assumption that the simulator supports hardware H.264 decoding.
+Checks seek to a known starting position after loading so startup latency cannot
+consume the short test clip. The performance lab uses the existing 1080p fixture
+packaged the same way, with players paused until all have loaded.
 Hosted coverage includes synthetic 4:3 video and a 720x576 H.264 fixture with 64:45
 sample aspect (16:9 display), checking real native and software playback without
 changing the video layer, playback position, or subtitle text geometry.
+The rotated fixture is a stream copy of `active-picture.mp4`, produced with
+FFmpeg `-display_rotation 90 -i active-picture.mp4 -map 0:v:0 -c copy
+active-picture-rotated.mp4`. Native analysis must retain the original upright
+aspect and crop axis while returning buffers no larger than 320x180.
+
+The optional `testLocalPictureRelativePGSStaysInsideMeasuredPicture` hosted
+test accepts an authorized local HDR clip through `PLOZZ_PICTURE_MEDIA_REPRO`
+(`TEST_RUNNER_PLOZZ_PICTURE_MEDIA_REPRO` when invoking xcodebuild). It verifies
+decoded dialogue bitmap geometry and actual painted caption bounds against
+the measured picture, then verifies that clearing the overlay removes that text.
+Media and captures stay outside source control. Validation covered real SDR,
+HDR10 and Dolby Vision Profiles 5/8 on macOS, including 4K HDR10 and Profile 8,
+and real HDR10/PGS presentation on both simulators. HLG has pixel-buffer
+regressions, not real-source playback evidence; simulator/macOS results do not
+establish physical-device HDR output or energy use.
 
 ## Subtitle appearance
+
+**Position** selects **Bottom of screen** (the existing default) or
+**Bottom of video**. **Vertical offset** keeps the existing percentage adjustment
+measured upward from that reference's bottom. Saved choices, offsets, and the
+default are unchanged; these labels do not introduce new placement presets.
+This lives in the existing profile-scoped subtitle style, including the separate
+Live TV style. Bottom of video uses measured active bounds when available and otherwise
+the displayed video, intersected with the visible viewport. It does not change
+source aspect ratio or resize authored subtitle canvases. Ordinary dialogue and
+dual lanes use that reference; eligible lower bitmap regions move together
+without scaling, while fixed artwork and independently source-positioned text
+retain their authored placement. Font/color controls do not apply to bitmap
+subtitles; their player editor exposes picture positioning instead.
 
 `Match Apple TV Subtitle Style` (`Match Device Subtitle Style` on mobile)
 reads this device's subtitle appearance through

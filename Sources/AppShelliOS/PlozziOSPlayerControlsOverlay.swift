@@ -1119,17 +1119,12 @@ private struct PlozziOSSubtitleOptionsSheet: View {
     private var appearance: some View {
         if viewModel.controls.subtitleStyleAdjustable {
             Section("Appearance") {
-                if let format =
-                    viewModel.controls.secondarySubtitleImagePrimaryFormat {
-                    Label(
-                        "\(format) subtitles are rendered as images and can’t be restyled.",
-                        systemImage: "photo"
-                    )
-                    .plozzForeground(.secondary)
-                } else {
-                    NavigationLink {
-                        MobileSubtitleStyleEditor(viewModel: .init(player: viewModel))
-                    } label: {
+                NavigationLink {
+                    MobileSubtitleStyleEditor(viewModel: .init(player: viewModel))
+                } label: {
+                    if viewModel.controls.secondarySubtitleImagePrimaryFormat != nil {
+                        Text("Position")
+                    } else {
                         LabeledContent {
                             viewModel.controls.subtitleStyle.fontDisplayName
                         } label: {

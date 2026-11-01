@@ -17,6 +17,7 @@ struct LiveChannelSubtitleSurface: View {
                     in: CGRect(origin: .zero, size: geometry.size),
                     aspectRatio: model.videoAspectRatio
                 ),
+                activePictureRect: viewport?.activePictureRect,
                 sourceVideoAspectRatio: model.videoZoom.settings.mode == .stretch ? model.videoAspectRatio : nil,
                 controlsFrames: model.subtitles.controlsLayout.frames
             )

@@ -141,6 +141,29 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         return width / height
     }
 
+    public var supportsActivePictureAnalysis: Bool { true }
+    #if DEBUG
+    private var lastPictureTimeForTesting: Double?
+    private(set) var pictureSampleCountForTesting = 0
+    var picturePeakWorkersForTesting: Int { engine.activePicturePeakWorkersForTesting }
+    var pictureWorkersForTesting: Int { engine.activePictureWorkersForTesting }
+    #endif
+
+    public func sampleActivePicture() async -> VideoActivePictureState {
+        let state = await engine.sampleActivePicture()
+        #if DEBUG
+        if case .measured(let observation) = state {
+            if lastPictureTimeForTesting != observation.presentationTime {
+                lastPictureTimeForTesting = observation.presentationTime
+                pictureSampleCountForTesting += 1
+            }
+        }
+        #endif
+        return VideoActivePictureState(engineState: state)
+    }
+
+    public func stopActivePictureAnalysis() { engine.stopActivePictureAnalysis() }
+
     /// Ground truth for the menu's "selected audio" indicator: the AVStream index
     /// AetherEngine is actually decoding (its resolved `activeAudioTrackIndex`),
     /// which can differ from the container `isDefault` flag because the engine

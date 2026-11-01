@@ -273,7 +273,10 @@ public struct SettingsSearchIndex {
             }
             let title = Self.normalize(entry.title.resolved(locale: locale), locale: locale)
             let aliases = Self.normalize(resolve(entry.keywords), locale: locale)
-            let preferredQueries = entry.preferredQueries.map { Self.normalize(resolve($0), locale: locale) }
+            let preferredQueries = entry.preferredQueries.map {
+                Self.tokens(Self.normalize(resolve($0), locale: locale), locale: locale)
+                    .filter { !Self.queryFillers.contains($0) }.joined(separator: " ")
+            }
             let path = (
                 entry.destinationPath(on: .phone) + entry.destinationPath(on: .television)
                     + (entry.contentCategory.map { [.localized($0.displayName)] } ?? [])
@@ -449,7 +452,10 @@ public enum SettingsSearchCatalog {
               keywords: "captions typeface lettering font family"),
         .init("subtitle-color", page: .subtitleStyle, title: "Subtitle color",
               keywords: "captions text colour yellow white"),
-        .init("subtitle-position", page: .subtitleStyle, title: "Subtitle position",
+        .init("subtitle-reference", page: .subtitleStyle, title: "Position",
+              keywords: "subtitles captions bottom of screen bottom of video picture black bars letterbox",
+              preferredQueries: SubtitleStyle.PositionReference.allCases.map(\.displayName)),
+        .init("subtitle-position", page: .subtitleStyle, title: "Vertical offset",
               keywords: "captions move up down vertical placement position on screen bottom top"),
         .init("theme", page: .theme, title: "Theme",
               keywords: "dark light mode appearance background colors colours"),

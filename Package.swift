@@ -242,9 +242,10 @@ let package = Package(
         // New host-controlled Now Playing and background retention remain opt-in.
         // 7.51.0 includes route-selected lossless PCM spatial beds from 7.50.0.
         // The fork retains Plozz's timing, subtitle, diagnostics and linkage fixes.
+        // Shared SDR/HDR active-picture measurements include host-owned native players.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "c1ce4cf48bad416e6be5230032a2b7f332e833d8",
+            revision: "feb41e58fb88ce7e693947f2148dbd0ea1df8483",
             traits: [
                 "TrueHDObjectAudio", "DTSXObjectAudio",
                 "DualLayerDolbyVision", "DolbyVisionStillReshaping",

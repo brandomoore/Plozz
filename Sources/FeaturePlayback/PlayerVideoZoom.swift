@@ -5,7 +5,7 @@ import Observation
 
 public struct PlayerVideoZoom: Equatable, Sendable {
     public enum Mode: Int, CaseIterable, Sendable {
-        case fit, fill, stretch, custom
+        case fit, fill, stretch, custom, picture
 
         public var title: LocalizedStringResource {
             switch self {
@@ -13,6 +13,7 @@ public struct PlayerVideoZoom: Equatable, Sendable {
             case .fill: "Crop"
             case .stretch: "Stretch"
             case .custom: "Custom"
+            case .picture: "Auto-crop black bars"
             }
         }
 
@@ -33,9 +34,14 @@ public struct PlayerVideoZoom: Equatable, Sendable {
 
     /// `fitBounds` constrains Normal and Custom's base, never Crop or Stretch.
     /// Both rectangles use the presentation view's coordinate space.
-    func scaleFactors(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect? = nil) -> CGVector {
+    func scaleFactors(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect? = nil,
+                      activePicture: CGRect? = nil) -> CGVector {
+        if let transform = pictureTransform(in: bounds, aspectRatio: aspectRatio,
+                                            fitBounds: fitBounds, activePicture: activePicture) {
+            return CGVector(dx: transform.scale, dy: transform.scale)
+        }
         switch mode {
-        case .fit, .custom:
+        case .fit, .custom, .picture:
             let viewport = fittingBounds(in: bounds, fitBounds: fitBounds)
             let custom = mode == .custom ? CGFloat(customPercent) / 100 : 1
             guard viewport != bounds else { return CGVector(dx: custom, dy: custom) }
@@ -58,23 +64,45 @@ public struct PlayerVideoZoom: Equatable, Sendable {
         }
     }
 
-    func surfaceFrame(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect? = nil) -> CGRect {
-        scaled(bounds, around: bounds, to: surfaceCenter(in: bounds, fitBounds: fitBounds),
-               by: scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds))
+    func surfaceFrame(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect? = nil,
+                      activePicture: CGRect? = nil) -> CGRect {
+        scaled(bounds, around: bounds, to: surfaceCenter(in: bounds, fitBounds: fitBounds,
+                                                        aspectRatio: aspectRatio, activePicture: activePicture),
+               by: scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds, activePicture: activePicture))
     }
 
-    func videoRect(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect? = nil) -> CGRect? {
+    func videoRect(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect? = nil,
+                   activePicture: CGRect? = nil) -> CGRect? {
         guard let fitted = SubtitleOverlayGeometry.aspectFitRect(
             in: bounds, aspectRatio: aspectRatio.map { CGFloat($0) }
         ) else { return nil }
-        return scaled(fitted, around: bounds, to: surfaceCenter(in: bounds, fitBounds: fitBounds),
-                      by: scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds))
+        return scaled(fitted, around: bounds, to: surfaceCenter(in: bounds, fitBounds: fitBounds,
+                                                              aspectRatio: aspectRatio, activePicture: activePicture),
+                      by: scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds, activePicture: activePicture))
     }
 
-    func surfaceCenter(in bounds: CGRect, fitBounds: CGRect? = nil) -> CGPoint {
-        let viewport = mode == .fit || mode == .custom
+    func surfaceCenter(in bounds: CGRect, fitBounds: CGRect? = nil,
+                       aspectRatio: Double? = nil, activePicture: CGRect? = nil) -> CGPoint {
+        if let transform = pictureTransform(in: bounds, aspectRatio: aspectRatio,
+                                            fitBounds: fitBounds, activePicture: activePicture) {
+            return transform.center
+        }
+        let viewport = mode == .fit || mode == .custom || mode == .picture
             ? fittingBounds(in: bounds, fitBounds: fitBounds) : bounds
         return CGPoint(x: viewport.midX, y: viewport.midY)
+    }
+
+    private func pictureTransform(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect?,
+                                  activePicture: CGRect?) -> (scale: CGFloat, center: CGPoint)? {
+        guard mode == .picture, let activePicture, VideoActivePictureGeometry.isValid(activePicture),
+              let fitted = SubtitleOverlayGeometry.aspectFitRect(in: bounds, aspectRatio: aspectRatio.map { CGFloat($0) })
+        else { return nil }
+        let active = VideoActivePictureGeometry.map(activePicture, into: fitted)
+        let viewport = fittingBounds(in: bounds, fitBounds: fitBounds)
+        let scale = min(viewport.width / active.width, viewport.height / active.height)
+        guard scale.isFinite, scale > 0, scale <= 2 else { return nil }
+        return (scale, CGPoint(x: viewport.midX - (active.midX - bounds.midX) * scale,
+                               y: viewport.midY - (active.midY - bounds.midY) * scale))
     }
 
     private func fittingBounds(in bounds: CGRect, fitBounds: CGRect?) -> CGRect {
@@ -97,13 +125,17 @@ public struct PlayerVideoZoom: Equatable, Sendable {
 @Observable
 public final class PlayerVideoZoomModel {
     public var settings = PlayerVideoZoom()
+    public var supportsActivePicture = false
+    public var availableModes: [PlayerVideoZoom.Mode] {
+        supportsActivePicture ? [.fit, .picture, .fill, .stretch, .custom] : [.fit, .fill, .stretch, .custom]
+    }
 
     public init() {}
 
     public func cycleMode(forward: Bool) {
-        let count = PlayerVideoZoom.Mode.allCases.count
-        let index = (settings.mode.rawValue + (forward ? 1 : count - 1)) % count
-        settings.mode = PlayerVideoZoom.Mode.allCases[index]
+        let modes = availableModes
+        let index = ((modes.firstIndex(of: settings.mode) ?? 0) + (forward ? 1 : modes.count - 1)) % modes.count
+        settings.mode = modes[index]
     }
 
     public func setCustomPercent(_ percent: Int) {

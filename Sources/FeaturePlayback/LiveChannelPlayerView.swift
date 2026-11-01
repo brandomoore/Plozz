@@ -129,7 +129,7 @@ public struct LiveChannelPlayerView: View {
     @State private var touchGestures = PlayerTouchGestureState()
     @State private var touchScrubbing = false
     @State private var touchBackgroundTapRevision = 0
-    @State private var mobileSubtitleViewport = VideoSubtitleViewport()
+    @State private var liveSubtitleViewport = VideoSubtitleViewport()
     @State private var tracksArePresented = false
     @State private var autoHideRevision = 0
     @State private var hudInactivity = PlaybackControlsInactivity()
@@ -374,6 +374,7 @@ public struct LiveChannelPlayerView: View {
                     engine: model.engine, zoom: model.videoZoom.settings,
                     aspectRatio: model.videoAspectRatio,
                     subtitleViewport: liveSubtitleViewport,
+                    needsPictureSubtitles: model.selectedSubtitleID != nil && model.subtitles.style.positionReference == .picture,
                     reflectionHeight: showsReflection ? previewReflectionHeight : 0,
                     topReflectionHeight: showsReflection ? previewTopReflectionHeight : 0,
                     leadingReflectionWidth: showsReflection ? previewLeadingReflectionWidth : 0,
@@ -915,14 +916,6 @@ public struct LiveChannelPlayerView: View {
     }
 
     private var permitsExternalPresentation: Bool { !isMultiview && isAuthorized }
-
-    private var liveSubtitleViewport: VideoSubtitleViewport? {
-        #if os(iOS)
-        isExpanded && !isMultiview ? mobileSubtitleViewport : nil
-        #else
-        nil
-        #endif
-    }
 
     private var sessionReporting: LiveChannelSessionReporting? {
         reportingID.map {
@@ -1773,6 +1766,7 @@ final class LiveChannelPlayerModel {
         playbackJournal: PlaybackDiagnosticJournal = .shared
     ) {
         self.engine = engine
+        videoZoom.supportsActivePicture = engine.supportsActivePictureAnalysis
         self.playbackJournal = playbackJournal
         self.outputGroup = outputGroup
         self.outputID = outputID

@@ -40,6 +40,9 @@ final class SettingsSearchTests: XCTestCase {
             "backward skip": "skip-backward",
             "show poster titles": "card-labels",
             "show external ratings": "detail-ratings",
+            "bottom of video": "subtitle-reference",
+            "bottom of screen": "subtitle-reference",
+            "vertical offset": "subtitle-position",
             "position on screen": "subtitle-position"
         ]
         for (query, id) in queries {
