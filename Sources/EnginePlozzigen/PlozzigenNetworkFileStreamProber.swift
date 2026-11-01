@@ -15,6 +15,59 @@ public struct PlozzigenNetworkFileStreamProber: NetworkFileStreamProbing {
         self.resolver = resolver
     }
 
+    public static func preparePlaybackSource(
+        locator: NetworkFileLocator, startPosition: Double, source: any MediaTransportByteSource
+    ) async throws {
+        let isDisc = (locator.relativePath as NSString).pathExtension.lowercased() == "iso"
+        guard isDisc || startPosition > 0 else { return }
+        let reader = TransportIOReader(
+            source: source, readAheadWindow: 4 * 1024 * 1024,
+            maximumReadAheadSize: 4 * 1024 * 1024, discImageProbeEnabled: isDisc
+        )
+        var limits = HDR10PlusProbeLimits()
+        limits.networkBytes = (isDisc ? 48 : 28) * 1024 * 1024
+        limits.packets = 4_096
+        limits.packetBytes = 4 * 1024 * 1024
+        limits.wallTimeout = isDisc ? 30 : 20
+        let report = await PlozzigenStreamProbeExecutor.runBoundedProbe(
+            reader: reader, formatHint: formatHint(for: locator.relativePath), limits: limits,
+            interrupt: { reader.close() }, finalShutdown: { await reader.waitForFinalShutdown() }
+        ) { source, limits, cancellation in
+            try AetherEngine.prepareSource(
+                source: source, presentationTime: startPosition, duration: isDisc ? 4 : 2, preroll: 0,
+                limits: limits, cancellation: cancellation
+            )
+        }
+        try Task.checkCancellation()
+        guard let report else {
+            throw MediaTransportError.protocolViolation(reason: "source preparation did not complete")
+        }
+        let outcome: String = switch report.outcome {
+        case .complete: "complete"
+        case .endOfSource: "endOfSource"
+        case .seekFailed: "seekFailed"
+        case .budgetExhausted: "budgetExhausted"
+        }
+        HandoffDiagnostics.emit(
+            "sourcePreparation outcome=\(outcome) inputBytes=\(report.inputBytesRead)"
+                + " packets=\(report.demuxedPackets) start=\(startPosition)"
+                + " origin=\(report.sourceOrigin) range=\(report.requestedSourceRange)"
+        )
+        for (kind, stream) in [("video", report.video), ("audio", report.audio)] {
+            guard let stream else { continue }
+            HandoffDiagnostics.emit(
+                "sourcePreparation stream=\(kind) packets=\(stream.packetCount) bytes=\(stream.packetBytes)"
+                    + " first=\(String(describing: stream.firstSourceTime))"
+                    + " range=\(String(describing: stream.observedSourceRange))"
+                    + " randomAccess=\(String(describing: stream.randomAccessSourceTime))"
+                    + " untimed=\(stream.untimedPacketCount)"
+            )
+        }
+        guard report.outcome == .complete else {
+            throw MediaTransportError.protocolViolation(reason: "source preparation coverage incomplete")
+        }
+    }
+
     public func probe(locator: NetworkFileLocator) async -> ProbedStreamFacts? {
         await probe(locator: locator, requirements: [.streamDetails, .atmos, .hdr10Plus])
     }

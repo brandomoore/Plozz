@@ -746,6 +746,33 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         )
     }
 
+    public static func exactFileRelativePath(for item: MediaItem) -> String? {
+        ShareCatalogID.relPath(forFileID: item.id)
+    }
+
+    public func playbackPreparationLocator(
+        for itemID: String, mediaSourceID: String
+    ) async throws -> NetworkFileLocator? {
+        guard ["http", "https"].contains(session.server.baseURL.scheme?.lowercased() ?? "") else {
+            return nil
+        }
+        try Task.checkCancellation()
+        if let filePath = ShareCatalogID.relPath(forFileID: itemID) {
+            guard filePath == mediaSourceID else {
+                throw MediaTransportError.sourceChanged(reason: "prepared file selection changed")
+            }
+        } else {
+            let catalog = await self.catalog
+            let canonicalID = await catalog.canonicalItemID(itemID)
+            guard let item = await catalog.item(id: canonicalID),
+                  item.versions.contains(where: { $0.id == mediaSourceID }) else {
+                throw MediaTransportError.sourceChanged(reason: "prepared version selection changed")
+            }
+        }
+        try Task.checkCancellation()
+        return try await playbackSource.networkFileLocator(for: mediaSourceID)
+    }
+
     /// Thin forwarder retained for direct tests of the representation-identity
     /// policy; the logic lives in `SharePlaybackSourceService`.
     func networkFileLocator(for relativePath: String) async throws -> NetworkFileLocator {

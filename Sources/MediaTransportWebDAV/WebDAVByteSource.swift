@@ -14,7 +14,62 @@ import MediaTransportHTTP
 /// a cancelled read cancels only its own `URLSessionTask`, and the owning
 /// ``WebDAVMediaTransportSession`` drains the shared ephemeral session on
 /// shutdown.
-final class WebDAVByteSource: MediaTransportByteSource, @unchecked Sendable {
+final class WebDAVByteSource: MediaTransportPreparationFinalizingByteSource, @unchecked Sendable {
+    struct PreparedRange: Sendable {
+        let offset: Int64
+        let data: Data
+    }
+
+    private final class PreparedCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private let maximumBytes: Int
+        private var ranges: [PreparedRange]
+        private var byteCount: Int
+        private var isFinished = false
+
+        init(ranges: [PreparedRange], maximumBytes: Int) {
+            self.ranges = ranges
+            self.maximumBytes = maximumBytes
+            self.byteCount = ranges.reduce(0) { $0 + $1.data.count }
+        }
+
+        func read(at offset: Int64, through end: Int64) -> Data? {
+            let range = lock.withLock {
+                ranges.first(where: {
+                    offset >= $0.offset && offset - $0.offset < $0.data.count
+                })
+            }
+            guard let range else { return nil }
+            let upperBound = min(Int(end - range.offset) + 1, range.data.count)
+            return range.data.subdata(in: Int(offset - range.offset)..<upperBound)
+        }
+
+        func insert(_ data: Data, at offset: Int64) {
+            lock.withLock {
+                guard !isFinished, !data.isEmpty, ranges.count < 64,
+                      data.count <= maximumBytes - byteCount,
+                      !ranges.contains(where: {
+                          offset >= $0.offset
+                              && offset - $0.offset + Int64(data.count) <= Int64($0.data.count)
+                      }) else { return }
+                ranges.append(PreparedRange(offset: offset, data: data))
+                byteCount += data.count
+            }
+        }
+
+        func finishPreparation() {
+            lock.withLock { isFinished = true }
+        }
+
+        func clear() {
+            lock.withLock {
+                ranges.removeAll()
+                byteCount = 0
+                isFinished = true
+            }
+        }
+    }
+
     let byteSize: Int64
     let preferredReadSize = 32 * 1024 * 1024
 
@@ -24,13 +79,16 @@ final class WebDAVByteSource: MediaTransportByteSource, @unchecked Sendable {
     private let sessionKey: TransportSessionKey
     private let credential: WebDAVCredential
     private let trustPolicy: TrustPolicy
+    private let preparedCache: PreparedCache?
 
     init(
         client: WebDAVClient,
         representation: RangeProbeResult,
         sessionKey: TransportSessionKey,
         credential: WebDAVCredential,
-        trustPolicy: TrustPolicy
+        trustPolicy: TrustPolicy,
+        preparedRanges: [PreparedRange] = [],
+        maximumCachedBytes: Int = 0
     ) {
         self.client = client
         self.resourceURL = representation.resourceURL
@@ -39,6 +97,33 @@ final class WebDAVByteSource: MediaTransportByteSource, @unchecked Sendable {
         self.credential = credential
         self.trustPolicy = trustPolicy
         self.byteSize = representation.totalLength
+        self.preparedCache = maximumCachedBytes > 0
+            ? PreparedCache(ranges: preparedRanges, maximumBytes: maximumCachedBytes) : nil
+    }
+
+    func preparingOpeningBytes(
+        includeTail: Bool, maximumCachedBytes: Int
+    ) async throws -> WebDAVByteSource {
+        let tailWindow = 4 * 1024 * 1024
+        let prefixWindow = includeTail ? 8 * 1024 * 1024 : tailWindow
+        var prefix = representation.initialData
+        let prefixLength = Int(min(byteSize, Int64(prefixWindow)))
+        if prefix.count < prefixLength {
+            let remainder = try await read(at: Int64(prefix.count), length: prefixLength - prefix.count)
+            prefix.append(remainder)
+        }
+        var ranges = [PreparedRange(offset: 0, data: prefix)]
+        if includeTail, byteSize > Int64(prefix.count) {
+            let offset = max(Int64(prefix.count), byteSize - Int64(tailWindow))
+            let tail = try await read(at: offset, length: tailWindow)
+            ranges.append(PreparedRange(offset: offset, data: tail))
+        }
+        try Task.checkCancellation()
+        return WebDAVByteSource(
+            client: client, representation: representation, sessionKey: sessionKey,
+            credential: credential, trustPolicy: trustPolicy, preparedRanges: ranges,
+            maximumCachedBytes: maximumCachedBytes
+        )
     }
 
     func read(at offset: Int64, length: Int) async throws -> Data {
@@ -60,18 +145,26 @@ final class WebDAVByteSource: MediaTransportByteSource, @unchecked Sendable {
             if end < representation.initialData.count {
                 return representation.initialData.subdata(in: Int(offset)..<(Int(end) + 1))
             }
-            return try await client.readRange(
+            if let cached = preparedCache?.read(at: offset, through: end) { return cached }
+            let data = try await client.readRange(
                 url: resourceURL, start: offset, end: end, representation: representation,
                 sessionKey: sessionKey, credential: credential, trustPolicy: trustPolicy
             )
+            try Task.checkCancellation()
+            preparedCache?.insert(data, at: offset)
+            return data
         } catch {
             throw mapWebDAVError(error)
         }
     }
 
+    func finishPreparation() {
+        preparedCache?.finishPreparation()
+    }
+
     func shutdown() async {
-        // No per-source resource to release: the ephemeral URLSession backing
-        // these reads is owned by the transport session's registry and drained
+        preparedCache?.clear()
+        // The ephemeral URLSession is owned by the transport registry and drained
         // when that session shuts down. Deterministic teardown is therefore the
         // session's responsibility; a cancelled in-flight read is torn down at
         // the URLSessionTask level by structured cancellation.

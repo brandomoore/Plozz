@@ -842,6 +842,10 @@ public struct RootView: View {
         .environment(appState.profileSettings.contentRatingModel)
         .environment(\.plozzShowsContentRatings, appState.profileSettings.contentRatingModel.showsRatings)
         .environment(\.familyGuidanceProvider, appState.familyGuidance)
+        .detailPlaybackPreparationEnvironment(
+            appState.detailPlaybackPreparation,
+            accountIDs: appState.accountsProviders.resolvedActiveAccounts.map(\.account.id)
+        )
         .environment(\.detailHeaderSettings, appState.profileSettings.detailPageModel)
         .environment(appState.profileSettings.libraryPresentationModel)
         .environment(\.libraryPresentationLoader, LibraryPresentationLoader(

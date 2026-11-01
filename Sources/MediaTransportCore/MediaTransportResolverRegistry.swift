@@ -35,6 +35,13 @@ public final class MediaTransportResolverLease: @unchecked Sendable {
         await registry.retireForReuse(key: key, generation: generation)
     }
 
+    /// A preparation owns a lease but has not admitted playback. Unlike an
+    /// existing playback cursor, it may not cross a retirement boundary.
+    func validateForPreparedPlayback() async throws {
+        guard !lock.withLock({ isReleased }) else { throw MediaTransportError.cancelled }
+        try await registry.validateForPreparedPlayback(key: key, generation: generation)
+    }
+
     public func release() {
         let shouldRelease = lock.withLock {
             guard !isReleased else { return false }
@@ -221,6 +228,21 @@ public actor MediaTransportResolverRegistry: MediaTransportResolving {
             await record.finalizer(record.session)
         } else {
             retiredRecordsByGeneration[generation] = record
+        }
+    }
+
+    fileprivate func validateForPreparedPlayback(
+        key: MediaTransportSessionKey,
+        generation: UUID
+    ) throws {
+        let scope = RevisionScope(
+            accountID: key.accountID,
+            credentialRevision: key.credentialRevision
+        )
+        guard !retiredScopes.contains(scope),
+              let record = records[key], !record.retired,
+              record.generation == generation, record.leaseCount > 0 else {
+            throw MediaTransportError.cancelled
         }
     }
 

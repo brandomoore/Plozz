@@ -1,0 +1,39 @@
+import AppRuntime
+import CoreModels
+import FeatureHomeCore
+import MediaTransportCore
+import ProviderShare
+
+extension AppState {
+    var detailPlaybackPreparation: DetailPlaybackPreparationEnvironment {
+        DetailPlaybackPreparationEnvironment(
+            allowsMultipleVersions: profileSettings.playbackModel.settings.versionSelectionMode == .automatic,
+            scope: { [weak self] accountID in
+                guard let self, self.isActiveProfileAuthorized,
+                      let account = self.accountsProviders.resolvedActiveAccounts.first(where: {
+                          $0.account.id == accountID
+                      })?.account
+                else { return nil }
+                return DetailPlaybackPreparationScope(
+                    webDAVAccount: account,
+                    profileID: self.profilesModel.activeProfileID,
+                    authorizationID: self.accountsProviders.liveTVAuthorizationID,
+                    credentialRevision: self.accountsProviders.credentialRevision(account),
+                    isAuthorized: self.isActiveProfileAuthorized
+                )
+            },
+            exactFileRelativePath: { ShareProvider.exactFileRelativePath(for: $0) },
+            provider: { [weak self] accountID in
+                guard let self, self.isActiveProfileAuthorized else { return nil }
+                return self.accountsProviders.resolvedActiveAccounts.first {
+                    $0.account.id == accountID
+                }?.provider
+            },
+            reserve: { [weak self] locator, position in
+                guard let self, self.isActiveProfileAuthorized else { throw CancellationError() }
+                let handle = try await self.mediaShare.networkFileResolver.prepare(locator, startPosition: position)
+                return DetailPlaybackPreparationReservation { handle.cancel() }
+            }
+        )
+    }
+}

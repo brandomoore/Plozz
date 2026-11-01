@@ -53,6 +53,7 @@ struct HomeTab: View {
     /// only to hand to the Top Shelf publisher: that snapshot crosses into
     /// another process, so its titles have to be resolved on this side.
     @Environment(\.locale) private var locale
+    @Environment(\.detailPlaybackPreparationAllowed) private var playbackPreparationAllowed
     @Environment(LibraryPresentationSettingsModel.self) private var libraryPresentation
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.plozzShowsContentRatings) private var showsContentRatings
@@ -666,6 +667,7 @@ struct HomeTab: View {
             // reaches the root content — "Episode Info" worked on Continue
             // Watching and was silently dropped in every pushed detail page.
             .mediaItemNavigator { navigate($0, asOwnSubject: $0.kind == .episode) }
+            .environment(\.detailPlaybackPreparationAllowed, playbackPreparationAllowed && isActiveTab)
         }
         .cinematicDetailNavigation(path: $path)
         // Under the rail, a pushed page is a detail page — report the depth so the

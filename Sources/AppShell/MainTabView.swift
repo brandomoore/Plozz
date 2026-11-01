@@ -1861,6 +1861,7 @@ struct MainTabView: View {
         // inside the Music tab's navigation stack made it present a beat late under
         // the sidebar style (only appearing after a stray Back press).
         routedShell
+        .environment(\.detailPlaybackPreparationAllowed, playRequest == nil && resumePrompt == nil && !showNowPlaying)
         .plozzFullScreenCover(isPresented: $showNowPlaying) {
             NowPlayingView(
                 controller: audioController,

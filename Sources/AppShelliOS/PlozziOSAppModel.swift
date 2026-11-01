@@ -5,6 +5,7 @@ import CoreModels
 import CoreNetworking
 import CoreUI
 import CrashReporting
+import EnginePlozzigen
 import FeatureAuthCore
 import FeatureHomeCore
 import FeatureProfiles
@@ -625,7 +626,8 @@ final class PlozziOSAppModel {
         }
         let mediaShareRuntime = DefaultMediaShareRuntime.make(
             accountStore: accountStore,
-            artworkCacheLifecycle: PlozziOSMediaShareArtworkCacheLifecycle()
+            artworkCacheLifecycle: PlozziOSMediaShareArtworkCacheLifecycle(),
+            sourcePreparer: PlozzigenNetworkFileStreamProber.preparePlaybackSource
         )
         ArtworkImageCache.shared.configure(
             networkFileService: mediaShareRuntime.artworkNetworkFileService

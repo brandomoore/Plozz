@@ -405,6 +405,259 @@ final class WebDAVMediaTransportTests: XCTestCase {
         await lease.waitForFinalShutdown()
     }
 
+    func testPreparedSourceRetainsOnlyBoundedValidatedOpeningRanges() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let window = 8 * 1024 * 1024
+        let tailWindow = 4 * 1024 * 1024
+        let total = 20 * 1024 * 1024
+        queueStat(size: total)
+        queueReadHalf(url: url, offset: 0, length: RangeProbe.initialReadByteCount, total: total)
+        queueReadHalf(
+            url: url, offset: RangeProbe.initialReadByteCount,
+            length: window - RangeProbe.initialReadByteCount, total: total
+        )
+        queueReadHalf(url: url, offset: total - tailWindow, length: tailWindow, total: total, byte: 7)
+        let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .playback))
+        addTeardownBlock { await session.shutdown() }
+        let fileSystem = try XCTUnwrap(session.fileSystem as? WebDAVMediaTransportFileSystem)
+        let locator = try strongETagLocator(size: Int64(total), revision: revision)
+        let lease = try await fileSystem.prepareSource(for: locator)
+        let cursor = try XCTUnwrap(lease.makeCursor())
+        addTeardownBlock {
+            cursor.close()
+            await lease.waitForFinalShutdown()
+        }
+
+        queueStat(size: total)
+        try await fileSystem.revalidatePreparedSource(for: locator)
+        let head = try await cursor.read(at: 300_000, length: 1_000)
+        XCTAssertEqual(head, Data(repeating: 42, count: 1_000))
+        let tail = try await cursor.read(at: Int64(total - 2_000), length: 1_000)
+        XCTAssertEqual(tail, Data(repeating: 7, count: 1_000))
+        let boundary = try await cursor.read(at: Int64(window - 100), length: 200)
+        XCTAssertEqual(boundary, Data(repeating: 42, count: 100))
+        let reads = StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }
+        XCTAssertEqual(reads.count, 3)
+        XCTAssertEqual(reads.dropFirst().compactMap { $0.value(forHTTPHeaderField: "Range") }, [
+            "bytes=\(RangeProbe.initialReadByteCount)-\(window - 1)", "bytes=\(total - tailWindow)-\(total - 1)"
+        ])
+        XCTAssertTrue(reads.dropFirst().allSatisfy {
+            $0.value(forHTTPHeaderField: "If-Match") == "\"strong-1\""
+        })
+        XCTAssertEqual(StubURLProtocol.requests(for: url).filter { $0.httpMethod == "PROPFIND" }.count, 2)
+
+        queueReadHalf(url: url, offset: window, length: 100, total: total, byte: 8)
+        let uncached = try await cursor.read(at: Int64(window), length: 100)
+        XCTAssertEqual(uncached, Data(repeating: 8, count: 100))
+        XCTAssertEqual(StubURLProtocol.requests(for: url).last?.value(forHTTPHeaderField: "If-Match"), "\"strong-1\"")
+    }
+
+    func testPreparedSmallSourceClampsAtEOFWithoutDuplicateTail() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        queueStat()
+        queueReadHalf(url: url, offset: 0, length: 2, total: 1_000)
+        queueReadHalf(url: url, offset: 0, length: 1_000, total: 1_000)
+        let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .playback))
+        addTeardownBlock { await session.shutdown() }
+        let fileSystem = try XCTUnwrap(session.fileSystem as? WebDAVMediaTransportFileSystem)
+        let lease = try await fileSystem.prepareSource(for: strongETagLocator(revision: revision))
+        let cursor = try XCTUnwrap(lease.makeCursor())
+        let bytes = try await cursor.read(at: 900, length: 200)
+        XCTAssertEqual(bytes.count, 100)
+        XCTAssertEqual(StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }.count, 2)
+        cursor.close()
+        await lease.waitForFinalShutdown()
+    }
+
+    func testClaimedSourceDoesNotGrowItsPreparationCacheDuringPlayback() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let window = 8 * 1024 * 1024
+        let tailWindow = 4 * 1024 * 1024
+        let total = 40 * 1024 * 1024
+        queueStat(size: total)
+        queueReadHalf(url: url, offset: 0, length: RangeProbe.initialReadByteCount, total: total)
+        queueReadHalf(
+            url: url, offset: RangeProbe.initialReadByteCount,
+            length: window - RangeProbe.initialReadByteCount, total: total
+        )
+        queueReadHalf(url: url, offset: total - tailWindow, length: tailWindow, total: total)
+        let key = try makeKey(revision: revision, role: .playback)
+        let registry = MediaTransportResolverRegistry(adapter: makeAdapter())
+        let resolver = MediaTransportNetworkFileResolver(
+            registry: registry, sessionKeyProvider: { _ in key }
+        )
+        addTeardownBlock { await registry.retire(accountID: key.accountID, credentialRevision: revision) }
+        let locator = try strongETagLocator(size: Int64(total), revision: revision)
+        let prepared = try await resolver.prepare(locator)
+        queueStat(size: total)
+        let resolved = try await resolver.resolve(locator)
+        XCTAssertTrue(prepared.wasConsumed)
+        let cursor = try XCTUnwrap(resolved.sourceLease.makeCursor())
+        for _ in 0..<2 {
+            queueReadHalf(url: url, offset: window, length: 100, total: total, byte: 8)
+            let bytes = try await cursor.read(at: Int64(window), length: 100)
+            XCTAssertEqual(bytes, Data(repeating: 8, count: 100))
+        }
+        XCTAssertEqual(StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }.count, 5)
+        cursor.close()
+        await resolved.waitForFinalShutdown()
+    }
+
+    func testPreparedDiscSourceCachesDiscoveredRangesWithinBudgetWithoutBlindTail() async throws {
+        let revision = CredentialRevision()
+        let path = "Movie.iso"
+        let url = URL(string: "https://nas.example.com/dav/movies/\(path)")!
+        let window = 4 * 1024 * 1024
+        let total = 17 * window
+        queueStat(size: total, relativePath: path)
+        queueReadHalf(url: url, offset: 0, length: RangeProbe.initialReadByteCount, total: total)
+        queueReadHalf(
+            url: url, offset: RangeProbe.initialReadByteCount,
+            length: window - RangeProbe.initialReadByteCount, total: total
+        )
+        let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .playback))
+        addTeardownBlock { await session.shutdown() }
+        let fileSystem = try XCTUnwrap(session.fileSystem as? WebDAVMediaTransportFileSystem)
+        let locator = try strongETagLocator(relativePath: path, size: Int64(total), revision: revision)
+        let lease = try await fileSystem.prepareSource(for: locator)
+        XCTAssertEqual(StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }.count, 2)
+        let cursor = try XCTUnwrap(lease.makeCursor())
+        for offset in stride(from: window, to: 16 * window, by: window) {
+            queueReadHalf(url: url, offset: offset, length: window, total: total, byte: 7)
+            let first = try await cursor.read(at: Int64(offset), length: window)
+            let cached = try await cursor.read(at: Int64(offset), length: window)
+            XCTAssertEqual(first, cached)
+            XCTAssertEqual(cached.count, window)
+        }
+        XCTAssertEqual(StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }.count, 17)
+        for _ in 0..<2 {
+            queueReadHalf(url: url, offset: 16 * window, length: window, total: total)
+            let uncached = try await cursor.read(at: Int64(16 * window), length: window)
+            XCTAssertEqual(uncached.count, window)
+        }
+        XCTAssertEqual(
+            StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }.count, 19,
+            "The 64 MiB disc preparation cache must not grow when full"
+        )
+        cursor.close()
+        await lease.waitForFinalShutdown()
+    }
+
+    func testPreparedCacheBoundsSparseRangeCountIndependentlyOfPayload() async throws {
+        let revision = CredentialRevision()
+        let path = "Movie.iso"
+        let url = URL(string: "https://nas.example.com/dav/movies/\(path)")!
+        let window = 4 * 1024 * 1024
+        let total = 40 * 1024 * 1024
+        queueStat(size: total, relativePath: path)
+        queueReadHalf(url: url, offset: 0, length: RangeProbe.initialReadByteCount, total: total)
+        queueReadHalf(
+            url: url, offset: RangeProbe.initialReadByteCount,
+            length: window - RangeProbe.initialReadByteCount, total: total
+        )
+        let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .playback))
+        addTeardownBlock { await session.shutdown() }
+        let fileSystem = try XCTUnwrap(session.fileSystem as? WebDAVMediaTransportFileSystem)
+        let locator = try strongETagLocator(relativePath: path, size: Int64(total), revision: revision)
+        let lease = try await fileSystem.prepareSource(for: locator)
+        let cursor = try XCTUnwrap(lease.makeCursor())
+        addTeardownBlock {
+            cursor.close()
+            await lease.waitForFinalShutdown()
+        }
+        for index in 0..<63 {
+            let offset = window + index * 2
+            queueReadHalf(url: url, offset: offset, length: 1, total: total)
+            let first = try await cursor.read(at: Int64(offset), length: 1)
+            let cached = try await cursor.read(at: Int64(offset), length: 1)
+            XCTAssertEqual(first, cached)
+        }
+        for _ in 0..<2 {
+            queueReadHalf(url: url, offset: window + 126, length: 1, total: total)
+            let bytes = try await cursor.read(at: Int64(window + 126), length: 1)
+            XCTAssertEqual(bytes.count, 1)
+        }
+        XCTAssertEqual(
+            StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }.count, 67,
+            "The opening range and 63 sparse ranges exhaust the entry budget"
+        )
+    }
+
+    func testPreparedOrdinarySourceKeepsSmallerCacheBudget() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let window = 4 * 1024 * 1024
+        let total = 12 * window
+        queueStat(size: total)
+        queueReadHalf(url: url, offset: 0, length: RangeProbe.initialReadByteCount, total: total)
+        queueReadHalf(
+            url: url, offset: RangeProbe.initialReadByteCount,
+            length: 2 * window - RangeProbe.initialReadByteCount, total: total
+        )
+        queueReadHalf(url: url, offset: total - window, length: window, total: total)
+        let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .playback))
+        addTeardownBlock { await session.shutdown() }
+        let fileSystem = try XCTUnwrap(session.fileSystem as? WebDAVMediaTransportFileSystem)
+        let lease = try await fileSystem.prepareSource(for: strongETagLocator(size: Int64(total), revision: revision))
+        let cursor = try XCTUnwrap(lease.makeCursor())
+        addTeardownBlock {
+            cursor.close()
+            await lease.waitForFinalShutdown()
+        }
+        for offset in stride(from: 2 * window, to: 9 * window, by: window) {
+            queueReadHalf(url: url, offset: offset, length: window, total: total)
+            let first = try await cursor.read(at: Int64(offset), length: window)
+            let cached = try await cursor.read(at: Int64(offset), length: window)
+            XCTAssertEqual(first, cached)
+        }
+        XCTAssertEqual(StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }.count, 10)
+        for _ in 0..<2 {
+            queueReadHalf(url: url, offset: 9 * window, length: window, total: total)
+            let uncached = try await cursor.read(at: Int64(9 * window), length: window)
+            XCTAssertEqual(uncached.count, window)
+        }
+        XCTAssertEqual(
+            StubURLProtocol.requests(for: url).filter { $0.httpMethod == "GET" }.count, 12,
+            "The larger ISO budget must not expand the 40 MiB ordinary-container cache"
+        )
+    }
+
+    func testPreparedSourceRejectsChangedRangeBeforePublication() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        queueStat()
+        queueReadHalf(url: url, offset: 0, length: 2, total: 1_000)
+        queueReadHalf(url: url, offset: 0, length: 1_000, total: 1_000, etag: "\"changed\"")
+        let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .playback))
+        addTeardownBlock { await session.shutdown() }
+        let fileSystem = try XCTUnwrap(session.fileSystem as? WebDAVMediaTransportFileSystem)
+        do {
+            _ = try await fileSystem.prepareSource(for: strongETagLocator(revision: revision))
+            XCTFail("Changed bytes must not enter the prepared cache")
+        } catch let error as MediaTransportError {
+            guard case .sourceChanged = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+    }
+
+    func testPreparedSourceRevalidationRejectsChangedDAVIdentityWithoutOpeningAgain() async throws {
+        let revision = CredentialRevision()
+        queueStat(etag: "\"changed\"")
+        let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: .playback))
+        addTeardownBlock { await session.shutdown() }
+        let fileSystem = try XCTUnwrap(session.fileSystem as? WebDAVMediaTransportFileSystem)
+        do {
+            try await fileSystem.revalidatePreparedSource(for: strongETagLocator(revision: revision))
+            XCTFail("A prepared source must not bypass fresh DAV identity validation")
+        } catch let error as MediaTransportError {
+            guard case .sourceChanged = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        XCTAssertEqual(StubURLProtocol.requests(for: url).map(\.httpMethod), ["PROPFIND"])
+    }
+
     func testPrefetchedBytesStillRespectCancellationAndLeaseClosure() async throws {
         let cursor = try await openLargeSource(total: 1_000_000)
         let task = Task {
@@ -596,10 +849,13 @@ final class WebDAVMediaTransportTests: XCTestCase {
 
     // MARK: - trust-revision threading
 
-    private func queueStat(etag: String? = "\"strong-1\"", modified: String? = nil, size: Int = 1000) {
+    private func queueStat(
+        etag: String? = "\"strong-1\"", modified: String? = nil, size: Int = 1000,
+        relativePath: String = "Movie.mkv"
+    ) {
         let xml = """
         <D:multistatus xmlns:D="DAV:"><D:response>
-          <D:href>/dav/movies/Movie.mkv</D:href>
+          <D:href>/dav/movies/\(relativePath)</D:href>
           <D:propstat><D:prop>
             <D:getcontentlength>\(size)</D:getcontentlength>
             \(etag.map { "<D:getetag>\($0)</D:getetag>" } ?? "")
@@ -609,7 +865,7 @@ final class WebDAVMediaTransportTests: XCTestCase {
         """
         StubURLProtocol.queue(
             StubResponse(statusCode: 207, body: Data(xml.utf8)),
-            for: URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+            for: URL(string: "https://nas.example.com/dav/movies/\(relativePath)")!
         )
     }
 

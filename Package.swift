@@ -84,7 +84,8 @@ let package = Package(
         //
         // Pinned to the playback-corrected fork integrating upstream 7.51.0
         // (263dc11579274e83458bd3839715caf99f3d8969). This retains Plozz's
-        // AAC timing, ASS duration, dynamic linkage, frame/cache APIs and privacy manifest.
+        // AAC timing, ASS duration, dynamic linkage, frame/cache APIs and privacy manifest,
+        // plus bounded position-aware compressed-source preparation.
         //
         // Everything the old `plozz-pin-*` stack existed for is upstream
         // as of 5.23.2:
@@ -244,7 +245,7 @@ let package = Package(
         // The fork retains Plozz's timing, subtitle, diagnostics and linkage fixes.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "c1ce4cf48bad416e6be5230032a2b7f332e833d8",
+            revision: "102b71faffe7df76dcc7b0364d891fb0ad4e22da",
             traits: [
                 "TrueHDObjectAudio", "DTSXObjectAudio",
                 "DualLayerDolbyVision", "DolbyVisionStillReshaping",

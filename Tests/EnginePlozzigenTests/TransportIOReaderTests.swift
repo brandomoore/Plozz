@@ -495,6 +495,34 @@ final class TransportIOReaderReadAheadTests: XCTestCase {
         XCTAssertEqual(source.readCount, 5)
     }
 
+    func testPreparedDemandReturnsAvailableBytesWithoutFillingAcrossBoundary() throws {
+        let payload = Data((0..<4096).map { UInt8($0 & 0xff) })
+        let source = CappedTransportByteSource(
+            payload, perReadCap: 1000, preferredReadSize: 32 * 1024 * 1024
+        )
+        let reader = TransportIOReader(
+            source: source, readAheadWindow: 4 * 1024 * 1024, usesPreparedSource: true
+        )
+        defer { reader.close() }
+        XCTAssertEqual(read(reader, count: 256).data, Data(payload.prefix(256)))
+        XCTAssertEqual(source.readCount, 1)
+        XCTAssertEqual(read(reader, count: 4096).data, Data(payload[256..<1000]))
+        XCTAssertEqual(source.readCount, 1)
+        XCTAssertEqual(read(reader, count: 4096).data, Data(payload[1000..<2000]))
+        XCTAssertEqual(source.readCount, 2)
+
+        XCTAssertEqual(reader.seek(offset: 3000, whence: SEEK_SET), 3000)
+        XCTAssertEqual(read(reader, count: 4096).data, Data(payload[3000..<4000]))
+        XCTAssertEqual(read(reader, count: 4096).data, Data(payload[4000..<4096]))
+        XCTAssertEqual(read(reader, count: 1).result, 0)
+
+        let clone = try XCTUnwrap(reader.makeIndependentReader())
+        defer { clone.close() }
+        let beforeClone = source.readCount
+        XCTAssertEqual(read(clone, count: 4096).data, Data(payload.prefix(1000)))
+        XCTAssertEqual(source.readCount, beforeClone + 1)
+    }
+
     func testLargeRangeReadsStartSmallGrowContiguouslyAndStayBounded() {
         let source = SparseTransportByteSource(preferredReadSize: 64 * 1024 * 1024)
         let reader = TransportIOReader(source: source)
@@ -534,6 +562,29 @@ final class TransportIOReaderReadAheadTests: XCTestCase {
         XCTAssertEqual(source.readLog.last?.length, 64 * 1024)
         XCTAssertEqual(read(reader, count: 2).data, Data([42, 42]))
         XCTAssertEqual(source.readLog.count, count + 1)
+    }
+
+    func testPreparationReadAheadLimitAlsoBoundsIndependentReaders() throws {
+        let source = SparseTransportByteSource(preferredReadSize: 32 * 1024 * 1024)
+        let limit = 4 * 1024 * 1024
+        let reader = TransportIOReader(
+            source: source, readAheadWindow: limit, maximumReadAheadSize: limit
+        )
+        defer { reader.close() }
+        let clone = try XCTUnwrap(reader.makeIndependentReader())
+        defer { clone.close() }
+        for candidate in [reader as any IOReader, clone] {
+            XCTAssertEqual(read(candidate, count: 2).data, Data([42, 42]))
+            for _ in 0..<6 {
+                let previous = try XCTUnwrap(source.readLog.last)
+                let next = previous.offset + Int64(previous.length)
+                XCTAssertEqual(candidate.seek(offset: next, whence: SEEK_SET), next)
+                XCTAssertEqual(read(candidate, count: 2).data, Data([42, 42]))
+            }
+        }
+        XCTAssertEqual(source.readLog.map(\.length), Array(repeating: [
+            64 * 1024, 256 * 1024, 1024 * 1024, limit, limit, limit, limit
+        ], count: 2).flatMap { $0 })
     }
 
     func testOtherTransportsKeepExistingWindowAndRequestSizes() {

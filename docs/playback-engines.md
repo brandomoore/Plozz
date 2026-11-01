@@ -95,6 +95,78 @@ challenges are reused only inside the exact ephemeral account/revision/origin/
 trust/role session; anonymous delivery remains separate. Origin revalidation,
 complete-response validation and server authentication refusals remain enforced.
 
+Detail-page WebDAV preparation retains one exact file, not a row, season or
+collection of versions. Its provider locator path omits playback sidecar
+discovery/materialization and watch-state work. It opens the ordinary
+representation-bound source without taking playback admission. MP4/MOV and
+Matroska/WebM retain up to 8 MiB from the beginning and 4 MiB from the end,
+without overlapping those windows. ISO and other formats retain up to 4 MiB
+from the beginning and do not blindly fetch a container tail.
+
+ISO and nonzero resume positions additionally use Aether's bounded
+`prepareSource` operation through a borrowed reader. It discovers disc extents
+and timestamp origins through the engine, seeks to the actual presentation
+position, and traverses two seconds of compressed video/audio coverage for
+ordinary containers or four seconds for a disc's native HLS startup segment.
+It neither creates a player nor decodes video. Packet-level coverage is not a
+decoded-frame, complete-track-inventory or cache-residency guarantee. The
+normal playback open remains authoritative; its stream analysis is unchanged.
+Preparation alone limits analysis to 2 MiB and two media seconds without opening
+decoders. Recognized discs with a declared title duration also warm the native
+duration-estimation reads through the disc adapter, within the same budgets;
+arbitrary container tails are not substituted for those reads.
+If a DVD seek exposes only a late keyframe, preparation may seek at most two
+seconds earlier once, reset its coverage evidence and retry the unchanged target
+window. Packet/input/time budgets remain cumulative; Blu-ray seeking is unchanged.
+Default audio selection during decoder-free preparation can differ from playback
+selection. Preparation does not change the user's audio preferences or promise
+coverage for the ultimately selected track.
+Closing the borrowed reader drains its work without consuming the single-use
+playback reservation.
+
+The source cache retains at most 64 ranges and 40 MiB of payload (64 MiB for
+ISO), including the opening and optional tail windows. Ordinary initial starts retain only their
+opening/tail bytes. This is in addition to
+the existing 256 KiB opening probe; these are source-level buffers, not decoder
+or process-memory limits. Full caches do not evict or grow; publication freezes
+the cache so subsequent playback reads cannot add to it. Native preparation
+allows at most 28 MiB of reader input (48 MiB for ISO), 4,096 packets, 4 MiB per packet and
+20 seconds (30 for ISO) inside the overall 30-second deadline. Reader input is not a
+wire-byte cap: validated read-ahead can fetch unused bytes, while repeated
+cached reads still count as input. Preparation read-ahead is capped at 4 MiB,
+including clones. Incomplete native coverage fails preparation rather than
+being labeled complete. No incomplete HTTP response becomes readable.
+
+During playback, prepared-source demand reads preserve positive short cache
+boundaries. They do not wait for an uncached remainder merely to fill a larger
+adaptive window before delivering already-validated bytes to the demuxer.
+Ordinary unprepared reads and speculative prefetch retain their existing
+window-filling behavior; prefetch must fill its advertised range before a
+seek can adopt it. The prepared policy follows independent reader clones,
+without lowering the normal 32 MiB steady-state read-ahead limit.
+The engine's software consumer also services parked video on a bounded 20 ms
+wait while its producer is blocked on source I/O. It does not lower the existing
+125 ms video lead or 250 ms clock scheduling requirements, enlarge buffers or
+treat a servicing deadline as end of stream.
+
+Play must still obtain its ordinary provider request and playback admission.
+Only an exact locator and current account/credential/trust/session match can
+consume the preparation, after fresh DAV identity and size validation. The
+delivery URL and conditional-read validator remain fixed; authorization or
+representation failures are not hidden by reopening or serving stale success.
+Unprepared and prepared startup are separate measurement populations. Preparation
+time, whether the reservation was actually consumed, renderer readiness and
+subsequent playback-clock advancement must be reported separately; a ready
+callback alone is not a displayed-frame measurement, and clock advancement is
+not proof that additional frames reached a physical display.
+The hosted live benchmark checks a full minute of advancing playback immediately
+after startup and again after seeking, so a quick first frame followed by a stall
+does not pass.
+Preparation does not guarantee a startup deadline: fresh provider metadata and
+DAV revalidation remain on the Play path, and continued playback still needs
+sufficient source throughput. Increasing preparation coverage cannot compensate
+for an unavailable server or an arbitrarily delayed range response.
+
 Share sidecar discovery lists the video's parent once and visits only advertised
 `Subs`/`Subtitles` folders, using their actual casing. An unlistable parent retains
 the legacy folder-name probes; ordinary optional-listing failures are logged,

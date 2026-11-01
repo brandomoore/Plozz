@@ -143,6 +143,7 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
     private let cursor: MediaTransportSourceCursor
     private let lease: MediaTransportSourceLease
     private let resolvedSource: MediaTransportResolvedSource?
+    private let usesPreparedSource: Bool
     private let readerGroup: TransportReaderGroup
     private let readerState = OSAllocatedUnfairLock(initialState: ReaderState())
     private let avseekSize: Int32 = 65_536
@@ -167,14 +168,22 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         )
     }
 
-    init(source: TransportByteSource, readAheadWindow: Int, discImageProbeEnabled: Bool = true) {
+    init(
+        source: TransportByteSource, readAheadWindow: Int,
+        maximumReadAheadSize: Int = TransportIOReader.maximumReadAheadWindow,
+        usesPreparedSource: Bool = false,
+        discImageProbeEnabled: Bool = true
+    ) {
         self.discImageProbeEnabled = discImageProbeEnabled
         let lease = MediaTransportSourceLease(source: source)
         self.lease = lease
         self.resolvedSource = nil
+        self.usesPreparedSource = usesPreparedSource
         self.cursor = lease.makeCursor()!
         self.readAheadWindow = max(1, readAheadWindow)
-        self.maxBackendChunk = min(max(1, lease.preferredReadSize), Self.maximumReadAheadWindow)
+        self.maxBackendChunk = min(
+            max(1, lease.preferredReadSize), max(1, maximumReadAheadSize), Self.maximumReadAheadWindow
+        )
         self.readerGroup = TransportReaderGroup()
         _ = readerGroup.register(self)
     }
@@ -182,6 +191,7 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
     public init(resolvedSource: MediaTransportResolvedSource, discImageProbeEnabled: Bool = true) {
         self.discImageProbeEnabled = discImageProbeEnabled
         self.resolvedSource = resolvedSource
+        self.usesPreparedSource = resolvedSource.wasPrepared
         self.lease = resolvedSource.sourceLease
         self.cursor = resolvedSource.sourceLease.makeCursor()!
         self.readAheadWindow = Self.defaultReadAheadWindow
@@ -195,6 +205,8 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         lease: MediaTransportSourceLease,
         resolvedSource: MediaTransportResolvedSource?,
         readAheadWindow: Int,
+        maxBackendChunk: Int,
+        usesPreparedSource: Bool,
         discImageProbeEnabled: Bool,
         readerGroup: TransportReaderGroup
     ) {
@@ -203,7 +215,8 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         self.lease = lease
         self.resolvedSource = resolvedSource
         self.readAheadWindow = readAheadWindow
-        self.maxBackendChunk = min(max(1, lease.preferredReadSize), Self.maximumReadAheadWindow)
+        self.maxBackendChunk = maxBackendChunk
+        self.usesPreparedSource = usesPreparedSource
         self.readerGroup = readerGroup
     }
 
@@ -346,15 +359,15 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
 
     private func start(_ operation: TransportInflightRead) {
         let chunkSize = maxBackendChunk
+        let returnsPreparedBoundary = usesPreparedSource && !operation.isPrefetch
         let task = Task.detached(priority: .userInitiated) { [cursor] in
             do {
                 guard !operation.isCancelled else { throw MediaTransportError.cancelled }
                 var assembled = Data()
                 var cursorOffset = operation.offset
-                // Fill the window with bounded reads, concatenating partial reads
-                // (a backend may cap each read below the chunk size). Stop only on
-                // an empty read (EOF / nothing more) or cancellation; the demux
-                // re-reads any remainder and short reads are handled downstream.
+                // Preserve validated prepared boundaries instead of waiting for
+                // uncached bytes just to fill a speculative-sized demand window.
+                // Prefetch still fills its advertised range before adoption.
                 while assembled.count < operation.length {
                     try Task.checkCancellation()
                     let want = min(chunkSize, operation.length - assembled.count)
@@ -369,6 +382,7 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
                         assembled.append(piece)
                     }
                     cursorOffset += Int64(piece.count)
+                    if returnsPreparedBoundary, piece.count < want { break }
                 }
                 try Task.checkCancellation()
                 operation.finish(.success(assembled))
@@ -442,6 +456,8 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
             lease: lease,
             resolvedSource: resolvedSource,
             readAheadWindow: readAheadWindow,
+            maxBackendChunk: maxBackendChunk,
+            usesPreparedSource: usesPreparedSource,
             discImageProbeEnabled: discImageProbeEnabled,
             readerGroup: readerGroup
         )

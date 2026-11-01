@@ -13,14 +13,15 @@ final class ShareProviderLocatorTests: XCTestCase {
     private func makeProvider(
         stat: RemoteFileEntry,
         streamProber: NetworkFileStreamProbing? = nil,
-        fileSystem: LocatorFakeFileSystem? = nil
+        fileSystem: LocatorFakeFileSystem? = nil,
+        baseURL: URL = URL(string: "https://nas.example.com/dav")!
     ) -> ShareProvider {
         let fileSystem = fileSystem ?? LocatorFakeFileSystem(statEntry: stat)
         let session = LocatorFakeSession(fileSystem: fileSystem)
         let server = MediaServer(
             id: "share:https://nas.example.com/dav#anon",
             name: "DAV",
-            baseURL: URL(string: "https://nas.example.com/dav")!,
+            baseURL: baseURL,
             provider: .mediaShare
         )
         let userSession = UserSession(
@@ -49,6 +50,73 @@ final class ShareProviderLocatorTests: XCTestCase {
         XCTAssertEqual(locator.representation.identity.kind, .strongETag)
         XCTAssertEqual(locator.representation.identity.value, "\"abc-123\"")
         XCTAssertEqual(locator.representation.size, 4096)
+    }
+
+    func testDetailPreparationResolvesExactFileWithoutSidecarWork() async throws {
+        let entry = try RemoteFileEntry(
+            relativePath: "Episode.mkv", kind: .file, size: 4096, strongETag: "\"episode\""
+        )
+        let fileSystem = LocatorFakeFileSystem(statEntry: entry)
+        let provider = makeProvider(stat: entry, fileSystem: fileSystem)
+        addTeardownBlock { await provider.teardown() }
+        let prepared = try await provider.playbackPreparationLocator(
+            for: "f:Episode.mkv", mediaSourceID: "Episode.mkv"
+        )
+        let locator = try XCTUnwrap(prepared)
+        XCTAssertEqual(locator.relativePath, "Episode.mkv")
+        XCTAssertEqual(locator.representation.identity.value, "\"episode\"")
+        let openingCalls = await fileSystem.openingCalls
+        let listingCalls = await fileSystem.listingCalls
+        let fileReads = await fileSystem.fileReads
+        XCTAssertEqual(openingCalls, 1)
+        XCTAssertEqual(listingCalls, 0)
+        XCTAssertEqual(fileReads, 0)
+    }
+
+    func testExactFileProofDoesNotInventAVersionForLogicalItems() {
+        let episode = MediaItem(id: "f:Show/Episode.mkv", title: "Episode", kind: .episode)
+        XCTAssertEqual(ShareProvider.exactFileRelativePath(for: episode), "Show/Episode.mkv")
+        for id in ["movie:show", "series:show", "d:Show"] {
+            XCTAssertNil(ShareProvider.exactFileRelativePath(
+                for: MediaItem(id: id, title: "Logical item", kind: .movie)
+            ))
+        }
+    }
+
+    func testDetailPreparationRejectsAnotherFilesVersionBeforeNetworkWork() async throws {
+        let entry = try RemoteFileEntry(
+            relativePath: "Episode.mkv", kind: .file, size: 4096, strongETag: "\"episode\""
+        )
+        let fileSystem = LocatorFakeFileSystem(statEntry: entry)
+        let provider = makeProvider(stat: entry, fileSystem: fileSystem)
+        addTeardownBlock { await provider.teardown() }
+        do {
+            _ = try await provider.playbackPreparationLocator(
+                for: "f:Episode.mkv", mediaSourceID: "Another.mkv"
+            )
+            XCTFail("A different file must not be prepared")
+        } catch let error as MediaTransportError {
+            guard case .sourceChanged = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+        let openingCalls = await fileSystem.openingCalls
+        XCTAssertEqual(openingCalls, 0)
+    }
+
+    func testDetailPreparationDoesNotChangeOtherShareTransports() async throws {
+        let entry = try RemoteFileEntry(
+            relativePath: "Episode.mkv", kind: .file, size: 4096, strongETag: "\"episode\""
+        )
+        let fileSystem = LocatorFakeFileSystem(statEntry: entry)
+        let provider = makeProvider(
+            stat: entry, fileSystem: fileSystem, baseURL: URL(string: "smb://nas.example.com/Media")!
+        )
+        addTeardownBlock { await provider.teardown() }
+        let locator = try await provider.playbackPreparationLocator(
+            for: "f:Episode.mkv", mediaSourceID: "Episode.mkv"
+        )
+        XCTAssertNil(locator)
+        let openingCalls = await fileSystem.openingCalls
+        XCTAssertEqual(openingCalls, 0)
     }
 
     func testISOPlaybackKeepsLargeFileIdentityAndUsesNetworkReader() async throws {
@@ -326,6 +394,9 @@ private final class LocatorFakeSession: MediaTransportSession, @unchecked Sendab
 private actor LocatorFakeFileSystem: MediaTransportFileSystem {
     private var statEntry: RemoteFileEntry
     private let openingEntry: RemoteFileEntry?
+    private(set) var openingCalls = 0
+    private(set) var listingCalls = 0
+    private(set) var fileReads = 0
 
     init(statEntry: RemoteFileEntry, openingEntry: RemoteFileEntry? = nil) {
         self.statEntry = statEntry
@@ -349,13 +420,22 @@ private actor LocatorFakeFileSystem: MediaTransportFileSystem {
         )
     }
 
-    func list(relativePath: String) async throws -> [RemoteFileEntry] { [] }
+    func list(relativePath: String) async throws -> [RemoteFileEntry] {
+        listingCalls += 1
+        return []
+    }
 
     func stat(relativePath: String) async throws -> RemoteFileEntry { statEntry }
 
-    func statForOpening(relativePath: String) async throws -> RemoteFileEntry { openingEntry ?? statEntry }
+    func statForOpening(relativePath: String) async throws -> RemoteFileEntry {
+        openingCalls += 1
+        return openingEntry ?? statEntry
+    }
 
-    func readSmallFile(relativePath: String, maximumBytes: Int) async throws -> Data { Data() }
+    func readSmallFile(relativePath: String, maximumBytes: Int) async throws -> Data {
+        fileReads += 1
+        return Data()
+    }
 
     func openSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease {
         throw MediaTransportError.unsupportedCapability("test")

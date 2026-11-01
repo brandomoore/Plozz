@@ -77,6 +77,17 @@ public protocol MediaTransportFileSystem: MediaTransportBrowsing {
     func openSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease
 }
 
+/// Explicit opt-in to bounded, exact-representation preparation. Implementations
+/// must honor cancellation, bound their I/O and memory, and return an unclaimed
+/// lease (no cursor). A failed preparation must drain any partially opened source.
+public protocol MediaTransportPreparingFileSystem: MediaTransportFileSystem {
+    func prepareSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease
+
+    /// Performs fresh authorization and representation/size validation. This is
+    /// not a cached stat: a mismatch must throw rather than reuse prepared bytes.
+    func revalidatePreparedSource(for locator: NetworkFileLocator) async throws
+}
+
 public extension MediaTransportFileSystem {
     func statForOpening(relativePath: String) async throws -> RemoteFileEntry {
         try await stat(relativePath: relativePath)

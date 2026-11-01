@@ -10,7 +10,8 @@ enum AppShellMediaShareRuntimeFactory {
         let artworkCacheLifecycle = MediaShareLocalArtworkCacheLifecycle()
         let runtime = DefaultMediaShareRuntime.make(
             accountStore: accountStore,
-            artworkCacheLifecycle: artworkCacheLifecycle
+            artworkCacheLifecycle: artworkCacheLifecycle,
+            sourcePreparer: PlozzigenNetworkFileStreamProber.preparePlaybackSource
         ) { resolver in
             PlozzigenNetworkFileStreamProber(resolver: resolver.withoutPlaybackAdmission())
         }

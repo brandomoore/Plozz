@@ -263,6 +263,38 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   metadata or generic source errors. Retry failures remain visible and secondary
   mobile actions continue to overflow before the primary label is squeezed.
 
+- **Bounded detail playback preparation** — The visible, active detail page may
+  prepare one already-known WebDAV file after a 750 ms dwell. Movies use the
+  resolved server/version; series use only the hero's resolved playable episode,
+  not the displayed series container or every rail card. A versionless episode or
+  raw movie qualifies only when ProviderShare's canonical physical-file ID proves
+  its exact relative path; a logical title ID or synthetic presentation version
+  alone is never that proof. Ambiguous or unauthorized selections do no work. Multi-version preparation
+  additionally requires an explicit exact selection and automatic version mode.
+  HTTP(S) network-share accounts and `networkFile` locators are both required;
+  other providers and SMB/SFTP/FTP/NFS shares are not implicitly WebDAV.
+  This approved exception uses `MediaProvider.playbackPreparationLocator`, not
+  full `playbackInfo`: it cannot inventory/materialize sidecar subtitles or mutate
+  watch state. It does not call `loadPlaybackVersions`, discover alternate
+  inventories, instantiate an engine, or add another stream-facts probe.
+  Preparation uses the item's already-loaded resume position (zero when absent);
+  nonfinite or negative positions are ineligible. Progress changes supersede the
+  old candidate without fetching watch state. Resume/Start Over still choose the
+  actual playback time, and may reuse a valid file cache prepared for another time.
+  The shared `FeatureHomeCore` coordinator checks live profile, authorization,
+  account, server-user and credential identity around awaits. Source/version/
+  episode changes, covered pages, inactivity and disappearance cancel work, with
+  a 30-second preparation deadline. Background failures are logged without
+  credential-bearing descriptions or user error sheets.
+  A deliberate exact Play handoff retains a completed reservation in the shell
+  while the normal resume/version/admission gates run. Profile/auth changes still
+  evict it; abandonment is bounded by the resolver's 30-second TTL. Play must
+  freshly validate and claim the exact locator, and a different choice plays
+  normally without borrowing the prepared file. Preparation is an optimization,
+  never authorization or evidence that playback succeeded.
+  Performance reports must separate cold starts from detail-prepared starts and
+  include dwell/byte costs; sub-three-second tap-to-play is not a cold-start claim.
+
 - **Kids Discovery policy** — both shells consume the live profile's effective
   Hero settings, not a destructive rewrite of saved preferences. Kids profiles
   exclude external Discovery, including Showcase, cached attributed titles, and

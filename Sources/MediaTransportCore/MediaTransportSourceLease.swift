@@ -5,12 +5,22 @@ public protocol MediaTransportByteSource: AnyObject, Sendable {
     /// Efficient bounded request size. Larger values opt readers into adaptive
     /// sequential read-ahead; the source still enforces its own protocol limits.
     var preferredReadSize: Int { get }
+    /// Returns up to `length` bytes. A short positive read is not EOF (for
+    /// example, a validated preparation window may end mid-request). Callers
+    /// advance by the returned count; an empty result denotes EOF.
     func read(at offset: Int64, length: Int) async throws -> Data
     func shutdown() async
 }
 
 public extension MediaTransportByteSource {
     var preferredReadSize: Int { 1024 * 1024 }
+}
+
+/// Optional lock-only transition from preparation to playback. Called after all
+/// borrowed preparation reads drain, before the reservation is published, even
+/// without a source preparer. Freeze bounded validated caches here; do no I/O.
+public protocol MediaTransportPreparationFinalizingByteSource: MediaTransportByteSource {
+    func finishPreparation()
 }
 
 /// Optional specialization for transports that require a distinct underlying
@@ -31,6 +41,8 @@ public protocol MediaTransportCursorIsolatedByteSource: MediaTransportByteSource
 /// another, and the source shuts down exactly once after the final cursor and
 /// every read already admitted by the lease have drained. A lease that never
 /// creates a cursor owns the source until `close()` or deinitialization.
+/// Internal preparation cursors borrow, rather than claim, that initial
+/// ownership; closing a probe cannot close a future playback reservation.
 public final class MediaTransportSourceLease: @unchecked Sendable {
     private struct State {
         var hasUnclaimedLease = true
@@ -69,6 +81,10 @@ public final class MediaTransportSourceLease: @unchecked Sendable {
     public var byteSize: Int64 { source.byteSize }
     public var preferredReadSize: Int { source.preferredReadSize }
 
+    func finishPreparation() {
+        (source as? any MediaTransportPreparationFinalizingByteSource)?.finishPreparation()
+    }
+
     public func makeCursor() -> MediaTransportSourceCursor? {
         let id = UUID()
         let admitted = lock.withLock {
@@ -78,6 +94,23 @@ public final class MediaTransportSourceLease: @unchecked Sendable {
             return true
         }
         return admitted ? MediaTransportSourceCursor(id: id, lease: self) : nil
+    }
+
+    /// Preparation alone may borrow a cursor without consuming the initial
+    /// ownership. The resolver drains this borrow before publishing the lease.
+    func makePreparationBorrow() throws -> MediaTransportPreparationBorrow {
+        let id = UUID()
+        try lock.withLock {
+            guard state.hasUnclaimedLease, !state.isDraining,
+                  state.cursorIDs.isEmpty, state.operationCount == 0 else {
+                throw MediaTransportError.invalidInput(reason: "source is not available for preparation")
+            }
+            state.cursorIDs.insert(id)
+        }
+        return MediaTransportPreparationBorrow(
+            cursor: MediaTransportSourceCursor(id: id, lease: self),
+            preferredReadSize: preferredReadSize
+        )
     }
 
     public func close() {
@@ -147,7 +180,7 @@ public final class MediaTransportSourceLease: @unchecked Sendable {
             guard state.cursorIDs.remove(cursorID) != nil else {
                 return (false, false)
             }
-            if state.cursorIDs.isEmpty {
+            if state.cursorIDs.isEmpty, !state.hasUnclaimedLease {
                 state.isDraining = true
             }
             return (true, markShutdownIfReady())
@@ -182,6 +215,66 @@ public final class MediaTransportSourceLease: @unchecked Sendable {
                 return waiters
             }
             waiters.forEach { $0.resume() }
+        }
+    }
+}
+
+/// Closing a probe reader closes its borrowed cursor, not the underlying source.
+/// The wrapper also joins reads that ignore cancellation before it reports
+/// shutdown, and drops its cursor so a retained, closed wrapper pins no lease.
+final class MediaTransportPreparationBorrow: MediaTransportByteSource, @unchecked Sendable {
+    let byteSize: Int64
+    let preferredReadSize: Int
+    private let lock = NSLock()
+    private var cursor: MediaTransportSourceCursor?
+    private var reads = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    fileprivate init(cursor: MediaTransportSourceCursor, preferredReadSize: Int) {
+        self.cursor = cursor
+        self.byteSize = cursor.byteSize
+        self.preferredReadSize = preferredReadSize
+    }
+
+    deinit { close() }
+
+    func read(at offset: Int64, length: Int) async throws -> Data {
+        let cursor = try lock.withLock {
+            guard let cursor = self.cursor else { throw MediaTransportError.cancelled }
+            reads += 1
+            return cursor
+        }
+        defer {
+            let waiters = lock.withLock {
+                reads -= 1
+                guard reads == 0, self.cursor == nil else {
+                    return [CheckedContinuation<Void, Never>]()
+                }
+                let waiters = self.waiters
+                self.waiters.removeAll()
+                return waiters
+            }
+            waiters.forEach { $0.resume() }
+        }
+        return try await cursor.read(at: offset, length: length)
+    }
+
+    func close() {
+        lock.withLock {
+            cursor?.close()
+            cursor = nil
+        }
+    }
+
+    func shutdown() async {
+        close()
+        await withCheckedContinuation { continuation in
+            let complete = lock.withLock {
+                guard reads != 0 else { return true }
+                waiters.append(continuation)
+                return false
+            }
+            if complete { continuation.resume() }
         }
     }
 }

@@ -286,6 +286,10 @@ public struct PlozziOSRootView: View {
             )
         }
         .environment(\.familyGuidanceProvider, appModel.familyGuidance)
+        .detailPlaybackPreparationEnvironment(
+            appModel.detailPlaybackPreparation,
+            accountIDs: appModel.accountsProviders.resolvedActiveAccounts.map(\.account.id)
+        )
         .environment(\.plozzShowsContentRatings, appModel.settings.contentRatings.showsRatings)
         .environment(
             \.versionPickerAudioLanguage,
