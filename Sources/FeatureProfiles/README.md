@@ -176,6 +176,13 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   each tile starts appearing. Sixteen profiles should settle within one second.
   Never clamp later delays into a batch. Reduce Motion reveals everything
   immediately; newly realized offscreen cells do not wait through earlier slots.
+  Mobile picker avatars use an offscreen drawing group inside their matched
+  geometry anchor; the tile's entrance opacity composites as a unit. The
+  lightweight scale/lift/fade remains outside the avatar drawing group, without
+  changing startup work, authorization, hit testing, or reveal timing.
+  Offscreen rendering trades texture allocation and rasterization for simpler
+  animated content; the presentation CPU probe does not establish smoother
+  cold-start frame pacing on a device.
 - **Native editor controls.** On tvOS, the scrollable editor keeps its title
   separate from one center-aligned row of Back, Delete, and save/revert actions.
   The navigation owner still supplies Back and its focus-restoration behavior.

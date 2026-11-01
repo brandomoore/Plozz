@@ -77,6 +77,13 @@ from a fixed 5 ms Plex metadata delay, checks that every selection reaches the
 PIN gate, and verifies tokens remain denied. It measures activation work, not
 rendered frame pacing or physical-device network latency.
 
+`mobile-profile-picker-entrance` mounts the production sixteen-profile touch
+picker in an iPad-sized window. It verifies a visible stagger and substantially
+settled avatars within one second, preserving the existing presentation timing.
+CPU measurements include hosting, native presentation, and rendered captures.
+This is repeated fresh-view presentation, not a cold process launch, connected
+startup workload, GPU measurement, or physical-device frame-pacing verdict.
+
 `mobile-home-rail-prefetch` updates the real mobile Continue Watching rail 24
 times with the same 180 metadata-rich episodes across twelve synthetic account
 identities. Artwork is preloaded into the test cache and online providers are

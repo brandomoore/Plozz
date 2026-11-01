@@ -1,5 +1,6 @@
 #if os(iOS)
 import CoreModels
+import CoreNetworking
 @testable import CoreUI
 import SwiftUI
 import UIKit
@@ -149,6 +150,88 @@ final class ProfilePickerPresentationTests: XCTestCase {
             progress.oneSecond, progress.settled * 95 / 100,
             "Six profiles must be substantially settled within one second of presentation."
         )
+    }
+
+    func testPerformanceProfilePickerEntrance() async throws {
+        try PerformanceProbe.requireEnabled()
+        try await PerformanceProbe.measure(self, scenario: "mobile-profile-picker-entrance") {
+            let progress = try await self.measureProductionEntrance(
+                count: 16, isSwitcher: false, size: .init(width: 768, height: 1024)
+            )
+            XCTAssertLessThan(progress.cascading, progress.settled * 9 / 10)
+            XCTAssertGreaterThan(progress.oneSecond, progress.settled * 95 / 100)
+            return ["profiles": 16, "completedEntrances": 1]
+        }
+    }
+
+    func testPickerPreservesPhotoEmojiAndSymbolAvatars() async throws {
+        let url = try XCTUnwrap(URL(string: "https://profile-picker.example.invalid/\(UUID()).png"))
+        let image = UIGraphicsImageRenderer(size: .init(width: 100, height: 100)).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+        }
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        let requestURL = ArtworkImageVariant.musicThumbnail.requestURL(for: url)
+        let request = URLRequest(url: requestURL)
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: requestURL, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+        ))
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(image.pngData())), for: request
+        )
+        defer { cache.removeCachedResponse(for: request) }
+        let decoded = await ArtworkImageCache.shared.image(for: url, variant: .musicThumbnail)
+        _ = try XCTUnwrap(decoded)
+
+        var photo = Profile(id: "photo", name: "Photo", colorIndex: 2)
+        photo.avatarImageURL = url.absoluteString
+        var emoji = Profile(id: "emoji", name: "Emoji")
+        emoji.avatarEmoji = "\u{1F34E}"
+        let symbol = Profile(id: "symbol", name: "Symbol", avatarSymbol: "person.fill", colorIndex: 0)
+        for profile in [photo, emoji, symbol] {
+            try await withWindow(
+                PlozziOSProfilePickerView(
+                    profiles: [profile], activeProfileID: profile.id, onSelect: { _ in }
+                )
+                    .environment(\.themePalette, .pureBlack)
+                    .environment(\.gradientBackgroundsEnabled, false)
+                    .preferredColorScheme(.dark),
+                size: .init(width: 390, height: 844)
+            ) { window in
+                try await Task.sleep(for: .seconds(1))
+                XCTAssertGreaterThan(
+                    try self.redPixelCount(self.capture(window, name: "picker-avatar-\(profile.id)")), 500,
+                    "The avatar's original colored content must survive the drawing group."
+                )
+            }
+        }
+    }
+
+    func testEntranceContinuesWhileMainThreadIsBusy() async throws {
+        let model = PickerMotionFixtureModel()
+        try await withWindow(
+            PickerMotionFixture(model: model), size: .init(width: 240, height: 360)
+        ) { window in
+            try await Task.sleep(for: .milliseconds(100))
+            model.isPresented = true
+            try await Task.sleep(for: .milliseconds(100))
+            let before = try self.brightness(self.capture(window, afterUpdates: false), x: 70, y: 70)
+            Self.simulateBusyMainThread()
+            let during = try self.brightness(self.capture(window, afterUpdates: false), x: 70, y: 70)
+            let data = try JSONSerialization.data(withJSONObject: [
+                "before": before, "afterMainThreadStall": during
+            ], options: [.sortedKeys])
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+            attachment.name = "profile-entrance-main-thread-stall"
+            attachment.lifetime = .keepAlways
+            self.add(attachment)
+            XCTAssertGreaterThan(during, before + 30, "The committed entrance should advance without another UI update.")
+        }
+    }
+
+    private static func simulateBusyMainThread() {
+        Thread.sleep(forTimeInterval: 0.18)
     }
 
     func testSixteenProfilesSettleWithinOneSecond() async throws {

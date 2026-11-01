@@ -336,6 +336,13 @@ SCENARIOS = {
         "description": "Activate sixteen profiles through the mobile app model and verify current Plex PIN gating; measure synchronous selection separately from 5-ms fixture metadata.",
         "counters": ["selections", "selectionMicroseconds", "maxSelectionMicroseconds"],
     },
+    "mobile-profile-picker-entrance": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "ProfilePickerPresentationTests/testPerformanceProfilePickerEntrance",
+        "file": "Tests/iOSPresentationTests/ProfilePickerPresentationTests.swift",
+        "description": "Mount the production sixteen-profile iPad picker and verify the visible stagger and one-second settling; measure fresh presentation, not process launch or hardware frame pacing.",
+        "counters": ["profiles", "completedEntrances"],
+    },
     "mobile-profile-pin-handoff": {
         "suite": "ui", "platforms": ["iOS"],
         "test": "ProfileSelectionPerformanceTests/testPerformanceLocalPINHandoff",

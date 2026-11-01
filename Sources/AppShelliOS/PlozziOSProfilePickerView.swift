@@ -307,6 +307,7 @@ private struct PlozziOSProfilePickerGrid: View {
                             )
                     ) {
                         ProfileAvatarView(profile: profile, size: layout.avatarSize)
+                            .drawingGroup()
                             .matchedGeometryEffect(id: identity.avatarID, in: identity.namespace)
                             .overlay(alignment: .bottomTrailing) {
                                 if isEditing {
@@ -487,6 +488,7 @@ struct PlozziOSProfilePickerEntrance: ViewModifier {
     func body(content: Content) -> some View {
         let delay = Self.delay(at: position, profileCount: profileCount)
         content
+            .compositingGroup()
             .opacity(isPresented || reduceMotion ? 1 : 0)
             .scaleEffect(isPresented || reduceMotion ? 1 : Self.initialScale)
             .offset(y: isPresented || reduceMotion ? 0 : Self.initialOffset)
