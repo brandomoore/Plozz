@@ -982,8 +982,12 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
             }
             let container = try await client.sectionItems(
                 sectionID: containerID, type: type, start: page.startIndex,
-                size: page.limit, sort: page.sort, filters: page.filters, genreID: genreID
+                size: page.limit, sort: page.sort, filters: page.filters, genreID: genreID,
+                includeCollections: page.usesServerCollections(for: kind)
             )
+            if page.usesServerCollections(for: kind) {
+                try Self.validateCollectionPage(container, startIndex: page.startIndex)
+            }
             let items = (container.Metadata ?? []).map(map(metadata:))
             let total = container.totalSize ?? container.size ?? (page.startIndex + items.count)
             PlozzLog.networking.info("Plex library browse: section=\(containerID) returned=\(items.count) total=\(total)")
@@ -2642,6 +2646,9 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
             displayTitle: dto.extendedDisplayTitle ?? dto.displayTitle ?? language ?? dto.codec ?? "Track",
             language: language,
             codec: dto.codec,
+            profile: isSubtitle ? nil : MediaSourceMetadata.audioProfile(
+                dto.profile, displayTitles: [dto.extendedDisplayTitle, dto.displayTitle, dto.title]
+            ),
             isDefault: dto.default ?? dto.selected ?? false,
             isForced: dto.forced ?? false,
             channels: isSubtitle ? nil : dto.channels,

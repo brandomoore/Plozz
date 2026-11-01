@@ -150,6 +150,13 @@ when an unknown section has no collection or item-type metadata. Audio/reading-o
 results therefore produce no Home row, even with a retained custom arrangement.
 This applies on both platforms and does not change tvOS's separate Music area.
 
+Emby 4.10.2 can omit `ItemTypes` and `Query.IsResumable` for its built-in Home
+sections. The verified `SectionType` values `userviews`, `resume`, and
+`resumeaudio` identify libraries, Continue Watching, and audio respectively.
+Library and history sections use Plozz's existing shared rows; audio sections
+are omitted from video Home even when the account has no music library.
+Server-authored names are never used to infer section behavior.
+
 Provider-style Home separates `/Items/Resume` from each TV library's
 `/Shows/NextUp`, and starts with per-library Latest rather than five movie
 recommendation shelves per library. Resume-only Home requests do not call Next
@@ -440,6 +447,21 @@ checks persisted server state after marking, completion, rewatching, dismissal,
 reload, and failed-read recovery, not just successful HTTP responses.
 
 ## Collections
+
+Unfiltered, name-sorted movie Browse leaves native collection grouping
+unspecified, allowing the server's saved policy to govern the paged result.
+Jellyfin's released `Folder.CollapseBoxSetItems` uses
+`EnableGroupingMoviesIntoCollections` when `CollapseBoxSetItems` is absent.
+For Emby, the corresponding query override is `GroupItemsIntoCollections`;
+Plozz leaves it absent rather than inventing a preference or forcing it true.
+Other sorts, filters and compact inventories explicitly disable grouping with
+the provider's parameter. No administrator configuration read is needed.
+Mixed BoxSet/movie results retain server IDs, order, counts and member routes.
+Grouped A-Z navigation resolves against those actual pages on demand: released
+servers can apply name predicates to members before replacing them with a
+differently named BoxSet, making predicate counts invalid grid offsets.
+No library enumeration happens merely to display the alphabet rail, although
+a late-letter jump can read multiple cancellable pages.
 
 Jellyfin and Emby retain native `boxsets` libraries and `BoxSet` items. Both also
 advertise `.libraryCollections` for the shared Collections option inside a

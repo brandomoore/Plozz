@@ -9,6 +9,41 @@ import XCTest
 
 @MainActor
 final class SubtitleLineRenderingTests: XCTestCase {
+    func testEdgeExclusionUsesFilledContoursRatherThanOverlapParity() {
+        let glyph = CGMutablePath()
+        glyph.addRect(CGRect(x: 10, y: 10, width: 30, height: 30))
+        glyph.addRect(CGRect(x: 25, y: 10, width: 30, height: 30))
+        // A separate ring verifies that real counters remain available to edges.
+        glyph.addEllipse(in: CGRect(x: 60, y: 10, width: 30, height: 30))
+        glyph.addPath(UIBezierPath(ovalIn: CGRect(x: 68, y: 18, width: 14, height: 14))
+            .reversing().cgPath)
+        let outside = SubtitleLineView.outsideGlyphsPath(
+            glyph, bounds: CGRect(x: 0, y: 0, width: 100, height: 50)
+        )
+        XCTAssertFalse(outside.contains(CGPoint(x: 30, y: 25), using: .winding))
+        XCTAssertFalse(outside.contains(CGPoint(x: 15, y: 25), using: .winding))
+        XCTAssertFalse(outside.contains(CGPoint(x: 62, y: 25), using: .winding))
+        XCTAssertTrue(outside.contains(CGPoint(x: 75, y: 25), using: .winding))
+        XCTAssertTrue(outside.contains(CGPoint(x: 5, y: 5), using: .winding))
+    }
+
+    func testTranslucentSystemFontJoinsAreNotDoublePaintedByDirectionalEdges() throws {
+        for size: CGFloat in [25, 42, 80] {
+            for offset: CGFloat in [-2, 2] {
+                for blur: CGFloat in [0, 2] {
+                    var c = config(family: .system, size: size, text: "aeae detective want")
+                    c.systemFontDescriptor = UIFont.systemFont(ofSize: size, weight: .medium).fontDescriptor
+                    c.fill = UIColor.white.withAlphaComponent(0.5)
+                    c.shadow = .init(offset: CGSize(width: offset, height: offset), blur: blur, color: .black)
+                    let pixels = try render(c).pixels
+                    let maximumWhite = stride(from: 0, to: pixels.count, by: 4).map { pixels[$0] }.max()
+                    XCTAssertEqual(Double(try XCTUnwrap(maximumWhite)), 128, accuracy: 2,
+                                   "size=\(size) offset=\(offset) blur=\(blur)")
+                }
+            }
+        }
+    }
+
     func testWebVTTAuthoredGreensReachTheRendererAndRespectViewerOverride() throws {
         let examples: [(String, CGFloat)] = [
             ("", 1),

@@ -56,7 +56,7 @@ struct PlozziOSDiagnosticsSettingsView: View {
             SettingsSectionGroup {
                 Toggle(isOn: $crashReporting.isEnabled) { Text(SettingsCopy.shareDiagnostics) }
                 .accessibilityIdentifier("diagnostics-sharing-toggle")
-                .disabled(!appModel.crashReportingController.isConfigured)
+                .disabled(!appModel.crashReportingController.isConfigured).settingsSearchAnchor("diagnostic-sharing")
             }
 
             SettingsSectionGroup("Send Diagnostics", accessory: { DiagnosticsInfoButton() }) {
@@ -99,7 +99,7 @@ struct PlozziOSDiagnosticsSettingsView: View {
 
             SettingsSectionGroup {
                 VStack(alignment: .leading, spacing: 6) {
-                    Toggle("Playback Diagnostics Overlay", isOn: $model.settings.isEnabled)
+                    Toggle("Playback Diagnostics Overlay", isOn: $model.settings.isEnabled).settingsSearchAnchor("playback-diagnostics-overlay")
                     Text("Shows codec, bitrate, buffer, and memory during playback.")
                         .font(.footnote)
                         .plozzForeground(.secondary)
@@ -109,7 +109,7 @@ struct PlozziOSDiagnosticsSettingsView: View {
                     Toggle(
                         "Home Performance Overlay",
                         isOn: $model.settings.homePerformanceOverlayEnabled
-                    )
+                    ).settingsSearchAnchor("home-performance-overlay")
                     Text("Shows FPS, hitches, and thermal state on Home.")
                         .font(.footnote)
                         .plozzForeground(.secondary)

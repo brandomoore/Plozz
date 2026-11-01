@@ -8,6 +8,145 @@ import XCTest
 
 @MainActor
 final class PlayerControlsRenderingHostedTests: XCTestCase {
+    #if os(tvOS)
+    func testOptionalCardMountsOnDemandAndRemainsMountedWhileParked() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let driver = CardStageDriver()
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: CardStageFixture(driver: driver))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(driver.mounts, 0, "Transport entry must not initialize optional card content.")
+        let parked = driver.frame
+        XCTAssertEqual(parked.height, InfoPanelView.cardHeight, accuracy: 1)
+        for _ in 0..<3 {
+            driver.isPresented = true
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(driver.mounts, 1)
+            XCTAssertEqual(driver.frame, parked, "First use must not reflow the transport's fixed stage.")
+            driver.isPresented = false
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(driver.unmounts, 0, "Parking must preserve the card's content and state.")
+            XCTAssertEqual(driver.frame, parked)
+        }
+    }
+    #endif
+
+    func testUnchangedLabelsFollowFractionalProgressAndHiddenUpdates() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let model = PlayerControlsModel()
+        model.controlsVisible = true
+        model.duration = 10
+        model.currentSeconds = 3.6
+        window.rootViewController = UIHostingController(rootView:
+            PlayerTimelineTimes(model: model)
+                .frame(width: 1400, height: 60)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .background(.black)
+        )
+        window.makeKeyAndVisible()
+        func currentLabelX(in image: UIImage) throws -> CGFloat {
+            let label = try XCTUnwrap(try recognizedTimelineText(in: image, recognitionLevel: .fast).first {
+                $0.topCandidates(1).first?.string == "0:04"
+            })
+            return label.boundingBox.midX * window.bounds.width
+        }
+        let initial = try await captureTimeline(in: window, matching: "0:04.*0:06", recognitionLevel: .fast)
+        model.currentSeconds = 4.4
+        let advanced = try await captureTimeline(in: window, matching: "0:04.*0:06", recognitionLevel: .fast)
+        XCTAssertEqual(
+            try currentLabelX(in: advanced) - currentLabelX(in: initial), 112, accuracy: 8,
+            "Identical displayed strings must not freeze their live playhead position."
+        )
+        model.isScrubbing = true
+        model.scrubSeconds = 6.2
+        _ = try await captureTimeline(in: window, matching: "0:06.*0:04", recognitionLevel: .fast)
+        model.isScrubbing = false
+        model.controlsVisible = false
+        model.currentSeconds = 4.2
+        _ = try await captureTimeline(in: window, matching: "0:04.*0:06", recognitionLevel: .fast)
+        model.controlsVisible = true
+        let revealed = try await captureTimeline(in: window, matching: "0:04.*0:06", recognitionLevel: .fast)
+        XCTAssertEqual(
+            try currentLabelX(in: revealed) - currentLabelX(in: initial), 84, accuracy: 8,
+            "Reveal must use the latest position, not a frozen hidden snapshot."
+        )
+    }
+
+    func testRemoteScanLevelRendersOnTheDirectionSideOfTheTimestamp() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let model = PlayerControlsModel()
+        model.controlsVisible = true
+        model.duration = 3600
+        model.isScrubbing = true
+        model.scrubSeconds = 600
+        window.rootViewController = UIHostingController(rootView:
+            PlayerTimelineTimes(model: model)
+                .frame(width: 1400, height: 60)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .background(.black)
+        )
+        window.makeKeyAndVisible()
+        for level in [-2, 2] {
+            model.skipGesture.scanLevel = level
+            // Accurate OCR can discard a standalone level beside the circle glyph.
+            let image = try await captureTimeline(
+                in: window, matching: level < 0 ? "2.*10:00" : "10:00.*2", recognitionLevel: .fast
+            )
+            let attachment = XCTAttachment(image: image)
+            attachment.name = level < 0 ? "Rewind level 2 left of timestamp" : "Forward level 2 right of timestamp"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        model.scrubSeconds = 0
+        model.skipGesture.scanLevel = -8
+        _ = try await captureTimeline(in: window, matching: "8.*0:00")
+        model.scrubSeconds = 3600
+        model.skipGesture.scanLevel = 8
+        _ = try await captureTimeline(in: window, matching: "1:00:00.*8")
+    }
+
     func testOutgoingTimelineKeepsClockLabelsUntilNextReveal() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -132,7 +271,8 @@ final class PlayerControlsRenderingHostedTests: XCTestCase {
             clockAttachment.lifetime = .keepAlways
             add(clockAttachment)
 
-            for _ in 0..<3 {
+            for opening in 0..<3 {
+                model.infoCard.headline = opening == 0 ? "First card opening" : "Updated card title"
                 model.controlBar.entry = .info
                 model.controlBar.focusArmed = false
                 model.controlBar.settled = false
@@ -144,6 +284,7 @@ final class PlayerControlsRenderingHostedTests: XCTestCase {
                 let card = try XCTUnwrap(model.subtitleLayout.frame(for: .card))
                 XCTAssertGreaterThan(card.minY, 0)
                 XCTAssertLessThanOrEqual(card.maxY, window.bounds.maxY + 1)
+                _ = try await captureTimeline(in: window, matching: model.infoCard.headline)
                 model.controlBarVisible = false
                 try await Task.sleep(for: .milliseconds(650))
                 XCTAssertFalse(model.controlBar.infoCardOpen)
@@ -181,13 +322,43 @@ final class PlayerControlsRenderingHostedTests: XCTestCase {
     }
 }
 
+#if os(tvOS)
+@MainActor @Observable
+private final class CardStageDriver {
+    var isPresented = false
+    var mounts = 0
+    var unmounts = 0
+    var frame = CGRect.zero
+}
+
+private struct CardStageFixture: View {
+    let driver: CardStageDriver
+    var body: some View {
+        PlayerControlsCardStage(isPresented: driver.isPresented) {
+            Text("Optional card")
+                .frame(height: InfoPanelView.cardHeight)
+                .frame(maxWidth: .infinity)
+                .onAppear { driver.mounts += 1 }
+                .onDisappear { driver.unmounts += 1 }
+        }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+            driver.frame = $0
+        }
+        .frame(width: 1600)
+    }
+}
+#endif
+
 @MainActor
 private final class InfoFocusDriver {
     var requestFocus: ((PlayerControls.FocusSlot) -> Void)?
 }
 
 @MainActor
-private func captureTimeline(in window: UIWindow, matching expected: String) async throws -> UIImage {
+private func captureTimeline(
+    in window: UIWindow, matching expected: String,
+    recognitionLevel: VNRequestTextRecognitionLevel = .accurate
+) async throws -> UIImage {
     let deadline = ContinuousClock.now + .seconds(4)
     var rendered = UIImage()
     var text = ""
@@ -197,7 +368,7 @@ private func captureTimeline(in window: UIWindow, matching expected: String) asy
         rendered = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
-        text = try recognizedTimelineText(in: rendered)
+        text = try recognizedTimelineText(in: rendered, recognitionLevel: recognitionLevel)
             .compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
         if text.range(of: expected, options: .regularExpression) != nil { return rendered }
     } while ContinuousClock.now < deadline
@@ -205,10 +376,16 @@ private func captureTimeline(in window: UIWindow, matching expected: String) asy
     return rendered
 }
 
-private func recognizedTimelineText(in image: UIImage) throws -> [VNRecognizedTextObservation] {
+private func recognizedTimelineText(
+    in image: UIImage, recognitionLevel: VNRequestTextRecognitionLevel = .accurate
+) throws -> [VNRecognizedTextObservation] {
     let recognition = VNRecognizeTextRequest()
-    recognition.recognitionLevel = .accurate
+    recognition.recognitionLevel = recognitionLevel
     recognition.recognitionLanguages = ["en-US"]
+    if recognitionLevel == .fast {
+        recognition.minimumTextHeight = 0.005
+        recognition.usesLanguageCorrection = false
+    }
     try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([recognition])
     return recognition.results ?? []
 }

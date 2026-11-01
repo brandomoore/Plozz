@@ -330,6 +330,7 @@ struct IntegrationsDetailView: View {
             ) {
                 Toggle("Sync across servers", isOn: $playback.settings.syncWatchAcrossServers)
                     .disabled(!canSyncAcrossServers)
+                    .settingsSearchAnchor("cross-server-watch-sync")
             }
         ]
 

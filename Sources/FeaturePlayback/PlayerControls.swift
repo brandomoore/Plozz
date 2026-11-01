@@ -430,7 +430,11 @@ struct PlayerControls: View {
             // the reveal. `entryFocusTarget` is non-nil for exactly that window.
             if case let .button(tab)? = slot, Self.usesBottomCard(tab),
                openPanel != tab, !isRestoringCastRow, entryFocusTarget == nil {
-                revealInfoCard(tab)
+                if Self.usesBottomCard(openPanel) {
+                    selectCardTab(focusedTo: slot)
+                } else {
+                    revealInfoCard(tab)
+                }
             }
             // Focus reached the strip above the tab, which only a deliberate Up from
             // the tab itself can do: that's the exit gesture. Acting on where focus
@@ -518,6 +522,9 @@ struct PlayerControls: View {
             // curve at the same time, which is exactly the kind of near-miss timing
             // that made the transport look like separate pieces.
             if !Self.usesBottomCard(panel) { titleVisible = false }
+            // Card tabs already own native focus. Re-queuing the old tab can
+            // pull focus backwards after the viewer has moved to its neighbour.
+            guard !Self.usesBottomCard(panel) else { return }
             // (The panel seeds its own height from `cachedPanelHeight`.)
             // Land initial focus on the active/selected row. This MUST be deferred to
             // the next runloop tick: opening a panel simultaneously inserts the panel's
@@ -674,8 +681,9 @@ struct PlayerControls: View {
             // undone from inside, so fading the block faded the open panel with it.
             // Each piece of chrome hides itself instead (see `chromeHidden`), leaving
             // the menu overlay, which hangs off the buttons, unaffected.
-            // The Info card is a PERMANENT member of the stack, never inserted or
-            // removed. That's the whole trick behind the reveal moving as one unit:
+            // The card's fixed-height stage is a permanent member of the stack.
+            // Its contents mount on first use and then stay mounted while parked.
+            // That's the whole trick behind the reveal moving as one unit:
             // the layout always holds the revealed arrangement (card at the bottom,
             // tab above it), and the resting look is produced purely by translating
             // the cluster down so the card sits just off the bottom edge. Opening it
@@ -1036,7 +1044,6 @@ struct PlayerControls: View {
             .focused($focus, equals: .button(.info))
             .accessibilityIdentifier("player-tab-info")
             .disabled(!tabFocusable(.info))
-            .onChange(of: focus) { _, slot in selectCardTab(focusedTo: slot) }
 
             if isTabVisible(.chapters) {
                 Button { toggle(.chapters) } label: {
@@ -1410,8 +1417,16 @@ struct PlayerControls: View {
     }
 
     private var infoCard: some View {
-        cardContent
-            .frame(maxWidth: .infinity, alignment: .leading)
+        Group {
+            #if os(tvOS)
+            PlayerControlsCardStage(isPresented: infoMode) {
+                cardContent
+            }
+            #else
+            cardContent
+            #endif
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Move between card tabs by *moving focus*, with no press needed — the
@@ -1488,8 +1503,8 @@ struct PlayerControls: View {
     }
 
     /// The focus target a freshly-opened panel should land on: the active/selected
-    /// row for the track lists, the first available delay row for Sync, the tab
-    /// itself for Info, and the right control for each Subtitles sub-screen. Deferred
+    /// row for the track lists, the first available delay row for Sync,
+    /// and the right control for each Subtitles sub-screen. Deferred
     /// onto `focus` in `onChange(of: openPanel)` via `restoreFocus`.
     private var preferredPanelFocus: FocusSlot? {
         guard let panel = openPanel else { return nil }
@@ -1667,6 +1682,31 @@ struct PlayerControls: View {
             : .easeOut(duration: 0.2).delay(0.45)
     }
 }
+
+#if os(tvOS)
+/// Reserve the card's layout without initializing its optional content on transport entry.
+struct PlayerControlsCardStage<Content: View>: View {
+    let isPresented: Bool
+    @ViewBuilder var content: () -> Content
+    @State private var hasPresented = false
+
+    var body: some View {
+        Group {
+            if hasPresented || isPresented {
+                content().transition(.identity)
+            } else {
+                Color.clear
+                    .frame(height: InfoPanelView.cardHeight)
+                    .accessibilityHidden(true)
+                    .transition(.identity)
+            }
+        }
+        .onChange(of: isPresented, initial: true) { _, presented in
+            if presented { hasPresented = true }
+        }
+    }
+}
+#endif
 
 extension PlayerControlsModel {
     var subtitleTrackListFocus: PlayerControls.FocusSlot {

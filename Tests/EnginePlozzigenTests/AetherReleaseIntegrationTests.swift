@@ -247,4 +247,39 @@ final class AetherReleaseIntegrationTests: XCTestCase {
             XCTAssertEqual(mapped.first?.isDefault, true)
         }
     }
+
+    func testSourceAudioUsesConfirmedTrackAndCarriesAllAvailableFacts() throws {
+        let tracks = [
+            TrackInfo(id: 3, name: "English", codec: "truehd", language: "en", channels: 8,
+                      bitrate: 4_000_000, isDefault: true, sampleRate: 48_000,
+                      channelLayout: "7.1", profile: "Dolby TrueHD + Dolby Atmos"),
+            TrackInfo(id: 9, name: "French", codec: "ac3", language: "fr", channels: 2, isDefault: false),
+            TrackInfo(id: 12, name: "Japanese", codec: "dca", language: "ja", channels: 8,
+                      isDefault: false, profile: "MA + DTS:X IMAX"),
+            TrackInfo(id: 15, name: "English", codec: "dca", language: "en", channels: 8,
+                      isDefault: false, profile: "DTS-HD MA", isDTSX: true)
+        ]
+        XCTAssertNil(PlozzigenVideoEngine.activeSourceAudio(from: tracks, selectedID: nil))
+        XCTAssertNil(PlozzigenVideoEngine.activeSourceAudio(from: tracks, selectedID: 1))
+        let first = try XCTUnwrap(PlozzigenVideoEngine.activeSourceAudio(from: tracks, selectedID: 3))
+        XCTAssertEqual(first.profile, "Dolby TrueHD + Dolby Atmos")
+        XCTAssertEqual(first.channels, 8)
+        XCTAssertEqual(first.channelLayout, "7.1")
+        XCTAssertEqual(first.sampleRate, 48_000)
+        XCTAssertEqual(first.bitrate, 4_000_000)
+        let switched = try XCTUnwrap(PlozzigenVideoEngine.activeSourceAudio(from: tracks, selectedID: 9))
+        XCTAssertEqual(switched.codec, "ac3")
+        XCTAssertEqual(switched.channels, 2)
+        XCTAssertNil(switched.profile)
+        XCTAssertNil(switched.channelLayout)
+        XCTAssertNil(switched.sampleRate)
+        XCTAssertNil(switched.bitrate)
+        XCTAssertEqual(PlozzigenVideoEngine.activeSourceAudio(from: tracks, selectedID: 15)?.profile,
+                       "DTS-HD MA DTS:X")
+        let menu = PlozzigenVideoEngine.selectableAudioTracks(from: tracks, route: .loopback)
+        XCTAssertEqual(menu[0].profile, first.profile)
+        XCTAssertEqual(menu[2].profile, "MA + DTS:X IMAX")
+        XCTAssertTrue(menu[2].isDTSX)
+        XCTAssertTrue(menu[3].isDTSX)
+    }
 }

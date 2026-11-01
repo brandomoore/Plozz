@@ -979,7 +979,8 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
                 startIndex: page.startIndex,
                 limit: page.limit,
                 sort: page.sort,
-                filters: page.filters
+                filters: page.filters,
+                useServerCollections: page.usesServerCollections(for: kind)
             )
             let items = response.Items.map(map(item:))
             PlozzLog.networking.info(
@@ -2768,6 +2769,9 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
             displayTitle: dto.DisplayTitle ?? dto.Language ?? dto.Codec ?? "Track \(dto.Index)",
             language: dto.Language,
             codec: dto.Codec,
+            profile: isSubtitle ? nil : MediaSourceMetadata.audioProfile(
+                dto.Profile, displayTitles: [dto.DisplayTitle, dto.Title]
+            ),
             isDefault: dto.IsDefault ?? false,
             isForced: dto.IsForced ?? false,
             channels: isSubtitle ? nil : dto.Channels,

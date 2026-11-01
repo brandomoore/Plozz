@@ -5,150 +5,157 @@ import SwiftUI
 
 public struct MobileSubtitleStyleEditor: View {
     let viewModel: SubtitleStyleEditingContext
+    private let initialPage: SettingsSearchSubtitlePage
     @Environment(\.locale) private var locale
     @State private var systemStyleConfirmation = SystemCaptionStyleConfirmation()
 
-    public init(viewModel: SubtitleStyleEditingContext) { self.viewModel = viewModel }
+    public init(viewModel: SubtitleStyleEditingContext, initialPage: SettingsSearchSubtitlePage = .appearance) {
+        self.viewModel = viewModel
+        self.initialPage = initialPage
+    }
 
     public var body: some View {
+        switch initialPage {
+        case .appearance: appearance
+        case .outline: MobileSubtitleShadowOutlineView(viewModel: viewModel)
+        case .background: MobileSubtitleBackgroundView(viewModel: viewModel)
+        case .formatting: MobileSubtitleFileFormattingView(viewModel: viewModel)
+        case .dual: MobileSubtitleDualView(viewModel: viewModel)
+        }
+    }
+
+    private var appearance: some View {
         Form {
-            Section {
-                Toggle(
-                    isOn: Binding(
-                        get: { viewModel.controls.subtitleStyle.followsSystemStyle },
-                        set: { enabled in
-                            systemStyleConfirmation.request(
-                                enabled, currentlyMatching: viewModel.controls.subtitleStyle.followsSystemStyle
-                            ) { value in viewModel.editSubtitleStyle { $0.followsSystemStyle = value } }
+            if viewModel.controls.secondarySubtitleImagePrimaryFormat != nil {
+                Section {
+                    positionRows
+                } footer: {
+                    Text("Moves lower dialogue without changing image size or fixed artwork.")
+                }
+            } else {
+                Section {
+                    Toggle(
+                        isOn: Binding(
+                            get: { viewModel.controls.subtitleStyle.followsSystemStyle },
+                            set: { enabled in
+                                systemStyleConfirmation.request(
+                                    enabled, currentlyMatching: viewModel.controls.subtitleStyle.followsSystemStyle
+                                ) { value in viewModel.editSubtitleStyle { $0.followsSystemStyle = value } }
+                            }
+                        )
+                    ) {
+                        Text(SystemCaptionStyleCopy.optionTitle)
+                    }.settingsSearchAnchor("style-system")
+                }
+
+                Section("Text") {
+                    NavigationLink {
+                        MobileSubtitleFontView(viewModel: viewModel)
+                    } label: {
+                        LabeledContent {
+                            viewModel.effectiveStyle.fontDisplayName
+                        } label: {
+                            Text("Font")
+                        }
+                    }
+                    .settingsSearchAnchor("subtitle-font")
+
+                    Picker(
+                        "Weight",
+                        selection: subtitleWeightBinding(viewModel)
+                    ) {
+                        if viewModel.effectiveStyle.fontDescriptor != nil {
+                            Text(viewModel.effectiveStyle.fontWeightDisplayName(locale: locale)).tag(Optional<SubtitleFontWeight>.none)
+                        }
+                        ForEach(
+                            viewModel.effectiveStyle.availableFontWeights,
+                            id: \.self
+                        ) {
+                            Text($0.displayName).tag(Optional($0))
+                        }
+                    }.settingsSearchAnchor("style-weight")
+                    MobileSubtitleSliderRow(
+                        title: "Text Size",
+                        value: subtitleStyleBinding(viewModel, \.fontScale),
+                        range: SubtitleStyle.fontScaleRange,
+                        step: SubtitleStyle.fontScaleStep,
+                        formattedValue: {
+                            $0.formatted(.percent.precision(.fractionLength(0...3)))
                         }
                     )
-                ) {
-                    Text(SystemCaptionStyleCopy.optionTitle)
-                }
-            }
-
-            Section("Text") {
-                NavigationLink {
-                    MobileSubtitleFontView(viewModel: viewModel)
-                } label: {
-                    LabeledContent {
-                        viewModel.effectiveStyle.fontDisplayName
-                    } label: {
-                        Text("Font")
-                    }
-                }
-
-                Picker(
-                    "Weight",
-                    selection: subtitleWeightBinding(viewModel)
-                ) {
-                    if viewModel.effectiveStyle.fontDescriptor != nil {
-                        Text(viewModel.effectiveStyle.fontWeightDisplayName(locale: locale)).tag(Optional<SubtitleFontWeight>.none)
-                    }
-                    ForEach(
-                        viewModel.effectiveStyle.availableFontWeights,
-                        id: \.self
-                    ) {
-                        Text($0.displayName).tag(Optional($0))
-                    }
-                }
-                MobileSubtitleSliderRow(
-                    title: "Text Size",
-                    value: subtitleStyleBinding(viewModel, \.fontScale),
-                    range: SubtitleStyle.fontScaleRange,
-                    step: SubtitleStyle.fontScaleStep,
-                    formattedValue: {
-                        $0.formatted(.percent.precision(.fractionLength(0...3)))
-                    }
-                )
-                MobileSubtitleSliderRow(
-                    title: "Position",
-                    value: subtitleStyleBinding(viewModel, \.verticalPosition),
-                    range: SubtitleStyle.verticalPositionRange,
-                    step: SubtitleStyle.verticalPositionStep,
-                    formattedValue: {
-                        $0.formatted(.percent.precision(.fractionLength(0...1)).locale(locale))
-                    }
-                )
-                Picker(selection: subtitleStyleBinding(viewModel, \.verticalAnchor)) {
-                    ForEach(SubtitleStyle.VerticalAnchor.allCases, id: \.self) { anchor in
-                        Text(anchor.displayName).tag(anchor)
-                    }
-                } label: {
-                    Text(
-                        "Extra Line Position",
-                        comment: "Subtitle setting for where additional wrapped lines appear: Above, Center, or Below. Not the placement of a second-language subtitle track."
-                    )
-                }
-                MobileSubtitleSliderRow(
-                    title: "Horizontal Offset",
-                    value: subtitleStyleBinding(viewModel, \.horizontalOffset),
-                    range: -1...1,
-                    step: 0.05,
-                    formattedValue: {
-                        let percent = Int(($0 * 100).rounded())
-                        return percent == 0
-                            ? "Center"
-                            : "\(percent > 0 ? "+" : "")\(percent)%"
-                    }
-                )
-                subtitleColorPicker(
-                    "Text Color", viewModel: viewModel, keyPath: \.textColor, options: SubtitleColor.presets
-                )
-                MobileSubtitleSliderRow(
-                    title: "Text Opacity",
-                    value: subtitleColorAlphaBinding(viewModel, \.textColor),
-                    range: 0...1, step: 0.05,
-                    formattedValue: { $0.formatted(.percent.precision(.fractionLength(0...3))) }
-                )
-                MobileSubtitleSliderRow(
-                    title: "Overall Opacity",
-                    value: subtitleStyleBinding(viewModel, \.opacity),
-                    range: 0.2...1, step: 0.05,
-                    formattedValue: { $0.formatted(.percent.precision(.fractionLength(0...3))) }
-                )
-                if viewModel.controls.subtitlesRenderHDR {
+                    .settingsSearchAnchor("subtitle-size")
+                    positionRows
                     MobileSubtitleSliderRow(
-                        title: "HDR Brightness",
-                        value: subtitleStyleBinding(
-                            viewModel,
-                            \.hdrLuminanceScale
-                        ),
-                        range: 0.2...1,
+                        title: "Horizontal Offset",
+                        value: subtitleStyleBinding(viewModel, \.horizontalOffset),
+                        range: -1...1,
                         step: 0.05,
                         formattedValue: {
-                            "\((100 * $0).rounded().formatted())%"
+                            let percent = Int(($0 * 100).rounded())
+                            return percent == 0
+                                ? "Center"
+                                : "\(percent > 0 ? "+" : "")\(percent)%"
                         }
+                    ).settingsSearchAnchor("style-horizontal")
+                    subtitleColorPicker(
+                        "Text Color", viewModel: viewModel, keyPath: \.textColor, options: SubtitleColor.presets
                     )
-                }
-            }
-
-            Section("Details") {
-                NavigationLink("Shadow & Outline") {
-                    MobileSubtitleShadowOutlineView(viewModel: viewModel)
-                }
-                NavigationLink {
-                    MobileSubtitleBackgroundView(viewModel: viewModel)
-                } label: {
-                    LabeledContent(
-                        "Background",
-                        value: viewModel.effectiveStyle.background.isEnabled || viewModel.effectiveStyle.glyphBackground.alpha > 0
-                            ? "On"
-                            : "Off"
-                    )
-                }
-                if viewModel.offersDualSubtitles {
-                    NavigationLink {
-                        MobileSubtitleDualView(viewModel: viewModel)
-                    } label: {
-                        LabeledContent(
-                            "Dual Subtitles",
-                            value: viewModel.hasSecondarySubtitle ? "On" : "Off"
-                        )
+                    .settingsSearchAnchor("subtitle-color")
+                    MobileSubtitleSliderRow(
+                        title: "Text Opacity",
+                        value: subtitleColorAlphaBinding(viewModel, \.textColor),
+                        range: 0...1, step: 0.05,
+                        formattedValue: { $0.formatted(.percent.precision(.fractionLength(0...3))) }
+                    ).settingsSearchAnchor("style-text-opacity")
+                    MobileSubtitleSliderRow(
+                        title: "Overall Opacity",
+                        value: subtitleStyleBinding(viewModel, \.opacity),
+                        range: 0.2...1, step: 0.05,
+                        formattedValue: { $0.formatted(.percent.precision(.fractionLength(0...3))) }
+                    ).settingsSearchAnchor("style-opacity")
+                    if viewModel.controls.subtitlesRenderHDR {
+                        MobileSubtitleSliderRow(
+                            title: "HDR Brightness",
+                            value: subtitleStyleBinding(
+                                viewModel,
+                                \.hdrLuminanceScale
+                            ),
+                            range: 0.2...1,
+                            step: 0.05,
+                            formattedValue: {
+                                "\((100 * $0).rounded().formatted())%"
+                            }
+                        ).settingsSearchAnchor("style-hdr")
                     }
                 }
-                NavigationLink("Subtitle file formatting") {
-                    MobileSubtitleFileFormattingView(viewModel: viewModel)
+
+                Section("Details") {
+                    NavigationLink("Shadow & Outline") {
+                        MobileSubtitleShadowOutlineView(viewModel: viewModel)
+                    }
+                    NavigationLink {
+                        MobileSubtitleBackgroundView(viewModel: viewModel)
+                    } label: {
+                        LabeledContent(
+                            "Background",
+                            value: viewModel.effectiveStyle.background.isEnabled || viewModel.effectiveStyle.glyphBackground.alpha > 0
+                                ? "On"
+                                : "Off"
+                        )
+                    }
+                    if viewModel.offersDualSubtitles {
+                        NavigationLink {
+                            MobileSubtitleDualView(viewModel: viewModel)
+                        } label: {
+                            LabeledContent(
+                                "Dual Subtitles",
+                                value: viewModel.hasSecondarySubtitle ? "On" : "Off"
+                            )
+                        }
+                    }
+                    NavigationLink("Subtitle file formatting") {
+                        MobileSubtitleFileFormattingView(viewModel: viewModel)
+                    }
                 }
             }
 
@@ -166,6 +173,35 @@ public struct MobileSubtitleStyleEditor: View {
             apply: { enabled in viewModel.editSubtitleStyle { $0.followsSystemStyle = enabled } }
         ))
     }
+
+    @ViewBuilder private var positionRows: some View {
+        Picker("Position", selection: subtitleStyleBinding(viewModel, \.positionReference)) {
+            ForEach(SubtitleStyle.PositionReference.allCases, id: \.self) { reference in
+                Text(reference.displayName).tag(reference)
+            }
+        }
+        .settingsSearchAnchor("subtitle-reference")
+        if viewModel.controls.secondarySubtitleImagePrimaryFormat == nil || viewModel.effectiveStyle.positionReference == .picture {
+            MobileSubtitleSliderRow(
+                title: "Vertical offset", value: subtitleStyleBinding(viewModel, \.verticalPosition),
+                range: SubtitleStyle.verticalPositionRange, step: SubtitleStyle.verticalPositionStep,
+                formattedValue: { $0.formatted(.percent.precision(.fractionLength(0...1)).locale(locale)) }
+            )
+            .settingsSearchAnchor("subtitle-position")
+        }
+        if viewModel.controls.secondarySubtitleImagePrimaryFormat == nil {
+            Picker(selection: subtitleStyleBinding(viewModel, \.verticalAnchor)) {
+                ForEach(SubtitleStyle.VerticalAnchor.allCases, id: \.self) { anchor in
+                    Text(anchor.displayName).tag(anchor)
+                }
+            } label: {
+                Text(
+                    "Extra Line Position",
+                    comment: "Subtitle setting for where additional wrapped lines appear: Above, Center, or Below. Not the placement of a second-language subtitle track."
+                )
+            }.settingsSearchAnchor("style-extra-line")
+        }
+    }
 }
 
 struct MobileSubtitleFileFormattingView: View {
@@ -174,9 +210,9 @@ struct MobileSubtitleFileFormattingView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Use File Positions", isOn: subtitleStyleBinding(viewModel, \.usesSourcePosition))
-                Toggle("Use File Colors", isOn: subtitleStyleBinding(viewModel, \.usesSourceColors))
-                Toggle("Use Bold and Italic", isOn: subtitleStyleBinding(viewModel, \.usesSourceEmphasis))
+                Toggle("Use File Positions", isOn: subtitleStyleBinding(viewModel, \.usesSourcePosition)).settingsSearchAnchor("file-position")
+                Toggle("Use File Colors", isOn: subtitleStyleBinding(viewModel, \.usesSourceColors)).settingsSearchAnchor("file-colors")
+                Toggle("Use Bold and Italic", isOn: subtitleStyleBinding(viewModel, \.usesSourceEmphasis)).settingsSearchAnchor("file-emphasis")
             } footer: {
                 Text("Some subtitle files specify colors, bold or italic text, or where a line should appear. Turn these off to use your chosen style instead.")
             }
@@ -266,20 +302,18 @@ struct MobileSubtitleShadowOutlineView: View {
                         Text($0 == viewModel.effectiveStyle.edge.style
                              ? SubtitleStyleEditorValues.edgeName(viewModel.effectiveStyle) : $0.displayName).tag($0)
                     }
-                }
+                }.settingsSearchAnchor("edge-style")
                 subtitleColorPicker(
                     "Color", viewModel: viewModel, keyPath: \.edge.color, options: SubtitleColor.presets
-                )
+                ).settingsSearchAnchor("edge-color")
                 MobileSubtitleSliderRow(
                     title: "Thickness",
                     value: subtitleStyleBinding(viewModel, \.edge.thickness),
                     range: 0...10, step: 1,
                     formattedValue: { $0.formatted(.number.precision(.fractionLength(0...3))) }
-                )
+                ).settingsSearchAnchor("edge-thickness")
             } header: {
                 Text("Text Edge")
-            } footer: {
-                Text("Apple supplies the edge style, including Uniform Outline, but not its color or thickness. Those are Plozz rendering values.")
             }
 
             Section("Outline") {
@@ -289,16 +323,16 @@ struct MobileSubtitleShadowOutlineView: View {
                         viewModel,
                         \.border.isEnabled
                     )
-                )
+                ).settingsSearchAnchor("outline-enabled")
                 subtitleColorPicker(
                     "Color", viewModel: viewModel, keyPath: \.border.color, options: SubtitleColor.presets
-                )
+                ).settingsSearchAnchor("outline-color")
                 MobileSubtitleSliderRow(
                     title: "Width",
                     value: subtitleStyleBinding(viewModel, \.border.width),
                     range: 0...10, step: 0.5,
                     formattedValue: { $0.formatted(.number.precision(.fractionLength(0...3))) }
-                )
+                ).settingsSearchAnchor("outline-width")
             }
         }
         .toggleStyle(SettingsSwitchToggleStyle())
@@ -327,7 +361,7 @@ struct MobileSubtitleBackgroundView: View {
                         viewModel,
                         \.background.isEnabled
                     )
-                )
+                ).settingsSearchAnchor("window-enabled")
             }
 
                 Section {
@@ -336,7 +370,7 @@ struct MobileSubtitleBackgroundView: View {
                         viewModel: viewModel,
                         keyPath: \.background.color,
                         options: backgroundColors
-                    )
+                    ).settingsSearchAnchor("window-color")
                     MobileSubtitleSliderRow(
                         title: "Opacity",
                         value: subtitleColorAlphaBinding(
@@ -348,7 +382,7 @@ struct MobileSubtitleBackgroundView: View {
                         formattedValue: {
                             $0.formatted(.percent.precision(.fractionLength(0...3)))
                         }
-                    )
+                    ).settingsSearchAnchor("window-opacity")
                     MobileSubtitleSliderRow(
                         title: "Corner Radius",
                         value: subtitleStyleBinding(
@@ -360,7 +394,7 @@ struct MobileSubtitleBackgroundView: View {
                         formattedValue: {
                             "\($0.formatted(.number.precision(.fractionLength(0...3)))) pt"
                         }
-                    )
+                    ).settingsSearchAnchor("window-corners")
                     MobileSubtitleSliderRow(
                         title: "Horizontal Padding (Plozz)",
                         value: subtitleStyleBinding(
@@ -372,7 +406,7 @@ struct MobileSubtitleBackgroundView: View {
                         formattedValue: {
                             "\($0.rounded().formatted()) pt"
                         }
-                    )
+                    ).settingsSearchAnchor("window-padding-x")
                     MobileSubtitleSliderRow(
                         title: "Vertical Padding (Plozz)",
                         value: subtitleStyleBinding(
@@ -384,20 +418,20 @@ struct MobileSubtitleBackgroundView: View {
                         formattedValue: {
                             "\($0.rounded().formatted()) pt"
                         }
-                    )
+                    ).settingsSearchAnchor("window-padding-y")
                 } header: {
                     Text("Window")
                 } footer: {
                     Text("Window padding is set by Plozz. Apple does not expose subtitle padding or line spacing.")
                 }
             Section("Line Background") {
-                subtitleColorPicker("Color", viewModel: viewModel, keyPath: \.glyphBackground, options: SubtitleColor.presets)
+                subtitleColorPicker("Color", viewModel: viewModel, keyPath: \.glyphBackground, options: SubtitleColor.presets).settingsSearchAnchor("line-background-color")
                 MobileSubtitleSliderRow(
                     title: "Opacity",
                     value: subtitleColorAlphaBinding(viewModel, \.glyphBackground),
                     range: 0...1, step: 0.05,
                     formattedValue: { $0.formatted(.percent.precision(.fractionLength(0...3))) }
-                )
+                ).settingsSearchAnchor("line-background-opacity")
             }
         }
         .toggleStyle(SettingsSwitchToggleStyle())
@@ -414,6 +448,10 @@ struct MobileSubtitleDualView: View {
             Section("Second Track") {
                 if let preview = viewModel.secondaryPreview {
                     Toggle("Show second subtitle", isOn: preview)
+                        .settingsSearchAnchor(
+                            "dual-preview", fallbackFor: preview.wrappedValue ? [] :
+                                ["dual-placement", "dual-distinct", "dual-size", "dual-color", "dual-gap"]
+                        )
                     Text("This changes the preview only. Choose subtitle tracks while watching.")
                         .plozzForeground(.secondary)
                 } else if let format =
@@ -458,13 +496,17 @@ struct MobileSubtitleDualView: View {
                         Text("Below").tag(
                             SubtitleStyle.Secondary.Placement.below
                         )
-                    }
+                    }.settingsSearchAnchor("dual-placement")
                     Toggle(
                         "Distinct Style",
                         isOn: subtitleStyleBinding(
                             viewModel,
                             \.secondary!.differentiate
                         )
+                    ).settingsSearchAnchor(
+                        "dual-distinct",
+                        fallbackFor: viewModel.effectiveStyle.secondary?.differentiate == true
+                            ? [] : ["dual-size", "dual-color"]
                     )
                     if viewModel.effectiveStyle.secondary?
                         .differentiate == true {
@@ -479,13 +521,13 @@ struct MobileSubtitleDualView: View {
                             formattedValue: {
                                 "\((100 * $0).rounded().formatted())%"
                             }
-                        )
+                        ).settingsSearchAnchor("dual-size")
                         subtitleColorPicker(
                             "Color",
                             viewModel: viewModel,
                             keyPath: \.secondary!.textColor,
                             options: SubtitleColor.presets
-                        )
+                        ).settingsSearchAnchor("dual-color")
                     }
                     MobileSubtitleSliderRow(
                         title: "Gap",
@@ -498,7 +540,7 @@ struct MobileSubtitleDualView: View {
                         formattedValue: {
                             "\($0.rounded().formatted()) pt"
                         }
-                    )
+                    ).settingsSearchAnchor("dual-gap")
                 }
             }
         }

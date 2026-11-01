@@ -380,6 +380,58 @@ final class JellyfinHomeLayoutTests: XCTestCase {
         XCTAssertFalse(stub.sentPaths.contains("/DisplayPreferences/usersettings"))
     }
 
+    func testEmbyNativeSectionTypesClassifySparseServerMetadata() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/selected-user/HomeSections", json: """
+        [
+          {"Id":"userviews","SectionType":"userviews","Name":"My Media","ItemTypes":[],
+           "Query":{"StudioIds":[],"TagIds":[],"GenreIds":[],"CollectionTypes":[]}},
+          {"Id":"resume","SectionType":"ReSuMe","Name":"Continue Watching","ItemTypes":[],
+           "IncludeNextUpInResume":true,
+           "Query":{"StudioIds":[],"TagIds":[],"GenreIds":[],"CollectionTypes":[]}},
+          {"Id":"resumeaudio","SectionType":"resumeaudio","Name":"Continue Listening","ItemTypes":[],
+           "Query":{"StudioIds":[],"TagIds":[],"GenreIds":[],"CollectionTypes":[]}},
+          {"Id":"onnow","SectionType":"onnow","CollectionType":"livetv","ItemTypes":[]},
+          {"Id":"latestmedia_movies","SectionType":"latestmedia","ParentId":"movies",
+           "CollectionType":"movies","CustomName":"Fresh picks","ItemTypes":[]},
+          {"Id":"latestmedia_shows","SectionType":"latestmedia","ParentId":"shows",
+           "CollectionType":"tvshows","ItemTypes":[]}
+        ]
+        """)
+        stub.stub(pathSuffix: "/Users/selected-user/Views", json: """
+        {"Items":[{"Id":"movies","CollectionType":"movies"},{"Id":"shows","CollectionType":"tvshows"}]}
+        """)
+        let provider = JellyfinProvider(session: session(.emby), http: stub)
+        let response = try await provider.serverHomeLayout()
+        let layout = try XCTUnwrap(response)
+        XCTAssertEqual(layout.sections.map(\.id), [
+            "emby:userviews", "emby:resume", "emby:onnow",
+            "emby:latestmedia_movies", "emby:latestmedia_shows"
+        ])
+        XCTAssertEqual(layout.sections.map(\.kind), [
+            .libraries, .continueWatching, .liveTV, .recentlyAdded, .recentlyAdded
+        ])
+        XCTAssertTrue(layout.omitsMusic, "An audio section is omitted even without a music library.")
+        XCTAssertFalse(layout.omitsReading)
+        let libraries = try XCTUnwrap(layout.sections.first { $0.id == "emby:userviews" })
+        let resume = try XCTUnwrap(layout.sections.first { $0.id == "emby:resume" })
+        XCTAssertEqual(libraries.title, "My Media")
+        XCTAssertEqual(resume.title, "Continue Watching")
+        XCTAssertTrue(resume.includesNextUp)
+        XCTAssertTrue(resume.isAccountWideHistory)
+        let sharedRows: [(ServerHomeSection, HomeRowID)] = [
+            (libraries, .libraries), (resume, .global(.continueWatching))
+        ]
+        for (section, expected) in sharedRows {
+            let row = HomeServerRowDefinition(
+                accountID: "account", serverName: "Server", providerKind: .emby, section: section
+            )
+            XCTAssertEqual(row.id, expected, "Native sections must use the existing library/history rows.")
+        }
+        XCTAssertEqual(layout.sections.first { $0.libraryID == "movies" }?.title, "Fresh picks")
+        XCTAssertFalse(stub.sentPaths.contains { $0.contains("/Sections/") })
+    }
+
     func testEmbyNativeItemsUseSectionIdentityEnvelopeBoundAndAllowedParent() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/Users/selected-user/Views", json: views)

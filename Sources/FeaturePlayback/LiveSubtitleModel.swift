@@ -40,6 +40,7 @@ public final class LiveSubtitleModel {
     /// On-screen rect of the video image (for bitmap cues / precise placement);
     /// `nil` fills the container, which is correct for text dialogue.
     public var videoRect: CGRect?
+    public var activePictureRect: CGRect?
     /// Unstretched picture aspect when the video plane is scaled nonuniformly.
     public var sourceVideoAspectRatio: Double?
     public let controlsLayout = SubtitleControlsLayout()
@@ -236,6 +237,7 @@ struct LiveSubtitleOverlay: View {
             style: SystemCaptionStyle.shared.resolved(model.style),
             isHDR: model.isHDR,
             videoRect: model.videoRect,
+            activePictureRect: model.activePictureRect,
             sourceVideoAspectRatio: model.sourceVideoAspectRatio,
             controlsFrames: controls.subtitleLayout.frames
         )

@@ -122,7 +122,7 @@ struct HelpDiagnosticsDetailView: View {
             Toggle(isOn: $crashReporting.isEnabled) { Text(SettingsCopy.shareDiagnostics) }
                 .toggleStyle(SettingsSwitchToggleStyle())
                 .accessibilityIdentifier("diagnostics-sharing-toggle")
-                .disabled(!crashReportingConfigured)
+                .disabled(!crashReportingConfigured).settingsSearchAnchor("diagnostic-sharing")
         }
     }
 
@@ -132,7 +132,7 @@ struct HelpDiagnosticsDetailView: View {
         SettingsPanel(title: "Diagnostics") {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Playback Diagnostics Overlay", isOn: $diagnostics.settings.isEnabled)
-                    .toggleStyle(SettingsSwitchToggleStyle())
+                    .toggleStyle(SettingsSwitchToggleStyle()).settingsSearchAnchor("playback-diagnostics-overlay")
                 Text("Shows codec, bitrate, buffer, and memory during playback.")
                     .font(.footnote)
                     .plozzForeground(.secondary)
@@ -143,7 +143,7 @@ struct HelpDiagnosticsDetailView: View {
                     "Home Performance Overlay",
                     isOn: $diagnostics.settings.homePerformanceOverlayEnabled
                 )
-                .toggleStyle(SettingsSwitchToggleStyle())
+                .toggleStyle(SettingsSwitchToggleStyle()).settingsSearchAnchor("home-performance-overlay")
                 Text("Shows FPS, hitches, and thermal state on Home.")
                     .font(.footnote)
                     .plozzForeground(.secondary)

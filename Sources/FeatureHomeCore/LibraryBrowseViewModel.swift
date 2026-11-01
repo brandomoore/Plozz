@@ -608,7 +608,9 @@ public final class LibraryBrowseViewModel {
                     request: PageRequest(
                         startIndex: startIndex(forPage: pageIndex),
                         limit: pageSpan(forPage: pageIndex),
-                        sort: sortAtRequest, filters: filters
+                        sort: sortAtRequest, filters: filters,
+                        collectionPresentation: browseScope == .library && mode == .titles
+                            ? .serverDefault : .individualItems
                     ),
                     priority: .userInitiated
                 )
@@ -1381,7 +1383,9 @@ public final class LibraryBrowseViewModel {
             startIndex: startIndex(forPage: page),
             limit: pageSpan(forPage: page),
             sort: sort,
-            filters: browseScope == .library && contentMode == .titles ? filters : .all
+            filters: browseScope == .library && contentMode == .titles ? filters : .all,
+            collectionPresentation: browseScope == .library && contentMode == .titles
+                ? .serverDefault : .individualItems
         )
     }
 

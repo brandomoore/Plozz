@@ -258,7 +258,19 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
     public static let fontScalePercentages = Array(
         Int((fontScaleRange.lowerBound * 100).rounded())...Int((fontScaleRange.upperBound * 100).rounded())
     )
-    /// Vertical position measured upward from the screen bottom. The chosen
+    public enum PositionReference: String, Codable, CaseIterable, Sendable {
+        case screen, picture
+
+        public var displayName: LocalizedStringResource {
+            switch self {
+            case .screen: "Bottom of screen"
+            case .picture: "Bottom of video"
+            }
+        }
+    }
+
+    public var positionReference: PositionReference
+    /// Vertical position measured upward from the selected reference's bottom. The chosen
     /// anchor stays fixed as lines change.
     /// `0` aligns the block's bottom with the screen bottom, `1` aligns its top.
     /// Negative values deliberately move the block past the bottom edge.
@@ -436,6 +448,7 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
         fontScale: Double = 1.0,
         verticalPosition: Double = 0.06,
         verticalAnchor: VerticalAnchor = .bottom,
+        positionReference: PositionReference = .screen,
         horizontalOffset: Double = 0,
         textColor: Color = .white,
         glyphBackground: Color = .clear,
@@ -458,6 +471,7 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
         self.fontScale = fontScale
         self.verticalPosition = verticalPosition
         self.verticalAnchor = verticalAnchor
+        self.positionReference = positionReference
         self.horizontalOffset = horizontalOffset
         self.textColor = textColor
         self.glyphBackground = glyphBackground
@@ -601,7 +615,7 @@ extension SubtitleStyle {
         case fontFamily, systemFont, fontDescriptor, captionSourceOverrides, fontWeight, fontScale, verticalPosition, verticalAnchor, horizontalOffset
         case textColor, glyphBackground, opacity, hdrLuminanceScale
         case background, edge, border, secondary, followsSystemStyle, captionEdgeStyleRawValue
-        case usesSourcePosition, usesSourceColors
+        case usesSourcePosition, usesSourceColors, positionReference
     }
 
     /// Custom decoder so a style persisted by an older build (missing keys added
@@ -619,6 +633,8 @@ extension SubtitleStyle {
             fontScale: try c.decodeIfPresent(Double.self, forKey: .fontScale) ?? d.fontScale,
             verticalPosition: try c.decodeIfPresent(Double.self, forKey: .verticalPosition) ?? d.verticalPosition,
             verticalAnchor: try c.decodeIfPresent(VerticalAnchor.self, forKey: .verticalAnchor) ?? d.verticalAnchor,
+            positionReference: (try c.decodeIfPresent(String.self, forKey: .positionReference))
+                .flatMap(PositionReference.init(rawValue:)) ?? .screen,
             horizontalOffset: try c.decodeIfPresent(Double.self, forKey: .horizontalOffset) ?? d.horizontalOffset,
             textColor: try c.decodeIfPresent(Color.self, forKey: .textColor) ?? d.textColor,
             glyphBackground: try c.decodeIfPresent(Color.self, forKey: .glyphBackground) ?? .clear,

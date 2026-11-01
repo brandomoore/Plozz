@@ -16,6 +16,10 @@ python3 tools/performance.py list
 Use a simulator you own. Select an explicit platform and UUID; an iPad is an
 `iOS` simulator. The runner verifies platform, runtime build, and device type
 before booting, never selects a different simulator or discovers physical devices.
+The runner inherits `DEVELOPER_DIR`. If the selected toolchain cannot launch
+hosted tests, select a compatible installed Xcode for the lane rather than
+changing the global selection or resetting shared developer services. Keep the
+same toolchain for both sides of a comparison.
 
 ```sh
 export GIT_CONFIG_PARAMETERS="'safe.bareRepository=all'"
@@ -95,6 +99,30 @@ case must complete new samples, capped at five per window; the disabled case
 must have no sampling task. These report app-process CPU and resident memory,
 not GPU/render-server cost or physical-device energy and frame pacing.
 
+The `active-picture-1-enabled`, `active-picture-1-disabled`,
+`active-picture-4-enabled`, and `active-picture-4-disabled` scenarios use the same
+1080p30 `glow-hd.mp4`, stream-copied to finite loopback HLS, with one or four
+visible Aether-backed native players. HLS exercises AVPlayer even on simulators
+that correctly reject hardware H.264 and route ordinary files to software.
+Players pause during setup and start together from zero. Each window
+requires advancing playback; enabled windows require new presentation-timestamp
+samples at no more than 2 Hz per player, and disabling must detach native output
+taps. The four-player case checks aggregate admission stays at or below four.
+These are app-process CPU/resident-memory comparisons, not GPU, physical-device
+energy, HDR, or four simultaneous 4K decoder benchmarks.
+The `active-picture-hls` fixtures are generated with FFmpeg `-c copy -f hls
+-hls_time 2 -hls_list_size 0 -hls_playlist_type vod -hls_segment_type fmp4` from
+`active-picture.mp4` and `glow-hd.mp4`; no video is re-encoded. Native SDR output
+materialization is included in the comparison, not bounded by the CPU sampler's
+2 Hz limit. Independent subtitle outputs are preserved when the video tap stops.
+Native analysis requests 320x180 output while retaining the original display
+canvas separately. This reduces the requested analysis surface, not necessarily
+AVFoundation's internal decode/render allocations. In an isolated tvOS simulator
+four-player pair, enabled analysis added approximately 16 MiB resident memory;
+CPU medians were 935 versus 952 ms per 2.3-second window, within the measured
+dispersion. These are one controlled SDR comparison, not a hardware or HDR
+performance guarantee.
+
 The glow fixtures in `Tests/SubtitlePresentationSupport/Fixtures` are synthetic:
 `live-continuity-dim.mp4` is the first 30 seconds of `live-continuity.mp4`,
 scaled by `colorchannelmixer=rr=0.18:gg=0.18:bb=0.18` and encoded with
@@ -163,6 +191,25 @@ informational: allocator caches and framework lifetime make them unsuitable
 for a blanket byte threshold. Lifecycle scenarios additionally assert weak
 references actually release.
 
+`player-card-first-visits` prioritizes the first Info, Chapters and Cast opening
+in a fresh production-controls hierarchy for every sample, including the
+discarded warmup. It uses twenty local chapters and cast members, with no artwork
+URLs, network requests or video decoding. It checks actual native tab focus,
+rejects intermediate wrong-tab focus, and requires focusable content inside the
+card. The separate hosted
+`testProductionCardContentAndNativeEntryOnFirstVisits` checks rendered text and
+native entry into each card with both normal and reduced glass; an empty or
+obscured card must not count as a faster presentation.
+
+Each first opening records its largest 2 ms main-actor heartbeat gap. Chapters
+and Cast additionally record the synchronous native focus-update duration; that
+is not input-to-presented-frame latency. CPU covers the full hierarchy setup,
+first openings and teardown; fixed settling intervals dominate wall time.
+Framework, shader and process caches remain warm between samples, so this is a
+first visit per playback hierarchy, not repeated cold app launches or proof of
+second-generation Apple TV performance. Prefer this workload over repeated tab
+round trips when assessing first-use responsiveness.
+
 `native-poster-indicators` exercises the actual native-poster coordinator's
 foreground path: 72 completed overlays across 24 posters, three visible episode
 badges, and changing playback progress. Each sample uses cold geometry. The
@@ -186,6 +233,44 @@ queue of 1,448 previews; counters distinguish 70,584 candidate visits from actua
 URL comparisons. This isolates synchronous admission/URL work, without network
 requests, image decoding, UI layout, or a claim about the duration of a reported
 device hang.
+
+`player-controls-cold-reveal` creates a fresh production TV controls hierarchy
+for every sample, requests its first reveal without a settling delay, and
+completes three show/hide cycles. It includes local synopsis metadata and track
+options but no artwork requests or video decoding. First/last main-actor heartbeat
+gaps distinguish initial layout work from settled repeats; they are not rendered
+frame timings. The process and framework caches are warm after the discarded
+warmup, so this is cold view construction, not cold app launch.
+`player-controls-first-card` adds the first Info-card opening and verifies its
+visible bounds and focus readiness. Compare both when deferring optional content:
+less transport-entry work can increase first-card initialization cost without
+reducing total CPU. Hosted lifecycle, OCR, focus and fade tests separately
+protect the fixed card stage, first content, retained state and native materials.
+
+`player-controls-hidden-clock` advances the mounted TV transport's playback and
+buffered positions 32 times at the production 250 ms cadence after hiding it.
+`player-controls-hidden-static` observes the same settled hierarchy without
+clock mutations; `player-controls-visible-clock` repeats the advancing workload
+with controls visible. Each eight-second sample verifies the completed updates
+and timeline collision-region visibility. These isolate clock-driven UI work
+without video decoding, network traffic, or thumbnail extraction. They measure
+app-process CPU, not second-generation Apple TV GPU cost or rendered frame pacing.
+
+`player-controls-reveal` mounts the production TV transport with sixteen audio
+tracks and thirty-two subtitle tracks, then shows and hides it four times per
+sample. `player-controls-reveal-contended` repeats the same interaction with a
+controlled 180 ms synchronous preference read through the real system-audio
+backend's reader seam. Both require four completed reads and visible timeline
+geometry on every reveal. They report main-thread read counts and the largest
+2 ms main-actor heartbeat gap separately from app CPU.
+
+These isolate the controls' preference synchronization, not remux decoding,
+network throughput, GPU presentation or second-generation Apple TV performance.
+The separate `PlayerControlsRevealRenderingHostedTests` retains hidden,
+intermediate and fully visible screenshots while a preference read is still
+blocked, so removing the fade cannot count as the fix. Run the existing native
+audio-menu and controls-rendering regressions alongside it to preserve focus,
+confirmed settings, hidden/background polling and both glass/fallback materials.
 
 ## Native Home navigation attribution
 
@@ -463,6 +548,25 @@ presented-frame hitches or memory-pressure limits. Do not describe a sleeping
 idle window's wall time as work; its comparison gates CPU only.
 
 ## Adding a scenario
+
+`seek-generated-80ms` and `seek-generated-180ms` exercise the production scrub
+coordinator at all eight remote scan speeds in both directions. Each sample
+delivers 384 inputs at 33-ms intervals through a paced synthetic extractor and
+requires every final target to arrive. Motion-frame, starvation, cancellation,
+concurrency, blank-publication, publication-gap and settle-latency counters
+distinguish a responsive preview from one that only appears after input stops.
+The synthetic delay is controlled fixture latency, not a decoder benchmark;
+these scenarios do not establish Plex-network or physical-device performance.
+Both require zero starved stages, zero motion cancellations, one in-flight
+extraction, no blank publications, and publication/settle gaps below 500 ms.
+This budget allows two 180-ms extractions plus scheduling overhead; the
+two-second thumbnail grid limits visible frame changes at the slowest speed.
+
+`seek-plex-bif` uses a real loopback HTTP server with 100-ms response latency
+and a 3,601-frame, 320-pixel BIF fixture. Cold and warm passes cover both
+directions at every speed, verify the final JPEG's pixel identity, require
+frames during every moving stage, and permit only one index download.
+This is controlled HTTP/JPEG coverage, not the reporter's Plex server.
 
 Reuse existing production fixtures and helpers first. Add an opt-in XCTest
 method that calls `PerformanceProbe.requireEnabled()` **before setup**, then

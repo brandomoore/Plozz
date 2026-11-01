@@ -192,7 +192,7 @@ public enum PlayerMoreMenu {
             if model.subtitleDownload.canSearch {
                 more.append(destination("Search & Download…", .subtitleSearch))
             }
-            if (model.subtitleStyleAdjustable && model.secondarySubtitleImagePrimaryFormat == nil)
+            if model.subtitleStyleAdjustable
                 || model.subtitleDelayAdjustable || !model.secondarySubtitleOptions.isEmpty {
                 more.append(destination("Advanced…", .subtitleAdvanced))
             }

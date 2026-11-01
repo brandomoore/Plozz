@@ -571,13 +571,13 @@ struct SettingsRevealSection<Content: View>: View {
     @Binding var isOn: Bool
     let masterLabel: LocalizedStringResource
     var revealedHeader: LocalizedStringResource? = nil
+    var searchAnchorID: String? = nil
+    var searchFallbacks: [String] = []
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         SettingsControlRows(nonTVSpacing: 20) {
-            Toggle(isOn: $isOn) {
-                Text(masterLabel)
-            }
+            masterToggle
 
             if isOn {
                 VStack(alignment: .leading, spacing: 16) {
@@ -594,6 +594,16 @@ struct SettingsRevealSection<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(.easeInOut(duration: 0.22), value: isOn)
+    }
+
+    @ViewBuilder
+    private var masterToggle: some View {
+        let toggle = Toggle(isOn: $isOn) { Text(masterLabel) }
+        if let searchAnchorID {
+            toggle.settingsSearchAnchor(searchAnchorID, fallbackFor: searchFallbacks)
+        } else {
+            toggle
+        }
     }
 }
 

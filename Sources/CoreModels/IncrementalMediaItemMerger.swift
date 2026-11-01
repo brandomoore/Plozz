@@ -207,7 +207,9 @@ public struct IncrementalMediaItemMerger {
         let identities = MediaItemIdentity.identities(for: item).map {
             KindScopedIdentity(identity: $0, kind: kind)
         }
-        let serverScope = item.sourceAccountID.flatMap { serverInfo($0)?.serverID } ?? item.sourceAccountID
+        let serverScope = kind == .collection
+            ? item.sourceAccountID
+            : item.sourceAccountID.flatMap { serverInfo($0)?.serverID } ?? item.sourceAccountID
         let serverKey = serverScope.map { "\($0)\u{1F}\(kind.rawValue)\u{1F}\(item.id)" }
         let ownRefKey = item.sourceAccountID.map { "\($0):\(item.id)" }
         if let ownRefKey {
@@ -215,7 +217,7 @@ public struct IncrementalMediaItemMerger {
                 cards[find(reader)] = nil
             }
         }
-        let claimedRefs = identitySources(item).map { "\($0.accountID):\($0.itemID)" }
+        let claimedRefs = kind == .collection ? [] : identitySources(item).map { "\($0.accountID):\($0.itemID)" }
 
         var candidates: [Int] = []
         for identity in identities {
@@ -231,7 +233,7 @@ public struct IncrementalMediaItemMerger {
                 if members[root].contains(where: { $0.item.kind == kind }) { candidates.append(root) }
             }
         }
-        if let ownRefKey, let claimants = claimsByRef[ownRefKey] {
+        if kind != .collection, let ownRefKey, let claimants = claimsByRef[ownRefKey] {
             for slot in claimants {
                 let root = find(slot)
                 if members[root].contains(where: { $0.item.kind == kind }) { candidates.append(root) }

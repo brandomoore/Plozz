@@ -14,11 +14,7 @@ struct ViewPreferenceChoiceGroup<Content: View>: View {
         }
         .environment(\.settingsFormRowsFlushLeading, false)
         #else
-        if rowSize == .contained {
-            Section(content: content)
-        } else {
-            SettingsSectionGroup(content: content)
-        }
+        SettingsSectionGroup(content: content)
         #endif
     }
 }
@@ -123,8 +119,8 @@ struct ViewCustomizationList<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @SettingsPageDismiss private var dismiss
     @Environment(SettingsDetailNavigation.self) private var detailNavigation: SettingsDetailNavigation?
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.themePalette) private var palette
     @FocusState private var focusedRow: String?
     @State private var hasEnteredList = false
     @State private var topFadeStrength: CGFloat = 0
@@ -146,7 +142,7 @@ struct ViewCustomizationList<Content: View>: View {
                                 }
                             }
                             .accessibilityIdentifier("view-customization-back")
-                            .disabled(!hasEnteredList && initialRowID != "view-customization-back")
+                            .disabled(!hasEnteredList && searchRequest == nil && initialRowID != "view-customization-back")
                             .modifier(ViewCustomizationRowFocus(id: "view-customization-back"))
                         ))
                     VStack(alignment: .leading, spacing: SettingsFormMetrics.controlSpacing) {
@@ -179,7 +175,16 @@ struct ViewCustomizationList<Content: View>: View {
                 .environment(\.viewCustomizationFocus, $focusedRow)
                 .focusScope(focusScope)
                 .defaultFocus($focusedRow, initialRowID)
-                .task(id: initialRowID) { focusedRow = initialRowID }
+                .task(id: initialRowID) {
+                    guard searchRequest == nil else { return }
+                    focusedRow = initialRowID
+                }
+                .onChange(of: searchRequest?.revealed) { _, revealed in
+                    if revealed == true {
+                        hasEnteredList = true
+                        detailNavigation?.focusArrived()
+                    }
+                }
                 .onChange(of: focusedRow) { _, row in
                     if row != nil {
                         hasEnteredList = true
@@ -216,18 +221,9 @@ struct ViewCustomizationList<Content: View>: View {
         .buttonStyle(SettingsFocusButtonStyle(size: .contained))
         .navigationTitle(Text(verbatim: ""))
         #else
-        List {
+        SettingsPageList {
             content()
-                .listRowBackground(palette.surface(.raised).fill)
-                .listRowSeparatorTint(palette.separator)
         }
-        .listStyle(.insetGrouped)
-        .toggleStyle(SettingsSwitchToggleStyle())
-        .scrollContentBackground(.hidden)
-        .background { palette.settingsBackground.ignoresSafeArea() }
-        .toolbarBackground(palette.settingsBackground, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarTitleDisplayMode(.inline)
         .navigationTitle(Text(title))
         #endif
     }
@@ -252,7 +248,7 @@ struct ViewCustomizationMenu<Selection: Hashable, Options: View>: View {
                 }
                 .pickerStyle(.inline)
             } label: {
-                ViewCustomizationMenuValue(value: value)
+                SettingsMenuValue(Text(value))
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
             }
@@ -305,24 +301,6 @@ private struct ViewCustomizationMenuLabel<Control: View>: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct ViewCustomizationMenuValue: View {
-    let value: LocalizedStringResource
-    @Environment(\.themePalette) private var palette
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(value)
-            Image(systemName: "chevron.up.chevron.down")
-                .font(.caption2.weight(.semibold))
-                .accessibilityHidden(true)
-        }
-        .font(.subheadline)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(palette.fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 #endif

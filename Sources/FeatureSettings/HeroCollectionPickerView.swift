@@ -226,11 +226,7 @@ private struct HeroCollectionSection<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 24)
         #else
-        Section {
-            content()
-        } header: {
-            Text(title)
-        }
+        SettingsSectionGroup(title, content: content)
         #endif
     }
 }

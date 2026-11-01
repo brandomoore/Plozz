@@ -257,13 +257,15 @@ extension JellyfinProvider {
         )
         var seen = Set<String>()
         for section in native {
+            let sectionType = section.SectionType?.lowercased()
             let parent = section.ParentId ?? section.ParentItem?.Id
             let collectionType = section.CollectionType ?? section.ParentItem?.CollectionType
                 ?? views.first(where: { $0.Id == parent })?.CollectionType
             let collections = Set(([collectionType].compactMap { $0 }
                 + (section.Query?.CollectionTypes ?? [])).map { $0.lowercased() })
             let itemTypes = Set((section.ItemTypes ?? []).map { $0.lowercased() })
-            let music = collections.contains(where: { Self.isMusicCollection($0) })
+            let music = sectionType == "resumeaudio"
+                || collections.contains(where: { Self.isMusicCollection($0) })
                 || !itemTypes.isDisjoint(with: ["audio", "musicalbum", "musicartist"])
             let reading = collections.contains(where: { Self.isReadingCollection($0) })
                 || !itemTypes.isDisjoint(with: ["book", "audiobook"])
@@ -276,12 +278,12 @@ extension JellyfinProvider {
             if collections.contains("livetv")
                 || !itemTypes.isDisjoint(with: ["tvchannel", "program"]) {
                 kind = .liveTV
-            } else if !itemTypes.isEmpty
-                        && itemTypes.isSubset(of: ["collectionfolder", "userview"]) {
+            } else if sectionType == "userviews"
+                        || (!itemTypes.isEmpty && itemTypes.isSubset(of: ["collectionfolder", "userview"])) {
                 kind = .libraries
-            } else if section.Query?.IsResumable == true {
+            } else if sectionType == "resume" || section.Query?.IsResumable == true {
                 kind = .continueWatching
-            } else if section.SectionType?.lowercased() == "latestmedia" {
+            } else if sectionType == "latestmedia" {
                 kind = .recentlyAdded
             } else {
                 kind = .recommendations

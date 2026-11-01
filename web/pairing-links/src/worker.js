@@ -16,9 +16,7 @@
 
 const APP_ID = "N8Z5T4AK3X.com.thatcube.Plozz";
 
-// Public install URL for Plozz. TestFlight public link (works before an App
-// Store release). The /pair page adapts its copy if this is ever emptied.
-const APP_STORE_URL = "https://testflight.apple.com/join/EKfReNMu";
+const APP_STORE_URL = "https://apps.apple.com/app/plozz-player/id6782668147";
 const SHORTLINKS = [
   { path: "/discord", target: "https://discord.gg/34tvRebP5Q" },
   { path: "/github", target: "https://github.com/brandomoore/Plozz" },
@@ -105,11 +103,7 @@ export default {
 };
 
 function pairPage() {
-  const hasStore = APP_STORE_URL.length > 0;
-  const cta = hasStore
-    ? `<a class="btn" href="${APP_STORE_URL}">Get Plozz on TestFlight</a>
-       <p class="hint">Plozz is in public beta — TestFlight is a free Apple app.</p>`
-    : `<p class="soon">Plozz isn’t on the App Store just yet.</p>`;
+  const cta = `<a class="btn" href="${APP_STORE_URL}">Download on the App Store</a>`;
 
   return `<!doctype html>
 <html lang="en">
