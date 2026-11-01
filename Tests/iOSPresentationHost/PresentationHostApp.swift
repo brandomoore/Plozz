@@ -216,7 +216,9 @@ struct PresentationHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--search-keyboard-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--continue-watching-details-fixture") {
+                ContinueWatchingDetailsFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--search-keyboard-fixture") {
                 SearchKeyboardInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--diagnostics-sharing-fixture") {
                 DiagnosticsSharingFixture()

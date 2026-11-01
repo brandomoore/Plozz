@@ -364,9 +364,13 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   selecting the already active preset does nothing.
   **Include Next Up** is a profile-scoped setting inside the **Continue Watching**
   section's configuration on every platform, alongside its artwork choice.
-  **Continue Watching action** chooses **Play** (the unchanged default) or
-  **Open details** for movie/episode cards on Home, including merged Next Up
-  entries and every TV Home layout. It persists and transfers with the profile.
+  **Continue Watching action** chooses **Open details** (the default) or **Play**
+  for movie/episode cards on Home, including merged Next Up entries and every TV
+  Home layout. Existing saved choices are preserved; profiles without a saved
+  action open details. The choice persists and transfers with the profile.
+  Opening an episode from Continue Watching shows that episode's own details,
+  rather than the parent show's page. Other browsing keeps its show-context
+  navigation.
   Artwork, progress overlays, context menus and Live TV tuning are unchanged.
   Library Recommended rows retain their existing detail navigation.
   On Apple TV, the remote's center button follows this choice, while Play/Pause

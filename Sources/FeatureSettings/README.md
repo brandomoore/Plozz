@@ -610,9 +610,10 @@ watch history and planning-list behavior are documented in
   Showcase groups Ratings and Discovery with their dependent controls.
   **Center button action** on TV and **When tapping an item** on iPhone/iPad
   select **Play** or **Open detail page** for Home's movie/episode cards.
-  Play remains the default for fresh and existing profiles. The choice uses the
-  existing profile-scoped Home settings store and profile transfer; it does not
-  change artwork or Live TV shortcuts.
+  Open detail page is the default when no action has been saved. Existing saved
+  choices remain unchanged. Episodes open their own detail page, not the parent
+  show's page. The choice uses the existing profile-scoped Home settings store
+  and profile transfer; it does not change artwork or Live TV shortcuts.
   On Apple TV this setting controls the center button only; the remote's
   Play/Pause button always starts the focused Continue Watching movie or episode.
   Helper text below the control describes Play/Pause, with its filled circular
