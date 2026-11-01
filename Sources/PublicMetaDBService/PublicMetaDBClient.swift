@@ -107,6 +107,9 @@ public struct PublicMetaDBClient: Sendable {
                 if method != .get { throw PublicMetaDB.Failure.uncertainWrite }
                 throw error
             }
+            if !(200...299).contains(response.statusCode) {
+                PlozzLog.networking.error("PublicMetaDB request rejected method=\(method.rawValue) status=\(response.statusCode)")
+            }
             if response.statusCode == 429 {
                 let delay = await gate.cooldown(response, scope: scope)
                 throw AppError.rateLimited(retryAfter: delay)
@@ -137,12 +140,24 @@ public struct PublicMetaDBClient: Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let value = try decoder.singleValueContainer().decode(String.self)
-            let fractional = ISO8601DateFormatter()
-            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value) { return date }
-            throw PublicMetaDB.Failure.incompleteResponse
+            return try date(from: value)
         }
         return decoder
+    }
+
+    static func date(from value: String) throws -> Date {
+        let formatter = ISO8601DateFormatter()
+        let formats: [ISO8601DateFormatter.Options] = [
+            [.withInternetDateTime, .withFractionalSeconds],
+            [.withInternetDateTime],
+            [.withInternetDateTime, .withSpaceBetweenDateAndTime, .withFractionalSeconds],
+            [.withInternetDateTime, .withSpaceBetweenDateAndTime],
+        ]
+        for format in formats {
+            formatter.formatOptions = format
+            if let date = formatter.date(from: value) { return date }
+        }
+        throw PublicMetaDB.Failure.incompleteResponse
     }
 
     static func encode<Value: Encodable>(_ value: Value) throws -> Data {

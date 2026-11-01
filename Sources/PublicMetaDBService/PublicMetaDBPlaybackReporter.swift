@@ -159,15 +159,7 @@ actor PublicMetaDBPlaybackReporter {
             throw PublicMetaDB.Failure.incompleteResponse
         }
         guard let row = rows.first else { return nil }
-        let updated: Date?
-        if let value = row.updated {
-            let parser = ISO8601DateFormatter()
-            parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            guard let date = parser.date(from: value) ?? ISO8601DateFormatter().date(from: value) else {
-                throw PublicMetaDB.Failure.incompleteResponse
-            }
-            updated = date
-        } else { updated = nil }
+        let updated = try row.updated.map { try PublicMetaDBClient.date(from: $0) }
         return ObservedResume(
             id: row.id, position: row.value.positionMilliseconds,
             duration: row.value.runtimeMilliseconds, updatedAt: updated

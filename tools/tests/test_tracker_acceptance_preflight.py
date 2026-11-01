@@ -178,6 +178,24 @@ class TrackerAcceptancePreflightTests(unittest.TestCase):
             with self.assertRaises(reader.Failure):
                 reader.baseline(config(), http, lambda _: KEY)
 
+    def test_live_movie_storage_zeros_are_not_episode_coordinates(self):
+        record = dict(MOVIE, id="resume-a", season=0, episode=0, position_ms=49184,
+                      runtime_ms=205152, updated="2026-11-01 22:21:41.312Z")
+        http = transport()
+        http.values["/api/external/resume"] = [page([record])]
+        result = reader.baseline(config(), http, lambda _: KEY)
+        resume = result["cases"][0]["tracker"]["resume"][0]
+        self.assertEqual(resume["content"], MOVIE)
+        self.assertEqual(resume["positionMilliseconds"], 49184)
+        self.assertEqual(resume["updatedAt"], record["updated"])
+        for field in ("season", "episode"):
+            for invalid in (-1, 1, False, "0"):
+                with self.subTest(field=field, value=invalid), self.assertRaises(reader.Failure):
+                    reader.content(dict(record, **{field: invalid}), remote=True)
+        with self.assertRaises(reader.Failure):
+            reader.content(record)
+        self.assertEqual(reader.content(EPISODE, remote=True), EPISODE)
+
     def test_plex_independent_server_user_and_catalog_checks_preserve_absent_fields(self):
         cfg = config("plex")
         cfg["servers"]["plex"]["userID"] = "42"

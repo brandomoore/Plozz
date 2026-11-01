@@ -80,11 +80,20 @@ public enum PublicMetaDB {
 
         public init(from decoder: Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
+            let mediaType = try values.decode(MediaType.self, forKey: .mediaType)
+            let season = try values.decodeIfPresent(Int.self, forKey: .season)
+            let episode = try values.decodeIfPresent(Int.self, forKey: .episode)
+            // Movie records use zero-valued storage fields instead of episode coordinates.
+            if mediaType == .movie {
+                guard (season == nil || season == 0), (episode == nil || episode == 0) else {
+                    throw Failure.incompleteResponse
+                }
+            }
             try self.init(
                 tmdbID: values.decode(Int.self, forKey: .tmdbID),
-                mediaType: values.decode(MediaType.self, forKey: .mediaType),
-                season: values.decodeIfPresent(Int.self, forKey: .season),
-                episode: values.decodeIfPresent(Int.self, forKey: .episode)
+                mediaType: mediaType,
+                season: mediaType == .movie ? nil : season,
+                episode: mediaType == .movie ? nil : episode
             )
         }
 
@@ -228,22 +237,30 @@ public enum PublicMetaDB {
         public init(content: Content, positionMilliseconds: Double, runtimeMilliseconds: Double) throws {
             guard content.isPlayable, positionMilliseconds.isFinite, runtimeMilliseconds.isFinite,
                   positionMilliseconds >= 0, runtimeMilliseconds > 0,
-                  positionMilliseconds <= runtimeMilliseconds else { throw Failure.invalidInput }
+                  positionMilliseconds <= runtimeMilliseconds,
+                  runtimeMilliseconds.rounded(.down) > 0 else { throw Failure.invalidInput }
             self.content = content
-            self.positionMilliseconds = positionMilliseconds
-            self.runtimeMilliseconds = runtimeMilliseconds
+            // The upstream store rejects decimal milliseconds from real player clocks.
+            self.positionMilliseconds = positionMilliseconds.rounded(.down)
+            self.runtimeMilliseconds = runtimeMilliseconds.rounded(.down)
         }
 
         enum CodingKeys: String, CodingKey {
             case positionMilliseconds = "position_ms", runtimeMilliseconds = "runtime_ms"
+            case season, episode
         }
 
         public init(from decoder: Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
+            let position = try values.decode(Double.self, forKey: .positionMilliseconds)
+            let runtime = try values.decode(Double.self, forKey: .runtimeMilliseconds)
+            guard position.rounded(.down) == position, runtime.rounded(.down) == runtime else {
+                throw Failure.incompleteResponse
+            }
             try self.init(
                 content: Content(from: decoder),
-                positionMilliseconds: values.decode(Double.self, forKey: .positionMilliseconds),
-                runtimeMilliseconds: values.decode(Double.self, forKey: .runtimeMilliseconds)
+                positionMilliseconds: position,
+                runtimeMilliseconds: runtime
             )
         }
 
@@ -252,6 +269,11 @@ public enum PublicMetaDB {
             var values = encoder.container(keyedBy: CodingKeys.self)
             try values.encode(positionMilliseconds, forKey: .positionMilliseconds)
             try values.encode(runtimeMilliseconds, forKey: .runtimeMilliseconds)
+            if content.mediaType == .movie {
+                // Upsert and completion must match the service's movie storage key.
+                try values.encode(0, forKey: .season)
+                try values.encode(0, forKey: .episode)
+            }
         }
     }
 

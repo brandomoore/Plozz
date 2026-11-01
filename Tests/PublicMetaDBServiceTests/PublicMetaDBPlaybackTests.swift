@@ -14,13 +14,15 @@ private func page(_ row: String) -> String {
     #"{"items":[\#(row)],"total":1,"page":1,"perPage":500,"totalPages":1}"#
 }
 
-private func delivery(position: Double = 900, seconds: Double = 900, sessionID: UUID = UUID()) throws -> TrackerPlaybackDelivery {
+private func delivery(
+    position: Double = 900, duration: Double = 1_000, seconds: Double = 900, sessionID: UUID = UUID()
+) throws -> TrackerPlaybackDelivery {
     let start = ISO8601DateFormatter().date(from: "2025-01-01T00:00:00Z")!
     return TrackerPlaybackDelivery(
         sample: try .init(
             sessionID: sessionID, startedAt: start, capturedAt: start.addingTimeInterval(seconds),
             item: .init(id: "movie", title: "Test", kind: .movie, providerIDs: ["Tmdb": "550"]),
-            position: position, duration: 1_000, isFinal: true
+            position: position, duration: duration, isFinal: true
         ),
         trackerID: "publicmetadb", connectionID: "consent-a",
         serverScope: .init(profile: .init(id: "profile", name: "Test"), accounts: [])
@@ -82,6 +84,24 @@ final class PublicMetaDBPlaybackTests: XCTestCase {
             XCTFail("Newer remote progress overwritten")
         } catch { XCTAssertEqual(error as? TrackerPlaybackDeliveryError, .remoteConflict) }
         XCTAssertTrue(http.sent.allSatisfy { $0.body == nil })
+    }
+
+    func testFractionalPlayerClockUsesWholeMillisecondsForWriteAndReadback() async throws {
+        let http = RecordingHTTPClient()
+        let stored = resumeRow.replacingOccurrences(of: #""media_type":"movie""#, with: #""media_type":"movie","season":0,"episode":0"#)
+            .replacingOccurrences(of: "2025-01-01T00:05:01.000Z", with: "2025-01-01 00:05:01.000Z")
+        http.stub(pathSuffix: "/resume", json: emptyPage)
+        http.stub(pathSuffix: "/resume", json: #"{"action":"saved","item":\#(stored)}"#)
+        http.stub(pathSuffix: "/resume", json: page(stored))
+        http.stub(pathSuffix: "/watched", json: emptyPage)
+        try await reporter(http).report(delivery(position: 300.0007, duration: 1_000.0009, seconds: 300))
+        let post = try XCTUnwrap(http.sent.first { $0.body != nil })
+        XCTAssertEqual(post.json?["position_ms"] as? Double, 300_000)
+        XCTAssertEqual(post.json?["runtime_ms"] as? Double, 1_000_000)
+        XCTAssertEqual(post.json?["season"] as? Int, 0)
+        XCTAssertEqual(post.json?["episode"] as? Int, 0)
+        XCTAssertEqual(http.sent.filter { $0.body != nil }.count, 1)
+        XCTAssertEqual(http.sentPaths, ["/api/external/resume", "/api/external/watched", "/api/external/resume", "/api/external/resume"])
     }
 
     func testNewerRemoteWatchPreventsResurrectingAnOldResume() async throws {

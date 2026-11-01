@@ -43,7 +43,7 @@ def number(value, minimum=0):
     return value
 
 
-def content(value):
+def content(value, *, remote=False):
     require(isinstance(value, dict), "Missing catalog identity.")
     require(type(value.get("tmdb_id")) is int and value["tmdb_id"] > 0, "Missing TMDB identity.")
     require(value.get("media_type") in ("movie", "tv"), "Unsupported catalog kind.")
@@ -53,7 +53,9 @@ def content(value):
                 and type(value.get("episode")) is int and value["episode"] > 0, "An exact episode is required.")
         result.update(season=value["season"], episode=value["episode"])
     else:
-        require(value.get("season") is None and value.get("episode") is None, "Movie has episode coordinates.")
+        require(all(value.get(key) is None or
+                    (remote and type(value[key]) is int and value[key] == 0)
+                    for key in ("season", "episode")), "Movie has episode coordinates.")
     return result
 
 
@@ -195,7 +197,7 @@ def tracker_state(http, token, canonical):
         records = complete_pages(http, token, path, canonical)
         projected = []
         for record in records:
-            require(content(record) == canonical, "Tracker returned a different catalog identity.")
+            require(content(record, remote=True) == canonical, "Tracker returned a different catalog identity.")
             item = {"id": record["id"], "content": canonical}
             if path == "/watched":
                 require("watched_at" in record, "Watched date is absent, not explicitly unknown.")

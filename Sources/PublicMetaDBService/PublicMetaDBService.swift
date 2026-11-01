@@ -312,7 +312,19 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
                 catch { PlozzLog.networking.error("PublicMetaDB playback failure could not be persisted") }
                 playbackConsent = consent
             }
-            PlozzLog.networking.error("PublicMetaDB playback delivery was not confirmed")
+            let reason: String
+            switch error {
+            case let failure as PublicMetaDB.Failure:
+                reason = String(describing: failure)
+            case let failure as TrackerPlaybackDeliveryError:
+                reason = String(describing: failure)
+            case let failure as AppError:
+                if case .unknown = failure { reason = "unknown" }
+                else { reason = String(describing: failure) }
+            default:
+                reason = String(reflecting: type(of: error))
+            }
+            PlozzLog.networking.error("PublicMetaDB playback delivery was not confirmed reason=\(reason)")
             throw error
         }
     }

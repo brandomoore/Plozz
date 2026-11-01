@@ -90,7 +90,16 @@ count. Episode ratings support season-only queries, and resume reads support
 external-ID lookup. Picks retain open-ended recipe filters and weights without
 interpreting unknown options or substituting local recommendation behavior.
 
-Resume uses milliseconds. PublicMetaDB ignores progress below 2% and clears
+Resume uses whole milliseconds; the live API rejects decimal values. Playback
+and export samples truncate submillisecond precision before encoding and
+readback comparison. Malformed fractional remote values are not silently rounded.
+Movie responses normalize the upstream zero-valued season/episode storage fields
+to absent coordinates; nonzero movie coordinates remain invalid. Resume writes
+send those zero storage fields explicitly: omitting them makes the live API
+miss an existing movie's upsert key and reject its update as a duplicate.
+This wire representation does not turn movies into episodes. Timestamp reads
+accept both ISO `T` separators and the service's space-separated storage dates.
+PublicMetaDB ignores progress below 2% and clears
 resume at 80%; that does not mean Plozz or a media server considers the title
 watched. Plozz's completion threshold remains 90%. Watched dates distinguish
 omitted/current, explicit null/unknown, and a known timestamp. A new watched
@@ -419,6 +428,24 @@ Contract/lifecycle/transport fixtures and guarded-import tests are automated.
 They are not authenticated service evidence. Release acceptance still requires
 dedicated real accounts, authorized real-media playback in Plozz, independent
 tracker/server readback in both directions, and exact run-owned cleanup.
+
+On 1 November 2026, real movie resume reporting was verified from the normal iOS
+app on an owned simulator against dedicated Emby and PublicMetaDB accounts.
+Independent reads confirmed creation, repeated updates of one record, relaunch
+persistence, no resume below 2%, and resume removal above 80% without a watched
+play. Opt-out suppressed uploads; re-enabling did not backfill old sessions and
+allowed only new playback to create another resume. This is a narrow movie/
+iOS-simulator/Emby result, not acceptance of TV playback, episodes, other
+providers, watched completion, imports, or cross-device synchronization.
+
+The unbound `PublicMetaDBLiveHistoryTests` driver uses normally configured
+production-app UI, not seeded profiles or substituted media. Its individual
+scenarios require explicit `PLOZZ_TRACKER_HISTORY_LIVE=1`, the owned
+`PLOZZ_TRACKER_HISTORY_SIMULATOR`, and non-secret test user/title settings in
+the runner environment. Run only the intended scenario, retain its nonzero
+XCTest result, and pair it with independent exact-title server/tracker reads;
+successful UI interaction alone is not delivery confirmation. Keep account
+configuration, credentials, screenshots and live-state evidence private.
 
 ## Opt-in playback reporting
 

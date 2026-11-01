@@ -47,6 +47,39 @@ final class PublicMetaDBContractTests: XCTestCase {
         XCTAssertNil(request.body)
     }
 
+    func testMovieReadNormalizesOnlyZeroStorageCoordinates() throws {
+        let decoder = PublicMetaDBClient.decoder()
+        let expected = try PublicMetaDB.Content(tmdbID: 550, mediaType: .movie)
+        for fields in [#""season":0,"episode":0"#, #""season":null,"episode":0"#, #""season":0,"episode":null"#] {
+            let json = #"{"tmdb_id":550,"media_type":"movie",\#(fields)}"#
+            XCTAssertEqual(try decoder.decode(PublicMetaDB.Content.self, from: Data(json.utf8)), expected)
+        }
+        for fields in [#""season":1,"episode":0"#, #""season":0,"episode":1"#, #""season":-1,"episode":0"#] {
+            let json = #"{"tmdb_id":550,"media_type":"movie",\#(fields)}"#
+            XCTAssertThrowsError(try decoder.decode(PublicMetaDB.Content.self, from: Data(json.utf8)))
+        }
+        let special = #"{"tmdb_id":550,"media_type":"tv","season":0,"episode":1}"#
+        let content = try decoder.decode(PublicMetaDB.Content.self, from: Data(special.utf8))
+        XCTAssertEqual(content.season, 0)
+        XCTAssertEqual(content.episode, 1)
+        XCTAssertThrowsError(try PublicMetaDB.Content(tmdbID: 550, mediaType: .movie, season: 0))
+    }
+
+    func testLiveStorageDatesAndISODatesUseTheSameInstant() throws {
+        for separator in ["T", " "] {
+            for fraction in ["", ".125"] {
+                let value = "2023-11-14\(separator)22:13:20\(fraction)Z"
+                let expected = 1_700_000_000 + (fraction.isEmpty ? 0 : 0.125)
+                XCTAssertEqual(try PublicMetaDBClient.date(from: value).timeIntervalSince1970, expected, accuracy: 0.001)
+                let json = watch.replacingOccurrences(of: "null", with: "\"\(value)\"")
+                let row = try PublicMetaDBClient.decoder().decode(PublicMetaDB.Record<PublicMetaDB.Watch>.self, from: Data(json.utf8))
+                XCTAssertEqual(try XCTUnwrap(row.value.watchedAt).timeIntervalSince1970, expected, accuracy: 0.001)
+            }
+        }
+        XCTAssertThrowsError(try PublicMetaDBClient.date(from: "not-a-date"))
+        XCTAssertThrowsError(try PublicMetaDBClient.date(from: "2023-11-14"))
+    }
+
     func testWatchDateOmittedNullAndKnownRemainDistinct() async throws {
         let content = try PublicMetaDB.Content(tmdbID: 550, mediaType: .movie)
         let http = RecordingHTTPClient()
@@ -164,6 +197,33 @@ final class PublicMetaDBContractTests: XCTestCase {
         XCTAssertNil(completed.item)
         XCTAssertTrue(http.sentPaths.allSatisfy { $0 == "/api/external/resume" })
         XCTAssertEqual(http.sent[1].json?["position_ms"] as? Double, 800)
+        for request in http.sent {
+            XCTAssertEqual(request.json?["season"] as? Int, 0)
+            XCTAssertEqual(request.json?["episode"] as? Int, 0)
+        }
+    }
+
+    func testResumeNormalizesSubmillisecondSamplesBeforeEncoding() throws {
+        let content = try PublicMetaDB.Content(tmdbID: 550, mediaType: .movie)
+        let resume = try PublicMetaDB.Resume(
+            content: content, positionMilliseconds: 26_910.3114, runtimeMilliseconds: 205_152.9999
+        )
+        XCTAssertEqual(resume.positionMilliseconds, 26_910)
+        XCTAssertEqual(resume.runtimeMilliseconds, 205_152)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(resume)) as? [String: Any])
+        XCTAssertEqual(body["position_ms"] as? Double, 26_910)
+        XCTAssertEqual(body["runtime_ms"] as? Double, 205_152)
+        XCTAssertEqual(body["season"] as? Int, 0)
+        XCTAssertEqual(body["episode"] as? Int, 0)
+        XCTAssertThrowsError(try PublicMetaDB.Resume(content: content, positionMilliseconds: 0, runtimeMilliseconds: 0.9))
+        XCTAssertThrowsError(try PublicMetaDB.Resume(content: content, positionMilliseconds: -0.1, runtimeMilliseconds: 1_000))
+    }
+
+    func testResumeReadDoesNotSilentlyRoundMalformedRemoteValues() throws {
+        for (position, runtime) in [(500.5, 1_000.0), (500.0, 1_000.5)] {
+            let json = #"{"tmdb_id":550,"media_type":"movie","position_ms":\#(position),"runtime_ms":\#(runtime)}"#
+            XCTAssertThrowsError(try PublicMetaDBClient.decoder().decode(PublicMetaDB.Resume.self, from: Data(json.utf8)))
+        }
     }
 
     func testBatchLimitsFailBeforeDispatch() async throws {
@@ -186,6 +246,20 @@ final class PublicMetaDBContractTests: XCTestCase {
         let result = try await client(http).saveResumeBatch(resumes)
         XCTAssertFalse(result.isCompleteSuccess)
         XCTAssertEqual(result.summary.errors, 1)
+        let items = try XCTUnwrap(http.sent.first?.json?["items"] as? [[String: Any]])
+        XCTAssertTrue(items.allSatisfy { $0["season"] as? Int == 0 && $0["episode"] as? Int == 0 })
+    }
+
+    func testEpisodeResumeKeepsActualCoordinatesOnWrite() throws {
+        let resume = try PublicMetaDB.Resume(
+            content: .init(tmdbID: 550, mediaType: .tv, season: 0, episode: 3),
+            positionMilliseconds: 300.75, runtimeMilliseconds: 1_000.25
+        )
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(resume)) as? [String: Any])
+        XCTAssertEqual(body["season"] as? Int, 0)
+        XCTAssertEqual(body["episode"] as? Int, 3)
+        XCTAssertEqual(body["position_ms"] as? Int, 300)
+        XCTAssertEqual(body["runtime_ms"] as? Int, 1_000)
     }
 
     func testHistoryRejectsMissingPagesAndChangedTotals() async throws {
