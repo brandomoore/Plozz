@@ -50,6 +50,10 @@ bounded language-match/accessibility flags without track titles or URLs.
   does not replace the glyph paths for the accepted view size. Zero-width
   probes do not shape text; unchanged measurements and control-only repositioning
   reuse cached paths. Configuration changes clear the cache.
+  Shadow and outline exclusion subtracts the winding-rule glyph silhouette,
+  preserving real letter counters without exposing overlapping font contours.
+  The exclusion path shares the layout cache; translucent text joins receive
+  only their normal fill, including with raised or depressed edges.
   These updates do not depend on pausing or revealing controls, and do not
   change saved positioning, subtitle offsets, or cue end times.
 - **Native-only video assets** — when that engine is selected, tvOS feeds the resolved URL directly to
@@ -65,7 +69,25 @@ bounded language-match/accessibility flags without track titles or URLs.
   `GeneratedScrubThumbnailLoader` decodes keyframe stills on the device from
   the original file through `ScrubStillExtracting`, which Plozzigen supplies
   via `EngineFactory.makeScrubStillExtractor`. Pending requests in the same
-  two-second cell share one decode. Playback teardown invalidates stills and
+  two-second cell share one decode. The shared preview coordinator completes
+  one request at a time and retains only the latest pending position, so
+  continuous scanning cannot starve the decoder. Cache hits remain immediate;
+  late results cannot overwrite them or cross a direction reversal. Transient
+  misses retain the last useful frame. Clearing a preview cancels generated
+  extraction, and a replacement waits for cancelled work to finish rather than
+  opening another decoder concurrently. Server index/tile warmups remain reusable.
+  TV touch swipes separately pace preview requests using the smoothed finger
+  speed: up to 30 requests/second for precision below 500 points/second, easing
+  down to four/second above 2,500 points/second. The playhead still follows every
+  input. Deferred requests use the latest position, remain anchored across
+  flick-bridged swipes, and catch up when motion slows; reversing requests a new
+  frame immediately. Commit, cancellation and teardown discard pending requests.
+  Held directional scanning, button skips, and mobile scrubbing are unchanged.
+  Final settling may require finishing the current extraction and one latest
+  extraction; this trades a bounded extra decode for continuous motion feedback.
+  The opt-in `seek-generated-*` and `seek-plex-bif` workloads in
+  [the performance lab](../../docs/performance-lab.md) cover this contract.
+  Playback teardown invalidates stills and
   closes every network-reader clone before awaiting transport drainage, even
   while the outgoing preview view remains mounted. Original-quality Plex,
   Jellyfin, and Emby transcodes retain a preview-only original source; reduced
@@ -151,6 +173,15 @@ checkpoints and suspends VOD and tears down live playback. Foreground recovery
 keeps its existing play/pause policy. iOS/iPadOS inactivity, PiP, AirPlay, and
 background-audio behavior are unchanged.
 
+Movie/episode loads explicitly select non-mixing `.playback` / `.moviePlayback`
+audio on tvOS and iOS/iPadOS, including when an engine instance is reused.
+Browsing trailers and theme music retain their non-interrupting mixing policy,
+but that process-wide setting must not carry into primary video playback.
+Plozzigen declares the category off-main before loading, preserves an existing
+playback route-sharing policy, and leaves activation to the engine. Muted or
+shared-session channel players do not claim this policy; live multiview keeps
+its existing ownership.
+
 Live source-reset recovery retains its three-attempt cap and 20-second minimum
 spacing. `LiveChannelRetuneBudget` replenishes attempts only after five minutes
 of observed playing state, a presented frame and advancing playback position.
@@ -197,6 +228,18 @@ services. Engine/load generation guards reject late results after replacement or
 stop. Files without chapters still have no tab. Title-relative DVD/Blu-ray chapters
 are not exposed by this container fallback.
 
+The tvOS transport reserves the bottom card's fixed-height stage immediately,
+but initializes its optional content only when a card is first requested.
+Timeline/title/buttons do not wait for off-screen Info layout or artwork.
+After first use, the selected card stays mounted while parked, preserving state
+and the existing single-transform reveal. First insertion has no extra fade.
+This shifts card initialization to first use; it does not eliminate that work
+or defer it with a timer. Mobile card presentation is unchanged.
+Native tvOS focus owns movement between Info, Chapters, Cast and the other card
+tabs. One focus observer switches their content without replaying the reveal or
+queuing a focus restoration; an older tab must never reclaim a newer native
+focus move. Deferred selected-row focus remains limited to floating track menus.
+
 On tvOS, the shared Audio menu offers **Reduce Loud Sounds** and **Enhance
 Dialogue** when Apple TV reports support for the current output. These are
 Apple TV-wide settings, not profile preferences or engine capabilities; VOD and
@@ -209,6 +252,13 @@ notification bridge, fails closed when it is unavailable, and requires bounded
 state readback before showing a changed selection. Controls refresh while visible,
 on route changes and on foreground return. No preference is changed on startup,
 profile changes, or teardown, and Plozz never writes the system preference domain.
+Preference synchronization and validated commands run on a serial actor, never
+on the UI thread. Initialization, reveal, route-change and confirmation refreshes
+share one in-flight read; the menu retains its last confirmed state until that
+read completes. Pending changes are reserved before awaiting preflight, so rapid
+repeat presses cannot post duplicate commands. Cancellation is checked again
+after preflight and before posting. A delayed preference service must not block
+the transport's existing fade animation or remote input.
 When tvOS reports dialogue-level support, **Enhance Dialogue** opens the existing
 player-style submenu with **Enhance More**, **Enhance**, and **Off**. Outputs with
 binary-only support keep a toggle. The tvOS Audio menu and its submenu use a
@@ -261,6 +311,12 @@ Native and tvOS track menus share `TrackLabeling` and `TrackMenuBuilder`.
 Bare language titles no longer suppress known codec/channel facts, for example
 `English (Opus 5.1)`. Custom names and commentary are retained, existing format
 facts are not duplicated, and unknown formats are not invented.
+Audio labels retain per-track codec profiles and confirmed spatial-format flags:
+for example `Dolby TrueHD Atmos`, `Dolby Digital+ Atmos`, or
+`DTS-HD MA + DTS:X IMAX`. These identify the encoded source independently of
+device capabilities, spatial-rendering preferences, and the active output path.
+Plain channel audio keeps its codec and channel layout; unavailable profiles
+fall back to the known codec rather than inferring a richer format.
 The Aether adapter's native-bypass track list also retains observed media subtype
 and channel information from the already-playing asset, rather than manufacturing
 language-only tracks. Single tracks are exposed as metadata without offering a
@@ -534,6 +590,12 @@ after seeking or pausing. Unknown duration or invalid timing omits the estimate.
 Clock formatting follows the device locale/time-zone conventions. The clock only
 ticks while requested, and mobile label slots retain their width during scrubbing.
 Live TV retains its existing guide-based program times.
+
+The TV timeline isolates text measurement in `PlayerTimelineLabels`: unchanged
+display strings reuse their label view, while its geometry continues observing
+fractional playhead updates. Text, clock-mode, model-identity, and Dynamic Type
+changes still refresh the labels. Controls stay mounted and keep their existing
+reveal/fade behavior; hidden playback positions are not frozen.
 
 ## Mobile player orientation
 
@@ -846,6 +908,12 @@ presentation state and detaches the old player.
 Plozzigen's Audio **Processing** row samples Aether's active audio pipeline
 label, independently of source-video probe availability. `TRUEHD → FLAC
 bridge` or `TRUEHD → EAC3 bridge` identifies ordinary channel processing.
+For on-demand original-source playback, source audio diagnostics sample the
+confirmed active engine track on every tick, not the initial provider snapshot
+or a pending menu selection. Codec, profile, channels/layout, sample rate, and
+bitrate are replaced together; unavailable properties clear the previous track's
+values. Server-transcoded renditions and live-stream sampling retain their own
+metadata paths. Source-track refresh does not change Processing or Encoding.
 Both TV and mobile also show **Encoding**: **Lossless encoding** for an active
 FLAC bridge, **Lossy encoding** for EAC3 or APAC, **No re-encoding** for stream-copy,
 and **Decoded to PCM** for the software decoder. These display-only descriptions
@@ -1652,6 +1720,23 @@ Left/Right. `RemoteTouchInput` reads the old remote's absolute GameController
 position while leaving UIKit in charge of input and menu focus. The tvOS app
 declares both remote profiles and separate micro gamepads in `project.yml`;
 newer directional remotes keep their native press behavior.
+
+On-demand tvOS playback distinguishes short directional clicks from a 0.4-second
+hold. Short clicks retain the profile's skip intervals; holding Left/Right (or a
+first-generation touchpad edge) starts continuous preview scanning. Releasing
+does not stop it. Further same-direction clicks increase the scan level through
+8, 24, 48, 96, 192, 384, 768 and 1536 content-seconds per second. Opposite clicks
+reduce the level, then reverse at level 1 without discarding the preview position.
+The timeline shows a directional circle beside the timestamp, with levels 2–8
+outside it; rewind feedback sits on the left and forward feedback on the right.
+
+Scanning moves only the existing scrub timeline and thumbnail preview, not the
+engine's playback rate or seek queue. Select commits once and preserves the
+pre-scrub play/pause intent; Play/Pause commits and resumes. Back cancels without
+seeking. At either endpoint the preview stops and waits for confirmation or a
+direction change. A deliberate horizontal swipe takes over from scanning using
+the normal swipe-commit behavior. Cancelled holds, app inactivity, focus handoff,
+and player teardown stop the scan task. Live TV and mobile gestures are unchanged.
 
 `RemoteClickInterpreter` resolves left/right edges to the configured skip
 intervals and keeps center clicks as Select. UIKit press timestamps use uptime,

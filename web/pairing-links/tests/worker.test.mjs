@@ -68,6 +68,8 @@ test("Pairing fallback retains the install link without reflecting URL payloads"
   assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
   assert.equal(response.headers.get("cache-control"), "no-store");
   const body = await response.text();
-  assert.ok(body.includes("https://testflight.apple.com/join/EKfReNMu"));
+  assert.ok(body.includes("https://apps.apple.com/app/plozz-player/id6782668147"));
+  assert.ok(body.includes("Download on the App Store"));
+  assert.doesNotMatch(body, /TestFlight|public beta|isn’t on the App Store/);
   assert.ok(!body.includes("private-pairing-data"));
 });

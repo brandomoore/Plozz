@@ -558,6 +558,7 @@ struct MainTabView: View {
     /// player has closed. Same hand-off as `pendingPersonRoute`.
     @State private var pendingTitleRoute: MediaItem?
     @State private var retainsExplicitHomeEntry = false
+    @State private var retainsExplicitWatchlistEntry = false
     /// Settings navigation identity owned above all three navigation shells.
     /// MainTabView passes the reference but never reads its path, so Settings
     /// pushes do not invalidate this large shell body.
@@ -690,15 +691,19 @@ struct MainTabView: View {
 
     private func releaseExplicitLiveTVEntry(ifLeavingFor destination: NavigationRailDestination) {
         if destination != .home { retainsExplicitHomeEntry = false }
+        if destination != .watchlist { retainsExplicitWatchlistEntry = false }
         if destination != .liveTV { retainsExplicitLiveTVEntry = false }
     }
 
     private func includingExplicitLiveTVEntry(
         _ destinations: [NavigationRailDestination]
     ) -> [NavigationRailDestination] {
-        let destinations = Self.includingExplicitHome(
+        var destinations = Self.includingExplicitHome(
             destinations, isRequested: retainsExplicitHomeEntry
         )
+        if retainsExplicitWatchlistEntry, !destinations.contains(.watchlist) {
+            destinations.append(.watchlist)
+        }
         return AppAdmissionNavigation.destinations(
             destinations,
             liveTV: .liveTV,
@@ -781,6 +786,17 @@ struct MainTabView: View {
             libraryNavigationSelection.wrappedValue = .liveTV
         }
         NotificationCenter.default.post(name: LiveTVGuideButton.pressed, object: nil)
+    }
+
+    private func openWatchlist() {
+        retainsExplicitWatchlistEntry = true
+        refreshWatchlistNavigation()
+        if navigationStyle == .tabBar {
+            selectedTab.wrappedValue = .watchlist
+        } else {
+            if navigationStyle == .sidebar { nativeSidebarFocus.begin(.watchlist) }
+            libraryNavigationSelection.wrappedValue = .watchlist
+        }
     }
 
     private func destination(for tab: MainTab) -> NavigationRailDestination {
@@ -1222,6 +1238,7 @@ struct MainTabView: View {
             // A rail library root gets its own identity, so switching libraries
             // rebuilds the stack instead of re-using the previous library's grid.
             .id(id ?? homeScopeKey)
+            .environment(\.openWatchlist, openWatchlist)
     }
 
     /// The Music destination.

@@ -88,6 +88,7 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
 
 struct PlozziOSHomeView: View {
     @Environment(\.homeLiveTVSnapshot) private var liveTV
+    @Environment(\.openWatchlist) private var openWatchlist
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
@@ -150,11 +151,18 @@ struct PlozziOSHomeView: View {
     @State private var watchlistIntentRevision = 0
     @State private var discoveryIdentityRevision = 0
     @State private var homeHasAppeared = false
+    @State private var rowBrowser: HomeRowBrowseModel?
     @State private var heroFreshnessRefresh = HeroFreshnessRefreshDriver()
     private let appModel: PlozziOSAppModel
     private let onAddServer: () -> Void
     private let onShowSettings: () -> Void
     private let heroMetadataEnricher: HeroMetadataEnricher
+
+    private func browseAction(for row: HomePresentationRow) -> (() -> Void)? {
+        guard row.canBrowse else { return nil }
+        if row.id == .global(.watchlist) { return openWatchlist }
+        return { rowBrowser = viewModel.browseRow(row) }
+    }
 
     init(
         appModel: PlozziOSAppModel,
@@ -264,7 +272,23 @@ struct PlozziOSHomeView: View {
         .onAppear { homeHasAppeared = true }
         .environment(\.plozzCardCaptionView, .home)
         .onDisappear { homeHasAppeared = false }
+        .navigationDestination(item: $rowBrowser) { browser in
+            HomeRowBrowseView(
+                model: browser,
+                columns: appModel.settings.density.density.iOSPosterGridColumns(horizontalSizeClass: horizontalSizeClass)
+            ) { item in
+                PlozziOSHomeMediaCard(
+                    item: item, isLandscape: false,
+                    provider: item.sourceAccountID.flatMap { appModel.accountsProviders.provider(forAccountID: $0) }
+                )
+            }
+            .environment(\.plozzMetrics, .touch(
+                density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize
+            ))
+        }
         .onChange(of: ObjectIdentifier(viewModel)) { _, _ in
+            rowBrowser?.invalidate()
+            rowBrowser = nil
             resetHeroScope()
         }
         .onChange(of: appModel.settings.homeVisibility.visibility.disabledKeys) { _, disabled in
@@ -578,7 +602,8 @@ struct PlozziOSHomeView: View {
                         viewModel: viewModel,
                         watchlistIntentRevision: watchlistIntentRevision,
                         watchlistLoadingPlaceholderCount:
-                            viewModel.watchlistLoadingPlaceholderCount
+                            viewModel.watchlistLoadingPlaceholderCount,
+                        onBrowse: browseAction(for: presentation)
                     )
                 case let .liveTV(channels):
                     PlozziOSHomeMediaRail(
@@ -607,7 +632,8 @@ struct PlozziOSHomeView: View {
                             PlozziOSFeaturedCollectionRail(
                                 row: row, appModel: appModel, scope: ObjectIdentifier(viewModel),
                                 coordinator: featuredTrailers, controller: trailerController,
-                                isActive: homeIsFrontmost && homeHasAppeared && !homeIsScrolling
+                                isActive: homeIsFrontmost && homeHasAppeared && !homeIsScrolling,
+                                onBrowse: browseAction(for: presentation)
                             )
                         } else {
                             PlozziOSHomeMediaRail(
@@ -618,6 +644,7 @@ struct PlozziOSHomeView: View {
                                     : .poster,
                                 appModel: appModel,
                                 browseItem: row.browseItem,
+                                onBrowse: browseAction(for: presentation),
                                 onNavigationInteraction:
                                     viewModel.noteHomeNavigationInteraction
                             )
@@ -2399,6 +2426,7 @@ private struct PlozziOSHomeRowView: View {
     let viewModel: HomeViewModel
     let watchlistIntentRevision: Int
     let watchlistLoadingPlaceholderCount: Int
+    let onBrowse: (() -> Void)?
     private var liveChannels: [HomeLiveTVChannel] {
         row.kind == .continueWatching ? liveTV.recentChannels : []
     }
@@ -2462,6 +2490,7 @@ private struct PlozziOSHomeRowView: View {
                     showsSeriesArtwork: row.kind == .continueWatching
                         && appModel.settings.homeVisibility.continueWatchingUsesSeriesArtwork,
                     liveChannels: liveChannels,
+                    onBrowse: row.items.isEmpty ? nil : onBrowse,
                     onNavigationInteraction:
                         viewModel.noteHomeNavigationInteraction
                 )
@@ -2531,6 +2560,7 @@ private struct PlozziOSFeaturedCollectionRail: View {
     let coordinator: FeaturedTrailerCoordinator
     let controller: HeroTrailerController
     let isActive: Bool
+    let onBrowse: (() -> Void)?
     @State private var selection: MediaItem?
 
     var body: some View {
@@ -2544,6 +2574,7 @@ private struct PlozziOSFeaturedCollectionRail: View {
             onSeeAll: row.browseItem.map { item in { selection = item } },
             onSelect: { selection = $0 }
         )
+        .browsingRow(onBrowse)
         .navigationDestination(item: $selection) { item in
             PlozziOSHomeCardDetail(
                 item: item,
@@ -2582,8 +2613,8 @@ struct PlozziOSHomeMediaRail: View {
     var showsSeriesArtwork: Bool = false
     var liveChannels: [HomeLiveTVChannel] = []
     var browseItem: MediaItem? = nil
+    var onBrowse: (() -> Void)? = nil
     var onNavigationInteraction: () -> Void = {}
-    @State private var isBrowsingCollection = false
     @State private var prefetchedIDs: Set<String> = []
     @State private var prefetchedPreviewIDs: Set<String> = []
     @State private var lastArtworkPrefetchIndex: Int?
@@ -2593,17 +2624,12 @@ struct PlozziOSHomeMediaRail: View {
 
     var body: some View {
         PlozziOSHomeRailLayout { rail(metrics: $0) }
-            .navigationDestination(isPresented: $isBrowsingCollection) {
-                if let browseItem {
-                    PlozziOSHomeCardDetail(item: browseItem, fallbackProvider: provider(for: browseItem))
-                }
-            }
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
         PlozziOSMediaSection(
             title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0,
-            onSeeAll: browseItem == nil ? nil : { isBrowsingCollection = true }
+            onBrowse: onBrowse
         ) {
             if browseItem != nil && items.isEmpty && loadingPlaceholderCount == 0 {
                 Text("No titles in this collection.")

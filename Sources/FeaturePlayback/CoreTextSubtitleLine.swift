@@ -124,6 +124,7 @@ final class SubtitleLineView: UIView {
         var background: BackgroundFill?  // rounded box hugging the text, drawn first
         var glyphBackgrounds: [CGRect] = []
         var defaultFillPath: CGPath? = nil
+        var outsideGlyphsPath: CGPath? = nil
     }
 
     /// Glyphs of one source-coloured span, in the same coordinates as `path`.
@@ -259,7 +260,7 @@ final class SubtitleLineView: UIView {
         //    blurred/offset copy shows behind everything else.
         if let sh = c.shadow {
             ctx.saveGState()
-            clipOutsideGlyphs(path, in: ctx)
+            clipOutsideGlyphs(l, in: ctx)
             // UIKit shadow offsets stay in device space even after the text
             // coordinate flip; positive height still means down on screen.
             ctx.setShadow(offset: sh.offset, blur: sh.blur, color: sh.color.cgColor)
@@ -273,7 +274,7 @@ final class SubtitleLineView: UIView {
         //    the outer half remains once the fill is painted over it.
         if let outline = c.outline, c.outlineWidth > 0 {
             ctx.saveGState()
-            clipOutsideGlyphs(path, in: ctx)
+            clipOutsideGlyphs(l, in: ctx)
             ctx.addPath(path)
             ctx.setStrokeColor(outline.cgColor)
             ctx.setLineWidth(c.outlineWidth * 2)
@@ -316,10 +317,16 @@ final class SubtitleLineView: UIView {
 
     // MARK: - Layout
 
-    private func clipOutsideGlyphs(_ path: CGPath, in context: CGContext) {
-        context.addRect(bounds)
-        context.addPath(path)
-        context.clip(using: .evenOdd)
+    private func clipOutsideGlyphs(_ layout: Layout, in context: CGContext) {
+        guard let outside = layout.outsideGlyphsPath else { return }
+        context.addPath(outside)
+        context.clip(using: .winding)
+    }
+
+    static func outsideGlyphsPath(_ path: CGPath, bounds: CGRect) -> CGPath {
+        // Font contours may overlap. Even-odd inversion exposes those joins;
+        // subtract the same winding-rule silhouette used by the text fill.
+        CGPath(rect: bounds, transform: nil).subtracting(path, using: .winding)
     }
 
     private func buildLayout(_ c: Config, maxWidth: CGFloat) -> Layout {
@@ -419,13 +426,18 @@ final class SubtitleLineView: UIView {
                 rect: r.offsetBy(dx: -drawn.minX, dy: -drawn.minY),
                 color: bg.color, cornerRadius: bg.cornerRadius)
         }
+        let totalSize = CGSize(width: ceil(drawn.width), height: ceil(drawn.height))
+        let outside = c.shadow != nil || (c.outline != nil && c.outlineWidth > 0)
+            ? Self.outsideGlyphsPath(path, bounds: CGRect(origin: .zero, size: totalSize))
+            : nil
         return Layout(path: path,
                       spanFills: spanFills,
-                      totalSize: CGSize(width: ceil(drawn.width), height: ceil(drawn.height)),
+                      totalSize: totalSize,
                       colorGlyphs: colorGlyphs,
                       background: background,
                       glyphBackgrounds: glyphBackgrounds.map { $0.offsetBy(dx: -drawn.minX, dy: -drawn.minY) },
-                      defaultFillPath: rawDefaultFill.copy(using: &shift) ?? rawDefaultFill)
+                      defaultFillPath: rawDefaultFill.copy(using: &shift) ?? rawDefaultFill,
+                      outsideGlyphsPath: outside)
     }
 
     /// Reference letters for a line's full height: ascenders and descenders

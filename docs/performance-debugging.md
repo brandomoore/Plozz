@@ -1293,6 +1293,28 @@ tools/trace-device.sh --device "$DEVICE_ID" --time-limit 90s
 # tvOS only: verify the named button already has focus, then press Select ONCE.
 tools/trace-device.sh --device "$DEVICE_ID" --time-limit 120s --press-focused Movies
 ```
+For manual reproduction, the recorder now waits at **Ready to record**. The
+requested duration starts only after explicit start confirmation and the visible
+red Recording acknowledgement, not when Instruments begins preparing. Once the
+user is on the intended screen and ready, run the exact `notifyutil -p ...`
+command printed by that invocation (also retained in its temporary `ready.json`).
+Agent-driven captures must ask the user to confirm before posting it. The
+single-use notification is unique per attempt; do not reuse an earlier command.
+Readiness expires after five minutes by default (`--start-timeout` changes that
+bounded wait). `--auto-start` explicitly opts into the old immediate-start
+interaction after readiness; the verified `--press-focused` driver starts
+automatically because its exact action has already been arranged.
+
+Instruments may collect preparation/waiting samples before the requested window.
+The report retains the window's start/end epochs, duration, and its start offset
+after the recorder-ready notification. Export verification aligns the confirmed
+window with the trace start and excludes setup samples from the app CPU summary;
+an empty requested window is not a verified capture. Do not treat the whole
+trace as user interaction. An outer Instruments time limit bounds preparation plus the window,
+while the helper requests stop only after the complete post-acknowledgement
+window. An early exit or disconnect cannot pass merely because setup produced
+a long trace. **Saving recording** is not success: only validated exported data
+produces **Recording finished**.
 The device is explicit (CoreDevice ID, hardware ID, or name); the helper resolves
 its hardware ID and takes a per-device lock shared across worktrees. It verifies
 the installed app and live PID, never launches/replaces Plozz, and never resets
@@ -1301,8 +1323,10 @@ runner, rejects app-bound runner metadata, and rechecks the exact focused label
 before input. It does not navigate to the control for you.
 
 **Do not tell someone to reproduce while the recorder is merely starting.**
-Current local Debug builds show a non-focusable status badge on tvOS and iOS:
-preparing (wait), **Recording** with a red dot (ready), and finished/failed. The helper requires
+Current local Debug builds show a non-focusable, input-transparent scene-level
+status badge above app content on tvOS and iOS, including full-screen playback
+and secondary app windows: preparing (wait), ready (confirm start),
+**Recording** with a red dot (perform the action), saving, and finished/failed. The helper requires
 the app's visible-status acknowledgement, the recorder's Darwin start
 notification, and five seconds without an early disconnect before authorizing
 input. Heartbeats maintain the badge; a missing heartbeat expires it after

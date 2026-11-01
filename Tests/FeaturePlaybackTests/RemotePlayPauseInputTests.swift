@@ -124,6 +124,33 @@ final class RemotePlayPauseInputTests: XCTestCase {
         XCTAssertTrue(model.controlsVisible)
     }
 
+    func testSystemPlayCommitsScanAndItsPressEchoDoesNotPause() {
+        let (controller, model, toggles) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        controller.advanceRemoteScan(forward: true)
+        XCTAssertTrue(model.isScrubbing)
+        XCTAssertEqual(toggles.count, 1, "Entering preview pauses playback")
+        XCTAssertTrue(model.remotePlayPause.admit(.systemCommand))
+        model.isPaused = false
+        model.remotePlayPause.onSystemCommand?()
+        XCTAssertFalse(model.isScrubbing)
+        XCTAssertEqual(model.skipGesture.scanLevel, 0)
+        controller.handlePlayPause()
+        XCTAssertFalse(model.isPaused)
+        XCTAssertEqual(toggles.count, 1)
+    }
+
+    func testScanPlayPausePressSuppressesItsSystemEcho() {
+        let (controller, model, toggles) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        controller.advanceRemoteScan(forward: true)
+        controller.handlePlayPause()
+        XCTAssertFalse(model.isPaused)
+        XCTAssertFalse(model.isScrubbing)
+        XCTAssertEqual(toggles.count, 2, "Pause for preview, then resume at the target")
+        XCTAssertFalse(model.remotePlayPause.admit(.systemCommand))
+    }
+
     private func makeInput() -> (PlayerInputViewController, PlayerControlsModel, ToggleCounter) {
         let model = PlayerControlsModel()
         model.duration = 7200

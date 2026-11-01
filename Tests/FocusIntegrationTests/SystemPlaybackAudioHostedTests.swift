@@ -102,7 +102,6 @@ final class SystemPlaybackAudioHostedTests: XCTestCase {
         try await withPanel(configure: { probe in
             probe.backend.dialogueLevel = .enhance
             probe.backend.values[.enhanceDialogue] = true
-            probe.model.systemAudio.refresh()
             probe.model.audioOptions = [
                 .init(id: 1, title: Text("English"), isSelected: true),
                 .init(id: 2, title: Text("French"), isSelected: false)
@@ -290,6 +289,7 @@ final class SystemPlaybackAudioHostedTests: XCTestCase {
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         let probe = Probe()
         configure(probe)
+        await probe.model.systemAudio.refresh().value
         window.rootViewController = UIHostingController(rootView: Panel(probe: probe))
         window.makeKeyAndVisible()
         defer {

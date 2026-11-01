@@ -128,7 +128,6 @@ public final class NativeVideoEngine: VideoEngine {
     @ObservationIgnored private var formatInspectTask: Task<Void, Never>?
     @ObservationIgnored private var chapterMetadataTask: Task<Void, Never>?
     private var convertedVideoFormat: NativePlaybackFailure.VideoFormat?
-    @ObservationIgnored private var audioSessionConfigured = false
     /// Retains the resource-loader delegate that serves injected subtitle
     /// playlists; `AVAssetResourceLoader` holds it only weakly.
     @ObservationIgnored private var subtitleLoader: SubtitleInjectingResourceLoader?
@@ -773,7 +772,6 @@ public final class NativeVideoEngine: VideoEngine {
         }
         routeChangeObserver = nil
         #endif
-        audioSessionConfigured = false
         teardownPlayer()
         #if os(tvOS)
         clearDisplayCriteria()
@@ -797,11 +795,9 @@ public final class NativeVideoEngine: VideoEngine {
     /// blocks or fails playback — any error is swallowed.
     private func configureAudioSession() {
         #if !os(macOS)
-        guard !audioSessionConfigured else { return }
-        audioSessionConfigured = true
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playback, mode: .moviePlayback)
+            try session.setCategory(.playback, mode: .moviePlayback, options: [])
             try session.setSupportsMultichannelContent(true)
             try session.setActive(true)
         } catch {

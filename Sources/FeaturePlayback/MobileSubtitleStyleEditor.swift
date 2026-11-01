@@ -296,8 +296,6 @@ struct MobileSubtitleShadowOutlineView: View {
                 ).settingsSearchAnchor("edge-thickness")
             } header: {
                 Text("Text Edge")
-            } footer: {
-                Text("Apple supplies the edge style, including Uniform Outline, but not its color or thickness. Those are Plozz rendering values.")
             }
 
             Section("Outline") {

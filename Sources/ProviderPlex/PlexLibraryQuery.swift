@@ -71,6 +71,10 @@ extension PlexProvider: MediaLibraryQueryProviding {
 
     public func libraryQueryLetterIndex(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> [LibraryLetterIndexEntry] {
         guard page.sort.field == .name else { return [] }
+        if page.usesServerCollections(for: kind) {
+            // The movie facet is not an authoritative offset into a mixed collection grid.
+            return LibraryLetterIndex.deferredEntries(direction: page.sort.direction)
+        }
         let genreID = try await libraryGenreID(page.filters.genre, in: containerID, kind: kind)
         if page.filters.genre != nil, genreID == nil { return [] }
         let directories = try await client.firstCharacter(
