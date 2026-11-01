@@ -32,8 +32,11 @@ extension PlozziOSAppModel {
             },
             reserve: { [weak self] locator, position in
                 guard let self, self.isActiveProfileAuthorized else { throw CancellationError() }
-                let handle = try await self.mediaShareRuntime.networkFileResolver.prepare(locator, startPosition: position)
-                return DetailPlaybackPreparationReservation { handle.cancel() }
+                let handle = try self.mediaShareRuntime.networkFileResolver.beginPreparation(locator, startPosition: position)
+                return DetailPlaybackPreparationReservation(
+                    cancel: { handle.cancel() },
+                    requestPlaybackHandoff: { handle.requestPlaybackHandoff() }
+                )
             }
         )
     }

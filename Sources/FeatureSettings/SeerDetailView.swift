@@ -90,6 +90,7 @@ struct SeerDetailView: View {
                 TextField("Server address (e.g. https://requests.example.com)", text: $urlText)
                     .textContentType(.URL)
                     .settingsWorkspaceEntry()
+                    .settingsSearchAnchor("seerr-profile-user")
                     #if os(tvOS) || os(iOS)
                     .keyboardType(.URL)
                     .autocorrectionDisabled(true)
@@ -237,6 +238,9 @@ struct SeerDetailView: View {
                                 profileMappingRow(profile: profile, users: list)
                             }
                             .buttonStyle(SettingsFocusButtonStyle())
+                            .settingsSearchAnchor(
+                                profile.id == profiles.first?.id ? "seerr-profile-user" : "seerr-profile-\(profile.id)"
+                            )
                         }
                     }
                 case .empty:
@@ -252,6 +256,9 @@ struct SeerDetailView: View {
                                 profileMappingRow(profile: profile, users: [])
                             }
                             .buttonStyle(SettingsFocusButtonStyle())
+                            .settingsSearchAnchor(
+                                profile.id == profiles.first?.id ? "seerr-profile-user" : "seerr-profile-\(profile.id)"
+                            )
                         }
                     }
                 }

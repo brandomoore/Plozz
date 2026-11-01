@@ -140,10 +140,13 @@ being labeled complete. No incomplete HTTP response becomes readable.
 During playback, prepared-source demand reads preserve positive short cache
 boundaries. They do not wait for an uncached remainder merely to fill a larger
 adaptive window before delivering already-validated bytes to the demuxer.
-Ordinary unprepared reads and speculative prefetch retain their existing
-window-filling behavior; prefetch must fill its advertised range before a
-seek can adopt it. The prepared policy follows independent reader clones,
-without lowering the normal 32 MiB steady-state read-ahead limit.
+HTTP(S) playback uses two independently validated response slots of at most
+8 MiB each, shared across the reader and its clones, plus at most 2 MiB of small
+probes. A complete response can be consumed while its successor is still loading;
+partial HTTP bodies are never exposed. Other transports retain the normal
+32 MiB steady-state read-ahead limit. Cancellation must drain a response before
+its slot can be reused. These bounds exclude the source's prepared cache and
+the engine's decoded-frame and packet buffers.
 The engine's software consumer also services parked video on a bounded 20 ms
 wait while its producer is blocked on source I/O. It does not lower the existing
 125 ms video lead or 250 ms clock scheduling requirements, enlarge buffers or
@@ -212,22 +215,32 @@ uses the production detail coordinator, including its 750 ms dwell, and invokes
 the normal handoff without waiting for preparation to complete. Its timer starts
 at that Play action, including cancellation/drain and ordinary provider work.
 It reports readiness at Play and actual reservation consumption; an incomplete
-preparation cannot be relabeled as a prepared start. The sub-three-second
-assertion applies even when Play falls back to a cold open. This models the
+preparation cannot be relabeled as a prepared start. Set
+`PLOZZ_WEBDAV_REQUIRE_SUBTHREE_START=1` for an additional sub-three-second
+assertion, including when Play falls back to a cold open. Matched baseline
+comparisons need not enable that stretch target. This models the
 already-resolved detail's lifecycle, not full UI navigation, artwork loading or
 physical remote/touch input. Runs without the delay still wait for complete
 preparation and must not be used as evidence for this early-Play scenario.
-The experimental hosted-only `PLOZZ_WEBDAV_EARLY_HANDOFF=1` mode additionally
-uses a pending preparation ticket and requests interruption of optional warming
-at Play. Ticket registration is not readiness: the benchmark snapshots the
+Both app shells retain a pending preparation ticket and request interruption of
+optional warming at Play, preserving complete validated ranges without waiting
+for the entire warmup. The hosted `PLOZZ_WEBDAV_EARLY_HANDOFF=1` mode exercises
+that path; omitting it retains the older completed-reservation comparison.
+Ticket registration is not readiness: the benchmark snapshots the
 warmup outcome before handoff and reports the sealed outcome and actual
 consumption after resolution. Interrupted warming must never be reported as
-complete native coverage. Normal app shells still use the completed-reservation
-path until this experiment is validated.
-The separate DEBUG-only `PLOZZ_WEBDAV_RANGE_PIPELINE=1` experiment requires an
-explicit configured HTTP(S) transport scheme at reader creation. The hosted
-benchmark supplies its actual endpoint scheme; a missing scheme leaves the
-normal path unchanged. Compare this separately and together with early handoff,
+complete native coverage.
+An explicit native preparation budget limit, end-of-source or unavailable seek
+discards and drains the reservation before ordinary playback opens afresh.
+Waiting for that reservation still reports incomplete preparation, never ready
+coverage or a consumed source. Transport timeouts and actual read, authorization,
+trust and representation failures remain failures; they are not hidden by this
+optional-preparation fallback.
+The range pipeline requires an
+HTTP(S) transport identifier from the resolved source's pinned session at reader
+creation, not a second account lookup. DEBUG benchmarks may set
+`PLOZZ_WEBDAV_RANGE_PIPELINE=0` to compare the old reader; Release builds always
+use the bounded pipeline for eligible sources. Compare this separately and together with early handoff,
 using the same aggregate bandwidth cap rather than per-connection throughput.
 
 Related upstream designs separate request sizing from buffered consumption:

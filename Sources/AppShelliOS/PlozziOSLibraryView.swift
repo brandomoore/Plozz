@@ -206,7 +206,7 @@ struct PlozziOSLibraryGridView: View {
     /// artwork, which is what the banner's edges have to match.
     @Environment(\.plozzCardStyle) private var cardStyle
     @State private var viewModel: LibraryBrowseViewModel
-    @State private var selectedRecommendedItem: MediaItem?
+    @State private var selectedRecommendedItem: PlozziOSArtworkItemRoute?
     private let title: String   // l10n:content — library name from the server
     private let provider: any MediaProvider
     private let settings: PlozziOSSettingsModel
@@ -267,13 +267,14 @@ struct PlozziOSLibraryGridView: View {
         .environment(\.plozzCardCaptionView, viewModel.browseScope.cardCaptionView(for: viewModel.contentMode))
         .environment(\.plozzArtworkArea, nil)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $selectedRecommendedItem) { item in
+        .navigationDestination(item: $selectedRecommendedItem) { route in
             PlozziOSItemDetailView(
                 appModel: appModel,
                 provider: provider,
-                item: item,
-                originSourceAccountID: item.sourceAccountID
+                item: route.item,
+                originSourceAccountID: route.item.sourceAccountID
             )
+            .mediaArtworkZoomDestination(route.source)
         }
         .safeAreaInset(edge: .bottom) {
             if viewModel.collectionScanIncomplete, viewModel.state.value != nil, viewModel.pageError == nil,
@@ -376,7 +377,7 @@ struct PlozziOSLibraryGridView: View {
                         showsSeriesArtwork: section.id == "continueWatching"
                             && settings.homeVisibility.continueWatchingUsesSeriesArtwork,
                         continueWatchingLayout: settings.homeVisibility.continueWatchingLayout,
-                        onSelect: { selectedRecommendedItem = $0 }
+                        onSelect: { selectedRecommendedItem = .init(item: $0, source: $1) }
                     )
                     .environment(\.plozzArtworkArea, section.id == "continueWatching" ? .continueWatching : .recommended)
                 }
@@ -568,7 +569,7 @@ struct PlozziOSLibraryRecommendationRow: View {
     let spoilerSettings: SpoilerSettings
     let showsSeriesArtwork: Bool
     var continueWatchingLayout: ContinueWatchingCardLayout = .landscape
-    let onSelect: (MediaItem) -> Void
+    let onSelect: (MediaItem, MediaArtworkZoomSource) -> Void
 
     var body: some View {
         let inset = PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
@@ -585,7 +586,9 @@ struct PlozziOSLibraryRecommendationRow: View {
                     spacing: PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
                 ) {
                     ForEach(MediaRowView.uniqued(section.items), id: \.stablePresentationID) { item in
-                        Button { onSelect(item) } label: {
+                        MediaArtworkZoomButton(id: item.stablePresentationID) { source in
+                            onSelect(item, source)
+                        } label: {
                             PlozziOSPosterCard(
                                 item: item, style: style,
                                 showsSeriesArtwork: showsSeriesArtwork,
@@ -631,7 +634,9 @@ private struct PlozziOSLibraryItemCell: View {
                 if let route = CollectionBrowseRoute(
                     item: item, fallbackAccountID: provider.session.server.id
                 ) {
-                    NavigationLink(value: PlozziOSLibraryRoute(collection: route)) {
+                    MediaArtworkZoomValueLink(
+                        id: item.stablePresentationID, value: PlozziOSLibraryRoute(collection: route)
+                    ) {
                         card
                     }
                     .buttonStyle(.plain)
@@ -649,14 +654,14 @@ private struct PlozziOSLibraryItemCell: View {
                     }
                     .buttonStyle(.plain)
                 } else if isCombinedLibrary {
-                    NavigationLink {
+                    MediaArtworkZoomLink(id: item.stablePresentationID) {
                         PlozziOSItemPage(appModel: appModel, item: item)
                     } label: {
                         card
                     }
                     .buttonStyle(.plain)
                 } else {
-                    NavigationLink {
+                    MediaArtworkZoomLink(id: item.stablePresentationID) {
                         PlozziOSItemDetailView(
                             appModel: appModel,
                             provider: provider,

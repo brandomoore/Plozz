@@ -21,6 +21,11 @@ struct TopShelfSettingsView: View {
                         }
                     }
                     .accessibilityIdentifier("top-shelf-enabled")
+                    .settingsSearchAnchor(
+                        "top-shelf-enabled",
+                        fallbackFor: model.settings.isEnabled
+                            ? [] : ["top-shelf-style", "top-shelf-continue", "top-shelf-recent"]
+                    )
                 }
                 if model.settings.isEnabled {
                     TopShelfStylePicker(usesFullScreen: $model.settings.usesFullScreen)
@@ -31,14 +36,14 @@ struct TopShelfSettingsView: View {
                             compact: true, label: "Continue Watching",
                             verbatimTitle: { $0.formatted() }
                         )
-                        .accessibilityIdentifier("top-shelf-continue-watching")
+                        .accessibilityIdentifier("top-shelf-continue-watching").settingsSearchAnchor("top-shelf-continue")
                         SettingsStepper(
                             options: Array(TopShelfSettings.itemCountRange),
                             selection: $model.settings.recentlyAddedItems,
                             compact: true, label: "Recently Added",
                             verbatimTitle: { $0.formatted() }
                         )
-                        .accessibilityIdentifier("top-shelf-recently-added")
+                        .accessibilityIdentifier("top-shelf-recently-added").settingsSearchAnchor("top-shelf-recent")
                     }
                     if model.settings.usesFullScreen {
                         Text("Swipe up on the Apple TV Home Screen to open the full-screen view. Continue Watching appears first, followed by Recently Added.")

@@ -38,8 +38,8 @@ public struct PlozzigenNetworkFileStreamProber: NetworkFileStreamProbing {
                 limits: limits, cancellation: cancellation
             )
         }
-        try Task.checkCancellation()
         guard let report else {
+            try Task.checkCancellation()
             throw MediaTransportError.protocolViolation(reason: "source preparation did not complete")
         }
         let outcome: String = switch report.outcome {
@@ -63,9 +63,36 @@ public struct PlozzigenNetworkFileStreamProber: NetworkFileStreamProbing {
                     + " untimed=\(stream.untimedPacketCount)"
             )
         }
-        guard report.outcome == .complete else {
-            throw MediaTransportError.protocolViolation(reason: "source preparation coverage incomplete")
+        try requireCompletePreparation(report.outcome)
+    }
+
+    static func requireCompletePreparation(_ outcome: SourcePreparationOutcome) throws {
+        switch outcome {
+        case .complete:
+            break
+        case .endOfSource:
+            throw MediaTransportPreparationIncomplete.endOfSource
+        case .seekFailed:
+            throw MediaTransportPreparationIncomplete.seekUnavailable
+        case .budgetExhausted(let reason):
+            switch reason {
+            case .inputLimit:
+                throw MediaTransportPreparationIncomplete.inputBudget
+            case .packetLimit:
+                throw MediaTransportPreparationIncomplete.packetBudget
+            case .packetSizeLimit:
+                throw MediaTransportPreparationIncomplete.packetSizeBudget
+            case .timedOut:
+                // This is the native optional-work budget report, never a
+                // transport timeout or the resolver's preparation deadline.
+                throw MediaTransportPreparationIncomplete.timeBudget
+            case .invalidLimits, .invalidReaderResult, .unsupportedURL, .sourceBusy:
+                throw reason
+            }
         }
+        // Do not turn an already observed incomplete/failure report into a
+        // successful partial-cache handoff when Play cancels at this boundary.
+        try Task.checkCancellation()
     }
 
     public func probe(locator: NetworkFileLocator) async -> ProbedStreamFacts? {

@@ -10,6 +10,36 @@ import XCTest
 /// silently appearing twice (or vanishing) partway down a long combined browse,
 /// which is exactly the class of bug that is hard to spot by eye on device.
 final class IncrementalMediaItemMergerTests: XCTestCase {
+    func testInlineCollectionsStayAccountScopedEvenOnTheSameServer() {
+        let collections = ["first", "second"].map {
+            MediaItem(id: "42", title: "Cuts", kind: .collection,
+                      providerIDs: ["Tmdb": "123"], sourceAccountID: $0)
+        }
+        let info: (String) -> SourceServerInfo? = {
+            SourceServerInfo(providerKind: .plex, serverName: "Server", accountName: $0, serverID: "same-server")
+        }
+        for expose in [false, true] {
+            var revision = 0
+            var merger = IncrementalMediaItemMerger(
+                serverInfo: info,
+                identitySources: { item in
+                    XCTAssertNotEqual(item.kind, .collection, "Curated membership must not consult the title index.")
+                    return []
+                },
+                identityRevision: { revision }
+            )
+            merger.append([collections[0]])
+            if expose { _ = merger.mergedItems() }
+            merger.append([collections[1]])
+            revision += 1
+            let result = merger.mergedItems()
+            XCTAssertEqual(result.map(\.sourceAccountID), ["first", "second"])
+            XCTAssertEqual(result, MediaItemMerger.merge(collections, serverInfo: info))
+            merger.append([collections[0]])
+            XCTAssertEqual(merger.mergedItems().count, 2, "Same-account duplicate collections still collapse.")
+        }
+    }
+
     func testSparseMemberStaysWithItsRefinedGroup() async throws {
         let a = item("a", title: "Movie", account: "server", ids: ["Imdb": "tt111", "Tmdb": "123"])
         let b = item("b", title: "Movie", account: "server", ids: ["Tmdb": "123"])

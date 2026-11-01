@@ -31,6 +31,15 @@ public struct PersonDetailView: View {
     @Environment(\.plozzMetrics) private var metrics
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var onSelectArtwork: ((MediaItem, MediaArtworkZoomSource) -> Void)?
+
+    public func artworkNavigation(
+        _ action: @escaping (MediaItem, MediaArtworkZoomSource) -> Void
+    ) -> Self {
+        var copy = self
+        copy.onSelectArtwork = action
+        return copy
+    }
     #endif
     @Environment(\.dismiss) private var dismiss
 
@@ -418,6 +427,9 @@ public struct PersonDetailView: View {
                 leadingInset: railInset,
                 onSelect: onSelectItem
             )
+                #if os(iOS)
+                .artworkNavigation(onSelectArtwork)
+                #endif
                 // Each shelf is its own focus section, which MediaRowView
                 // deliberately does NOT do by default — ordinary rows stay
                 // unsectioned to preserve tvOS's column-aligned projection.

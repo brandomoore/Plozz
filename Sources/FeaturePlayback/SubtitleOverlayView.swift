@@ -5,6 +5,73 @@ import CoreModels
 import CoreUI
 
 enum SubtitleOverlayGeometry {
+    static func positionReference(style: SubtitleStyle, video: CGRect, active: CGRect?, bounds: CGRect) -> CGRect {
+        guard style.positionReference == .picture else { return bounds }
+        let visible = (active ?? video).intersection(bounds)
+        return visible.isNull || visible.isEmpty || !visible.width.isFinite || !visible.height.isFinite
+            ? bounds : visible
+    }
+
+    static func pictureBitmapOffsets(
+        images: [SubtitleImage], style: SubtitleStyle, video: CGRect, reference: CGRect,
+        bounds: CGRect, controls: [CGRect], sourceAspectRatio: CGFloat?
+    ) -> [Int: CGFloat] {
+        guard style.positionReference == .picture else { return [:] }
+        let frames = images.map {
+            bitmapRect(normalizedRect: $0.normalizedRect, canvasSize: $0.canvasSize,
+                       videoRect: video, sourceAspectRatio: sourceAspectRatio)
+        }
+        var candidates: [(index: Int, envelope: CGRect, minimumY: CGFloat)] = []
+        for (index, image) in images.enumerated() {
+            switch image.controlAvoidance {
+            case .fixed: break
+            case .automatic:
+                let frame = frames[index]
+                if frame.height <= video.height * 0.15, frame.midY >= video.midY {
+                    candidates.append((index, frame, reference.minY))
+                }
+            case let .lowerRegion(envelope, minimumY):
+                let region = bitmapRect(normalizedRect: envelope, canvasSize: image.canvasSize,
+                                        videoRect: video, sourceAspectRatio: sourceAspectRatio)
+                let limit = bitmapRect(normalizedRect: CGRect(x: 0, y: minimumY, width: 1, height: 1 - minimumY),
+                                       canvasSize: image.canvasSize, videoRect: video, sourceAspectRatio: sourceAspectRatio)
+                candidates.append((index, region, max(reference.minY, limit.minY)))
+            }
+        }
+        guard let bottom = candidates.map(\.envelope.maxY).max() else { return [:] }
+        candidates = candidates.filter { $0.envelope.minY >= bottom - video.height * 0.2 }
+        let block = candidates.reduce(CGRect.null) { $0.union($1.envelope) }
+        let minimumY = candidates.map(\.minimumY).max() ?? reference.minY
+        let limits = CGRect(x: reference.minX, y: minimumY, width: reference.width,
+                            height: max(0, reference.maxY - minimumY))
+        guard !block.isNull, block.height <= limits.height else { return [:] }
+        let anchor: CGFloat = switch style.verticalAnchor {
+        case .top: 0
+        case .center: 0.5
+        case .bottom: 1
+        }
+        let top = reference.maxY - reference.height * style.verticalPosition - block.height * anchor
+        var offset = min(max(top, limits.minY), limits.maxY - block.height) - block.minY
+        offset += upwardOffset(for: block.offsetBy(dx: 0, dy: offset), avoiding: controls, in: limits)
+        let moved = block.offsetBy(dx: 0, dy: offset)
+        let selected = Set(candidates.map(\.index))
+        let fallbackFrames = images.enumerated().map { index, image in
+            frames[index].offsetBy(dx: 0, dy: bitmapOffset(
+                for: image, videoRect: video, controls: controls, bounds: bounds,
+                sourceAspectRatio: sourceAspectRatio
+            ))
+        }
+        guard moved.minY >= limits.minY, moved.maxY <= limits.maxY,
+              !controls.contains(where: {
+                  let visible = $0.intersection(bounds)
+                  return !visible.isNull && !visible.isEmpty
+                      && moved.intersects(visible.insetBy(dx: 0, dy: -controlsClearance + 0.5))
+              }),
+              !fallbackFrames.enumerated().contains(where: { !selected.contains($0.offset) && $0.element.intersects(moved) })
+        else { return [:] }
+        return Dictionary(uniqueKeysWithValues: candidates.map { ($0.index, offset) })
+    }
+
     static var controlsClearance: CGFloat {
         #if os(tvOS)
         24
@@ -391,6 +458,7 @@ public struct SubtitleOverlayView: View {
     /// The on-screen rect of the video image, used to place bitmap cues. `nil`
     /// means "fill the container" (fine for text and for the harness).
     public var videoRect: CGRect?
+    public var activePictureRect: CGRect?
     public var sourceVideoAspectRatio: Double?
     /// Visible bottom controls in global coordinates; never a persisted position.
     public var controlsFrame: CGRect?
@@ -403,6 +471,7 @@ public struct SubtitleOverlayView: View {
         style: SubtitleStyle,
         isHDR: Bool = false,
         videoRect: CGRect? = nil,
+        activePictureRect: CGRect? = nil,
         sourceVideoAspectRatio: Double? = nil,
         controlsFrame: CGRect? = nil,
         controlsFrames: [CGRect] = []
@@ -413,6 +482,7 @@ public struct SubtitleOverlayView: View {
         self.style = style
         self.isHDR = isHDR
         self.videoRect = videoRect
+        self.activePictureRect = activePictureRect
         self.sourceVideoAspectRatio = sourceVideoAspectRatio
         self.controlsFrame = controlsFrame
         self.controlsFrames = controlsFrames
@@ -452,7 +522,19 @@ public struct SubtitleOverlayView: View {
 
     @ViewBuilder
     private func bitmapLayer(in rect: CGRect, bounds: CGRect, controls: [CGRect]) -> some View {
-        ForEach(primary.filter(\.isImage)) { cue in
+        let cues = primary.filter(\.isImage)
+        let images = cues.compactMap { cue -> SubtitleImage? in
+            if case .image(let image) = cue.body { return image }
+            return nil
+        }
+        let reference = SubtitleOverlayGeometry.positionReference(
+            style: style, video: rect, active: activePictureRect, bounds: bounds
+        )
+        let offsets = SubtitleOverlayGeometry.pictureBitmapOffsets(
+            images: images, style: style, video: rect, reference: reference, bounds: bounds,
+            controls: controls, sourceAspectRatio: sourceVideoAspectRatio.map { CGFloat($0) }
+        )
+        ForEach(Array(cues.enumerated()), id: \.element.id) { index, cue in
             if case .image(let img) = cue.body {
                 let frame = SubtitleOverlayGeometry.bitmapRect(
                     normalizedRect: img.normalizedRect,
@@ -462,7 +544,7 @@ public struct SubtitleOverlayView: View {
                 )
                 let w = max(1, frame.width)
                 let h = max(1, frame.height)
-                let lift = SubtitleOverlayGeometry.bitmapOffset(
+                let lift = offsets[index] ?? SubtitleOverlayGeometry.bitmapOffset(
                     for: img, videoRect: rect, controls: controls, bounds: bounds,
                     sourceAspectRatio: sourceVideoAspectRatio.map { CGFloat($0) }
                 )
@@ -488,6 +570,9 @@ public struct SubtitleOverlayView: View {
 
     @ViewBuilder
     private func textLayer(in size: CGSize, videoRect: CGRect, controls: [CGRect]) -> some View {
+        let reference = SubtitleOverlayGeometry.positionReference(
+            style: style, video: videoRect, active: activePictureRect, bounds: CGRect(origin: .zero, size: size)
+        )
         let text = primary.filter { !$0.isImage }
         // A cue whose layout is source-positioned is a sign/caption placed
         // independently in its own plane (against the video rect). Everything
@@ -502,14 +587,20 @@ public struct SubtitleOverlayView: View {
                 verticalAnchor: style.verticalAnchor,
                 spacing: secondaryActive ? style.secondary?.gap ?? 0 : 0,
                 controlsFrames: controls.map {
-                    $0.offsetBy(dx: -size.width * 0.04 - style.horizontalOffset * (size.width * 0.25), dy: 0)
+                    $0.offsetBy(
+                        dx: -reference.minX - reference.width * 0.04 - style.horizontalOffset * (reference.width * 0.25),
+                        dy: -reference.minY
+                    )
                 }
             ) {
                 dialogueStack(dialogue)
             }
-            .frame(width: size.width * 0.92, height: size.height)
+            .frame(width: reference.width * 0.92, height: reference.height)
             .frame(width: size.width, height: size.height)
-            .offset(x: style.horizontalOffset * (size.width * 0.25))
+            .offset(
+                x: reference.midX - size.width / 2 + style.horizontalOffset * (reference.width * 0.25),
+                y: reference.midY - size.height / 2
+            )
 
             // Positioned cues (ASS signs / captions): each honours its own
             // layout independently, placed against the video rect.

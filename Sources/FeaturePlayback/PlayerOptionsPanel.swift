@@ -188,7 +188,7 @@ struct PlayerOptionsPanel: View {
                 // its right.
                 return .row(0)
             case .style:
-                return model.secondarySubtitleImagePrimaryFormat == nil ? .row(0) : .subBack
+                return .row(0)
             case .styleFont:
                 let style = SystemCaptionStyle.shared.resolved(model.subtitleStyle)
                 return .row(style.systemFont == nil && style.fontDescriptor == nil

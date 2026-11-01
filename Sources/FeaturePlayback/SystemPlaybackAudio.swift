@@ -5,7 +5,7 @@ import Foundation
 import Observation
 import SwiftUI
 
-enum SystemPlaybackAudioSetting: Int, CaseIterable {
+enum SystemPlaybackAudioSetting: Int, CaseIterable, Sendable {
     case enhanceDialogue = -101
     case reduceLoudSounds = -100
 
@@ -40,7 +40,7 @@ enum SystemPlaybackAudioSetting: Int, CaseIterable {
     }
 }
 
-enum SystemDialogueLevel: Int {
+enum SystemDialogueLevel: Int, Sendable {
     case off = 0, enhance = 1, enhanceMore = 2, isolate = 3
 
     // Isolate has an additional Accessibility gate. Preserve its reported state,
@@ -72,35 +72,42 @@ enum SystemDialogueLevel: Int {
     }
 }
 
-struct SystemPlaybackAudioState: Equatable {
+struct SystemPlaybackAudioState: Equatable, Sendable {
     var values: [SystemPlaybackAudioSetting: Bool]
     var dialogueLevel: SystemDialogueLevel? = nil
 }
 
-@MainActor
-protocol SystemPlaybackAudioControlling {
-    func read() -> SystemPlaybackAudioState
-    func setEnabled(_ enabled: Bool, for setting: SystemPlaybackAudioSetting) throws
-    func setDialogueLevel(_ level: SystemDialogueLevel) throws
+protocol SystemPlaybackAudioControlling: Sendable {
+    func read() async -> SystemPlaybackAudioState
+    func setEnabled(_ enabled: Bool, for setting: SystemPlaybackAudioSetting) async throws
+    func setDialogueLevel(_ level: SystemDialogueLevel) async throws
 }
 
 extension SystemPlaybackAudioControlling {
-    func setDialogueLevel(_ level: SystemDialogueLevel) throws {
+    func setDialogueLevel(_ level: SystemDialogueLevel) async throws {
         throw SystemPlaybackAudio.Failure.unavailable
     }
 }
 
 /// Undocumented tvOS integration: the system owns availability, processing and
 /// persistence. Never write the preference domain or mirror it in profile state.
-@MainActor
-struct SystemPlaybackAudioPreferences: SystemPlaybackAudioControlling {
-    private let domain = "com.apple.preferences-sounds" as CFString
+actor SystemPlaybackAudioPreferences: SystemPlaybackAudioControlling {
+    private let readState: @Sendable () -> SystemPlaybackAudioState
 
-    private var notificationCenter: NotificationCenter? {
+    init(readState: @escaping @Sendable () -> SystemPlaybackAudioState = SystemPlaybackAudioPreferences.readPreferences) {
+        self.readState = readState
+    }
+
+    private nonisolated static var notificationCenter: NotificationCenter? {
         (NSClassFromString("NSDistributedNotificationCenter") as? NotificationCenter.Type)?.default
     }
 
     func read() -> SystemPlaybackAudioState {
+        readState()
+    }
+
+    private nonisolated static func readPreferences() -> SystemPlaybackAudioState {
+        let domain = "com.apple.preferences-sounds" as CFString
         CFPreferencesAppSynchronize(domain)
         let values = Self.availableValues(canPost: notificationCenter != nil) { key in
             CFPreferencesGetAppBooleanValue(key as CFString, domain, nil)
@@ -114,7 +121,7 @@ struct SystemPlaybackAudioPreferences: SystemPlaybackAudioControlling {
         return SystemPlaybackAudioState(values: values, dialogueLevel: level)
     }
 
-    static func availableValues(
+    nonisolated static func availableValues(
         canPost: Bool, readBoolean: (String) -> Bool
     ) -> [SystemPlaybackAudioSetting: Bool] {
         guard canPost else { return [:] }
@@ -126,17 +133,19 @@ struct SystemPlaybackAudioPreferences: SystemPlaybackAudioControlling {
     }
 
     func setEnabled(_ enabled: Bool, for setting: SystemPlaybackAudioSetting) throws {
-        guard let center = notificationCenter, read().values[setting] != nil else {
+        guard let center = Self.notificationCenter, read().values[setting] != nil else {
             throw SystemPlaybackAudio.Failure.unavailable
         }
+        try Task.checkCancellation()
         center.post(name: setting.notification(enabled: enabled), object: nil)
     }
 
     func setDialogueLevel(_ level: SystemDialogueLevel) throws {
-        guard SystemDialogueLevel.choices.contains(level), let center = notificationCenter,
+        guard SystemDialogueLevel.choices.contains(level), let center = Self.notificationCenter,
               read().dialogueLevel != nil else {
             throw SystemPlaybackAudio.Failure.unavailable
         }
+        try Task.checkCancellation()
         let command = level.command
         center.post(name: command.name, object: command.object)
     }
@@ -152,13 +161,15 @@ final class SystemPlaybackAudio {
     static let shared = SystemPlaybackAudio(backend: SystemPlaybackAudioPreferences())
 
     private let backend: any SystemPlaybackAudioControlling
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
     private(set) var state: SystemPlaybackAudioState
     private(set) var pending: Set<SystemPlaybackAudioSetting> = []
     var failure: Failure?
 
     init(backend: any SystemPlaybackAudioControlling) {
         self.backend = backend
-        state = backend.read()
+        state = .init(values: [:])
+        refresh()
     }
 
     var values: [SystemPlaybackAudioSetting: Bool] { state.values }
@@ -168,15 +179,26 @@ final class SystemPlaybackAudio {
         SystemPlaybackAudioSetting.allCases.filter { values[$0] != nil }
     }
 
-    func refresh() {
-        let latest = backend.read()
-        if latest != state { state = latest }
+    /// Reveal, route-change and confirmation readers share one off-main read.
+    /// Keep the last confirmed state visible while the system responds.
+    @discardableResult
+    func refresh() -> Task<Void, Never> {
+        if let refreshTask { return refreshTask }
+        let backend = backend
+        let task = Task { [weak self] in
+            let latest = await backend.read()
+            guard let self else { return }
+            if latest != state { state = latest }
+            refreshTask = nil
+        }
+        refreshTask = task
+        return task
     }
 
     func setEnabled(_ enabled: Bool, for setting: SystemPlaybackAudioSetting) async {
         await apply(setting, isSupported: { $0.values[setting] != nil },
                     isConfirmed: { $0.values[setting] == enabled }) {
-            try backend.setEnabled(enabled, for: setting)
+            try await backend.setEnabled(enabled, for: setting)
         }
     }
 
@@ -186,7 +208,7 @@ final class SystemPlaybackAudio {
         }, isConfirmed: {
             $0.dialogueLevel == level && $0.values[.enhanceDialogue] == (level != .off)
         }) {
-            try backend.setDialogueLevel(level)
+            try await backend.setDialogueLevel(level)
         }
     }
 
@@ -194,26 +216,28 @@ final class SystemPlaybackAudio {
         _ setting: SystemPlaybackAudioSetting,
         isSupported: (SystemPlaybackAudioState) -> Bool,
         isConfirmed: (SystemPlaybackAudioState) -> Bool,
-        send: () throws -> Void
+        send: () async throws -> Void
     ) async {
         guard !pending.contains(setting) else { return }
         failure = nil
-        refresh()
-        guard isSupported(state) else {
-            report(.unavailable)
-            return
-        }
-        guard !isConfirmed(state) else { return }
         pending.insert(setting)
         defer { pending.remove(setting) }
         do {
             try Task.checkCancellation()
-            try send()
+            await refresh().value
+            try Task.checkCancellation()
+            guard isSupported(state) else {
+                report(.unavailable)
+                return
+            }
+            guard !isConfirmed(state) else { return }
+            try await send()
             // Posting is not acknowledgement. Keep the real checkmark until the
             // system confirms, including when the output changes during the wait.
             for _ in 0..<10 {
                 try await Task.sleep(for: .milliseconds(100))
-                refresh()
+                await refresh().value
+                try Task.checkCancellation()
                 guard isSupported(state) else {
                     report(.unavailable)
                     return
@@ -222,7 +246,7 @@ final class SystemPlaybackAudio {
             }
             report(.unconfirmed)
         } catch is CancellationError {
-            refresh()
+            await refresh().value
             PlozzLog.playback.debug("System audio setting confirmation was cancelled.")
         } catch {
             report(.unavailable)
@@ -253,7 +277,7 @@ private struct SystemPlaybackAudioObservation: ViewModifier {
                 guard isActive else { return }
                 do {
                     while !Task.isCancelled {
-                        audio.refresh()
+                        await audio.refresh().value
                         try await Task.sleep(for: .seconds(1))
                     }
                 } catch is CancellationError {

@@ -73,6 +73,9 @@ public final class MediaTransportResolvedSource: @unchecked Sendable {
     /// Keep prepared and cold startup evidence separate.
     public let wasPrepared: Bool
 
+    /// The transport pinned by this resolved source's exact session.
+    public var transportIdentifier: String { sessionLease.key.endpoint.transportIdentifier }
+
     private let sessionLease: MediaTransportResolverLease
     private let playbackLease: MediaIOPlaybackLease?
     private let lock = NSLock()
@@ -132,6 +135,9 @@ public struct MediaTransportNetworkFileResolver: MediaTransportNetworkFileResolv
     /// source is borrowed only for this call; closing it does not consume the
     /// reservation. Retaining a reader does not extend its borrowed lifetime:
     /// all borrowed reads are closed and drained before publication.
+    /// Throw MediaTransportPreparationIncomplete for expected optional coverage
+    /// limits. That source is discarded before Play may resolve normally; actual
+    /// transport, authorization and representation errors must not use that type.
     public typealias SourcePreparer = @Sendable (
         _ locator: NetworkFileLocator,
         _ startPosition: Double,
@@ -267,9 +273,10 @@ public struct MediaTransportNetworkFileResolver: MediaTransportNetworkFileResolv
                         }
                     } catch {
                         await borrowed.shutdown()
-                        throw error
+                        throw borrowed.firstFailure ?? error
                     }
                     await borrowed.shutdown()
+                    if let failure = borrowed.firstFailure { throw failure }
                     try Task.checkCancellation()
                 }
                 let fresh = try await Self.validatedKey(for: locator, provider: provider)

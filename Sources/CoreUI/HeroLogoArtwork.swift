@@ -306,6 +306,30 @@ enum HeroLogoMemo {
         let fallback: HeroLogoFallback.Identity?
         let prefersOnlineArtwork: Bool
         let providerPolicyIdentity: String
+
+        /// A richer request for the same subject may keep its visible logo while
+        /// resolving. Corrections, account changes and artwork preferences cannot.
+        func canRetainImage(from previous: Self) -> Bool {
+            if self == previous { return true }
+            guard prefersOnlineArtwork == previous.prefersOnlineArtwork,
+                  providerPolicyIdentity == previous.providerPolicyIdentity,
+                  let next = fallback, let old = previous.fallback,
+                  next.itemID == old.itemID, next.sourceAccountID == old.sourceAccountID else {
+                return false
+            }
+            let query = next.query
+            let prior = old.query
+            // Genres can change metadata routing without changing the subject.
+            // The exact request still resolves again; its visible logo stays.
+            guard query.artworkLanguage == prior.artworkLanguage,
+                  query.kind == prior.kind,
+                  query.title == prior.title, query.alternateTitle == prior.alternateTitle,
+                  prior.year == nil || query.year == prior.year,
+                  query.seasonNumber == prior.seasonNumber,
+                  query.episodeNumber == prior.episodeNumber else { return false }
+            let ids = query.providerIDs.normalizedProviderIDs
+            return prior.providerIDs.normalizedProviderIDs.allSatisfy { ids[$0.key] == $0.value }
+        }
     }
 
     private static var entries: [Key: ProcessedLogo] = [:]
@@ -380,7 +404,8 @@ private struct LoadedLogo<TextFallback: View>: View {
         // resolved once paints on the FIRST frame of a rebuild. Without it every
         // rebuild drew the styled title for at least one frame, because the
         // pipeline is an actor and even a cache hit costs a suspension.
-        let cached = (resolvedKey == taskKey ? image : nil) ?? HeroLogoMemo.value(for: taskKey)
+        let retained = resolvedKey.map { taskKey.canRetainImage(from: $0) } == true ? image : nil
+        let cached = HeroLogoMemo.value(for: taskKey) ?? retained
         let shown = cached.map { processed in
             guard let displayedArtworkID else { return processed }
             return HeroLogoAnalysis.refine(processed, backgroundSample: displayedArtwork?.sample(for: displayedArtworkID))
@@ -508,19 +533,10 @@ private struct LoadedLogo<TextFallback: View>: View {
 
     private func resolve() async {
         let startedAt = ProcessInfo.processInfo.systemUptime
-        // Deliberately NOT cleared here.
-        //
-        // Blanking first meant every re-resolve dropped a logo that was already on
-        // screen back to the styled title, and then restored it — the text
-        // reappearing *after* the logo had loaded. A re-resolve is common: the
-        // reference list changes as a title is enriched, and a hero carousel
-        // rebuilds its slides as it pages.
-        //
-        // A matching key may retain its current image. A different title,
-        // source, lookup query or artwork preference must resolve independently;
-        // `body` also rejects that old image before the new task starts.
-        if resolvedKey != taskKey { image = nil }
+        // Keep a visible logo during compatible enrichment, but never carry it
+        // into another subject or artwork policy while the new request resolves.
         let key = taskKey
+        if resolvedKey.map({ key.canRetainImage(from: $0) }) != true { image = nil }
         if let cached = HeroLogoMemo.value(for: key) {
             resolvedKey = key
             adopt(cached, for: key)
@@ -541,10 +557,13 @@ private struct LoadedLogo<TextFallback: View>: View {
             prefersOnlineArtwork: prefersOnlineArtwork
         )
         guard !Task.isCancelled else { return }
-        resolvedKey = key
-        guard let prepared else { return }
         let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
-        guard presentationPolicy.shouldAdopt(elapsed: elapsed) else { return }
+        guard let prepared, presentationPolicy.shouldAdopt(elapsed: elapsed) else {
+            image = nil
+            resolvedKey = key
+            return
+        }
+        resolvedKey = key
 
         // Draw the logo the moment it is decoded, BEFORE the backdrop is sampled.
         //

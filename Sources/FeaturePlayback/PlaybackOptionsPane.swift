@@ -30,9 +30,10 @@ struct PlaybackOptionsPane: View {
     private func content(rows: [PlayerOptionsRowSpec]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             if screen == .zoom {
-                PlayerMenuRowStack(rows: [PlayerVideoZoom.Mode.fit, .fill, .stretch].map { mode in
+                PlayerMenuRowStack(rows: zoom.availableModes.filter { $0 != .custom }.map { mode in
                     PlayerControls.TrackRow(
-                        id: Self.modeSlot(mode), header: nil, title: Text(mode.menuTitle), subtitle: nil,
+                        id: Self.modeSlot(mode), header: nil, title: Text(mode.menuTitle),
+                        subtitle: nil,
                         isSelected: zoom.settings.mode == mode, isToggle: false,
                         action: {
                             zoom.settings.mode = mode

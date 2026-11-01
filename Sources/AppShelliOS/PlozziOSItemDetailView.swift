@@ -188,7 +188,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     /// subview because a `navigationDestination` is hosted by the stack, so it
     /// inherits the STACK's environment — the router has to be read where the page
     /// itself is declared.
-    @Environment(\.mediaItemNavigator) private var itemNavigator
+    @Environment(\.mediaItemArtworkNavigator) private var artworkItemNavigator
     @State private var viewModel: ItemDetailViewModel
     @State private var isPageVisible = false
     @State private var playbackPreparation = DetailPlaybackPreparationCoordinator()
@@ -641,7 +641,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     PlozziOSRelatedSection(
                         entries: entries,
                         inset: pageInset,
-                        onSelect: { itemNavigator?($0) }
+                        onSelect: { item, source in artworkItemNavigator?(item, source) }
                     )
                 }
 
@@ -3706,6 +3706,7 @@ struct PlozziOSInlineEpisodeEntry: View {
     @Environment(\.themePalette) private var palette
     @Environment(PlozziOSAppModel.self) private var appModel
     @Environment(\.mediaItemNavigator) private var navigator
+    @State private var pendingNavigationTarget: MediaItem?
     @State private var downloadRecord: DownloadedMediaRecord?
     @State private var downloadError: String?
 
@@ -3713,17 +3714,19 @@ struct PlozziOSInlineEpisodeEntry: View {
     let episodes: [MediaItem]
     let onPlay: (MediaItem, Bool) -> Void
 
-    @ViewBuilder
     var body: some View {
-        if cardStyle == .framed {
-            content
-                .plozzFramedMediaCard(
-                    innerCornerRadius: metrics.landscapeArtworkCornerRadius
-                )
-                .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
-        } else {
-            content
+        Group {
+            if cardStyle == .framed {
+                content
+                    .plozzFramedMediaCard(
+                        innerCornerRadius: metrics.landscapeArtworkCornerRadius
+                    )
+                    .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+            } else {
+                content
+            }
         }
+        .mediaArtworkZoomOrigin(id: episode.stablePresentationID)
     }
 
     private var content: some View {
@@ -3820,6 +3823,7 @@ struct PlozziOSInlineEpisodeEntry: View {
         .frame(width: cardWidth, alignment: .leading)
         .padding(cardStyle == .framed ? 10 : 0)
         .contextMenu { episodeMenuActions }
+        .mediaItemMenuNavigation(target: $pendingNavigationTarget)
         .task(id: "\(episode.id)|\(episode.selectedVersionID ?? "")") {
             downloadRecord = await appModel.downloads
                 .record(forSelectedVersionOf: episode)
@@ -3879,6 +3883,7 @@ struct PlozziOSInlineEpisodeEntry: View {
             cornerRadius: metrics.landscapeArtworkCornerRadius,
             isEnabled: MediaArtworkPlaceholder.Symbol(for: episode) == .playback
         )
+        .mediaArtworkZoomSource(cornerRadius: metrics.landscapeArtworkCornerRadius)
     }
 
     @ViewBuilder
@@ -3892,7 +3897,7 @@ struct PlozziOSInlineEpisodeEntry: View {
                 // deliberately ignores it, so routing everything through the
                 // handler would leave "Episode Info" visible but inert.
                 if action.isNavigation {
-                    navigator?(episode)
+                    pendingNavigationTarget = episode.navigationTarget(for: action)
                 } else {
                     appModel.mediaItemActionHandler.perform(
                         action,

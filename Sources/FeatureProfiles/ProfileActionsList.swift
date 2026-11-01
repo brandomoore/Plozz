@@ -225,6 +225,7 @@ public struct ProfileActionsList: View {
                         }
                     }
                     .accessibilityIdentifier("profile.lock")
+                    .settingsSearchAnchor("profile-lock-entry")
 
                     actionRow(
                         icon: "figure.and.child.holdinghands",
@@ -234,6 +235,7 @@ public struct ProfileActionsList: View {
                         showingKidsOptions = true
                     }
                     .accessibilityIdentifier("profile.kids")
+                    .settingsSearchAnchor("profile-kids")
 
                     // Without a household Parental PIN, settings and profile switching remain open —
                     // say so here rather than let the "On" above imply otherwise. This

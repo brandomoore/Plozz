@@ -350,7 +350,7 @@ final class TransportIOReaderRangePipelineTests: XCTestCase {
     private let mib = 1024 * 1024
     private let enabledEnvironment = ["PLOZZ_WEBDAV_RANGE_PIPELINE": "1"]
 
-    func testPipelineRequiresExplicitHTTPTransportAndExactDebugFlag() async {
+    func testPipelineRequiresHTTPTransportAndOnlyDebugCanDisableIt() async {
         let schemes: [String?] = [nil, "http", "https", "HTTP", "smb", "nfs", "sftp", "ftp", "file", "webdav"]
         for scheme in schemes {
             for flag in [nil, "1", "true", "0"] as [String?] {
@@ -363,9 +363,9 @@ final class TransportIOReaderRangePipelineTests: XCTestCase {
                             discImageProbeEnabled: disc, transportScheme: scheme, environment: environment
                         )
                         #if DEBUG
-                        let expected = ["http", "https"].contains(scheme?.lowercased() ?? "") && flag == "1"
+                        let expected = ["http", "https"].contains(scheme?.lowercased() ?? "") && flag != "0"
                         #else
-                        let expected = false
+                        let expected = ["http", "https"].contains(scheme?.lowercased() ?? "")
                         #endif
                         XCTAssertEqual(reader.usesRangePipeline, expected)
                         reader.close()
@@ -376,12 +376,16 @@ final class TransportIOReaderRangePipelineTests: XCTestCase {
         }
     }
 
-    func testDisabledAndReleasePoliciesKeepOriginalRequestSizes() async {
-        for scheme in ["https", "smb"] {
+    func testDisabledAndNonHTTPPoliciesKeepOriginalRequestSizes() async {
+        var schemes = ["smb"]
+        #if DEBUG
+        schemes.append("https")
+        #endif
+        for scheme in schemes {
             let source = SparseTransportByteSource(preferredReadSize: 32 * mib)
             let reader = TransportIOReader(
                 source: source, readAheadWindow: 4 * mib, transportScheme: scheme,
-                environment: scheme == "smb" ? enabledEnvironment : [:]
+                environment: ["PLOZZ_WEBDAV_RANGE_PIPELINE": "0"]
             )
             XCTAssertEqual(read(reader, count: 12 * mib).result, Int32(12 * mib))
             reader.close()
@@ -391,16 +395,16 @@ final class TransportIOReaderRangePipelineTests: XCTestCase {
         #if !DEBUG
         let source = SparseTransportByteSource(preferredReadSize: 32 * mib)
         let reader = TransportIOReader(
-            source: source, readAheadWindow: 4 * mib, transportScheme: "https", environment: enabledEnvironment
+            source: source, readAheadWindow: 4 * mib, transportScheme: "https",
+            environment: ["PLOZZ_WEBDAV_RANGE_PIPELINE": "0"]
         )
-        XCTAssertEqual(read(reader, count: 12 * mib).result, Int32(12 * mib))
+        XCTAssertEqual(read(reader, count: 12 * mib).result, Int32(8 * mib))
         reader.close()
         await reader.waitForFinalShutdown()
-        XCTAssertEqual(source.readLog.map(\.length), [12 * mib])
+        XCTAssertTrue(source.readLog.allSatisfy { $0.length <= 8 * mib })
         #endif
     }
 
-    #if DEBUG
     private func makeReader(
         _ source: any TransportByteSource, prepared: Bool = false, disc: Bool = false
     ) -> TransportIOReader {
@@ -726,7 +730,6 @@ final class TransportIOReaderRangePipelineTests: XCTestCase {
         reader.close()
         await reader.waitForFinalShutdown()
     }
-    #endif
 }
 
 final class TransportIOReaderReadAheadTests: XCTestCase {

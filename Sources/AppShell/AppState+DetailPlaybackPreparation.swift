@@ -31,8 +31,11 @@ extension AppState {
             },
             reserve: { [weak self] locator, position in
                 guard let self, self.isActiveProfileAuthorized else { throw CancellationError() }
-                let handle = try await self.mediaShare.networkFileResolver.prepare(locator, startPosition: position)
-                return DetailPlaybackPreparationReservation { handle.cancel() }
+                let handle = try self.mediaShare.networkFileResolver.beginPreparation(locator, startPosition: position)
+                return DetailPlaybackPreparationReservation(
+                    cancel: { handle.cancel() },
+                    requestPlaybackHandoff: { handle.requestPlaybackHandoff() }
+                )
             }
         )
     }

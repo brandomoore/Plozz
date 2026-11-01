@@ -43,6 +43,9 @@ jobs:
       - name: Test hygiene guard
         run: python3 tools/test-hygiene.py
 
+      - name: Settings search coverage and regression tests
+        run: tools/check-settings-search.sh
+
       - name: Localization guard
         run: tools/l10n-guard.sh
 

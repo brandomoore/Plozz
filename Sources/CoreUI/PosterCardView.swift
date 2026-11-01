@@ -225,6 +225,9 @@ public struct PosterCardView: View {
                 }
             }
             #endif
+            #if os(iOS)
+            .mediaArtworkZoomOrigin(id: item.stablePresentationID)
+            #endif
     }
 
     private var usesNativePoster: Bool {
@@ -419,6 +422,8 @@ public struct PosterCardView: View {
                 )
                 #if os(tvOS)
                 .recordDetailTransitionArtwork(detailTransitionSource)
+                #elseif os(iOS)
+                .mediaArtworkZoomSource(cornerRadius: metrics.posterArtworkCornerRadius)
                 #endif
 
             if !captionsHidden {
@@ -506,6 +511,8 @@ public struct PosterCardView: View {
                 )
                 #if os(tvOS)
                 .recordDetailTransitionArtwork(detailTransitionSource)
+                #elseif os(iOS)
+                .mediaArtworkZoomSource(cornerRadius: metrics.landscapeArtworkCornerRadius)
                 #endif
 
             if showsCaption {
@@ -610,6 +617,8 @@ public struct PosterCardView: View {
             )
             #if os(tvOS)
             .recordDetailTransitionArtwork(detailTransitionSource)
+            #elseif os(iOS)
+            .mediaArtworkZoomSource(cornerRadius: borderlessCornerRadius)
             #endif
             .plozzFocusHalo(
                 cornerRadius: borderlessCornerRadius,

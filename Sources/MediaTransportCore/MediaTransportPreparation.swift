@@ -7,6 +7,18 @@ public enum MediaTransportPreparationWarmupOutcome: Sendable, Equatable {
     case interruptedForPlayback
 }
 
+/// An optional probe ended without establishing its requested coverage. This is
+/// not a transport failure or a usable reservation: discard and drain the source,
+/// then let actual Play resolve afresh. Real borrowed-read failures take precedence.
+public enum MediaTransportPreparationIncomplete: Error, Sendable, Equatable {
+    case inputBudget
+    case packetBudget
+    case packetSizeBudget
+    case timeBudget
+    case endOfSource
+    case seekUnavailable
+}
+
 /// Keep this handle only while the initiating detail/profile context is valid.
 /// Cancellation (including deinitialization) affects only this reservation, never
 /// a replacement or a source already claimed by playback.
@@ -362,9 +374,13 @@ final class MediaTransportPreparationCoordinator: @unchecked Sendable {
             do {
                 try await candidate.ready.wait().get()
             } catch {
-                // A failed pending ticket carries its observed error to the
-                // first exact Play, rather than turning into a silent cold miss.
-                let expired = lock.withLock {
+                // Only an explicit optional-probe disposition permits a fresh
+                // open; real failures remain terminal for this exact Play.
+                let incomplete = error is MediaTransportPreparationIncomplete
+                let reopen = try lock.withLock {
+                    if incomplete, let current = entry, current.id != candidate.id {
+                        throw MediaTransportError.cancelled
+                    }
                     if let expiry = candidate.expiresAt, timing.now() >= expiry {
                         if entry?.id == candidate.id {
                             cancelLocked(error: MediaTransportError.cancelled, expired: true)
@@ -375,11 +391,18 @@ final class MediaTransportPreparationCoordinator: @unchecked Sendable {
                         entry?.timer?.cancel()
                         entry = nil
                     }
-                    return candidate.status.expired
+                    return candidate.status.expired || incomplete
                 }
-                if expired {
+                if reopen {
                     await candidate.drained.value
                     try Task.checkCancellation()
+                    if incomplete {
+                        try lock.withLock {
+                            if let current = entry, current.id != candidate.id {
+                                throw MediaTransportError.cancelled
+                            }
+                        }
+                    }
                     return nil
                 }
                 throw error
@@ -462,7 +485,7 @@ final class MediaTransportPreparationCoordinator: @unchecked Sendable {
             case .failure(let error):
                 current.status.error = error
                 cancelledDrain = current.drained
-                if current.warmup != nil {
+                if current.warmup != nil, !(error is MediaTransportPreparationIncomplete) {
                     // Resource-free and bounded; cancellation/supersession or
                     // the first claim removes this failed pending ticket.
                     current.expiresAt = timing.now().advanced(by: timing.lifetime)

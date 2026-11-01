@@ -393,8 +393,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             return XCTFail("Disc playback must use the production network-file path")
         }
         let engine = try PlozzigenVideoEngine(
-            networkFileResolver: resolver,
-            networkFileTransportScheme: { $0.accountID == account ? scheme.rawValue : nil }
+            networkFileResolver: resolver
         )
         engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
         let initiallyRendered = await engine.hasRenderedVideoFrame()

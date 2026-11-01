@@ -417,11 +417,11 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
     private let readAheadWindow: Int
     private let maxBackendChunk: Int
 
-    static func rangePipelineRequested(environment: [String: String]? = nil) -> Bool {
+    static func rangePipelineEnabled(environment: [String: String]? = nil) -> Bool {
         #if DEBUG
-        return (environment ?? ProcessInfo.processInfo.environment)["PLOZZ_WEBDAV_RANGE_PIPELINE"] == "1"
+        return (environment ?? ProcessInfo.processInfo.environment)["PLOZZ_WEBDAV_RANGE_PIPELINE"] != "0"
         #else
-        return false
+        return true
         #endif
     }
 
@@ -430,7 +430,7 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         environment: [String: String]? = nil
     ) -> TransportRangePipeline? {
         if ["http", "https"].contains(transportScheme?.lowercased() ?? ""),
-           rangePipelineRequested(environment: environment) {
+           rangePipelineEnabled(environment: environment) {
             return TransportRangePipeline()
         }
         return nil
@@ -472,13 +472,12 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         _ = readerGroup.register(self)
     }
 
-    /// The caller supplies the resolved endpoint's scheme, not a format hint or
-    /// inferred source identity. The optional range pipeline is DEBUG-only and
+    /// The pinned session supplies transport identity, not a format hint or
+    /// a second account lookup. The bounded range pipeline
     /// applies to cold and prepared HTTP(S) files, never other transports.
     public init(
         resolvedSource: MediaTransportResolvedSource,
-        discImageProbeEnabled: Bool = true,
-        transportScheme: String? = nil
+        discImageProbeEnabled: Bool = true
     ) {
         self.discImageProbeEnabled = discImageProbeEnabled
         self.resolvedSource = resolvedSource
@@ -487,7 +486,7 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         self.cursor = resolvedSource.sourceLease.makeCursor()!
         self.readAheadWindow = Self.defaultReadAheadWindow
         self.maxBackendChunk = min(max(1, lease.preferredReadSize), Self.maximumReadAheadWindow)
-        self.rangePipeline = Self.makeRangePipeline(transportScheme: transportScheme)
+        self.rangePipeline = Self.makeRangePipeline(transportScheme: resolvedSource.transportIdentifier)
         self.readerGroup = TransportReaderGroup()
         _ = readerGroup.register(self)
     }

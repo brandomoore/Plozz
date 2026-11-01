@@ -886,7 +886,8 @@ struct DetailHeroView: View, Equatable {
                     // stops at the text column instead of flexing past it — see
                     // ``heroLogoBox``.
                     maxWidth: heroLogoBox.width,
-                    maxHeight: heroLogoBox.height
+                    maxHeight: heroLogoBox.height,
+                    presentationPolicy: .whenResolved
                 ) {
                     titleText(hideText: hideText)
                 }

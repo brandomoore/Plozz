@@ -204,7 +204,7 @@ private struct PlozziOSSearchResultCard: View {
     var body: some View {
         Group {
             if let provider {
-                NavigationLink {
+                MediaArtworkZoomLink(id: item.stablePresentationID) {
                     PlozziOSItemDetailView(
                         appModel: appModel,
                         provider: provider,

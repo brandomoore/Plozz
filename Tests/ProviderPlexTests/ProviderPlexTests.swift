@@ -487,6 +487,22 @@ final class PlexProviderMappingTests: XCTestCase {
         XCTAssertFalse(try provider.map(stream: plain, itemID: "movie", mediaSourceID: "file").isHearingImpaired)
     }
 
+    func testAudioTrackMappingRetainsItsOwnProfileAndSpatialEvidence() throws {
+        let provider = PlexProvider(session: makeSession(), http: StubHTTPClient())
+        for (fields, expected) in [
+            (#""codec":"dca","profile":"MA + DTS:X IMAX""#, "MA + DTS:X IMAX"),
+            (#""codec":"truehd","extendedDisplayTitle":"English TrueHD Atmos""#, "Atmos"),
+            (#""codec":"eac3","profile":"JOC""#, "JOC")
+        ] {
+            let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(
+                (#"{"index":3,"streamType":2,"channels":8,"# + fields + "}").utf8
+            ))
+            let track = try provider.map(stream: dto, itemID: "movie", mediaSourceID: "file")
+            XCTAssertEqual(track.id, 3)
+            XCTAssertEqual(track.profile, expected)
+        }
+    }
+
     private func makeSession() -> UserSession {
         UserSession(
             server: MediaServer(id: "srv", name: "Home", baseURL: URL(string: "https://plex.host:32400")!, provider: .plex),

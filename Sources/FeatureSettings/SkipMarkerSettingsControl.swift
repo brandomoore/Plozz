@@ -56,18 +56,52 @@ private struct SkipMarkerEnableControl: View {
             set: { model.settings.setSkipMarkersEnabled($0) }
         ))
         .accessibilityIdentifier("skip-markers-enabled")
+        .settingsSearchAnchor(
+            "skip-intros",
+            fallbackFor: model.settings.skipMarkersEnabled ? [] : SettingsSearchCatalog.targets(on: .skipMarkers)
+        )
     }
 }
 
 public struct SkipMarkerSettingsView: View {
     @Bindable private var model: PlaybackSettingsModel
+    private let initialKind: MediaSegment.Kind?
+    private let initialCategory: ContentCategory?
     @State private var selectedKind: MediaSegment.Kind?
 
-    public init(model: PlaybackSettingsModel) {
+    public init(
+        model: PlaybackSettingsModel, initialKind: MediaSegment.Kind? = nil,
+        initialCategory: ContentCategory? = nil
+    ) {
         self.model = model
+        self.initialKind = initialKind
+        self.initialCategory = initialCategory
     }
 
     public var body: some View {
+        if !model.settings.skipMarkersEnabled {
+            #if os(tvOS)
+            SettingsFormLayout(
+                title: Text("Intros, credits & more"),
+                rows: [SettingsSplitRow(id: "skip-enable", title: "Enable") {
+                    SkipMarkerEnableControl(model: model)
+                }], showsBack: true
+            )
+            #else
+            List {
+                SettingsSectionGroup { SkipMarkerEnableControl(model: model) }
+            }
+            .settingsPageSurface()
+            .navigationTitle("Intros, credits & more")
+            #endif
+        } else if let initialKind, let initialCategory, model.settings.skipContentCategories.contains(initialCategory) {
+            SkipMarkerContentSettingsView(model: model, kind: initialKind)
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         #if os(tvOS)
         SettingsFormLayout(title: Text("Intros, credits & more"), rows: rows, showsBack: true)
         #else
@@ -75,9 +109,13 @@ public struct SkipMarkerSettingsView: View {
             SettingsSectionGroup {
                 SkipMarkerRuleControls(model: model, scope: .defaultBehavior)
             }
+            .settingsSearchGroup(["skip-default", "skip-default-delay"])
             SettingsSectionGroup("Enable for") {
                 SkipMarkerContentControls(model: model)
             }
+            .settingsSearchGroup(SettingsSearchCatalog.entries.filter {
+                $0.page == .skipMarkers && $0.contentCategory != nil
+            }.map(\.id))
             SettingsSectionGroup {
                 ForEach(MediaSegment.Kind.skippable, id: \.self) { kind in
                     Button { selectedKind = kind } label: {
@@ -89,6 +127,7 @@ public struct SkipMarkerSettingsView: View {
             SettingsSectionGroup {
                 SkipMarkerCommunityControl(model: model)
             }
+            .settingsSearchGroup(["community-markers"])
         }
         .settingsPageSurface()
         .navigationTitle("Intros, credits & more")
@@ -158,6 +197,10 @@ public struct SkipMarkerContentSettingsView: View {
                 SettingsSectionGroup {
                     controls(for: category)
                 }
+                .settingsSearchGroup([
+                    "skip-rule-\(kind.rawValue)-\(category.rawValue)",
+                    "skip-rule-\(kind.rawValue)-\(category.rawValue)-delay"
+                ])
             }
         }
         .settingsPageSurface()
@@ -193,6 +236,11 @@ private struct SkipMarkerContentControls: View {
                 Text(category.displayName)
             }
             .accessibilityIdentifier("skip-content-\(category.rawValue)")
+            .settingsSearchAnchor(
+                "skip-content-\(category.rawValue)",
+                fallbackFor: model.settings.skipContentCategories.contains(category) ? [] :
+                    SettingsSearchCatalog.entries.filter { $0.skipKind != nil && $0.contentCategory == category }.map(\.id)
+            )
         }
     }
 }
@@ -203,7 +251,7 @@ private struct SkipMarkerCommunityControl: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle("Use community markers", isOn: $model.settings.useCommunityMarkers)
-                .accessibilityIdentifier("skip-community-markers")
+                .accessibilityIdentifier("skip-community-markers").settingsSearchAnchor("community-markers")
             Text("From IntroDB and TheIntroDB when your server has none. Shares IMDb/TMDB IDs.")
                 .settingsHelperText()
                 .fixedSize(horizontal: false, vertical: true)
@@ -254,6 +302,20 @@ struct SkipMarkerRuleControls: View {
         switch scope {
         case .defaultBehavior: "default"
         case .content(let kind, let category): "\(kind.rawValue)-\(category.rawValue)"
+        }
+    }
+
+    private var searchID: String {
+        switch scope {
+        case .defaultBehavior: return "skip-default"
+        case .content(let kind, let category): return "skip-rule-\(kind.rawValue)-\(category.rawValue)"
+        }
+    }
+
+    private var delaySearchID: String {
+        switch scope {
+        case .defaultBehavior: return "skip-default-delay"
+        case .content: return "\(searchID)-delay"
         }
     }
     var behaviors: [SkipBehavior] {
@@ -338,6 +400,7 @@ struct SkipMarkerRuleControls: View {
                 SkipBehaviorMenuContent(behaviors: behaviors, selection: behavior)
             }
             .accessibilityIdentifier("skip-behavior-\(identifier)")
+            .settingsSearchAnchor(searchID, fallbackFor: behavior.wrappedValue == .delayed ? [] : [delaySearchID])
             #else
             Menu {
                 SkipBehaviorMenuContent(behaviors: behaviors, selection: behavior)
@@ -348,6 +411,7 @@ struct SkipMarkerRuleControls: View {
             .accessibilityLabel(Text(title))
             .accessibilityValue(selectionSummary)
             .accessibilityIdentifier("skip-behavior-\(identifier)")
+            .settingsSearchAnchor(searchID, fallbackFor: behavior.wrappedValue == .delayed ? [] : [delaySearchID])
             #endif
             if behavior.wrappedValue == .delayed {
                 #if os(tvOS)
@@ -358,7 +422,7 @@ struct SkipMarkerRuleControls: View {
                         Text(Duration.seconds(seconds), format: .units(allowed: [.seconds], width: .wide).locale(locale))
                     }
                 )
-                .accessibilityIdentifier("skip-delay-\(identifier)")
+                .accessibilityIdentifier("skip-delay-\(identifier)").settingsSearchAnchor(delaySearchID)
                 #else
                 Stepper(value: delay, in: 1...30) {
                     LabeledContent {
@@ -367,7 +431,7 @@ struct SkipMarkerRuleControls: View {
                         Text("Skip after")
                     }
                 }
-                .accessibilityIdentifier("skip-delay-\(identifier)")
+                .accessibilityIdentifier("skip-delay-\(identifier)").settingsSearchAnchor(delaySearchID)
                 #endif
             }
         }
