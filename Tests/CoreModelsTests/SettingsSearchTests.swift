@@ -107,6 +107,24 @@ final class SettingsSearchTests: XCTestCase {
         XCTAssertEqual(remembered?.destinationPage(on: .television), .subtitles)
     }
 
+    func testRowStyleSearchIsSeparateFromHeroAndOnlyAvailableOnTV() {
+        let targets = [
+            "home-layout", "showcase-logo-size", "showcase-text-size", "showcase-ratings",
+            "showcase-age", "showcase-rating-count", "showcase-discovery-row"
+        ]
+        let television = SettingsSearchCatalog.entries(on: .television)
+        for id in targets {
+            XCTAssertEqual(television.first { $0.id == id }?.page, .homeRowStyle, id)
+            XCTAssertFalse(SettingsSearchCatalog.carouselHeroTargets.contains(id), id)
+            for platform: SettingsSearchEntry.Platform in [.phone, .tablet] {
+                XCTAssertFalse(SettingsSearchCatalog.entries(on: platform).contains { $0.id == id }, id)
+            }
+        }
+        XCTAssertEqual(SettingsSearchCatalog.entry(id: "hero-ratings")?.page, .heroRatings)
+        XCTAssertEqual(SettingsSearchCatalog.entry(id: "hero-enabled")?.page, .hero)
+        XCTAssertEqual(SettingsSearchCatalog.entry(id: "home-row-style")?.page, .home)
+    }
+
     func testModelBackedFamiliesAreExhaustive() {
         for source in RatingSource.allCases {
             XCTAssertEqual(

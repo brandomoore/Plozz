@@ -9,6 +9,22 @@ import CoreUI
 
 @MainActor
 final class HomeHeroBackdropTests: XCTestCase {
+    func testTopOverscanIsOptInAndPreservesTheRestingViewportSize() {
+        let standard = HomeHeroBackdrop(
+            urls: [], asyncFallbackURL: nil, slideID: "standard", forward: true,
+            width: 1280, height: 720, scrimTone: .black
+        )
+        let incoming = HomeHeroBackdrop(
+            references: [], asyncFallbackURL: nil, slideID: "incoming", forward: true,
+            width: 1280, height: 720, topOverscan: 120, scrimTone: .black
+        )
+        XCTAssertEqual(standard.topOverscan, 0)
+        XCTAssertEqual(incoming.topOverscan, 120)
+        XCTAssertEqual(standard.width, incoming.width)
+        XCTAssertEqual(standard.height, incoming.height)
+        XCTAssertEqual(incoming.recedeLift, 0, "Overscan must not start a separate recede animation.")
+    }
+
     func testCarouselRoutesPersistedExternalBackdropsThroughLiveProviderPolicy() async throws {
         let server = try XCTUnwrap(URL(string: "https://library.example.test/hero.jpg"))
         let tmdb = try XCTUnwrap(URL(string: "https://metadata.example.test/tmdb.jpg"))

@@ -1978,15 +1978,10 @@ public final class AppState {
         apply(.themeSelected)
     }
 
-    /// Advances first-run navigation selection to Home layout.
+    /// Completes appearance setup and reconciles the selected identity.
     public func finishNavigationSelection() {
-        apply(.navigationSelected)
-    }
-
-    /// Reconciles the selected identity after appearance setup.
-    public func finishHomeLayoutSelection() {
         profileFlow.completeAppearanceSetup(for: profilesModel.activeProfileID)
-        apply(.homeLayoutSelected)
+        apply(.navigationSelected)
         plexHomeUsers.ensurePlexIdentityForActiveProfile()
     }
 

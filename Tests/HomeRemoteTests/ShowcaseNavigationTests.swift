@@ -4,6 +4,44 @@ import notify
 
 @MainActor
 final class ShowcaseNavigationTests: XCTestCase {
+    func testFeaturedHeroAndShowcaseRestoreTheSameSlideAndCard() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--production-home-fixture", "--pinned-home", "--hero-showcase-home",
+            "--cached-home-hero", "--home-performance-fixture", "--distinct-home-artwork"
+        ]
+        app.launch()
+        defer { app.terminate() }
+        let hero = app.buttons["home-hero-action-row"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 30))
+        let heroFocused = NSPredicate { _, _ in hero.hasFocus }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: heroFocused, object: nil)], timeout: 10
+        ), .completed)
+        let slide = hero.label
+        XCUIRemote.shared.press(.down)
+        waitForStableCard(in: app)
+        XCUIRemote.shared.press(.right)
+        waitForStableCard(in: app)
+        let card = focusedCard(in: app).label
+        for _ in 0..<3 {
+            XCUIRemote.shared.press(.up)
+            XCTAssertEqual(XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: heroFocused, object: nil)], timeout: 5
+            ), .completed)
+            XCTAssertEqual(hero.label, slide)
+            XCUIRemote.shared.press(.down)
+            waitForStableCard(in: app)
+            XCTAssertEqual(focusedCard(in: app).label, card)
+        }
+        XCUIRemote.shared.press(.down)
+        waitForStableCard(in: app)
+        XCTAssertNotEqual(focusedCard(in: app).label, card)
+        XCUIRemote.shared.press(.up)
+        waitForStableCard(in: app)
+        XCTAssertEqual(focusedCard(in: app).label, card)
+    }
+
     func testPartialServerFailureKeepsContinueWatchingFocusThroughReconciliation() throws {
         try checkPartialServerFailure(leavesResume: false)
     }
@@ -350,6 +388,48 @@ final class ShowcaseNavigationTests: XCTestCase {
         XCTAssertTrue(hero.waitForExistence(timeout: 15))
         if !hero.hasFocus { XCUIRemote.shared.press(.select) }
         try assertNativeSidebarButtonPainted(in: app, name: "carousel-native-sidebar")
+    }
+
+    func testNativeSidebarReturnsToHeroBeforeRevealingHome() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--production-home-fixture", "--native-sidebar-home", "--hero-showcase-home",
+            "--cached-home-hero", "--home-performance-fixture", "--held-home-artwork",
+            "--gradient-off", "--gradient-black",
+            "--home-artwork-cache-namespace=native-hero-sidebar-remote"
+        ]
+        app.launch()
+        defer { app.terminate() }
+        let hero = app.buttons["home-hero-action-row"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 30))
+        if !hero.hasFocus { XCUIRemote.shared.press(.select) }
+        let heroFocused = NSPredicate { _, _ in hero.hasFocus }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: heroFocused, object: nil)], timeout: 10
+        ), .completed)
+        try assertNativeSidebarButtonPainted(in: app, name: "hero-native-sidebar")
+        for cycle in 0..<3 {
+            XCUIRemote.shared.press(.down)
+            waitForStableCard(in: app)
+            let card = focusedCard(in: app).label
+            try assertNativeSidebarButtonPainted(
+                in: app, name: "hero-native-sidebar-first-row-\(cycle)", visible: false
+            )
+            XCUIRemote.shared.press(.down)
+            waitForStableCard(in: app)
+            XCTAssertNotEqual(focusedCard(in: app).label, card)
+            XCUIRemote.shared.press(.up)
+            waitForStableCard(in: app)
+            XCTAssertEqual(focusedCard(in: app).label, card)
+            try assertNativeSidebarButtonPainted(
+                in: app, name: "hero-native-sidebar-return-row-\(cycle)", visible: false
+            )
+            XCUIRemote.shared.press(.up)
+            XCTAssertEqual(XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: heroFocused, object: nil)], timeout: 5
+            ), .completed)
+            try assertNativeSidebarButtonPainted(in: app, name: "hero-native-sidebar-return-\(cycle)")
+        }
     }
 
     func testNativeSidebarButtonRemainsVisibleInShowcase() throws {

@@ -97,6 +97,7 @@ final class NavigationRailFocusHostController: UIHostingController<AnyView> {
     var rootUpdateCount = 0
     #endif
     private weak var requestedFocus: (any UIFocusItem)?
+    weak var directionalContentEntry: NavigationContentFocusRequester.RequestView?
 
     static func containing(_ view: UIView) -> NavigationRailFocusHostController? {
         var responder = view.next
@@ -145,7 +146,9 @@ final class NavigationRailFocusHostController: UIHostingController<AnyView> {
     }
 
     func allowsFocusUpdate(heading: UIFocusHeading) -> Bool {
-        !(isNavigationFocused && !heading.intersection(contentExitHeading).isEmpty)
+        guard isNavigationFocused, !heading.intersection(contentExitHeading).isEmpty else { return true }
+        directionalContentEntry?.scheduleDirectionalEntry()
+        return false
     }
 
     @discardableResult
