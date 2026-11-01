@@ -57,7 +57,10 @@ highlight state changes. Non-target rows retain their native background. The hig
 does not intercept touches or change the setting.
 The landing cue stays invisible for 0.35 seconds after reveal, then plays its
 full three-second animation. It opens with a quick, soft brightness lift that blends
-into two broad neutral reflections over the first 1.8 seconds. The brightness
+into two broad neutral reflections over the first 1.8 seconds. Dark appearances
+use a stronger arrival, surface reflection and fine edge so the cue is visibly
+brighter even without HDR display headroom; light appearances retain their
+existing contrast. The brightness
 lift decays throughout their movement rather than ending as a separate flash. Each reflection
 drifts and changes strength independently, lighting the surface
 and fine portions of its edge rather than drawing a continuously illuminated rim.

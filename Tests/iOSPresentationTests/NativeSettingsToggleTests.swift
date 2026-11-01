@@ -191,6 +191,43 @@ final class NativeSettingsToggleTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(emission.headroom), 2, accuracy: 0.0001)
     }
 
+    func testSearchGlowHDRSurvivesCanvasMaskCompositing() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("HDR colors require iOS 26.") }
+        func renderedPixel(hdr: Bool, opacity: Double) throws -> [Float] {
+            let renderer = ImageRenderer(content:
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white.opacity(opacity)))
+                }
+                    .modifier(SettingsSearchGlowHDR(enabled: hdr))
+                    .frame(width: 16, height: 16)
+                    .background(.black)
+            )
+            renderer.colorMode = .extendedLinear
+            renderer.allowedDynamicRange = .high
+            let image = try XCTUnwrap(renderer.cgImage)
+            let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+            var pixel = [Float](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &pixel, width: 1, height: 1, bitsPerComponent: 32, bytesPerRow: 16,
+                space: space, bitmapInfo: CGBitmapInfo.floatComponents.rawValue
+                    | CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            XCTAssertTrue(context.setEDRTargetHeadroom(2))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return pixel
+        }
+        for opacity in [1.0, 0.5, 0.25] {
+            let standard = try renderedPixel(hdr: false, opacity: opacity)
+            let hdr = try renderedPixel(hdr: true, opacity: opacity)
+            XCTAssertGreaterThan(standard[0], 0)
+            XCTAssertGreaterThan(hdr[0], standard[0] * 1.8,
+                                 "HDR emission must survive the mask at opacity \(opacity): SDR=\(standard), HDR=\(hdr)")
+            XCTAssertEqual(hdr[0], hdr[1], accuracy: 0.001)
+            XCTAssertEqual(hdr[1], hdr[2], accuracy: 0.001)
+            if opacity == 1 { XCTAssertGreaterThan(hdr[0], 1.5) }
+        }
+    }
+
     func testSearchReflectionsDriftGentlyAndIndependently() {
         for phase in stride(from: 0.0, to: 2 * .pi, by: .pi / 4) {
             for time in stride(from: 0.0, through: 2.9, by: 0.1) {
@@ -331,14 +368,20 @@ final class NativeSettingsToggleTests: XCTestCase {
                 let weakest = try XCTUnwrap(contrasts.min())
                 let strongest = try XCTUnwrap(contrasts.max())
                 XCTAssertLessThan(weakest, 20, "Unlit edges should blend into the surface, not form a continuous rim.")
-                XCTAssertGreaterThan(strongest, 65, "The localized reflection must clearly identify the searched row.")
-                XCTAssertLessThan(strongest, 140, "Fine edge reflections must not become a bright illuminated border.")
+                XCTAssertGreaterThan(strongest, light ? 65 : 110,
+                                     "Dark reflections must visibly exceed the previous dim glow even in SDR captures.")
+                XCTAssertLessThan(strongest, light ? 140 : 195,
+                                  "Fine edge reflections must remain below a solid white border.")
                 XCTAssertGreaterThan(Double(strongest) / Double(max(1, weakest)), 2.5,
                                      "Edge reflections must remain localized rather than evenly outlining the row.")
                 let surface = CGPoint(x: bounds.minX + width * 0.3, y: bounds.minY + bounds.height * 0.25)
-                XCTAssertGreaterThan(abs(try pixel(settled, surface)[0] - background), 25,
+                XCTAssertGreaterThan(abs(try pixel(settled, surface)[0] - background), light ? 25 : 60,
                                      "The broad surface reflection must be visible, not just its edge.")
                 let center = CGPoint(x: bounds.midX, y: bounds.midY)
+                if !light {
+                    XCTAssertGreaterThan(try pixel(first, center)[0], 60,
+                                         "The arrival must pop visibly without depending on HDR display headroom.")
+                }
                 XCTAssertGreaterThan(
                     abs(try pixel(first, center)[0] - background),
                     abs(try pixel(settled, center)[0] - background) + 12,

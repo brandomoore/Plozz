@@ -299,9 +299,9 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
                     let surface = shape.path(in: bounds)
                     let outline = shape.inset(by: 1.5).path(in: bounds)
                     let passes: [(mask: Path, opacity: Double, blur: CGFloat)] = [
-                        (surface, 0.20, 0),
-                        (outline.strokedPath(StrokeStyle(lineWidth: 6)), 0.28, 3),
-                        (outline.strokedPath(StrokeStyle(lineWidth: 1)), 0.50, 0.35)
+                        (surface, palette.isLight ? 0.20 : 0.35, 0),
+                        (outline.strokedPath(StrokeStyle(lineWidth: 6)), palette.isLight ? 0.28 : 0.45, 3),
+                        (outline.strokedPath(StrokeStyle(lineWidth: 1)), palette.isLight ? 0.50 : 0.72, 0.35)
                     ]
                     TimelineView(.animation(minimumInterval: 1.0 / 30, paused: waiting || finished)) { timeline in
                         let time = finished ? SettingsSearchGlowMotion.duration
@@ -309,7 +309,9 @@ struct SettingsSearchGlow<Outline: InsettableShape>: View {
                         Canvas { context, _ in
                             let arrival = SettingsSearchGlowMotion.arrivalBoost(at: time)
                             context.opacity = SettingsSearchGlowMotion.opacity(at: time)
-                            context.fill(surface, with: .color(neutral.opacity(0.045 + 0.11 * arrival)))
+                            context.fill(surface, with: .color(neutral.opacity(
+                                0.045 + (palette.isLight ? 0.11 : 0.18) * arrival
+                            )))
                             let lights = SettingsSearchGlowMotion.reflections(at: time, phase: phase).map { reflection in
                                 let gradient = Gradient(stops: (0...24).map { index in
                                     let distance = Double(index) / 24
