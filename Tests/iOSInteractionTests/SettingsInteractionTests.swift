@@ -203,11 +203,11 @@ final class SettingsInteractionTests: XCTestCase {
         // Capture before accessibility queries consume the short-lived cue.
         let arrival = XCUIScreen.main.screenshot().image
         // A polling wait adds at least a second after XCTest's tap-idle wait,
-        // which can consume the complete three-second cue on iPad.
+        // which can consume much of the cue on iPad.
         XCTAssertTrue(target.exists, app.debugDescription)
         let frame = target.frame.insetBy(dx: 0, dy: -8)
         XCTAssertFalse(frame.isEmpty)
-        Thread.sleep(forTimeInterval: 3.6)
+        Thread.sleep(forTimeInterval: 4.5)
         let settled = XCUIScreen.main.screenshot().image
         XCTAssertEqual(target.frame.insetBy(dx: 0, dy: -8), frame,
                        "Compare the same stationary row, not navigation or keyboard movement.")

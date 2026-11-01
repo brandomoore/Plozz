@@ -226,11 +226,12 @@ private struct SettingsSearchHighlightKey: PreferenceKey {
 
 enum SettingsSearchGlowMotion {
     static let delay = 0.35
-    static let duration = 3.0
+    static let duration = 3.9
+    static let fadeOutDuration = 1.8
     static let lifetime = delay + duration
 
     static func opacity(at time: Double) -> Double {
-        eased(time / 0.16) * eased((duration - time) / 0.9)
+        eased(time / 0.16) * eased((duration - time) / fadeOutDuration)
     }
 
     static func arrivalBoost(at time: Double) -> Double {

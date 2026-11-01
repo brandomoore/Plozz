@@ -56,7 +56,7 @@ retain an initially absent background during navigation even when the row's
 highlight state changes. Non-target rows retain their native background. The highlight
 does not intercept touches or change the setting.
 The landing cue stays invisible for 0.35 seconds after reveal, then plays its
-full three-second animation. It opens with a quick, soft brightness lift that blends
+full 3.9-second animation. It opens with a quick, soft brightness lift that blends
 into two broad neutral reflections over the first 1.8 seconds. Dark appearances
 use a stronger arrival, surface reflection and fine edge so the cue is visibly
 brighter even without HDR display headroom; light appearances retain their
@@ -66,8 +66,9 @@ drifts and changes strength independently, lighting the surface
 and fine portions of its edge rather than drawing a continuously illuminated rim.
 The light fields scale with the row, including wide tablet rows, and start at a
 varied phase on each landing; nothing picks new random values between frames.
-A shared envelope eases the arrival in and gradually fades the entire cue out,
-without extending its duration. Its inset drawing stays within
+A shared envelope preserves the initial 2.1 seconds, then fades the entire cue out
+over 1.8 seconds with a smooth, flat-ended curve. The full lifetime, including
+the invisible pause, is 4.25 seconds. Its inset drawing stays within
 the row's corner shape, and its 30-fps timeline stops when the cue ends.
 Reduce Motion, reduced transparency/effects, and inactive scenes use a steady
 outline after the same delay instead; TV continues to use native focus without this mobile effect.

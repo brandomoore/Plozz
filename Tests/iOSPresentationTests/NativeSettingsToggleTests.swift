@@ -158,10 +158,10 @@ final class NativeSettingsToggleTests: XCTestCase {
                        "Spatial movement comparisons must not mistake a global fade for moving reflections.")
     }
 
-    func testSearchArrivalPopBlendsIntoReflectionsWithoutExtendingCue() {
+    func testSearchArrivalPopBlendsIntoReflectionsBeforeLongFade() {
         XCTAssertEqual(SettingsSearchGlowMotion.delay, 0.35)
-        XCTAssertEqual(SettingsSearchGlowMotion.duration, 3)
-        XCTAssertEqual(SettingsSearchGlowMotion.lifetime, 3.35)
+        XCTAssertEqual(SettingsSearchGlowMotion.duration, 3.9)
+        XCTAssertEqual(SettingsSearchGlowMotion.lifetime, 4.25)
         XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0.16), 1)
         XCTAssertEqual(SettingsSearchGlowMotion.arrivalBoost(at: 0.16), 1)
         XCTAssertGreaterThan(SettingsSearchGlowMotion.arrivalBoost(at: 0.8), 0.6,
@@ -179,6 +179,25 @@ final class NativeSettingsToggleTests: XCTestCase {
             XCTAssertLessThan(before - after, 0.01,
                               "The longer blend must avoid the previous sharp mid-fade brightness drop.")
         }
+    }
+
+    func testSearchFadeOutLastsLongerAndEasesToRest() {
+        XCTAssertEqual(SettingsSearchGlowMotion.fadeOutDuration, 1.8)
+        let start = SettingsSearchGlowMotion.duration - SettingsSearchGlowMotion.fadeOutDuration
+        XCTAssertEqual(start, 2.1, accuracy: 0.000001,
+                       "Extend the tail without dimming the existing arrival or settled reflection earlier.")
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: start), 1, accuracy: 0.000001)
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 3), 0.5, accuracy: 0.000001,
+                       "The glow must still be halfway through its fade at the previous endpoint.")
+        XCTAssertLessThan(1 - SettingsSearchGlowMotion.opacity(at: start + 0.01), 0.0001)
+        XCTAssertLessThan(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration - 0.01), 0.0001)
+        for step in 1...180 {
+            let before = SettingsSearchGlowMotion.opacity(at: start + Double(step - 1) / 100)
+            let after = SettingsSearchGlowMotion.opacity(at: start + Double(step) / 100)
+            XCTAssertLessThanOrEqual(after, before)
+            XCTAssertLessThan(before - after, 0.009, "The fade must not drop sharply between frames.")
+        }
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration), 0)
     }
 
     func testSearchGlowHDRUsesExpectedLinearHeadroom() throws {
@@ -230,7 +249,7 @@ final class NativeSettingsToggleTests: XCTestCase {
 
     func testSearchReflectionsDriftGentlyAndIndependently() {
         for phase in stride(from: 0.0, to: 2 * .pi, by: .pi / 4) {
-            for time in stride(from: 0.0, through: 2.9, by: 0.1) {
+            for time in stride(from: 0.0, through: SettingsSearchGlowMotion.duration - 0.1, by: 0.1) {
                 let before = SettingsSearchGlowMotion.reflections(at: time, phase: phase)
                 let after = SettingsSearchGlowMotion.reflections(at: time + 0.1, phase: phase)
                 XCTAssertEqual(before.count, 2, "Use a few broad reflections, not a repeating border pattern.")
@@ -417,10 +436,24 @@ final class NativeSettingsToggleTests: XCTestCase {
                 add(attachment)
             }
             if animates {
+                let fading = try await captureFrame(at: SettingsSearchGlowMotion.delay + 3)
+                let tail = try await captureFrame(at: SettingsSearchGlowMotion.delay + 3.6)
+                let background = light ? 255 : 0
+                let fadingContrast = try XCTUnwrap(edge.map { abs(try pixel(fading, $0)[0] - background) }.max())
+                let tailContrast = try XCTUnwrap(edge.map { abs(try pixel(tail, $0)[0] - background) }.max())
+                XCTAssertGreaterThan(fadingContrast, 20, "The reflection must remain visible past its former endpoint.")
+                XCTAssertGreaterThan(tailContrast, 0, "The extended tail must remain visible before its final fade.")
+                XCTAssertLessThan(tailContrast, fadingContrast / 2, "The tail must taper away, not linger at full brightness.")
+                for (name, image) in [("fading", fading), ("tail", tail)] {
+                    let attachment = XCTAttachment(image: image)
+                    attachment.name = "Search glow \(name) width=\(Int(width)) light=\(light)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
                 let expired = try await captureFrame(at: SettingsSearchGlowMotion.lifetime + 0.2)
                 for point in edge {
                     XCTAssertEqual(try pixel(expired, point)[0], light ? 255 : 0, accuracy: 2,
-                                   "The glow must finish fading before the three-second landing ends.")
+                                   "The glow must finish fading before the extended landing ends.")
                 }
             }
             XCTAssertEqual(model.controlBounds, bounds, "Animation must not change row geometry.")
