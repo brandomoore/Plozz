@@ -263,8 +263,8 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
 
         public var displayName: LocalizedStringResource {
             switch self {
-            case .screen: "Screen"
-            case .picture: "Picture"
+            case .screen: "Bottom of screen"
+            case .picture: "Bottom of video"
             }
         }
     }

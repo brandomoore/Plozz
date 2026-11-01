@@ -3,12 +3,33 @@ import XCTest
 
 @MainActor
 final class SubtitleStylePreferencesTests: XCTestCase {
+    func testPositionLabelsDescribeTheBottomReferenceWithoutChangingStoredValues() {
+        let expected: [(SubtitleStyle.PositionReference, String, String)] = [
+            (.screen, "screen", "Bottom of screen"),
+            (.picture, "picture", "Bottom of video")
+        ]
+        XCTAssertEqual(SubtitleStyle.PositionReference.allCases, expected.map { $0.0 })
+        for (reference, storedValue, title) in expected {
+            var label = reference.displayName
+            label.locale = Locale(identifier: "en")
+            XCTAssertEqual(String(localized: label), title)
+            XCTAssertEqual(reference.rawValue, storedValue)
+        }
+        XCTAssertEqual(SubtitleStyle.default.positionReference, .screen)
+        XCTAssertEqual(SubtitleStyle.profileDefault.positionReference, .screen)
+    }
+
     func testPictureReferenceDecodesLegacyUnknownAndRoundTrips() throws {
         XCTAssertEqual(try JSONDecoder().decode(SubtitleStyle.self, from: Data("{}".utf8)).positionReference, .screen)
         XCTAssertEqual(try JSONDecoder().decode(SubtitleStyle.self, from: Data("{\"positionReference\":\"future\"}".utf8)).positionReference, .screen)
-        var style = SubtitleStyle.default
-        style.positionReference = .picture
-        XCTAssertEqual(try JSONDecoder().decode(SubtitleStyle.self, from: JSONEncoder().encode(style)), style)
+        for reference in SubtitleStyle.PositionReference.allCases {
+            var style = SubtitleStyle.default
+            style.positionReference = reference
+            style.verticalPosition = 0.73
+            style.verticalAnchor = .top
+            style.horizontalOffset = -0.12
+            XCTAssertEqual(try JSONDecoder().decode(SubtitleStyle.self, from: JSONEncoder().encode(style)), style)
+        }
     }
     func testSystemStyleChoiceAndCustomStyleTransferOnlyToTheSameProfile() throws {
         let sourceName = "SubtitleProfileSource.\(UUID().uuidString)"
@@ -112,6 +133,8 @@ final class SubtitleStylePreferencesTests: XCTestCase {
             let store = SubtitleStyleStore(defaults: defaults, namespace: namespace)
             XCTAssertTrue(store.load().base.followsSystemStyle)
             XCTAssertTrue(store.load().resolvedLiveTV.followsSystemStyle)
+            XCTAssertEqual(store.load().base.positionReference, .screen)
+            XCTAssertEqual(store.load().resolvedLiveTV.positionReference, .screen)
             XCTAssertNil(store.load().liveTV)
         }
         for json in ["{}", #"{"base":{}}"#, #"{"base":{"fontScale":0.37},"liveTV":{"fontScale":1.17}}"#] {

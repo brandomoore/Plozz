@@ -158,14 +158,14 @@ public struct MobileSubtitleStyleEditor: View {
     }
 
     @ViewBuilder private var positionRows: some View {
-        Picker("Position relative to", selection: subtitleStyleBinding(viewModel, \.positionReference)) {
+        Picker("Position", selection: subtitleStyleBinding(viewModel, \.positionReference)) {
             ForEach(SubtitleStyle.PositionReference.allCases, id: \.self) { reference in
                 Text(reference.displayName).tag(reference)
             }
         }
         if viewModel.controls.secondarySubtitleImagePrimaryFormat == nil || viewModel.effectiveStyle.positionReference == .picture {
             MobileSubtitleSliderRow(
-                title: "Position", value: subtitleStyleBinding(viewModel, \.verticalPosition),
+                title: "Vertical offset", value: subtitleStyleBinding(viewModel, \.verticalPosition),
                 range: SubtitleStyle.verticalPositionRange, step: SubtitleStyle.verticalPositionStep,
                 formattedValue: { $0.formatted(.percent.precision(.fractionLength(0...1)).locale(locale)) }
             )

@@ -1083,9 +1083,12 @@ establish physical-device HDR output or energy use.
 
 ## Subtitle appearance
 
-**Position relative to** selects Screen (the existing default) or Picture.
+**Position** selects **Bottom of screen** (the existing default) or
+**Bottom of video**. **Vertical offset** keeps the existing percentage adjustment
+measured upward from that reference's bottom. Saved choices, offsets, and the
+default are unchanged; these labels do not introduce new placement presets.
 This lives in the existing profile-scoped subtitle style, including the separate
-Live TV style. Picture uses measured active bounds when available and otherwise
+Live TV style. Bottom of video uses measured active bounds when available and otherwise
 the displayed video, intersected with the visible viewport. It does not change
 source aspect ratio or resize authored subtitle canvases. Ordinary dialogue and
 dual lanes use that reference; eligible lower bitmap regions move together

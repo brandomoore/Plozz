@@ -313,6 +313,18 @@ final class PlayerOptionsPanelIntegrationTests: XCTestCase {
             let rows = try XCTUnwrap(captured)
             XCTAssertEqual(rows.map(\.slot), Array(0..<rows.count))
             XCTAssertEqual(rows.first?.title, SystemCaptionStyleCopy.optionTitle)
+            XCTAssertFalse(rows.contains { $0.title == LocalizedStringResource("Position relative to") })
+            let position = try XCTUnwrap(rows.first { $0.title == LocalizedStringResource("Position") })
+            if case let .choice(_, _, next) = position.kind {
+                next()
+                XCTAssertEqual(model.subtitleStyle.positionReference, .picture)
+                XCTAssertEqual(model.subtitleStyle.verticalPosition, 0.06)
+            } else { XCTFail("Position must select the reference, not change the vertical offset.") }
+            let offset = try XCTUnwrap(rows.first { $0.title == LocalizedStringResource("Vertical offset") })
+            if case let .number(_, step) = offset.kind {
+                step(1)
+                XCTAssertEqual(model.subtitleStyle.verticalPosition, 0.065, accuracy: 0.000_001)
+            } else { XCTFail("Vertical offset must keep the existing percentage stepper.") }
             XCTAssertFalse(rows.contains { $0.title == LocalizedStringResource("Use File Positions") })
             XCTAssertFalse(rows.contains { $0.title == LocalizedStringResource("Use File Colors") })
             XCTAssertFalse(rows.contains { $0.title == LocalizedStringResource("Use Bold and Italic") })

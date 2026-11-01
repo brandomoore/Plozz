@@ -79,12 +79,12 @@ struct SubtitleStylePanel: View {
     private var bitmapPositionRows: [StyleRowSpec] {
         let style = effectiveStyle
         var rows = [choiceRow(
-            0, "Position relative to", options: SubtitleStyle.PositionReference.allCases,
+            0, "Position", options: SubtitleStyle.PositionReference.allCases,
             current: style.positionReference, label: { $0.displayName }
         ) { value in updateStyle { $0.positionReference = value } }]
         if style.positionReference == .picture {
             rows.append(numberRow(
-                1, "Position", options: Self.positionOptions,
+                1, "Vertical offset", options: Self.positionOptions,
                 current: Int((style.verticalPosition / SubtitleStyle.verticalPositionStep).rounded()),
                 label: { Text(Double($0) * SubtitleStyle.verticalPositionStep, format: .percent.precision(.fractionLength(0...1))) }
             ) { value in updateStyle { $0.verticalPosition = Double(value) * SubtitleStyle.verticalPositionStep } })
@@ -166,7 +166,7 @@ struct SubtitleStylePanel: View {
 
     @ViewBuilder private var styleFooter: some View {
         if screen == .style, model.secondarySubtitleImagePrimaryFormat != nil {
-            Text("Picture positioning moves lower captions, not artwork. Image subtitles keep their original font and color.")
+            Text("Bottom of video moves lower captions, not artwork. Image subtitles keep their original font and color.")
                 .font(.footnote).playerMenuRowSecondary().padding(16)
         } else if screen == .styleBackground {
             Text("Window padding is set by Plozz. Apple does not expose subtitle padding or line spacing.")
@@ -202,11 +202,11 @@ struct SubtitleStylePanel: View {
         ))); slot += 1
         rows.append(numberRow(slot, "Text Size", options: Self.sizeOptions, current: Int((s.fontScale * 100).rounded()), displayValue: Text(s.fontScale, format: .percent.precision(.fractionLength(0...3))), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.fontScale = Double(v) / 100 } }); slot += 1
         rows.append(choiceRow(
-            slot, "Position relative to", options: SubtitleStyle.PositionReference.allCases,
+            slot, "Position", options: SubtitleStyle.PositionReference.allCases,
             current: s.positionReference, label: { $0.displayName }
         ) { v in updateStyle { $0.positionReference = v } }); slot += 1
         rows.append(numberRow(
-            slot, "Position",
+            slot, "Vertical offset",
             options: Self.positionOptions,
             current: Int((s.verticalPosition / SubtitleStyle.verticalPositionStep).rounded()),
             label: { Text(Double($0) * SubtitleStyle.verticalPositionStep, format: .percent.precision(.fractionLength(0...1))) }
