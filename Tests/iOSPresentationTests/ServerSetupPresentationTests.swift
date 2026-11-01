@@ -11,6 +11,35 @@ import XCTest
 
 @MainActor
 final class ServerSetupPresentationTests: XCTestCase {
+    func testMobileLinkCodesRemainReadableAcrossWidthsAndTextSizes() async throws {
+        for (size, typeSize, light) in [
+            (CGSize(width: 320, height: 568), DynamicTypeSize.large, false),
+            (.init(width: 320, height: 568), .accessibility5, true),
+            (.init(width: 844, height: 390), .accessibility3, false),
+            (.init(width: 768, height: 1024), .large, true)
+        ] {
+            for code in ["654321", "ABCD"] {
+                let image = try await render(
+                    ScrollView {
+                        ServerConnectionCode(
+                            code: code, expiresAt: .now.addingTimeInterval(120), lifetime: 120
+                        )
+                        .padding(.horizontal, 20)
+                    }
+                    .environment(\.themePalette, light ? ThemePalette.light : .dark)
+                    .environment(\.dynamicTypeSize, typeSize),
+                    size: size, light: light
+                ) { window in
+                    let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+                    XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+                }
+                let text = try recognize(image).joined().replacingOccurrences(of: " ", with: "")
+                XCTAssertTrue(text.contains(code), "Every code character must remain readable: \(text)")
+                attach(image, name: "Refined-code-\(code)-\(size)-\(typeSize)")
+            }
+        }
+    }
+
     func testOnboardingActionsRemainReadableWhenDisabledInEveryTheme() async throws {
         for (name, palette) in [("dark", ThemePalette.dark), ("black", .pureBlack), ("light", .light)] {
             let image = try await render(
@@ -43,7 +72,7 @@ final class ServerSetupPresentationTests: XCTestCase {
             (.init(width: 375, height: 1024), .accessibility3, false),
             (.init(width: 1024, height: 768), .large, true)
         ] {
-            for page in ["chooser", "password", "quick", "plex-servers", "silo", "iptv"] {
+            for page in ["chooser", "password", "quick", "plex", "plex-servers", "silo", "iptv"] {
                 let image = try await render(
                     MobileServerOnboardingFixture(page: page)
                         .environment(\.themePalette, light ? ThemePalette.light : .dark)
@@ -59,7 +88,7 @@ final class ServerSetupPresentationTests: XCTestCase {
                 }
                 let text = try recognize(image).joined(separator: " ")
                 let expected = ["chooser": "IPTV", "password": "Quick Connect",
-                                "quick": "Password", "plex-servers": "Continue",
+                                "quick": "Password", "plex": "approval", "plex-servers": "Continue",
                                 "silo": "Cancel", "iptv": "Cancel"][page]!
                 XCTAssertTrue(text.contains(expected), "\(page) at \(size): \(text)")
                 attach(image, name: "Onboarding-\(page)-bottom-\(size)-\(typeSize)")

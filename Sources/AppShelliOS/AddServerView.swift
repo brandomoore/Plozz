@@ -156,7 +156,8 @@ struct AddServerView: View {
                                 Text("Connect")
                             }
                         }
-                        .frame(maxWidth: .infinity)
+                        .font(.body)
+                        .frame(maxWidth: .infinity, minHeight: 24)
                     }
                     .plozzActionButton()
                     .controlSize(.large)
@@ -380,17 +381,16 @@ struct QuickConnectServerSignInView: View {
             provider: .jellyfin, title: Text(verbatim: server.name),
             subtitle: Text("Open Jellyfin on another device, choose **Quick Connect**, and enter this code.")
         ) {
-            SettingsSectionGroup {
-                phaseContent
-                    .frame(maxWidth: .infinity)
-            }
+            phaseContent
+                .frame(maxWidth: .infinity)
             Button {
                 onUsePassword()
             } label: {
                 Text("Use Password")
+                    .font(.body)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 24)
             }
             .plozzActionButton(role: .secondary)
             .controlSize(.large)
@@ -420,7 +420,7 @@ struct QuickConnectServerSignInView: View {
                 Button {
                     viewModel.retry()
                 } label: {
-                    Text("Try Again").frame(maxWidth: .infinity)
+                    Text("Try Again").font(.body).frame(maxWidth: .infinity, minHeight: 24)
                 }
                 .plozzActionButton()
                 .controlSize(.large)
@@ -498,7 +498,8 @@ struct PasswordServerSignInView: View {
                     if case .submitting = viewModel.phase { ProgressView() }
                     else { Text("Sign In") }
                 }
-                .frame(maxWidth: .infinity)
+                .font(.body)
+                .frame(maxWidth: .infinity, minHeight: 24)
             }
             .plozzActionButton()
             .controlSize(.large)
@@ -510,9 +511,10 @@ struct PasswordServerSignInView: View {
                     onUseQuickConnect()
                 } label: {
                     Text("Use Quick Connect")
+                        .font(.body)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 24)
                 }
                 .plozzActionButton(role: .secondary)
                 .controlSize(.large)
@@ -572,7 +574,8 @@ struct PlexServerSignInView: View {
                     }
                 } label: {
                     Label("Open Plex to link", systemImage: "safari")
-                        .frame(maxWidth: .infinity)
+                        .font(.body)
+                        .frame(maxWidth: .infinity, minHeight: 24)
                 }
                 .plozzActionButton()
                 .controlSize(.large)
@@ -582,15 +585,15 @@ struct PlexServerSignInView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                SettingsSectionGroup {
-                    VStack(spacing: 16) {
+                VStack(spacing: 16) {
+                    VStack(spacing: 4) {
                         Text("Or enter a code at")
                             .foregroundStyle(.secondary)
                         Text(verbatim: "plex.tv/link").font(.title3.bold())
-                        ServerConnectionCode(code: code, expiresAt: expiresAt, lifetime: viewModel.codeLifetime)
                     }
-                    .frame(maxWidth: .infinity)
+                    ServerConnectionCode(code: code, expiresAt: expiresAt, lifetime: viewModel.codeLifetime)
                 }
+                .frame(maxWidth: .infinity)
             case .loadingServers:
                 ProgressView("Loading your Plex servers…")
                     .frame(maxWidth: .infinity)
@@ -599,7 +602,7 @@ struct PlexServerSignInView: View {
                 Button {
                     viewModel.selectServers(servers.filter { selectedServerIDs.contains($0.id) })
                 } label: {
-                    Text("Continue").frame(maxWidth: .infinity)
+                    Text("Continue").font(.body).frame(maxWidth: .infinity, minHeight: 24)
                 }
                 .plozzActionButton()
                 .controlSize(.large)
@@ -615,7 +618,7 @@ struct PlexServerSignInView: View {
                         didSeedSelection = false
                         viewModel.retry()
                     } label: {
-                        Text("Try Again").frame(maxWidth: .infinity)
+                        Text("Try Again").font(.body).frame(maxWidth: .infinity, minHeight: 24)
                     }
                     .plozzActionButton()
                     .controlSize(.large)

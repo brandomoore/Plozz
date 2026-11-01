@@ -75,6 +75,44 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["654321"].waitForExistence(timeout: 5))
     }
 
+    func testCodeLayoutAndAlternativeActionSizesMatch() throws {
+        let app = launch("quick")
+        defer { app.terminate() }
+        let password = app.buttons["Use Password"]
+        XCTAssertTrue(password.waitForExistence(timeout: 8))
+        let code = app.staticTexts["654321"]
+        XCTAssertTrue(code.waitForExistence(timeout: 8))
+        let countdown = app.descendants(matching: .any).matching(identifier: "connection-code-countdown").firstMatch
+        XCTAssertTrue(countdown.exists)
+        XCTAssertGreaterThan(countdown.frame.minX, code.frame.maxX)
+        XCTAssertEqual(countdown.frame.midY, code.frame.midY, accuracy: 2)
+        let alternateFrame = password.frame
+        XCTAssertGreaterThanOrEqual(alternateFrame.height, 44)
+        attach(app, name: "Refined-quick")
+
+        password.tap()
+        let quick = app.buttons["Use Quick Connect"]
+        XCTAssertTrue(quick.waitForExistence(timeout: 5))
+        let primary = app.buttons["server-sign-in-submit"]
+        XCTAssertEqual(primary.frame.height, quick.frame.height, accuracy: 1)
+        XCTAssertEqual(primary.frame.minX, quick.frame.minX, accuracy: 1)
+        XCTAssertEqual(primary.frame.width, quick.frame.width, accuracy: 1)
+        XCTAssertEqual(primary.frame.height, alternateFrame.height, accuracy: 1)
+        attach(app, name: "Refined-password")
+        app.terminate()
+
+        app.launchArguments = ["--onboarding-page=plex"]
+        app.launch()
+        let plexCode = app.staticTexts["ABCD"]
+        XCTAssertTrue(plexCode.waitForExistence(timeout: 8))
+        let plexCountdown = app.descendants(matching: .any).matching(identifier: "connection-code-countdown").firstMatch
+        XCTAssertTrue(plexCountdown.exists)
+        XCTAssertGreaterThan(plexCountdown.frame.minX, plexCode.frame.maxX)
+        XCTAssertEqual(plexCountdown.frame.midY, plexCode.frame.midY, accuracy: 2)
+        XCTAssertEqual(app.buttons["Open Plex to link"].frame.height, alternateFrame.height, accuracy: 1)
+        attach(app, name: "Refined-plex")
+    }
+
     func testDiscoveredServerOpensSignInAndPersistsAccount() throws {
         let app = launch("flow")
         defer { app.terminate() }

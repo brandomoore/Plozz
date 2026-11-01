@@ -1,6 +1,7 @@
 #if os(iOS)
 import CoreModels
 import CoreUI
+import FeatureAuth
 import ProviderPlex
 import SwiftUI
 
@@ -60,50 +61,43 @@ struct ServerProviderChoices: View {
     }
 }
 
-struct ServerLinkCountdown: View {
-    let expiresAt: Date
-    let lifetime: TimeInterval
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let remaining = max(0, expiresAt.timeIntervalSince(context.date))
-            let fraction = lifetime > 0 ? min(1, remaining / lifetime) : 0
-            let tint: Color = remaining <= 15 ? .orange : .accentColor
-            ZStack {
-                Circle().stroke(tint.opacity(0.16), lineWidth: 6)
-                Circle()
-                    .trim(from: 0, to: fraction)
-                    .stroke(tint, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Text(Int(remaining.rounded(.up)), format: .number)
-                    .font(.title3.monospacedDigit().bold())
-                    .minimumScaleFactor(0.25)
-                    .padding(12)
-                    .foregroundStyle(tint)
-            }
-            .frame(width: 76, height: 76)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Code expires in \(Int(remaining.rounded(.up))) seconds")
-        }
-    }
-}
-
 struct ServerConnectionCode: View {
+    @Environment(\.themePalette) private var palette
     let code: String
     let expiresAt: Date
     let lifetime: TimeInterval
 
     var body: some View {
-        VStack(spacing: 20) {
-            ConnectionCodeView(code, size: 64)
-                .textSelection(.enabled)
-            ServerLinkCountdown(expiresAt: expiresAt, lifetime: lifetime)
+        VStack(spacing: 16) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 20) {
+                    codePanel
+                    countdown
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                VStack(spacing: 20) {
+                    codePanel
+                    countdown
+                }
+            }
             Text("Waiting for approval…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
+    }
+
+    private var codePanel: some View {
+        ConnectionCodeView(code)
+            .textSelection(.enabled)
+    }
+
+    private var countdown: some View {
+        LinkCodeExpiryCountdown(
+            expiresAt: expiresAt, lifetime: lifetime, size: 56,
+            tint: palette.secondaryText
+        )
     }
 }
 
