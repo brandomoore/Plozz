@@ -5,9 +5,111 @@ import Foundation
 import XCTest
 
 final class IPTVIntegrationTests: XCTestCase {
+    func testIndexedGuideDownloadExposesCachePolicyAndDoesNotReuseRawBytes() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
+        let url = try XCTUnwrap(URL(string: "https://provider.test/guide.xml"))
+        let client = try IPTVClient(
+            credential: IPTVCredential(mode: .playlist, address: url),
+            directory: root, configuration: configuration()
+        )
+        addTeardownBlock { await client.cancel() }
+        for (policy, persists, fresh) in [
+            ("max-age=3600", true, true), ("no-cache", true, false), ("no-store", false, true)
+        ] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { _ in (200, ["Cache-Control": policy], Data("<tv/>".utf8)) }
+            let before = Date()
+            let first = try await client.guideDocument(from: url)
+            _ = try await client.guideDocument(from: url)
+            XCTAssertEqual(first.permitsPersistence, persists)
+            XCTAssertEqual(first.expiresAt > before.addingTimeInterval(1), fresh)
+            XCTAssertLessThanOrEqual(first.expiresAt.timeIntervalSinceNow, 60)
+            XCTAssertEqual(IPTVFixture.state.requests.count, 2)
+        }
+    }
+
+    func testProviderPassesCompleteCatalogToIndexAndInvalidatesItOnManualRefresh() async throws {
+        IPTVFixture.state.handler = { request in
+            if request.url?.path == "/guide.xml" { return (200, [:], Data("<tv/>".utf8)) }
+            return (200, [:], Data("""
+            #EXTM3U x-tvg-url="https://provider.test/guide.xml"
+            #EXTINF:-1 tvg-id="news" tvg-name="News Guide",News
+            https://provider.test/news.ts
+            #EXTINF:-1 tvg-id="sport",Sport
+            https://provider.test/sport.ts
+            """.utf8))
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
+        let credential = try IPTVCredential(
+            mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/playlist"))
+        )
+        let session = try await IPTVProvider.signIn(
+            credential: credential, name: "Fixture", deviceID: "device",
+            cacheDirectory: root, configuration: configuration()
+        )
+        let index = GuideIndexSpy()
+        let concurrentClient = try IPTVClient(
+            credential: credential, directory: root, configuration: configuration()
+        )
+        addTeardownBlock { await concurrentClient.cancel() }
+        await index.beforeCatalog {
+            IPTVFixture.state.handler = { request in
+                if request.url?.path == "/guide.xml" { return (200, [:], Data("<tv/>".utf8)) }
+                return (200, [:], Data("""
+                #EXTM3U x-tvg-url="https://provider.test/guide.xml"
+                #EXTINF:-1 tvg-id="changed",Changed
+                https://provider.test/news.ts
+                """.utf8))
+            }
+            try await concurrentClient.ensureCatalog("live", force: true)
+        }
+        let provider = try IPTVProvider(
+            context: .init(
+                session: session, accountID: "account", credentialRevision: .init(),
+                localMediaContext: .init(accountID: "account", profileID: "profile", profileNamespace: nil)
+            ), cacheDirectory: root, configuration: configuration(), guideIndex: index
+        )
+        let channels = try await provider.liveTVChannels()
+        _ = try await provider.liveTVGuide(
+            channelIDs: [XCTUnwrap(channels.first).id],
+            from: Date(timeIntervalSince1970: 100), to: Date(timeIntervalSince1970: 500)
+        )
+        let metadata = await index.catalogChannels
+        XCTAssertEqual(Set(metadata.compactMap(\.guideID)), ["news", "sport"])
+        XCTAssertEqual(metadata.first(where: { $0.guideID == "news" })?.guideName, "News Guide")
+        _ = try await provider.refreshLiveTVAvailability()
+        await provider.teardown()
+        let invalidations = await index.invalidations
+        let cancellations = await index.cancellations
+        XCTAssertEqual(invalidations, 1)
+        XCTAssertEqual(cancellations, 1)
+    }
+
     override func tearDown() {
         IPTVFixture.state.reset()
         super.tearDown()
+    }
+
+    private actor GuideIndexSpy: IPTVGuideIndexLoading {
+        var catalogChannels: [IPTVProvider.IPTVGuideChannel] = []
+        var invalidations = 0
+        var cancellations = 0
+        private var beforeRead: (@Sendable () async throws -> Void)?
+        func beforeCatalog(_ action: @escaping @Sendable () async throws -> Void) { beforeRead = action }
+        func programmes(
+            url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
+            catalog: @escaping @Sendable () async throws -> [IPTVProvider.IPTVGuideChannel],
+            download: @escaping @Sendable () async throws -> XMLTVDownloadedDocument
+        ) async throws -> [ServerLiveTVProgramme] {
+            try await beforeRead?()
+            catalogChannels = try await catalog()
+            _ = try await download()
+            return []
+        }
+        func invalidate() { invalidations += 1 }
+        func cancel() { cancellations += 1 }
     }
 
     func testSavedXtreamCatalogueRestoresWithoutAnyProviderRequestAfterSignIn() async throws {

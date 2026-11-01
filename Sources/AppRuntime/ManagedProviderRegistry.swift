@@ -78,7 +78,10 @@ public enum ManagedProviderRegistry {
 
     public static func registerIPTV(into registry: ProviderRegistry, durableStore: DurableLocalStateStore?) {
         registry.register(.iptv) { context in
-            try IPTVProvider(context: context, durableStore: durableStore, guideLoader: iptvGuideLoader)
+            try IPTVProvider(
+                context: context, durableStore: durableStore,
+                guideIndex: IPTVAccountGuideIndex(context: context)
+            )
         }
     }
 

@@ -104,9 +104,10 @@ SCENARIOS = {
         "suite": "network", "target": "ProviderIPTVTests",
         "test": "IPTVPerformanceProbeTests/testPerformanceLargeGuideBatches",
         "file": "Tests/ProviderIPTVTests/IPTVPerformanceProbeTests.swift",
-        "description": "Two 2,000-channel batches from one 6,000-channel, 48,000-programme XMLTV document above the small-body cache limit.",
+        "description": "Cold indexed import and warm query: two 2,000-channel batches from one 6,000-channel, 48,000-programme XMLTV document.",
         "counters": ["guideBytes", "httpRequests", "downloadedBytes", "parseInvocations",
-                     "retainedRows", "requestedChannels"],
+                     "retainedRows", "requestedChannels", "coldBatchNanoseconds", "warmBatchNanoseconds",
+                     "indexedChannels"],
     },
     "live-tv-schedule-sync": {
         "suite": "core", "target": "FeatureLiveTVCoreTests",

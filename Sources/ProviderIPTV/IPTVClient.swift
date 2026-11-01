@@ -557,6 +557,31 @@ actor IPTVClient {
         return try committedLiveChannels()
     }
 
+    func guideChannels() async throws -> [IPTVProvider.IPTVGuideChannel] {
+        try await ensureCatalog("live")
+        try catalog.execute("BEGIN")
+        do {
+            var result: [IPTVProvider.IPTVGuideChannel] = []
+            while true {
+                try Task.checkCancellation()
+                let page = try catalog.records(where: "live = 1", values: [], start: result.count, limit: 1_000)
+                guard result.count + page.count <= 100_000 else { throw LiveTVSourceImportError.guideTooLarge }
+                result += page.map {
+                    IPTVProvider.IPTVGuideChannel(
+                        id: $0.item.id, name: $0.item.title, guideID: $0.guideID,
+                        guideName: $0.guideName, country: $0.guideCountry
+                    )
+                }
+                if page.count < 1_000 { break }
+            }
+            try catalog.execute("COMMIT")
+            return result
+        } catch {
+            try catalog.execute("ROLLBACK")
+            throw error
+        }
+    }
+
     func cachedLiveTVCatalog() throws -> ServerLiveTVCatalogSnapshot? {
         let scope = credential.mode == .xtream ? "live" : Self.playlistCatalogScope
         let committed = credential.mode == .file
@@ -687,6 +712,10 @@ actor IPTVClient {
     }
 
     func guideData(from url: URL) async throws -> Data {
+        try await guideDocument(from: url, retainsRawResponse: true).data
+    }
+
+    func guideDocument(from url: URL, retainsRawResponse: Bool = false) async throws -> XMLTVDownloadedDocument {
         try Task.checkCancellation()
         let refresh = currentGuideRefresh()
         if refresh?.missingURLs.contains(url) == true {
@@ -702,7 +731,7 @@ actor IPTVClient {
             while true {
                 let retryAfter = OSAllocatedUnfairLock<TimeInterval?>(initialState: nil)
                 do {
-                    return try await downloadGuideData(from: url) { response in
+                    return try await downloadGuideData(from: url, retainsRawResponse: retainsRawResponse) { response in
                         let delay = HTTPDate.retryAfter(response.value(forHTTPHeaderField: "Retry-After"))
                         retryAfter.withLock { $0 = delay }
                     }
@@ -756,11 +785,12 @@ actor IPTVClient {
     }
 
     private func downloadGuideData(
-        from url: URL, receivedResponse: @escaping @Sendable (HTTPURLResponse) -> Void
-    ) async throws -> Data {
-        if let cachedGuide, cachedGuide.url == url, cachedGuide.expires > Date() {
+        from url: URL, retainsRawResponse: Bool,
+        receivedResponse: @escaping @Sendable (HTTPURLResponse) -> Void
+    ) async throws -> XMLTVDownloadedDocument {
+        if retainsRawResponse, let cachedGuide, cachedGuide.url == url, cachedGuide.expires > Date() {
             IPTVGuideDiagnostics.request?.cacheHit(bytes: cachedGuide.data.count)
-            return cachedGuide.data
+            return XMLTVDownloadedDocument(data: cachedGuide.data, expiresAt: cachedGuide.expires, permitsPersistence: true)
         }
         let (bytes, response) = try await http.bytes(
             url: url, headers: credential.guideHeaders(for: url), guideRequest: true,
@@ -802,7 +832,7 @@ actor IPTVClient {
             .flatMap { Double($0.dropFirst(8).trimmingCharacters(in: CharacterSet(charactersIn: "\""))) }
         let duration = min(60, maxAge.flatMap { $0.isFinite ? max(0, $0) : nil } ?? 60)
         clearGuideCache()
-        if duration > 0, !directives.contains("no-store"), !directives.contains("no-cache") {
+        if retainsRawResponse, duration > 0, !directives.contains("no-store"), !directives.contains("no-cache") {
             cachedGuide = (url, data, Date().addingTimeInterval(duration))
             let generation = guideCacheGeneration
             guideCacheExpiry = Task { [weak self] in
@@ -815,7 +845,10 @@ actor IPTVClient {
             }
         }
         try Task.checkCancellation()
-        return data
+        return XMLTVDownloadedDocument(
+            data: data, expiresAt: Date().addingTimeInterval(directives.contains("no-cache") ? 0 : duration),
+            permitsPersistence: !directives.contains("no-store")
+        )
     }
 
     private func expireGuideCache(generation: UUID) {
@@ -828,6 +861,11 @@ actor IPTVClient {
         guideCacheExpiry = nil
         guideCacheGeneration = UUID()
         cachedGuide = nil
+    }
+
+    func invalidateGuideCache() {
+        clearGuideCache()
+        guideRefreshes.removeAll()
     }
 
     func cancel() {

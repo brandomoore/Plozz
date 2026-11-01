@@ -384,8 +384,9 @@ downloads spool through 64 KiB buffers into unlinked temporary files, then expos
 immutable file-backed data to the existing streaming parser. Partial downloads
 are reclaimed on failure, cancellation or process termination. Expiry and teardown
 release the account response cache without requiring another
-request. This avoids downloading a large guide again for each channel batch;
-matching and parsing still run separately for each batch. A storage failure fails
+request. This transport cache remains available to the bounded parser adapter.
+The app's account-backed adapter instead uses the indexed generation path below.
+A storage failure fails
 the import rather than falling back to an unbounded in-memory download.
 Rejected XMLTV documents are evicted from the response cache in both account and
 standalone source paths, so the next refresh can fetch corrected data rather than
@@ -399,6 +400,36 @@ their last-good data. The window remains failed and retryable rather than becomi
 fresh or successfully empty. Cancellation and authorization failures remain terminal,
 and publication still rechecks the active profile and source authorization.
 
+Account-backed XMLTV now uses the existing encrypted SQLite guide cache, scoped
+to account, profile, namespace and credential revision. An import retains potential
+guide stations for the complete committed channel catalog within one day behind
+and seven days ahead of the requested start. Subsequent channel/window requests
+query that index rather than scanning XML again. Matching still runs against the
+exact requested/remaining channel set: exact-ID ambiguity, name matching and
+airing IDs do not change merely because another channel exists in the catalog.
+Catalog metadata and each multi-channel query are read from consistent snapshots.
+Result limits fail explicitly rather than silently truncating at the UI window limit.
+These separate account caches omit the standalone search and manual-mapping tables;
+the complete station metadata remains in the atomic guide document. Standalone
+guide search and mapping retain their existing indexes.
+
+Rows, projection, content digest, retained interval and freshness are committed
+together. Malformed or cancelled replacements preserve the previous generation;
+failed requests retain the existing failure/partial-result behavior. A shared
+utility-priority import has separate waiter cancellation, and teardown or explicit
+refresh cancels and drains superseded work. Existing visible listings remain
+available in the presentation model while it refreshes.
+
+This does not introduce a new polling schedule. Parsed reuse retains the existing
+60-second maximum freshness, honoring shorter max-age and no-cache. An identical
+download can revalidate an eligible index without parsing again. No-store removes
+persisted source data before bounded transient parsing, including malformed
+replacements. Explicit refresh bypasses parsed freshness and the raw-response
+cache. Account HTTP validators are not introduced here: unlike existing standalone
+conditional fetching, this path still downloads expired bodies before comparing
+their digest. A changed catalog projection, language, or requested interval outside
+the retained horizon requires a new import.
+
 The bounded-retry comparison used
 [Kodi IPTV Simple's XMLTV loader](https://github.com/kodi-pvr/pvr.iptvsimple/blob/f4071e16c747e1a13d4710e249cb03ff11204f17/src/iptvsimple/Epg.cpp)
 and [Jellyfin's XMLTV download/cache handling](https://github.com/jellyfin/jellyfin/blob/5b385862fb97201d954a6ac7c9c745d791a738fa/src/Jellyfin.LiveTv/Listings/XmlTvListingsProvider.cs).
@@ -409,6 +440,12 @@ The large-guide comparison also inspected
 and [guide ingestion](https://github.com/bilipp/Lume/blob/36d2df31616a6f58cee679b220a0412173b762bf/Lume/Services/Sync/EPGSyncManager.swift).
 Plozz extends its own temporary-file and streaming-parser infrastructure; it does
 not copy upstream code or adopt global cache deletion or success-on-partial-failure.
+The generation/query separation also draws on
+[Kodi's indexed EPG database](https://github.com/xbmc/xbmc/blob/6a26de1efa2d908d020eec39f9a2c06d554d49a4/xbmc/pvr/epg/EpgDatabase.cpp)
+and distinguishes it from
+[TVHeadend's in-memory schedule snapshots](https://github.com/tvheadend/tvheadend/blob/941d132fde23f1c22e35175fe2e276f0728295f9/src/epgdb.c).
+Neither implementation establishes a speed estimate for Plozz or justifies
+replacing its bounded streaming XML/gzip validation with a materialized XML tree.
 
 XMLTV accepts minute- or second-precision programme timestamps, compact and
 colon-separated numeric timezone offsets, and the unambiguous UTC/GMT/Z labels.

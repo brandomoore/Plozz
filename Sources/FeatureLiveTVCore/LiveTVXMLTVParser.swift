@@ -105,6 +105,7 @@ public struct LiveTVXMLTVParser: Sendable {
     public func parseIndexed(
         data: Data, channels: [LiveTVPrototypeChannel], now: Date,
         overrides: [String: String] = [:], lookbackDays: Int = 1, lookaheadDays: Int = 7,
+        indexGuideStations: Bool = false,
         sink: @escaping (LiveTVPrototypeProgram) throws -> Void
     ) throws -> LiveTVGuideImport {
         guard (0...7).contains(lookbackDays), (1...28).contains(lookaheadDays) else {
@@ -123,6 +124,7 @@ public struct LiveTVXMLTVParser: Sendable {
                 }
                 return InputStream(data: data)
             }, channels: channels, now: now, overrides: overrides,
+            indexGuideStations: indexGuideStations,
             lookbackDays: lookbackDays, lookaheadDays: lookaheadDays, sink: sink
         )
     }
@@ -132,6 +134,7 @@ public struct LiveTVXMLTVParser: Sendable {
         channels: [LiveTVPrototypeChannel],
         now: Date,
         overrides: [String: String] = [:],
+        indexGuideStations: Bool = false,
         lookbackDays: Int = 1, lookaheadDays: Int = 7,
         sink: ((LiveTVPrototypeProgram) throws -> Void)? = nil
     ) throws -> LiveTVGuideImport {
@@ -154,14 +157,28 @@ public struct LiveTVXMLTVParser: Sendable {
         }
         var guideChannels = metadataDelegate.guideChannels
         for id in metadataDelegate.undeclaredGuideIDs { guideChannels[id] = [] }
-        let matching = LiveTVGuideMatcher(provider: provider).matching(
-            channels: channels,
-            guideChannels: guideChannels,
-            overrides: overrides
-        )
+        let matcher = LiveTVGuideMatcher(provider: provider)
+        let matching = indexGuideStations
+            ? (channelsByGuideID: [String: [LiveTVPrototypeChannel]](), assignments: [String: LiveTVGuideMatch]())
+            : matcher.matching(channels: channels, guideChannels: guideChannels, overrides: overrides)
+        var channelsByGuideID = matching.channelsByGuideID
+        if indexGuideStations {
+            // Matching depends on the requested batch. Retain potential stations,
+            // then apply the unchanged matcher to that exact batch at query time.
+            let ids = Set(channels.compactMap(\.guideID))
+            let names = Set(channels.map { matcher.normalizedDisplayName($0.guideName ?? $0.name) })
+            channelsByGuideID = [:]
+            for (id, stationNames) in guideChannels where ids.contains(id)
+                || stationNames.contains(where: { names.contains(matcher.normalizedDisplayName($0)) }) {
+                channelsByGuideID[id] = [LiveTVPrototypeChannel(
+                    id: id, number: 0, name: stationNames.first ?? id, category: "Live TV",
+                    symbol: "tv", accent: 0, source: .iptv, tagline: "", guideID: id
+                )]
+            }
+        }
         try checkCancellation()
         let programmeDelegate = XMLTVDelegate(
-            channelsByGuideID: matching.channelsByGuideID,
+            channelsByGuideID: channelsByGuideID,
             initialRetainedTextBytes: metadataDelegate.retainedTextBytes,
             preferredLanguage: preferredLanguage,
             now: now, lookbackDays: lookbackDays, lookaheadDays: lookaheadDays, sink: sink
@@ -785,7 +802,7 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
                 parser.abortParsing()
                 return
             }
-            let identifier = stableProgramID(
+            let identifier = LiveTVXMLTVParser.stableProgramID(
                 channelID: channel.id,
                 guideChannelID: program.guideChannelID,
                 title: program.title,
@@ -823,7 +840,10 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
         }
     }
 
-    private func stableProgramID(
+}
+
+extension LiveTVXMLTVParser {
+    static func stableProgramID(
         channelID: String,
         guideChannelID: String,
         title: String,
@@ -844,7 +864,9 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
         )
         return "xmltv-" + LiveTVIdentityDigest.hex(digest)
     }
+}
 
+extension XMLTVDelegate {
     private func normalizedText(_ text: String) -> String? {
         let result = text.split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
@@ -873,14 +895,7 @@ private struct PendingProgram {
     var end: Date
     var details = LiveTVProgramDetails()
     var textBytes: Int {
-        var count = title.utf8.count + subtitle.utf8.count
-        count += details.description?.utf8.count ?? 0
-        count += details.categories.reduce(0) { $0 + $1.utf8.count }
-        count += details.languages.reduce(0) { $0 + $1.utf8.count }
-        count += details.episode?.utf8.count ?? 0
-        count += details.rating?.utf8.count ?? 0
-        count += details.artworkURL?.absoluteString.utf8.count ?? 0
-        return count
+        title.utf8.count + subtitle.utf8.count + details.retainedTextBytes
     }
 }
 

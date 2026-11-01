@@ -12,17 +12,19 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
     private let watch: LocalMediaWatchStore
     private let playback: IPTVPlaybackSessions
     private let guideLoader: IPTVGuideLoader?
+    private let guideIndex: (any IPTVGuideIndexLoading)?
 
     public init(
         context: ProviderResolutionContext, durableStore: DurableLocalStateStore? = nil,
         cacheDirectory: URL? = nil, configuration: URLSessionConfiguration? = nil,
-        guideLoader: IPTVGuideLoader? = nil
+        guideLoader: IPTVGuideLoader? = nil, guideIndex: (any IPTVGuideIndexLoading)? = nil
     ) throws {
         guard context.session.server.provider == .iptv, let local = context.localMediaContext,
               local.accountID == context.accountID else { throw ProviderResolutionError.localMediaContextRequired(.iptv) }
         let credential = try IPTVCredential.decode(context.session.accessToken)
         self.context = context
         self.guideLoader = guideLoader
+        self.guideIndex = guideIndex
         session = context.session
         client = try IPTVClient(credential: credential, directory: cacheDirectory, configuration: configuration)
         watch = LocalMediaWatchStore(localMediaContext: local, durableStore: durableStore)
@@ -263,6 +265,8 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
     }
 
     public func refreshLiveTVAvailability() async throws -> ServerLiveTVAvailability {
+        await guideIndex?.invalidate()
+        await client.invalidateGuideCache()
         try await client.ensureCatalog("live", force: true)
         return try await liveTVAvailability()
     }
@@ -372,14 +376,23 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         guard !channelIDs.isEmpty else { return [] }
         let urls = try await client.guideURLs()
         guard !urls.isEmpty else { return [] }
-        guard let guideLoader else { throw ServerLiveTVError.unsupportedAPI }
+        guard guideLoader != nil || guideIndex != nil else { throw ServerLiveTVError.unsupportedAPI }
+        let indexedCatalog = guideIndex == nil ? nil : try await client.guideChannels()
         var channels: [IPTVGuideChannel] = []
-        for id in channelIDs {
-            let record = try await client.record(id)
-            channels.append(IPTVGuideChannel(
-                id: id, name: record.item.title, guideID: record.guideID,
-                guideName: record.guideName, country: record.guideCountry
-            ))
+        if let indexedCatalog {
+            let byID = Dictionary(uniqueKeysWithValues: indexedCatalog.map { ($0.id, $0) })
+            channels = try channelIDs.map {
+                guard let channel = byID[$0] else { throw AppError.notFound }
+                return channel
+            }
+        } else {
+            for id in channelIDs {
+                let record = try await client.record(id)
+                channels.append(IPTVGuideChannel(
+                    id: id, name: record.item.title, guideID: record.guideID,
+                    guideName: record.guideName, country: record.guideCountry
+                ))
+            }
         }
         var result: [ServerLiveTVProgramme] = []
         var covered = Set<String>()
@@ -393,7 +406,8 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
             if remaining.isEmpty { break }
             do {
                 let programmes = try await loadXMLTVGuide(
-                    url: url, channels: remaining, from: from, to: to, loader: guideLoader, diagnostics: diagnostics
+                    url: url, channels: remaining, from: from, to: to, loader: guideLoader,
+                    catalog: indexedCatalog, diagnostics: diagnostics
                 )
                 result += programmes
                 covered.formUnion(programmes.map(\.channelID))
@@ -419,7 +433,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
                     do {
                         result += try await loadXMLTVGuide(
                             url: fallback, channels: remaining, from: from, to: to,
-                            loader: guideLoader, diagnostics: diagnostics
+                            loader: guideLoader, catalog: indexedCatalog, diagnostics: diagnostics
                         )
                     } catch {
                         try Task.checkCancellation()
@@ -462,12 +476,24 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
 
     private func loadXMLTVGuide(
         url: URL, channels: [IPTVGuideChannel], from: Date, to: Date,
-        loader: IPTVGuideLoader, diagnostics: IPTVGuideDiagnostics
+        loader: IPTVGuideLoader?, catalog: [IPTVGuideChannel]?, diagnostics: IPTVGuideDiagnostics
     ) async throws -> [ServerLiveTVProgramme] {
         try Task.checkCancellation()
         let request = IPTVGuideDiagnostics.Request()
         do {
             let programmes = try await IPTVGuideDiagnostics.$request.withValue(request) {
+                if let guideIndex, let catalog {
+                    return try await guideIndex.programmes(
+                        url: url, channels: channels, from: from, to: to,
+                        catalog: { catalog },
+                        download: { [client] in
+                            let response = try await client.guideDocument(from: url)
+                            request.parsing()
+                            return response
+                        }
+                    )
+                }
+                guard let loader else { throw ServerLiveTVError.unsupportedAPI }
                 let data = try await client.guideData(from: url)
                 request.parsing()
                 return try await loader(data, url, channels, from, to)
@@ -513,6 +539,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
     }
 
     public func teardown() async {
+        await guideIndex?.cancel()
         await client.cancel()
         await playback.closeAll()
     }

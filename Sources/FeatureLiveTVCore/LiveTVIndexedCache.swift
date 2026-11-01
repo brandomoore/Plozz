@@ -79,6 +79,7 @@ public actor LiveTVIndexedCache {
     private struct GuideDocument: Codable {
         let guide: LiveTVGuideImport?
         let settings: GuideSettings?
+        var index: LiveTVGuideIndexState? = nil
     }
 
     public init(
@@ -600,11 +601,14 @@ public actor LiveTVIndexedCache {
 
     /// XML parser calls the sink synchronously inside this actor's transaction.
     /// No programme array or million-element deduplication set crosses to the main actor.
+    /// Account indexes omit standalone search/mapping tables; station metadata
+    /// remains in the atomic document for request-time matching.
     public func importGuide(
         data: Data, sourceID: String, channels: [LiveTVPrototypeChannel],
         provider: LiveTVGuideProvider?, now: Date,
         lookbackDays: Int = 1, lookaheadDays: Int = 7, sourceURL: URL? = nil,
-        preferredLanguage: String? = LanguageMatch.deviceLanguageCode
+        preferredLanguage: String? = LanguageMatch.deviceLanguageCode,
+        indexState: LiveTVGuideIndexState? = nil
     ) throws -> LiveTVGuideImport {
         let db = try database()
         let binding = try sourceBinding(kind: "guide", sourceID: sourceID, url: sourceURL)
@@ -622,7 +626,8 @@ public actor LiveTVIndexedCache {
             try db.execute("DELETE FROM guide_channels WHERE source=?", [.text(sourceID)])
             result = try LiveTVXMLTVParser(provider: provider, preferredLanguage: preferredLanguage).parseIndexed(
                 data: data, channels: channels, now: now, overrides: overrides,
-                lookbackDays: lookbackDays, lookaheadDays: lookaheadDays
+                lookbackDays: lookbackDays, lookaheadDays: lookaheadDays,
+                indexGuideStations: indexState != nil
             ) { program in
                 try db.execute(
                     "INSERT OR IGNORE INTO programs(source,id,channel,start,end,payload) VALUES(?,?,?,?,?,?)",
@@ -632,10 +637,12 @@ public actor LiveTVIndexedCache {
                 )
                 if db.changes > 0 {
                     insertedProgramCount += 1
-                    try db.execute(
-                        "INSERT INTO program_search(source,id,title) VALUES(?,?,?)",
-                        [.text(sourceID), .text(program.id), .text(program.title)]
-                    )
+                    if indexState == nil {
+                        try db.execute(
+                            "INSERT INTO program_search(source,id,title) VALUES(?,?,?)",
+                            [.text(sourceID), .text(program.id), .text(program.title)]
+                        )
+                    }
                     #if DEBUG
                     if insertedProgramCount.isMultiple(of: 10_000) {
                         try self.guideImportProgressForTesting?(insertedProgramCount)
@@ -652,7 +659,7 @@ public actor LiveTVIndexedCache {
                 matches: parsed.matches, guideChannels: parsed.guideChannels
             )
             result = summary
-            for (id, names) in summary.guideChannels {
+            for (id, names) in summary.guideChannels where indexState == nil {
                 let option = LiveTVGuideChannelOption(id: id, name: names.first ?? "Guide station")
                 try db.execute(
                     "INSERT INTO guide_channels(source,id,name,display_id,payload) VALUES(?,?,?,?,?)",
@@ -662,7 +669,7 @@ public actor LiveTVIndexedCache {
             }
             try db.execute(
                 "INSERT OR REPLACE INTO documents(kind,source,payload,generation,refreshed) VALUES('guide',?,?,?,?)",
-                [.text(sourceID), .blob(try seal(GuideDocument(guide: summary, settings: settings), binding: binding)),
+                [.text(sourceID), .blob(try seal(GuideDocument(guide: summary, settings: settings, index: indexState), binding: binding)),
                  .text(UUID().uuidString), .real(now.timeIntervalSince1970)]
             )
             try writeSourceBinding(binding, kind: "guide", sourceID: sourceID, database: db)
@@ -674,6 +681,93 @@ public actor LiveTVIndexedCache {
             NotificationCenter.default.post(name: .plozzLiveTVPortableStateDidChange, object: nil)
         }
         return result
+    }
+
+    func guideIndexState(sourceID: String, sourceURL: URL) throws -> LiveTVGuideIndexState? {
+        let db = try database()
+        return try guideIndexDocument(sourceID: sourceID, sourceURL: sourceURL, database: db)?.index
+    }
+
+    private func guideIndexDocument(
+        sourceID: String, sourceURL: URL, database db: LiveTVCacheConnection
+    ) throws -> GuideDocument? {
+        let binding = try sourceBinding(kind: "guide", sourceID: sourceID, url: sourceURL)
+        guard try storedSourceBinding(kind: "guide", sourceID: sourceID, database: db) == binding,
+              let row = try db.rows(
+                "SELECT payload FROM documents WHERE kind='guide' AND source=?", [.text(sourceID)]
+              ).first else { return nil }
+        return try open(row.blob(0), as: GuideDocument.self, binding: binding)
+    }
+
+    func revalidateGuideIndex(
+        sourceID: String, sourceURL: URL, state: LiveTVGuideIndexState
+    ) throws {
+        let db = try database()
+        try db.transaction {
+            guard var document = try guideIndexDocument(sourceID: sourceID, sourceURL: sourceURL, database: db),
+                  document.index?.generation == state.generation else { throw LiveTVGuideIndexError.generationChanged }
+            document.index = state
+            let binding = try sourceBinding(kind: "guide", sourceID: sourceID, url: sourceURL)
+            try db.execute(
+                "UPDATE documents SET payload=?,refreshed=? WHERE kind='guide' AND source=?",
+                [.blob(try seal(document, binding: binding)), .real(Date().timeIntervalSince1970), .text(sourceID)]
+            )
+        }
+    }
+
+    func indexedAccountPrograms(
+        sourceID: String, sourceURL: URL, generation: UUID,
+        channels: [LiveTVPrototypeChannel], range: DateInterval
+    ) throws -> [LiveTVPrototypeProgram] {
+        guard channels.count <= 2_000, range.duration > 0, range.duration <= 172_800 else {
+            throw LiveTVCacheError.invalidRange
+        }
+        let db = try database()
+        return try db.readTransaction {
+            guard let document = try guideIndexDocument(sourceID: sourceID, sourceURL: sourceURL, database: db),
+                  let state = document.index, state.generation == generation,
+                  state.contains(range), let guide = document.guide else {
+                throw LiveTVGuideIndexError.generationChanged
+            }
+            let matches = LiveTVGuideMatcher(provider: LiveTVGuideSource.provider(for: sourceURL))
+                .match(channels: channels, guideChannels: guide.guideChannels)
+            let binding = try sourceBinding(kind: "guide", sourceID: sourceID, url: sourceURL)
+            var result: [LiveTVPrototypeProgram] = []
+            var textBytes = 0
+            for guideID in matches.keys.sorted() {
+                try Task.checkCancellation()
+                var offset = 0
+                while true {
+                    let rows = try db.rows(
+                        "SELECT payload FROM programs WHERE source=? AND channel=? AND start<? AND end>? ORDER BY start,id LIMIT 512 OFFSET ?",
+                        [.text(sourceID), .text(guideID), .real(range.end.timeIntervalSince1970),
+                         .real(range.start.timeIntervalSince1970), .integer(offset)]
+                    )
+                    for row in rows {
+                        let program = try open(row.blob(0), as: LiveTVPrototypeProgram.self, binding: binding)
+                        for channel in matches[guideID] ?? [] {
+                            textBytes += program.title.utf8.count + program.subtitle.utf8.count
+                                + (program.details?.retainedTextBytes ?? 0)
+                            guard result.count < LiveTVXMLTVParser.maximumRetainedPrograms,
+                                  textBytes <= LiveTVXMLTVParser.maximumRetainedTextBytes else {
+                                throw LiveTVSourceImportError.guideTooLarge
+                            }
+                            result.append(LiveTVPrototypeProgram(
+                                id: LiveTVXMLTVParser.stableProgramID(
+                                    channelID: channel.id, guideChannelID: guideID, title: program.title,
+                                    subtitle: program.subtitle, start: program.start, end: program.end
+                                ),
+                                channelID: channel.id, title: program.title, subtitle: program.subtitle,
+                                start: program.start, end: program.end, details: program.details
+                            ))
+                        }
+                    }
+                    if rows.count < 512 { break }
+                    offset += rows.count
+                }
+            }
+            return result.sorted { ($0.start, $0.id) < ($1.start, $1.id) }
+        }
     }
 
     public func programs(
@@ -1098,6 +1192,20 @@ private final class LiveTVCacheConnection {
             try body()
             try Task.checkCancellation()
             try execute("COMMIT")
+        } catch {
+            guard sqlite3_exec(handle, "ROLLBACK", nil, nil, nil) == SQLITE_OK else { throw LiveTVCacheError.unavailable }
+            throw error
+        }
+
+    }
+
+    func readTransaction<T>(_ body: () throws -> T) throws -> T {
+        try execute("BEGIN")
+        do {
+            let result = try body()
+            try Task.checkCancellation()
+            try execute("COMMIT")
+            return result
         } catch {
             guard sqlite3_exec(handle, "ROLLBACK", nil, nil, nil) == SQLITE_OK else { throw LiveTVCacheError.unavailable }
             throw error

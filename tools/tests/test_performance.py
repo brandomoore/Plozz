@@ -91,6 +91,13 @@ class EvidenceTests(unittest.TestCase):
                 with self.assertRaises(performance.Failure):
                     performance.stack_sample_summary(path, 42)
 
+    def test_guide_batches_report_cold_and_warm_cost_without_dropping_work(self):
+        self.assertEqual(performance.select(None, ["guide-large-batches"]), ["guide-large-batches"])
+        self.assertEqual(set(performance.SCENARIOS["guide-large-batches"]["counters"]), {
+            "guideBytes", "httpRequests", "downloadedBytes", "parseInvocations", "retainedRows",
+            "requestedChannels", "coldBatchNanoseconds", "warmBatchNanoseconds", "indexedChannels",
+        })
+
     def test_selection_is_explicit_and_narrow_by_default(self):
         self.assertEqual(set(performance.select(None, None)), {
             "sync-unchanged", "library-unchanged", "catalog-import", "watchlist-artwork-rehydration",
