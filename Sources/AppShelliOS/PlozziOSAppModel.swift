@@ -7,6 +7,7 @@ import CoreUI
 import CrashReporting
 import FeatureAuthCore
 import FeatureHomeCore
+import FeatureLiveTVCore
 import FeatureProfiles
 import FeatureSettings
 import FeatureSyncSetup
@@ -31,6 +32,13 @@ import UIKit
 @Observable
 final class PlozziOSAppModel {
     private let appAdmission: AppAdmissionModel
+    @ObservationIgnored lazy var guidePreparation = LiveTVGuidePreparationModel { [weak self] id in
+        guard let self, !self.mustChooseProfile, !self.activeProfileNeedsUnlock,
+              self.lockedSwitch == nil, self.parentalSwitch == nil,
+              self.plexHomeUsers.pendingPlexPINRequest == nil,
+              !self.accountsProviders.activeProfileAwaitsIdentity else { return nil }
+        return self.accountsProviders.liveTVProviderResolver()(id)
+    }
 
     static var isStandalonePlaybackAvailable: Bool {
         true
@@ -2703,6 +2711,7 @@ final class PlozziOSAppModel {
                 && !profiles.firstRunProfileSetupComplete
             var addedAccounts: [Account] = []
             var addedLiveTV = false
+            var guideAccountIDs: [String] = []
             for session in sessions {
                 let registration = try accountStore.registerAuthenticatedSession(session)
                 let account = registration.account
@@ -2711,6 +2720,7 @@ final class PlozziOSAppModel {
                 if registration.previousAccount == nil || activateIPTVAccount {
                     try accountsProviders.includeIPTVAccountInActiveProfile(account)
                     addedLiveTV = addedLiveTV || account.server.provider == .iptv
+                    if account.server.provider == .iptv { guideAccountIDs.append(account.id) }
                 }
                 if registration.previousAccount == nil {
                     addedAccounts.append(account)
@@ -2726,6 +2736,7 @@ final class PlozziOSAppModel {
             if addedLiveTV { settings.navigation.showsLiveTV = true }
             reloadAccountsAndCrashContext()
             selectNewlyAddedUserIfNeeded(from: addedAccounts)
+            for id in guideAccountIDs { guidePreparation.start(accountID: id) }
             identityIndex.warmIdentityIndex()
             if isFirstRun, let account = addedAccounts.first {
                 profiles.seedDefaultProfileIdentity(

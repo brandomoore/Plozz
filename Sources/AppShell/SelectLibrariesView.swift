@@ -2,6 +2,8 @@
 import SwiftUI
 import CoreModels
 import CoreUI
+import FeatureLiveTV
+import FeatureLiveTVCore
 
 /// "Choose your libraries" — shown right after one or more servers are added
 /// (both first run and later adds). It lists the just-added servers' libraries
@@ -19,6 +21,10 @@ struct SelectLibrariesView: View {
 
     @State private var discovery = LibraryDiscoveryModel()
     @FocusState private var focused: Field?
+
+    private var guides: [LiveTVGuidePreparationModel.Status] {
+        appState.pendingLibrarySelectionAccountIDs.compactMap { appState.guidePreparation.statuses[$0] }
+    }
 
     private enum Field: Hashable {
         case library(String)
@@ -83,8 +89,10 @@ struct SelectLibrariesView: View {
     private var librarySelection: some View {
         VStack(spacing: 0) {
             OnboardingHeader(
-                Text("Choose your libraries"),
-                subtitle: Text("You can change this any time in Settings.")
+                discovery.canSkipSelection && !guides.isEmpty ? Text("Live TV") : Text("Choose your libraries"),
+                subtitle: discovery.canSkipSelection && !guides.isEmpty
+                    ? Text("You can start watching while the guide loads.")
+                    : Text("You can change this any time in Settings.")
             )
             .padding(.bottom, 28)
 
@@ -116,7 +124,7 @@ struct SelectLibrariesView: View {
         let accounts = appState.accountsProviders.resolvedAccounts(withIDs: ids)
         await discovery.load(from: accounts, expectedAccountIDs: Set(ids), isCurrent: { scope == loadID })
         guard !Task.isCancelled, scope == loadID, ids == appState.pendingLibrarySelectionAccountIDs,
-              accounts.count == ids.count, discovery.canSkipSelection else { return }
+              accounts.count == ids.count, discovery.canSkipSelection, guides.isEmpty else { return }
         appState.confirmLibrarySelection()
     }
 
@@ -124,19 +132,26 @@ struct SelectLibrariesView: View {
     private var content: some View {
         switch discovery.state {
         case .idle, .loading:
-            SetupProgressCard(
-                title: "Finding your libraries",
-                detail: "Checking your connected sources for available libraries.",
-                symbol: "rectangle.stack"
-            )
+            VStack(alignment: .leading, spacing: 16) {
+                ForEach(guides) { LiveTVGuidePreparationStatus(status: $0) }
+                SetupProgressCard(
+                    title: "Finding your libraries",
+                    detail: "Checking your connected sources for available libraries.",
+                    symbol: "rectangle.stack"
+                )
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .empty:
-            Text("No libraries were found on the servers you added.")
-                .font(.title3)
-                .plozzForeground(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(alignment: .leading, spacing: 16) {
+                if guides.isEmpty {
+                    Text("No libraries were found on the servers you added.")
+                } else {
+                    Label("Playlist added", systemImage: "checkmark.circle")
+                    ForEach(guides) { LiveTVGuidePreparationStatus(status: $0) }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .failed:
             VStack(spacing: 16) {
@@ -158,6 +173,7 @@ struct SelectLibrariesView: View {
             PlozzScrollCard {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
+                        ForEach(guides) { LiveTVGuidePreparationStatus(status: $0) }
                         ForEach(groups(from: all)) { group in
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack(spacing: 16) {

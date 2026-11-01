@@ -8,6 +8,7 @@ import FeatureAuth
 import FeatureDiscovery
 import FeatureDiscoveryCore
 import FeatureMusic
+import FeatureLiveTVCore
 import FeatureProfiles
 import FeatureSyncSetup
 import FeatureSyncCloud
@@ -47,6 +48,14 @@ import UIKit
 @Observable
 public final class AppState {
     public private(set) var state: SessionState = .launching
+    @ObservationIgnored public lazy var guidePreparation = LiveTVGuidePreparationModel { [weak self] id in
+        guard let self, !self.profileFlow.isChoosingProfile, !self.profileFlow.isForegroundLocked,
+              self.profileFlow.pendingLockedProfile == nil, self.profileFlow.pendingParentalSwitch == nil,
+              !self.profileFlow.activeProfileAwaitsUnlock,
+              self.plexHomeUsers.pendingPlexPINRequest == nil,
+              !self.accountsProviders.activeProfileAwaitsIdentity else { return nil }
+        return self.accountsProviders.liveTVProviderResolver()(id)
+    }
     private let appAdmission: AppAdmissionModel
     @ObservationIgnored private var accountSetupOriginProfileID: String?
 
@@ -1706,6 +1715,10 @@ public final class AppState {
             previousAccount: registration.previousAccount,
             isFirstRun: isFirstRun
         )
+        if registration.account.server.provider == .iptv,
+           registration.previousAccount == nil || activateIPTVAccount {
+            guidePreparation.start(accountID: registration.account.id)
+        }
         return true
     }
 

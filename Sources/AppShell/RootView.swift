@@ -895,6 +895,7 @@ public struct RootView: View {
         // state without another argument on an already ~60-argument chain.
         .environment(appState.profilesModel)
         .environment(appState.profileSettings.navigationStyleModel)
+        .environment(appState.guidePreparation)
         .environment(glassPerformance)
         .environment(displayVeil)
         #if os(tvOS)

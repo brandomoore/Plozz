@@ -20,12 +20,15 @@ public protocol ServerLiveTVProviding: Sendable {
         from: Date,
         to: Date
     ) async throws -> [ServerLiveTVProgramme]
+    /// Require revalidation on the next guide request, retaining usable saved listings.
+    func invalidateLiveTVGuideCache() async
     func openLiveTVChannel(id: String) async throws -> any LiveTVStreamLease
 }
 
 public extension ServerLiveTVProviding {
     func cachedLiveTVCatalog() async throws -> ServerLiveTVCatalogSnapshot? { nil }
     func completeLiveTVGuideDiscovery() async throws -> Bool? { nil }
+    func invalidateLiveTVGuideCache() async {}
 
     func refreshLiveTVAvailability() async throws -> ServerLiveTVAvailability {
         try await liveTVAvailability()

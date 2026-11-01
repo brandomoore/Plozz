@@ -265,10 +265,14 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
     }
 
     public func refreshLiveTVAvailability() async throws -> ServerLiveTVAvailability {
-        await guideIndex?.invalidate()
-        await client.invalidateGuideCache()
+        await invalidateLiveTVGuideCache()
         try await client.ensureCatalog("live", force: true)
         return try await liveTVAvailability()
+    }
+
+    public func invalidateLiveTVGuideCache() async {
+        await guideIndex?.invalidate()
+        await client.invalidateGuideCache()
     }
 
     public func completeLiveTVGuideDiscovery() async throws -> Bool? {

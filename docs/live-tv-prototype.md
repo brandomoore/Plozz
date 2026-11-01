@@ -15,10 +15,20 @@ Successful playlist setup (including free channels), adding an IPTV account,
 or explicitly adding a media server's Live TV source shows Live TV in the active
 profile's navigation. Other destinations, their order, and other profiles are
 unchanged. Ordinary account reconnection does not undo a later manual Hide.
-Playlist sign-in imports the channel catalog, not the XMLTV guide; listings load
-separately when Live TV requests them. A quick sign-in therefore does not confirm
-that a guide has downloaded or matched channels. Sources shows guide loading
-and failures independently of channel availability.
+Playlist sign-in imports the channel catalog, then starts a separately owned
+guide preparation task for the active account/profile. Setup shows the guide
+state instead of dismissing an empty library chooser. Continuing setup or
+watching a channel does not cancel that task. Live TV and Sources show its
+progress independently of channel availability. A quick sign-in alone never
+confirms that a guide downloaded or matched channels.
+
+Source details offers **Refresh guide**, which revalidates the guide without
+refreshing the playlist or interrupting playback. Existing listings survive a
+failed refresh. Completion distinguishes missing guide configuration, no current
+listings, successful matching and failure; displayed matching counts cover the
+next six hours. Ordinary cache-driven refreshes retain their existing policy and
+do not create a setup-progress task. Profile/account authorization changes cancel
+explicit work and discard its presentation state.
 
 Source setup explains that viewers must have authorization for their channels
 and that Plozz does not provide TV content or channel subscriptions.

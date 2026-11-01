@@ -4,6 +4,7 @@ import CoreUI
 import FeatureAuth
 @testable import FeatureLiveTV
 @testable import FeatureLiveTVCore
+@testable import AppShelliOS
 import SwiftUI
 import UIKit
 import Vision
@@ -11,6 +12,69 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesPresentationTests: XCTestCase {
+    func testPlaylistSetupShowsGuideWorkAndContinuingDoesNotCancelIt() async throws {
+        let suite = "GuideSetupPresentation.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let started = expectation(description: "Initial guide requested during setup")
+        let provider = SetupGuideProvider(started: { started.fulfill() }, librariesSuspended: true)
+        let app = PlozziOSAppModel(
+            appAdmissionStore: AppAdmissionStore(defaults: defaults),
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        app.accountsProviders.registry.register(.iptv) { _ in provider }
+        XCTAssertTrue(app.persist([provider.session]))
+        let id = try XCTUnwrap(app.accountsProviders.accounts.first?.id)
+        defer {
+            app.guidePreparation.cancel(accountID: id)
+            Task {
+                await provider.resumeLibraries()
+                await provider.resume()
+            }
+        }
+        await fulfillment(of: [started], timeout: 3)
+        XCTAssertEqual(app.guidePreparation.statuses[id]?.phase, .loading)
+
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = UIHostingController(rootView:
+            PlozziOSLibrarySelectionView(appModel: app, accountIDs: [id])
+                .environment(\.themePalette, .light)
+                .environment(\.colorScheme, .light)
+                .environment(\.locale, Locale(identifier: "en_US"))
+        )
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await settle(window)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: XCTUnwrap(snapshot(window).cgImage)).perform([request])
+        let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+        XCTAssertTrue(text.contains("Adding guide"), text)
+        XCTAssertTrue(text.contains("Choose later"), text)
+        XCTAssertFalse(text.contains("No Video Libraries"), text)
+        await provider.resumeLibraries()
+        try await settle(window)
+        try VNImageRequestHandler(cgImage: XCTUnwrap(snapshot(window).cgImage)).perform([request])
+        let ready = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+        XCTAssertTrue(ready.contains("Adding guide"), ready)
+        XCTAssertTrue(ready.contains("Continue"), ready)
+        XCTAssertFalse(ready.contains("No Video Libraries"), ready)
+        app.completeLibrarySelection()
+        XCTAssertEqual(app.guidePreparation.statuses[id]?.phase, .loading)
+        await provider.resume()
+        await app.guidePreparation.waitForCompletion(accountID: id)
+        XCTAssertEqual(app.guidePreparation.statuses[id]?.phase, .loaded)
+    }
+
     func testAccountSourceShowsGuideLoadingAfterChannelsAreReady() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -47,6 +111,69 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
             XCTAssertEqual(text.contains("Loading guide"), phase == .loading, text)
             XCTAssertTrue(text.contains("channels"), text)
         }
+    }
+
+    func testManualGuideRefreshShowsProgressAndResultInSourceDetails() async throws {
+        let source = LiveTVServerSource(id: "fixture", name: "Live channels", accountID: "account")
+        let configuration = LiveTVSourcesConfiguration(servers: [source])
+        let model = LiveTVSourceManagementModel(store: SourcesFixtureStore(configuration: configuration), canMutate: { true })
+        model.reload()
+        let imports = LiveTVPrototypeImportModel(configuration: configuration)
+        let started = expectation(description: "Manual guide refresh started")
+        let provider = SetupGuideProvider(started: { started.fulfill() })
+        let preparation = LiveTVGuidePreparationModel { id in
+            .init(accountID: id, authorizationID: "fixture", kind: .iptv, provider: provider)
+        }
+        defer {
+            preparation.cancel(accountID: source.accountID)
+            Task { await provider.resume() }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 1024)
+        window.rootViewController = UIHostingController(rootView:
+            NavigationStack {
+                LiveTVServerSourceDetails(model: model, imports: imports, sourceID: source.id, removeSource: { _ in false })
+            }
+            .environment(preparation)
+            .environment(\.themePalette, .light)
+            .environment(\.colorScheme, .light)
+            .environment(\.locale, Locale(identifier: "en_US"))
+        )
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        func visibleText() async throws -> String {
+            try await settle(window)
+            let image = snapshot(window)
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "manual-guide-refresh"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+        }
+        let initial = try await visibleText()
+        XCTAssertTrue(initial.contains("Refresh guide"), initial)
+        preparation.start(accountID: source.accountID, refresh: true)
+        await fulfillment(of: [started], timeout: 3)
+        let loading = try await visibleText()
+        XCTAssertTrue(loading.contains("Refreshing guide"), loading)
+        XCTAssertFalse(loading.contains("0 loaded program listings"), loading)
+        XCTAssertFalse(loading.contains("0 channels"), loading)
+        XCTAssertFalse(loading.contains("Ready to load"), loading)
+        await provider.resume()
+        await preparation.waitForCompletion(accountID: source.accountID)
+        let completed = try await visibleText()
+        XCTAssertTrue(completed.contains("Guide ready"), completed)
+        XCTAssertTrue(completed.contains("current listings"), completed)
     }
 
     func testSourceOverflowUsesMeasuredRowsAndDirectionalSharedFade() async throws {
@@ -427,7 +554,62 @@ private struct SetupBackgroundFixture: View {
 }
 
 private struct SourcesFixtureStore: LiveTVSourcesStoring {
-    func load() throws -> LiveTVSourcesConfiguration { .empty }
+    var configuration = LiveTVSourcesConfiguration.empty
+    func load() throws -> LiveTVSourcesConfiguration { configuration }
     func save(_ configuration: LiveTVSourcesConfiguration) throws { throw LiveTVSourcesStoreError.saveFailed }
+}
+
+private actor SetupGuideProvider: MediaProvider, ServerLiveTVProviding {
+    nonisolated let kind = ProviderKind.iptv
+    nonisolated let session = UserSession(
+        server: .init(id: "setup", name: "Playlist", baseURL: URL(string: "https://fixture.invalid")!, provider: .iptv),
+        userID: "playlist", userName: "Viewer", deviceID: "fixture", accessToken: "fixture"
+    )
+    let started: @Sendable () -> Void
+    var pending: CheckedContinuation<Void, Never>?
+    var resumed = false
+    var librariesSuspended: Bool
+    var pendingLibraries: [CheckedContinuation<Void, Never>] = []
+    init(started: @escaping @Sendable () -> Void, librariesSuspended: Bool = false) {
+        self.started = started
+        self.librariesSuspended = librariesSuspended
+    }
+    func libraries() async -> [MediaLibrary] {
+        if librariesSuspended { await withCheckedContinuation { pendingLibraries.append($0) } }
+        return []
+    }
+    func resumeLibraries() {
+        librariesSuspended = false
+        for continuation in pendingLibraries { continuation.resume() }
+        pendingLibraries.removeAll()
+    }
+    func continueWatching(limit: Int) -> [MediaItem] { [] }
+    func latest(limit: Int) -> [MediaItem] { [] }
+    func item(id: String) throws -> MediaItem { throw AppError.notFound }
+    func children(of itemID: String) -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) -> MediaPage {
+        .init(items: [], startIndex: 0, totalCount: 0)
+    }
+    func search(query: String, limit: Int) -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) {}
+    nonisolated func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+    func liveTVAvailability() -> ServerLiveTVAvailability {
+        .init(status: .available, channelCount: 1, supportsGuide: true)
+    }
+    func liveTVChannels() -> [ServerLiveTVChannel] { [.init(id: "one", name: "One")] }
+    func liveTVGuide(channelIDs: [String], from: Date, to: Date) async -> [ServerLiveTVProgramme] {
+        started()
+        if !resumed { await withCheckedContinuation { pending = $0 } }
+        return [.init(id: "show", channelID: "one", title: "Show", startDate: from, endDate: to)]
+    }
+    func resume() {
+        resumed = true
+        pending?.resume()
+        pending = nil
+    }
+    func openLiveTVChannel(id: String) throws -> any LiveTVStreamLease {
+        throw ServerLiveTVError.unsupportedAPI
+    }
 }
 #endif
