@@ -165,6 +165,20 @@ class EvidenceTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(performance.Failure):
                 performance.verify_summary(dict(summary(), **change), 1)
 
+    def test_mobile_loading_scroll_requires_complete_layout_work(self):
+        name = "mobile-home-loading-scroll"
+        self.assertEqual(performance.select(None, [name], "iOS"), [name])
+        with self.assertRaisesRegex(performance.Failure, "not supported on tvOS"):
+            performance.select(None, [name], "tvOS")
+        spec = performance.SCENARIOS[name]
+        sample = report(name=name)
+        performance.validate_report(sample, spec)
+        for counter in spec["counters"]:
+            incomplete = copy.deepcopy(sample)
+            del incomplete["samples"][0]["counters"][counter]
+            with self.assertRaises(performance.Failure):
+                performance.validate_report(incomplete, spec)
+
     def test_controls_reveal_scenarios_require_tv_and_complete_responsiveness_counters(self):
         for name in ("player-controls-reveal", "player-controls-reveal-contended"):
             self.assertEqual(performance.select(None, [name], "tvOS"), [name])

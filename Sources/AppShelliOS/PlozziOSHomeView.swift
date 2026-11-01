@@ -66,26 +66,6 @@ struct PlozziOSHomeLoadID: Equatable {
     }
 }
 
-struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
-    let heroActive: Bool
-    @ViewBuilder var hero: Hero
-    @ViewBuilder var rows: Rows
-
-    var body: some View {
-        ScrollView {
-            // Rows own their horizontal laziness; keep the vertical layout eager.
-            VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionSpacing) {
-                if heroActive {
-                    hero
-                }
-                rows
-            }
-            .padding(.bottom)
-        }
-        .ignoresSafeArea(.container, edges: heroActive ? .top : [])
-    }
-}
-
 struct PlozziOSHomeView: View {
     @Environment(\.homeLiveTVSnapshot) private var liveTV
     @Environment(\.openWatchlist) private var openWatchlist
@@ -226,6 +206,7 @@ struct PlozziOSHomeView: View {
                     ) != .hidden,
                     logoSize: appModel.settings.hero.settings.logoSize,
                     showsPosterCaptions: appModel.settings.cardStyle.captions.showsLabels(in: .home),
+                    showsLibraryCaptions: appModel.settings.cardStyle.captions.showsLabels(in: .homeLibraries),
                     continueWatchingLayout: appModel.settings.homeVisibility.continueWatchingLayout,
                     continueWatchingShowsSeriesArtwork: appModel.settings.homeVisibility.continueWatchingUsesSeriesArtwork,
                     continueWatchingShowsCaption: appModel.settings.cardStyle.captions.showsLabels(
@@ -594,24 +575,25 @@ struct PlozziOSHomeView: View {
                 rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
                 presentation: appModel.settings.libraryPresentation.settings
             )) { presentation in
-                switch presentation.source {
-                case let .home(row):
-                    PlozziOSHomeRowView(
-                        row: row,
-                        appModel: appModel,
-                        viewModel: viewModel,
-                        watchlistIntentRevision: watchlistIntentRevision,
-                        watchlistLoadingPlaceholderCount:
-                            viewModel.watchlistLoadingPlaceholderCount,
-                        onBrowse: browseAction(for: presentation)
-                    )
-                case let .liveTV(channels):
-                    PlozziOSHomeMediaRail(
-                        title: Text("Live TV"), items: [], style: .landscape,
-                        appModel: appModel, liveChannels: channels,
-                        onNavigationInteraction: viewModel.noteHomeNavigationInteraction
-                    )
-                case let .library(row):
+                Group {
+                    switch presentation.source {
+                    case let .home(row):
+                        PlozziOSHomeRowView(
+                            row: row,
+                            appModel: appModel,
+                            viewModel: viewModel,
+                            watchlistIntentRevision: watchlistIntentRevision,
+                            watchlistLoadingPlaceholderCount:
+                                viewModel.watchlistLoadingPlaceholderCount,
+                            onBrowse: browseAction(for: presentation)
+                        )
+                    case let .liveTV(channels):
+                        PlozziOSHomeMediaRail(
+                            title: Text("Live TV"), items: [], style: .landscape,
+                            appModel: appModel, liveChannels: channels,
+                            onNavigationInteraction: viewModel.noteHomeNavigationInteraction
+                        )
+                    case let .library(row):
                         let section = row.section
                         if let issue = row.issue {
                             PlozziOSHomeSectionStatusRow(
@@ -622,7 +604,7 @@ struct PlozziOSHomeView: View {
                                 title: section.displayName,
                                 error: failure, viewModel: viewModel
                             )
-                        } else if row.isLoading {
+                        } else if row.isLoading && row.collectionCardStyle != .featured {
                             PlozziOSHomeSkeletonRail(
                                 title: section.displayName,
                                 style: section.style == .landscape ? .landscape : .poster,
@@ -649,10 +631,13 @@ struct PlozziOSHomeView: View {
                                     viewModel.noteHomeNavigationInteraction
                             )
                         }
+                    }
                 }
+                .plozziOSHomeScrollRow(presentation.id)
             }
         }
         return scroll
+            .id(ObjectIdentifier(viewModel))
             .scrollClipDisabled()
             .onScrollPhaseChange { _, phase in homeIsScrolling = phase != .idle }
             .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -2468,7 +2453,8 @@ private struct PlozziOSHomeRowView: View {
                             isContinueWatching: row.kind == .continueWatching
                         ),
                     showsSeriesArtwork: row.kind == .continueWatching
-                        && appModel.settings.homeVisibility.continueWatchingUsesSeriesArtwork
+                        && appModel.settings.homeVisibility.continueWatchingUsesSeriesArtwork,
+                    isLibraryRow: row.kind == .libraries
                 )
             } else {
                 PlozziOSHomeMediaRail(
@@ -2577,6 +2563,7 @@ private struct PlozziOSFeaturedCollectionRail: View {
         )
         .artworkNavigation { artworkSelection = .init(item: $0, source: $1) }
         .browsingRow(onBrowse)
+        .loading(row.isLoading)
         .navigationDestination(item: $artworkSelection) { route in
             PlozziOSHomeCardDetail(
                 item: route.item,
@@ -3045,11 +3032,24 @@ struct PlozziOSHomeLibraryCard: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzCardCaptionSettings) private var captions
-    let library: AggregatedLibrary
+    let library: AggregatedLibrary?
     let artworkSource: LibraryArtworkSource?
     let width: CGFloat
 
     var body: some View {
+        Group {
+            if let library {
+                card
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(library.library.displayName)
+                    .accessibilityValue(Text(library.serverName))
+            } else {
+                card.shimmering().accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var card: some View {
         Group {
             if cardStyle == .framed {
                 content
@@ -3061,9 +3061,6 @@ struct PlozziOSHomeLibraryCard: View {
                 content
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(library.library.displayName)
-        .accessibilityValue(Text(library.serverName))
     }
 
     private var content: some View {
@@ -3071,7 +3068,13 @@ struct PlozziOSHomeLibraryCard: View {
             alignment: .leading,
             spacing: metrics.landscapeCaptionTopSpacing
         ) {
-            LibraryCardArtwork(library: library, source: artworkSource)
+            Group {
+                if let library {
+                    LibraryCardArtwork(library: library, source: artworkSource)
+                } else {
+                    Rectangle().fill(palette.fill)
+                }
+            }
             .frame(width: width, height: width * 0.6)
             .clipShape(
                 RoundedRectangle(
@@ -3092,19 +3095,29 @@ struct PlozziOSHomeLibraryCard: View {
 
     private var caption: some View {
         HStack(spacing: 8) {
-            ProviderBrandMark(
-                provider: library.providerKind, size: providerBadgeSize,
-                mediaShareTransport: library.transportKind
-            )
-            .accessibilityHidden(true)
+            if let library {
+                ProviderBrandMark(
+                    provider: library.providerKind, size: providerBadgeSize,
+                    mediaShareTransport: library.transportKind
+                )
+                .accessibilityHidden(true)
+            } else {
+                Circle().fill(palette.fill).frame(width: providerBadgeSize, height: providerBadgeSize)
+            }
             VStack(alignment: .leading, spacing: 2) {
-                Text(library.library.title)
+                Text(verbatim: library?.library.title ?? " ")
                     .font(.headline)
                     .lineLimit(1)
-                Text(library.serverName)
+                    .overlay(alignment: .leading) {
+                        if library == nil { Capsule().fill(palette.fill).frame(width: width * 0.6, height: 8) }
+                    }
+                Text(verbatim: library?.serverName ?? " ")
                     .font(.caption)
                     .plozzForeground(.secondary)
                     .lineLimit(1)
+                    .overlay(alignment: .leading) {
+                        if library == nil { Capsule().fill(palette.fill).frame(width: width * 0.4, height: 6) }
+                    }
             }
         }
         .padding(.trailing, metrics.landscapeCaptionHorizontalInset)

@@ -7,6 +7,23 @@ an empty provider feed from local curation without recording media or account ID
 Home rows, item detail, series/season experience, and the online-trailer
 fallback when the user's server has no attached trailer.
 
+## Mobile Home loading geometry
+
+Home measures its viewport once and shares that width with loaded and skeleton
+rails, so newly mounted rows do not first lay out at a fallback poster size.
+Browse headings keep their native 44-point touch target without enlarging the
+row. Library placeholders use the library card's own layout; featured collection
+placeholders use the featured row's card size.
+
+The vertical stack remains eager to avoid estimated-height changes. Stable
+`HomeRowID` content-coordinate frames preserve the first surviving visible row
+when loading inserts or removes rows above it. Empty rows disappear rather than
+leaving gaps. Scroll geometry is retained in a non-observable owner, not published
+through the full Home view every frame; a new Home model resets the scroll scope.
+At the top, Home stays at the top. Viewport resizing is not treated as a row
+insertion. This does not promise a fixed total height before the server's row
+inventory is known, or prove physical-device frame pacing.
+
 ## Inline library collections
 
 Movie Browse follows the server's collection presentation automatically under
