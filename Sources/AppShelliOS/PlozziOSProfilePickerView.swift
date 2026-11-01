@@ -141,6 +141,7 @@ struct PlozziOSProfilePickerView: View {
 
     @State private var isEditing = false
     @State private var route: Route?
+    @State private var hasAppeared = false
     @Namespace private var localIdentityNamespace
     @Environment(\.themePalette) private var palette
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -170,6 +171,10 @@ struct PlozziOSProfilePickerView: View {
                             .foregroundStyle(palette.primaryText)
                             .multilineTextAlignment(.center)
                             .accessibilityAddTraits(.isHeader)
+                            .modifier(PlozziOSProfilePickerHeadingEntrance(
+                                isPresented: hasAppeared, isLaunch: onCancel == nil,
+                                reduceMotion: reduceMotion
+                            ))
                             .animation(reduceMotion ? nil : .easeOut(duration: 0.18)) { content in
                                 content.opacity(isCovered ? 0 : 1)
                             }
@@ -178,7 +183,8 @@ struct PlozziOSProfilePickerView: View {
                             profiles: profiles, layout: layout,
                             showsPINLock: showsPINLock,
                             canManage: manager != nil, isEditing: isEditing,
-                            startsDuringPresentation: onCancel != nil,
+                            isPresented: hasAppeared,
+                            startDelay: onCancel == nil ? PlozziOSProfilePickerEntrance.headingDuration : 0,
                             identityNamespace: identityNamespace ?? localIdentityNamespace,
                             selectedProfileID: selectedProfileID,
                             isCovered: isCovered,
@@ -192,6 +198,13 @@ struct PlozziOSProfilePickerView: View {
                     .padding(.vertical, 32)
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: geometry.size.height, alignment: .center)
+                    .background {
+                        ProfilePickerPresentationObserver(startsDuringPresentation: onCancel != nil) {
+                            hasAppeared = true
+                        }
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    }
                 }
                 .scrollBounceBehavior(.basedOnSize)
             }
@@ -275,14 +288,14 @@ private struct PlozziOSProfilePickerGrid: View {
     let showsPINLock: (Profile) -> Bool
     let canManage: Bool
     let isEditing: Bool
-    let startsDuringPresentation: Bool
+    let isPresented: Bool
+    let startDelay: TimeInterval
     let identityNamespace: Namespace.ID
     let selectedProfileID: String?
     let isCovered: Bool
     let onSelect: (Profile) -> Void
     let onEdit: (Profile) -> Void
     let onAdd: (Bool) -> Void
-    @State private var hasAppeared = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -307,7 +320,6 @@ private struct PlozziOSProfilePickerGrid: View {
                             )
                     ) {
                         ProfileAvatarView(profile: profile, size: layout.avatarSize)
-                            .drawingGroup()
                             .matchedGeometryEffect(id: identity.avatarID, in: identity.namespace)
                             .overlay(alignment: .bottomTrailing) {
                                 if isEditing {
@@ -331,8 +343,9 @@ private struct PlozziOSProfilePickerGrid: View {
                     }
                 }
                 .modifier(PlozziOSProfilePickerEntrance(
-                    isPresented: hasAppeared, position: position,
-                    profileCount: profiles.count, reduceMotion: reduceMotion
+                    isPresented: isPresented, position: position,
+                    profileCount: profiles.count, reduceMotion: reduceMotion,
+                    startDelay: startDelay
                 ))
                 .animation(
                     reduceMotion || profile.id == selectedProfileID ? nil : .easeOut(duration: 0.18)
@@ -345,8 +358,9 @@ private struct PlozziOSProfilePickerGrid: View {
                     title: "Add Profile", symbol: "plus", size: layout.avatarSize
                 ) { onAdd(false) }
                 .modifier(PlozziOSProfilePickerEntrance(
-                    isPresented: hasAppeared, position: profiles.count,
-                    profileCount: profiles.count, reduceMotion: reduceMotion
+                    isPresented: isPresented, position: profiles.count,
+                    profileCount: profiles.count, reduceMotion: reduceMotion,
+                    startDelay: startDelay
                 ))
                 .opacity(isCovered ? 0 : 1)
                 PlozziOSProfilePickerAddTile(
@@ -354,20 +368,14 @@ private struct PlozziOSProfilePickerGrid: View {
                     size: layout.avatarSize
                 ) { onAdd(true) }
                 .modifier(PlozziOSProfilePickerEntrance(
-                    isPresented: hasAppeared, position: profiles.count + 1,
-                    profileCount: profiles.count, reduceMotion: reduceMotion
+                    isPresented: isPresented, position: profiles.count + 1,
+                    profileCount: profiles.count, reduceMotion: reduceMotion,
+                    startDelay: startDelay
                 ))
                 .opacity(isCovered ? 0 : 1)
             }
         }
         .disabled(isCovered)
-        .background {
-            ProfilePickerPresentationObserver(startsDuringPresentation: startsDuringPresentation) {
-                hasAppeared = true
-            }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
     }
 }
 
@@ -460,35 +468,59 @@ private struct PlozziOSProfilePickerAddTile: View {
     }
 }
 
+struct PlozziOSProfilePickerHeadingEntrance: ViewModifier {
+    let isPresented: Bool
+    let isLaunch: Bool
+    let reduceMotion: Bool
+
+    func body(content: Content) -> some View {
+        let isVisible = isPresented || !isLaunch || reduceMotion
+        content
+            .opacity(isVisible ? 1 : 0)
+            .offset(y: isVisible ? 0 : 4)
+            .animation(
+                !isLaunch || reduceMotion ? nil
+                    : .easeOut(duration: PlozziOSProfilePickerEntrance.headingDuration),
+                value: isPresented
+            )
+            .accessibilityHidden(!isVisible)
+    }
+}
+
 struct PlozziOSProfilePickerEntrance: ViewModifier {
     let isPresented: Bool
     let position: Int
     let profileCount: Int
     let reduceMotion: Bool
+    let startDelay: TimeInterval
     @State private var isInteractive = false
 
     static let initialScale: CGFloat = 0.96
     static let initialOffset: CGFloat = 8
     static let duration: TimeInterval = 0.45
+    static let headingDuration: TimeInterval = 0.3
     static func delay(at position: Int, profileCount: Int) -> TimeInterval {
         let interval = min(0.09, 0.45 / Double(max(1, profileCount - 1)))
         return Double(max(0, position)) * interval
     }
 
-    init(isPresented: Bool, position: Int, profileCount: Int, reduceMotion: Bool) {
+    init(
+        isPresented: Bool, position: Int, profileCount: Int, reduceMotion: Bool,
+        startDelay: TimeInterval = 0
+    ) {
         self.isPresented = isPresented
         self.position = position
         self.profileCount = profileCount
         self.reduceMotion = reduceMotion
+        self.startDelay = startDelay
         // Cells first realized after the entrance (scrolling a large household)
         // are immediately available instead of waiting through offscreen slots.
         _isInteractive = State(initialValue: isPresented || reduceMotion)
     }
 
     func body(content: Content) -> some View {
-        let delay = Self.delay(at: position, profileCount: profileCount)
+        let delay = startDelay + Self.delay(at: position, profileCount: profileCount)
         content
-            .compositingGroup()
             .opacity(isPresented || reduceMotion ? 1 : 0)
             .scaleEffect(isPresented || reduceMotion ? 1 : Self.initialScale)
             .offset(y: isPresented || reduceMotion ? 0 : Self.initialOffset)

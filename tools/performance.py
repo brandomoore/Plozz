@@ -340,7 +340,7 @@ SCENARIOS = {
         "suite": "ui", "platforms": ["iOS"],
         "test": "ProfilePickerPresentationTests/testPerformanceProfilePickerEntrance",
         "file": "Tests/iOSPresentationTests/ProfilePickerPresentationTests.swift",
-        "description": "Mount the production sixteen-profile iPad picker and verify the visible stagger and one-second settling; measure fresh presentation, not process launch or hardware frame pacing.",
+        "description": "Mount the production sixteen-profile iPad picker and verify heading-first staging, a visible stagger, and settling within 1.3 seconds; measure fresh presentation, not process launch or hardware frame pacing.",
         "counters": ["profiles", "completedEntrances"],
     },
     "mobile-profile-pin-handoff": {

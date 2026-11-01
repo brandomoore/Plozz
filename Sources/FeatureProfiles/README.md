@@ -166,23 +166,21 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   its same-profile presentation until dismissal before rebuilding covered content;
   a different active profile still invalidates that presentation. A proposed
   binding is still saved only after authentication succeeds.
-- **Visible mobile entrance.** Launch waits for native presentation to finish;
+- **Visible mobile entrance.** Launch waits for native presentation to finish,
+  reveals the heading with a 300 ms fade/lift, then starts the avatar cascade;
   the cancellable in-app switcher starts during presentation instead of adding
   another pause afterward. Overlapping 450 ms native smooth springs use a subtle
   lift and 90 ms between profiles for households of up to six. Larger households
   shorten every interval so the last profile starts within 450 ms; Add tiles
   continue the same cadence. All visual starts share one presentation transaction,
   rather than waiting on separate task wake-ups; tasks only admit input when
-  each tile starts appearing. Sixteen profiles should settle within one second.
+  each tile starts appearing, including the launch-only heading delay. Sixteen
+  profiles should settle within one second of the cascade (1.3 seconds at launch).
   Never clamp later delays into a batch. Reduce Motion reveals everything
   immediately; newly realized offscreen cells do not wait through earlier slots.
-  Mobile picker avatars use an offscreen drawing group inside their matched
-  geometry anchor; the tile's entrance opacity composites as a unit. The
-  lightweight scale/lift/fade remains outside the avatar drawing group, without
-  changing startup work, authorization, hit testing, or reveal timing.
-  Offscreen rendering trades texture allocation and rasterization for simpler
-  animated content; the presentation CPU probe does not establish smoother
-  cold-start frame pacing on a device.
+  The launch-only staging does not defer startup or authorization work. Avatars
+  use their normal rendering path, without forced offscreen rasterization. The
+  presentation probe verifies sequencing, not physical cold-start frame pacing.
 - **Native editor controls.** On tvOS, the scrollable editor keeps its title
   separate from one center-aligned row of Back, Delete, and save/revert actions.
   The navigation owner still supplies Back and its focus-restoration behavior.
