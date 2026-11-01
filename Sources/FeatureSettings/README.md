@@ -608,7 +608,7 @@ watch history and planning-list behavior are documented in
   Continue Watching groups artwork, playback details and labels before their shared
   Recommended-page scope note; Include Next Up and selection behavior follow.
   Showcase groups Ratings and Discovery with their dependent controls.
-  **Center button action** on TV and **When tapping an item** on iPhone/iPad
+  **Center button action** on TV and **Tap action** on iPhone/iPad
   select **Play** or **Open detail page** for Home's movie/episode cards.
   Open detail page is the default when no action has been saved. Existing saved
   choices remain unchanged. Episodes open their own detail page, not the parent

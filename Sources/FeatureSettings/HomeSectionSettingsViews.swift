@@ -303,7 +303,11 @@ struct ContinueWatchingActionControl: View {
         Group {
             #if os(iOS)
             ViewCustomizationMenu(
-                id: "continue-watching-action", title: "When tapping an item",
+                id: "continue-watching-action",
+                title: LocalizedStringResource(
+                    "Tap action",
+                    comment: "Short label for the Continue Watching setting on iPhone and iPad that chooses whether tapping a movie or episode plays it or opens its detail page."
+                ),
                 value: selection.displayName, detail: selection.detail,
                 selection: Binding(
                     get: { visibility.continueWatchingAction },
