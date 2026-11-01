@@ -34,6 +34,7 @@ final class ShareProviderLocatorTests: XCTestCase {
         return ShareProvider(
             session: userSession,
             sessionFactory: { _ in session },
+            catalogCoordinator: ShareCatalogCoordinator(initialWorkScope: .paused),
             streamProber: streamProber
         )
     }
@@ -50,6 +51,160 @@ final class ShareProviderLocatorTests: XCTestCase {
         XCTAssertEqual(locator.representation.identity.kind, .strongETag)
         XCTAssertEqual(locator.representation.identity.value, "\"abc-123\"")
         XCTAssertEqual(locator.representation.size, 4096)
+    }
+
+    func testPlayUsesFreshListingMetadataWithoutAnotherOpeningStat() async throws {
+        let path = "Movies/movie.mkv"
+        let old = try RemoteFileEntry(
+            relativePath: path, kind: .file, size: 1024, strongETag: "\"old\""
+        )
+        let current = try RemoteFileEntry(
+            relativePath: path, kind: .file, size: 8192,
+            modifiedAt: Date(timeIntervalSince1970: 20), strongETag: "\"current\""
+        )
+        let fileSystem = LocatorFakeFileSystem(statEntry: old, listedEntries: [current])
+        let provider = makeProvider(stat: old, fileSystem: fileSystem)
+        addTeardownBlock { await provider.teardown() }
+        let request = try await provider.playbackInfo(for: "f:\(path)")
+        guard case .networkFile(let locator) = request.playbackSource else {
+            return XCTFail("Expected network-file playback")
+        }
+        XCTAssertEqual(locator.relativePath, path)
+        XCTAssertEqual(locator.representation.size, 8192)
+        XCTAssertEqual(locator.representation.identity.kind, .strongETag)
+        XCTAssertEqual(locator.representation.identity.value, "\"current\"")
+        let openingCalls = await fileSystem.openingCalls
+        let listingCalls = await fileSystem.listingCalls
+        XCTAssertEqual(openingCalls, 0)
+        XCTAssertEqual(listingCalls, 1, "Subtitles must reuse this request's parent listing")
+    }
+
+    func testPlayDoesNotCacheListingAcrossRequestsAndSupportsModificationTimeIdentity() async throws {
+        let path = "movie.mkv"
+        let first = try RemoteFileEntry(
+            relativePath: path, kind: .file, size: 1024,
+            modifiedAt: Date(timeIntervalSince1970: 10)
+        )
+        let second = try RemoteFileEntry(
+            relativePath: path, kind: .file, size: 2048,
+            modifiedAt: Date(timeIntervalSince1970: 20)
+        )
+        let fileSystem = LocatorFakeFileSystem(statEntry: first, listedEntries: [first])
+        let provider = makeProvider(stat: first, fileSystem: fileSystem)
+        addTeardownBlock { await provider.teardown() }
+        let firstRequest = try await provider.playbackInfo(for: "f:\(path)")
+        await fileSystem.replaceListing([second])
+        let secondRequest = try await provider.playbackInfo(for: "f:\(path)")
+        guard case .networkFile(let firstLocator) = firstRequest.playbackSource,
+              case .networkFile(let secondLocator) = secondRequest.playbackSource else {
+            return XCTFail("Expected network-file playback")
+        }
+        XCTAssertEqual(firstLocator.representation.identity.modifiedAt, first.modifiedAt)
+        XCTAssertEqual(secondLocator.representation.identity.kind, .modificationTime)
+        XCTAssertEqual(secondLocator.representation.identity.modifiedAt, second.modifiedAt)
+        XCTAssertEqual(secondLocator.representation.size, 2048)
+        let openingCalls = await fileSystem.openingCalls
+        let listingCalls = await fileSystem.listingCalls
+        XCTAssertEqual(openingCalls, 0)
+        XCTAssertEqual(listingCalls, 2)
+    }
+
+    func testOtherTransportsKeepAuthoritativeOpeningStat() async throws {
+        let listed = try RemoteFileEntry(
+            relativePath: "movie.mkv", kind: .file, size: 1024,
+            modifiedAt: Date(timeIntervalSince1970: 10)
+        )
+        let opening = try RemoteFileEntry(
+            relativePath: "movie.mkv", kind: .file, size: 2048,
+            modifiedAt: Date(timeIntervalSince1970: 10.5)
+        )
+        for scheme in ["smb", "nfs", "sftp", "ftp", "ftps"] {
+            let fileSystem = LocatorFakeFileSystem(statEntry: opening, listedEntries: [listed])
+            let provider = makeProvider(
+                stat: opening, fileSystem: fileSystem,
+                baseURL: try XCTUnwrap(URL(string: "\(scheme)://nas.example.com/Media"))
+            )
+            addTeardownBlock { await provider.teardown() }
+            let request = try await provider.playbackInfo(for: "f:movie.mkv")
+            guard case .networkFile(let locator) = request.playbackSource else {
+                return XCTFail("Expected network-file playback")
+            }
+            XCTAssertEqual(locator.representation.size, 2048)
+            XCTAssertEqual(locator.representation.identity.modifiedAt, opening.modifiedAt)
+            let openingCalls = await fileSystem.openingCalls
+            let listingCalls = await fileSystem.listingCalls
+            XCTAssertEqual(openingCalls, 1, scheme)
+            XCTAssertEqual(listingCalls, 1, scheme)
+        }
+    }
+
+    func testIncompleteAmbiguousOrDifferentListingFallsBackToOpeningMetadata() async throws {
+        let path = "Movies/movie.mkv"
+        let opening = try RemoteFileEntry(
+            relativePath: path, kind: .file, size: 4096, strongETag: "\"opening\""
+        )
+        let cases: [[RemoteFileEntry]] = [
+            [],
+            [try RemoteFileEntry(relativePath: path, kind: .file, size: 4096)],
+            [try RemoteFileEntry(relativePath: path, kind: .file, strongETag: "\"listed\"")],
+            [try RemoteFileEntry(relativePath: path, kind: .directory)],
+            [try RemoteFileEntry(
+                relativePath: "Elsewhere/movie.mkv", kind: .file, size: 4096, strongETag: "\"elsewhere\""
+            )],
+            [opening, opening]
+        ]
+        for entries in cases {
+            let fileSystem = LocatorFakeFileSystem(statEntry: opening, listedEntries: entries)
+            let provider = makeProvider(stat: opening, fileSystem: fileSystem)
+            addTeardownBlock { await provider.teardown() }
+            let request = try await provider.playbackInfo(for: "f:\(path)")
+            guard case .networkFile(let locator) = request.playbackSource else {
+                return XCTFail("Expected network-file playback")
+            }
+            XCTAssertEqual(locator.relativePath, path)
+            XCTAssertEqual(locator.representation.identity.value, "\"opening\"")
+            let openingCalls = await fileSystem.openingCalls
+            let listingCalls = await fileSystem.listingCalls
+            XCTAssertEqual(openingCalls, 1)
+            XCTAssertEqual(listingCalls, 1)
+        }
+    }
+
+    func testUnlistableParentStillUsesOpeningStatAndLegacySubtitleProbes() async throws {
+        let entry = try RemoteFileEntry(
+            relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"opening\""
+        )
+        let fileSystem = LocatorFakeFileSystem(statEntry: entry, listingError: .permissionDenied)
+        let provider = makeProvider(stat: entry, fileSystem: fileSystem)
+        addTeardownBlock { await provider.teardown() }
+        let request = try await provider.playbackInfo(for: "f:movie.mkv")
+        guard case .networkFile(let locator) = request.playbackSource else {
+            return XCTFail("Expected network-file playback")
+        }
+        XCTAssertEqual(locator.representation.identity.value, "\"opening\"")
+        let openingCalls = await fileSystem.openingCalls
+        let listingCalls = await fileSystem.listingCalls
+        XCTAssertEqual(openingCalls, 1)
+        XCTAssertEqual(listingCalls, 5)
+    }
+
+    func testCancelledOpeningListingDoesNotStartStatOrSubtitleFallback() async throws {
+        let entry = try RemoteFileEntry(
+            relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"opening\""
+        )
+        let fileSystem = LocatorFakeFileSystem(statEntry: entry, listingError: .cancelled)
+        let provider = makeProvider(stat: entry, fileSystem: fileSystem)
+        addTeardownBlock { await provider.teardown() }
+        do {
+            _ = try await provider.playbackInfo(for: "f:movie.mkv")
+            XCTFail("Cancellation must not become successful playback")
+        } catch {
+            XCTAssertEqual(error as? MediaTransportError, .cancelled)
+        }
+        let openingCalls = await fileSystem.openingCalls
+        let listingCalls = await fileSystem.listingCalls
+        XCTAssertEqual(openingCalls, 0)
+        XCTAssertEqual(listingCalls, 1)
     }
 
     func testDetailPreparationResolvesExactFileWithoutSidecarWork() async throws {
@@ -394,16 +549,24 @@ private final class LocatorFakeSession: MediaTransportSession, @unchecked Sendab
 private actor LocatorFakeFileSystem: MediaTransportFileSystem {
     private var statEntry: RemoteFileEntry
     private let openingEntry: RemoteFileEntry?
+    private var listedEntries: [RemoteFileEntry]
+    private let listingError: MediaTransportError?
     private(set) var openingCalls = 0
     private(set) var listingCalls = 0
     private(set) var fileReads = 0
 
-    init(statEntry: RemoteFileEntry, openingEntry: RemoteFileEntry? = nil) {
+    init(
+        statEntry: RemoteFileEntry, openingEntry: RemoteFileEntry? = nil,
+        listedEntries: [RemoteFileEntry] = [], listingError: MediaTransportError? = nil
+    ) {
         self.statEntry = statEntry
         self.openingEntry = openingEntry
+        self.listedEntries = listedEntries
+        self.listingError = listingError
     }
 
     func replaceStat(_ entry: RemoteFileEntry) { statEntry = entry }
+    func replaceListing(_ entries: [RemoteFileEntry]) { listedEntries = entries }
 
     func validate() async throws {}
 
@@ -422,7 +585,8 @@ private actor LocatorFakeFileSystem: MediaTransportFileSystem {
 
     func list(relativePath: String) async throws -> [RemoteFileEntry] {
         listingCalls += 1
-        return []
+        if let listingError { throw listingError }
+        return listedEntries
     }
 
     func stat(relativePath: String) async throws -> RemoteFileEntry { statEntry }

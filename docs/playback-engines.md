@@ -172,6 +172,14 @@ Share sidecar discovery lists the video's parent once and visits only advertised
 the legacy folder-name probes; ordinary optional-listing failures are logged,
 while cancellation stops discovery. Own-folder exact-stem matching, dedicated
 folder boundary matching and extras' exact-stem rule are unchanged.
+For WebDAV, the same fresh, request-local parent listing also supplies the playback locator
+when it contains exactly one matching physical path with a file size and strong
+ETag or modification time. Missing, incomplete or ambiguous entries retain the
+ordinary opening-stat fallback. This avoids a redundant metadata round trip,
+not the final source-open/prepared-claim revalidation. Listings are never reused
+across Play requests, and detail preparation still does no sidecar discovery.
+Other share transports retain opening-stat metadata; their directory-listing and
+file-stat representations need not carry the same precision or completeness.
 
 Related upstream designs separate request sizing from buffered consumption:
 [FFmpeg HTTP](https://github.com/FFmpeg/FFmpeg/blob/b7e835e06913e4374a4567003fe8c75cebfffb98/libavformat/http.c)

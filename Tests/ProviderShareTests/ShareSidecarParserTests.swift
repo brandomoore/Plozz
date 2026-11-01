@@ -15,6 +15,33 @@ final class ShareSidecarParserTests: XCTestCase {
     }
 
     final class ShareSidecarDiscoveryTests: XCTestCase {
+        func testPlaybackOpeningReusesParentWithoutLosingSelectedFilesSubtitles() async throws {
+            let session = try SidecarSession(directories: [
+                "Movies": [
+                    RemoteFileEntry(
+                        relativePath: "Movies/Film.mp4", kind: .file, size: 4096, strongETag: "\"film\""
+                    ),
+                    entry("Film.en.srt"), entry("Other.en.srt"), entry("Subs", .directory)
+                ],
+                "Movies/Subs": [entry("Film.fr.srt")]
+            ])
+            let source = service(session)
+            let opening = try await source.playbackOpening(
+                for: "Movies/Film.mp4", reuseDirectoryMetadata: true
+            )
+            let tracks = try await source.discoverSidecarSubtitles(
+                forVideoRelPath: "Movies/Film.mp4", exactStemOnly: true,
+                directoryEntries: opening.directoryEntries
+            )
+            removeTracksOnTeardown(tracks)
+            let lists = await session.listedPaths
+            let reads = await session.readPaths
+            XCTAssertEqual(opening.locator.representation.identity.value, "\"film\"")
+            XCTAssertEqual(lists, ["Movies", "Movies/Subs"])
+            XCTAssertEqual(reads, ["Movies/Film.en.srt", "Movies/Subs/Film.fr.srt"])
+            XCTAssertEqual(Set(tracks.compactMap(\.language)), ["en", "fr"])
+        }
+
         func testNoSubtitleFoldersNeedsOnlyTheParentListing() async throws {
             let session = try SidecarSession(directories: [
                 "": [entry("Film.mp4"), entry("Subs"), entry("Unrelated", .directory)]

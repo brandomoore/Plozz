@@ -680,7 +680,11 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         } else {
             throw AppError.unknown("Item is not directly playable: \(itemID)")
         }
-        let locator = try await playbackSource.networkFileLocator(for: relPath)
+        let opening = try await playbackSource.playbackOpening(
+            for: relPath,
+            reuseDirectoryMetadata: ["http", "https"].contains(session.server.baseURL.scheme?.lowercased() ?? "")
+        )
+        let locator = opening.locator
         let item = try await item(id: canonicalItemID)
         // Resume from the newest canonical/legacy member-file state so a movie
         // watched before version grouping still resumes after the upgrade.
@@ -730,7 +734,8 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         // listing/read failure just yields no sidecars rather than blocking play.
         let subtitleTracks = try await playbackSource.discoverSidecarSubtitles(
             forVideoRelPath: relPath,
-            exactStemOnly: isExtra
+            exactStemOnly: isExtra,
+            directoryEntries: opening.directoryEntries
         )
         try Task.checkCancellation()
         return PlaybackRequest(
