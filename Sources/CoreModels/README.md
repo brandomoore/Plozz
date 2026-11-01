@@ -279,7 +279,9 @@ These display facts never create selectable tracks or change track preferences.
 The compact row highlights a reported preferred language and counts the rest
 (`English | +9` in one chip) without discarding the complete language inventory.
 `MediaSourceDisplayName` formats ordinary filenames, paths and source labels.
-A filename in a URL's path wins over query hints. When the path has no filename,
+A recognized media-file extension in a URL's path wins over query hints;
+an arbitrary dot in a signed path component does not make it a filename.
+When the path has no filename,
 only `filename` and `file_name` query parameters are accepted, decoded once.
 Conflicting hints, control characters, nested URLs and unrelated query fields supply no filename;
 the picker falls back to the server's other labels and technical metadata.
@@ -287,7 +289,13 @@ Optimized app-hosted tests cover query filename display and control-character
 rejection in the same build configuration used by the version picker.
 Bare query text is never shown as a source label. Cached locator-like names are
 cleaned at presentation time without changing stored values, playback locators
-or source IDs. Only the resulting filename supplies release text or
+or source IDs. Long ASCII hash/token-shaped components without a recognized media
+extension are also excluded from raw names and filename hints, including cached basenames. A readable
+source description or metadata filename supplies the fallback; with none, the
+picker omits the release-name line and keeps the known technical facts. This is
+display-only filtering, not token decoding, provider-specific parsing or a network
+lookup. Ordinary long filenames, recognized media files and Unicode names remain
+intact. Only the resulting filename supplies release text or
 filename-derived edition/quality hints.
 Multiline remote-source labels can identify their release file on a folder-marked
 line, including continuation lines through the file extension; presentation
