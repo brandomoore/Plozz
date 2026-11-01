@@ -290,7 +290,7 @@ final class LibraryPresentationTests: XCTestCase {
                 section: LibrarySection(id: "similar", title: title, items: []),
                 spoilerSettings: SpoilerSettings(),
                 showsSeriesArtwork: false,
-                onSelect: { _ in }
+                onSelect: { _, _ in }
             )
             try await withPresentation(
                 ScrollView { row },

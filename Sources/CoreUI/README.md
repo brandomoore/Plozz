@@ -13,6 +13,15 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+`diagnosticRecordingStatus()` installs the local-Debug recording indicator in a
+non-key, input-transparent window owned by the current scene. It stays above
+full-screen playback, sheets, and secondary app windows without taking remote
+focus or intercepting touches. Its acknowledgement follows mounted, in-bounds
+overlay layout; hosted tests check the composited scene rather than only the
+existence of a label. Heartbeats expire in the render server even during a
+main-thread stall. Preparation, ready, recording, saving, and terminal states
+are distinct; only the external recorder starts or verifies a capture.
+
 `PlaybackResumePrompt` owns the native Resume / Start Over dialog on both
 platforms. It retains the full pending playback request through the choice so
 source, version and playlist context are preserved; cancellation starts nothing.
@@ -326,6 +335,18 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   The bottom reflection and minimum dissolve span remain intact; trailers keep
   their full-stage presentation. Landscape and tvOS heroes are unchanged.
 
+  Detail title artwork stays attached to the page's root title, not its Play
+  episode, on both compact and regular-width mobile layouts. A visible logo
+  remains while additive metadata or artwork references for the same subject
+  resolve, including genre or added-ID enrichment that changes its metadata
+  routing (for example, TV to anime); the full request still keys resolution and
+  memoization. Changed subjects, accounts, languages, artwork policies or
+  conflicting lookup facts clear the old logo immediately. A completed miss
+  returns to the text fallback.
+  Detail pages on iOS/iPadOS and tvOS keep that text invisible during the initial
+  logo lookup and decoding, rather than flashing it before the logo arrives.
+  Titles with no logo sources show text immediately; cached logos also paint immediately.
+
 - **Setup presentation** — `ConnectionCodeView` shares the readable monospaced
   code panel across server sign-in and device pairing. `SetupCodeComparisonView`
   keeps both devices' confirmation copy and code treatment consistent while
@@ -399,8 +420,23 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   It starts when the native page appears, without a cover, window
   input guard, artwork wait, or custom Back handler. Leaving cancels the reveal;
   returning to an existing page does not replay it. Reduce Motion shows everything
-  immediately. iOS/iPadOS navigation is unchanged.
-- **Retained cinematic transition infrastructure** — the zoom implementation and
+  immediately.
+- **Mobile artwork navigation** — iOS/iPadOS poster detail links use the system
+  interactive zoom transition. `MediaArtworkZoomLink`, its value-based variant,
+  and `MediaArtworkZoomButton` give each card occurrence its own namespace.
+  `PosterCardView` registers the final artwork bounds and corner radius after
+  layout for framed/borderless, portrait/landscape, and Continue Watching cards;
+  captions, padding, density, and user-selected aspect ratios do not become
+  guessed transition geometry. Featured cards register their own artwork.
+  Home, library/recommendation/collection grids, search, watchlist, related
+  titles, and filmography carry the originating source into their destination.
+  Card menus share that origin for Go to Show, Go to Episode, and Go to Movie,
+  including direct-play posters and inline episode artwork. Menu navigation
+  waits for dismissal before opening the destination. Source-less menus,
+  deep links, folders, playback actions, and the Home hero retain their existing
+  behavior. iOS owns the gesture, cancellation, return animation, and Reduce
+  Motion treatment; no drag recognizer or per-frame layout state is installed.
+- **Retained tvOS cinematic transition infrastructure** — the custom zoom implementation and
   its focused fixtures remain available for future work, but no production shell
   enables it. TV browse stacks install
   `cinematicDetailNavigation(path:)` on the stack so its destinations inherit it.

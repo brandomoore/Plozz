@@ -26,6 +26,10 @@ final class JellyfinRecentlyAddedLiveTests: XCTestCase {
         ))
         let response = try await provider.serverHomeLayout()
         let layout = try XCTUnwrap(response)
+        XCTAssertTrue(layout.sections.contains { $0.kind == .libraries })
+        XCTAssertTrue(layout.sections.contains { $0.kind == .continueWatching && $0.isAccountWideHistory })
+        XCTAssertFalse(layout.sections.contains { $0.id == "emby:resumeaudio" })
+        XCTAssertTrue(layout.omitsMusic)
         let recent = layout.sections.filter { $0.kind == .recentlyAdded }
         XCTAssertFalse(recent.isEmpty, "The live response must identify native Recently Added sections.")
         var nativeCount = 0

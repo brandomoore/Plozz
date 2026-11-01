@@ -41,6 +41,13 @@ struct HomeRowStylePicker: View {
                 }
                 .accessibilityIdentifier(option ? "home-rows-showcase" : "home-rows-classic")
                 .accessibilityAddTraits(immersive == option ? .isSelected : [])
+                .settingsSearchAnchor(
+                    immersive == option ? "home-layout" : "home-layout-\(option ? "showcase" : "classic")",
+                    fallbackFor: option && !immersive
+                        ? SettingsSearchCatalog.targets(on: .homeRowStyle).filter { $0 != "home-layout" }
+                            + SettingsSearchCatalog.targets(on: .heroDiscovery)
+                        : []
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

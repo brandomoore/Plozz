@@ -21,6 +21,7 @@ struct SpatialAudioLayoutControl: View {
                 }
             }
             .accessibilityIdentifier("spatial-audio-layout")
+            .settingsSearchAnchor("spatial-layout")
             Text("Used when Spatial audio is on. Applies to this device.")
                 .settingsHelperText()
             Text("DTS:X heights require 7.1.4 or 9.1.6.")

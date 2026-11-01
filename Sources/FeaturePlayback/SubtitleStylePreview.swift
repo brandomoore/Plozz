@@ -120,7 +120,9 @@ struct SubtitleStylePreview: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Subtitle preview")
-            SubtitlePreviewCaption(style: style, options: options)
+            if options.showsHDRBrightness {
+                SubtitlePreviewCaption(style: style, options: options)
+            }
         }
         .onAppear { options.setVisible(true, fullscreen: false, sceneActive: scenePhase == .active) }
         .onDisappear { options.setVisible(false, fullscreen: false, sceneActive: scenePhase == .active) }
@@ -147,8 +149,6 @@ private struct SubtitlePreviewCaption: View {
                     Text(failure.message).foregroundStyle(.red)
                     Text("Turn HDR preview off and on to retry.")
                 }
-            } else {
-                Text("Size and position match the proportions of full-screen playback.")
             }
         }
         .font(.caption)
@@ -201,12 +201,17 @@ struct SubtitleStylePreviewCanvas: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let picture = CGRect(x: 0, y: referenceSize.height * 0.13,
+                                 width: referenceSize.width, height: referenceSize.height * 0.74)
             ZStack {
                 if let hdrVideo {
                     Color.black
                     if hostsHDRVideo { SubtitleHDRVideoSurface(preview: hdrVideo) }
                 } else {
+                    Color.black
                     SubtitlePreviewBackground(animate: animate, options: backgroundOptions)
+                        .frame(height: picture.height)
+                        .clipped()
                 }
                 if hdrVideo == nil || hdrVideo?.state == .ready {
                     SubtitleOverlayView(
@@ -216,7 +221,8 @@ struct SubtitleStylePreviewCanvas: View {
                         )))],
                         secondaryActive: secondaryVisible,
                         style: SystemCaptionStyle.shared.resolved(style),
-                        isHDR: showsHDRBrightness
+                        isHDR: showsHDRBrightness,
+                        activePictureRect: hdrVideo == nil ? picture : nil
                     )
                     // Cue equality uses identity/timing, not text. Refresh only
                     // passive captions; keep video, background and editor alive.

@@ -7,6 +7,74 @@ import os
 
 @MainActor
 final class PlaybackDiagnosticsSamplerTests: XCTestCase {
+    func testConfirmedAudioTrackReplacesProviderSnapshotAndClearsMissingProperties() {
+        let sampler = PlaybackDiagnosticsSampler()
+        defer { sampler.stop() }
+        let original = MediaSourceMetadata.AudioStream(
+            codec: "truehd", profile: "Dolby Atmos", channels: 8,
+            channelLayout: "7.1", sampleRate: 96_000, bitrate: 4_000_000
+        )
+        var audio: MediaSourceMetadata.AudioStream? = original
+        var pipeline = "TRUEHD → FLAC bridge"
+        sampler.start(
+            player: nil, mode: .plozzigen, metadata: .init(audio: original),
+            engineTelemetry: { .init(audioPipelineDescription: pipeline) },
+            probedFacts: { .init(activeAudioTrack: audio) }, includesSystemMetrics: false
+        )
+        for next in [
+            MediaSourceMetadata.AudioStream(codec: "ac3", channels: 2),
+            original,
+            .init(codec: "pcm_s16le", channels: 2, sampleRate: 48_000),
+            .init(codec: "dca", channels: 2, bitrate: 768_000),
+            .init(codec: "dca", profile: "MA + DTS:X IMAX", channels: 8, channelLayout: "7.1"),
+            .init()
+        ] {
+            audio = next
+            sampler.sampleTick()
+            let expected = PlaybackDiagnostics.base(from: .init(audio: next), mode: .plozzigen)
+            XCTAssertEqual(sampler.latest?.audioCodec, expected.audioCodec)
+            XCTAssertEqual(sampler.latest?.audioProfile, expected.audioProfile)
+            XCTAssertEqual(sampler.latest?.audioChannels, expected.audioChannels)
+            XCTAssertEqual(sampler.latest?.audioChannelLayout, expected.audioChannelLayout)
+            XCTAssertEqual(sampler.latest?.audioSampleRate, expected.audioSampleRate)
+            XCTAssertEqual(sampler.latest?.audioBitrate, expected.audioBitrate)
+            XCTAssertEqual(sampler.latest?.audioPipelineDescription, pipeline)
+        }
+        pipeline = "DTS → EAC3 bridge"
+        audio = .init(codec: "dca", channels: 2)
+        sampler.sampleTick()
+        XCTAssertEqual(sampler.latest?.audioEncodingDescription, "Lossy encoding")
+        XCTAssertEqual(sampler.latest?.audioCodec, "DTS")
+        sampler.start(player: nil, mode: .plozzigen, includesSystemMetrics: false)
+        sampler.sampleTick()
+        XCTAssertNil(sampler.latest?.audioCodec)
+        XCTAssertNil(sampler.latest?.audioProfile)
+    }
+
+    func testConfirmedSourceAudioDoesNotReplaceServerRenditionOrLiveTrackFacts() {
+        for live in [false, true] {
+            let sampler = PlaybackDiagnosticsSampler()
+            defer { sampler.stop() }
+            let liveStream: (@MainActor () -> PlaybackDiagnostics.LiveStreamFacts?)?
+            if live {
+                liveStream = { PlaybackDiagnostics.LiveStreamFacts() }
+            } else {
+                liveStream = nil
+            }
+            sampler.start(
+                player: nil, mode: live ? .plozzigen : .transcode,
+                metadata: .init(audio: .init(codec: "aac", channels: 2)),
+                probedFacts: { .init(activeAudioTrack: .init(codec: "truehd", profile: "Atmos", channels: 8)) },
+                liveStream: liveStream,
+                includesSystemMetrics: false
+            )
+            sampler.sampleTick()
+            XCTAssertEqual(sampler.latest?.audioCodec, live ? "AAC" : nil)
+            XCTAssertEqual(sampler.latest?.audioChannels, live ? 2 : nil)
+            if !live { XCTAssertEqual(sampler.latest?.originalSource?.audio?.codec, "aac") }
+        }
+    }
+
     func testCacheTelemetryClearsWhenMissingUnsupportedStoppedOrRestarted() {
         let sampler = PlaybackDiagnosticsSampler()
         defer { sampler.stop() }

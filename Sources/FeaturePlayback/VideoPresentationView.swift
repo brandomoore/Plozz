@@ -10,6 +10,18 @@ final class VideoPresentationView: UIView {
     private var zoom = PlayerVideoZoom()
     private var aspectRatio: Double?
     private var fitsInsideSafeArea = false
+    private var needsPictureSubtitles = false
+    private var activePicture: CGRect?
+    private var pictureTask: Task<Void, Never>?
+    private var pictureToken = UUID()
+    private var pictureSuspended = false
+    private var pictureObservers: [NSObjectProtocol] = []
+    private final class PictureOwner {
+        weak var view: VideoPresentationView?
+        let token: UUID
+        init(_ view: VideoPresentationView, token: UUID) { self.view = view; self.token = token }
+    }
+    private static var pictureOwners: [ObjectIdentifier: PictureOwner] = [:]
     #if os(iOS)
     private let reflection = VideoPreviewReflectionView()
     private var colorSampler: VideoPreviewColorSampler?
@@ -29,6 +41,24 @@ final class VideoPresentationView: UIView {
         backgroundColor = .black
         clipsToBounds = true
         isUserInteractionEnabled = false
+        pictureObservers = [
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.pictureSuspended = true
+                    self?.stopPictureSampling()
+                }
+            },
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.pictureSuspended = false
+                    self?.updatePictureSampling()
+                }
+            }
+        ]
         #if os(iOS)
         addSubview(reflection)
         activationObservers = [
@@ -54,7 +84,9 @@ final class VideoPresentationView: UIView {
         #endif
     }
 
-    deinit {
+    isolated deinit {
+        stopPictureSampling()
+        for observer in pictureObservers { NotificationCenter.default.removeObserver(observer) }
         #if os(iOS)
         for observer in activationObservers { NotificationCenter.default.removeObserver(observer) }
         #endif
@@ -64,6 +96,7 @@ final class VideoPresentationView: UIView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func attach(_ engine: any VideoEngine) {
+        if self.engine !== engine { stopPictureSampling() }
         let output = engine.makeVideoOutputView()
         self.engine = engine
         #if os(iOS)
@@ -106,13 +139,16 @@ final class VideoPresentationView: UIView {
         #endif
     }
 
-    func update(zoom: PlayerVideoZoom, aspectRatio: Double? = nil, fitsInsideSafeArea: Bool = false) {
+    func update(zoom: PlayerVideoZoom, aspectRatio: Double? = nil, fitsInsideSafeArea: Bool = false,
+                needsPictureSubtitles: Bool = false) {
         let ratio = aspectRatio ?? engine?.videoAspectRatio
         let needsUpdate = self.fitsInsideSafeArea != fitsInsideSafeArea
             || self.aspectRatio != ratio || self.zoom != zoom
         self.zoom = zoom
         self.aspectRatio = ratio
         self.fitsInsideSafeArea = fitsInsideSafeArea
+        self.needsPictureSubtitles = needsPictureSubtitles
+        updatePictureSampling()
         guard needsUpdate || fitBounds != resolvedFitBounds else { return }
         setNeedsLayout()
         layoutIfNeeded()
@@ -125,11 +161,78 @@ final class VideoPresentationView: UIView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        updatePictureSampling()
         #if os(iOS)
         updateColorSampling()
         #endif
         setNeedsLayout()
         subtitleViewport?.scheduleUpdate()
+    }
+
+    private var shouldSamplePicture: Bool {
+        guard window != nil, !pictureSuspended, let engine, engine.supportsActivePictureAnalysis,
+              engine.isPlaybackPositionReady,
+              surface?.superview === surfaceHost, needsPictureSubtitles || zoom.mode == .picture
+        else { return false }
+        #if os(iOS)
+        if (engine as? any PictureInPicturePresentingEngine)?.continuesPlaybackInBackground == true { return false }
+        #endif
+        return engine.nowPlayingPlayer?.isExternalPlaybackActive != true
+    }
+
+    private func updatePictureSampling() {
+        guard shouldSamplePicture, let engine else { stopPictureSampling(); return }
+        guard pictureTask == nil else { return }
+        let id = ObjectIdentifier(engine)
+        Self.pictureOwners[id]?.view?.stopPictureSampling()
+        let token = UUID()
+        Self.pictureOwners[id] = PictureOwner(self, token: token)
+        pictureToken = token
+        pictureTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard await self?.samplePicture(token: token) == true else { return }
+                do { try await Task.sleep(for: .milliseconds(500)) }
+                catch { return }
+            }
+        }
+    }
+
+    private func samplePicture(token: UUID) async -> Bool {
+        guard shouldSamplePicture, let engine else { stopPictureSampling(); return false }
+        let result = await engine.sampleActivePicture()
+        guard !Task.isCancelled, pictureToken == token, self.engine === engine else { return false }
+        guard shouldSamplePicture else { stopPictureSampling(); return false }
+        let next: CGRect?
+        if case let .measured(rect, size) = result, VideoActivePictureGeometry.isValid(rect),
+           size.width > 0, size.height > 0, let ratio = engine.videoAspectRatio,
+           abs(size.width / size.height - ratio) < 0.01 {
+            next = rect
+        } else {
+            next = nil
+        }
+        if activePicture != next {
+            activePicture = next
+            setNeedsLayout()
+            layoutIfNeeded()
+        }
+        return true
+    }
+
+    private func stopPictureSampling() {
+        guard pictureTask != nil || activePicture != nil else { return }
+        let ownershipToken = pictureToken
+        pictureToken = UUID()
+        pictureTask?.cancel()
+        pictureTask = nil
+        if let engine, Self.pictureOwners[ObjectIdentifier(engine)]?.token == ownershipToken {
+            Self.pictureOwners.removeValue(forKey: ObjectIdentifier(engine))
+            engine.stopActivePictureAnalysis()
+        }
+        if activePicture != nil {
+            activePicture = nil
+            setNeedsLayout()
+            subtitleViewport?.scheduleUpdate()
+        }
     }
 
     #if os(iOS)
@@ -197,8 +300,8 @@ final class VideoPresentationView: UIView {
         #endif
         guard let surface, surface.superview === surfaceHost else { return }
         let contentBounds = CGRect(origin: .zero, size: bounds.size)
-        let center = zoom.surfaceCenter(in: bounds, fitBounds: fitBounds)
-        let scale = zoom.scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds)
+        let center = zoom.surfaceCenter(in: bounds, fitBounds: fitBounds, aspectRatio: aspectRatio, activePicture: activePicture)
+        let scale = zoom.scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds, activePicture: activePicture)
         let transform = CGAffineTransform(scaleX: scale.dx, y: scale.dy)
         if surface.bounds != contentBounds || surface.center != center || surface.transform != transform {
             UIView.performWithoutAnimation {
@@ -437,7 +540,12 @@ final class VideoPresentationView: UIView {
     }
     #endif
 
-    var videoRect: CGRect? { zoom.videoRect(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds) }
+    var videoRect: CGRect? {
+        zoom.videoRect(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds, activePicture: activePicture)
+    }
+    var activePictureRect: CGRect? {
+        videoRect.map { VideoActivePictureGeometry.map(activePicture, into: $0).intersection(bounds) }
+    }
     var sourceAspectRatio: Double? { aspectRatio }
 }
 
@@ -447,6 +555,7 @@ final class VideoPresentationView: UIView {
 @Observable
 final class VideoSubtitleViewport {
     private(set) var videoRect: CGRect?
+    private(set) var activePictureRect: CGRect?
     @ObservationIgnored private weak var videoView: VideoPresentationView?
     @ObservationIgnored private weak var subtitleView: UIView?
     @ObservationIgnored private var updateScheduled = false
@@ -470,13 +579,17 @@ final class VideoSubtitleViewport {
             guard let self else { return }
             self.updateScheduled = false
             let rect: CGRect?
+            let activeRect: CGRect?
             if let videoView = self.videoView, let subtitleView = self.subtitleView,
                let window = videoView.window, subtitleView.window === window {
                 rect = videoView.videoRect.map { videoView.convert($0, to: subtitleView) }
+                activeRect = videoView.activePictureRect.map { videoView.convert($0, to: subtitleView) }
             } else {
                 rect = nil
+                activeRect = nil
             }
             if self.videoRect != rect { self.videoRect = rect }
+            if self.activePictureRect != activeRect { self.activePictureRect = activeRect }
         }
     }
 }

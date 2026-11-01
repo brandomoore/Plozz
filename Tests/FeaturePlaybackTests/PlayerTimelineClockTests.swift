@@ -73,6 +73,35 @@ final class PlayerTimelineClockTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testTimelineLabelsCompareTextAndIdentityRatherThanFractionalProgress() {
+        let model = PlayerControlsModel()
+        model.duration = 10
+        func labels() -> PlayerTimelineLabels {
+            PlayerTimelineLabels(
+                model: model, curLabel: PlayerControls.timeLabel(model.displaySeconds),
+                remLabel: "-" + PlayerControls.timeLabel(model.duration - model.displaySeconds), showsClock: false
+            )
+        }
+        model.currentSeconds = 3.6
+        let before = labels()
+        model.currentSeconds = 4.4
+        let after = labels()
+        XCTAssertEqual(before, after)
+        XCTAssertNotEqual(before, PlayerTimelineLabels(
+            model: model, curLabel: "0:05", remLabel: "-0:06", showsClock: false
+        ))
+        XCTAssertNotEqual(before, PlayerTimelineLabels(
+            model: model, curLabel: "0:04", remLabel: "-0:07", showsClock: false
+        ))
+        XCTAssertNotEqual(before, PlayerTimelineLabels(
+            model: model, curLabel: "0:04", remLabel: "-0:06", showsClock: true
+        ))
+        XCTAssertNotEqual(before, PlayerTimelineLabels(
+            model: PlayerControlsModel(), curLabel: "0:04", remLabel: "-0:06", showsClock: false
+        ))
+    }
+
     private func end(position: Double, duration: Double, speed: Double = 1) throws -> Date {
         try XCTUnwrap(PlayerClockTimes.estimatedEnd(now: now, position: position, duration: duration, speed: speed))
     }

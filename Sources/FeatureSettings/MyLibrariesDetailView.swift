@@ -23,6 +23,7 @@ import CoreUI
 public struct MyLibrariesDetailView: View {
     public let scope: ProfileLibrariesScope
     @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
 
     public init(scope: ProfileLibrariesScope) { self.scope = scope }
 
@@ -39,6 +40,21 @@ public struct MyLibrariesDetailView: View {
     #endif
 
     private var allGroups: [ServerAccountGroup] { serverGroups(from: scope.accounts) }
+
+    private func searchGroup(for target: String) -> ServerAccountGroup? {
+        let candidates = allGroups.filter {
+            target == "watcher-plex-user" ? $0.providerKind == .plex
+                : target == "watcher-server-user" ? $0.providerKind != .mediaShare : true
+        }
+        return candidates.first(where: isWatching) ?? candidates.first
+    }
+
+    private func searchFallbacks(for group: ServerAccountGroup) -> [String] {
+        guard !isWatching(group) else { return [] }
+        return ["profile-library-inclusion", "watcher-server-user", "watcher-plex-user"].filter {
+            searchGroup(for: $0)?.serverKey == group.serverKey
+        }
+    }
 
     private func isWatching(_ group: ServerAccountGroup) -> Bool {
         group.accounts.contains { scope.isAccountIncludedInActiveProfile($0.id) }
@@ -73,6 +89,17 @@ public struct MyLibrariesDetailView: View {
                             // picker decides whose watchlist comes with it.
                             subtitle: "Only this profile is affected. Who you watch as sets whose watchlist it uses."
                         )
+                    }
+                    if searchRequest?.targetID == "watcher-plex-user",
+                       searchGroup(for: "watcher-plex-user") == nil {
+                        Text("Add a Plex server to choose a Plex user.")
+                            .focusable()
+                            .settingsSearchAnchor("watcher-plex-user")
+                    } else if searchRequest?.targetID == "watcher-server-user",
+                              searchGroup(for: "watcher-server-user") == nil {
+                        Text("Add a media server to choose who you watch as.")
+                            .focusable()
+                            .settingsSearchAnchor("watcher-server-user")
                     }
                     if allGroups.isEmpty {
                         emptyInventoryState
@@ -151,6 +178,11 @@ public struct MyLibrariesDetailView: View {
                 }
                 .id(serverHeaderID(group))
                 .settingsWorkspaceEntry(group.serverKey == allGroups.first?.serverKey)
+                .settingsSearchAnchor(
+                    group.serverKey == allGroups.first?.serverKey
+                        ? "profile-source-inclusion" : "profile-source-\(group.serverKey)",
+                    fallbackFor: searchFallbacks(for: group)
+                )
 
                 if isWatching(group) {
                     // A media share has no watcher identity, so it skips "Watching
@@ -158,6 +190,10 @@ public struct MyLibrariesDetailView: View {
                     if group.providerKind != .mediaShare {
                         PlozzDivider()
                         watchingAs(group)
+                            .settingsSearchAnchor(
+                                group.serverKey == searchGroup(for: "watcher-server-user")?.serverKey
+                                    ? "watcher-server-user" : "watcher-server-\(group.serverKey)"
+                            )
                     }
 
                     PlozzDivider()
@@ -212,7 +248,14 @@ public struct MyLibrariesDetailView: View {
                 .font(.caption.weight(.semibold))
                 .plozzForeground(.secondary)
             if group.providerKind == .plex {
-                ForEach(group.accounts) { plexIdentityLink($0) }
+                ForEach(group.accounts) { account in
+                    plexIdentityLink(account)
+                        .settingsSearchAnchor(
+                            group.serverKey == searchGroup(for: "watcher-plex-user")?.serverKey
+                                && account.id == group.accounts.first?.id
+                                ? "watcher-plex-user" : "watcher-plex-\(account.id)"
+                        )
+                }
             } else {
                 jellyfinIdentity(group)
             }
@@ -393,6 +436,10 @@ public struct MyLibrariesDetailView: View {
                     onToggle: { lib in
                         scope.homeVisibility.setEnabled(!scope.homeVisibility.isVisibleOnHome(lib), for: lib.key)
                     }
+                )
+                .settingsSearchAnchor(
+                    group.serverKey == searchGroup(for: "profile-library-inclusion")?.serverKey
+                        ? "profile-library-inclusion" : "profile-libraries-\(group.serverKey)"
                 )
             }
         }

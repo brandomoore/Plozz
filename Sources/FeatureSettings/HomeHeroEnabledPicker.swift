@@ -28,6 +28,11 @@ struct HomeHeroEnabledPicker: View {
                 }
                 .accessibilityIdentifier(enabled ? "home-hero-on" : "home-hero-off")
                 .accessibilityAddTraits(settings.spotlightEnabled == enabled ? .isSelected : [])
+                .settingsSearchAnchor(
+                    enabled ? "hero-enabled" : "hero-disabled",
+                    fallbackFor: enabled && !settings.spotlightEnabled ? SettingsSearchCatalog.carouselHeroTargets
+                        : (!enabled && settings.spotlightEnabled ? ["showcase-discovery-row"] : [])
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

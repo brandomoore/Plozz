@@ -1154,9 +1154,9 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                         let rows: [(String, AnyView)] = [
                             ("Popular", AnyView(PlozziOSLibraryRecommendationRow(
                                 section: LibrarySection(id: "shared", title: "Popular", items: items),
-                                spoilerSettings: .default, showsSeriesArtwork: false, onSelect: { _ in }
+                                spoilerSettings: .default, showsSeriesArtwork: false, onSelect: { _, _ in }
                             ))),
-                            ("Related", AnyView(PlozziOSRelatedSection(entries: related, inset: inset, onSelect: { _ in }))),
+                            ("Related", AnyView(PlozziOSRelatedSection(entries: related, inset: inset, onSelect: { _, _ in }))),
                             ("Extras", AnyView(PlozziOSExtrasSection(
                                 state: .loaded(items.map { MediaExtra(item: $0, kind: .trailer) }),
                                 inset: inset, onSelect: { _ in }, onRetry: {}

@@ -36,6 +36,35 @@ HOME_HOST_FITTING_COUNTERS = [
     "hostFittingMaxNanoseconds", "hostFittingReentrantCalls",
 ]
 SCENARIOS = {
+    **{
+        f"active-picture-{players}-{state}": {
+            "suite": "ui",
+            "test": f"VideoZoomPresentationTests/testPerformance{'FourPictures' if players == 4 else 'Picture'}{state.title()}",
+            "file": "Tests/SubtitlePresentationSupport/VideoZoomPresentationTests.swift",
+            "description": f"Play {players} visible 1080p30 streams with active-picture analysis {state}; require advancing playback, bounded fresh samples and released output taps.",
+            "counters": ["players", "samples", "windowMilliseconds"],
+        }
+        for players in (1, 4) for state in ("enabled", "disabled")
+    },
+    "seek-plex-bif": {
+        "suite": "network", "target": "FeaturePlaybackTests",
+        "test": "ScrubPreviewLoaderTests/testPerformancePlexBIFScan",
+        "file": "Tests/FeaturePlaybackTests/ScrubPreviewLoaderTests.swift",
+        "description": "Cold then warm Plex BIF scanning at all eight speeds in both directions; verify JPEG pixel identity and one real loopback download with 100-ms latency.",
+        "counters": ["inputSamples", "stages", "motionFrames", "httpRequests", "bifBytes", "firstFrameMicroseconds"],
+    },
+    **{
+        f"seek-generated-{delay}ms": {
+            "suite": "core", "target": "FeaturePlaybackTests",
+            "test": f"ScrubPreviewPerformanceTests/{method}",
+            "file": "Tests/FeaturePlaybackTests/ScrubPreviewPerformanceTests.swift",
+            "description": f"All eight scan speeds in both directions, 384 paced inputs, {delay}-ms synthetic still extraction; require the correct settled frames and measure motion starvation.",
+            "counters": ["stages", "inputSamples", "motionFrames", "starvedStages", "settledStages",
+                         "decodeStarts", "decodeCompletions", "decodeCancellations", "maxInFlight",
+                         "blankPublications", "maxPublicationGapMicroseconds", "maxSettleMicroseconds"],
+        }
+        for delay, method in [(80, "testPerformanceGeneratedScan"), (180, "testPerformanceSlowGeneratedScan")]
+    },
     "server-ratings-critical-path": {
         "suite": "network", "target": "ProviderJellyfinTests",
         "test": "ServerRatingsLatencyTests/testPerformanceRequiredItemAndPlayback",
@@ -213,6 +242,74 @@ SCENARIOS = {
         "description": "The same notifications with bounded recording and completed encoding/persistence.",
         "counters": ["notifications", "retained", "discarded", "persistedBytes", "enqueueMicroseconds"],
     },
+    "player-card-first-visits": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "PlayerEpisodeArtworkHostedTests/testPerformancePlayerCardFirstVisits",
+        "file": "Tests/FocusIntegrationTests/PlayerEpisodeArtworkHostedTests.swift",
+        "description": "Fresh controls hierarchy per sample; first Info/Chapters/Cast visits with native focus and populated card checks, no video decoding.",
+        "counters": ["freshHierarchies", "firstVisits", "infoMaxMainActorGapMicroseconds",
+                     "chaptersFocusUpdateMicroseconds", "chaptersMaxMainActorGapMicroseconds",
+                     "castFocusUpdateMicroseconds", "castMaxMainActorGapMicroseconds"],
+        "timing": ["cpuMilliseconds"],
+    },
+    "player-controls-cold-reveal": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "PlayerControlsRevealPerformanceTests/testPerformanceColdControlsReveal",
+        "file": "Tests/FocusIntegrationTests/PlayerControlsRevealPerformanceTests.swift",
+        "description": "Fresh production controls hierarchy per sample, with three reveals and first/last main-actor gaps; warm process, no decoding.",
+        "counters": ["freshHierarchies", "reveals", "firstRevealMaxMainActorGapMicroseconds",
+                     "lastRevealMaxMainActorGapMicroseconds", "cardOpens", "cardOpenMaxMainActorGapMicroseconds"],
+        "timing": ["cpuMilliseconds"],
+    },
+    "player-controls-first-card": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "PlayerControlsRevealPerformanceTests/testPerformanceFirstInfoCard",
+        "file": "Tests/FocusIntegrationTests/PlayerControlsRevealPerformanceTests.swift",
+        "description": "Fresh controls hierarchy, three reveals and first Info card opening; checks deferred-work cost and focus readiness.",
+        "counters": ["freshHierarchies", "reveals", "firstRevealMaxMainActorGapMicroseconds",
+                     "lastRevealMaxMainActorGapMicroseconds", "cardOpens", "cardOpenMaxMainActorGapMicroseconds"],
+        "timing": ["cpuMilliseconds"],
+    },
+    "player-controls-reveal": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "PlayerControlsRevealPerformanceTests/testPerformanceControlsReveal",
+        "file": "Tests/FocusIntegrationTests/PlayerControlsRevealPerformanceTests.swift",
+        "description": "Four reveals of production transport controls with immediate preference reads; no video decoding.",
+        "counters": ["reveals", "preferenceReads", "mainThreadReads", "maxMainActorGapMicroseconds"],
+        "timing": ["cpuMilliseconds"],
+    },
+    "player-controls-reveal-contended": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "PlayerControlsRevealPerformanceTests/testPerformanceControlsRevealWithContendedPreferences",
+        "file": "Tests/FocusIntegrationTests/PlayerControlsRevealPerformanceTests.swift",
+        "description": "The same controls with a controlled 180-ms synchronous preference read; heartbeat gaps are not rendered FPS or remux decoding.",
+        "counters": ["reveals", "preferenceReads", "mainThreadReads", "maxMainActorGapMicroseconds"],
+        "timing": ["cpuMilliseconds"],
+    },
+    "player-controls-hidden-clock": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "PlayerControlsClockPerformanceTests/testPerformanceHiddenClock",
+        "file": "Tests/FocusIntegrationTests/PlayerControlsClockPerformanceTests.swift",
+        "description": "Mounted, hidden TV transport with 32 playback-clock updates at the production 250-ms cadence; no decoding.",
+        "counters": ["ticks", "clockUpdates", "controlsVisible", "observationMilliseconds"],
+        "timing": ["cpuMilliseconds"],
+    },
+    "player-controls-hidden-static": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "PlayerControlsClockPerformanceTests/testPerformanceHiddenStatic",
+        "file": "Tests/FocusIntegrationTests/PlayerControlsClockPerformanceTests.swift",
+        "description": "The same mounted, hidden transport and eight-second observation without clock mutations; an idle control.",
+        "counters": ["ticks", "clockUpdates", "controlsVisible", "observationMilliseconds"],
+        "timing": ["cpuMilliseconds"],
+    },
+    "player-controls-visible-clock": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "PlayerControlsClockPerformanceTests/testPerformanceVisibleClock",
+        "file": "Tests/FocusIntegrationTests/PlayerControlsClockPerformanceTests.swift",
+        "description": "The same 32 clock updates with visible TV transport; measures app-process CPU, not GPU cost or rendered FPS.",
+        "counters": ["ticks", "clockUpdates", "controlsVisible", "observationMilliseconds"],
+        "timing": ["cpuMilliseconds"],
+    },
     "skeletons-idle": {
         "suite": "ui", "test": "ShimmerPerformanceTests/testPerformanceLoadingCards",
         "file": "Tests/PerformancePresentationSupport/ShimmerPerformanceTests.swift",
@@ -335,6 +432,13 @@ SCENARIOS = {
         "file": "Tests/iOSPresentationTests/ProfileSelectionPerformanceTests.swift",
         "description": "Activate sixteen profiles through the mobile app model and verify current Plex PIN gating; measure synchronous selection separately from 5-ms fixture metadata.",
         "counters": ["selections", "selectionMicroseconds", "maxSelectionMicroseconds"],
+    },
+    "mobile-profile-picker-entrance": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "ProfilePickerPresentationTests/testPerformanceProfilePickerEntrance",
+        "file": "Tests/iOSPresentationTests/ProfilePickerPresentationTests.swift",
+        "description": "Mount the production sixteen-profile iPad picker and verify heading-first staging, a visible stagger, and settling within 1.5 seconds; measure fresh presentation, not process launch or hardware frame pacing.",
+        "counters": ["profiles", "completedEntrances"],
     },
     "mobile-profile-pin-handoff": {
         "suite": "ui", "platforms": ["iOS"],

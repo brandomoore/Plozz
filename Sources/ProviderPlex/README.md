@@ -141,6 +141,17 @@ the original feed available.
 
 ## Collections
 
+Movie Browse follows the server's library collection policy and per-collection
+overrides automatically under All + Name sorting. Its existing section query
+sends `includeCollections=1`; Plex supplies the mixed rows and authoritative
+total, without a client membership scan or a second global collection listing.
+Stream enrichment uses `includeOptionalElements` so collection containers survive
+response customization. Other sorts, filters, background inventories and feeds
+request individual titles. There is no new setting or persistent Browse control.
+For grouped Browse, A-Z targets resolve against the actual paged mixed result
+on demand, not the movie-only `firstCharacter` facet. Ordinary paging does not
+enumerate the library; a late-letter jump can read multiple cancellable pages.
+
 `libraries()` returns actual server sections only. Collection discovery is an
 option inside a movie/TV library, exposed by `.libraryCollections` and
 `MediaProvider.collections(in:page:)`. It pages the dedicated

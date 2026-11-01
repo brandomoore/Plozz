@@ -2562,6 +2562,7 @@ private struct PlozziOSFeaturedCollectionRail: View {
     let isActive: Bool
     let onBrowse: (() -> Void)?
     @State private var selection: MediaItem?
+    @State private var artworkSelection: PlozziOSArtworkItemRoute?
 
     var body: some View {
         FeaturedMediaRow(
@@ -2569,12 +2570,22 @@ private struct PlozziOSFeaturedCollectionRail: View {
             coordinator: coordinator, controller: controller,
             settings: appModel.settings.heroBackground.settings,
             resolver: appModel.heroTrailerResolver(),
-            isActive: isActive && selection == nil,
+            isActive: isActive && selection == nil && artworkSelection == nil,
             spoilers: appModel.settings.spoilers.settings,
             onSeeAll: row.browseItem.map { item in { selection = item } },
             onSelect: { selection = $0 }
         )
+        .artworkNavigation { artworkSelection = .init(item: $0, source: $1) }
         .browsingRow(onBrowse)
+        .navigationDestination(item: $artworkSelection) { route in
+            PlozziOSHomeCardDetail(
+                item: route.item,
+                fallbackProvider: route.item.sourceAccountID.flatMap {
+                    appModel.accountsProviders.provider(forAccountID: $0)
+                }
+            )
+            .mediaArtworkZoomDestination(route.source)
+        }
         .navigationDestination(item: $selection) { item in
             PlozziOSHomeCardDetail(
                 item: item,
@@ -2932,7 +2943,7 @@ struct PlozziOSHomeMediaCard: View {
                 } label: { card }
                     .buttonStyle(.plain)
             } else if provider != nil || !appModel.accountsProviders.resolvedActiveAccounts.isEmpty {
-                NavigationLink {
+                MediaArtworkZoomLink(id: item.stablePresentationID) {
                     PlozziOSHomeCardDetail(item: item, fallbackProvider: provider)
                     .environment(\.plozzMetrics, .touch(
                         density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize))

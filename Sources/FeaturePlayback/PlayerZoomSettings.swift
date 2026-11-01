@@ -10,10 +10,10 @@ public enum PlayerZoomMenu {
         onCustomZoom: @escaping () -> Void
     ) -> UIMenu {
         let selection = model.settings.mode
-        let choices = PlayerVideoZoom.Mode.allCases.map { mode in
+        let choices = model.availableModes.map { mode in
             var title = mode.menuTitle
             title.locale = locale
-            return UIAction(
+            let action = UIAction(
                 title: String(localized: title), // l10n:content - UIKit menu boundary.
                 state: selection == mode ? .on : .off
             ) { _ in
@@ -21,6 +21,7 @@ public enum PlayerZoomMenu {
                 model.settings.mode = mode
                 if mode == .custom { onCustomZoom() }
             }
+            return action
         }
         return UIMenu(
             title: String(localized: "Zoom Mode", locale: locale), // l10n:content - UIKit menu boundary.
@@ -35,7 +36,7 @@ struct PlayerZoomSettingsRows: View {
 
     var body: some View {
         Picker("Zoom Mode", selection: $model.settings.mode) {
-            ForEach(PlayerVideoZoom.Mode.allCases, id: \.self) { mode in
+            ForEach(model.availableModes, id: \.self) { mode in
                 Text(mode.menuTitle).tag(mode)
             }
         }

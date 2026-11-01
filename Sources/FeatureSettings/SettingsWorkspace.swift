@@ -92,7 +92,7 @@ private struct SettingsWorkspaceDestination<Content: View>: View {
                 .environment(\.settingsPageBackButton, AnyView(SettingsBackButton(usesGlass: usesGlassBackButton) {
                     dismiss()
                 }.settingsWorkspaceEntry(route: route)
-                    .settingsPageEntryFocus(enabled: !route.usesFullScreenDetail)
+                    .settingsPageEntryFocus(enabled: !route.usesFullScreenDetail && !route.isSearchResult)
                     .accessibilityIdentifier(page?.depth == 1 ? "settings-category-back" : "settings-workspace-back")))
                 .toolbar(.hidden, for: .tabBar)
         }

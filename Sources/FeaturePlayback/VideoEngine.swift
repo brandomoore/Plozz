@@ -79,6 +79,9 @@ public struct PlayerEngineCapabilities: OptionSet, Sendable {
 ///    lives above the engine, not inside it.
 @MainActor
 public protocol VideoEngine: AnyObject {
+    var supportsActivePictureAnalysis: Bool { get }
+    func sampleActivePicture() async -> VideoActivePictureState
+    func stopActivePictureAnalysis()
     /// Optional association for system Now Playing; custom decoders use the
     /// app-level center and still receive transport through this protocol.
     var nowPlayingPlayer: AVPlayer? { get }
@@ -374,6 +377,9 @@ public protocol VideoEngine: AnyObject {
 }
 
 public extension VideoEngine {
+    var supportsActivePictureAnalysis: Bool { false }
+    func sampleActivePicture() async -> VideoActivePictureState { .unsupported }
+    func stopActivePictureAnalysis() {}
     var subtitlePresentationTime: TimeInterval { currentTime }
     func renderSubtitles(at time: TimeInterval, style: SubtitleStyle) {}
     func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool { true }

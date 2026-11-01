@@ -10,19 +10,22 @@ import XCTest
 @MainActor
 final class PlayerZoomMenuPresentationTests: XCTestCase {
     func testNativeChoicesApplyTheirModeAndOnlyCustomOpensFineControl() throws {
-        let model = PlayerVideoZoomModel()
-        var opened = 0
-        let menu = PlayerZoomMenu.make(model: model, locale: Locale(identifier: "en-US")) { opened += 1 }
-        let choices = menu.children.compactMap { $0 as? UIAction }
-        XCTAssertEqual(choices.count, 4)
-        XCTAssertEqual(choices.map(\.title), ["Normal (Default)", "Crop", "Stretch", "Custom"])
-        XCTAssertTrue(choices.allSatisfy { $0.subtitle?.isEmpty != false }, "Keep the choices concise without extra descriptions.")
-        for mode in PlayerVideoZoom.Mode.allCases {
-            let button = UIButton(type: .system)
-            button.addAction(choices[mode.rawValue], for: .primaryActionTriggered)
-            button.sendActions(for: .primaryActionTriggered)
-            XCTAssertEqual(model.settings.mode, mode)
-            XCTAssertEqual(opened, mode == .custom ? 1 : 0)
+        for supportsPicture in [false, true] {
+            let model = PlayerVideoZoomModel()
+            model.supportsActivePicture = supportsPicture
+            var opened = 0
+            let menu = PlayerZoomMenu.make(model: model, locale: Locale(identifier: "en-US")) { opened += 1 }
+            let choices = menu.children.compactMap { $0 as? UIAction }
+            let titles = ["Normal (Default)"] + (supportsPicture ? ["Auto-crop black bars"] : []) + ["Crop", "Stretch", "Custom"]
+            XCTAssertEqual(choices.map(\.title), titles)
+            XCTAssertTrue(choices.allSatisfy { $0.subtitle?.isEmpty != false }, "Keep the choices concise without extra descriptions.")
+            for (mode, choice) in zip(model.availableModes, choices) {
+                let button = UIButton(type: .system)
+                button.addAction(choice, for: .primaryActionTriggered)
+                button.sendActions(for: .primaryActionTriggered)
+                XCTAssertEqual(model.settings.mode, mode)
+                XCTAssertEqual(opened, mode == .custom ? 1 : 0)
+            }
         }
     }
 

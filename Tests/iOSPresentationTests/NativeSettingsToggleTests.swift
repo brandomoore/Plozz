@@ -1,6 +1,6 @@
 #if os(iOS)
 import CoreModels
-import CoreUI
+@testable import CoreUI
 import FeatureProfiles
 @testable import FeaturePlayback
 @testable import FeatureSettings
@@ -17,6 +17,11 @@ final class NativeSettingsToggleTests: XCTestCase {
         var isOn = false
         var isDisabled = false
         var writes = 0
+        var groupBounds = CGRect.zero
+        var controlBounds = CGRect.zero
+        var selection = 0
+        var amount = 0.5
+        var searchRequest: SettingsSearchRequest?
 
         var binding: Binding<Bool> {
             Binding(
@@ -37,6 +42,666 @@ final class NativeSettingsToggleTests: XCTestCase {
 
     func testSharedSettingsStyleUsesNativeSwitchesOnMobile() async throws {
         try await verifyNativeSwitch(grouped: false)
+    }
+
+    func testArtworkCustomizationUsesTheStandardSettingsPageAndGroups() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let suite = "ArtworkSurface-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let cards = CardStyleSettingsModel(store: CardStyleSettingsStore(defaults: defaults))
+        let original = cards.artwork
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+
+        func capture(_ content: some View, width: CGFloat, light: Bool, inherited: Bool) async throws -> UIImage {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 900)
+            window.overrideUserInterfaceStyle = light ? .light : .dark
+            window.rootViewController = UIHostingController(rootView:
+                content
+                    .environment(\.themePalette, light ? .light : .dark)
+                    .environment(\.colorScheme, light ? .light : .dark)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+                    .environment(\.dynamicTypeSize, .large)
+                    .environment(\.gradientBackgroundsEnabled, false)
+                    .environment(\.plozzDialogBackgroundOwned, inherited)
+                    .background(Color.purple)
+            )
+            window.makeKeyAndVisible()
+            try await Task.sleep(for: .milliseconds(350))
+            window.layoutIfNeeded()
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+        }
+
+        func pixels(_ image: UIImage) throws -> [UInt8] {
+            let cgImage = try XCTUnwrap(image.cgImage)
+            var bytes = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+            try bytes.withUnsafeMutableBytes { buffer in
+                let context = try XCTUnwrap(CGContext(
+                    data: buffer.baseAddress, width: cgImage.width, height: cgImage.height,
+                    bitsPerComponent: 8, bytesPerRow: cgImage.width * 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ))
+                context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+            }
+            return bytes
+        }
+
+        for width: CGFloat in [390, 834] {
+            for (light, inherited) in [(false, false), (true, false), (false, true)] {
+                let actual = try await capture(
+                    ArtworkCustomizationView(cards: cards), width: width, light: light, inherited: inherited
+                )
+                let reference = SettingsPageList {
+                    SettingsSectionGroup("Home") {
+                        ArtworkAreaChoices(area: .home, settings: .constant(original))
+                        ArtworkAreaChoices(area: .homeRows, settings: .constant(original))
+                    }
+                    SettingsSectionGroup("Libraries") {
+                        ForEach([ArtworkArea.recommended, .browse, .collections, .playlists]) { area in
+                            ArtworkAreaChoices(area: area, settings: .constant(original))
+                        }
+                    }
+                    SettingsSectionGroup("Across the app") {
+                        ForEach([ArtworkArea.continueWatching, .search, .watchlist, .details, .episodes,
+                                 .playback, .downloads]) { area in
+                            ArtworkAreaChoices(area: area, settings: .constant(original))
+                        }
+                    }
+                }
+                let expected = try await capture(reference, width: width, light: light, inherited: inherited)
+                let actualPixels = try pixels(actual)
+                let expectedPixels = try pixels(expected)
+                XCTAssertEqual(actualPixels.count, expectedPixels.count)
+                let differences = zip(actualPixels, expectedPixels).filter { abs(Int($0) - Int($1)) > 12 }.count
+                XCTAssertLessThan(Double(differences) / Double(actualPixels.count), 0.005,
+                                  "Artwork must inherit standard margins, row sizing, headers, surfaces and background.")
+                let attachment = XCTAttachment(image: actual)
+                attachment.name = "Artwork standard Settings \(Int(width)) light=\(light) inherited=\(inherited)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+        XCTAssertEqual(cards.artwork, original, "Restyling must not modify artwork preferences.")
+    }
+
+    func testSearchReflectionHasSoftEdgesAndGradualEndpoints() {
+        XCTAssertEqual(SettingsSearchGlowMotion.falloff(at: 0), 1)
+        XCTAssertEqual(SettingsSearchGlowMotion.falloff(at: 1), 0)
+        XCTAssertEqual(SettingsSearchGlowMotion.falloff(at: 1.1), 0)
+        XCTAssertGreaterThan(SettingsSearchGlowMotion.falloff(at: 0.01), 0.999)
+        XCTAssertLessThan(SettingsSearchGlowMotion.falloff(at: 0.99), 0.000001)
+        for step in 1...100 {
+            XCTAssertLessThanOrEqual(
+                SettingsSearchGlowMotion.falloff(at: Double(step) / 100),
+                SettingsSearchGlowMotion.falloff(at: Double(step - 1) / 100),
+                "Each reflection must dissolve smoothly, without repeated bright bands."
+            )
+        }
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0), 0)
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration), 0)
+        XCTAssertLessThan(SettingsSearchGlowMotion.opacity(at: 0.01), 0.015)
+        XCTAssertLessThan(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration - 0.01), 0.002)
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0.9), 1)
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 1.55), 1,
+                       "Spatial movement comparisons must not mistake a global fade for moving reflections.")
+    }
+
+    func testSearchArrivalPopBlendsIntoReflectionsBeforeLongFade() {
+        XCTAssertEqual(SettingsSearchGlowMotion.delay, 0.35)
+        XCTAssertEqual(SettingsSearchGlowMotion.duration, 3.9)
+        XCTAssertEqual(SettingsSearchGlowMotion.lifetime, 4.25)
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 0.16), 1)
+        XCTAssertEqual(SettingsSearchGlowMotion.arrivalBoost(at: 0.16), 1)
+        XCTAssertGreaterThan(SettingsSearchGlowMotion.arrivalBoost(at: 0.8), 0.6,
+                             "The pop must still be blending while the reflections move, not finish as a separate flash.")
+        XCTAssertGreaterThan(SettingsSearchGlowMotion.arrivalBoost(at: 1.2), 0.2)
+        XCTAssertEqual(SettingsSearchGlowMotion.arrivalBoost(at: 1.76), 0)
+        XCTAssertEqual(SettingsSearchGlowMotion.arrivalBoost(at: 3), 0)
+        XCTAssertGreaterThan(SettingsSearchGlowMotion.arrivalBoost(at: 0.1601), 0.999999)
+        XCTAssertLessThan(SettingsSearchGlowMotion.arrivalBoost(at: 1.7599), 0.000001,
+                          "The brightness lift must join the existing reflections without a visible step.")
+        for step in 1...300 {
+            let before = SettingsSearchGlowMotion.arrivalBoost(at: Double(step - 1) / 100)
+            let after = SettingsSearchGlowMotion.arrivalBoost(at: Double(step) / 100)
+            XCTAssertLessThanOrEqual(after, before, "The initial pop must decay once, not pulse repeatedly.")
+            XCTAssertLessThan(before - after, 0.01,
+                              "The longer blend must avoid the previous sharp mid-fade brightness drop.")
+        }
+    }
+
+    func testSearchFadeOutLastsLongerAndEasesToRest() {
+        XCTAssertEqual(SettingsSearchGlowMotion.fadeOutDuration, 1.8)
+        let start = SettingsSearchGlowMotion.duration - SettingsSearchGlowMotion.fadeOutDuration
+        XCTAssertEqual(start, 2.1, accuracy: 0.000001,
+                       "Extend the tail without dimming the existing arrival or settled reflection earlier.")
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: start), 1, accuracy: 0.000001)
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: 3), 0.5, accuracy: 0.000001,
+                       "The glow must still be halfway through its fade at the previous endpoint.")
+        XCTAssertLessThan(1 - SettingsSearchGlowMotion.opacity(at: start + 0.01), 0.0001)
+        XCTAssertLessThan(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration - 0.01), 0.0001)
+        for step in 1...180 {
+            let before = SettingsSearchGlowMotion.opacity(at: start + Double(step - 1) / 100)
+            let after = SettingsSearchGlowMotion.opacity(at: start + Double(step) / 100)
+            XCTAssertLessThanOrEqual(after, before)
+            XCTAssertLessThan(before - after, 0.009, "The fade must not drop sharply between frames.")
+        }
+        XCTAssertEqual(SettingsSearchGlowMotion.opacity(at: SettingsSearchGlowMotion.duration), 0)
+    }
+
+    func testSearchGlowHDRUsesExpectedLinearHeadroom() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("HDR colors require iOS 26.") }
+        let emission = SettingsSearchGlowHDR.emission.resolveHDR(in: EnvironmentValues())
+        XCTAssertEqual(emission.linearRed, 2.25, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearGreen, 2.25, accuracy: 0.0001)
+        XCTAssertEqual(emission.linearBlue, 2.25, accuracy: 0.0001)
+        XCTAssertEqual(emission.opacity, 1)
+        XCTAssertEqual(try XCTUnwrap(emission.headroom), 2.25, accuracy: 0.0001)
+    }
+
+    func testSearchGlowHDRSurvivesCanvasMaskCompositing() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("HDR colors require iOS 26.") }
+        func renderedPixel(hdr: Bool, opacity: Double) throws -> [Float] {
+            let renderer = ImageRenderer(content:
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white.opacity(opacity)))
+                }
+                    .modifier(SettingsSearchGlowHDR(enabled: hdr))
+                    .frame(width: 16, height: 16)
+                    .background(.black)
+            )
+            renderer.colorMode = .extendedLinear
+            renderer.allowedDynamicRange = .high
+            let image = try XCTUnwrap(renderer.cgImage)
+            let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+            var pixel = [Float](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &pixel, width: 1, height: 1, bitsPerComponent: 32, bytesPerRow: 16,
+                space: space, bitmapInfo: CGBitmapInfo.floatComponents.rawValue
+                    | CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            XCTAssertTrue(context.setEDRTargetHeadroom(2.25))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return pixel
+        }
+        for opacity in [1.0, 0.5, 0.25] {
+            let standard = try renderedPixel(hdr: false, opacity: opacity)
+            let hdr = try renderedPixel(hdr: true, opacity: opacity)
+            XCTAssertGreaterThan(standard[0], 0)
+            XCTAssertEqual(hdr[0], standard[0] * 2.25, accuracy: 0.01,
+                           "HDR emission must survive the mask at opacity \(opacity): SDR=\(standard), HDR=\(hdr)")
+            XCTAssertEqual(hdr[0], hdr[1], accuracy: 0.001)
+            XCTAssertEqual(hdr[1], hdr[2], accuracy: 0.001)
+            if opacity == 1 { XCTAssertGreaterThan(hdr[0], 1.5) }
+        }
+    }
+
+    func testSearchReflectionsDriftGentlyAndIndependently() {
+        for phase in stride(from: 0.0, to: 2 * .pi, by: .pi / 4) {
+            for time in stride(from: 0.0, through: SettingsSearchGlowMotion.duration - 0.1, by: 0.1) {
+                let before = SettingsSearchGlowMotion.reflections(at: time, phase: phase)
+                let after = SettingsSearchGlowMotion.reflections(at: time + 0.1, phase: phase)
+                XCTAssertEqual(before.count, 2, "Use a few broad reflections, not a repeating border pattern.")
+                for (first, last) in zip(before, after) {
+                    XCTAssertGreaterThan(first.radius, 0.6)
+                    XCTAssertGreaterThan(first.strength, 0)
+                    XCTAssertLessThan(first.strength, 1)
+                    XCTAssertLessThan(hypot(last.center.x - first.center.x, last.center.y - first.center.y), 0.015,
+                                      "Reflection movement must be gentle, without random frame-to-frame jumps.")
+                    XCTAssertLessThan(abs(last.strength - first.strength), 0.02)
+                }
+            }
+        }
+        let first = SettingsSearchGlowMotion.reflections(at: 0.7, phase: 0)
+        let later = SettingsSearchGlowMotion.reflections(at: 1.35, phase: 0)
+        XCTAssertGreaterThan(later[0].center.x - first[0].center.x, 0.04)
+        XCTAssertLessThan(later[1].center.x - first[1].center.x, -0.02)
+        XCTAssertGreaterThan(later[0].strength, first[0].strength)
+        XCTAssertLessThan(later[1].strength, first[1].strength)
+    }
+
+    func testSearchGlowMovesNeutrallyAndRespectsReducedEffects() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+
+        func capture() -> UIImage {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+        }
+
+        func pixel(_ image: UIImage, _ point: CGPoint) throws -> [Int] {
+            let crop = try XCTUnwrap(image.cgImage?.cropping(to:
+                CGRect(x: point.x.rounded(.down), y: point.y.rounded(.down), width: 1, height: 1)))
+            var bytes = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &bytes, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return bytes.prefix(3).map(Int.init)
+        }
+
+        for (light, reducedMotion, reducedEffects, active) in [
+            (false, false, false, true), (true, false, false, true),
+            (false, true, false, true), (false, false, true, true),
+            (false, false, false, false)
+        ] {
+            let model = Model()
+            var appearedAt: ContinuousClock.Instant?
+            let animates = !reducedMotion && !reducedEffects && active
+            let width: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 744 : 300
+            window.frame = CGRect(x: 0, y: 0, width: width + 90, height: 400)
+            window.rootViewController = UIHostingController(rootView:
+                SettingsSearchGlow(shape: RoundedRectangle(cornerRadius: 18), phase: 0)
+                    .onAppear { appearedAt = .now }
+                    .frame(width: width, height: 100)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                        model.controlBounds = $0
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(light ? Color.white : .black)
+                    .environment(\.themePalette, light ? .light : .dark)
+                    .environment(\.colorScheme, light ? .light : .dark)
+                    .environment(\.scenePhase, active ? .active : .inactive)
+                    .environment(\._accessibilityReduceMotion, reducedMotion)
+                    .environment(\.plozzReduceTransparency, reducedEffects)
+            )
+            window.makeKeyAndVisible()
+            let appearanceDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while appearedAt == nil && ContinuousClock.now < appearanceDeadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let mountedAt = try XCTUnwrap(appearedAt, "Measure the cue from its appearance, not window creation.")
+            func captureFrame(at time: Double) async throws -> UIImage {
+                try await ContinuousClock().sleep(until: mountedAt.advanced(by: .seconds(time)))
+                return capture()
+            }
+            try await ContinuousClock().sleep(until: mountedAt.advanced(by: .milliseconds(150)))
+            window.layoutIfNeeded()
+            let bounds = model.controlBounds
+            XCTAssertEqual(bounds.width, width)
+            let beforeStart = capture()
+            let first = try await captureFrame(at: SettingsSearchGlowMotion.delay + 0.25)
+            let second = try await captureFrame(at: SettingsSearchGlowMotion.delay + 0.9)
+            let third = try await captureFrame(at: SettingsSearchGlowMotion.delay + 1.55)
+            let settled = try await captureFrame(at: SettingsSearchGlowMotion.delay + 1.85)
+            let edge: [CGPoint] = (1...9).flatMap { index -> [CGPoint] in
+                let x = bounds.minX + width * CGFloat(index) / 10
+                return [CGPoint(x: x, y: bounds.minY + 1), CGPoint(x: x, y: bounds.maxY - 2)]
+            }
+            var movement = 0
+            for point in edge + [CGPoint(x: bounds.midX, y: bounds.midY)] {
+                XCTAssertEqual(try pixel(beforeStart, point)[0], light ? 255 : 0, accuracy: 2,
+                               "The complete cue must initially be invisible, including accessibility fallbacks.")
+            }
+            for point in edge {
+                let before = try pixel(first, point)
+                let after = try pixel(second, point)
+                movement += abs(before[0] - after[0])
+                XCTAssertLessThanOrEqual((before.max() ?? 0) - (before.min() ?? 0), 2,
+                                         "The arrival pop must remain neutral in both appearances.")
+                XCTAssertLessThanOrEqual((after.max() ?? 0) - (after.min() ?? 0), 2,
+                                         "The search glow must remain neutral in both appearances.")
+            }
+            if animates {
+                XCTAssertGreaterThan(movement, 40, "The arrival pop must visibly settle into the reflections.")
+                let background = light ? 255 : 0
+                func brightestPosition(_ image: UIImage, y: CGFloat) throws -> CGFloat {
+                    let samples = try (1...39).map { index in
+                        let x = bounds.minX + width * CGFloat(index) / 40
+                        return (x: x, contrast: abs(try pixel(image, CGPoint(x: x, y: y))[0] - background))
+                    }
+                    return try XCTUnwrap(samples.max { $0.contrast < $1.contrast }).x
+                }
+                XCTAssertGreaterThan(
+                    try brightestPosition(third, y: bounds.minY + 1) - brightestPosition(second, y: bounds.minY + 1),
+                    width * 0.02, "The upper reflection must move while the arrival brightness is fading."
+                )
+                XCTAssertLessThan(
+                    try brightestPosition(third, y: bounds.maxY - 2) - brightestPosition(second, y: bounds.maxY - 2),
+                    -width * 0.01, "The lower reflection must continue drifting in the opposite direction."
+                )
+                let contrasts = try edge.map { abs(try pixel(settled, $0)[0] - background) }
+                let weakest = try XCTUnwrap(contrasts.min())
+                let strongest = try XCTUnwrap(contrasts.max())
+                XCTAssertLessThan(weakest, 20, "Unlit edges should blend into the surface, not form a continuous rim.")
+                XCTAssertGreaterThan(strongest, light ? 65 : 110,
+                                     "Dark reflections must visibly exceed the previous dim glow even in SDR captures.")
+                XCTAssertLessThan(strongest, light ? 140 : 195,
+                                  "Fine edge reflections must remain below a solid white border.")
+                XCTAssertGreaterThan(Double(strongest) / Double(max(1, weakest)), 2.5,
+                                     "Edge reflections must remain localized rather than evenly outlining the row.")
+                let surface = CGPoint(x: bounds.minX + width * 0.3, y: bounds.minY + bounds.height * 0.25)
+                XCTAssertGreaterThan(abs(try pixel(settled, surface)[0] - background), light ? 25 : 60,
+                                     "The broad surface reflection must be visible, not just its edge.")
+                let center = CGPoint(x: bounds.midX, y: bounds.midY)
+                if !light {
+                    XCTAssertGreaterThan(try pixel(first, center)[0], 60,
+                                         "The arrival must pop visibly without depending on HDR display headroom.")
+                }
+                XCTAssertGreaterThan(
+                    abs(try pixel(first, center)[0] - background),
+                    abs(try pixel(settled, center)[0] - background) + 12,
+                    "The initial brightness pop must be stronger than the settled reflection."
+                )
+                XCTAssertGreaterThan(
+                    abs(try pixel(second, center)[0] - background),
+                    abs(try pixel(settled, center)[0] - background) + 6,
+                    "The intermediate frame must retain a visible brightness tail instead of dropping straight to the settled effect."
+                )
+                let above = try pixel(settled, CGPoint(x: bounds.maxX - 2, y: bounds.midY - 1))[0]
+                let middle = try pixel(settled, CGPoint(x: bounds.maxX - 2, y: bounds.midY))[0]
+                let below = try pixel(settled, CGPoint(x: bounds.maxX - 2, y: bounds.midY + 1))[0]
+                XCTAssertEqual(Double(middle), Double(above + below) / 2, accuracy: 3,
+                               "Reflections may slope across the edge, but must not expose a brightness jump.")
+            } else {
+                XCTAssertEqual(movement, 0, "Reduced effects and inactive scenes must use a steady outline.")
+            }
+            for point in [CGPoint(x: bounds.minX - 1, y: bounds.midY),
+                          CGPoint(x: bounds.minX + 1, y: bounds.minY + 1)] {
+                XCTAssertEqual(try pixel(second, point)[0], light ? 255 : 0,
+                               "Glow must stay inside the row, including its rounded corners.")
+                XCTAssertEqual(try pixel(first, point)[0], light ? 255 : 0,
+                               "The brighter arrival must also stay inside the row.")
+            }
+            for (name, image) in [
+                ("waiting", beforeStart), ("arrival", first), ("blending-first", second),
+                ("blending-later", third), ("settled", settled)
+            ] {
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "Search glow \(name) width=\(Int(width)) light=\(light) motion=\(reducedMotion) effects=\(reducedEffects) active=\(active)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+            if animates {
+                let fading = try await captureFrame(at: SettingsSearchGlowMotion.delay + 3)
+                let tail = try await captureFrame(at: SettingsSearchGlowMotion.delay + 3.6)
+                let background = light ? 255 : 0
+                let fadingContrast = try XCTUnwrap(edge.map { abs(try pixel(fading, $0)[0] - background) }.max())
+                let tailContrast = try XCTUnwrap(edge.map { abs(try pixel(tail, $0)[0] - background) }.max())
+                XCTAssertGreaterThan(fadingContrast, 20, "The reflection must remain visible past its former endpoint.")
+                XCTAssertGreaterThan(tailContrast, 0, "The extended tail must remain visible before its final fade.")
+                XCTAssertLessThan(tailContrast, fadingContrast / 2, "The tail must taper away, not linger at full brightness.")
+                for (name, image) in [("fading", fading), ("tail", tail)] {
+                    let attachment = XCTAttachment(image: image)
+                    attachment.name = "Search glow \(name) width=\(Int(width)) light=\(light)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+                let expired = try await captureFrame(at: SettingsSearchGlowMotion.lifetime + 0.2)
+                for point in edge {
+                    XCTAssertEqual(try pixel(expired, point)[0], light ? 255 : 0, accuracy: 2,
+                                   "The glow must finish fading before the extended landing ends.")
+                }
+            }
+            XCTAssertEqual(model.controlBounds, bounds, "Animation must not change row geometry.")
+        }
+    }
+
+    func testSearchHighlightCoversRowPaddingWithoutHighlightingNeighbors() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.overrideUserInterfaceStyle = .dark
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+
+        func capture() -> UIImage {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+        }
+
+        func red(_ image: UIImage, at point: CGPoint) throws -> Int {
+            let crop = try XCTUnwrap(image.cgImage?.cropping(to:
+                CGRect(x: point.x.rounded(.down), y: point.y.rounded(.down), width: 1, height: 1)))
+            var pixel = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return Int(pixel[0])
+        }
+
+        for width: CGFloat in [390, 834] {
+            for (layout, kind) in [
+                ("group-list", "toggle"), ("group-scroll", "toggle"),
+                ("group-scroll", "menu"), ("group-scroll", "stepper"),
+                ("group-scroll", "slider"), ("group-scroll", "button"),
+                ("nested-group-scroll", "toggle"), ("nested-anchor-scroll", "menu"),
+                ("native-list", "toggle"), ("native-form", "menu"),
+                ("native-nested-anchor", "toggle"), ("hero-scroll", "toggle"),
+                ("standalone-scroll", "button"), ("accessibility-scroll", "menu"),
+                ("disabled-scroll", "toggle")
+            ] {
+                let grouped = !layout.hasPrefix("native")
+                let scrolls = layout.hasSuffix("scroll")
+                let model = Model()
+                let suite = "SearchHighlight-\(UUID())"
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+                defer { defaults.removePersistentDomain(forName: suite) }
+                let hero = HeroSettingsModel(store: HeroSettingsStore(defaults: defaults))
+                hero.settings.isEnabled = false
+                let request = SettingsSearchRequest(targetID: layout == "hero-scroll" ? "hero-enabled" : "target")
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 900)
+                let rawTarget = searchHighlightControl(kind, model: model)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                        model.controlBounds = $0
+                    }
+                let target = rawTarget.settingsSearchAnchor("target")
+                let anchoredTarget = Group {
+                    if layout.contains("nested-anchor") {
+                        target.settingsSearchAnchor("another-target")
+                    } else {
+                        target
+                    }
+                }
+                let group = SettingsSectionGroup {
+                    anchoredTarget
+                    Text("Neighbor")
+                }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    model.groupBounds = $0
+                }
+                let rows = Group {
+                    if layout == "hero-scroll" {
+                        HeroSettingsControls(libraries: [], accounts: [])
+                            .environment(hero)
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                                model.groupBounds = $0
+                            }
+                        Text("Neighbor")
+                    } else if layout == "standalone-scroll" {
+                        rawTarget
+                            .buttonStyle(.plain)
+                            .padding(16)
+                            .contentShape(Rectangle())
+                            .settingsSearchAnchor("target")
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                                model.groupBounds = $0
+                            }
+                        Text("Neighbor")
+                    } else if grouped {
+                        if layout == "nested-group-scroll" {
+                            SettingsSectionGroup { group }
+                        } else {
+                            group
+                        }
+                    } else {
+                        anchoredTarget
+                            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                        Text("Neighbor")
+                    }
+                }
+                window.rootViewController = UIHostingController(rootView:
+                    NavigationStack {
+                        Group {
+                            if scrolls {
+                                ScrollView { rows }
+                            } else if layout == "native-form" {
+                                Form { rows }
+                            } else {
+                                List { rows }
+                            }
+                        }
+                        .settingsPageSurface(horizontalInset: 0)
+                    }
+                    .environment(request)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.gradientBackgroundsEnabled, false)
+                    .environment(\._accessibilityReduceMotion, true)
+                    .environment(\.dynamicTypeSize, layout == "accessibility-scroll" ? .accessibility3 : .large)
+                    .disabled(layout == "disabled-scroll")
+                )
+                window.makeKeyAndVisible()
+                let deadline = ContinuousClock.now + .seconds(5)
+                while !request.revealed, ContinuousClock.now < deadline {
+                    try await settle(window)
+                }
+                XCTAssertTrue(request.revealed)
+                try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.delay))
+                try await settle(window)
+                let controlBounds: CGRect
+                if layout == "hero-scroll" {
+                    let control = try XCTUnwrap(switches(in: window).first)
+                    controlBounds = control.convert(control.bounds, to: window)
+                } else {
+                    controlBounds = model.controlBounds
+                }
+                XCTAssertGreaterThan(controlBounds.width, 0)
+                let cellBounds: CGRect
+                if grouped {
+                    cellBounds = model.groupBounds
+                } else {
+                    let cell = try XCTUnwrap(searchHighlightCell(
+                        at: CGPoint(x: controlBounds.midX, y: controlBounds.midY), in: window
+                    ))
+                    cellBounds = cell.convert(cell.bounds, to: window)
+                }
+                let paddingPoints = [
+                    CGPoint(x: cellBounds.minX + 8, y: controlBounds.midY),
+                    CGPoint(x: cellBounds.maxX - 8, y: controlBounds.midY),
+                    CGPoint(x: cellBounds.midX, y: controlBounds.minY - 6),
+                    CGPoint(x: cellBounds.midX, y: controlBounds.maxY + 6)
+                ]
+                let neighbor = CGPoint(x: cellBounds.midX, y: controlBounds.maxY + 32)
+                let highlighted = capture()
+                let attachment = XCTAttachment(image: highlighted)
+                attachment.name = "search-row-highlight-\(layout)-\(kind)-\(Int(width))"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.lifetime + 0.2))
+                try await settle(window)
+                let normal = capture()
+                let interior = CGPoint(
+                    x: cellBounds.minX + cellBounds.width * 0.6, y: controlBounds.minY + 2
+                )
+                let interiorDelta = try red(highlighted, at: interior) - red(normal, at: interior)
+                for point in paddingPoints {
+                    let delta = try red(highlighted, at: point) - red(normal, at: point)
+                    XCTAssertGreaterThan(
+                        delta, 10,
+                        "Highlight must cover row padding at \(point), layout=\(layout), width=\(width)."
+                    )
+                    XCTAssertEqual(
+                        Double(delta), Double(interiorDelta), accuracy: 3,
+                        "One uniform highlight must cover content and padding, layout=\(layout), width=\(width)."
+                    )
+                }
+                XCTAssertEqual(try red(highlighted, at: neighbor), try red(normal, at: neighbor), accuracy: 3)
+                if grouped && layout != "standalone-scroll" {
+                    let corner = CGPoint(x: cellBounds.minX + 1, y: controlBounds.minY - 11)
+                    XCTAssertEqual(try red(highlighted, at: corner), try red(normal, at: corner), accuracy: 3)
+                }
+                if layout == "nested-group-scroll" {
+                    let outerPadding = CGPoint(x: cellBounds.minX - 8, y: controlBounds.midY)
+                    XCTAssertEqual(
+                        try red(highlighted, at: outerPadding), try red(normal, at: outerPadding), accuracy: 3,
+                        "A nested row must consume its highlight instead of lighting up the outer group."
+                    )
+                }
+                if layout != "hero-scroll" { XCTAssertEqual(model.controlBounds, controlBounds) }
+                XCTAssertFalse(hero.settings.isEnabled)
+                XCTAssertFalse(model.isOn)
+                XCTAssertEqual(model.selection, 0)
+                XCTAssertEqual(model.amount, 0.5)
+                XCTAssertEqual(model.writes, 0, "Revealing a search result must not activate its control.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func searchHighlightControl(_ kind: String, model: Model) -> some View {
+        switch kind {
+        case "menu":
+            ViewCustomizationMenu(
+                id: "target-menu", title: "Target", value: "First",
+                selection: Binding(
+                    get: { model.selection },
+                    set: { model.selection = $0; model.writes += 1 }
+                )
+            ) {
+                Text("First").tag(0)
+                Text("Second").tag(1)
+            }
+        case "stepper":
+            Stepper("Target", value: Binding(
+                get: { model.selection },
+                set: { model.selection = $0; model.writes += 1 }
+            ), in: 0...10)
+        case "slider":
+            Slider(value: Binding(
+                get: { model.amount },
+                set: { model.amount = $0; model.writes += 1 }
+            )) { Text("Target") }
+        case "button":
+            Button { model.writes += 1 } label: {
+                SettingsDisclosureLabel { Text("Target") }
+            }
+        default:
+            Toggle("Target", isOn: model.binding)
+        }
+    }
+
+    private func searchHighlightCell(at point: CGPoint, in view: UIView) -> UICollectionViewCell? {
+        if let list = view as? UICollectionView {
+            return list.visibleCells.first { $0.convert($0.bounds, to: view.window).contains(point) }
+        }
+        for child in view.subviews {
+            if let cell = searchHighlightCell(at: point, in: child) { return cell }
+        }
+        return nil
     }
 
     func testAdaptiveCardSettingsKeepLabelsAndIndicatorsInFirstViewport() async throws {
@@ -849,7 +1514,147 @@ final class NativeSettingsToggleTests: XCTestCase {
         }
     }
 
-    func testHeroSourceGroupsKeepNativeSwitchesSeparateFromNavigationRows() async throws {
+    private struct SearchLandingProbe: View {
+        @Environment(SettingsSearchRequest.self) private var request: SettingsSearchRequest?
+        let model: Model
+
+        var body: some View {
+            Color.clear.onAppear { model.searchRequest = request }
+        }
+    }
+
+    func testSubtitleSearchRevealsOffscreenNativeFormRowsWithoutEditing() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width: CGFloat in [390, 834] {
+            for (target, title) in [("style-opacity", "Overall Opacity"), ("style-hdr", "HDR Brightness")] {
+                let controls = PlayerControlsModel()
+                controls.subtitlesRenderHDR = true
+                let original = controls.subtitleStyle
+                var writes = 0
+                let context = SubtitleStyleEditingContext(
+                    controls: controls,
+                    style: Binding(
+                        get: { controls.subtitleStyle },
+                        set: { controls.subtitleStyle = $0; writes += 1 }
+                    ),
+                    secondaryPreview: .constant(false)
+                )
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 480)
+                window.rootViewController = UIHostingController(rootView: NavigationStack {
+                    MobileSubtitleStyleEditor(viewModel: context)
+                }.environment(\.locale, Locale(identifier: "en_US")))
+                window.makeKeyAndVisible()
+                try await settle(window)
+                let before = try captureText(window, name: "subtitle-before-search-\(target)-\(Int(width))")
+                XCTAssertFalse(before.contains(title), "The regression target must start outside the viewport.")
+
+                let model = Model()
+                window.rootViewController = UIHostingController(rootView: NavigationStack {
+                    SettingsSearchLanding(targetID: target) {
+                        MobileSubtitleStyleEditor(viewModel: context)
+                            .background { SearchLandingProbe(model: model) }
+                    }
+                }.environment(\.locale, Locale(identifier: "en_US")))
+                let deadline = ContinuousClock.now + .seconds(5)
+                while model.searchRequest?.revealed != true, ContinuousClock.now < deadline {
+                    try await settle(window)
+                }
+                XCTAssertEqual(model.searchRequest?.revealed, true, target)
+                let after = try captureText(window, name: "subtitle-search-\(target)-\(Int(width))")
+                XCTAssertTrue(after.contains(title), after)
+                XCTAssertEqual(controls.subtitleStyle, original)
+                XCTAssertEqual(writes, 0)
+            }
+        }
+    }
+
+    func testHeroSourceSearchRevealsAndHighlightsOffscreenGroups() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        func capture() -> UIImage {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+        }
+        func pixels(_ image: UIImage) throws -> [UInt8] {
+            let cgImage = try XCTUnwrap(image.cgImage)
+            var bytes = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &bytes, width: cgImage.width, height: cgImage.height, bitsPerComponent: 8,
+                bytesPerRow: cgImage.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+            return bytes
+        }
+        for width: CGFloat in [390, 834] {
+            for (target, enabled) in [
+                ("hero-source-collection", false), ("hero-source-collection", true),
+                ("hero-choose-collections", false), ("hero-source-featured", true)
+            ] {
+                let model = Model()
+                let hero = HeroSettingsModel(store: InMemoryHeroSettingsStore())
+                let background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore())
+                hero.settings.sources = HeroSourceKind.allCases
+                hero.settings.setEnabled(.collection, enabled: enabled)
+                let original = hero.settings
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 360)
+                window.rootViewController = UIHostingController(rootView: NavigationStack {
+                    SettingsSearchLanding(targetID: target) {
+                        HeroSettingsScreen(page: .titles, libraries: [], accounts: [])
+                            .background { SearchLandingProbe(model: model) }
+                    }
+                }
+                .environment(hero)
+                .environment(background)
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.gradientBackgroundsEnabled, false)
+                .environment(\.scenePhase, .active)
+                .environment(\._accessibilityReduceMotion, false))
+                window.makeKeyAndVisible()
+                let deadline = ContinuousClock.now + .seconds(5)
+                while model.searchRequest?.revealed != true, ContinuousClock.now < deadline {
+                    try await settle(window)
+                }
+                XCTAssertEqual(model.searchRequest?.revealed, true,
+                               "\(target) must reveal even when its group starts below the viewport.")
+                try await Task.sleep(for: .milliseconds(700))
+                let highlighted = capture()
+                let attachment = XCTAttachment(image: highlighted)
+                attachment.name = "\(target) search width=\(Int(width)) collectionsEnabled=\(enabled)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                try await Task.sleep(for: .seconds(SettingsSearchGlowMotion.lifetime + 0.2))
+                let before = try pixels(highlighted)
+                let after = try pixels(capture())
+                let changed = stride(from: 0, to: before.count, by: 4).filter {
+                    Int(before[$0]) - Int(after[$0]) > 10
+                }.count
+                XCTAssertGreaterThan(changed, 1000, "The revealed row must visibly highlight, not merely scroll.")
+                XCTAssertEqual(hero.settings, original, "Search must not enable Collections or change its selections.")
+            }
+        }
+    }
+
+    func testHeroSourceGroupsUseSharedInsetsAndKeepControlsIndependent() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -887,10 +1692,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                 try assertGreenOnState(control, in: window)
             }
             let random = try XCTUnwrap(switches.indices.contains(2) ? switches[2] : nil)
-            var ancestor = random.superview
-            while ancestor != nil && !(ancestor is UICollectionViewCell) { ancestor = ancestor?.superview }
-            let cell = try XCTUnwrap(ancestor as? UICollectionViewCell)
-            XCTAssertLessThan(cell.bounds.height, 90, "The source and its navigation link must be separate native rows.")
+            let sourceTrailing = random.convert(random.bounds, to: window).maxX
             random.setOn(false, animated: false)
             random.sendActions(for: .valueChanged)
             try await settle(window)
@@ -901,6 +1703,19 @@ final class NativeSettingsToggleTests: XCTestCase {
             XCTAssertFalse(collapsed.contains("Choose libraries"), collapsed)
             XCTAssertTrue(collapsed.contains("Choose collections"), collapsed)
             XCTAssertTrue(collapsed.contains("Discovery providers"), collapsed)
+
+            window.rootViewController = UIHostingController(rootView: NavigationStack {
+                SettingsPageList {
+                    SettingsSectionGroup {
+                        Toggle("Random from Library", isOn: .constant(true))
+                    }
+                }
+            }
+            .environment(\.colorScheme, .dark))
+            try await settle(window)
+            let reference = try XCTUnwrap(listedSwitches(in: window).first)
+            XCTAssertEqual(sourceTrailing, reference.convert(reference.bounds, to: window).maxX, accuracy: 1,
+                           "Hero sources must use the same content inset as a standard Settings group.")
         }
     }
 

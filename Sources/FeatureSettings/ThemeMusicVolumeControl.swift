@@ -39,7 +39,7 @@ public struct ThemeMusicVolumeControl: View {
                 textTitle: { Text(Double($0) / 100, format: .percent.precision(.fractionLength(0))) }
             )
             .environment(\.settingsAdjustmentRepeatSpeed, .fast)
-            .accessibilityIdentifier("theme-music-volume")
+            .accessibilityIdentifier("theme-music-volume").settingsSearchAnchor("theme-music-volume")
             #else
             HStack(spacing: 16) {
                 Text("Theme music volume")
@@ -48,7 +48,7 @@ public struct ThemeMusicVolumeControl: View {
                 } onEditingChanged: { editing in
                     if editing { startPreviewIfNeeded() }
                 }
-                .accessibilityIdentifier("theme-music-volume")
+                .accessibilityIdentifier("theme-music-volume").settingsSearchAnchor("theme-music-volume")
                 Text(level.wrappedValue, format: .percent.precision(.fractionLength(0)))
                     .monospacedDigit()
                     .frame(minWidth: 44, alignment: .trailing)

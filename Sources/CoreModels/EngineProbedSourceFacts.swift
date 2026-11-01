@@ -27,6 +27,9 @@ public struct EngineProbedSourceFacts: Equatable, Sendable {
     public var audioChannels: Int?
     public var audioIsAtmos: Bool
     public var audioDecoder: String?
+    /// One coherent snapshot of the confirmed active source track. Missing
+    /// properties must clear the previous track's facts, not inherit them.
+    public var activeAudioTrack: MediaSourceMetadata.AudioStream?
 
     public init(
         range: SourceDynamicRange? = nil,
@@ -36,7 +39,8 @@ public struct EngineProbedSourceFacts: Equatable, Sendable {
         audioCodec: String? = nil,
         audioChannels: Int? = nil,
         audioIsAtmos: Bool = false,
-        audioDecoder: String? = nil
+        audioDecoder: String? = nil,
+        activeAudioTrack: MediaSourceMetadata.AudioStream? = nil
     ) {
         self.range = range
         self.videoWidth = videoWidth
@@ -46,5 +50,6 @@ public struct EngineProbedSourceFacts: Equatable, Sendable {
         self.audioChannels = audioChannels
         self.audioIsAtmos = audioIsAtmos
         self.audioDecoder = audioDecoder
+        self.activeAudioTrack = activeAudioTrack
     }
 }

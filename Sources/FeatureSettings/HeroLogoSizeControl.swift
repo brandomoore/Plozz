@@ -39,6 +39,15 @@ public struct HeroLogoSizeControl: View {
         }
     }
 
+    private var searchPrefix: String {
+        if showsLibraryPreview { return "recommended" }
+        switch surface {
+        case .home: return "hero"
+        case .showcase: return "showcase"
+        case .detail: return "detail"
+        }
+    }
+
     private var preview: some View {
         HeroLogoSizePreview(
             size: size, surface: surface, layout: layout,
@@ -69,6 +78,7 @@ public struct HeroLogoSizeControl: View {
                     title: { $0 == HeroLogoSize.default.position ? "Default" : "\($0 + 1) of \(HeroLogoSize.allSizes.count)" }
                 )
                 .accessibilityIdentifier("logo-size-adjustment")
+                .settingsSearchAnchor("\(searchPrefix)-logo-size")
                 if let textPosition {
                     SettingsStepper(
                         options: Array(HeroTextSize.allSizes.indices), selection: textPosition, compact: true,
@@ -79,6 +89,7 @@ public struct HeroLogoSizeControl: View {
                         }
                     )
                     .accessibilityIdentifier("text-size-adjustment")
+                    .settingsSearchAnchor("\(searchPrefix)-text-size")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -96,11 +107,13 @@ public struct HeroLogoSizeControl: View {
                 "Logo size", position: position, count: HeroLogoSize.allSizes.count,
                 isDefault: size == .default, identifier: "logo-size-adjustment"
             )
+            .settingsSearchAnchor("\(searchPrefix)-logo-size")
             if let textPosition {
                 slider(
                     "Text size", position: textPosition, count: HeroTextSize.allSizes.count,
                     isDefault: textSize?.wrappedValue == .default, identifier: "text-size-adjustment"
                 )
+                .settingsSearchAnchor("\(searchPrefix)-text-size")
             }
         }
         .accessibilityElement(children: .contain)

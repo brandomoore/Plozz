@@ -218,6 +218,7 @@ struct HomeSectionSettingsView: View {
                     }
                 ), playbackDetails: visibility.continueWatchingPlaybackDetails,
                    captions: cards.captions, isShowcase: previewsShowcase)
+                .settingsSearchAnchor("continue-artwork-layout")
                 #if os(tvOS)
                 SettingsControlGroup { presentationControls }
                 #else
@@ -256,11 +257,13 @@ struct HomeSectionSettingsView: View {
     @ViewBuilder
     private var presentationControls: some View {
         ContinueWatchingPlaybackDetailsControl(visibility: visibility)
+            .settingsSearchAnchor("continue-playback-details")
         CardCaptionViewChoices(
             view: .continueWatching,
             settings: Binding(get: { cards.captions }, set: { cards.captions = $0 }),
             title: "Labels"
         )
+        .settingsSearchAnchor("continue-labels")
     }
 
     private var coverAddress: String {
@@ -278,7 +281,9 @@ struct HomeSectionSettingsView: View {
     @ViewBuilder
     private var behaviorControls: some View {
         ContinueWatchingNextUpControl(visibility: visibility)
+            .settingsSearchAnchor("continue-next-up")
         ContinueWatchingActionControl(visibility: visibility)
+            .settingsSearchAnchor("continue-action")
     }
 
     private var previewsShowcase: Bool {
@@ -424,14 +429,40 @@ struct HomeAddSectionView: View {
     }
 }
 
-struct HomeHeroSettingsView: View {
+public struct HomeHeroSettingsView: View {
     let libraries: [AggregatedLibrary]
     let accounts: [ResolvedAccount]
     let visibility: HomeLibraryVisibilityModel
+    let initialPage: HeroSettingsPage?
     @Environment(HeroSettingsModel.self) private var hero
     #if os(tvOS)
     @State private var navigation = SettingsDetailNavigation()
     #endif
+
+    public init(
+        libraries: [AggregatedLibrary], accounts: [ResolvedAccount], visibility: HomeLibraryVisibilityModel,
+        initialPage: HeroSettingsPage? = nil
+    ) {
+        self.libraries = libraries
+        self.accounts = accounts
+        self.visibility = visibility
+        self.initialPage = initialPage
+    }
+
+    private var resolvedPage: HeroSettingsPage? {
+        guard let initialPage else { return nil }
+        #if os(tvOS)
+        guard hero.settings.spotlightEnabled else { return nil }
+        #else
+        guard hero.settings.isEnabled else { return nil }
+        #endif
+        switch initialPage {
+        case .libraries where !hero.effectiveSettings.isEnabled(.randomFromLibrary): return .titles
+        case .collections where !hero.effectiveSettings.isEnabled(.collection): return .titles
+        case .discovery where !hero.effectiveSettings.isEnabled(.featured): return .titles
+        default: return initialPage
+        }
+    }
 
     private var availableLibraries: [AggregatedLibrary] {
         let accountIDs = Set(accounts.map(\.account.id))
@@ -440,7 +471,10 @@ struct HomeHeroSettingsView: View {
         }
     }
 
-    var body: some View {
+    public var body: some View {
+        if let resolvedPage {
+            HeroSettingsScreen(page: resolvedPage, libraries: availableLibraries, accounts: accounts)
+        } else {
         #if os(tvOS)
         SettingsDetailPages(navigation: navigation) {
             page
@@ -450,6 +484,7 @@ struct HomeHeroSettingsView: View {
         #else
         page
         #endif
+        }
     }
 
     @ViewBuilder private var page: some View {
@@ -486,11 +521,15 @@ struct HomeRowStyleSettingsView: View {
                             textSize: $hero.settings.showcaseTextSize, surface: .showcase
                         )
                     }
-                    HeroRatingControls()
+                    HeroRatingControls(isShowcase: true)
                     if hero.settings.style == .followsFocus {
                         if hero.allowsDiscovery {
                             SettingsControlGroup {
                                 Toggle("Discovery row", isOn: $hero.settings.showsDiscoverRow)
+                                    .settingsSearchAnchor(
+                                        "showcase-discovery-row",
+                                        fallbackFor: hero.settings.showsDiscoverRow ? [] : SettingsSearchCatalog.targets(on: .heroDiscovery)
+                                    )
                                 if hero.settings.showsDiscoverRow {
                                     HeroSettingsLink(page: .discovery, libraries: libraries, accounts: accounts)
                                 }
@@ -637,6 +676,7 @@ struct HomeRowPresetPicker: View {
         .accessibilityLabel(Text("Preset"))
         .accessibilityValue(currentTitle)
         .accessibilityIdentifier("home-row-preset")
+        .settingsSearchAnchor("home-row-preset")
     }
 
     private var currentTitle: Text {

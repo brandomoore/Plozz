@@ -15,7 +15,16 @@ struct PlayerOptionsRowSpec: Identifiable {
     let title: LocalizedStringResource
     let kind: Kind
     var isSelected = false
+    var searchAnchor: String?
+    var searchFallbacks: [String] = []
     var id: Int { slot }
+
+    func settingsSearchAnchor(_ id: String, fallbackFor: [String] = []) -> Self {
+        var row = self
+        row.searchAnchor = id
+        row.searchFallbacks = fallbackFor
+        return row
+    }
 }
 
 struct PlayerOptionsRow: View {

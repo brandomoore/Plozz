@@ -43,6 +43,15 @@ public final class LibraryLiveChannelEngine: LiveChannelEngine {
     }
     #endif
     public var subtitlePresentationTime: TimeInterval { underlyingEngine.subtitlePresentationTime }
+    public var supportsActivePictureAnalysis: Bool { underlyingEngine.supportsActivePictureAnalysis }
+    public func sampleActivePicture() async -> VideoActivePictureState {
+        guard hasPresentedVideoFrame else { return .unavailable }
+        let stamp = generation
+        let result = await underlyingEngine.sampleActivePicture()
+        guard generation == stamp, hasPresentedVideoFrame else { return .unavailable }
+        return result
+    }
+    public func stopActivePictureAnalysis() { underlyingEngine.stopActivePictureAnalysis() }
     public func renderSubtitles(at time: TimeInterval, style: SubtitleStyle) {
         underlyingEngine.renderSubtitles(at: time, style: style)
     }
