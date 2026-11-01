@@ -324,9 +324,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Detail title artwork stays attached to the page's root title, not its Play
   episode, on both compact and regular-width mobile layouts. A visible logo
   remains while additive metadata or artwork references for the same subject
-  resolve; the full request still keys resolution and memoization. Changed
-  subjects, accounts, languages, artwork policies or conflicting lookup facts
-  clear the old logo immediately. A completed miss returns to the text fallback.
+  resolve, including genre or added-ID enrichment that changes its metadata
+  routing (for example, TV to anime); the full request still keys resolution and
+  memoization. Changed subjects, accounts, languages, artwork policies or
+  conflicting lookup facts clear the old logo immediately. A completed miss
+  returns to the text fallback.
   Detail pages on iOS/iPadOS and tvOS keep that text invisible during the initial
   logo lookup and decoding, rather than flashing it before the logo arrives.
   Titles with no logo sources show text immediately; cached logos also paint immediately.

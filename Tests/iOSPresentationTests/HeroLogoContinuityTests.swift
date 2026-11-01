@@ -1,6 +1,7 @@
 import CoreModels
 @testable import CoreUI
 import FeatureHomeCore
+import MetadataKit
 import Observation
 import SwiftUI
 import UIKit
@@ -74,6 +75,30 @@ final class HeroLogoContinuityTests: XCTestCase {
         changed = original
         changed.providerIDs = [:]
         XCTAssertFalse(key(changed).canRetainImage(from: baseline))
+        changed = original
+        changed.kind = .series
+        XCTAssertFalse(key(changed).canRetainImage(from: baseline))
+    }
+
+    func testAddedAnimeIdentityCanRetainLogoButCorrectionsCannot() {
+        let show = MediaItem(
+            id: "show", title: "Show", kind: .series,
+            providerIDs: ["Tmdb": "123"], sourceAccountID: "server"
+        )
+        func key(_ item: MediaItem) -> HeroLogoMemo.Key {
+            HeroLogoMemo.key(for: [], fallback: HeroLogoFallback(for: item) { nil })
+        }
+        var enriched = show
+        enriched.providerIDs["AniList"] = "456"
+        XCTAssertNotEqual(key(enriched), key(show), "Richer identity must still trigger a fresh lookup.")
+        XCTAssertTrue(key(enriched).canRetainImage(from: key(show)))
+        XCTAssertFalse(key(show).canRetainImage(from: key(enriched)), "Removing an established ID is not enrichment.")
+        var corrected = enriched
+        corrected.providerIDs["AniList"] = "789"
+        XCTAssertFalse(key(corrected).canRetainImage(from: key(enriched)))
+        corrected = enriched
+        corrected.providerIDs["Tmdb"] = "321"
+        XCTAssertFalse(key(corrected).canRetainImage(from: key(show)))
     }
 
     func testTabletDetailKeepsShowLogoWhenItsPlayEpisodeArrives() async throws {
@@ -119,6 +144,46 @@ final class HeroLogoContinuityTests: XCTestCase {
         lookup.release(url)
         try await waitUntil { state.resolutions == 2 }
         XCTAssertTrue(try fixture.hasRedLogo())
+    }
+
+    func testEpisodeContextKeepsShowLogoWhenGenresArrive() async throws {
+        for style: HeroArtworkStyle in [.landscape, .compactPortrait] {
+            let fixture = try Fixture()
+            defer { fixture.close() }
+            let url = try fixture.seedLogo()
+            let show = MediaItem(
+                id: UUID().uuidString, title: "Animated show", kind: .series,
+                providerIDs: ["Tmdb": "123"], sourceAccountID: "server"
+            )
+            let episode = MediaItem(
+                id: UUID().uuidString, title: "New episode", kind: .episode,
+                parentTitle: show.title, seriesID: show.id, sourceAccountID: "server"
+            )
+            let state = SubjectState(item: episode)
+            fixture.host.rootView = AnyView(DetailMetadataFixture(
+                state: state, root: show, style: style,
+                fallback: HeroLogoFallback(for: show) { url }
+            ))
+            try await waitUntil { try fixture.hasRedLogo() }
+
+            let enriched = DetailMetadataResolver.applying(
+                MetadataEnrichment(genres: .init(value: ["Anime"], source: .tmdb)),
+                to: show
+            )
+            XCTAssertEqual(ContentClassifier.classify(show), .tvShow)
+            XCTAssertEqual(ContentClassifier.classify(enriched), .anime)
+            let lookup = LookupGate()
+            defer { lookup.release(url) }
+            fixture.host.rootView = AnyView(DetailMetadataFixture(
+                state: state, root: enriched, style: style,
+                fallback: HeroLogoFallback(for: enriched) { await lookup.resolve() }
+            ))
+            try await waitUntil { lookup.calls == 1 }
+            XCTAssertTrue(try fixture.hasRedLogo(), "Genre enrichment must not remove the same show's visible logo.")
+            XCTAssertFalse(try fixture.hasTitleText())
+            lookup.release(url)
+            try await waitUntil { try fixture.hasRedLogo() }
+        }
     }
 
     func testChangedSubjectOrCorrectedIdentityCannotKeepThePreviousLogo() async throws {

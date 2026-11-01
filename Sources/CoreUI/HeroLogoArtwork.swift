@@ -319,8 +319,10 @@ enum HeroLogoMemo {
             }
             let query = next.query
             let prior = old.query
+            // Genres can change metadata routing without changing the subject.
+            // The exact request still resolves again; its visible logo stays.
             guard query.artworkLanguage == prior.artworkLanguage,
-                  query.kind == prior.kind, query.contentType == prior.contentType,
+                  query.kind == prior.kind,
                   query.title == prior.title, query.alternateTitle == prior.alternateTitle,
                   prior.year == nil || query.year == prior.year,
                   query.seasonNumber == prior.seasonNumber,
