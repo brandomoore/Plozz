@@ -53,6 +53,9 @@ and Back from the results clears the query and restores the settings cards and
 search-field focus. Result destinations use the existing retained Settings page
 stack, preserving the query and selected result on return. Profile or
 authorization changes clear search along with the page stack.
+TV result buttons use `SettingsFormButtonStyle` for the standard row height and
+content insets inside the focus highlight, with `SettingsIconLabelStyle` keeping
+titles aligned across different symbols. Result labels add no extra padding.
 `SettingsSearchLanding` and
 `settingsSearchAnchor` reveal the existing control without changing its value.
 On mobile, the brief landing highlight covers the complete padded row, not just

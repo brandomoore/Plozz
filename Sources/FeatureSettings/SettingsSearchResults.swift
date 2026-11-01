@@ -44,11 +44,12 @@ public struct SettingsSearchResults: View {
                     } label: {
                         resultLabel(entry)
                     }
-                    .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                    .buttonStyle(SettingsFormButtonStyle())
                     .accessibilityIdentifier("settings-search-result-\(entry.id)")
                 }
             }
             .padding(SettingsFormMetrics.groupInset)
+            .labelStyle(SettingsIconLabelStyle())
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("settings-search-results")
             #else
@@ -95,9 +96,6 @@ public struct SettingsSearchResults: View {
         } icon: {
             Image(systemName: entry.page.symbol)
         }
-        #if os(tvOS)
-        .padding(.vertical, 10)
-        #endif
         .contentShape(Rectangle())
     }
 

@@ -29,6 +29,22 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
             let autoplay = app.buttons["settings-search-result-autoplay-next-episode"]
             try focus(autoplay, in: app)
             capture("settings-search-\(style)-query", in: app)
+            let rowFrame = autoplay.frame
+            let icon = autoplay.images["play.rectangle"]
+            let title = autoplay.staticTexts["Autoplay next episode"]
+            let path = autoplay.staticTexts["Playback"]
+            XCTAssertTrue(icon.exists)
+            XCTAssertTrue(title.exists)
+            XCTAssertTrue(path.exists)
+            XCTAssertGreaterThanOrEqual(icon.frame.minX - rowFrame.minX, 8,
+                                        "Even the symbol's optical bounds must clear the focus fill's edge.")
+            XCTAssertEqual(title.frame.minY - rowFrame.minY, 14, accuracy: 1)
+            XCTAssertEqual(rowFrame.maxY - path.frame.maxY, 14, accuracy: 1)
+            XCTAssertEqual(title.frame.minX, path.frame.minX, accuracy: 1)
+            for label in ["Automatically Sign In", "Auto preview"] {
+                XCTAssertEqual(title.frame.minX, app.staticTexts[label].frame.minX, accuracy: 1,
+                               "Different symbols must keep result titles on the same keyline.")
+            }
             XCUIRemote.shared.press(.select)
             XCTAssertTrue(app.switches["Autoplay next episode"].waitForExistence(timeout: 5))
             XCUIRemote.shared.press(.menu)
