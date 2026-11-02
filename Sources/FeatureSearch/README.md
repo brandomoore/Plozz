@@ -51,6 +51,11 @@ opt-out or app restart; completed entries expire after 48 hours. Enable reportin
 before reproducing and submit before restarting. No search text, media titles,
 server addresses, profile names, credentials or cursor values are collected.
 
+Refreshing the same normalized query keeps its loaded cards visible until the
+response arrives, preserving native context menus and focus during background
+identity updates. A different query still shows loading; an empty or failed
+refresh replaces the previous results with the corresponding explicit state.
+
 ## Where to look first
 
 The mobile presentation lives in `AppShelliOS/PlozziOSSearchView.swift`. Its input

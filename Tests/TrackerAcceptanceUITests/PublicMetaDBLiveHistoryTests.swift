@@ -597,10 +597,53 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func openSelectedTitleControls() throws {
         let card = try selectedTitleCard()
+        recordState()
         card.press(forDuration: 1)
-        try tapVisible(app.buttons["PublicMetaDB"])
+        try require(app.buttons["PublicMetaDB"].waitForExistence(timeout: 10),
+                    "Expected PublicMetaDB in the native card menu")
+        app.buttons["PublicMetaDB"].tap()
         try require(app.buttons["publicmetadb.open-title"].waitForExistence(timeout: 20),
                     "Expected the selected title's tracker controls")
+    }
+
+    func testCatalogShowRoundTrip() throws {
+        for _ in 0..<2 {
+            try openSelectedTitleControls()
+            try require(app.staticTexts["TV show"].exists, "Expected show-level tracker controls")
+            XCTAssertEqual(app.buttons["publicmetadb.open-title"].label, "Open title in Plozz")
+            try openCatalogLibraryDetail()
+            try require(app.scrollViews["series-season-tabs"].waitForExistence(timeout: 20),
+                        "Expected the actual library show's seasons")
+            recordState()
+        }
+    }
+
+    func testCatalogEpisodeOpensParentShow() throws {
+        try openHistoryPlay(expectedUnknownDate: true)
+        try tapVisible(app.buttons["Title controls"])
+        try require(app.staticTexts["Season 1, episode 3"].exists, "Expected exact episode coordinates")
+        XCTAssertEqual(app.buttons["publicmetadb.open-title"].label, "Open show in Plozz")
+        try openCatalogLibraryDetail()
+        try require(app.scrollViews["series-season-tabs"].waitForExistence(timeout: 20),
+                    "Expected the episode's parent library show")
+        recordState()
+    }
+
+    func testCatalogMovieRoundTrip() throws {
+        try openSelectedTitleControls()
+        try require(app.staticTexts["Movie"].exists, "Expected movie-level tracker controls")
+        XCTAssertEqual(app.buttons["publicmetadb.open-title"].label, "Open title in Plozz")
+        try openCatalogLibraryDetail()
+        XCTAssertFalse(app.scrollViews["series-season-tabs"].exists)
+        recordState()
+    }
+
+    private func openCatalogLibraryDetail() throws {
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        try tapVisible(app.buttons["publicmetadb.open-title"])
+        try require(detailPlayButton.waitForExistence(timeout: 30), "Expected a playable library detail, not an external placeholder")
+        XCTAssertFalse(app.buttons["publicmetadb.open-title"].exists)
+        XCTAssertTrue(app.images[title].exists || app.staticTexts[title].exists)
     }
 
     func testPrepareShowDrop() throws {

@@ -352,6 +352,13 @@ List-add and sync consent therefore disclose possible undropping, not a guarante
 Plozz does not issue an additional undrop request to manufacture the side effect;
 the explicit undrop action remains available.
 
+Real catalog-navigation checks exposed mobile Search replacing a visible card
+with its loading state during a long press. Same-query refreshes now retain the
+loaded grid. After rebuilding the production simulator app, three cold movie
+menu round trips, two show round trips, and an exact episode-history-to-parent
+route passed. Independent dedicated-server and tracker reads found no history
+changes from browsing. This evidence does not yet cover unowned titles or Picks.
+
 ## Optional community ratings
 
 The profile-scoped rating lookup preference starts off. Enabling it sends the
