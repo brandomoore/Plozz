@@ -1042,12 +1042,9 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
                 XCTAssertEqual(system.focusedItem.map(ObjectIdentifier.init), ObjectIdentifier(episode))
 
                 if roundTrip == 2, !reduceMotion {
-                    let first = try XCTUnwrap(moving.first)
-                    let last = try XCTUnwrap(moving.last)
                     try await assertRapidEpisodeRelatedNavigation(
                         episode: episode, related: southPark, page: page,
-                        window: window, host: host, style: style,
-                        upwardDuration: last.time - first.time
+                        window: window, host: host, style: style
                     )
                 }
             }
@@ -1056,26 +1053,34 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
 
     private func assertRapidEpisodeRelatedNavigation(
         episode: any UIFocusItem, related: any UIFocusItem, page: UIScrollView,
-        window: UIWindow, host: TransitionShowController, style: CardFocusStyle,
-        upwardDuration: TimeInterval
+        window: UIWindow, host: TransitionShowController, style: CardFocusStyle
     ) async throws {
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
-        let started = CACurrentMediaTime()
-        var downwardMotion: [(time: TimeInterval, y: CGFloat)] = [
-            (0, (page.layer.presentation() ?? page.layer).bounds.minY)
-        ]
-        host.target = related
-        system.requestFocusUpdate(to: host)
-        system.updateFocusIfNeeded()
-        while CACurrentMediaTime() - started < 0.8 {
-            downwardMotion.append((CACurrentMediaTime() - started,
-                                   (page.layer.presentation() ?? page.layer).bounds.minY))
-            try await Task.sleep(for: .milliseconds(16))
+        func motion(to target: any UIFocusItem, name: String) async throws -> [(time: TimeInterval, y: CGFloat)] {
+            let started = CACurrentMediaTime()
+            var samples: [(time: TimeInterval, y: CGFloat)] = [
+                (0, (page.layer.presentation() ?? page.layer).bounds.minY)
+            ]
+            host.target = target
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            while CACurrentMediaTime() - started < 1.2 {
+                samples.append((CACurrentMediaTime() - started,
+                                (page.layer.presentation() ?? page.layer).bounds.minY))
+                try await Task.sleep(for: .milliseconds(16))
+            }
+            let trace = XCTAttachment(string: samples.map { "t=\($0.time), y=\($0.y)" }.joined(separator: "\n"))
+            trace.name = "episode-related-\(name)-motion-\(style)"
+            trace.lifetime = .keepAlways
+            add(trace)
+            try await waitForHostedLayout(window)
+            XCTAssertTrue(system.focusedItem === target)
+            XCTAssertEqual(try XCTUnwrap(samples.last).y,
+                           (page.layer.presentation() ?? page.layer).bounds.minY, accuracy: 1,
+                           "Motion sampling must include the settled endpoint.")
+            return samples
         }
-        let downwardTrace = XCTAttachment(string: downwardMotion.map { "t=\($0.time), y=\($0.y)" }.joined(separator: "\n"))
-        downwardTrace.name = "episode-related-downward-motion-\(style)"
-        downwardTrace.lifetime = .keepAlways
-        add(downwardTrace)
+        let downwardMotion = try await motion(to: related, name: "downward")
         let departure = try XCTUnwrap(downwardMotion.first).y
         let arrival = try XCTUnwrap(downwardMotion.last).y
         XCTAssertGreaterThan(arrival - departure, 100, "Down must reveal Related without manually scrolling.")
@@ -1085,7 +1090,16 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         }
         let first = try XCTUnwrap(moving.first)
         let last = try XCTUnwrap(moving.last)
-        XCTAssertEqual(upwardDuration, last.time - first.time, accuracy: 0.15,
+        let upwardMotion = try await motion(to: episode, name: "upward")
+        XCTAssertEqual(try XCTUnwrap(upwardMotion.first).y, arrival, accuracy: 1)
+        XCTAssertEqual(try XCTUnwrap(upwardMotion.last).y, departure, accuracy: 1)
+        let upwardMoving = upwardMotion.filter {
+            $0.y > departure + (arrival - departure) * 0.05
+                && $0.y < arrival - (arrival - departure) * 0.05
+        }
+        let upwardFirst = try XCTUnwrap(upwardMoving.first)
+        let upwardLast = try XCTUnwrap(upwardMoving.last)
+        XCTAssertEqual(upwardLast.time - upwardFirst.time, last.time - first.time, accuracy: 0.15,
                        "\(style): Up and Down must have comparable visible animation time.")
         for milliseconds in [0, 30, 80, 150, 300] {
             for finishesOnEpisode in [false, true] {

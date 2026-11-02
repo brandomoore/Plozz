@@ -105,7 +105,8 @@ final class ChannelPositionReadinessHostedTests: XCTestCase {
             XCTAssertFalse(engine.isPaused)
         }
         engine.pause()
-        let position = engine.currentTime
+        let position = player?.currentTime().seconds ?? engine.currentTime
+        XCTAssertTrue(position.isFinite)
         let selectedAudio = engine.currentAudioTrackID
         for suppressed in [false, true, false, true] {
             engine.configureLiveOutput(.init(suppressesDisplayMatching: suppressed))

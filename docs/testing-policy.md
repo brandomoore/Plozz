@@ -15,6 +15,8 @@ deployment or automatic retries. Normal suites skip those opt-in probes.
 Render-dependent playback transitions belong in the app-hosted suite. Use a
 mounted video surface and a real HLS fixture for native-player continuity; a
 local MP4 may select the software decoder and cannot prove AVPlayer item reuse.
+Capture a native pause baseline from `AVPlayer.currentTime()`, not the engine's
+last periodic progress notification.
 Keep decoded-frame sampling independent of concurrent guide/network requests so
 their retry waits are not counted as video stalls. Hosted focus comparisons must
 establish the starting focus and observe presented geometry, not just a layout
@@ -23,6 +25,10 @@ Settings through the mounted destination handoff and request focus through the
 containing native owner, not directly from an unfocused leaf. Fade captures must
 prove an intermediate rendered state; screenshot capture time can allow a later
 sample to reach the final state sooner than its nominal sleep interval suggests.
+
+Asynchronous transport fixture waits use bounded elapsed deadlines, not a count
+of `Task.yield()` calls. Yield counts do not guarantee that cancellation,
+shutdown, or lease-release workers have received time to finish.
 
 ## The two speed wins
 
@@ -1017,6 +1023,10 @@ Presentation-layer samples also require at least eight intermediate positions
 and 300-600ms between 5% and 95% of the normal-motion return. The 0.6-second
 page animation must not inherit the much shorter focus-effect duration; its
 visible duration must match an unforced native downward reveal within 150ms.
+Compare native Up and Down over the same settled endpoints, separately from
+the manually positioned deep-return cases. Both directions retain 1.2 seconds
+of samples and verify the captured endpoint has settled; a partial downward
+trace must not redefine the 5%-95% distance.
 Nine-move native-focus bursts at 0, 30, 80, 150, and 300ms intervals end on each
 row, across all three focus styles. The final focused item must be fully visible,
 its page destination correct, and scrolling enabled. These exact-target bursts

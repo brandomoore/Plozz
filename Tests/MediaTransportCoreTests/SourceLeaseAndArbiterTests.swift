@@ -479,7 +479,7 @@ final class SourceLeaseAndArbiterTests: XCTestCase {
         // Drop the only arbiter-retaining handle. The detached cancel/force-close
         // operation tasks hold the resource and their latch, never the arbiter.
         lease = nil
-        _ = await waitUntilAsync(iterations: 5_000) { weakArbiter == nil }
+        _ = await waitUntilAsync { weakArbiter == nil }
         XCTAssertNil(
             weakArbiter,
             "arbiter must retire even while a resource operation never returns"
