@@ -13,8 +13,9 @@ import MediaTransportCore
 actor FTPNetworkBackend: FTPBackend {
     private struct ActiveTransfer {
         let socket: FTPSocket
+        let path: String
+        let expected: RemoteFileRepresentation
         var nextOffset: Int64
-        var reachedEOF: Bool
     }
 
     private let target: FTPConnectionTarget
@@ -92,16 +93,16 @@ actor FTPNetworkBackend: FTPBackend {
             }
             try await loadFeatures(control, beforeLogin: true)
             if features.contains("UTF8") {
-                _ = try? await control.send("OPTS UTF8 ON")
+                try await enableUTF8(control, beforeLogin: true)
             }
             try await login(control)
             try await loadFeatures(control, beforeLogin: false)
             if features.contains("UTF8") {
-                _ = try? await control.send("OPTS UTF8 ON")
+                try await enableUTF8(control, beforeLogin: false)
             }
             if configuration.security.usesTLS {
                 // Protect the data channel too (RFC 4217): PBSZ 0 then PROT P.
-                _ = try? await control.send("PBSZ 0")
+                try await control.sendExpectingCompletion("PBSZ 0")
                 let prot = try await control.send("PROT P")
                 guard prot.isPositiveCompletion else {
                     throw FTPProtocolError.unexpectedReply(code: prot.code)
@@ -171,39 +172,132 @@ actor FTPNetworkBackend: FTPBackend {
         }
     }
 
-    // MARK: - Passive data channel
-
-    private func openPassiveDataConnection() async throws -> FTPSocket {
-        let port = try await negotiatePassivePort()
-        let parameters = FTPTLSParameters.make(
-            security: configuration.security,
-            trustPolicy: configuration.trustPolicy
-        )
-        // Always connect the data channel to the control host (NAT-hairpin-safe;
-        // the PASV reply's advertised IP is deliberately ignored — see
-        // FTPPassivePort doc).
-        let socket = FTPSocket(host: target.host, port: port, parameters: parameters)
-        do {
-            try await socket.start()
-        } catch {
-            socket.cancel()
-            throw FTPProtocolError.dataConnectionFailed
+    private func enableUTF8(_ control: FTPControlConnection, beforeLogin: Bool) async throws {
+        let reply = try await control.send("OPTS UTF8 ON")
+        guard reply.isPositiveCompletion || [500, 501, 502, 504].contains(reply.code)
+                || (beforeLogin && reply.code == 530) else {
+            throw FTPProtocolError.unexpectedReply(code: reply.code)
         }
-        return socket
     }
 
-    private func negotiatePassivePort() async throws -> Int {
+    // MARK: - Passive data channel
+
+    private func negotiatePassivePort(forcePASV: Bool) async throws -> (port: Int, extended: Bool) {
         guard let control else { throw MediaTransportError.transport(code: -1) }
-        // Prefer EPSV (IPv6-capable + modern); fall back to PASV (IPv4).
-        if let epsv = try? await control.send("EPSV"), epsv.code == 229,
-           let parsed = try? FTPPassiveParser.parseEPSV(epsv.text) {
-            return parsed.port
+        if !forcePASV {
+            let epsv = try await control.send("EPSV")
+            if epsv.code == 229 {
+                if let parsed = try? FTPPassiveParser.parseEPSV(epsv.text) {
+                    return (parsed.port, true)
+                }
+            } else if ![500, 501, 502, 504, 522].contains(epsv.code) {
+                throw FTPProtocolError.unexpectedReply(code: epsv.code)
+            }
         }
+        guard control.usesIPv4 else { throw FTPProtocolError.passiveModeUnavailable }
         let pasv = try await control.send("PASV")
         guard pasv.code == 227 else {
-            throw FTPProtocolError.passiveModeUnavailable
+            throw FTPProtocolError.unexpectedReply(code: pasv.code)
         }
-        return try FTPPassiveParser.parsePASV(pasv.text).port
+        return (try FTPPassiveParser.parsePASV(pasv.text).port, false)
+    }
+
+    private func beginTransfer(
+        _ command: String,
+        offset: Int64 = 0,
+        expectedFile: (path: String, representation: RemoteFileRepresentation)? = nil
+    ) async throws -> FTPSocket {
+        var forcePASV = false
+        while true {
+            try Task.checkCancellation()
+            guard let control else { throw MediaTransportError.transport(code: -1) }
+            if let expectedFile {
+                try await validateSize(path: expectedFile.path, expected: expectedFile.representation)
+            }
+            let passive = try await negotiatePassivePort(forcePASV: forcePASV)
+            let socket = FTPSocket(
+                host: target.host, port: passive.port,
+                parameters: FTPTLSParameters.make(
+                    security: configuration.security, trustPolicy: configuration.trustPolicy
+                )
+            )
+            let readiness = Task { try await socket.start() }
+            let controlUsesIPv4 = control.usesIPv4
+            var waitingForDataConnection = false
+            var commandSent = false
+            do {
+                try await withTaskCancellationHandler {
+                    // Start TCP immediately, but do not wait for data TLS before
+                    // RETR/LIST: servers may defer that handshake until then.
+                    if !configuration.security.usesTLS {
+                        waitingForDataConnection = true
+                        try await readiness.value
+                        waitingForDataConnection = false
+                    }
+                    if offset > 0 {
+                        let rest = try await control.send("REST \(offset)")
+                        guard rest.code == 350 else {
+                            throw FTPProtocolError.unexpectedReply(code: rest.code)
+                        }
+                    }
+                    commandSent = true
+                    let reply = try await control.send(command)
+                    guard reply.code == 125 || reply.code == 150 else {
+                        throw FTPProtocolError.unexpectedReply(code: reply.code)
+                    }
+                    waitingForDataConnection = true
+                    try await readiness.value
+                    waitingForDataConnection = false
+                } onCancel: {
+                    readiness.cancel()
+                    socket.cancel()
+                }
+                return socket
+            } catch {
+                readiness.cancel()
+                socket.cancel()
+                let readyResult = await readiness.result
+                let dataConnectionFailed: Bool
+                if case .failure(let dataError) = readyResult {
+                    dataConnectionFailed = isRetryableFTPError(dataError)
+                } else {
+                    dataConnectionFailed = false
+                }
+                let canFallback = (waitingForDataConnection || dataConnectionFailed)
+                    && passive.extended && controlUsesIPv4
+                    && !Task.isCancelled && isRetryableFTPError(error)
+                if commandSent || !canFallback {
+                    discardConnections()
+                }
+                guard canFallback else { throw error }
+                forcePASV = true
+                if commandSent { try await connect() }
+            }
+        }
+    }
+
+    private func prepareIdleConnection() async throws {
+        try Task.checkCancellation()
+        guard !isClosed else { throw MediaTransportError.cancelled }
+        // A pending 226 and the ABOR response are indistinguishable on some
+        // servers. Never reuse that control stream after a partial transfer.
+        if activeTransfer != nil { discardConnections() }
+        if control == nil { try await connect() }
+    }
+
+    private func discardConnections() {
+        activeTransfer?.socket.cancel()
+        activeTransfer = nil
+        control?.cancel()
+        control = nil
+    }
+
+    private func finishTransfer() async throws {
+        guard let control else { throw MediaTransportError.transport(code: -1) }
+        let reply = try await control.readReply()
+        guard reply.code == 226 || reply.code == 250 else {
+            throw FTPProtocolError.unexpectedReply(code: reply.code)
+        }
     }
 
     // MARK: - Browse
@@ -212,37 +306,35 @@ actor FTPNetworkBackend: FTPBackend {
         try Task.checkCancellation()
         await acquire()
         defer { release() }
-        guard let control else { throw MediaTransportError.transport(code: -1) }
-
-        let dataSocket = try await openPassiveDataConnection()
-        let useMLSD = features.contains("MLSD")
-        let command = useMLSD ? "MLSD \(path)" : "LIST \(path)"
-        let reply = try await control.send(command)
-        guard reply.isPositivePreliminary || reply.isPositiveCompletion else {
-            dataSocket.cancel()
-            throw FTPProtocolError.unexpectedReply(code: reply.code)
-        }
-        let data = try await readAll(from: dataSocket, cap: Self.maxListingBytes)
-        dataSocket.cancel()
-        if reply.isPositivePreliminary {
-            let final = try await control.readReply()
-            guard final.isPositiveCompletion else {
-                throw FTPProtocolError.unexpectedReply(code: final.code)
+        do {
+            try await prepareIdleConnection()
+            var useMLSD = features.contains("MLST") || features.contains("MLSD")
+            let dataSocket: FTPSocket
+            do {
+                dataSocket = try await beginTransfer(useMLSD ? "MLSD \(path)" : "LIST \(path)")
+            } catch FTPProtocolError.unexpectedReply(let code) where useMLSD && [500, 502, 504].contains(code) {
+                try await prepareIdleConnection()
+                useMLSD = false
+                dataSocket = try await beginTransfer("LIST \(path)")
             }
-        }
-
-        let text = String(decoding: data, as: UTF8.self)
-        let listings = useMLSD
-            ? FTPListParser.parseMLSD(text)
-            : FTPListParser.parseLIST(text)
-        return listings.map {
-            FTPBackendEntry(name: $0.name, kind: $0.kind, size: $0.size, modifiedAt: $0.modifiedAt)
+            defer { dataSocket.cancel() }
+            let data = try await readAll(from: dataSocket, cap: Self.maxListingBytes)
+            try await finishTransfer()
+            let text = String(decoding: data, as: UTF8.self)
+            let listings = useMLSD ? FTPListParser.parseMLSD(text) : FTPListParser.parseLIST(text)
+            return listings.map {
+                FTPBackendEntry(name: $0.name, kind: $0.kind, size: $0.size, modifiedAt: $0.modifiedAt)
+            }
+        } catch {
+            discardConnections()
+            throw error
         }
     }
 
     func stat(path: String) async throws -> FTPBackendEntry {
         await acquire()
         defer { release() }
+        try await prepareIdleConnection()
         guard let control else { throw MediaTransportError.transport(code: -1) }
         let name = lastComponent(of: path)
 
@@ -279,23 +371,17 @@ actor FTPNetworkBackend: FTPBackend {
         try Task.checkCancellation()
         await acquire()
         defer { release() }
-        guard let control else { throw MediaTransportError.transport(code: -1) }
-
-        let dataSocket = try await openPassiveDataConnection()
-        let retr = try await control.send("RETR \(path)")
-        guard retr.isPositivePreliminary else {
-            dataSocket.cancel()
-            throw FTPProtocolError.unexpectedReply(code: retr.code)
+        do {
+            try await prepareIdleConnection()
+            let dataSocket = try await beginTransfer("RETR \(path)")
+            defer { dataSocket.cancel() }
+            let data = try await readAll(from: dataSocket, cap: maximumBytes)
+            try await finishTransfer()
+            return data
+        } catch {
+            discardConnections()
+            throw error
         }
-        // Read one byte past the bound so an over-large file is detected rather
-        // than silently truncated.
-        let data = try await readAll(from: dataSocket, cap: maximumBytes + 1)
-        dataSocket.cancel()
-        _ = try? await control.readReply()
-        guard data.count <= maximumBytes else {
-            throw MediaTransportError.invalidInput(reason: "FTP file exceeds bound")
-        }
-        return data
     }
 
     // MARK: - Ranged playback read
@@ -312,9 +398,8 @@ actor FTPNetworkBackend: FTPBackend {
     /// before each new `REST`+`RETR`). It does **not** re-validate mid-contiguous
     /// stream, because doing so would require aborting the active transfer. Net:
     /// drift is caught at open and at each seek; a change during an uninterrupted
-    /// linear read is not detected (and would surface as an early EOF / short
-    /// read, never as mixed-version bytes). This is a conscious limitation of the
-    /// protocol, kept explicit so the family's fail-closed story stays coherent.
+    /// linear read cannot reliably detect same-size in-place edits. Length
+    /// changes and failed transfer completion are rejected separately.
     func read(
         path: String,
         at offset: Int64,
@@ -325,109 +410,100 @@ actor FTPNetworkBackend: FTPBackend {
         await acquire()
         defer { release() }
 
-        if let active = activeTransfer, active.nextOffset == offset, !active.reachedEOF {
-            return try await continueRead(length: length)
+        guard offset >= 0, length > 0 else {
+            throw MediaTransportError.invalidInput(reason: "invalid FTP byte range")
         }
-        try await abortActiveTransfer()
-        try await validateSize(path: path, expected: expected)
-        try await startTransfer(path: path, offset: offset)
-        return try await continueRead(length: length)
+        do {
+            try Task.checkCancellation()
+            guard !isClosed else { throw MediaTransportError.cancelled }
+            if let active = activeTransfer, active.nextOffset == offset,
+               active.path == path, active.expected == expected {
+                return try await continueRead(length: length)
+            }
+            try await prepareIdleConnection()
+            guard offset < expected.size else { return Data() }
+            let socket = try await beginTransfer(
+                "RETR \(path)", offset: offset, expectedFile: (path, expected)
+            )
+            activeTransfer = ActiveTransfer(socket: socket, path: path, expected: expected, nextOffset: offset)
+            return try await continueRead(length: length)
+        } catch {
+            discardConnections()
+            throw error
+        }
     }
 
     private func validateSize(path: String, expected: RemoteFileRepresentation) async throws {
         guard let control else { throw MediaTransportError.transport(code: -1) }
         let reply = try await control.send("SIZE \(path)")
-        guard reply.code == 213,
-              let size = Int64(reply.text.trimmingCharacters(in: .whitespaces)) else {
+        guard reply.code == 213 else {
+            throw FTPProtocolError.unexpectedReply(code: reply.code)
+        }
+        guard let size = Int64(reply.text.trimmingCharacters(in: .whitespaces)) else {
             throw MediaTransportError.sourceChanged(reason: "FTP size unavailable")
         }
         guard size == expected.size else {
             throw MediaTransportError.sourceChanged(reason: "FTP size changed")
         }
-        if expected.identity.kind == .modificationTime,
-           let expectedDate = expected.identity.modifiedAt,
-           let current = try await fetchMDTM(path, on: control),
-           current != expectedDate {
-            throw MediaTransportError.sourceChanged(reason: "FTP mtime changed")
-        }
-    }
-
-    private func startTransfer(path: String, offset: Int64) async throws {
-        guard let control else { throw MediaTransportError.transport(code: -1) }
-        let dataSocket = try await openPassiveDataConnection()
-        if offset > 0 {
-            let rest = try await control.send("REST \(offset)")
-            guard rest.code == 350 else {
-                dataSocket.cancel()
-                throw FTPProtocolError.unexpectedReply(code: rest.code)
-            }
-        }
-        let retr = try await control.send("RETR \(path)")
-        guard retr.isPositivePreliminary else {
-            dataSocket.cancel()
-            throw FTPProtocolError.unexpectedReply(code: retr.code)
-        }
-        activeTransfer = ActiveTransfer(socket: dataSocket, nextOffset: offset, reachedEOF: false)
+        let current = try await fetchMDTM(path, on: control)
+        try validateFTPRepresentation(size: size, modifiedAt: current, against: expected)
     }
 
     private func continueRead(length: Int) async throws -> Data {
-        guard var active = activeTransfer else { return Data() }
+        guard var active = activeTransfer else { throw MediaTransportError.transport(code: -1) }
+        let count = Int(min(Int64(length), active.expected.size - active.nextOffset))
         var accumulated = Data()
-        while accumulated.count < length {
-            let remaining = length - accumulated.count
+        while true {
+            // At the expected end, require actual EOF and the final reply even
+            // if the last payload receive did not carry the EOF flag.
+            let remaining = max(1, count - accumulated.count)
             let (chunk, isComplete) = try await active.socket.receive(maximumLength: remaining)
-            if !chunk.isEmpty { accumulated.append(chunk) }
-            if isComplete {
-                active.reachedEOF = true
-                break
+            accumulated.append(chunk)
+            guard Int64(accumulated.count) <= active.expected.size - active.nextOffset else {
+                throw MediaTransportError.sourceChanged(reason: "FTP transfer exceeded size")
             }
-            if chunk.isEmpty { break }
+            let end = active.nextOffset + Int64(accumulated.count)
+            if isComplete {
+                guard end == active.expected.size else { throw FTPProtocolError.transferIncomplete }
+                try await finishTransfer()
+                active.socket.cancel()
+                activeTransfer = nil
+                return accumulated
+            }
+            guard !chunk.isEmpty else { throw FTPProtocolError.transferIncomplete }
+            if accumulated.count == count, end < active.expected.size { break }
         }
         active.nextOffset += Int64(accumulated.count)
         activeTransfer = active
 
-        if active.reachedEOF {
-            active.socket.cancel()
-            activeTransfer = nil
-            // Drain the transfer-complete (226) reply so the control channel
-            // stays in sync for the next command.
-            if let control { _ = try? await control.readReply() }
-        }
         return accumulated
-    }
-
-    private func abortActiveTransfer() async throws {
-        guard let active = activeTransfer else { return }
-        activeTransfer = nil
-        active.socket.cancel()
-        guard let control else { return }
-        // Best-effort ABOR + drain: a partial RETR typically yields a 426
-        // (aborted) followed by a 226/225 (abort ok). Tolerate either framing.
-        if let reply = try? await control.send("ABOR") {
-            if reply.isPositivePreliminary || reply.code == 426 || reply.isTransientNegative {
-                _ = try? await control.readReply()
-            }
-        }
     }
 
     // MARK: - Helpers
 
     private func fetchMDTM(_ path: String, on control: FTPControlConnection) async throws -> Date? {
-        guard let reply = try? await control.send("MDTM \(path)"), reply.code == 213 else {
-            return nil
+        let reply = try await control.send("MDTM \(path)")
+        if [500, 502, 504].contains(reply.code) { return nil }
+        guard reply.code == 213 else { throw FTPProtocolError.unexpectedReply(code: reply.code) }
+        guard let date = FTPListParser.parseMLSDTimestamp(reply.text.trimmingCharacters(in: .whitespaces)) else {
+            throw FTPProtocolError.malformedReply
         }
-        return FTPListParser.parseMLSDTimestamp(reply.text.trimmingCharacters(in: .whitespaces))
+        return date
     }
 
     private func readAll(from socket: FTPSocket, cap: Int) async throws -> Data {
         var accumulated = Data()
-        while accumulated.count < cap {
-            let (chunk, isComplete) = try await socket.receive(maximumLength: 64 * 1_024)
-            if !chunk.isEmpty { accumulated.append(chunk) }
-            if isComplete { break }
-            if chunk.isEmpty { break }
+        guard cap >= 0 else { throw MediaTransportError.invalidInput(reason: "invalid FTP read bound") }
+        while true {
+            let count = min(64 * 1_024, cap - accumulated.count)
+            let (chunk, isComplete) = try await socket.receive(maximumLength: max(1, count))
+            accumulated.append(chunk)
+            guard accumulated.count <= cap else {
+                throw MediaTransportError.invalidInput(reason: "FTP file exceeds bound")
+            }
+            if isComplete { return accumulated }
+            guard !chunk.isEmpty else { throw FTPProtocolError.transferIncomplete }
         }
-        return accumulated
     }
 
     private func lastComponent(of path: String) -> String {
@@ -453,14 +529,9 @@ actor FTPNetworkBackend: FTPBackend {
         defer { release() }
         guard !isClosed else { return }
         isClosed = true
-        if let active = activeTransfer {
-            active.socket.cancel()
-            activeTransfer = nil
-        }
-        if let control {
+        if activeTransfer == nil, let control {
             _ = try? await control.send("QUIT")
-            control.cancel()
         }
-        control = nil
+        discardConnections()
     }
 }

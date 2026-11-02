@@ -164,7 +164,7 @@ final class FTPCapabilityNegotiationTests: XCTestCase {
     }
 }
 
-private final class FTPHandshakeServer: @unchecked Sendable {
+final class FTPHandshakeServer: @unchecked Sendable {
     struct Step: Sendable {
         let command: String
         let reply: String
@@ -178,8 +178,11 @@ private final class FTPHandshakeServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "plozz.tests.ftp-handshake")
     private let listener: NWListener
     private let dataListener: NWListener
+    private let closedPortListener: NWListener
+    private var closedPort: UInt16 = 0
     private let steps: [Step]
     private let payload: Data?
+    private let completion: String
     private var connections: [NWConnection] = []
     private var dataConnection: NWConnection?
     private var transferControl: NWConnection?
@@ -189,19 +192,23 @@ private final class FTPHandshakeServer: @unchecked Sendable {
 
     var commands: [String] { queue.sync { receivedCommands } }
 
-    init(steps: [Step], payload: Data?) throws {
+    init(steps: [Step], payload: Data?, completion: String = "226 Complete\r\n", host: String = "127.0.0.1") throws {
         self.steps = steps
         self.payload = payload
+        self.completion = completion
         let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(host), port: .any)
         listener = try NWListener(using: parameters)
         dataListener = try NWListener(using: parameters)
+        closedPortListener = try NWListener(using: parameters)
     }
 
     func start() async throws -> UInt16 {
         listener.newConnectionHandler = { [weak self] connection in
             guard let self else { connection.cancel(); return }
             self.connections.append(connection)
+            self.buffer = Data()
+            self.restartOffset = 0
             connection.start(queue: self.queue)
             connection.send(content: Data("220 Test FTP\r\n".utf8), completion: .contentProcessed { _ in })
             self.receive(on: connection)
@@ -215,9 +222,18 @@ private final class FTPHandshakeServer: @unchecked Sendable {
         }
         listener.start(queue: queue)
         dataListener.start(queue: queue)
+        closedPortListener.newConnectionHandler = { $0.cancel() }
+        closedPortListener.start(queue: queue)
         for _ in 0..<200 {
             if let port = listener.port?.rawValue, port != 0,
-               let dataPort = dataListener.port?.rawValue, dataPort != 0 { return port }
+               let dataPort = dataListener.port?.rawValue, dataPort != 0,
+               let unusedPort = closedPortListener.port?.rawValue, unusedPort != 0 {
+                queue.sync {
+                    closedPort = unusedPort
+                    closedPortListener.cancel()
+                }
+                return port
+            }
             try await Task.sleep(nanoseconds: 25_000_000)
         }
         throw MediaTransportError.timeout
@@ -227,6 +243,7 @@ private final class FTPHandshakeServer: @unchecked Sendable {
         queue.sync {
             listener.cancel()
             dataListener.cancel()
+            closedPortListener.cancel()
             connections.forEach { $0.cancel() }
             connections.removeAll()
         }
@@ -245,14 +262,22 @@ private final class FTPHandshakeServer: @unchecked Sendable {
                     connection.cancel()
                     return
                 }
-                let reply = self.steps[index].reply.replacingOccurrences(
-                    of: "PORT", with: String(self.dataListener.port!.rawValue)
-                )
+                let port = self.dataListener.port!.rawValue
+                let reply = self.steps[index].reply
+                    .replacingOccurrences(of: "CLOSEDPORT", with: String(self.closedPort))
+                    .replacingOccurrences(of: "PORT_HIGH", with: String(port / 256))
+                    .replacingOccurrences(of: "PORT_LOW", with: String(port % 256))
+                    .replacingOccurrences(of: "PORT", with: String(port))
                 if command.hasPrefix("REST "), reply.hasPrefix("350") {
                     self.restartOffset = Int(command.dropFirst(5))!
                 }
+                if command == "EPSV" || command == "PASV" {
+                    self.dataConnection = nil
+                    self.transferControl = nil
+                }
                 connection.send(content: Data(reply.utf8), completion: .contentProcessed { _ in })
-                if command.hasPrefix("RETR ") {
+                if (reply.hasPrefix("150") || reply.hasPrefix("125")),
+                   command.hasPrefix("RETR ") || command.hasPrefix("MLSD ") || command.hasPrefix("LIST ") {
                     self.transferControl = connection
                     self.sendTransferIfReady()
                 }
@@ -264,10 +289,11 @@ private final class FTPHandshakeServer: @unchecked Sendable {
     private func sendTransferIfReady() {
         guard let control = transferControl, let dataConnection, let payload else { return }
         transferControl = nil
+        self.dataConnection = nil
         dataConnection.send(
             content: payload.dropFirst(restartOffset), contentContext: .finalMessage,
             isComplete: true, completion: .contentProcessed { _ in
-                control.send(content: Data("226 Complete\r\n".utf8), completion: .contentProcessed { _ in })
+                control.send(content: Data(self.completion.utf8), completion: .contentProcessed { _ in })
             }
         )
     }

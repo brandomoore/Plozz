@@ -64,6 +64,7 @@ final class FTPCursorIsolatedByteSource:
         private let expectedRepresentation: RemoteFileRepresentation
         private let backendFactory: FTPBackendFactory
         private var channels: [UUID: Channel] = [:]
+        private var cursorGenerations: [UUID: UUID] = [:]
         private var isClosed = false
 
         init(
@@ -77,35 +78,48 @@ final class FTPCursorIsolatedByteSource:
         }
 
         func read(cursorID: UUID, offset: Int64, length: Int) async throws -> Data {
-            let channel = try channel(for: cursorID)
-            let backend: any FTPBackend
-            do {
-                backend = try await withTaskCancellationHandler {
-                    try await channel.task.value
-                } onCancel: {
-                    channel.task.cancel()
+            try Task.checkCancellation()
+            guard !isClosed else { throw MediaTransportError.cancelled }
+            let generation = cursorGenerations[cursorID] ?? UUID()
+            cursorGenerations[cursorID] = generation
+            var retried = false
+            while true {
+                let channel = try channel(for: cursorID)
+                do {
+                    let backend = try await withTaskCancellationHandler {
+                        try await channel.task.value
+                    } onCancel: {
+                        channel.task.cancel()
+                    }
+                    try Task.checkCancellation()
+                    guard cursorGenerations[cursorID] == generation, !isClosed else {
+                        throw MediaTransportError.cancelled
+                    }
+                    let data = try await backend.read(
+                        path: path, at: offset, length: length, expected: expectedRepresentation
+                    )
+                    try Task.checkCancellation()
+                    guard cursorGenerations[cursorID] == generation, !isClosed,
+                          channels[cursorID]?.id == channel.id else {
+                        throw MediaTransportError.cancelled
+                    }
+                    return data
+                } catch {
+                    let owned = channels[cursorID]?.id == channel.id
+                    await discard(channel, for: cursorID)
+                    guard !Task.isCancelled, !isClosed, cursorGenerations[cursorID] == generation else {
+                        throw MediaTransportError.cancelled
+                    }
+                    guard owned, !retried, isRetryableFTPError(error) else { throw mapFTPError(error) }
+                    // Replay only this read, at its original offset, on a fresh
+                    // connection that revalidates the captured representation.
+                    retried = true
                 }
-            } catch {
-                await discard(channel, for: cursorID)
-                throw mapFTPError(error)
-            }
-
-            do {
-                return try await backend.read(
-                    path: path,
-                    at: offset,
-                    length: length,
-                    expected: expectedRepresentation
-                )
-            } catch {
-                // A failed read taints the channel's transfer state; drop it so
-                // the next read on this cursor reconnects cleanly.
-                await discard(channel, for: cursorID)
-                throw mapFTPError(error)
             }
         }
 
         func release(cursorID: UUID) async {
+            cursorGenerations.removeValue(forKey: cursorID)
             guard let channel = channels.removeValue(forKey: cursorID) else { return }
             await close(channel)
         }
@@ -115,6 +129,7 @@ final class FTPCursorIsolatedByteSource:
             isClosed = true
             let active = Array(channels.values)
             channels.removeAll()
+            cursorGenerations.removeAll()
             for channel in active {
                 await close(channel)
             }

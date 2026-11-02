@@ -1167,6 +1167,10 @@ let package = Package(
             swiftSettings: [.unsafeFlags(["-strict-concurrency=complete"])]
         ),
         .testTarget(
+            name: "FTPPlaybackIntegrationTests",
+            dependencies: ["CoreModels", "EnginePlozzigen", "MediaTransportCore", "MediaTransportFTP"]
+        ),
+        .testTarget(
             name: "EnginePlozzigenTests",
             dependencies: [
                 "CoreModels",
