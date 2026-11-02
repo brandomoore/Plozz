@@ -12,6 +12,90 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesPresentationTests: XCTestCase {
+    func testGuideToastUsesCurrentSheetBoundsAndClearsNativeNavigation() async throws {
+        let suite = "ToastSheets.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let started = expectation(description: "Guide requested")
+        let provider = SetupGuideProvider(started: { started.fulfill() })
+        let app = PlozziOSAppModel(
+            appAdmissionStore: AppAdmissionStore(defaults: defaults),
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        app.accountsProviders.registry.register(.iptv) { _ in provider }
+        XCTAssertTrue(app.persist([provider.session]))
+        await fulfillment(of: [started], timeout: 3)
+        app.completeLibrarySelection()
+        await provider.emit(.init(stage: .downloading, completed: 25, total: 100))
+        app.transientStatusPresenter.present(icon: "tv", text: "Preparing", placement: .musicTransport, isProgress: true)
+        defer {
+            if let id = app.accountsProviders.accounts.first?.id { app.guidePreparation.cancel(accountID: id) }
+            Task { await provider.resume() }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        let state = ToastSheetFixtureState()
+        let host = UIHostingController(rootView: ToastSheetFixture(app: app, state: state)
+            .environment(AppLanguageSettingsModel())
+            .environment(\.locale, Locale(identifier: "en_US")))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for page in [
+            "idle-root", "idle-settings", "source", "settings-return", "root-return",
+            "root-live", "root-downloads", "root-search", "settings-reopened"
+        ] {
+            switch page {
+            case "idle-settings", "settings-reopened": state.settings = true
+            case "source": state.source = true
+            case "settings-return": state.source = false
+            case "root-return": state.settings = false
+            case "root-live": state.tab = 1
+            case "root-downloads": state.tab = 2
+            case "root-search": state.tab = 3
+            default: break
+            }
+            try await settle(window)
+            try await Task.sleep(for: .milliseconds(650))
+            if page.hasPrefix("idle") { continue }
+            if page == "source" {
+                app.transientStatusPresenter.dismiss()
+                try await settle(window)
+                try await Task.sleep(for: .milliseconds(400))
+            }
+            let reading = page.hasPrefix("root")
+            await provider.emit(reading
+                ? .init(stage: .readingGuide, completed: 603_000)
+                : .init(stage: .downloading, completed: 25, total: 100))
+            try await settle(window)
+            let image = snapshot(window)
+            captureToastFrame(image, name: "guide-toast-sheet-\(page)")
+            let caption = try textFrame(reading ? "Reading guide" : "Downloading guide", in: image)
+            let surface = try grayToastBounds(in: image, caption: caption)
+            XCTAssertEqual(surface.minX, 16, accuracy: 2, page)
+            XCTAssertEqual(surface.maxX, window.bounds.maxX - 16, accuracy: 2, page)
+            if page.hasPrefix("settings") {
+                let search = try XCTUnwrap(searchFields(in: window).last)
+                let frame = search.convert(search.bounds, to: window)
+                XCTAssertGreaterThanOrEqual(frame.minY - surface.maxY, 14, page)
+                XCTAssertLessThanOrEqual(frame.minY - surface.maxY, 30, page)
+            } else if page == "source" {
+                XCTAssertEqual(surface.maxY, window.safeAreaLayoutGuide.layoutFrame.maxY - 16, accuracy: 2)
+            } else {
+                let tabs = try XCTUnwrap(tabController(in: host))
+                let frame = tabs.tabBar.convert(tabs.tabBar.bounds, to: window)
+                XCTAssertEqual(surface.maxY, frame.minY - 16, accuracy: 3, page)
+            }
+        }
+    }
+
     func testToastUsesNativeSidebarContentAreaWithoutBottomBarClearance() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Native content layout guide requires iOS 26.") }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -868,9 +952,62 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
         add(attachment)
     }
 
+    private func grayToastBounds(in image: UIImage, caption: CGRect) throws -> CGRect {
+        func isSurface(_ point: CGPoint) throws -> Bool {
+            try pixel(image, at: point).allSatisfy { (50...110).contains($0) }
+        }
+        let y = Int(caption.midY)
+        let xs = try (0..<Int(image.size.width)).filter {
+            try isSurface(CGPoint(x: $0, y: y))
+        }
+        let left = try XCTUnwrap(xs.first)
+        let right = try XCTUnwrap(xs.last)
+        let x = (left + right) / 2
+        var bottom = Int(caption.maxY)
+        while bottom + 1 < Int(image.size.height),
+              try isSurface(CGPoint(x: x, y: bottom + 1)) {
+            bottom += 1
+        }
+        return CGRect(x: left, y: y, width: right - left + 1, height: bottom - y + 1)
+    }
+
     private func tabController(in controller: UIViewController) -> UITabBarController? {
         if let tabs = controller as? UITabBarController { return tabs }
         return controller.children.lazy.compactMap { self.tabController(in: $0) }.first
+    }
+}
+
+@MainActor @Observable
+private final class ToastSheetFixtureState {
+    var settings = false
+    var source = false
+    var tab = 0
+}
+
+private struct ToastSheetFixture: View {
+    let app: PlozziOSAppModel
+    @Bindable var state: ToastSheetFixtureState
+
+    var body: some View {
+        TabView(selection: $state.tab) {
+            Tab("Home", systemImage: "house", value: 0) { Color.white }
+            Tab("Live TV", systemImage: "tv", value: 1) { Color.white }
+            Tab("Downloads", systemImage: "arrow.down", value: 2) { Color.white }
+            Tab("Search", systemImage: "magnifyingglass", value: 3, role: .search) { Color.white }
+        }
+        .tabViewStyle(.sidebarAdaptable)
+        .guidePreparationOverlay(model: app.guidePreparation, presenter: app.transientStatusPresenter, palette: .dark)
+        .plozzSheet(isPresented: $state.settings) {
+            PlozziOSSettingsView(appModel: app, onClose: { state.settings = false }, systemColorScheme: .dark)
+                .plozzSheet(isPresented: $state.source) {
+                    NavigationStack {
+                        Color.white.navigationTitle("Add TV source")
+                    }
+                    .guidePreparationOverlay(
+                        model: app.guidePreparation, presenter: app.transientStatusPresenter, palette: .dark
+                    )
+                }
+        }
     }
 }
 

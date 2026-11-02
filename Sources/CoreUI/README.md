@@ -778,6 +778,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Side-mounted navigation constrains the toast's horizontal content area instead
   of adding bottom clearance; native tab containers supply their unobscured
   content layout guide on iOS 26 and later.
+  Each host measures its own presentation hierarchy, including both dimensions
+  of the native tab content guide. Window measurements are converted back into
+  the host's local coordinates so sheet presentation scaling cannot leave stale
+  widths or offsets in the covered screen.
   tvOS retains its 48-point bottom clearance.
   Manual watched actions retain the immediate tap and separate confirmation of
   durable outbox acceptance, not eventual server synchronization.

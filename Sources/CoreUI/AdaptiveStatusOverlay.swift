@@ -115,11 +115,10 @@ private struct StatusControlsReader: UIViewControllerRepresentable {
         }
 
         private func measure() {
-            guard isActive, let window = view.window, !view.bounds.isEmpty,
-                  var surface = window.rootViewController else { return }
-            while let presented = surface.presentedViewController, !presented.isBeingDismissed {
-                surface = presented
-            }
+            guard isActive, let window = view.window, !view.bounds.isEmpty else { return }
+            // Each toast belongs to its own presentation, not a sheet covering its presenter.
+            var surface: UIViewController = self
+            while let parent = surface.parent { surface = parent }
             let frame = view.convert(view.bounds, to: window)
             var area = frame.intersection(window.safeAreaLayoutGuide.layoutFrame)
             guard !area.isNull else { return }
@@ -138,8 +137,9 @@ private struct StatusControlsReader: UIViewControllerRepresentable {
                     area.size.height = max(0, min(area.maxY, control.minY) - area.minY)
                 }
             }
-            area.size.height = max(0, area.height - TransientStatusLayout.controlSpacing)
-            onChange?(area.offsetBy(dx: -frame.minX, dy: -frame.minY))
+            var localArea = view.convert(area, from: window)
+            localArea.size.height = max(0, localArea.height - TransientStatusLayout.controlSpacing)
+            onChange?(localArea)
         }
 
         private func constrainToNativeContent(in controller: UIViewController, window: UIWindow, area: inout CGRect) {
@@ -152,6 +152,7 @@ private struct StatusControlsReader: UIViewControllerRepresentable {
                     let right = min(area.maxX, content.maxX)
                     area.origin.x = left
                     area.size.width = max(0, right - left)
+                    area.size.height = max(0, min(area.maxY, content.maxY) - area.minY)
                 }
             }
             for child in controller.children {
