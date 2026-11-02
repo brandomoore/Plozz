@@ -87,6 +87,11 @@ registry.
   height. Compact layouts, detail pages, and video framing retain their existing
   behavior.
 
+- **Mac navigation leaves the artwork uncovered.** The iOS-on-Mac tab shell
+  hides the tab-bar background and, on iOS 26 and later, the top scroll-edge
+  effect. Native sidebar, tab, and profile controls remain available with their
+  system appearance. iPhone/iPad backgrounds and other scroll edges are unchanged.
+
 - **Preference sync is not a profile switch.** Mobile cloud apply rebuilds active
   settings and track/version preferences without restarting downloads, provider
   caches, identity indexing, or tracker/watchlist imports. Inactive-profile

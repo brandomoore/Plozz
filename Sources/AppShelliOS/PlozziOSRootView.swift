@@ -868,6 +868,22 @@ private struct PlozziOSScreenshotTabRouter: View {
     }
 }
 
+struct PlozziOSMacNavigationBackground: ViewModifier {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .toolbarBackground(isRunningOnMac ? .hidden : .automatic, for: .tabBar)
+                .scrollEdgeEffectHidden(isRunningOnMac, for: .top)
+        } else {
+            content
+                .toolbarBackground(isRunningOnMac ? .hidden : .automatic, for: .tabBar)
+        }
+    }
+}
+
 struct PlozziOSTabShell: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
@@ -1306,6 +1322,7 @@ struct PlozziOSTabShell: View {
         }
 
         .tabViewStyle(.sidebarAdaptable)
+        .modifier(PlozziOSMacNavigationBackground())
         .background {
             PlozziOSSettingsTabAction(
                 tabIndex: tabDestinations.firstIndex(of: .settings),

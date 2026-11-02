@@ -10,6 +10,59 @@ import XCTest
 
 @MainActor
 final class HomeHeroFullWidthPresentationTests: XCTestCase {
+    func testMacNavigationBackgroundKeepsArtworkClearAndNativeControlsVisible() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let item = try await artworkItem()
+        try await withWindow(
+            item: item, size: scene.coordinateSpace.bounds.size, sizeClass: nil,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            for isRunningOnMac in [false, true, false] {
+                host.rootView = AnyView(
+                    MacNavigationBackgroundFixture()
+                        .environment(\.plozziOSIsRunningOnMac, isRunningOnMac)
+                        .environment(\.colorScheme, .dark)
+                )
+                try await waitForHostedLayout(window)
+                let tabs = try XCTUnwrap(findController(UITabBarController.self, in: host))
+                for sidebarHidden in [true, false] {
+                    tabs.sidebar.isHidden = sidebarHidden
+                    try await waitForHostedLayout(window)
+                    let navigation = try XCTUnwrap(findController(UINavigationController.self, in: tabs))
+                    let scroll = try XCTUnwrap(descendants(navigation.view).compactMap { $0 as? UIScrollView }
+                        .first { $0.contentSize.height > $0.bounds.height })
+                    XCTAssertEqual(scroll.topEdgeEffect.isHidden, isRunningOnMac)
+                    XCTAssertFalse(scroll.bottomEdgeEffect.isHidden)
+                    XCTAssertFalse(navigation.isNavigationBarHidden)
+                    XCTAssertEqual(tabs.sidebar.isHidden, sidebarHidden)
+                    let image = snapshot(window, name: "navigation-background-mac-\(isRunningOnMac)-sidebar-\(!sidebarHidden)")
+                    let trailing = CGRect(x: image.size.width - 240, y: 0, width: 240, height: 150)
+                    let controlImage = UIImage(
+                        cgImage: try XCTUnwrap(image.cgImage?.cropping(to: trailing.applying(
+                            CGAffineTransform(scaleX: image.scale, y: image.scale)
+                        ))), scale: image.scale, orientation: .up
+                    )
+                    let controls = try HeroTextInk.frames(in: controlImage, terms: ["PROFILE"], darkTerms: ["PROFILE"])
+                    let profile = try XCTUnwrap(controls["PROFILE"])
+                    XCTAssertTrue(window.bounds.contains(profile.offsetBy(dx: trailing.minX, dy: 0)))
+                    if isRunningOnMac {
+                        let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
+                        let x = bar.minX + bar.width * 0.7
+                        let top = try pixel(image, at: CGPoint(x: x, y: bar.midY))
+                        let content = try pixel(image, at: CGPoint(x: x, y: bar.maxY + 120))
+                        for channel in 0..<3 {
+                            XCTAssertLessThan(
+                                abs(Int(top[channel]) - Int(content[channel])), 10,
+                                "The navigation area must not add a backdrop over the artwork."
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testMacWideWindowsKeepTheArtworkTopAndActionsVisible() async throws {
         let item = try await artworkItem(marksTop: true)
         let sizes = [
@@ -210,6 +263,30 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         return image
     }
 
+    private func findController<T: UIViewController>(_ type: T.Type, in controller: UIViewController) -> T? {
+        (controller as? T) ?? controller.children.lazy.compactMap { self.findController(type, in: $0) }.first
+    }
+
+    private func descendants(_ view: UIView) -> [UIView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+
+    private func pixel(_ image: UIImage, at point: CGPoint) throws -> [UInt8] {
+        let cgImage = try XCTUnwrap(image.cgImage)
+        let sample = try XCTUnwrap(cgImage.cropping(to: CGRect(
+            x: point.x * image.scale, y: point.y * image.scale, width: 1, height: 1
+        )))
+        var pixel = [UInt8](repeating: 0, count: 4)
+        try pixel.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(sample, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        return pixel
+    }
+
     private func assertArtworkAtBothEdges(
         _ image: UIImage, file: StaticString = #filePath, line: UInt = #line
     ) throws {
@@ -254,6 +331,36 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         XCTAssertGreaterThan(pixel[0], 180, "The top-of-art marker must survive a wide crop.")
         XCTAssertLessThan(pixel[1], 70)
         XCTAssertGreaterThan(pixel[2], 180)
+    }
+}
+
+@available(iOS 26.0, *)
+private struct MacNavigationBackgroundFixture: View {
+    var body: some View {
+        TabView {
+            Tab("Home", systemImage: "house") {
+                NavigationStack {
+                    ScrollView {
+                        Color(uiColor: .cyan).frame(height: 3_000)
+                    }
+                    .ignoresSafeArea()
+                    .navigationTitle("")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbarBackground(.hidden, for: .navigationBar)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(action: {}) {
+                                Text(verbatim: "PROFILE").font(.title2).foregroundStyle(.black)
+                            }
+                        }
+                    }
+                }
+            }
+            Tab("Search", systemImage: "magnifyingglass", role: .search) { Text("Search") }
+        }
+        .tabViewStyle(.sidebarAdaptable)
+        .scrollEdgeEffectStyle(.hard, for: .top)
+        .modifier(PlozziOSMacNavigationBackground())
     }
 }
 
