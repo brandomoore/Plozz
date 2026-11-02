@@ -1106,20 +1106,26 @@ or invisible focusable target is used.
 
 ### Preview display mode and original titles
 
-On tvOS, ordinary guide previews do not request content-matched dynamic range or
-refresh rate. They leave the display in the Apple TV's configured menu format
+On tvOS, all guide previews, including Plozz channels, leave dynamic-range and
+refresh-rate matching off. They keep the Apple TV's configured menu format
 (SDR when that is the menu default), without changing system settings. Opening a
 channel full-screen enables matching; returning to the guide disables it even
 when Keep watching while browsing retains the player. Multiview still has one
 display owner, independent of which pane supplies audio.
 
-Plozzigen applies this policy before source loading. Changes on a retained tvOS
-player use AetherEngine's session-preserving option reload, keeping its playhead,
-pause intent and tracks rather than starting a new broadcast session. Queued
+Plozzigen applies this policy before source loading with explicit host-owned
+display criteria for previews, not AVKit-owned matching. Ready SDR players change
+policy in place through AetherEngine's `updateDisplayMatching(enabled:)`, retaining
+the player, item, buffers, playhead, pause intent and tracks. HDR sources still use
+the session-preserving option reload when the output pipeline must change; an SDR
+output badge is not proof that an HDR source can skip that rebuild. Queued
 superseded requests, source replacement and stop cannot revive an older policy.
 Failed changes surface through playback recovery instead of silently retrying.
-This can require one playback/output transition when entering or leaving watching,
-but not a new HDMI mode switch for every automatically previewed channel.
+Fullscreen frame-rate or dynamic-range matching can still cause an HDMI blackout
+when entering or leaving watching, but browsing does not request a new HDMI mode
+for every automatically previewed channel. Changing channels can briefly leave
+the preview unavailable while the new source loads; no second decoder or held-frame
+crossfade is used.
 Plozz channels play normal library files through that decoder, with a scheduling
 controller choosing the file and position; they are not actual live broadcasts.
 Shared loading messages say **Loading channel** rather than “live stream.”

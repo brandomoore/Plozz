@@ -249,7 +249,7 @@ let package = Package(
         // Audio shaping and low-resolution upscaling remain opt-in and disabled.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "3c035a3f62d7cb40e2cad93d28c7296746d94174",
+            revision: "45e37ed2e6b66ea520229a6fb8b0f973fe155fda",
             traits: [
                 "TrueHDObjectAudio", "DTSXObjectAudio",
                 "DualLayerDolbyVision", "DolbyVisionStillReshaping",

@@ -816,6 +816,15 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
               loadedDisplaySuppression != liveOutputPolicy.suppressesDisplayMatching else { return }
         let generation = outputLoadGeneration
         let policy = liveOutputPolicy
+        switch engine.updateDisplayMatching(enabled: !policy.suppressesDisplayMatching) {
+        case .applied:
+            self.loadedDisplaySuppression = policy.suppressesDisplayMatching
+            return
+        case .notReady:
+            return
+        case .requiresReload:
+            break
+        }
         outputPolicyReload = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
@@ -827,8 +836,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             guard outputLoadGeneration == generation, !Task.isCancelled,
                   liveOutputPolicy.suppressesDisplayMatching == policy.suppressesDisplayMatching else { return }
             do {
-                // Changing load options through Aether's session-preserving reload
-                // keeps the broadcast cursor, pause state and selected tracks.
+                // HDR output changes still need a pipeline rebuild.
                 try await reloadSession(outputPolicy: policy)
                 guard outputLoadGeneration == generation, !Task.isCancelled else { return }
                 self.loadedDisplaySuppression = policy.suppressesDisplayMatching
@@ -958,6 +966,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     nonisolated static func applyLiveOutputPolicy(_ policy: LiveChannelOutputPolicy, to options: inout LoadOptions) {
+        #if os(tvOS)
+        options.displayCriteriaOwner = policy.suppressesDisplayMatching ? .host : .engine
+        #endif
         options.suppressDisplayCriteria = policy.suppressesDisplayMatching
         options.matchContentEnabled = !policy.suppressesDisplayMatching
     }
@@ -1859,8 +1870,18 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 self.hasReachedSessionReadiness = true
                 self.applyNativeSubtitleSelection()
                 self.applyAVPlayerSubtitleStyle(to: self.engine.currentAVPlayer)
+                self.reconcileLiveDisplayPolicy()
             }
             .store(in: &cancellables)
+
+        #if os(tvOS)
+        // Native HLS can become ready before its source format and dimensions arrive.
+        engine.$sourceVideoWidth
+            .combineLatest(engine.$sourceVideoHeight, engine.$sourceVideoFormat)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.reconcileLiveDisplayPolicy() }
+            .store(in: &cancellables)
+        #endif
 
         // State → status/isPaused/onEnded/onFailure
         engine.$state

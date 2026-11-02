@@ -414,8 +414,8 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/3c035a3f62d7cb40e2cad93d28c7296746d94174)
-at commit `3c035a3f62d7cb40e2cad93d28c7296746d94174`, integrating upstream
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/45e37ed2e6b66ea520229a6fb8b0f973fe155fda)
+at commit `45e37ed2e6b66ea520229a6fb8b0f973fe155fda`, integrating upstream
 **7.53.1** (`0839aeee18dd0818c5c307a3c5ecba8ea3161b22`).
 Playback diagnostics show `AetherEngine v7.53.1`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in
@@ -430,6 +430,11 @@ ASS duration handling, dynamic linkage and active-picture APIs, including seam
 invalidation in the upstream weak-session callback.
 It also retains bounded position-aware WebDAV preparation, video servicing
 during source reads, and active-picture cleanup compatible with older runtimes.
+Ready SDR guide/fullscreen transitions on tvOS use its in-place display-matching API,
+without reopening media or replacing the player item. Previews explicitly use
+host-owned fixed output; HDR pipeline changes retain the reload path. Late native
+HLS format callbacks honor the current policy, and an outgoing display owner
+cannot clear a newer engine's criteria.
 New audio shaping and low-resolution SDR upscaling remain disabled by default.
 The engine uses upstream's single privacy manifest, including local-media file
 timestamps; FFmpeg's applicable frameworks now carry their own manifests.
@@ -711,7 +716,7 @@ on iOS/iPadOS. Enabling the option is not evidence that a particular file took
 the route or that a physical display applied its metadata. The engine logs
 `DV P7 dual-layer route: taken` or the reason it was not taken; actual picture
 and HDMI output require a suitable physical-device sample.
-See the pinned [FEL design and evidence](https://github.com/brandomoore/AetherEngine/blob/3c035a3f62d7cb40e2cad93d28c7296746d94174/docs/dolby-vision-fel.md).
+See the pinned [FEL design and evidence](https://github.com/brandomoore/AetherEngine/blob/45e37ed2e6b66ea520229a6fb8b0f973fe155fda/docs/dolby-vision-fel.md).
 
 ## Remote AV1 Matroska startup
 
