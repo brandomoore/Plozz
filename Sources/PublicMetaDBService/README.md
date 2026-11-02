@@ -89,6 +89,10 @@ Writes validate returned identities and values, not just a success flag or row
 count. Episode ratings support season-only queries, and resume reads support
 external-ID lookup. Picks retain open-ended recipe filters and weights without
 interpreting unknown options or substituting local recommendation behavior.
+Picks report the full candidate total while exposing at most five pages of
+twenty recommendations. Their validation checks that capped window, including
+exact page sizes and catalog identity, without changing the returned candidate
+total or weakening complete-history/list validation.
 
 Resume uses whole milliseconds; the live API rejects decimal values. Playback
 and export samples truncate submillisecond precision before encoding and
@@ -375,8 +379,17 @@ relaunches, without a library Play control. Independent Plex, Jellyfin and Emby
 reads confirmed the title remained unowned. The list was deleted through native
 confirmation; original lists and server/tracker histories remained unchanged.
 This verifies the configured TMDB fallback, not native list-add coverage or
-playback of an unowned title. Nonempty Picks and recommendation pagination remain
-unverified.
+playback of an unowned title.
+
+A real owned recommendation recipe exposed a pagination-contract defect: the
+API returned 191 candidates but only five pages. After the Picks-only validation
+fix, native iPhone acceptance checked all 100 real title/year rows, page-three
+refresh, the final-page cap, and reverse navigation. Independent API reads
+confirmed the same identities and order. A recommended movie opened its actual
+library detail across relaunches, without starting playback or changing server
+metadata/history. Exact API cleanup removed only the owned temporary recipe;
+native refresh and relaunch returned to the empty state. This is native browsing
+and routing coverage, not recipe-editor or other-platform acceptance.
 
 ## Optional community ratings
 

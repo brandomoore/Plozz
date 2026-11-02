@@ -193,8 +193,16 @@ public extension PublicMetaDBClient {
             PublicMetaDB.PickPage.self, path: "/catalogs/\(Self.component(id))/items",
             query: [.init(name: "page", value: String(page))]
         )
-        try result.page.validate(requestedPage: page, maximumPageSize: 20)
-        guard result.catalog.id == id, result.page.totalPages <= 5 else { throw PublicMetaDB.Failure.incompleteResponse }
+        // Picks retains the full candidate count but exposes at most 100 recommendations.
+        let exposedPage = PublicMetaDB.Page(
+            items: result.page.items, total: min(result.page.total, 100),
+            page: result.page.page, perPage: result.page.perPage, totalPages: result.page.totalPages
+        )
+        try exposedPage.validate(requestedPage: page, maximumPageSize: 20)
+        guard result.catalog.id == id, exposedPage.perPage == 20,
+              exposedPage.items.count == min(20, max(0, exposedPage.total - (page - 1) * 20)) else {
+            throw PublicMetaDB.Failure.incompleteResponse
+        }
         return result
     }
 }

@@ -706,6 +706,101 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testBrowseRealPicksPage() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let encoded = try XCTUnwrap(environment["PLOZZ_TRACKER_PICKS_EVIDENCE"])
+        let data = try XCTUnwrap(encoded.data(using: .utf8))
+        try require(data.count < 100_000, "Expected bounded independent recipe evidence")
+        let evidence = try JSONDecoder().decode(PicksEvidence.self, from: data)
+        let page = try XCTUnwrap(Int(environment["PLOZZ_TRACKER_PICKS_PAGE"] ?? ""))
+        try require(evidence.pages.map(\.page) == Array(1...5) && (1...5).contains(page),
+                    "Expected the five actual exposed recommendation pages")
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = "independent-real-picks-expectations"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        try openPicksRecipe(named: evidence.recipe.name)
+        for current in 1...page {
+            try tapVisible(app.staticTexts["Page \(current) of 5"], tapping: false)
+            if current < page { try tapVisible(app.buttons["Next page"]) }
+        }
+        try assertPicksPage(evidence.pages[page - 1])
+        if page == 3 {
+            try tapVisible(app.buttons["publicmetadb.refresh"])
+            try assertPicksPage(evidence.pages[page - 1])
+        } else if page == 5 {
+            XCTAssertFalse(app.buttons["Next page"].exists, "The API exposes five pages, not the uncapped total")
+            try tapVisible(app.buttons["Previous page"])
+            try tapVisible(app.staticTexts["Page 4 of 5"], tapping: false)
+            try assertPicksPage(evidence.pages[3])
+        }
+    }
+
+    func testPicksEntryOpensLibraryMovie() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let title = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        let year = try XCTUnwrap(environment["PLOZZ_TRACKER_CATALOG_YEAR"])
+        let encoded = try XCTUnwrap(environment["PLOZZ_TRACKER_PICKS_EVIDENCE"])
+        let evidence = try JSONDecoder().decode(PicksEvidence.self, from: Data(encoded.utf8))
+        try require(evidence.pages.first?.items.contains { $0.title == title && $0.year == year } == true,
+                    "Expected a genuine first-page recommendation independently matched to the servers")
+        try openPicksRecipe(named: evidence.recipe.name)
+        let row = app.buttons.containing(.staticText, identifier: title)
+            .containing(.staticText, identifier: year)
+        try tapVisible(row.firstMatch)
+        try require(app.staticTexts["Movie"].waitForExistence(timeout: 15),
+                    "Expected the recommendation's movie namespace")
+        try openCatalogLibraryDetail()
+        let metadata = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", year + "  ·")).firstMatch
+        try require(metadata.waitForExistence(timeout: 15), "Expected the real library movie's release year")
+        XCTAssertFalse(app.scrollViews["series-season-tabs"].exists)
+        XCTAssertFalse(app.buttons["Close player"].exists, "Browsing must not start playback")
+        recordState()
+    }
+
+    private func openPicksRecipe(named name: String) throws {
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["Picks"])
+        let recipe = app.buttons.containing(.staticText, identifier: name)
+        try require(recipe.firstMatch.waitForExistence(timeout: 30) && recipe.count == 1,
+                    "Expected the independently verified owned recipe")
+        try tapVisible(recipe.element)
+    }
+
+    private struct PicksEvidence: Decodable {
+        struct Recipe: Decodable { let name: String }
+        struct Page: Decodable {
+            struct Item: Decodable { let title: String; let year: String }
+            let page: Int
+            let items: [Item]
+        }
+        let recipe: Recipe
+        let pages: [Page]
+    }
+
+    private func assertPicksPage(_ page: PicksEvidence.Page) throws {
+        try require(page.items.count == 20, "Expected every real item on this page")
+        let heading = app.staticTexts["Recommendations"]
+        for _ in 0..<8 {
+            if heading.exists && heading.isHittable { break }
+            app.swipeDown()
+        }
+        try require(heading.exists && heading.isHittable, "Expected the recommendation page header")
+        for (index, item) in page.items.enumerated() {
+            let row = app.buttons.containing(.staticText, identifier: item.title)
+                .containing(.staticText, identifier: item.year)
+            try tapVisible(row.firstMatch, tapping: false)
+            XCTAssertEqual(row.count, 1, "Expected exactly the independently read title and release year")
+            if index == 0 || index == page.items.count - 1 { recordState() }
+        }
+        try tapVisible(app.staticTexts["Page \(page.page) of 5"], tapping: false)
+        XCTAssertEqual(app.buttons["Previous page"].exists, page.page > 1)
+        XCTAssertEqual(app.buttons["Next page"].exists, page.page < 5)
+        XCTAssertFalse(app.staticTexts["No records"].exists)
+        recordState()
+    }
+
     func testUnownedCatalogTitleIsAbsentFromLibraries() throws {
         let title = try searchForSelectedTitle()
         let empty = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "No results")).firstMatch

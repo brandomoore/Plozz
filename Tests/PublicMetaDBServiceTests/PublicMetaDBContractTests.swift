@@ -465,6 +465,69 @@ final class PublicMetaDBContractTests: XCTestCase {
         XCTAssertTrue(http.sent.isEmpty)
     }
 
+    func testPicksPreserveCandidateTotalWhileValidatingTheExposedWindow() async throws {
+        for total in [101, 164, 191, Int.max] {
+            for page in [1, 5] {
+                let http = RecordingHTTPClient()
+                http.stub(pathSuffix: "/catalogs/pick1/items", json: picksPage(total: total, page: page))
+                let result = try await client(http).pickItems(id: "pick1", page: page)
+                XCTAssertEqual(result.page.total, total)
+                XCTAssertEqual(result.page.totalPages, 5)
+                XCTAssertEqual(result.page.items.count, 20)
+                XCTAssertEqual(result.page.items.first?.content.tmdbID, (page - 1) * 20 + 1)
+            }
+        }
+    }
+
+    func testPicksValidateUncappedAndEmptyResults() async throws {
+        for (total, page, pages, count) in [(0, 1, 0, 0), (0, 1, 1, 0), (81, 5, 5, 1), (100, 5, 5, 20)] {
+            let http = RecordingHTTPClient()
+            http.stub(pathSuffix: "/catalogs/pick1/items", json: picksPage(
+                total: total, page: page, totalPages: pages, itemCount: count
+            ))
+            let result = try await client(http).pickItems(id: "pick1", page: page)
+            XCTAssertEqual(result.page.total, total)
+            XCTAssertEqual(result.page.items.count, count)
+        }
+    }
+
+    func testPicksCapDoesNotAcceptIncompleteOrWrongScopeResponses() async throws {
+        let responses = [
+            picksPage(total: 191, page: 5, itemCount: 19),
+            picksPage(total: 81, page: 5, itemCount: 2),
+            picksPage(total: 191, page: 5, totalPages: 10),
+            picksPage(total: 191, page: 5, perPage: 10, itemCount: 10),
+            picksPage(total: -1, page: 5),
+            picksPage(total: 191, page: 4),
+            picksPage(total: 191, page: 5, catalogID: "another-pick"),
+        ]
+        for response in responses {
+            let http = RecordingHTTPClient()
+            http.stub(pathSuffix: "/catalogs/pick1/items", json: response)
+            do {
+                _ = try await client(http).pickItems(id: "pick1", page: 5)
+                XCTFail("Malformed or incomplete recommendations were accepted")
+            } catch {
+                XCTAssertEqual(error as? PublicMetaDB.Failure, .incompleteResponse)
+            }
+        }
+    }
+
+    private func picksPage(
+        total: Int, page: Int, totalPages: Int = 5, perPage: Int = 20,
+        itemCount: Int = 20, catalogID: String = "pick1"
+    ) -> String {
+        let items = (0..<itemCount).map { index in
+            let id = (page - 1) * 20 + index + 1
+            return #"{"tmdb_id":\#(id),"media_type":"movie","title":"Movie \#(id)","reasons":[]}"#
+        }.joined(separator: ",")
+        return """
+        {"catalog":{"id":"\(catalogID)","slug":"movies","name":"Movies","seed_type":"taste",\
+        "exclude_watched":true,"exclude_watchlist":false},"items":[\(items)],\
+        "total":\(total),"page":\(page),"perPage":\(perPage),"totalPages":\(totalPages),"cached":true}
+        """
+    }
+
     func testSeasonOnlyRatingsUseEpisodeEndpointAndRetainIncompleteCounts() async throws {
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/episode-ratings", json: #"{"items":[],"total":501,"average":80}"#)
