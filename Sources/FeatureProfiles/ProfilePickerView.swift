@@ -34,11 +34,14 @@ public struct ProfilePickerView: View {
     private let identityNamespace: Namespace.ID?
     private let isCovered: Bool
     private let isClearingForHandoff: Bool
-    private var isTransitioning: Bool { isCovered || isClearingForHandoff }
+    private let isIdentitySource: Bool
+    private var isTransitioning: Bool { isCovered || isClearingForHandoff || !isEnabled }
     @Namespace private var fallbackIdentity
     @State private var selectedForReturnID: String?
 
     @Environment(\.themePalette) private var palette
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(
         profiles: [Profile],
@@ -53,7 +56,8 @@ public struct ProfilePickerView: View {
         showsPINLock: @escaping (Profile) -> Bool = { $0.showsPINLock },
         identityNamespace: Namespace.ID? = nil,
         isCovered: Bool = false,
-        isClearingForHandoff: Bool = false
+        isClearingForHandoff: Bool = false,
+        isIdentitySource: Bool = true
     ) {
         self.profiles = profiles
         self.activeProfileID = activeProfileID
@@ -68,6 +72,7 @@ public struct ProfilePickerView: View {
         self.identityNamespace = identityNamespace
         self.isCovered = isCovered
         self.isClearingForHandoff = isClearingForHandoff
+        self.isIdentitySource = isIdentitySource
     }
 
 
@@ -184,8 +189,9 @@ public struct ProfilePickerView: View {
                                 profile: profile, showsLock: showsPINLock(profile),
                                 isSelected: isTransitioning && profile.id == selectedForReturnID,
                                 identity: PINProfileTransition(
-                                    profileID: isCovered ? "retained-\(profile.id)" : profile.id,
-                                    namespace: identityNamespace ?? fallbackIdentity
+                                    profileID: reduceMotion ? "static-picker-\(profile.id)" : profile.id,
+                                    namespace: identityNamespace ?? fallbackIdentity,
+                                    isSource: reduceMotion || isIdentitySource || profile.id != selectedForReturnID
                                 )
                             ) {
                                 selectedForReturnID = profile.id
@@ -273,7 +279,6 @@ public struct ProfilePickerView: View {
                 .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
             }
         }
-        .opacity(isCovered ? 0 : 1)
         .disabled(isTransitioning)
         .background {
             ProfilePickerFocusEntry(isPending: awaitingInitialProfileFocus) {
@@ -544,14 +549,18 @@ private struct ProfileTileLabel: View {
         VStack(spacing: 12) {
             FocusGlassAvatar {
                 ProfileAvatarView(profile: profile, size: ProfilePickerLayout.avatarSize)
-                    .matchedGeometryEffect(id: identity.avatarID, in: identity.namespace)
+                    .matchedGeometryEffect(
+                        id: identity.avatarID, in: identity.namespace, isSource: identity.isSource
+                    )
             }
 
             ProfileNameLabel(profile: profile, showsLock: showsLock)
                 .font(ProfilePickerLayout.nameFont)
                 .foregroundStyle(isFocused || isSelected ? palette.primaryText : palette.secondaryText)
                 .lineLimit(1)
-                .matchedGeometryEffect(id: identity.nameID, in: identity.namespace, properties: .position)
+                .matchedGeometryEffect(
+                    id: identity.nameID, in: identity.namespace, properties: .position, isSource: identity.isSource
+                )
         }
     }
 }

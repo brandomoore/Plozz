@@ -32,7 +32,7 @@ struct ProfileSelectionView: View {
     private var handoffAnimation: Animation? { reduceMotion ? nil : .smooth(duration: 0.48) }
 
     private enum HandoffPhase {
-        case picker, clearing, moving
+        case picker, clearing, moving, returning, revealing
     }
 
     private var presentsAuthorization: Bool {
@@ -134,16 +134,19 @@ struct ProfileSelectionView: View {
             picker
                 .disabled(presentsAuthorization)
                 .accessibilityHidden(presentsAuthorization)
-            if presentsAuthorization && handoffPhase == .moving {
+            if presentsAuthorization && handoffPhase != .picker && handoffPhase != .revealing {
                 ProfileAccessGateView(appState: appState, selectedProfile: selectedProfile) {
                     cancelAuthorization()
                 }
                 .environment(\.pinProfileTransition, selectedProfile.map {
                     PINProfileTransition(
                         profileID: $0.id, namespace: profileIdentity, avatarSize: ProfilePickerView.avatarSize,
-                        nameFont: ProfilePickerView.nameFont
+                        nameFont: ProfilePickerView.nameFont,
+                        isSource: handoffPhase == .moving
                     )
                 })
+                .disabled(handoffPhase != .moving)
+                .accessibilityHidden(handoffPhase != .moving)
                 .transition(.identity)
                 .zIndex(1)
             }
@@ -158,7 +161,7 @@ struct ProfileSelectionView: View {
             if presentsAuthorization { cancelAuthorization() }
         }
         .onChange(of: appState.profileFlow.profilePickerSelectionID) { _, selection in
-            if selection == nil {
+            if selection == nil, handoffPhase != .returning, handoffPhase != .revealing {
                 selectedProfileID = nil
                 hasPresentedAuthorization = false
                 handoffID = UUID()
@@ -176,6 +179,10 @@ struct ProfileSelectionView: View {
     private func beginHandoff() {
         let requestID = UUID()
         handoffID = requestID
+        if reduceMotion {
+            handoffPhase = .moving
+            return
+        }
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2), completionCriteria: .removed) {
             handoffPhase = .clearing
         } completion: {
@@ -185,9 +192,31 @@ struct ProfileSelectionView: View {
     }
 
     private func cancelAuthorization() {
-        handoffID = UUID()
-        withAnimation(handoffAnimation) {
+        guard handoffPhase != .returning, handoffPhase != .revealing else { return }
+        let requestID = UUID()
+        handoffID = requestID
+        if reduceMotion {
             appState.profileFlow.cancelPickerAuthorization()
+            selectedProfileID = nil
+            hasPresentedAuthorization = false
+            handoffPhase = .picker
+            return
+        }
+        withAnimation(handoffAnimation, completionCriteria: .logicallyComplete) {
+            handoffPhase = .returning
+            appState.profileFlow.cancelPickerAuthorization()
+        } completion: {
+            guard handoffID == requestID, handoffPhase == .returning else { return }
+            revealPicker(after: requestID)
+        }
+    }
+
+    private func revealPicker(after requestID: UUID) {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2), completionCriteria: .removed) {
+            handoffPhase = .revealing
+        } completion: {
+            guard handoffID == requestID, handoffPhase == .revealing else { return }
+            // Keep the outgoing PIN identity and namespace alive until its return completes.
             selectedProfileID = nil
             hasPresentedAuthorization = false
             handoffPhase = .picker
@@ -219,8 +248,9 @@ struct ProfileSelectionView: View {
             onOpenSettings: { appState.profileFlow.requestSettingsFromProfileSelection() },
             showsPINLock: appState.accountsProviders.profileShowsPINLock,
             identityNamespace: profileIdentity,
-            isCovered: handoffPhase == .moving,
-            isClearingForHandoff: handoffPhase != .picker
+            isCovered: handoffPhase != .picker && handoffPhase != .revealing,
+            isClearingForHandoff: handoffPhase != .picker && handoffPhase != .revealing,
+            isIdentitySource: handoffPhase != .moving
         )
         // tvOS Menu button: the picker is rendered as a top-level view (not a
         // sheet / NavigationStack push), so without this handler Menu falls

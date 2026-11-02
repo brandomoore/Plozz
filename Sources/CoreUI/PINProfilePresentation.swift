@@ -7,15 +7,17 @@ public struct PINProfileTransition: Equatable {
     public let namespace: Namespace.ID
     public let avatarSize: CGFloat
     public let nameFont: Font
+    public let isSource: Bool
 
     public init(
         profileID: String, namespace: Namespace.ID, avatarSize: CGFloat = 88,
-        nameFont: Font = .title2.weight(.bold)
+        nameFont: Font = .title2.weight(.bold), isSource: Bool = true
     ) {
         self.profileID = profileID
         self.namespace = namespace
         self.avatarSize = avatarSize
         self.nameFont = nameFont
+        self.isSource = isSource
     }
 
     public var avatarID: String { "\(profileID).avatar" }
@@ -51,12 +53,17 @@ struct PINProfileEntryLayout<Badge: View, Pad: View>: View {
             )
             .frame(width: PINMetrics.proseColumnWidth)
             ZStack {
-                if availability == .available {
-                    pad()
-                } else {
-                    PINProfileRequirementState(
-                        availability: availability, errorMessage: errorMessage, onRetry: onRetry
-                    )
+                if transition.isSource {
+                    Group {
+                        if availability == .available {
+                            pad()
+                        } else {
+                            PINProfileRequirementState(
+                                availability: availability, errorMessage: errorMessage, onRetry: onRetry
+                            )
+                        }
+                    }
+                    .transition(.identity)
                 }
             }
             .frame(width: PINMetrics.padWidth)
@@ -124,9 +131,12 @@ private struct PINProfileIdentity<Badge: View>: View {
         VStack(spacing: 10) {
             if let sequenceStep, sequenceStep.total > 1 {
                 PINSequenceIndicator(step: sequenceStep)
+                    .opacity(transition.isSource ? 1 : 0)
             }
             badge()
-                .matchedGeometryEffect(id: transition.avatarID, in: transition.namespace)
+                .matchedGeometryEffect(
+                    id: transition.avatarID, in: transition.namespace, isSource: transition.isSource
+                )
                 .accessibilityHidden(true)
             identityName
                 .font(transition.nameFont)
@@ -135,7 +145,8 @@ private struct PINProfileIdentity<Badge: View>: View {
                 .fixedSize(horizontal: false, vertical: true)
                 // Interpolating text bounds would rewrap the larger heading in flight.
                 .matchedGeometryEffect(
-                    id: transition.nameID, in: transition.namespace, properties: .position
+                    id: transition.nameID, in: transition.namespace, properties: .position,
+                    isSource: transition.isSource
                 )
                 .accessibilityIdentifier("profile-pin-name")
                 .accessibilityAddTraits(.isHeader)
@@ -145,6 +156,7 @@ private struct PINProfileIdentity<Badge: View>: View {
                     .foregroundStyle(palette.secondaryText)
                     .accessibilityIdentifier("pin-entry-title")
                     .modifier(PINKeyEntrance(enabled: true, position: 0, reduceMotion: reduceMotion))
+                    .opacity(transition.isSource ? 1 : 0)
             } else {
                 Text(verbatim: " ").font(.subheadline).accessibilityHidden(true)
             }
@@ -152,11 +164,13 @@ private struct PINProfileIdentity<Badge: View>: View {
                 .font(.callout)
                 .foregroundStyle(availability == .available && errorMessage != nil ? Color.red : .clear)
                 .multilineTextAlignment(.center)
+                .opacity(transition.isSource ? 1 : 0)
             if let footnote {
                 Text(footnote)
                     .font(.footnote)
                     .foregroundStyle(palette.secondaryText)
                     .multilineTextAlignment(.center)
+                    .opacity(transition.isSource ? 1 : 0)
             }
         }
         .accessibilityElement(children: .contain)

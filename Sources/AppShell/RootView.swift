@@ -1668,6 +1668,7 @@ struct ProfileAccessGateView: View {
     private var displayedStep: Step? {
         let pending = Self.pendingStep(appState)
         guard profileTransition != nil else { return pending }
+        if profileTransition?.isSource == false { return retainedStep }
         if case .profile = retainedStep, case .plex = pending,
            appState.plexHomeUsers.plexPINEntryAvailability == .checking {
             return retainedStep

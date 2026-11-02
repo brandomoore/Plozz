@@ -51,6 +51,9 @@ struct ProfilePINTransitionFixture: View {
         }
         state.plexHomeUsers.plexServerTokenResolve = { _, _, _ in "fixture-server-token" }
         state.profileFlow.requestProfileSelection()
+        if ProcessInfo.processInfo.arguments.contains("--foreground-lock") {
+            state.profileFlow.lockForForegroundIfNeeded()
+        }
         _app = State(initialValue: state)
     }
 
@@ -69,6 +72,12 @@ struct ProfilePINTransitionFixture: View {
         .overlay(alignment: .bottomLeading) {
             Text(verbatim: UIAccessibility.isReduceMotionEnabled ? "Reduced motion" : "Full motion")
                 .accessibilityIdentifier("profile-handoff-motion")
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if ProcessInfo.processInfo.arguments.contains("--foreground-lock") {
+                Text(verbatim: app.profileFlow.isForegroundLocked ? "Foreground locked" : "Foreground unlocked")
+                    .accessibilityIdentifier("profile-handoff-foreground")
+            }
         }
     }
 }

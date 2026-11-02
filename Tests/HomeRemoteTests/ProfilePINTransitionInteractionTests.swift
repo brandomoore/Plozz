@@ -14,14 +14,24 @@ final class ProfilePINTransitionInteractionTests: XCTestCase {
         try verifyHandoff(reduceMotion: false, usesPlex: true)
     }
 
-    private func verifyHandoff(reduceMotion: Bool, usesPlex: Bool = false) throws {
+    func testForegroundBackRetainsGateAndReturnFocus() throws {
+        try verifyHandoff(reduceMotion: false, foregroundLocked: true)
+    }
+
+    private func verifyHandoff(
+        reduceMotion: Bool, usesPlex: Bool = false, foregroundLocked: Bool = false
+    ) throws {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = ["--profile-pin-transition-fixture"]
         if usesPlex { app.launchArguments.append("--plex-pin") }
+        if foregroundLocked { app.launchArguments.append("--foreground-lock") }
         app.launch()
         defer { app.terminate() }
         let viewer = app.buttons.matching(NSPredicate(format: "label == %@", "Locked viewer")).firstMatch
         XCTAssertTrue(viewer.waitForExistence(timeout: 10))
+        if foregroundLocked {
+            XCTAssertEqual(app.staticTexts["profile-handoff-foreground"].label, "Foreground locked")
+        }
         if reduceMotion {
             try XCTSkipUnless(app.staticTexts["profile-handoff-motion"].label == "Reduced motion",
                               "Run with Reduce Motion enabled on the owned simulator.")
@@ -45,6 +55,9 @@ final class ProfilePINTransitionInteractionTests: XCTestCase {
         XCTAssertEqual(viewer.frame.midX, sourceFrame.midX, accuracy: 2)
         XCTAssertEqual(viewer.frame.midY, sourceFrame.midY, accuracy: 2)
         XCTAssertFalse(identity.exists)
+        if foregroundLocked {
+            XCTAssertEqual(app.staticTexts["profile-handoff-foreground"].label, "Foreground locked")
+        }
         capture(app, name: "Profile handoff return, reduced motion \(reduceMotion)")
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(one.waitForExistence(timeout: 5))
@@ -60,6 +73,20 @@ final class ProfilePINTransitionInteractionTests: XCTestCase {
             XCTAssertFalse(app.staticTexts["profile-handoff-complete"].exists)
             waitForFocus(one)
             capture(app, name: "Plex PIN keeps selected Plozz avatar")
+            XCUIRemote.shared.press(.menu)
+            waitForFocus(viewer)
+            XCTAssertFalse(identity.exists)
+            XCTAssertEqual(viewer.frame.midX, sourceFrame.midX, accuracy: 2)
+            XCTAssertEqual(viewer.frame.midY, sourceFrame.midY, accuracy: 2)
+            capture(app, name: "Plex PIN returns to the original tile")
+            XCUIRemote.shared.press(.select)
+            waitForFocus(one)
+            for _ in 0..<4 { XCUIRemote.shared.press(.select) }
+            let repeatedPlex = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label == %@", "Enter your Plex PIN"), object: plexTitle
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [repeatedPlex], timeout: 5), .completed)
+            waitForFocus(one)
             XCUIRemote.shared.press(.right)
             waitForFocus(app.buttons["2"])
             for _ in 0..<4 { XCUIRemote.shared.press(.select) }
