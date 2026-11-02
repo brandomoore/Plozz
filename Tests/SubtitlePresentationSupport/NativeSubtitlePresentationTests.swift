@@ -745,15 +745,28 @@ final class NativeSubtitlePresentationTests: XCTestCase {
                           "Reselecting the current track must not clear or republish its paused captions.")
         }
         reselectionUpdates = nil
-        let fullOutput = try XCTUnwrap(item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }.first)
-        item.select(alternateOption, in: group)
-        try await waitUntil { item.currentMediaSelection.selectedMediaOption(in: group) == alternateOption }
-        engine.selectSubtitleTrack(alternate)
-        let selection = try XCTUnwrap(engine.defaultSubtitleSelectionTask)
-        await selection.value
-        XCTAssertFalse(item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }.first === fullOutput,
-                       "A selection changed outside the engine must still fence the old rendition's output.")
-        try await waitUntil { model.primary.compactMap(\.text) == ["Alternate"] }
+        for adoptionDelay in [0, 10, 100, 500] {
+            engine.selectSubtitleTrack(full)
+            try await waitUntil { model.primary.compactMap(\.text) == ["Alpha", "Bravo"] }
+            let fullOutput = try XCTUnwrap(item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }.first)
+            item.select(alternateOption, in: group)
+            try await waitUntil { item.currentMediaSelection.selectedMediaOption(in: group) == alternateOption }
+            if adoptionDelay > 0 {
+                try await Task.sleep(for: .milliseconds(adoptionDelay))
+            }
+            engine.selectSubtitleTrack(alternate)
+            let selection = try XCTUnwrap(engine.defaultSubtitleSelectionTask)
+            await selection.value
+            XCTAssertFalse(item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }.first === fullOutput,
+                           "A selection changed outside the engine must still fence the old rendition's output.")
+            try await waitUntil(
+                detail: "After adopting external Alternate (\(adoptionDelay)ms): visible=\(model.primary.compactMap(\.text)), "
+                    + "decoded=\(cues), time=\(engine.subtitlePresentationTime), "
+                    + "selected=\(String(describing: item.currentMediaSelection.selectedMediaOption(in: group)))"
+            ) { model.primary.compactMap(\.text) == ["Alternate"] }
+            XCTAssertTrue(engine.isPaused)
+            XCTAssertEqual(engine.subtitlePresentationTime, 2.5, accuracy: 1.0 / 24)
+        }
         engine.selectSubtitleTrack(nil)
         try await waitUntil {
             item.currentMediaSelection.selectedMediaOption(in: group) == nil && cues.isEmpty

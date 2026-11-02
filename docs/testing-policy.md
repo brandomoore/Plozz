@@ -30,6 +30,12 @@ Asynchronous transport fixture waits use bounded elapsed deadlines, not a count
 of `Task.yield()` calls. Yield counts do not guarantee that cancellation,
 shutdown, or lease-release workers have received time to finish.
 
+Native subtitle coverage adopts externally selected HLS renditions both
+immediately and after fixed callback-scheduling delays. Every case must retain
+the paused position and fence the previous extraction output; the delays are
+separate required cases, not retries. Failure diagnostics retain decoded cue
+timing, visible text, and the actual native selection.
+
 ## The two speed wins
 
 ### 1. Build once, run many (`tools/run-tests.sh`)
