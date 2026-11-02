@@ -188,6 +188,16 @@ public struct LiveTVProgramDetails: Codable, Equatable, Sendable {
     public var artworkURL: URL?
     public var endWasInferred: Bool
 
+    var retainedTextBytes: Int {
+        var count = description?.utf8.count ?? 0
+        count += categories.reduce(0) { $0 + $1.utf8.count }
+        count += languages.reduce(0) { $0 + $1.utf8.count }
+        count += episode?.utf8.count ?? 0
+        count += rating?.utf8.count ?? 0
+        count += artworkURL?.absoluteString.utf8.count ?? 0
+        return count
+    }
+
     public init(
         description: String? = nil, episode: String? = nil, categories: [String] = [],
         languages: [String] = [], rating: String? = nil, artworkURL: URL? = nil,

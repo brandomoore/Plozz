@@ -1820,12 +1820,13 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         let path: String?
         if components.scheme != nil || components.host != nil {
             path = components.url.flatMap { nestedURL in
-                knownImageBaseURLs.lazy.compactMap { baseURL in
-                    MediaProviderURLIdentity.relativeResourcePath(
+                firstKnownArtworkResource { baseURL in
+                    guard let path = MediaProviderURLIdentity.relativeResourcePath(
                         of: nestedURL,
                         under: baseURL
-                    )
-                }.first(where: isLocalArtworkPath)
+                    ), isLocalArtworkPath(path) else { return nil }
+                    return path
+                }
             }
         } else {
             var candidate = components.path
@@ -1851,25 +1852,30 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         let baseURL: URL
     }
 
-    private var knownImageBaseURLs: [URL] {
-        var seen = Set<String>()
-        return (
-            client.knownBaseURLs
-            + (UserDefaults.standard.stringArray(
+    private func firstKnownArtworkResource<Resource>(
+        _ resolve: (URL) -> Resource?
+    ) -> Resource? {
+        // Most saved artwork still uses a live connection. Do not read and
+        // parse preferences for every poster and cast credit in a cached Home.
+        for baseURL in client.knownBaseURLs {
+            if let resource = resolve(baseURL) { return resource }
+        }
+        let remaining = (UserDefaults.standard.stringArray(
                 forKey: artworkOriginHistoryKey
             ) ?? []).compactMap(URL.init(string:))
             + [client.baseURL]
             + (session.server.connectionURLs ?? [])
             + [session.server.baseURL]
-        ).filter {
-            seen.insert($0.absoluteString).inserted
+        for baseURL in remaining {
+            if let resource = resolve(baseURL) { return resource }
         }
+        return nil
     }
 
     private func persistedArtworkResource(
         for url: URL
     ) -> PersistedArtworkResource? {
-        for baseURL in knownImageBaseURLs {
+        firstKnownArtworkResource { baseURL in
             guard let path =
                     MediaProviderURLIdentity.relativeResourcePath(
                         of: url,
@@ -1877,13 +1883,12 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
                     ),
                   path.hasPrefix("/photo/:/transcode")
                     || isLocalArtworkPath(path)
-            else { continue }
+            else { return nil }
             return PersistedArtworkResource(
                 path: path,
                 baseURL: baseURL
             )
         }
-        return nil
     }
 
     private func isLocalArtworkPath(_ path: String) -> Bool {

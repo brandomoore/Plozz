@@ -55,6 +55,8 @@ struct PrototypeBrowser: View {
     @State private var guideHours = Self.initialGuideHours
     @State private var guideWidth: CGFloat = 0
     @State private var timeline = PrototypeTimelineScroll()
+    @State private var appliedPreparationRevision = 0
+    @Environment(LiveTVGuidePreparationModel.self) private var guidePreparation: LiveTVGuidePreparationModel?
     #if os(tvOS)
     @State private var nativeScroll = PrototypeGuideScrollController()
     @ScaledMetric(relativeTo: .subheadline) private var nativeRowHeight = PrototypeLayout.rowHeight
@@ -67,10 +69,16 @@ struct PrototypeBrowser: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.layoutDirection) private var layoutDirection
 
+    private struct GuideWorkRequest: Equatable {
+        let window: PrototypeServerGuideRequest?
+        let preparationRevision: Int
+    }
+
     var body: some View {
         let guideRequest = serverGuideRequest
         let cachedWindowRequest = cachedGuideRequest
         let generatedWindowRequest = libraryGuideRequest
+        let preparationRevision = guidePreparation?.completionRevision ?? 0
         GeometryReader { geometry in
             let focusReturnTarget = returnTarget
             VStack(spacing: PrototypeLayout.rulerGap) {
@@ -358,21 +366,23 @@ struct PrototypeBrowser: View {
             pendingFocus = target
             focused = target
         }
-        .task(id: guideRequest) {
+        .task(id: GuideWorkRequest(window: guideRequest, preparationRevision: preparationRevision)) {
             guard let guideRequest else { return }
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
             // Block by block, so extending the guide fetches only the new hours
             // instead of re-requesting the whole span as one partly loaded chunk.
             var blockStart = guideRequest.from
+            let force = appliedPreparationRevision != preparationRevision
             while blockStart < guideRequest.to, !Task.isCancelled {
                 let blockEnd = min(guideRequest.to, blockStart.addingTimeInterval(Self.guideStepSeconds))
                 await imports.reloadServerGuides(
                     channelIDs: guideRequest.channels.map(\.id),
-                    from: blockStart, to: blockEnd, into: model
+                    from: blockStart, to: blockEnd, into: model, force: force
                 )
                 blockStart = blockEnd
             }
+            if !Task.isCancelled { appliedPreparationRevision = preparationRevision }
         }
         .task(id: cachedWindowRequest) {
             guard let cachedWindowRequest else { return }

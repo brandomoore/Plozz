@@ -19,6 +19,31 @@ private final class LiveChannelObservationChanges: @unchecked Sendable {
 
 @MainActor
 final class LiveChannelPlayerModelTests: XCTestCase {
+    func testPreviewPublishesSourceRangeAndChangesOutputWithoutRetuning() async {
+        let engine = LiveEngineSpy()
+        let model = LiveChannelPlayerModel(
+            engine: engine, streamURL: URL(string: "https://example.invalid/live.m3u8")!,
+            allowsDisplayMatching: false
+        )
+        defer { model.stop() }
+        await model.start()
+        XCTAssertNil(model.sourceDynamicRange)
+        engine.probedSourceFacts = .init(range: .dolbyVision)
+        model.refreshFromEngine()
+        XCTAssertEqual(model.sourceDynamicRange, .dolbyVision)
+        XCTAssertFalse(model.allowsDisplayMatching)
+        model.setDisplayMatchingAllowed(true)
+        XCTAssertTrue(model.allowsDisplayMatching)
+        XCTAssertFalse(engine.outputPolicy.suppressesDisplayMatching)
+        engine.probedSourceFacts = nil
+        model.refreshFromEngine()
+        XCTAssertEqual(model.sourceDynamicRange, .dolbyVision, "Retain exit facts during an output rebuild")
+        model.setDisplayMatchingAllowed(false)
+        XCTAssertTrue(engine.outputPolicy.suppressesDisplayMatching)
+        XCTAssertEqual(engine.liveLoads, 1)
+        XCTAssertEqual(engine.stopCount, 0)
+    }
+
     func testLocalJournalCapturesLiveFailuresWithoutServerSessionReporting() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let journal = PlaybackDiagnosticJournal(url: root.appendingPathComponent("playback.json"))
@@ -1871,6 +1896,7 @@ private struct LiveFullscreenHarness: View {
 
 @MainActor
 final class LiveEngineSpy: LiveChannelEngine {
+    var probedSourceFacts: EngineProbedSourceFacts?
     var videoAspectRatio: Double?
     var liveStartupBuffer: LivePlaybackBuffer = .automatic
     var livePlaybackFailureDiagnostic: PlaybackFailureDiagnostic?

@@ -2,6 +2,7 @@ import XCTest
 import Synchronization
 import CoreModels
 import FeatureAuth
+import AppRuntime
 @testable import AppShell
 
 /// Unit tests for ``AccountsProvidersModel`` — the accounts + providers hub split
@@ -288,13 +289,13 @@ final class AccountsProvidersModelTests: XCTestCase {
         profiles.setActiveAccountIDs(["plex", "silo"], for: target.id)
         XCTAssertTrue(model.profileShowsPINLock(target), "Re-enabling Plex restores its lock hint.")
         profiles.setActiveAccountIDs(["gone"], for: target.id)
-        XCTAssertTrue(model.profileShowsPINLock(target), "Match activation's entirely stale subset fallback.")
+        XCTAssertFalse(model.profileShowsPINLock(target), "Absent selected sources cannot enable an excluded Plex account.")
         profiles.select(target.id)
         model.reloadAccounts()
         XCTAssertEqual(model.activeAccountIDs, Set(model.activeAccountIDs(forProfile: target.id)))
 
         profiles.setActiveAccountIDs(["gone", "silo"], for: target.id)
-        XCTAssertFalse(model.profileShowsPINLock(target), "A surviving non-Plex source prevents fallback.")
+        XCTAssertFalse(model.profileShowsPINLock(target), "Only the surviving selected source is active.")
         profiles.setActiveAccountIDs(["plex"], for: target.id)
         try store.remove(id: "plex")
         model.reloadAccounts()
@@ -317,10 +318,7 @@ final class AccountsProvidersModelTests: XCTestCase {
         XCTAssertTrue(model.navigationAccounts.isEmpty)
     }
 
-    /// (b) An explicit choice whose accounts have ALL gone stale falls back to the
-    /// household-global active set (so a profile isn't left permanently blank by a
-    /// removal it didn't make) — not to empty.
-    func testReloadFallsBackToGlobalWhenAllChosenAreStale() throws {
+    func testReloadPreservesExplicitSelectionWhenAllChosenAccountsAreAbsent() throws {
         let (model, store, profiles) = try makeModel(accountIDs: [("a", "a.example.com"), ("b", "b.example.com")])
         // Household-global active set is just "b".
         store.setActiveAccountIDs(["b"])
@@ -329,9 +327,45 @@ final class AccountsProvidersModelTests: XCTestCase {
 
         model.reloadAccounts()
 
-        // Falls back to the global set (filtered to known), NOT empty, NOT all.
-        XCTAssertEqual(model.activeAccountIDs, ["b"])
-        XCTAssertEqual(model.navigationAccounts.map(\.id), ["b"])
+        XCTAssertTrue(model.activeAccountIDs.isEmpty)
+        XCTAssertTrue(model.navigationAccounts.isEmpty)
+        XCTAssertTrue(model.watchesNothingByChoice)
+        XCTAssertNil(model.primaryActiveAccount)
+        XCTAssertEqual(profiles.storedActiveAccountIDs(for: profiles.activeProfileID), ["gone-1", "gone-2"])
+    }
+
+    func testDeletingLastSelectedAccountCannotStartExcludedShareWorkAndReaddRestoresOnlyIt() throws {
+        let (model, store, profiles) = try makeModel(accountIDs: [("selected", "selected.example")])
+        try store.add(account(id: "share", host: "share.invalid", provider: .mediaShare), token: "fixture")
+        store.setActiveAccountIDs(["selected", "share"])
+        profiles.setActiveAccountIDs(["selected"], for: profiles.activeProfileID)
+        model.reloadAccounts()
+        XCTAssertEqual(model.activeAccountIDs, ["selected"])
+        var notified: Set<String>?
+        model.onActiveAccountsChanged = { selected, _ in notified = selected }
+
+        try store.remove(id: "selected")
+        model.reloadAccounts()
+
+        XCTAssertEqual(notified, [])
+        XCTAssertTrue(model.activeAccountIDs.isEmpty)
+        XCTAssertTrue(model.navigationAccounts.isEmpty)
+        XCTAssertNil(model.primaryActiveAccount)
+        XCTAssertTrue(model.homeAccounts.isEmpty)
+        XCTAssertTrue(model.watchMutationServerScope.accounts.isEmpty)
+        let work = MediaShareWorkScope.resolve(
+            profileID: profiles.activeProfileID, isProfileAuthorized: true,
+            activeAccountIDs: model.activeAccountIDs, accounts: model.accounts, visibility: .default
+        )
+        XCTAssertTrue(work.accountKeys.isEmpty)
+        XCTAssertEqual(profiles.storedActiveAccountIDs(for: profiles.activeProfileID), ["selected"])
+        model.reloadAccounts()
+        XCTAssertTrue(model.activeAccountIDs.isEmpty)
+
+        try store.add(account(id: "selected", host: "selected.example"), token: "fixture")
+        model.reloadAccounts()
+        XCTAssertEqual(model.activeAccountIDs, ["selected"])
+        XCTAssertEqual(model.navigationAccounts.map(\.id), ["selected"])
     }
 
     /// (c) An explicit choice where only SOME chosen accounts survive honors

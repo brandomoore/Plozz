@@ -3,11 +3,15 @@ import AppRuntime
 import CoreModels
 import CoreUI
 import FeatureHomeCore
+import FeatureLiveTV
+import FeatureLiveTVCore
 import SwiftUI
 
 struct PlozziOSLibrarySelectionView: View {
     let appModel: PlozziOSAppModel
     let accountIDs: [String]
+    var hostsGuideProgress = true
+    @Environment(\.themePalette) private var palette
 
     private var visibility: HomeLibraryVisibilityModel { appModel.settings.homeVisibility }
     private func onContinue() { appModel.completeLibrarySelection() }
@@ -16,6 +20,10 @@ struct PlozziOSLibrarySelectionView: View {
     @State private var isLoading = true
     @State private var loadFailed = false
     @State private var loadGeneration = 0
+
+    private var guides: [LiveTVGuidePreparationModel.Status] {
+        accountIDs.compactMap { appModel.guidePreparation.statuses[$0] }
+    }
 
     var body: some View {
         Group {
@@ -27,6 +35,10 @@ struct PlozziOSLibrarySelectionView: View {
                 librarySelection
             }
         }
+        .guidePreparationOverlay(
+            model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
+            palette: palette, isEnabled: hostsGuideProgress
+        )
         .task(id: loadID) {
             guard appModel.plexHomeUsers.pendingPlexPINRequest == nil else { return }
             await loadLibraries()
@@ -73,20 +85,29 @@ struct PlozziOSLibrarySelectionView: View {
                             .listRowInsets(EdgeInsets())
                             .listRowSeparator(.hidden)
                         } footer: {
-                            Text("You can change these choices later in Settings.")
+                            if !libraries.isEmpty || guides.isEmpty {
+                                Text("You can change these choices later in Settings.")
+                            }
                         }
                     }
                     .settingsPageSurface()
                 }
             }
-            .navigationTitle("Choose Your Libraries")
+            .navigationTitle(libraries.isEmpty && !guides.isEmpty ? Text("Live TV") : Text("Choose Your Libraries"))
             .navigationBarTitleDisplayMode(.inline)
         }
     }
 
     @ViewBuilder
     private var content: some View {
-        if libraries.isEmpty {
+        if !guides.isEmpty {
+            Section {
+                if libraries.isEmpty { Label("Playlist added", systemImage: "checkmark.circle") }
+            } footer: {
+                Text("You can start watching while the guide loads.")
+            }
+        }
+        if libraries.isEmpty && guides.isEmpty {
             Section {
                 ContentUnavailableView(
                     loadFailed ? "Couldn’t Load Libraries" : "No Video Libraries",
@@ -168,7 +189,7 @@ struct PlozziOSLibrarySelectionView: View {
             LibraryChoice(accountID: $0.accountID, serverName: $0.serverName, library: $0.library)
         }
         isLoading = false
-        if discovery.canSkipSelection(for: accounts) { onContinue() }
+        if discovery.canSkipSelection(for: accounts), guides.isEmpty { onContinue() }
     }
 }
 

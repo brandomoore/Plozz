@@ -33,7 +33,6 @@ public struct LiveTVPrototypePlayback {
     public let playbackUpdate: @MainActor (LiveTVPlaybackUpdate) -> Void
     public let playbackFailed: @MainActor (LiveChannelFailureReport) -> Void
     public let videoAspectRatioChanged: @MainActor (Double?) -> Void
-    public let preparingChannelName: String?
     public let isMultiview: Bool
     public let isAudible: Bool
     public let openMultiview: () -> Void
@@ -546,14 +545,6 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         .environment(\.themePalette, palette)
         .tint(palette.accent)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
-        .overlay(alignment: .topTrailing) {
-            if let id = playback.pendingWatchChannelID, !preview.isExpanded || playback.preparation.current == nil {
-                PrototypeWatchPreparationStatus(
-                    channelName: model.channel(id: id)?.name ?? "",
-                    cancel: playback.cancelWatch
-                )
-            }
-        }
         .overlay(alignment: .bottomLeading) {
             if isActive, !allowsPlayback, !model.channels.isEmpty, let playbackUnavailableReason {
                 Label {
@@ -625,9 +616,6 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             },
             videoAspectRatioChanged: {
                 multiview.updateVideoAspectRatio($0, paneID: pane.id, preparedID: prepared.id)
-            },
-            preparingChannelName: pane.preparation.preparingChannelID.flatMap {
-                model.channel(id: $0)?.name
             },
             isMultiview: multiview.isEnabled,
             isAudible: pane.id == multiview.audiblePaneID,
@@ -2243,23 +2231,6 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         #else
         tune(id)
         #endif
-    }
-}
-
-private struct PrototypeWatchPreparationStatus: View {
-    let channelName: String
-    let cancel: () -> Void
-    @Environment(\.themePalette) private var palette
-
-    var body: some View {
-        HStack {
-            ProgressView()
-            Text("Opening \(channelName)")
-            Button("Cancel", role: .cancel, action: cancel)
-        }
-        .padding()
-        .background(palette.backgroundBase, in: RoundedRectangle(cornerRadius: 12))
-        .padding()
     }
 }
 

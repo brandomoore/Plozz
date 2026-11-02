@@ -90,9 +90,19 @@ extension LiveTVPrototypeImportModel {
                         sourceID: source.id, channelIDs: batch, from: chunkStart, to: end
                     )
                     do {
-                        let nativePrograms = try await context.provider.liveTVGuide(
-                            channelIDs: nativeIDs, from: chunkStart, to: end
-                        )
+                        let nativePrograms: [ServerLiveTVProgramme]
+                        var partialFailure: LiveTVServerImportError?
+                        do {
+                            nativePrograms = try await context.provider.liveTVGuide(
+                                channelIDs: nativeIDs, from: chunkStart, to: end
+                            )
+                        } catch let partial as ServerLiveTVPartialGuideError {
+                            let failure = LiveTVServerImportError.sanitizedGuide(partial.failure)
+                            guard !isCancellation(partial.failure), failure != .permissionDenied,
+                                  failure != .subscriptionRequired else { throw partial.failure }
+                            nativePrograms = partial.programmes
+                            partialFailure = failure
+                        }
                         try Task.checkCancellation()
                         guard activeServerGuideRequests.contains(window.id) else { return .cancelled }
                         guard acceptServerResult(
@@ -103,9 +113,11 @@ extension LiveTVPrototypeImportModel {
                         let programs = try catalog.mapPrograms(nativePrograms, source: source).filter {
                             requested.contains($0.channelID) && $0.end > chunkStart && $0.start < end
                         }
-                        // An empty successful response replaces only this channel/window, not its whole guide.
+                        // Partial results replace only channels with new listings; failures
+                        // must not erase saved listings or claim empty coverage elsewhere.
+                        let replaced = partialFailure == nil ? requested : Set(programs.map(\.channelID))
                         var merged = Dictionary(uniqueKeysWithValues: catalog.programs.filter {
-                            !requested.contains($0.channelID) || $0.end <= chunkStart || $0.start >= end
+                            !replaced.contains($0.channelID) || $0.end <= chunkStart || $0.start >= end
                         }.map { ($0.id, $0) })
                         for program in programs { merged[program.id] = program }
                         let previous = cachedServerCatalogs[source.id]
@@ -120,10 +132,15 @@ extension LiveTVPrototypeImportModel {
                             cachedServerCatalogs[source.id] = previous
                             throw LiveTVServerImportError.invalidGuide
                         }
-                        finishServerGuideWindow(window.id, phase: .loaded)
+                        if let partialFailure {
+                            result = .failed
+                            finishServerGuideWindow(window.id, phase: .failed, failure: partialFailure)
+                        } else {
+                            finishServerGuideWindow(window.id, phase: .loaded)
+                        }
                         updateServerStatus(source.id) {
                             $0.programCount = catalog.programs.count
-                            $0.lastGuideRefresh = Date()
+                            if partialFailure == nil { $0.lastGuideRefresh = Date() }
                         }
                     } catch {
                         guard activeServerGuideRequests.contains(window.id) else { return .cancelled }

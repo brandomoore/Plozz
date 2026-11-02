@@ -78,7 +78,10 @@ public enum ManagedProviderRegistry {
 
     public static func registerIPTV(into registry: ProviderRegistry, durableStore: DurableLocalStateStore?) {
         registry.register(.iptv) { context in
-            try IPTVProvider(context: context, durableStore: durableStore, guideLoader: iptvGuideLoader)
+            try IPTVProvider(
+                context: context, durableStore: durableStore,
+                guideIndex: IPTVAccountGuideIndex(context: context)
+            )
         }
     }
 
@@ -90,11 +93,14 @@ public enum ManagedProviderRegistry {
                 guideID: channel.guideID, guideName: channel.guideName, country: channel.country
             )
         }
+        let progress = ServerLiveTVGuideProgress.report
         let task = Task.detached(priority: .userInitiated) {
-            let parser = LiveTVXMLTVParser(provider: LiveTVGuideSource.provider(for: url))
-            return try data.starts(with: [0x1f, 0x8b])
-                ? parser.parse(gzipData: data, channels: source, now: from)
-                : parser.parseXML(data: data, channels: source, now: from)
+            try ServerLiveTVGuideProgress.$report.withValue(progress) {
+                let parser = LiveTVXMLTVParser(provider: LiveTVGuideSource.provider(for: url))
+                return try data.starts(with: [0x1f, 0x8b])
+                    ? parser.parse(gzipData: data, channels: source, now: from)
+                    : parser.parseXML(data: data, channels: source, now: from)
+            }
         }
         let guide = try await withTaskCancellationHandler {
             try await task.value

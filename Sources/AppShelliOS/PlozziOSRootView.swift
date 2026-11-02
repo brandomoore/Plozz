@@ -336,10 +336,15 @@ public struct PlozziOSRootView: View {
         )
         .transientStatusOverlay(
             presenter: appModel.transientStatusPresenter,
-            bottomPadding: 72,
+            palette: resolvedPalette
+        )
+        .guidePreparationOverlay(
+            model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
             palette: resolvedPalette
         )
         .environment(appModel)
+        .environment(appModel.settings.navigation)
+        .environment(appModel.guidePreparation)
         .environment(heroTrailerController)
         .themeMusicScope(
             controller: themeMusicController,

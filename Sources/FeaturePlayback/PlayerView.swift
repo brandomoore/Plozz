@@ -517,7 +517,7 @@ public struct PlayerView: View {
 /// Observes the tvOS display manager and reports when an HDMI display-mode switch
 /// finishes, so the HDR veil can fade back in exactly when the panel has settled.
 /// A no-op on platforms without `AVDisplayManager` (e.g. macOS test builds).
-private struct DisplaySettleObserver: ViewModifier {
+struct DisplaySettleObserver: ViewModifier {
     let onSettle: () -> Void
 
     func body(content: Content) -> some View {

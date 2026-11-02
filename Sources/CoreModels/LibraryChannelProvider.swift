@@ -3,14 +3,28 @@ import Foundation
 /// Recursive queries are paginated at the server. Series metadata may be queried
 /// to inherit genres/ratings, but only concrete episodes and movies are scheduled.
 public protocol LibraryChannelCatalogProviding: MediaProvider {
+    func prepareLibraryChannels() async throws
     func libraryChannelItems(in libraryID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage
+}
+
+extension LibraryChannelCatalogProviding {
+    public func prepareLibraryChannels() async throws {}
 }
 
 /// This path does not open an ordinary watch-reporting session. Providers must
 /// refuse any transport whose lifecycle cannot be separated from library state.
 public protocol LibraryChannelPlaybackProviding: MediaProvider {
     func libraryChannelPlayback(for item: LibraryChannelItem) async throws -> PlaybackRequest
+    /// Transport-only heartbeat; never ordinary resume, watched or scrobble writes.
+    func reportLibraryChannelPlayback(_ progress: PlaybackProgress) async throws
+    /// Release an owned transport, including rejected or cancelled negotiations.
+    func releaseLibraryChannelPlayback(_ request: PlaybackRequest) async throws
     func recordLibraryChannelCompletion(itemID: String) async throws
+}
+
+extension LibraryChannelPlaybackProviding {
+    public func reportLibraryChannelPlayback(_ progress: PlaybackProgress) async throws {}
+    public func releaseLibraryChannelPlayback(_ request: PlaybackRequest) async throws {}
 }
 
 /// Actual, unique media intervals, not the greatest source position. Initial

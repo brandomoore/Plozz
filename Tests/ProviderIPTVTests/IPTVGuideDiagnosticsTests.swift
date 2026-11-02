@@ -199,6 +199,53 @@ final class IPTVGuideDiagnosticsTests: XCTestCase {
         await provider.teardown()
     }
 
+    func testRejectedGuidesAreReusedOnlyWithinTheirRefresh() async throws {
+        for failure in [LiveTVSourceImportError.invalidGuide] {
+            let provider = try await provider(explicit: true) { data, _, _, _, _ in
+                guard data == Data("<tv/>".utf8) else { throw failure }
+                return []
+            }
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { _ in (200, [:], Data("<rejected/>".utf8)) }
+            let since = Date()
+            await ServerLiveTVGuideRefreshScope.$current.withValue(.init()) {
+                for _ in 0..<3 {
+                    do {
+                        _ = try await load(provider)
+                        XCTFail("Rejected guide must remain failed")
+                    } catch { XCTAssertEqual(error as? LiveTVSourceImportError, failure) }
+                }
+            }
+            XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+            XCTAssertTrue(report(since: since).contains("reusedFailure=true"))
+            IPTVFixture.state.handler = { _ in (200, [:], Data("<tv/>".utf8)) }
+            _ = try await ServerLiveTVGuideRefreshScope.$current.withValue(.init()) { try await load(provider) }
+            XCTAssertEqual(IPTVFixture.state.requests.count, 2)
+            await provider.teardown()
+        }
+    }
+
+    func testRetentionLimitFailureDoesNotRejectAnotherWindowInTheSameRefresh() async throws {
+        let provider = try await provider(explicit: true) { _, _, _, from, _ in
+            if from == Date(timeIntervalSince1970: 100) { throw LiveTVSourceImportError.guideTooLarge }
+            return []
+        }
+        IPTVFixture.state.reset()
+        IPTVFixture.state.handler = { _ in (200, [:], Data("<tv/>".utf8)) }
+        try await ServerLiveTVGuideRefreshScope.$current.withValue(.init()) {
+            do {
+                _ = try await load(provider)
+                XCTFail("The selected window exceeds its retention budget")
+            } catch { XCTAssertEqual(error as? LiveTVSourceImportError, .guideTooLarge) }
+            _ = try await provider.liveTVGuide(
+                channelIDs: ["live:10"], from: Date(timeIntervalSince1970: 200),
+                to: Date(timeIntervalSince1970: 500)
+            )
+        }
+        XCTAssertEqual(IPTVFixture.state.requests.count, 2)
+        await provider.teardown()
+    }
+
     private func load(_ provider: IPTVProvider) async throws -> [ServerLiveTVProgramme] {
         try await provider.liveTVGuide(channelIDs: ["live:10"],
             from: Date(timeIntervalSince1970: 100), to: Date(timeIntervalSince1970: 500))

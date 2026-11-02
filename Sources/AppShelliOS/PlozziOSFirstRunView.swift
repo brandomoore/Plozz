@@ -2,6 +2,7 @@
 import AppRuntime
 import CoreModels
 import CoreUI
+import FeatureLiveTV
 import FeatureProfiles
 import FeatureSettings
 import Foundation
@@ -66,6 +67,10 @@ struct PlozziOSFirstRunView: View {
         }
         .scrollContentBackground(.hidden)
         .background { AppBackground(palette: palette) }
+        .guidePreparationOverlay(
+            model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
+            palette: palette
+        )
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -88,7 +93,7 @@ struct PlozziOSFirstRunView: View {
         case .libraries:
             if let selection = appModel.pendingLibrarySelection {
                 PlozziOSLibrarySelectionView(
-                    appModel: appModel, accountIDs: selection.accountIDs
+                    appModel: appModel, accountIDs: selection.accountIDs, hostsGuideProgress: false
                 )
             }
         case .confirmProfile:

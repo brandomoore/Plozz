@@ -11,6 +11,40 @@ management, guide/search, Multiview, playback and profile-scoped iCloud sync. Ex
 profile authorization, parental approval, account, source and persistence gates
 remain in force.
 
+Successful playlist setup (including free channels), adding an IPTV account,
+or explicitly adding a media server's Live TV source shows Live TV in the active
+profile's navigation. Other destinations, their order, and other profiles are
+unchanged. Ordinary account reconnection does not undo a later manual Hide.
+Playlist sign-in imports the channel catalog, then starts a separately owned
+guide preparation task for the active account/profile. Setup shows the guide
+state instead of dismissing an empty library chooser. Continuing setup or
+watching a channel does not cancel that task. Progress stays in the same bottom
+toast across setup, Live TV and Sources, independently of channel availability.
+A quick sign-in alone never
+confirms that a guide downloaded or matched channels.
+
+Explicit preparation reports download bytes, guide scanning, listing processing,
+saving and channel checks. Percentages describe only the current stage: download
+totals are omitted for unknown lengths or HTTP-decoded bodies, and listing totals
+come from the completed metadata pass. Progress is throttled and shared with
+foreground consumers joining an existing import, not a second download.
+The dismissible toast stays 16 points above the visible native bottom navigation
+or Settings search controls on mobile, or the bottom safe area when neither is
+present. Side-mounted navigation instead constrains its horizontal content area.
+Position changes animate unless Reduce Motion is enabled. It does not
+add an inline progress block or resize the guide. It briefly shows
+the outcome. Dismissal hides only that request's notification; loading continues
+and its final result remains in Sources. Unrelated transient messages
+take priority. Ordinary background refreshes stay quiet.
+
+Source details offers **Refresh guide**, which revalidates the guide without
+refreshing the playlist or interrupting playback. Existing listings survive a
+failed refresh. Completion distinguishes missing guide configuration, no current
+listings, successful matching and failure; displayed matching counts cover the
+next six hours. Ordinary cache-driven refreshes retain their existing policy and
+do not create a setup-progress task. Profile/account authorization changes cancel
+explicit work and discard its presentation state.
+
 Source setup explains that viewers must have authorization for their channels
 and that Plozz does not provide TV content or channel subscriptions.
 
@@ -322,6 +356,10 @@ does not become a relative stream. Malformed extended entries remain skipped,
 and HLS segments/renditions never become individual channels. `#EXTGRP` supplies
 persistent default groups until changed or cleared, while an entry's
 `group-title` overrides those defaults for that entry.
+Standalone duplicate rows retain additional category memberships when their
+full stream address and accepted headers match. Their existing ID, first-entry
+metadata and skipped-row accounting remain unchanged; headers are never combined.
+Account category rows and distinct-delivery identity rules are unchanged.
 
 Playlist `user-agent`/`referrer` attributes (including HTTP-prefixed aliases),
 `#EXTVLCOPT`, and URL pipe headers share the same bounded header validation.
@@ -367,27 +405,81 @@ deadline. Cancellation, authentication, certificates, blocked redirects, missing
 endpoints, size limits and XML parse errors are not retried. Failed body transfers
 restart from byte zero; incomplete responses are never cached. Native Xtream
 API fallback selection is unchanged.
-Confirmed XMLTV 404s are reused only within the current provider's refresh,
+Confirmed XMLTV 404s, malformed guides and transport byte-limit failures are reused
+only within the current provider's refresh,
 across its channel/window batches. Every new refresh can retry immediately;
-neither another account nor a later refresh inherits those failures. Diagnostics
-distinguish a reused failure from a new HTTP request. Successful document caching
+neither another account nor a later refresh inherits those failures. Parser size
+failures are not memoized: they may depend on the selected channels' retention
+budget rather than the whole document. Diagnostics distinguish a reused failure
+from a new HTTP request. Successful document caching
 retains one account-scoped response per provider instance for at most 60 seconds,
-honoring shorter max-age, no-cache and no-store. Bodies up to 16 MiB remain in
-memory; larger permitted bodies (up to the existing 256 MiB download limit) use an unlinked temporary
-file mapping. Expiry and teardown release the cache without requiring another
-request. This avoids downloading a large guide again for each channel batch;
-matching and parsing still run separately for each batch. Initial download
-assembly still uses Data. Backing failures are logged and leave a valid response
-uncached rather than failing its guide import.
+honoring shorter max-age, no-cache and no-store. Both account and standalone guide
+downloads spool through 64 KiB buffers into unlinked temporary files, then expose
+immutable file-backed data to the existing streaming parser. Partial downloads
+are reclaimed on failure, cancellation or process termination. Expiry and teardown
+release the account response cache without requiring another
+request. This transport cache remains available to the bounded parser adapter.
+The app's account-backed adapter instead uses the indexed generation path below.
+A storage failure fails
+the import rather than falling back to an unbounded in-memory download.
 Rejected XMLTV documents are evicted from the response cache in both account and
 standalone source paths, so the next refresh can fetch corrected data rather than
 replay cached HTML, malformed XML or an oversized expanded document.
+
+Account-backed guide aggregation continues through independently failing configured
+XMLTV sources. Valid listings, including native Xtream listings obtained before a
+failed XMLTV fallback, reach the feature layer as an explicitly incomplete result.
+Only channels with new listings replace their saved window; missing channels keep
+their last-good data. The window remains failed and retryable rather than becoming
+fresh or successfully empty. Cancellation and authorization failures remain terminal,
+and publication still rechecks the active profile and source authorization.
+
+Account-backed XMLTV now uses the existing encrypted SQLite guide cache, scoped
+to account, profile, namespace and credential revision. An import retains potential
+guide stations for the complete committed channel catalog within one day behind
+and seven days ahead of the requested start. Subsequent channel/window requests
+query that index rather than scanning XML again. Matching still runs against the
+exact requested/remaining channel set: exact-ID ambiguity, name matching and
+airing IDs do not change merely because another channel exists in the catalog.
+Catalog metadata and each multi-channel query are read from consistent snapshots.
+Result limits fail explicitly rather than silently truncating at the UI window limit.
+These separate account caches omit the standalone search and manual-mapping tables;
+the complete station metadata remains in the atomic guide document. Standalone
+guide search and mapping retain their existing indexes.
+
+Rows, projection, content digest, retained interval and freshness are committed
+together. Malformed or cancelled replacements preserve the previous generation;
+failed requests retain the existing failure/partial-result behavior. A shared
+utility-priority import has separate waiter cancellation, and teardown or explicit
+refresh cancels and drains superseded work. Existing visible listings remain
+available in the presentation model while it refreshes.
+
+This does not introduce a new polling schedule. Parsed reuse retains the existing
+60-second maximum freshness, honoring shorter max-age and no-cache. An identical
+download can revalidate an eligible index without parsing again. No-store removes
+persisted source data before bounded transient parsing, including malformed
+replacements. Explicit refresh bypasses parsed freshness and the raw-response
+cache. Account HTTP validators are not introduced here: unlike existing standalone
+conditional fetching, this path still downloads expired bodies before comparing
+their digest. A changed catalog projection, language, or requested interval outside
+the retained horizon requires a new import.
 
 The bounded-retry comparison used
 [Kodi IPTV Simple's XMLTV loader](https://github.com/kodi-pvr/pvr.iptvsimple/blob/f4071e16c747e1a13d4710e249cb03ff11204f17/src/iptvsimple/Epg.cpp)
 and [Jellyfin's XMLTV download/cache handling](https://github.com/jellyfin/jellyfin/blob/5b385862fb97201d954a6ac7c9c745d791a738fa/src/Jellyfin.LiveTv/Listings/XmlTvListingsProvider.cs).
 Plozz retains its own credential boundaries, cancellation behavior, strict parser,
 resource limits and visible failures rather than copying broad fallback policies.
+The large-guide comparison also inspected
+[Lume's file-backed transport](https://github.com/bilipp/Lume/blob/36d2df31616a6f58cee679b220a0412173b762bf/Lume/Services/Network/M3UClient.swift)
+and [guide ingestion](https://github.com/bilipp/Lume/blob/36d2df31616a6f58cee679b220a0412173b762bf/Lume/Services/Sync/EPGSyncManager.swift).
+Plozz extends its own temporary-file and streaming-parser infrastructure; it does
+not copy upstream code or adopt global cache deletion or success-on-partial-failure.
+The generation/query separation also draws on
+[Kodi's indexed EPG database](https://github.com/xbmc/xbmc/blob/6a26de1efa2d908d020eec39f9a2c06d554d49a4/xbmc/pvr/epg/EpgDatabase.cpp)
+and distinguishes it from
+[TVHeadend's in-memory schedule snapshots](https://github.com/tvheadend/tvheadend/blob/941d132fde23f1c22e35175fe2e276f0728295f9/src/epgdb.c).
+Neither implementation establishes a speed estimate for Plozz or justifies
+replacing its bounded streaming XML/gzip validation with a materialized XML tree.
 
 XMLTV accepts minute- or second-precision programme timestamps, compact and
 colon-separated numeric timezone offsets, and the unambiguous UTC/GMT/Z labels.
@@ -1106,20 +1198,26 @@ or invisible focusable target is used.
 
 ### Preview display mode and original titles
 
-On tvOS, ordinary guide previews do not request content-matched dynamic range or
-refresh rate. They leave the display in the Apple TV's configured menu format
+On tvOS, all guide previews, including Plozz channels, leave dynamic-range and
+refresh-rate matching off. They keep the Apple TV's configured menu format
 (SDR when that is the menu default), without changing system settings. Opening a
 channel full-screen enables matching; returning to the guide disables it even
 when Keep watching while browsing retains the player. Multiview still has one
 display owner, independent of which pane supplies audio.
 
-Plozzigen applies this policy before source loading. Changes on a retained tvOS
-player use AetherEngine's session-preserving option reload, keeping its playhead,
-pause intent and tracks rather than starting a new broadcast session. Queued
+Plozzigen applies this policy before source loading with explicit host-owned
+display criteria for previews, not AVKit-owned matching. Ready SDR players change
+policy in place through AetherEngine's `updateDisplayMatching(enabled:)`, retaining
+the player, item, buffers, playhead, pause intent and tracks. HDR sources still use
+the session-preserving option reload when the output pipeline must change; an SDR
+output badge is not proof that an HDR source can skip that rebuild. Queued
 superseded requests, source replacement and stop cannot revive an older policy.
 Failed changes surface through playback recovery instead of silently retrying.
-This can require one playback/output transition when entering or leaving watching,
-but not a new HDMI mode switch for every automatically previewed channel.
+Fullscreen frame-rate or dynamic-range matching can still cause an HDMI blackout
+when entering or leaving watching, but browsing does not request a new HDMI mode
+for every automatically previewed channel. Changing channels can briefly leave
+the preview unavailable while the new source loads; no second decoder or held-frame
+crossfade is used.
 Plozz channels play normal library files through that decoder, with a scheduling
 controller choosing the file and position; they are not actual live broadcasts.
 Shared loading messages say **Loading channel** rather than “live stream.”
@@ -1174,9 +1272,18 @@ supersedes the old refresh; profile checks still reject late results.
 ### Automatic Plozz channels
 
 Enable **Plozz channels** once to prepare a lineup from the accessible movie and
-TV libraries on Plex, Jellyfin and Emby. The automatic path does not ask for
+TV libraries on Plex, Jellyfin, Emby and native Silo. The automatic path does not ask for
 channel names, library selections or scheduling rules. **Create custom channel**
 remains available separately for users who want a particular recipe.
+
+Native Silo uses concrete file durations and its protocol-3 client-owned progress
+contract, not ordinary playback reporting or the downloads API. Owned transport
+sessions are heartbeated and released independently of watch history. Only
+seekable original files are scheduled for playback; multipart/combined-episode
+files and server-converted delivery are not supported on this path. See
+[native Silo's channel contracts](../Sources/ProviderSilo/README.md#plozz-channels).
+Unsupported sources and unavailable sign-ins are shown as source failures, not
+as missing movie or episode durations.
 
 The lineup is based on actual library metadata, not a fixed catalogue of empty
 presets. Broad movie and TV channels cover eligible content, with useful themed
@@ -1532,7 +1639,16 @@ prefer a schedule with upcoming listings, then the source order shown above.
 An unavailable refresh retains that source's last good data for current channels.
 Source changes fence late network/parse results before reloading.
 
-Compressed input, expanded XML, retained text and program counts are bounded.
+Each guide allows at most 256 MiB of gzip input, 2 GiB of expanded/plain XML,
+100,000 channel declarations and 4,000,000 programme elements. Byte limits apply
+while downloading/decompressing, not just after allocation. Gzip integrity and
+every concatenated member are validated; truncated members and trailing garbage
+fail the import. Expanded XML is streamed, never assembled in memory or written
+as a second full temporary copy.
+Optional descriptions are retained only for requested listings and shortened at
+a valid Unicode boundary to the existing 16 KiB field budget. Diagnostics count
+shortened descriptions; an unrelated channel's long synopsis cannot discard a
+valid schedule. Required titles, identifiers and structural validation remain strict.
 The combined in-memory guide cache is also capped at 250,000 programs and
 32 MiB of program title/subtitle text. Sequential feed loading limits transient
 memory. Two streaming XML passes discover channel metadata before retaining

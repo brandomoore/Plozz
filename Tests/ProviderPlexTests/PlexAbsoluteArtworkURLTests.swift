@@ -196,6 +196,40 @@ final class PlexAbsoluteArtworkURLTests: XCTestCase {
         )
     }
 
+    func testHistoricalArtworkOriginsRemainLiveAndServerScoped() throws {
+        let serverID = UUID().uuidString
+        let key = "plex.artwork-origins.\(serverID)"
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        let current = URL(string: "https://current.test/plex")!
+        let previous = URL(string: "https://previous.test/old-proxy")!
+        let provider = makeProvider(baseURL: current, serverID: serverID)
+        let other = makeProvider(baseURL: current, serverID: UUID().uuidString)
+        let direct = previous.appendingPathComponent("library/metadata/42/thumb/123")
+        var transcode = URLComponents(url: previous.appendingPathComponent("photo/:/transcode"),
+                                      resolvingAgainstBaseURL: false)!
+        transcode.queryItems = [URLQueryItem(name: "url", value: direct.absoluteString)]
+        let saved = [direct, try XCTUnwrap(transcode.url)]
+
+        for url in saved {
+            XCTAssertFalse(provider.ownsPersistedImageURL(url))
+            XCTAssertNil(provider.reauthenticatedImageURL(url, maxWidth: 500))
+        }
+        UserDefaults.standard.set([previous.absoluteString], forKey: key)
+        for url in saved {
+            XCTAssertTrue(provider.ownsPersistedImageURL(url))
+            let signed = try XCTUnwrap(provider.reauthenticatedImageURL(url, maxWidth: 500))
+            XCTAssertEqual(signed.host, current.host)
+            XCTAssertTrue(signed.absoluteString.contains("SERVER-TOKEN"))
+            XCTAssertFalse(other.ownsPersistedImageURL(url))
+            XCTAssertNil(other.reauthenticatedImageURL(url, maxWidth: 500))
+        }
+        UserDefaults.standard.removeObject(forKey: key)
+        for url in saved {
+            XCTAssertFalse(provider.ownsPersistedImageURL(url))
+            XCTAssertNil(provider.reauthenticatedImageURL(url, maxWidth: 500))
+        }
+    }
+
     func testProviderReauthenticatesDiscoverArtworkWithDiscoverToken() throws {
         let live = try XCTUnwrap(
             PlexClient(

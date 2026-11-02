@@ -322,7 +322,13 @@ public final class LiveTVLibraryRuntime {
                         PlozzLog.app.error("Automatic library catalog failed: \(failure.reason.rawValue)")
                     }
                     if automaticChannelCount == 0 {
-                        automaticChannelsIssue = automaticUnavailableSources.isEmpty ? .emptyCatalog : .sourceUnavailable
+                        if !automaticUnavailableSources.isEmpty,
+                           automaticUnavailableSources.allSatisfy({ $0.reason == .unsupported }) {
+                            automaticChannelsIssue = .sourceUnsupported
+                        } else {
+                            automaticChannelsIssue = discovery.contexts.isEmpty || !automaticUnavailableSources.isEmpty
+                                ? .sourceUnavailable : .emptyCatalog
+                        }
                         PlozzLog.app.info("Automatic Plozz channels have no currently available library media")
                     }
                     PlozzLog.app.info(
@@ -364,27 +370,36 @@ public final class LiveTVLibraryRuntime {
         var contexts: [LibraryChannelProviderContext] = []
         var unavailable: Set<String> = []
         var failures: [LibraryChannelSourceFailure] = []
-        for resolved in accounts?.resolvedActiveAccounts ?? [] {
-            guard requiredAccountIDs?.contains(resolved.account.id) ?? true else { continue }
-            guard let provider = resolved.provider as? any LibraryChannelCatalogProviding,
-                  provider is any LibraryChannelPlaybackProviding else { continue }
+        let resolvedAccounts = accounts?.resolvedActiveAccounts ?? []
+        for account in accounts?.accounts ?? [] {
+            guard accounts?.activeAccountIDs.contains(account.id) == true,
+                  requiredAccountIDs?.contains(account.id) ?? true else { continue }
             do {
+                guard let resolved = resolvedAccounts.first(where: { $0.account.id == account.id }) else {
+                    throw AppError.unauthorized
+                }
+                guard let provider = resolved.provider as? any LibraryChannelCatalogProviding,
+                      provider is any LibraryChannelPlaybackProviding else {
+                    throw LibraryChannelError.sourceUnsupported
+                }
                 if reportsProgress {
                     automaticPreparation.receive(.init(
-                        stage: .checkingServers, serverName: resolved.account.server.name))
+                        stage: .checkingServers, serverName: account.server.name))
                 }
+                try await provider.prepareLibraryChannels()
+                try check(stamp, accounts: accounts, expected: expected)
                 let libraries = try await provider.libraries()
                 try check(stamp, accounts: accounts, expected: expected)
                 contexts.append(LibraryChannelProviderContext(
-                    accountID: resolved.account.id, authorizationID: expected,
+                    accountID: account.id, authorizationID: expected,
                     provider: provider, allowedLibraryIDs: Set(libraries.map(\.id))))
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 try check(stamp, accounts: accounts, expected: expected)
-                unavailable.insert(resolved.account.id)
+                unavailable.insert(account.id)
                 let failure = LibraryChannelSourceFailure(
-                    accountID: resolved.account.id, serverName: resolved.account.server.name, error: error)
+                    accountID: account.id, serverName: account.server.name, error: error)
                 failures.append(failure)
                 PlozzLog.app.error("Live TV library discovery failed for an authorized source: \(failure.reason.rawValue)")
             }

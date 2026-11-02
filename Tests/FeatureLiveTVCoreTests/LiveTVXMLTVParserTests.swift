@@ -8,6 +8,24 @@ import zlib
 final class LiveTVXMLTVParserTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_767_225_600)
 
+    func testLargeChannelDirectoryRetainsOnlyTheRequestedSchedule() throws {
+        let declarations = (0..<20_001).map { "<channel id=\"g\($0)\"/>" }.joined()
+        let xml = Data("""
+        <tv>\(declarations)
+        <programme channel="g20000" start="20260101000000 +0000" stop="20260101010000 +0000"><title>Selected</title></programme>
+        <programme channel="g0" start="20260101000000 +0000" stop="20260101010000 +0000"><title>Unrequested</title></programme>
+        </tv>
+        """.utf8)
+        let channels = [makeChannel(id: "app", name: "Selected", guideID: "g20000")]
+        for result in [
+            try LiveTVXMLTVParser().parseXML(data: xml, channels: channels, now: now),
+            try LiveTVXMLTVParser().parse(gzipData: gzip(xml), channels: channels, now: now)
+        ] {
+            XCTAssertEqual(result.guideChannelCount, 20_001)
+            XCTAssertEqual(result.programs.map(\.title), ["Selected"])
+        }
+    }
+
     func testProgrammeOnlyFeedMatchesExactIDsWithoutGuessingNamesOrCase() throws {
         let xml = Data("""
         <tv>
@@ -607,26 +625,36 @@ final class LiveTVXMLTVParserTests: XCTestCase {
         )
     }
 
+    func testConcatenatedGzipMembersValidateEveryTrailerAndRejectTrailingGarbage() throws {
+        let first = try gzip(Data("<tv>".utf8))
+        let last = try gzip(Data("</tv>".utf8))
+        let parsed = try LiveTVXMLTVParser().parse(gzipData: first + last, channels: [], now: now)
+        XCTAssertEqual(parsed.programCount, 0)
+        let complete = try gzip(Data("<tv/>".utf8))
+        var damaged = complete
+        damaged[damaged.count - 8] ^= 0xff
+        for data in [damaged, Data(complete.dropLast()), complete + Data("garbage".utf8),
+                     complete + damaged, complete + Data(last.dropLast())] {
+            XCTAssertThrowsError(try LiveTVXMLTVParser().parse(gzipData: data, channels: [], now: now)) {
+                XCTAssertEqual($0 as? LiveTVSourceImportError, .invalidGuide)
+            }
+        }
+        XCTAssertThrowsError(
+            try LiveTVXMLTVParser(maximumExpandedBytes: 6).parse(
+                gzipData: first + last, channels: [], now: now
+            )
+        ) { XCTAssertEqual($0 as? LiveTVSourceImportError, .guideTooLarge) }
+    }
+
     func testGzipCorruptionAndExpansionLimitAreRejected() throws {
         XCTAssertThrowsError(
             try LiveTVXMLTVParser().parse(
-                gzipData: Data(count: LiveTVXMLTVParser.maximumCompressedBytes + 1),
-                channels: [],
-                now: now
+                gzipData: Data(count: LiveTVXMLTVParser.maximumCompressedBytes + 1), channels: [], now: now
             )
-        ) {
-            XCTAssertEqual($0 as? LiveTVSourceImportError, .guideTooLarge)
-        }
+        ) { XCTAssertEqual($0 as? LiveTVSourceImportError, .guideTooLarge) }
         XCTAssertThrowsError(
-            try LiveTVXMLTVParser().parse(
-                gzipData: Data([0x1f, 0x8b, 0x00, 0x01]),
-                channels: [],
-                now: now
-            )
-        ) {
-            XCTAssertEqual($0 as? LiveTVSourceImportError, .invalidGuide)
-        }
-
+            try LiveTVXMLTVParser().parse(gzipData: Data([0x1f, 0x8b, 0x00, 0x01]), channels: [], now: now)
+        ) { XCTAssertEqual($0 as? LiveTVSourceImportError, .invalidGuide) }
         let oversizedXML = "<tv><!--" + String(repeating: "x", count: 1_024) + "--></tv>"
         let compressed = try gzip(Data(oversizedXML.utf8))
         XCTAssertThrowsError(
@@ -637,6 +665,29 @@ final class LiveTVXMLTVParserTests: XCTestCase {
             )
         ) {
             XCTAssertEqual($0 as? LiveTVSourceImportError, .guideTooLarge)
+        }
+    }
+
+    func testOversizedOptionalDescriptionsStayBoundedWithoutDiscardingTheSchedule() throws {
+        let description = String(repeating: "é", count: LiveTVXMLTVParser.maximumTextLength)
+        let data = Data("""
+        <tv>
+        <programme channel="guide" start="20260101000000 +0000" stop="20260101010000 +0000">
+        <title>Listing</title><desc>\(description)</desc></programme>
+        <programme channel="other" start="20260101000000 +0000" stop="20260101010000 +0000">
+        <title>Other</title><desc><![CDATA[\(description)]]></desc></programme>
+        </tv>
+        """.utf8)
+        let channels = [makeChannel(id: "app", name: "Guide", guideID: "guide")]
+        for result in [
+            try LiveTVXMLTVParser().parseXML(data: data, channels: channels, now: now),
+            try LiveTVXMLTVParser().parse(gzipData: gzip(data), channels: channels, now: now)
+        ] {
+            let program = try XCTUnwrap(result.programs.first)
+            XCTAssertEqual(result.programs.count, 1)
+            XCTAssertEqual(program.title, "Listing")
+            XCTAssertEqual(program.details?.description?.utf8.count, LiveTVXMLTVParser.maximumTextLength)
+            XCTAssertEqual(program.details?.description, String(description.prefix(LiveTVXMLTVParser.maximumTextLength / 2)))
         }
     }
 

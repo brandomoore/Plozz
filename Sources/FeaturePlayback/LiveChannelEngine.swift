@@ -99,6 +99,9 @@ public struct LiveChannelOutputPolicy: Equatable, Sendable {
 @MainActor
 public protocol LiveChannelEngine: VideoEngine {
     var liveSnapshot: LiveChannelEngineSnapshot { get }
+    /// Confirmed audio-only output can become audible without a video frame.
+    var isAudioOnlyPlaybackReady: Bool { get }
+    var onLiveOutputReadinessChanged: (@MainActor () -> Void)? { get set }
     /// The cushion applied to this load; the host allows that time in addition to its startup deadline.
     var liveStartupBuffer: LivePlaybackBuffer { get }
     var livePlaybackFailureDiagnostic: PlaybackFailureDiagnostic? { get }
@@ -121,6 +124,11 @@ public protocol LiveChannelEngine: VideoEngine {
 }
 
 public extension LiveChannelEngine {
+    var isAudioOnlyPlaybackReady: Bool { false }
+    var onLiveOutputReadinessChanged: (@MainActor () -> Void)? {
+        get { nil }
+        set {}
+    }
     var liveStartupBuffer: LivePlaybackBuffer { .automatic }
     var livePlaybackFailureDiagnostic: PlaybackFailureDiagnostic? { nil }
     var isCapturingLiveFailureDiagnostic: Bool { false }

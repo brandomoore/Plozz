@@ -755,27 +755,19 @@ final class ProfileFlowModelTests: XCTestCase {
         XCTAssertEqual(trackerReScopes, 0, "non-active removal must not re-scope trackers")
     }
 
-    /// The documented anti-stale logic in `setAccount(_:includedInActiveProfile:)`:
-    /// it mutates the RESOLVED active set, not the raw stored set. With a stale
-    /// stored set (all stored ids gone → reload fell back to the global set),
-    /// toggling a visible account OFF must actually remove it — not no-op on the
-    /// stale set and then re-expand to every account on the next reload.
-    func testSetAccountTogglesResolvedSetNotStaleStoredSet() throws {
+    func testExplicitlyEnablingOneAccountAfterRemovalDoesNotEnableOthers() throws {
         let env = try makeEnv(accounts: [("a", .jellyfin), ("b", .jellyfin)])
         env.store.setActiveAccountIDs(["a", "b"])                       // global = {a,b}
-        // Stored set is entirely stale (references a since-removed account), so
-        // reloadAccounts resolves via the global-set fallback to {a,b}.
         env.profiles.setActiveAccountIDs(["stale-removed"], for: env.profiles.activeProfileID)
         env.hub.reloadAccounts()
-        XCTAssertTrue(env.flow.isAccountIncludedInActiveProfile("a"))
-        XCTAssertTrue(env.flow.isAccountIncludedInActiveProfile("b"))
+        XCTAssertFalse(env.flow.isAccountIncludedInActiveProfile("a"))
+        XCTAssertFalse(env.flow.isAccountIncludedInActiveProfile("b"))
 
-        env.flow.setAccount("a", includedInActiveProfile: false)
+        env.flow.setAccount("b", includedInActiveProfile: true)
 
-        // Toggling "a" off must stick (operated on the resolved {a,b}); a stored-set
-        // implementation would no-op then re-expand to {a,b}, leaving "a" ON.
         XCTAssertFalse(env.flow.isAccountIncludedInActiveProfile("a"))
         XCTAssertTrue(env.flow.isAccountIncludedInActiveProfile("b"))
+        XCTAssertEqual(env.profiles.storedActiveAccountIDs(for: env.profiles.activeProfileID), ["b"])
     }
 
     /// switchProfile runs the full re-scope: selects the target, re-points trackers,

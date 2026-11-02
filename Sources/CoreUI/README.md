@@ -777,6 +777,31 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Their shared toast uses "Added to Watchlist" / "Removed from Watchlist" for
   the optimistic local change, not lingering progress wording. A failed save
   replaces that confirmation with "Couldn't update Watchlist".
+  Ordinary feedback and guide-progress toasts share `transientStatusSurface`:
+  an 18-point rounded rectangle, 24-point horizontal / 16-point vertical insets,
+  and the lighter `ThemePalette.toast` surface rather than modal overlay colors.
+  Guide progress uses a leading spinner centered beside a left-aligned title and
+  detail column, with dismissal centered at the trailing edge. Determinate
+  progress stays in the text column so stage changes preserve horizontal alignment.
+  Downloads show transferred and total bytes below the bar, without a redundant
+  numeric percentage.
+  Mobile feedback uses `adaptiveStatusOverlay` to keep a 16-point gap above the
+  visible native bottom navigation, toolbar, or search bar, falling back to the
+  bottom safe area when none is present. Layout changes animate over 0.25 seconds;
+  Reduce Motion changes position without animation. The passive UIKit layout
+  reader measures the current presentation without polling or changing its controls.
+  Side-mounted navigation constrains the toast's horizontal content area instead
+  of adding bottom clearance; native tab containers supply their unobscured
+  content layout guide on iOS 26 and later.
+  Each host measures its own presentation hierarchy, including both dimensions
+  of the native tab content guide. Window measurements are converted back into
+  the host's local coordinates so sheet presentation scaling cannot leave stale
+  widths or offsets in the covered screen.
+  While feedback is visible, passive observers in loaded navigation pages also
+  trigger measurement when a page reattaches, its safe area changes, or a native
+  transition completes. This covers search bars returning after a navigation pop
+  without polling or waiting for another progress update.
+  tvOS retains its 48-point bottom clearance.
   Manual watched actions retain the immediate tap and separate confirmation of
   durable outbox acceptance, not eventual server synchronization.
   Favorites confirm successful writes. Capture asynchronous completion haptics
