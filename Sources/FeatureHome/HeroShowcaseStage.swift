@@ -22,8 +22,17 @@ final class HeroShowcaseScrollMotion {
     enum Surface: Hashable { case featured, featuredBackdrop, showcase, showcaseBackdrop, rows }
 
     static let backdropTravelFraction: CGFloat = 0.375
-    static let duration: TimeInterval = 0.6
-    static let timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0, 0.2, 1)
+    static let spring = FocusHeroLayout.rowSpring
+    static let duration = spring.settlingDuration
+
+    static func animation(keyPath: String) -> CASpringAnimation {
+        let animation = CASpringAnimation(keyPath: keyPath)
+        animation.mass = spring.mass
+        animation.stiffness = spring.stiffness
+        animation.damping = spring.damping
+        animation.duration = duration
+        return animation
+    }
 
     private final class Target {
         weak var view: UIView?
@@ -84,13 +93,11 @@ final class HeroShowcaseScrollMotion {
             target.offset = value
             layer.setValue(value, forKeyPath: "transform.translation.y")
             if animated, !reduceMotion, delta != 0 {
-                let animation = CABasicAnimation(keyPath: "transform.translation.y")
+                let animation = Self.animation(keyPath: "transform.translation.y")
                 animation.fromValue = -delta
                 animation.toValue = 0
                 animation.isAdditive = true
                 // Default start time is the shared transaction's commit, not before cold UI work.
-                animation.duration = Self.duration
-                animation.timingFunction = Self.timingFunction
                 layer.add(animation, forKey: key)
                 target.keys.append(key)
             } else if !animated || reduceMotion {
@@ -102,7 +109,7 @@ final class HeroShowcaseScrollMotion {
         let navigationDelta = targetNavigationProgress - departure
         if animated, !reduceMotion, navigationDelta != 0 {
             navigationPosition?.animateNavigation(
-                from: -navigationDelta, duration: Self.duration, timingFunction: Self.timingFunction, key: key
+                from: -navigationDelta, spring: Self.spring, key: key
             )
         } else if !animated || reduceMotion {
             finishNavigation()
@@ -656,11 +663,9 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             CATransaction.setDisableActions(true)
             view.alpha = alpha
             if animated {
-                let animation = CABasicAnimation(keyPath: "opacity")
+                let animation = HeroShowcaseScrollMotion.animation(keyPath: "opacity")
                 animation.fromValue = from
                 animation.toValue = Float(alpha)
-                animation.duration = HeroShowcaseScrollMotion.duration
-                animation.timingFunction = HeroShowcaseScrollMotion.timingFunction
                 view.layer.add(animation, forKey: "plozz.hero-showcase.opacity")
             } else {
                 view.layer.removeAnimation(forKey: "plozz.hero-showcase.opacity")

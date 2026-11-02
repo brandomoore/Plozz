@@ -11,6 +11,135 @@ import XCTest
 
 @MainActor
 final class HomeVerticalMotionHostedTests: XCTestCase {
+    func testHeroBoundaryMatchesRowSpringThroughRapidReversals() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let stage = HeroShowcaseStage.Controller(
+            state: HeroShowcaseState(), hero: AnyView(Color.clear),
+            showcase: AnyView(Color.clear), rows: AnyView(Color.white)
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = stage
+        window.makeKeyAndVisible()
+        stage.updatePeek(firstRowHeight: 300)
+        let distance = stage.state.motion.distance
+        let reference = UIView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        stage.view.addSubview(reference)
+        reference.transform = CGAffineTransform(translationX: 0, y: distance)
+        defer {
+            stage.stopAnimations()
+            reference.layer.removeAllAnimations()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(150))
+        var maximumError: CGFloat = 0
+        var samples: [[String: Double]] = []
+        for (index, expanded) in [false, true, false, true].enumerated() {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            stage.present(expanded: expanded, focus: false)
+            reference.transform = CGAffineTransform(translationX: 0, y: expanded ? distance : 0)
+            let spring = FocusHeroLayout.rowSpring
+            let animation = CASpringAnimation(keyPath: "transform.translation.y")
+            animation.mass = spring.mass
+            animation.stiffness = spring.stiffness
+            animation.damping = spring.damping
+            animation.duration = spring.settlingDuration
+            animation.fromValue = expanded ? -distance : distance
+            animation.toValue = 0
+            animation.isAdditive = true
+            reference.layer.add(animation, forKey: "reference-\(index)")
+            CATransaction.commit()
+            for _ in 0..<4 {
+                try await Task.sleep(for: .milliseconds(40))
+                let expected = try XCTUnwrap(reference.layer.presentation()).affineTransform().ty
+                let actual = try XCTUnwrap(stage.rows.view.layer.presentation()).affineTransform().ty
+                maximumError = max(maximumError, abs(expected - actual))
+                samples.append(["reference": expected, "heroBoundary": actual])
+            }
+        }
+        let attachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: samples, options: .prettyPrinted),
+                                       uniformTypeIdentifier: "public.json")
+        attachment.name = "Hero boundary versus Showcase spring"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertLessThanOrEqual(maximumError, 1, "Hero and row navigation must share their motion cadence.")
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(try XCTUnwrap(stage.rows.view.layer.presentation()).affineTransform().ty, distance, accuracy: 0.5)
+    }
+
+    func testHeroInsetChangesPreserveTheInFlightRowSpring() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let state = HeroShowcaseState()
+        let distance: CGFloat = 320.5
+        state.motion.move(expanded: false, distance: distance, animated: false, reduceMotion: false)
+        state.setExpanded(false)
+        let model = FocusHeroModel()
+        let rows = (0..<3).map { FocusHeroRow(id: "row-\($0)", itemIDs: [], leadItem: nil) }
+        for row in rows {
+            model.record(height: 480 - FocusHeroLayout.rowBottomTightening, for: row.id)
+        }
+        model.activate(rows[2], in: rows)
+        let host = UIHostingController(rootView: HeroShowcaseNativeRows(
+            state: state, usesNativeSidebar: true
+        ) { inset in
+            AnyView(FocusHeroScrollingRows(rows: rows, model: model, rowContent: { _, _ in
+                Color.white.frame(height: 480)
+            }, topInset: inset))
+        }.frame(width: 1920, height: 1080).background(.black).ignoresSafeArea())
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            model.motion.stop()
+            state.motion.stopAnimations()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        let scroll = try XCTUnwrap(firstScrollView(in: window))
+        model.activate(rows[0], in: rows)
+        try await Task.sleep(for: .milliseconds(90))
+        let keys = try XCTUnwrap(scroll.layer.animationKeys())
+        let key = try XCTUnwrap(keys.first { $0.hasPrefix("plozz.home.scroll.") })
+        let original = try XCTUnwrap(scroll.layer.animation(forKey: key) as? CASpringAnimation)
+        XCTAssertGreaterThan(try XCTUnwrap(scroll.layer.presentation()).bounds.minY, distance + 20)
+        var samples: [[String: Double]] = []
+        for expanded in [true, false, true] {
+            state.setExpanded(expanded)
+            try await Task.sleep(for: .milliseconds(40))
+            let activeKeys = scroll.layer.animationKeys() ?? []
+            let added = activeKeys.filter { !keys.contains($0) && $0.hasPrefix("plozz.home.scroll.") }
+            if let retained = scroll.layer.animation(forKey: key) as? CASpringAnimation {
+                XCTAssertEqual(retained.beginTime, original.beginTime)
+                XCTAssertEqual(retained.fromValue as? CGFloat, original.fromValue as? CGFloat)
+            }
+            XCTAssertTrue(added.isEmpty, "Hero inset compensation must not add another scroll spring: \(added)")
+            let inset: CGFloat = expanded ? 0 : distance
+            XCTAssertEqual(scroll.contentOffset.y, inset, accuracy: 0.5)
+            samples.append([
+                "inset": inset,
+                "presentedOffset": try XCTUnwrap(scroll.layer.presentation()).bounds.minY,
+                "extraSprings": Double(added.count)
+            ])
+        }
+        let attachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: samples, options: .prettyPrinted),
+                                       uniformTypeIdentifier: "public.json")
+        attachment.name = "Rapid hero inset handoff samples"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(try XCTUnwrap(scroll.layer.presentation()).bounds.minY, 0, accuracy: 0.5)
+    }
+
     func testHeroShowcaseRestoresActualNativeFocusBetweenItsHosts() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

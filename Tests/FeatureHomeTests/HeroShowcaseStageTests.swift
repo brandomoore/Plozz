@@ -10,6 +10,56 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testContentOriginRebasesScrollWithoutRestartingViewportMotion() throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let root = UIViewController()
+        window.rootViewController = root
+        window.isHidden = false
+        let scroll = UIScrollView(frame: window.bounds)
+        scroll.contentSize = CGSize(width: 1920, height: 3000)
+        root.view.addSubview(scroll)
+        let mask = UIView(frame: window.bounds)
+        root.view.addSubview(mask)
+        let motion = FocusHeroRowMotion()
+        motion.mask = mask
+        motion.height = 300
+        motion.heightStops = [.init(offset: 0, height: 300), .init(offset: 500, height: 460)]
+        let position = FocusHeroNativeScrollPosition.PositionView()
+        position.rowMotion = motion
+        scroll.addSubview(position)
+        defer {
+            position.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        CATransaction.begin()
+        defer { CATransaction.commit() }
+        position.move(to: 500, rowID: "second", contentOrigin: 320.5)
+        position.move(to: 0, rowID: "first", contentOrigin: 0)
+        let key = try XCTUnwrap(scroll.layer.animationKeys()?.first)
+        let original = try XCTUnwrap(scroll.layer.animation(forKey: key) as? CASpringAnimation)
+        XCTAssertEqual(original.fromValue as? CGFloat, 500, "An origin change is not extra row travel.")
+        let heightKey = try XCTUnwrap(mask.layer.animationKeys()?.first)
+        let heightPath = try XCTUnwrap(mask.layer.animation(forKey: heightKey) as? CAKeyframeAnimation)
+        for origin: CGFloat in [320.5, 0, 640.25] {
+            position.move(to: 0, rowID: "first", contentOrigin: origin)
+            XCTAssertEqual(scroll.contentOffset.y, origin, accuracy: 0.5)
+            XCTAssertEqual(scroll.layer.animationKeys(), [key])
+            let retained = try XCTUnwrap(scroll.layer.animation(forKey: key) as? CASpringAnimation)
+            XCTAssertEqual(retained.fromValue as? CGFloat, 500)
+            XCTAssertEqual(retained.beginTime, original.beginTime)
+            XCTAssertEqual(mask.layer.animationKeys(), [heightKey])
+            let retainedPath = try XCTUnwrap(mask.layer.animation(forKey: heightKey) as? CAKeyframeAnimation)
+            XCTAssertEqual(retainedPath.values as? [CGFloat], heightPath.values as? [CGFloat])
+            XCTAssertEqual(retainedPath.beginTime, heightPath.beginTime)
+        }
+        position.move(to: 250, rowID: "second", contentOrigin: 0)
+        let nextKey = try XCTUnwrap(scroll.layer.animationKeys()?.first { $0 != key })
+        let next = try XCTUnwrap(scroll.layer.animation(forKey: nextKey) as? CASpringAnimation)
+        XCTAssertEqual(next.fromValue as? CGFloat, -250)
+        XCTAssertNotNil(scroll.layer.animation(forKey: key))
+    }
+
     func testRecreatedStageRestoresItsRetainedCollapsedPresentation() {
         let state = HeroShowcaseState()
         state.setExpanded(false)
@@ -290,7 +340,7 @@ final class HeroShowcaseStageTests: XCTestCase {
             XCTAssertEqual(animation.toValue as? CGFloat, 0)
             XCTAssertEqual(animation.beginTime, 0)
             XCTAssertEqual(animation.duration, HeroShowcaseScrollMotion.duration)
-            XCTAssertEqual(animation.timingFunction, HeroShowcaseScrollMotion.timingFunction)
+            try assertRowSpring(animation)
             XCTAssertTrue(animation.isAdditive)
             XCTAssertEqual(bar.transform.ty, expanded ? 0 : -124)
             XCTAssertEqual(navigation.stageTransition?.progress, expanded ? 0 : 1)
@@ -339,7 +389,7 @@ final class HeroShowcaseStageTests: XCTestCase {
         navigation.bindMotionView(bar, maximumOffset: 124)
         navigation.register(source: source, offset: 320) {}
         navigation.animateStage(
-            from: -1, duration: 0.6, timingFunction: HeroShowcaseScrollMotion.timingFunction,
+            from: -1, spring: HeroShowcaseScrollMotion.spring,
             key: "first", source: source
         )
         XCTAssertNotNil(bar.layer.animation(forKey: "first"))
@@ -347,12 +397,12 @@ final class HeroShowcaseStageTests: XCTestCase {
         XCTAssertNil(bar.layer.animationKeys())
         XCTAssertEqual(bar.transform.ty, -40)
         navigation.animateStage(
-            from: -1, duration: 0.6, timingFunction: HeroShowcaseScrollMotion.timingFunction,
+            from: -1, spring: HeroShowcaseScrollMotion.spring,
             key: "stale", source: source
         )
         XCTAssertNil(bar.layer.animationKeys())
         navigation.animateStage(
-            from: -1, duration: 0.6, timingFunction: HeroShowcaseScrollMotion.timingFunction,
+            from: -1, spring: HeroShowcaseScrollMotion.spring,
             key: "replacement", source: replacement
         )
         navigation.unbindMotionView(bar)
@@ -503,7 +553,7 @@ final class HeroShowcaseStageTests: XCTestCase {
                 let animation = try XCTUnwrap(host.view.layer.animation(forKey: key))
                 XCTAssertEqual(animation.beginTime, 0, "Cold UI work must not consume the animation before submission.")
                 XCTAssertEqual(animation.duration, HeroShowcaseScrollMotion.duration)
-                XCTAssertEqual(animation.timingFunction, HeroShowcaseScrollMotion.timingFunction)
+                try assertRowSpring(animation)
             }
         }
     }
@@ -549,13 +599,22 @@ final class HeroShowcaseStageTests: XCTestCase {
                 XCTAssertEqual(animation.toValue as? CGFloat, 0)
                 XCTAssertTrue(animation.isAdditive)
                 XCTAssertEqual(animation.duration, HeroShowcaseScrollMotion.duration)
-                XCTAssertEqual(animation.timingFunction, HeroShowcaseScrollMotion.timingFunction)
+                try assertRowSpring(animation)
                 for oldKey in oldKeys { XCTAssertNotNil(view.layer.animation(forKey: oldKey)) }
             }
             oldKeys.append(key)
         }
         motion.stopAnimations()
         for view in [featured, backdrop, showcase, showcaseBackdrop, rows] { XCTAssertNil(view.layer.animationKeys()) }
+    }
+
+    private func assertRowSpring(_ animation: CAAnimation, file: StaticString = #filePath, line: UInt = #line) throws {
+        let spring = try XCTUnwrap(animation as? CASpringAnimation, file: file, line: line)
+        XCTAssertEqual(spring.mass, FocusHeroLayout.rowSpring.mass, file: file, line: line)
+        XCTAssertEqual(spring.stiffness, FocusHeroLayout.rowSpring.stiffness, file: file, line: line)
+        XCTAssertEqual(spring.damping, FocusHeroLayout.rowSpring.damping, file: file, line: line)
+        XCTAssertEqual(spring.duration, FocusHeroLayout.rowSpring.settlingDuration, file: file, line: line)
+        XCTAssertNil(spring.timingFunction, file: file, line: line)
     }
 
     func testScrollMotionHandlesLateMountsAndReducedMotionWithoutForegroundTravel() {

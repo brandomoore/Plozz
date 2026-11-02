@@ -117,17 +117,18 @@ public final class TopNavigationScroll {
 
     /// Add to the feature's current animation transaction; no per-frame SwiftUI updates.
     public func animateStage(
-        from progress: CGFloat, duration: TimeInterval, timingFunction: CAMediaTimingFunction,
-        key: String, source: UUID
+        from progress: CGFloat, spring: Spring, key: String, source: UUID
     ) {
         guard self.source == source, let layer = motionView?.layer else { return }
         motionKeys.removeAll { layer.animation(forKey: $0) == nil }
-        let animation = CABasicAnimation(keyPath: "transform.translation.y")
+        let animation = CASpringAnimation(keyPath: "transform.translation.y")
         animation.fromValue = -progress * maximumMotionOffset
         animation.toValue = 0
         animation.isAdditive = true
-        animation.duration = duration
-        animation.timingFunction = timingFunction
+        animation.mass = spring.mass
+        animation.stiffness = spring.stiffness
+        animation.damping = spring.damping
+        animation.duration = spring.settlingDuration
         layer.add(animation, forKey: key)
         motionKeys.append(key)
     }

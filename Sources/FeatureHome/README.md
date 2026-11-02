@@ -1178,7 +1178,11 @@ both the rows and featured stage. With the native Sidebar, the first Showcase ro
 also includes the hidden hero's distance in its real scroll offset, balanced by
 matching content padding so card placement does not change. Native Home chrome
 therefore disappears on the first Down, not the second row, and reappears only
-when returning to the hero. The boundary handoff keeps Up directed at the hero
+when returning to the hero. This padding is a coordinate origin, separate from
+the row destination and height stops. Changing it rebases the native scroll
+target without adding a spring or restarting the in-flight viewport-height
+path, including when Up reaches the hero before the first row settles.
+The boundary handoff keeps Up directed at the hero
 instead of the native Home control. Standalone Showcase keeps its existing
 first-row behavior, and the Pinned Sidebar is unchanged.
 The bar travels only far enough to clear the screen and receives an additive
@@ -1211,10 +1215,12 @@ the foreground speed (about 120 points at the standard peek distance): the
 featured image rises out while the first Showcase image rises into place from
 below, reversing together on return. Their nested foregrounds compensate for
 that parent movement so their total travel still matches the rows. The
-transition uses a 0.6-second cubic easing `(0.32, 0, 0.2, 1)` with a gradual
-start and longer deceleration, shared by movement and crossfade. This timing
-is specific to the Hero boundary; ordinary Showcase row transitions are
-unchanged and keep their artwork pinned. The return chevron lives outside the
+transition uses the same zero-bounce spring as ordinary Showcase rows
+(0.4-second perceptual duration, running through its settling duration).
+Foregrounds, artwork, navigation, and crossfade share those spring parameters
+and the transaction's commit time. Additive movement retains running springs
+through rapid reversals instead of restarting from rest. Ordinary Showcase row
+transitions are unchanged and keep their artwork pinned. The return chevron lives outside the
 moving hosts and stays stationary.
 The incoming image includes top overscan equal to its travel, keeping its upper
 edge offscreen throughout the transition. This adds a modest aspect-fill crop
