@@ -6,7 +6,48 @@ struct PublicMetaDBRatingCacheEntry {
     let ratings: [ExternalRating]
 }
 
+public struct PublicMetaDBCommunityRatingLookup: Sendable {
+    let item: MediaItem
+    let epoch: PublicMetaDBConnectionEpoch
+}
+
 public extension PublicMetaDBService {
+    func communityRatingLookup(for item: MediaItem) async throws -> PublicMetaDBCommunityRatingLookup? {
+        guard !item.usesProviderRatings, communityRatingsEnabled, phase == .connected else { return nil }
+        let (client, epoch) = try communityRatingsClient()
+        var lookupItem = item
+        if Self.ratingContent(item) == nil {
+            guard item.kind == .episode, let episode = item.episodeNumber,
+                  item.episodeNumberEnd == nil || item.episodeNumberEnd == episode,
+                  let resolveLibraryEpisode else { return nil }
+            guard var library = try await resolveLibraryEpisode(item) else { return nil }
+            try Task.checkCancellation()
+            guard epoch.isCurrent, communityRatingsEnabled else { throw PublicMetaDB.Failure.connectionChanged }
+            guard library.id == item.id, library.sourceAccountID == item.sourceAccountID,
+                  library.kind == .episode, !library.usesProviderRatings,
+                  library.seriesID == item.seriesID,
+                  library.seasonNumber == item.seasonNumber, library.episodeNumber == item.episodeNumber,
+                  !MediaItemIdentity.externalIdentitiesConflict(
+                      MediaItemIdentity.identities(for: item), MediaItemIdentity.identities(for: library)
+                  ) else { throw PublicMetaDB.Failure.incompleteResponse }
+            guard let content = PublicMetaDB.Content.episodeCandidate(library),
+                  let reference = try await resolveEpisodeIdentity?(content) else { return nil }
+            try Task.checkCancellation()
+            guard epoch.isCurrent, communityRatingsEnabled else { throw PublicMetaDB.Failure.connectionChanged }
+            let identity = try PublicMetaDBEpisodeIdentity(content: content, item: reference)
+            guard identity.matches(library) else { return nil }
+            library.episodeOrdering = .tmdb
+            lookupItem = library
+        }
+        _ = try await communityRatings(for: lookupItem, client: client, epoch: epoch)
+        return .init(item: lookupItem, epoch: epoch)
+    }
+
+    func cachedCommunityRatings(for lookup: PublicMetaDBCommunityRatingLookup) -> [ExternalRating]? {
+        guard lookup.epoch.isCurrent else { return nil }
+        return cachedCommunityRatings(for: lookup.item)
+    }
+
     func cachedCommunityRatings(for item: MediaItem) -> [ExternalRating]? {
         guard !item.usesProviderRatings, communityRatingsEnabled, phase == .connected,
               let content = Self.ratingContent(item),
@@ -16,9 +57,18 @@ public extension PublicMetaDBService {
 
     func communityRatings(for item: MediaItem) async throws -> [ExternalRating] {
         guard !item.usesProviderRatings, communityRatingsEnabled, phase == .connected,
-              let content = Self.ratingContent(item) else { return [] }
-        if let cached = cachedCommunityRatings(for: item) { return cached }
+              Self.ratingContent(item) != nil else { return [] }
         let (client, epoch) = try communityRatingsClient()
+        return try await communityRatings(for: item, client: client, epoch: epoch)
+    }
+
+    private func communityRatings(
+        for item: MediaItem, client: PublicMetaDBClient, epoch: PublicMetaDBConnectionEpoch
+    ) async throws -> [ExternalRating] {
+        try Task.checkCancellation()
+        guard epoch.isCurrent, communityRatingsEnabled else { throw PublicMetaDB.Failure.connectionChanged }
+        guard let content = Self.ratingContent(item) else { throw PublicMetaDB.Failure.invalidInput }
+        if let cached = cachedCommunityRatings(for: item) { return cached }
         let response = try await client.ratings(for: content, label: "Overall")
         try Task.checkCancellation()
         guard epoch.isCurrent, communityRatingsEnabled else { throw PublicMetaDB.Failure.connectionChanged }

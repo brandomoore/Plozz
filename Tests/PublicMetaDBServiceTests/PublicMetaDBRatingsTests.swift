@@ -176,6 +176,162 @@ final class PublicMetaDBRatingsTests: XCTestCase {
         XCTAssertNil(PublicMetaDBService.ratingContent(episode))
     }
 
+    private var libraryEpisode: MediaItem {
+        MediaItem(
+            id: "16477", title: "Windsor", kind: .episode,
+            seasonNumber: 1, episodeNumber: 3, seriesID: "10962",
+            providerIDs: ["Tvdb": "5579549", "Imdb": "tt5242352"]
+        ).taggingSource("emby")
+    }
+
+    private var enrichedLibraryEpisode: MediaItem {
+        var item = libraryEpisode
+        item.providerIDs.mergeSeriesProviderIDs(from: [
+            "Tmdb": "65494", "Tvdb": "305574", "Imdb": "tt4786824"
+        ])
+        item.episodeOrdering = .aired
+        return item
+    }
+
+    private var referenceEpisode: MediaItem {
+        var item = enrichedLibraryEpisode
+        item.providerIDs["Tmdb"] = "1235728"
+        item.episodeOrdering = .tmdb
+        return item
+    }
+
+    func testLibraryEpisodeLookupVerifiesIdentityWithoutChangingServerOrdering() async throws {
+        try await withService { service, http, _ in
+            service.setCommunityRatingsEnabled(true)
+            let original = libraryEpisode
+            let enriched = enrichedLibraryEpisode
+            let reference = referenceEpisode
+            service.resolveLibraryEpisode = { item in
+                XCTAssertEqual(item, original)
+                return enriched
+            }
+            service.resolveEpisodeIdentity = { content in
+                XCTAssertEqual(content, try PublicMetaDB.Content(tmdbID: 65494, mediaType: .tv, season: 1, episode: 3))
+                return reference
+            }
+            http.stub(
+                pathSuffix: "/episode-ratings",
+                json: #"{"items":[{"id":"episode-rating","tmdb_id":65494,"media_type":"tv","season":1,"episode":3,"label":"Overall","score":50}],"total":1,"average":50}"#
+            )
+            let result = try await service.communityRatingLookup(for: original)
+            let lookup = try XCTUnwrap(result)
+            XCTAssertEqual(service.cachedCommunityRatings(for: lookup)?.first?.value, 50)
+            XCTAssertEqual(http.sent.last?.queryItems.first(where: { $0.name == "label" })?.value, "Overall")
+            XCTAssertNil(original.episodeOrdering)
+            XCTAssertEqual(enriched.episodeOrdering, .aired)
+            XCTAssertNil(service.cachedCommunityRatings(for: original))
+            service.setCommunityRatingsEnabled(false)
+            service.setCommunityRatingsEnabled(true)
+            XCTAssertNil(service.cachedCommunityRatings(for: lookup))
+        }
+    }
+
+    func testLibraryEpisodeLookupNeverAssumesMatchingSeasonNumbersProveIdentity() async throws {
+        for missingEpisodeIDs in [false, true] {
+            try await withService { service, http, _ in
+                service.setCommunityRatingsEnabled(true)
+                var enriched = enrichedLibraryEpisode
+                if missingEpisodeIDs {
+                    enriched.providerIDs.removeValue(forKey: "Imdb")
+                    enriched.providerIDs.removeValue(forKey: "Tvdb")
+                }
+                let resolved = enriched
+                var reference = referenceEpisode
+                reference.providerIDs["Imdb"] = "tt5242353"
+                reference.providerIDs["Tvdb"] = "5579550"
+                let independent = reference
+                service.resolveLibraryEpisode = { _ in resolved }
+                service.resolveEpisodeIdentity = { _ in independent }
+                let lookup = try await service.communityRatingLookup(for: libraryEpisode)
+                XCTAssertNil(lookup)
+                XCTAssertEqual(http.sent.count, 1)
+            }
+        }
+    }
+
+    func testLibraryEpisodeLookupRejectsAReplacementSource() async throws {
+        var differentSeries = enrichedLibraryEpisode
+        differentSeries.seriesID = "another-series"
+        for replacement in [enrichedLibraryEpisode.taggingSource("another-account"), differentSeries] {
+            try await withService { service, http, _ in
+                service.setCommunityRatingsEnabled(true)
+                service.resolveLibraryEpisode = { _ in replacement }
+                do {
+                    _ = try await service.communityRatingLookup(for: libraryEpisode)
+                    XCTFail("Replacement source authorized a rating lookup")
+                } catch {
+                    XCTAssertEqual(error as? PublicMetaDB.Failure, .incompleteResponse)
+                }
+                XCTAssertEqual(http.sent.count, 1)
+            }
+        }
+    }
+
+    func testLookupHandleCannotReadReplacementProfileOrKeyCache() async throws {
+        for changeProfile in [false, true] {
+            try await withService { service, _, _ in
+                service.setCommunityRatingsEnabled(true)
+                let first = try await service.communityRatingLookup(for: movie)
+                let old = try XCTUnwrap(first)
+                if changeProfile { service.selectProfile(namespace: "replacement") }
+                let key = "pm-" + (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").prefix(60)
+                await service.connect(key: key)
+                service.setCommunityRatingsEnabled(true)
+                let second = try await service.communityRatingLookup(for: movie)
+                let current = try XCTUnwrap(second)
+                XCTAssertNil(service.cachedCommunityRatings(for: old))
+                XCTAssertNotNil(service.cachedCommunityRatings(for: current))
+            }
+        }
+    }
+
+    func testLibraryEpisodeLookupFencesRevocationDuringEitherIdentityRead() async throws {
+        for revokeDuringParentRead in [false, true] {
+            try await withService { service, http, _ in
+                service.setCommunityRatingsEnabled(true)
+                let enriched = enrichedLibraryEpisode
+                let reference = referenceEpisode
+                service.resolveLibraryEpisode = { _ in
+                    if revokeDuringParentRead { service.setCommunityRatingsEnabled(false) }
+                    return enriched
+                }
+                service.resolveEpisodeIdentity = { _ in
+                    service.setCommunityRatingsEnabled(false)
+                    return reference
+                }
+                do {
+                    _ = try await service.communityRatingLookup(for: libraryEpisode)
+                    XCTFail("Revoked lookup reached PublicMetaDB")
+                } catch {
+                    XCTAssertEqual(error as? PublicMetaDB.Failure, .connectionChanged)
+                }
+                XCTAssertEqual(http.sent.count, 1)
+            }
+        }
+    }
+
+    func testDisabledAndCuratedEpisodeLookupsDoNotResolveIdentity() async throws {
+        try await withService { service, http, _ in
+            service.resolveLibraryEpisode = { _ in
+                XCTFail("Lookup without consent or with authoritative ratings must not resolve identity")
+                return nil
+            }
+            let disabled = try await service.communityRatingLookup(for: libraryEpisode)
+            XCTAssertNil(disabled)
+            service.setCommunityRatingsEnabled(true)
+            var curated = libraryEpisode
+            curated.usesProviderRatings = true
+            let overridden = try await service.communityRatingLookup(for: curated)
+            XCTAssertNil(overridden)
+            XCTAssertEqual(http.sent.count, 1)
+        }
+    }
+
     func testConflictingTMDBAliasesNeverChooseAnArbitraryTitle() throws {
         var item = movie
         item.providerIDs = ["Tmdb": "550", "TMDB": "999"]

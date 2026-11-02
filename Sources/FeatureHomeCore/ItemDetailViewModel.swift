@@ -2550,6 +2550,7 @@ public final class ItemDetailViewModel {
     private func enrichRatings(
         for item: MediaItem, provider: any MediaProvider, sourceGeneration: UInt64
     ) async {
+        let item = tagged(item)
         guard !item.usesProviderRatings else { return }
         if let server = provider as? any ServerRatingsProviding {
             startServerRatings(for: item, server: server, generation: sourceGeneration)

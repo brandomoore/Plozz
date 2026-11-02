@@ -88,6 +88,39 @@ final class PublicMetaDBRatingsProviderTests: XCTestCase {
             }
         }
     }
+
+    func testLibraryEpisodeUsesVerifiedLookupWithoutReplacingBaseRatings() async throws {
+        try await withConnectedService { service, http, _ in
+            let episode = MediaItem(
+                id: "16477", title: "Windsor", kind: .episode,
+                seasonNumber: 1, episodeNumber: 3, seriesID: "10962",
+                providerIDs: ["Tvdb": "5579549", "Imdb": "tt5242352"]
+            ).taggingSource("emby")
+            var enriched = episode
+            enriched.providerIDs.mergeSeriesProviderIDs(from: [
+                "Tmdb": "65494", "Tvdb": "305574", "Imdb": "tt4786824"
+            ])
+            enriched.episodeOrdering = .aired
+            let library = enriched
+            enriched.episodeOrdering = .tmdb
+            let reference = enriched
+            service.resolveLibraryEpisode = { _ in library }
+            service.resolveEpisodeIdentity = { _ in reference }
+            http.stub(
+                pathSuffix: "/episode-ratings",
+                json: #"{"items":[{"id":"episode-rating","tmdb_id":65494,"media_type":"tv","season":1,"episode":3,"label":"Overall","score":50}],"total":1,"average":50}"#
+            )
+            let base = [ExternalRating(source: .imdb, value: 8, scale: .outOfTen)]
+            let provider = PublicMetaDBRatingsProvider(base: CachedRatingFixture(ratings: base), service: service)
+            let cold = await provider.cachedRatings(for: episode)
+            XCTAssertEqual(cold, base)
+            XCTAssertEqual(http.sent.count, 1)
+            let actual = await provider.ratings(for: episode)
+            XCTAssertEqual(actual.first(where: { $0.source == .imdb }), base.first)
+            XCTAssertEqual(actual.first(where: { $0.id == "publicmetadb.overall" })?.value, 50)
+            XCTAssertEqual(http.sent.count, 2)
+        }
+    }
 }
 
 private struct CachedRatingFixture: CachedExternalRatingsProviding {

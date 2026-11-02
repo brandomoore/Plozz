@@ -65,6 +65,7 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
     }
     @ObservationIgnored public var resolveCatalogItem: (@MainActor (PublicMetaDB.Content) async throws -> MediaItem)?
     @ObservationIgnored public var resolveEpisodeIdentity: (@MainActor @Sendable (PublicMetaDB.Content) async throws -> MediaItem?)?
+    @ObservationIgnored public var resolveLibraryEpisode: (@MainActor @Sendable (MediaItem) async throws -> MediaItem?)?
 
     public struct CatalogNavigation: Identifiable {
         public let id = UUID()

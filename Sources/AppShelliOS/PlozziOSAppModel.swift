@@ -976,6 +976,11 @@ final class PlozziOSAppModel {
                 source: self.makeTrackerHistoryExportSource(), store: store
             )
         }
+        self.publicMetaDBService.resolveLibraryEpisode = { [weak self] item in
+            guard let self, let accountID = item.sourceAccountID else { return nil }
+            return try await self.makeTrackerHistoryExportSource()
+                .item(accountID: accountID, itemID: item.id).taggingSource(accountID)
+        }
         self.publicMetaDBService.resolveEpisodeIdentity = { [weak self] content in
             guard let self else { throw CancellationError() }
             let scope = self.accountsProviders.liveTVAuthorizationID

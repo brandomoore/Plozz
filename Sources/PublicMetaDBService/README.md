@@ -399,15 +399,23 @@ overall score alongside the existing rating providers on TV and mobile. It does
 not submit personal ratings or replace server titles, artwork or IDs.
 
 Movie/show namespaces remain distinct. Episodes require a parent-series TMDB ID,
-confirmed TMDB ordering and one episode; conflicting ID aliases do not select an
-arbitrary title. Only the explicit `Overall` label is aggregated into this badge,
+confirmed TMDB ordering and one episode. For a library episode missing that
+proof, detail lookup reads the exact scoped server item and parent through the
+existing tracker history source, then verifies independent episode and parent
+external IDs at the same coordinates. Aired numbering alone is not proof.
+The verified order belongs only to the lookup copy; server identity/order is
+not rewritten. Conflicting ID aliases do not select an arbitrary title.
+Only the explicit `Overall` label is aggregated into this badge,
 not acting/direction or other user-defined dimensions. Incomplete collections,
 duplicate records, wrong identities and invalid averages are rejected.
 
 The service's five-minute, 256-entry memory cache is scoped to the live connection and
 cleared on profile/key/preference changes. Pending requests are fenced too.
-Home's cache-only path never starts a network lookup. Ordinary keyed/keyless
-ratings remain available if this optional source fails; its failures are logged
+Home's cache-only path never starts a network lookup and cannot reuse an
+episode badge through an unverified identity.
+The lookup handle retains the original connection/preference epoch through
+identity resolution, the aggregate request and a delayed base-rating response.
+Ordinary keyed/keyless ratings remain available if this optional source fails; its failures are logged
 without credentials or title data. Server-selected rating lists, including
 intentional empty lists, do not trigger or reuse this contribution.
 Existing profile-scoped page snapshots can retain previously displayed public
@@ -424,12 +432,19 @@ five-minute cache lifetime without intervening preference, profile or key
 changes. Independent reads confirmed restoration of all contributions and
 unchanged server metadata, watched/resume histories and original lists.
 This does not establish exact request counts, in-flight scope revocation,
-server-selected rating overrides, episode lookup or other-platform acceptance.
-The real episode case exposed an unresolved gap: publication and independent
-Overall readback succeeded, but the episode detail had neither its parent's
-TMDB ID nor confirmed TMDB ordering and displayed no score. Missing identity
-must remain a refusal until an exact episode match is established; successful
-contribution management does not prove episode badge lookup.
+server-selected rating overrides or other-platform acceptance.
+
+The real episode case exposed and then verified a separate identity fix.
+The server episode supplied episode IDs but neither a parent TMDB ID nor
+confirmed TMDB ordering. After scoped parent enrichment and exact independent
+identity verification, its own detail displayed the independently read 50/100
+Overall score. Native deletion of the exact temporary contribution restored
+all four original contributions and removed the badge. Eleven final-binary
+native passes cover opt-in/empty, preparation/publication, positive lookup,
+deletion/empty, movie/show regressions and opt-out; independent server metadata,
+histories and original lists were unchanged. This episode result uses ordinary
+relaunches, not a same-process TTL test. TV composition compiled, but native
+TV/iPad and other-provider episode acceptance remain separate work.
 
 ## Explicit community contributions
 

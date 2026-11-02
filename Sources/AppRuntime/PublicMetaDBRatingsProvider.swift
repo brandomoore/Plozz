@@ -15,7 +15,10 @@ public struct PublicMetaDBRatingsProvider: CachedExternalRatingsProviding {
 
     public func ratings(for item: MediaItem) async -> [ExternalRating] {
         async let existing = base.ratings(for: item)
-        do { _ = try await service.communityRatings(for: item) }
+        var lookup: PublicMetaDBCommunityRatingLookup?
+        do {
+            lookup = try await service.communityRatingLookup(for: item)
+        }
         catch {
             if !(error is CancellationError) {
                 PlozzLog.networking.error("PublicMetaDB community ratings unavailable")
@@ -23,7 +26,11 @@ public struct PublicMetaDBRatingsProvider: CachedExternalRatingsProviding {
         }
         let ratings = await existing
         // Consent or profile can change while an unrelated rating provider finishes.
-        let additional = await service.cachedCommunityRatings(for: item) ?? []
+        let additional = if let lookup {
+            await service.cachedCommunityRatings(for: lookup) ?? []
+        } else {
+            [ExternalRating]()
+        }
         return ratings.mergedWithAuthoritative(additional)
     }
 
