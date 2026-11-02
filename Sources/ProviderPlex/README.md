@@ -257,6 +257,15 @@ options translate selected audio/subtitle indexes to Plex's database stream
 IDs, using the selected media version's stream inventory. Decision and playback
 requests must carry identical selections and limits.
 
+Before negotiating a server rendition with a selected audio track, Plozz awaits
+`PUT /library/parts/{partID}?audioStreamID={streamID}&allParts=1` using the active
+Plex user's credentials. Plex can ignore the audio selection in decision/start
+URLs alone. The part and database stream ID come from the selected version;
+the player's container index remains unchanged. Selection failures or cancellation
+stop negotiation rather than silently playing the previous language. Direct-file
+playback does not write the server's track selection. This follows
+[`MediaPart.setSelectedAudioStream` in PlexAPI](https://github.com/pushingkarmaorg/python-plexapi/blob/master/plexapi/media.py).
+
 Bounded video encoding reserves the quality policy's audio budget. Plex receives
 the documented `audioChannelCount` parameter and a `videoAudioCodec` /
 `audio.bitrate` profile limitation, rather than relying on `audioChannels` or

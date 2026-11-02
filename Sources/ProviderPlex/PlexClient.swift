@@ -1821,6 +1821,20 @@ public struct PlexClient: Sendable {
 
     // MARK: URLs
 
+    func selectAudioStream(_ streamID: Int, partID: Int) async throws {
+        let endpoint = Endpoint(
+            method: .put,
+            path: "/library/parts/\(partID)",
+            queryItems: [
+                URLQueryItem(name: "audioStreamID", value: String(streamID)),
+                URLQueryItem(name: "allParts", value: "1")
+            ],
+            headers: headers
+        )
+        _ = try await send(endpoint)
+        try Task.checkCancellation()
+    }
+
     /// Fetches the raw text of a lyrics (or other sidecar) stream by its
     /// server-relative `key` (e.g. `/library/streams/5555`). Plex serves an
     /// `.lrc` or plain-text body; `download=1` asks for the file itself rather
