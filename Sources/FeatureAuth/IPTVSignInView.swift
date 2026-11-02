@@ -46,7 +46,7 @@ public struct IPTVSignInView: View {
                     model.cancel()
                     onCancel()
                 } label: {
-                    Text("Cancel").frame(maxWidth: .infinity)
+                    Text("Cancel").frame(maxWidth: .infinity).plozzPageActionLabel()
                 }
                 .plozzActionButton(role: .secondary)
                 .accessibilityIdentifier("iptv-cancel")
@@ -327,7 +327,7 @@ private struct IPTVConnectionStatus: View {
             }
 
             Button(action: model.connect) {
-                Text("Connect").frame(maxWidth: .infinity)
+                Text("Connect").frame(maxWidth: .infinity).plozzPageActionLabel()
             }
             .plozzActionButton(role: .primary)
             .disabled(!model.canConnect)

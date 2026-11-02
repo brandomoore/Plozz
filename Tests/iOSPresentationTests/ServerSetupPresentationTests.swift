@@ -11,6 +11,50 @@ import XCTest
 
 @MainActor
 final class ServerSetupPresentationTests: XCTestCase {
+    func testCodeSurfaceMatchesSettingsAcrossThemesAndTransparencyModes() async throws {
+        for (name, palette) in [("dark", ThemePalette.dark), ("black", .pureBlack), ("light", .light)] {
+            for (gradient, reduced) in [(true, false), (false, false), (true, true)] {
+                var images: [CGImage] = []
+                for variant in 0..<3 {
+                    let image = try await render(
+                        Group {
+                            if variant == 1 {
+                                ConnectionCodeView("      ")
+                                    .hidden()
+                                    .settingsGroupSurface(cornerRadius: PlozzTheme.Metrics.Radius.panel)
+                            } else if variant == 2 {
+                                ConnectionCodeView("      ").hidden()
+                            } else {
+                                ConnectionCodeView("      ")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(red: 0.18, green: 0.20, blue: 0.22))
+                        .ignoresSafeArea()
+                        .environment(\.themePalette, palette)
+                        .environment(\.gradientBackgroundsEnabled, gradient)
+                        .environment(\.plozzReduceTransparency, reduced),
+                        size: .init(width: 320, height: 240), light: palette.isLight
+                    )
+                    images.append(image)
+                }
+                let actual = try rgba(images[0])
+                let expected = try rgba(images[1])
+                let backdrop = try rgba(images[2])
+                let center = ((images[0].height / 2) * images[0].width + images[0].width / 2) * 4
+                XCTAssertTrue((0..<3).contains {
+                    abs(Int(actual[center + $0]) - Int(backdrop[center + $0])) > 2
+                }, "The sampled pixel must be inside the code surface, not the page backdrop")
+                for channel in 0..<3 {
+                    XCTAssertLessThanOrEqual(
+                        abs(Int(actual[center + channel]) - Int(expected[center + channel])), 2,
+                        "\(name), gradient=\(gradient), reduced=\(reduced): code must match the shared surface"
+                    )
+                }
+            }
+        }
+    }
+
     func testMobileLinkCodesRemainReadableAcrossWidthsAndTextSizes() async throws {
         for (size, typeSize, light) in [
             (CGSize(width: 320, height: 568), DynamicTypeSize.large, false),
@@ -44,12 +88,12 @@ final class ServerSetupPresentationTests: XCTestCase {
         for (name, palette) in [("dark", ThemePalette.dark), ("black", .pureBlack), ("light", .light)] {
             let image = try await render(
                 VStack(spacing: 28) {
-                    Button {} label: { Text("Continue").frame(maxWidth: .infinity) }
+                    Button {} label: { Text("Continue").plozzPageActionLabel() }
                         .plozzActionButton()
-                    Button {} label: { Text("Sign In").frame(maxWidth: .infinity) }
+                    Button {} label: { Text("Sign In").plozzPageActionLabel() }
                         .plozzActionButton()
                         .disabled(true)
-                    Button {} label: { Text("Cancel").frame(maxWidth: .infinity) }
+                    Button {} label: { Text("Cancel").plozzPageActionLabel() }
                         .plozzActionButton(role: .secondary)
                 }
                 .controlSize(.large)

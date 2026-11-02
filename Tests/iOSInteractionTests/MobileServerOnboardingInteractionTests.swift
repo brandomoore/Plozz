@@ -7,6 +7,18 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
     }
 
     func testEveryOnboardingStageOnThisDevice() throws {
+        var pageActionSize: CGSize?
+        let actions = [
+            "welcome": ["Set Up from Another Device"],
+            "discovery": ["Connect"],
+            "quick": ["Use Password"],
+            "password": ["Sign In", "Use Quick Connect"],
+            "emby": ["Sign In"],
+            "plex": ["Open Plex to link"],
+            "plex-servers": ["Continue"],
+            "silo": ["Open Silo to approve", "Cancel"],
+            "iptv": ["Connect", "Cancel"]
+        ]
         for (page, expected) in [
             ("welcome", "Free forever and open source."),
             ("chooser", "Add Server"),
@@ -28,6 +40,26 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
                     .matching(NSPredicate(format: "label CONTAINS %@", expected)).firstMatch
             XCTAssertTrue(target.waitForExistence(timeout: 12),
                 "Missing \(expected) on \(page): \(app.debugDescription)")
+            for title in actions[page, default: []] {
+                let button = app.buttons[title]
+                XCTAssertTrue(button.waitForExistence(timeout: 5), "\(page): \(title)")
+                if !button.isHittable { app.swipeUp() }
+                XCTAssertTrue(button.isHittable, "\(page): \(title) must remain reachable")
+                if let expectedSize = pageActionSize {
+                    XCTAssertEqual(button.frame.height, expectedSize.height, accuracy: 1,
+                                   "\(page): \(title) must use the shared page-action height")
+                    XCTAssertEqual(button.frame.width, expectedSize.width, accuracy: 1,
+                                   "\(page): \(title) must use the shared content width")
+                } else {
+                    pageActionSize = button.frame.size
+                    XCTAssertGreaterThanOrEqual(button.frame.height, 44)
+                }
+            }
+            if ["chooser", "discovery", "plex", "share"].contains(page) {
+                let cancel = app.navigationBars.buttons["Cancel"]
+                XCTAssertTrue(cancel.exists, "\(page) must retain native toolbar cancellation")
+                XCTAssertTrue(cancel.isHittable)
+            }
             attach(app, name: "Onboarding-\(page)")
         }
     }

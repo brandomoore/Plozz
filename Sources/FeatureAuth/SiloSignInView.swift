@@ -112,7 +112,7 @@ public struct SiloSignInView: View {
             #if os(tvOS)
             Text("Cancel").frame(minWidth: 200)
             #else
-            Text("Cancel").frame(maxWidth: .infinity)
+            Text("Cancel").frame(maxWidth: .infinity).plozzPageActionLabel()
             #endif
         }
         #if os(tvOS)
@@ -188,9 +188,7 @@ public struct SiloSignInView: View {
                     model.submitPIN(profile)
                 } label: {
                     Text("Continue")
-                        #if os(iOS)
-                        .frame(maxWidth: .infinity)
-                        #endif
+                        .plozzPageActionLabel()
                 }
                     #if os(tvOS)
                     .buttonStyle(.borderedProminent)
@@ -205,9 +203,7 @@ public struct SiloSignInView: View {
                     model.chooseAnotherProfile()
                 } label: {
                     Text("Choose another profile")
-                        #if os(iOS)
-                        .frame(maxWidth: .infinity)
-                        #endif
+                        .plozzPageActionLabel()
                 }
                     #if os(tvOS)
                     .buttonStyle(.bordered)
@@ -227,9 +223,7 @@ public struct SiloSignInView: View {
                     model.start()
                 } label: {
                     Text("Get a new code")
-                        #if os(iOS)
-                        .frame(maxWidth: .infinity)
-                        #endif
+                        .plozzPageActionLabel()
                 }
                     #if os(tvOS)
                     .buttonStyle(.borderedProminent)
@@ -247,9 +241,7 @@ public struct SiloSignInView: View {
                     model.retry()
                 } label: {
                     Text("Try Again")
-                        #if os(iOS)
-                        .frame(maxWidth: .infinity)
-                        #endif
+                        .plozzPageActionLabel()
                 }
                     #if os(tvOS)
                     .buttonStyle(.borderedProminent)
@@ -311,6 +303,7 @@ private struct SiloPairingCard: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity)
+                        .plozzPageActionLabel()
                 }
                 .plozzActionButton()
                 .controlSize(.large)

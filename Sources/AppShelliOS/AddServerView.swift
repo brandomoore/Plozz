@@ -156,8 +156,7 @@ struct AddServerView: View {
                                 Text("Connect")
                             }
                         }
-                        .font(.body)
-                        .frame(maxWidth: .infinity, minHeight: 24)
+                        .plozzPageActionLabel()
                     }
                     .plozzActionButton()
                     .controlSize(.large)
@@ -387,10 +386,7 @@ struct QuickConnectServerSignInView: View {
                 onUsePassword()
             } label: {
                 Text("Use Password")
-                    .font(.body)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, minHeight: 24)
+                    .plozzPageActionLabel()
             }
             .plozzActionButton(role: .secondary)
             .controlSize(.large)
@@ -420,7 +416,7 @@ struct QuickConnectServerSignInView: View {
                 Button {
                     viewModel.retry()
                 } label: {
-                    Text("Try Again").font(.body).frame(maxWidth: .infinity, minHeight: 24)
+                    Text("Try Again").plozzPageActionLabel()
                 }
                 .plozzActionButton()
                 .controlSize(.large)
@@ -498,8 +494,7 @@ struct PasswordServerSignInView: View {
                     if case .submitting = viewModel.phase { ProgressView() }
                     else { Text("Sign In") }
                 }
-                .font(.body)
-                .frame(maxWidth: .infinity, minHeight: 24)
+                .plozzPageActionLabel()
             }
             .plozzActionButton()
             .controlSize(.large)
@@ -511,10 +506,7 @@ struct PasswordServerSignInView: View {
                     onUseQuickConnect()
                 } label: {
                     Text("Use Quick Connect")
-                        .font(.body)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, minHeight: 24)
+                        .plozzPageActionLabel()
                 }
                 .plozzActionButton(role: .secondary)
                 .controlSize(.large)
@@ -574,8 +566,7 @@ struct PlexServerSignInView: View {
                     }
                 } label: {
                     Label("Open Plex to link", systemImage: "safari")
-                        .font(.body)
-                        .frame(maxWidth: .infinity, minHeight: 24)
+                        .plozzPageActionLabel()
                 }
                 .plozzActionButton()
                 .controlSize(.large)
@@ -602,7 +593,7 @@ struct PlexServerSignInView: View {
                 Button {
                     viewModel.selectServers(servers.filter { selectedServerIDs.contains($0.id) })
                 } label: {
-                    Text("Continue").font(.body).frame(maxWidth: .infinity, minHeight: 24)
+                    Text("Continue").plozzPageActionLabel()
                 }
                 .plozzActionButton()
                 .controlSize(.large)
@@ -618,7 +609,7 @@ struct PlexServerSignInView: View {
                         didSeedSelection = false
                         viewModel.retry()
                     } label: {
-                        Text("Try Again").font(.body).frame(maxWidth: .infinity, minHeight: 24)
+                        Text("Try Again").plozzPageActionLabel()
                     }
                     .plozzActionButton()
                     .controlSize(.large)

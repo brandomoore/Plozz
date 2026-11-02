@@ -10,6 +10,20 @@ public extension View {
     func plozzActionButton(role: ActionButtonProminence = .primary) -> some View {
         modifier(NativeActionButtonModifier(prominence: role))
     }
+
+    /// Full-width mobile page actions share label metrics; toolbars keep native sizing.
+    @ViewBuilder
+    func plozzPageActionLabel() -> some View {
+        #if os(iOS)
+        self
+            .font(.body)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, minHeight: 24)
+        #else
+        self
+        #endif
+    }
 }
 
 private struct NativeActionButtonModifier: ViewModifier {

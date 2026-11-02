@@ -52,10 +52,12 @@ session persistence.
   selection asks for confirmation, and leaving authentication cancels its work.
   Mobile primary and secondary actions use `plozzActionButton`, with matching
   20-point page insets and a 640-point content cap across the server flows.
-  Add Server page actions share body typography and a 24-point minimum label
-  height inside native large buttons, including alternative sign-in methods.
+  Welcome, Add Server, Silo, and IPTV page actions share `plozzPageActionLabel`
+  inside native large buttons, including alternative sign-in methods and
+  in-content Cancel actions. Native toolbar Cancel remains compact.
   Mobile link codes use the shared mobile code size without an enclosing
-  settings card. The shared `LinkCodeExpiryCountdown` sits beside the code when
+  settings card, and the code tile uses the shared theme-aware group surface
+  instead of a dark overlay. The shared `LinkCodeExpiryCountdown` sits beside the code when
   it fits, stacking below at narrow widths or larger text sizes; its neutral
   mobile tint turns orange near expiry. TV retains its existing layout and tint.
   Shared Silo and IPTV retain their setup behavior and tvOS layout; media shares

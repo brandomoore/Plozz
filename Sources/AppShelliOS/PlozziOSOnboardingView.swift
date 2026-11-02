@@ -74,9 +74,7 @@ struct PlozziOSOnboardingView: View {
             showReceive = true
         } label: {
             Label("Set Up from Another Device", systemImage: "qrcode")
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity)
+                .plozzPageActionLabel()
         }
         .plozzActionButton(role: .secondary)
         .controlSize(.large)
