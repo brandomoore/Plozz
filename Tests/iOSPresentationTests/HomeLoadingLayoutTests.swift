@@ -21,7 +21,7 @@ final class HomeLoadingLayoutTests: XCTestCase {
                 XCTAssertEqual(mobile, .touch(density: density, dynamicTypeSize: size))
                 XCTAssertFalse(mobile.usesDesktopSizing)
                 XCTAssertTrue(desktop.usesDesktopSizing)
-                XCTAssertEqual(desktop.posterWidth, 208 * density.scale)
+                XCTAssertEqual(desktop.posterWidth, 212 * density.scale)
                 XCTAssertEqual(desktop.landscapeWidth, 360 * density.scale)
                 XCTAssertEqual(desktop.castTileDiameter, 160 * density.scale)
                 XCTAssertEqual(desktop.cardInset, mobile.cardInset)
@@ -106,6 +106,29 @@ final class HomeLoadingLayoutTests: XCTestCase {
         XCTAssertEqual(1930 - DesktopMediaRailLayout.pageInset - count * (featured.width + metrics.cardSpacing), 26)
     }
 
+    func testMacPostersKeepReferenceColumnsAcrossTheWideWindowBreakpoint() {
+        let metrics = PlozzMetrics.desktop(density: .standard)
+        // The paired screenshots put this viewport just above 1,950 points.
+        // The old limit added a ninth full poster here despite keeping the peek.
+        for width: CGFloat in [1952, 1960, 1970, 1980] {
+            for style in [CardStyle.borderless, .framed] {
+                let resolved = metrics.fittingDesktopRail(in: width, cardStyle: style)
+                let frameInset = style == .framed ? metrics.cardInset : 0
+                let pitch = resolved.posterWidth + 2 * frameInset + metrics.cardSpacing
+                let count = floor((width - DesktopMediaRailLayout.pageInset + frameInset) / pitch)
+                XCTAssertEqual(count, 8, "Reference window \(width) must not fit nine full posters.")
+                let featured = DesktopMediaRailLayout.featuredSize(in: width, metrics: resolved)
+                XCTAssertEqual(floor((width - DesktopMediaRailLayout.pageInset)
+                    / (featured.width + metrics.cardSpacing)), 4)
+            }
+        }
+        for (width, expectedCount): (CGFloat, CGFloat) in [(1039, 5), (1297, 6), (1930, 8)] {
+            let resolved = metrics.fittingDesktopRail(in: width, cardStyle: .borderless)
+            XCTAssertEqual(floor((width - DesktopMediaRailLayout.pageInset)
+                / (resolved.posterWidth + metrics.cardSpacing)), expectedCount)
+        }
+    }
+
     func testMacHeroLogoRemainsCompactAndHonorsEverySizePreference() {
         XCTAssertEqual(PlozziOSPageLayout.homeTextMaxWidth(for: .landscape, logoSize: .default), 480)
         XCTAssertEqual(PlozziOSPageLayout.homeTextMaxWidth(
@@ -155,18 +178,30 @@ final class HomeLoadingLayoutTests: XCTestCase {
             MediaItem(id: "episode-peek-\($0)", title: "Episode", kind: .episode,
                       posterURL: url, backdropURL: url, allowsTitleBasedMetadataMatching: false)
         }
+        let related = items.enumerated().map { index, item in
+            RelatedEntry(
+                related: RelatedTitle(title: item.title, kind: .movie,
+                                      providerIDs: ["tmdb": "\(index + 1)"], source: .tmdb),
+                libraryItem: item
+            )
+        }
         let coordinator = FeaturedTrailerCoordinator()
         let controller = HeroTrailerController()
         let scenarios: [(CGFloat, CardStyle)] = [
             (1039, .borderless), (1039, .framed),
             (1297, .borderless), (1297, .framed),
-            (1930, .borderless), (1930, .framed)
+            (1930, .borderless), (1930, .framed),
+            (1960, .borderless), (1960, .framed)
         ]
         for (width, cardStyle) in scenarios {
             var headingHeight: CGFloat?
-            for kind in 0..<4 {
+            for kind in 0..<5 {
                 let row: AnyView
-                if kind == 3 {
+                if kind == 4 {
+                    row = AnyView(PlozziOSRelatedSection(
+                        entries: related, inset: DesktopMediaRailLayout.pageInset, onSelect: { _, _ in }
+                    ))
+                } else if kind == 3 {
                     row = AnyView(PlozziOSMediaSection(title: Text(verbatim: "Collection")) {
                         PlozziOSInlineEpisodeRail(episodes: episodes, isLoading: false, onPlay: { _, _ in })
                     })
@@ -213,15 +248,19 @@ final class HomeLoadingLayoutTests: XCTestCase {
                 let frameInset = cardStyle == .framed && kind != 2 ? metrics.cardInset : 0
                 XCTAssertEqual(last.upperBound - last.lowerBound, 26 - frameInset, accuracy: 1.5,
                                "Rendered row \(kind) at width \(width) must show the next card.")
-                let expectedWidth = kind == 0 ? metrics.posterWidth
+                let expectedWidth = kind == 0 || kind == 4 ? metrics.posterWidth
                     : kind == 2 ? DesktopMediaRailLayout.featuredSize(in: width, metrics: metrics).width
                     : metrics.landscapeWidth
                 XCTAssertEqual(first.upperBound - first.lowerBound, expectedWidth, accuracy: 1.5)
                 for run in runs.dropLast() {
                     XCTAssertEqual(run.upperBound - run.lowerBound, expectedWidth, accuracy: 1.5)
                 }
-                let ink = try HeroTextInk.frames(in: image, terms: ["Collection"])
-                let heading = try XCTUnwrap(ink["Collection"])
+                if width == 1960, kind == 0 || kind == 4 {
+                    XCTAssertEqual(runs.count, 9, "Home and Related must show eight full posters and one preview.")
+                }
+                let title = kind == 4 ? "Related" : "Collection"
+                let ink = try HeroTextInk.frames(in: image, terms: [title])
+                let heading = try XCTUnwrap(ink[title])
                 if let headingHeight { XCTAssertEqual(heading.height, headingHeight, accuracy: 1) }
                 else { headingHeight = heading.height }
             }

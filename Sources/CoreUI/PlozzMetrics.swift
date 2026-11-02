@@ -7,7 +7,7 @@ import UIKit
 
 public enum DesktopMediaRailLayout {
     public static let pageInset: CGFloat = 52
-    public static let posterMaximum: CGFloat = 208
+    public static let posterMaximum: CGFloat = 212
     public static let landscapeMaximum: CGFloat = 360
     public static let castMaximum: CGFloat = 160
 

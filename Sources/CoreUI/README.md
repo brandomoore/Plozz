@@ -19,6 +19,9 @@ without scaling touch controls, captions, or overlays with the artwork.
 a gap-sized preview of the next card at every width. Page containers publish
 the resolved metrics through `plozzDesktopMediaRailLayout`; Featured rows use
 the same fitting policy for their 4:5 cards.
+Poster breakpoints preserve eight full cards plus a ninth-card preview around
+the wide reference viewport (1,960 points), including Home and Related. Verify
+the complete-card count as well as the preview when changing these limits.
 `HeroLogoSizing.Layout.desktop` retains the same logo-preference scaling and
 width containment as other hero layouts. The shell selects these policies;
 shared components do not infer their platform from a wide viewport.
