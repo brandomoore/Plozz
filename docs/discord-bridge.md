@@ -133,6 +133,27 @@ post. A conflicting human-owned title or multiple matching guides stops the
 operation. Ambiguous creation failures are not retried immediately; a later run
 rediscovers a successfully created guide.
 
+### TestFlight information channel
+
+The existing read-only `#testflight` text channel can receive a separate bot-owned
+beta guide. Run **Discord issue bridge -> publish-testflight-guide** explicitly.
+This manual-only mode uses the existing Discord bot secret, no model or GitHub
+write token, and does not change the issue bridge or release-announcement schedule.
+
+The guide includes the public beta invitation, `https://plozz.app/testflight/`,
+an App Store fallback, beta reliability/expiry, Apple TV joining steps and the
+public bug-report notice. `TESTFLIGHT_GUIDE` in `tools/discord-bridge.py` owns
+its content. The bot finds one existing `testflight` channel in the configured
+Plozz server, verifies its identity and effective send/embed/history permissions,
+and requires an explicit `@everyone` Send Messages denial. It never creates a
+channel or changes permissions. Give the bot a channel-specific Send Messages
+allow if needed; Administrator or Manage Channels is not required.
+
+Publication uses a stable bot-owned footer and deterministic nonce. Re-running
+updates the same guide, never modifies human messages, suppresses mentions and
+verifies the published content. Missing/ambiguous channels, duplicate bot
+markers, insufficient permissions and unconfirmed writes fail visibly.
+
 ## Operational limits and recovery
 
 Mappings live in the bot-authored GitHub report bodies/comments and Discord
