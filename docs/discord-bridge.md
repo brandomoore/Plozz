@@ -146,8 +146,16 @@ public bug-report notice. `TESTFLIGHT_GUIDE` in `tools/discord-bridge.py` owns
 its content. The bot finds one existing `testflight` channel in the configured
 Plozz server, verifies its identity and effective send/embed/history permissions,
 and requires an explicit `@everyone` Send Messages denial. It never creates a
-channel or changes permissions. Give the bot a channel-specific Send Messages
-allow if needed; Administrator or Manage Channels is not required.
+channel. Ordinary publication does not change permissions. Give the bot a
+channel-specific Send Messages allow if needed; Administrator is not required.
+
+With explicit owner approval, the manual `make_testflight_read_only` input can
+configure that one existing channel. The bot must already have Manage Permissions
+there. The operation denies member messages, thread creation and thread replies,
+preserves unrelated permissions/visibility and existing staff overrides, and
+keeps the bot able to post. It verifies the changed permissions before posting.
+No server roles or other channels are changed. This option defaults off; it is
+never used by scheduled synchronization.
 
 Publication uses a stable bot-owned footer and deterministic nonce. Re-running
 updates the same guide, never modifies human messages, suppresses mentions and

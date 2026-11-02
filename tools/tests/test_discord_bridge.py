@@ -683,7 +683,15 @@ class TestFlightGuideTests(unittest.TestCase):
                     if path == f"/guilds/{BRIDGE.GUILD}/members/{BRIDGE.BOT}":
                         return {"roles": []}
                     if path == f"/guilds/{BRIDGE.GUILD}/roles":
-                        return [{"id": BRIDGE.GUILD, "permissions": str(sum(1 << bit for bit in (10, 11, 14, 16)))}]
+                        bits = (10, 11, 14, 16, 28) if getattr(self, "can_manage", False) else (10, 11, 14, 16)
+                        return [{"id": BRIDGE.GUILD, "permissions": str(sum(1 << bit for bit in bits))}]
+                if method == "PUT" and "/permissions/" in path:
+                    self.writes.append((method, path, copy.deepcopy(data)))
+                    identifier = path.rsplit("/", 1)[1]
+                    target = self.threads[0]["permission_overwrites"]
+                    target[:] = [o for o in target if o["id"] != identifier]
+                    target.append({"id": identifier, **data})
+                    return None
                 result = super().call(method, path, data, query)
                 if self.fail_after_create and method == "POST":
                     self.fail_after_create = False
@@ -758,6 +766,25 @@ class TestFlightGuideTests(unittest.TestCase):
         with self.assertRaisesRegex(BRIDGE.BridgeError, "Duplicate"):
             self.publish()
         self.assertEqual(len(self.discord.writes), 1)
+
+    def test_explicit_read_only_setup_preserves_visibility_and_bot_access(self):
+        self.discord.can_manage = True
+        self.discord.threads[0]["permission_overwrites"] = [
+            {"id": BRIDGE.GUILD, "type": 0, "allow": str((1 << 10) | (1 << 11)), "deny": str(1 << 15)},
+        ]
+        with redirect_stdout(io.StringIO()):
+            BRIDGE.publish_testflight_guide(self.discord, make_read_only=True)
+            BRIDGE.publish_testflight_guide(self.discord, make_read_only=True)
+        self.assertEqual([write[0] for write in self.discord.writes], ["PUT", "PUT", "POST"])
+        everyone = next(o for o in self.discord.threads[0]["permission_overwrites"] if o["id"] == BRIDGE.GUILD)
+        self.assertEqual(int(everyone["allow"]), 1 << 10)
+        self.assertEqual(int(everyone["deny"]), sum(1 << bit for bit in (11, 15, 35, 36, 38)))
+        self.assertEqual(len(self.discord.messages[THREAD]), 1)
+
+    def test_read_only_setup_requires_existing_manage_permission(self):
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "Manage Permissions"):
+            BRIDGE.publish_testflight_guide(self.discord, make_read_only=True)
+        self.assertEqual(self.discord.writes, [])
 
 
 class PostingGuideTests(unittest.TestCase):
@@ -912,7 +939,7 @@ class WorkflowTests(unittest.TestCase):
                     patch.object(BRIDGE, "CopilotMatcher") as matcher:
                 BRIDGE.main()
                 api.assert_called_once_with("Discord", "test-token", write=True)
-                publish.assert_called_once_with(api.return_value)
+                publish.assert_called_once_with(api.return_value, make_read_only=False)
                 inspect.assert_not_called()
                 matcher.assert_not_called()
 

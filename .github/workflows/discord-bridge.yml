@@ -17,6 +17,10 @@ on:
         options: [preflight, dry-run, sync, publish-guides, publish-testflight-guide]
         default: preflight
         required: true
+      make_testflight_read_only:
+        description: Explicitly make the existing TestFlight channel read-only before publishing its guide.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -78,7 +82,13 @@ jobs:
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           GUIDE_MODE: ${{ inputs.mode }}
-        run: python3 tools/discord-bridge.py --mode "$GUIDE_MODE"
+          MAKE_TESTFLIGHT_READ_ONLY: ${{ inputs.make_testflight_read_only }}
+        run: |
+          args=(--mode "$GUIDE_MODE")
+          if [ "$MAKE_TESTFLIGHT_READ_ONLY" = "true" ]; then
+            args+=(--make-testflight-read-only)
+          fi
+          python3 tools/discord-bridge.py "${args[@]}"
 
   sync:
     if: >-
