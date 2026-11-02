@@ -86,9 +86,12 @@ struct PlozziOSHomeEmptyState: View {
             ScrollView {
                 VStack(spacing: 28) {
                     VStack(spacing: 16) {
-                        Image(systemName: "play.rectangle.on.rectangle")
-                            .font(.system(size: 44, weight: .regular))
-                            .plozzForeground(.secondary)
+                        Image("PlozzLogo")
+                            .renderingMode(.original)
+                            .resizable()
+                            .interpolation(.none)
+                            .scaledToFit()
+                            .frame(width: 64, height: 64)
                             .accessibilityHidden(true)
                         VStack(spacing: 8) {
                             Text(title)

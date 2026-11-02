@@ -802,7 +802,7 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   accessible when no preferred tab is supported. Collection/playlist member
   routes remain plain Browse destinations.
   Mobile Home's no-account and connected-but-empty states share
-  `PlozziOSHomeEmptyState`: a compact media symbol, state-specific explanation,
+  `PlozziOSHomeEmptyState`: the small blue Plozz mascot without its wordmark, a state-specific explanation,
   and one native **Add Source** action. Only the no-account state also offers
   device transfer. Both remain scrollable at large text sizes and in landscape;
   empty-state presentation does not alter provider loading or profile inclusion.

@@ -11,6 +11,32 @@ import XCTest
 
 @MainActor
 final class ServerSetupPresentationTests: XCTestCase {
+    func testHomeEmptyStatesRenderBlueMascotInBothAppearances() async throws {
+        XCTAssertNotNil(UIImage(named: "PlozzLogo"))
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 768, height: 1024)] {
+            for hasAccounts in [false, true] {
+                for light in [false, true] {
+                    let image = try await render(
+                        PlozziOSHomeEmptyState(
+                            hasAccounts: hasAccounts, onAddSource: {},
+                            onReceiveSetup: hasAccounts ? nil : {}
+                        )
+                        .background(light ? ThemePalette.light.backgroundBase : ThemePalette.dark.backgroundBase)
+                        .environment(\.themePalette, light ? ThemePalette.light : .dark),
+                        size: size, light: light
+                    )
+                    let pixels = try rgba(image)
+                    let bluePixels = stride(from: 0, to: pixels.count, by: 4).filter {
+                        Int(pixels[$0 + 2]) > Int(pixels[$0]) + 30
+                            && Int(pixels[$0 + 1]) > Int(pixels[$0]) + 20
+                    }.count
+                    XCTAssertGreaterThan(bluePixels, 100, "The blue mascot must render, not a missing or monochrome image")
+                    attach(image, name: "Home-mascot-\(hasAccounts)-\(size.width)-\(light ? "light" : "dark")")
+                }
+            }
+        }
+    }
+
     func testHomeEmptyStatesKeepActionsReadableAtLargeTextAndNarrowWidths() async throws {
         for (size, typeSize, light) in [
             (CGSize(width: 320, height: 568), DynamicTypeSize.accessibility5, false),
