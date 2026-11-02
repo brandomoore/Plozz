@@ -1223,6 +1223,10 @@
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVServerSourceDetails|body|Button|SettingsRowLabel(icon: \"arrow.clockwise\", title: \"Refresh guide\")": {
+      "reason": "Source-scoped guide refresh action; does not change a preference or source selection.",
+      "count": 1
+    },
     "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVServerSourceDetails|body|Button|SettingsRowLabel(icon: \"trash\", title: \"Remove source\")": {
       "count": 1,
       "reason": "destructive_action: Keep confirmation and authorization."
