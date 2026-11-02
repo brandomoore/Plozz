@@ -321,6 +321,19 @@ Title controls in native card/detail menus, Picks, list entries and history
 records expose the same explicit history actions. Opening these controls neither
 starts playback nor marks the title watched.
 
+Real iPhone-simulator acceptance covers dated/undated play creation, independent
+rewatches, known/unknown date changes, exact no-op date preservation, cancelled
+and confirmed exact deletion, and selected bulk deletion. During a four-play
+deletion, an independent real API writer changed the third play after the first
+removal. Plozz confirmed two removals, stopped at the changed record, left the
+fourth untouched, and blocked replay until history was refreshed and selected
+again. Independent readback confirmed each exact record, the subsequent cleanup,
+and preservation of the original play, other tracker collections, and dedicated
+media-server histories. Retained native-driver failures concerned offscreen
+selection/result controls; read-only follow-up scenarios verified the existing
+outcomes rather than repeating destructive requests. Resume clearing, interrupted
+transport, and other-platform acceptance remain separate.
+
 ## Optional community ratings
 
 The profile-scoped rating lookup preference starts off. Enabling it sends the

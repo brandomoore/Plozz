@@ -310,19 +310,220 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testBrowseUnknownHistoryPlay() throws {
+        try openHistoryPlay(expectedUnknownDate: true)
+    }
+
+    private func openHistoryPlay(expectedUnknownDate: Bool) throws {
         let id = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_RECORD_ID"])
         try require(!id.isEmpty, "Expected the independently read exact play ID")
         try openPublicMetaDBAccount()
         try tapVisible(app.buttons["publicmetadb.history"])
         let record = app.buttons["publicmetadb.history.record.\(id)"]
         try tapVisible(record, tapping: false)
-        XCTAssertTrue(record.label.contains("Watch date unknown"))
+        XCTAssertEqual(record.label.contains("Watch date unknown"), expectedUnknownDate)
         record.tap()
         try require(app.buttons["publicmetadb.history.action"].waitForExistence(timeout: 30),
                     "Expected the exact watch record, not a title-level history action")
         XCTAssertEqual(app.buttons["publicmetadb.history.action"].label, "Delete this play")
-        XCTAssertTrue(app.staticTexts["Watch date unknown"].exists)
+        XCTAssertEqual(app.staticTexts["Watch date unknown"].exists, expectedUnknownDate)
         XCTAssertTrue(app.buttons["Change watch date"].exists)
+    }
+
+    func testPrepareNewUnknownHistoryPlay() throws {
+        try prepareHistoryPlay(adding: true, existingUnknown: true, newUnknown: true)
+    }
+
+    func testPrepareNewDatedHistoryPlay() throws {
+        try prepareHistoryPlay(adding: true, existingUnknown: true, newUnknown: false)
+    }
+
+    func testPrepareUnknownToDatedHistoryChange() throws {
+        try prepareHistoryPlay(adding: false, existingUnknown: true, newUnknown: false)
+    }
+
+    func testPrepareDatedToUnknownHistoryChange() throws {
+        try prepareHistoryPlay(adding: false, existingUnknown: false, newUnknown: true)
+    }
+
+    func testPrepareUnknownHistoryDateNoop() throws {
+        try prepareHistoryPlay(adding: false, existingUnknown: true, newUnknown: true)
+    }
+
+    func testPrepareDatedHistoryDateNoop() throws {
+        try prepareHistoryPlay(adding: false, existingUnknown: false, newUnknown: false)
+    }
+
+    private func prepareHistoryPlay(adding: Bool, existingUnknown: Bool, newUnknown: Bool) throws {
+        try openHistoryPlay(expectedUnknownDate: existingUnknown)
+        try tapVisible(app.buttons[adding ? "Add another play" : "Change watch date"])
+        let unknown = app.switches["Watch date unknown"]
+        try tapVisible(unknown, tapping: false)
+        XCTAssertEqual(unknown.value as? String, !adding && existingUnknown ? "1" : "0")
+        if (unknown.value as? String == "1") != newUnknown {
+            try tapVisible(unknown.switches.firstMatch)
+        }
+        XCTAssertEqual(unknown.value as? String, newUnknown ? "1" : "0")
+        try tapVisible(app.buttons["publicmetadb.history.review-date"])
+        try require(app.popovers.buttons["Save play"].waitForExistence(timeout: 5), "Expected the reviewed play")
+        let message = app.popovers.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "Other apps connected to PublicMetaDB may also react to this change."
+        )).firstMatch
+        try require(message.waitForExistence(timeout: 5), "Expected the complete history disclosure")
+        XCTAssertEqual(message.label.contains("Watch date unknown"), newUnknown)
+        XCTAssertEqual(message.label.contains("This creates another play; it does not replace earlier plays."), adding)
+    }
+
+    func testConfirmPreparedHistoryPlay() throws {
+        try tapVisible(app.popovers.buttons["Save play"])
+        try require(app.staticTexts["Change confirmed on PublicMetaDB"].waitForExistence(timeout: 40),
+                    "Expected the exact play change to be confirmed")
+        XCTAssertFalse(app.buttons["publicmetadb.history.review-date"].exists)
+    }
+
+    func testPrepareExactPlayDeletion() throws {
+        let unknown = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_EXPECT_UNKNOWN"])
+        try require(["0", "1"].contains(unknown), "Expected independently observed date presence")
+        try openHistoryPlay(expectedUnknownDate: unknown == "1")
+        try tapVisible(app.buttons["publicmetadb.history.action"])
+        try require(app.popovers.buttons["Delete this play"].waitForExistence(timeout: 5),
+                    "Expected exact-play deletion, not a title-wide action")
+        let message = app.popovers.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "Other apps connected to PublicMetaDB may also react to this change."
+        )).firstMatch
+        try require(message.waitForExistence(timeout: 5), "Expected the complete deletion disclosure")
+        XCTAssertTrue(message.label.contains("Deletes only this play"))
+    }
+
+    func testCancelExactPlayDeletion() throws {
+        try require(app.popovers.buttons["Delete this play"].exists, "Expected a prepared exact-play deletion")
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["publicmetadb.history.action"].isEnabled)
+    }
+
+    func testConfirmExactPlayDeletion() throws {
+        try tapVisible(app.popovers.buttons["Delete this play"])
+        try require(app.staticTexts["Change confirmed on PublicMetaDB"].waitForExistence(timeout: 40),
+                    "Expected independently confirmed exact-play deletion")
+        XCTAssertFalse(app.buttons["publicmetadb.history.action"].exists)
+    }
+
+    func testPrepareSelectedPlayDeletion() throws {
+        let ids = try selectedHistoryIDs()
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["publicmetadb.history.bulk"])
+        try selectHistoryPlays(ids)
+    }
+
+    private func selectHistoryPlays(_ ids: [String]) throws {
+        for (index, id) in ids.enumerated() {
+            let control = app.switches["publicmetadb.history.select.\(id)"]
+            try tapVisible(control, tapping: false)
+            XCTAssertEqual(control.value as? String, "0")
+            try tapVisible(control.switches.firstMatch)
+            XCTAssertEqual(control.value as? String, "1")
+            XCTAssertFalse(app.popovers.firstMatch.exists)
+            for later in ids.dropFirst(index + 1) {
+                let other = app.switches["publicmetadb.history.select.\(later)"]
+                try tapVisible(other, tapping: false)
+                XCTAssertEqual(other.value as? String, "0", "A sibling selection changed")
+            }
+        }
+        try tapVisible(app.buttons["publicmetadb.history.bulk.review"])
+        try require(app.popovers.buttons["Delete \(ids.count) plays"].waitForExistence(timeout: 5),
+                    "Expected precisely the selected play count")
+        let message = app.popovers.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "Other apps connected to PublicMetaDB may also react to this change."
+        )).firstMatch
+        try require(message.waitForExistence(timeout: 5), "Expected the complete bulk disclosure")
+        XCTAssertTrue(message.label.contains("Only these \(ids.count) selected records will be removed."))
+    }
+
+    func testCancelSelectedPlayDeletion() throws {
+        let ids = try selectedHistoryIDs()
+        try require(app.popovers.buttons["Delete \(ids.count) plays"].exists, "Expected selected-play confirmation")
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        let first = app.switches["publicmetadb.history.select.\(ids[0])"]
+        for _ in 0..<8 {
+            if first.exists && first.isHittable { break }
+            app.swipeDown()
+        }
+        try require(first.exists && first.isHittable, "Expected the retained selections above the review action")
+        for id in ids {
+            let control = app.switches["publicmetadb.history.select.\(id)"]
+            try tapVisible(control, tapping: false)
+            XCTAssertEqual(control.value as? String, "1")
+        }
+    }
+
+    func testConfirmSelectedPlayDeletion() throws {
+        let ids = try selectedHistoryIDs()
+        try tapVisible(app.popovers.buttons["Delete \(ids.count) plays"])
+        try inspectConfirmedHistoryDeletion()
+    }
+
+    func testInspectConfirmedSelectedPlayDeletion() throws {
+        try inspectConfirmedHistoryDeletion()
+    }
+
+    private func inspectConfirmedHistoryDeletion() throws {
+        let confirmed = app.staticTexts["Selected plays confirmed removed on PublicMetaDB"]
+        for _ in 0..<8 {
+            if confirmed.exists && confirmed.isHittable { break }
+            app.swipeDown()
+        }
+        try require(confirmed.waitForExistence(timeout: 45),
+                    "Expected all selected plays to be confirmed removed")
+        try tapVisible(app.buttons["publicmetadb.history.bulk.review"], tapping: false)
+        XCTAssertFalse(app.buttons["publicmetadb.history.bulk.review"].isEnabled)
+    }
+
+    func testConfirmSelectedPlayDeletionWithConcurrentEdit() throws {
+        let ids = try selectedHistoryIDs()
+        try require(ids.count == 4, "Expected four separately verified disposable plays")
+        try tapVisible(app.popovers.buttons["Delete 4 plays"])
+        try inspectStoppedHistoryDeletion()
+    }
+
+    func testInspectStoppedSelectedPlayDeletion() throws {
+        try inspectStoppedHistoryDeletion()
+    }
+
+    private func inspectStoppedHistoryDeletion() throws {
+        let stopped = app.staticTexts[
+            "2 selected plays were confirmed removed. Processing stopped at the next play; 1 later plays were not attempted."
+        ]
+        try require(stopped.waitForExistence(timeout: 45), "Expected deletion to stop at the concurrently changed third play")
+        XCTAssertFalse(app.staticTexts["Selected plays confirmed removed on PublicMetaDB"].exists)
+        XCTAssertFalse(app.buttons["publicmetadb.history.bulk.review"].isEnabled)
+        try tapVisible(app.buttons["Refresh history"], tapping: false)
+        XCTAssertTrue(app.buttons["Refresh history"].isEnabled)
+    }
+
+    func testRefreshStoppedSelectedPlayDeletion() throws {
+        let ids = try selectedHistoryIDs()
+        try inspectStoppedHistoryDeletion()
+        try tapVisible(app.buttons["Refresh history"])
+        try require(app.staticTexts[
+            "2 selected plays were confirmed removed. Processing stopped at the next play; 1 later plays were not attempted."
+        ].waitForNonExistence(timeout: 15), "Expected a fresh history snapshot after the stopped operation")
+        let first = app.switches["publicmetadb.history.select.\(ids[0])"]
+        for _ in 0..<8 {
+            if first.exists && first.isHittable { break }
+            app.swipeDown()
+        }
+        try require(first.exists && first.isHittable, "Expected the freshly read remaining plays")
+        try selectHistoryPlays(ids)
+    }
+
+    private func selectedHistoryIDs() throws -> [String] {
+        let value = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_SELECTED_IDS"])
+        let ids = value.split(separator: ",").map(String.init)
+        try require((1...4).contains(ids.count) && Set(ids).count == ids.count && ids.allSatisfy {
+            $0.range(of: #"^[a-z0-9]{15}$"#, options: .regularExpression) != nil
+        }, "Expected at most four distinct independently observed disposable play IDs")
+        return ids
     }
 
     func testCancelHistoryDateChange() throws {
