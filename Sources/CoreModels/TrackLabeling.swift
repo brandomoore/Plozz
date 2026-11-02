@@ -245,7 +245,7 @@ public enum TrackLabeling {
         return TrackLabel(base: base, qualifiers: qualifiers)
     }
 
-    private static func audioVersions(in title: String) -> [String] {
+    private static func audioVersions(in title: String) -> [String] { // l10n:content - provider/container track title.
         let known: Set<String> = ["VFQ", "VFF", "VFI", "VFB", "VQ", "VOF", "VOQ"]
         return title.uppercased().split { !$0.isLetter && !$0.isNumber }
             .map(String.init).reduce(into: []) { versions, word in
