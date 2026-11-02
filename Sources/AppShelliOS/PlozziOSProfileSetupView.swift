@@ -70,7 +70,7 @@ struct PlozziOSProfileSetupView: View {
         ) {
             AddServerView(
                 appModel: appModel,
-                initialProvider: addUserServer?.provider ?? .jellyfin,
+                initialProvider: addUserServer?.provider,
                 initialAddress: addUserServer?.baseURL.absoluteString ?? ""
             )
             .presentationSizing(.page)

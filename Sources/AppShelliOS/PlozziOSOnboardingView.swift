@@ -26,9 +26,9 @@ struct PlozziOSOnboardingView: View {
                         receiveButton
                         Spacer(minLength: 32)
                     }
-                    .frame(maxWidth: 500)
+                    .frame(maxWidth: 640)
                     .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, 20)
                     .frame(minHeight: geo.size.height)
                 }
             }
@@ -60,54 +60,13 @@ struct PlozziOSOnboardingView: View {
     }
 
     private var providerList: some View {
-        VStack(spacing: 0) {
-            providerRow(.jellyfin)
-            divider
-            providerRow(.plex)
-            divider
-            providerRow(.emby)
-            divider
-            providerRow(.silo)
-            divider
-            providerRow(.mediaShare)
-            divider
-            providerRow(.iptv)
-        }
-        .background(palette.cardSurface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(palette.cardBorder, lineWidth: 1)
-        )
-    }
-
-    private var divider: some View {
-        Rectangle().fill(palette.cardBorder).frame(height: 1)
-            .padding(.horizontal, 1)
-    }
-
-    private func providerRow(_ provider: ProviderKind) -> some View {
-        Button {
+        ServerProviderChoices { provider in
             if provider == .mediaShare {
                 showAddShare = true
             } else {
                 addProvider = OnboardingProvider(kind: provider)
             }
-        } label: {
-            HStack(spacing: 16) {
-                ProviderBrandMark(provider: provider, size: 40)
-                Text(provider.displayName)
-                    .font(.headline)
-                    .foregroundStyle(palette.primaryText)
-                Spacer()
-                Image(systemName: "chevron.forward")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(palette.secondaryText)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
     }
 
     private var receiveButton: some View {
@@ -115,9 +74,9 @@ struct PlozziOSOnboardingView: View {
             showReceive = true
         } label: {
             Label("Set Up from Another Device", systemImage: "qrcode")
-                .font(.headline)
+                .plozzPageActionLabel()
         }
-        .buttonStyle(.bordered)
+        .plozzPageActionButton(role: .secondary)
         .controlSize(.large)
         .tint(palette.accent)
     }

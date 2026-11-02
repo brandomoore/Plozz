@@ -1,5 +1,6 @@
 import CoreModels
 import EnginePlozzigen
+import FeatureHomeCore
 import Foundation
 import MediaTransportCore
 import MediaTransportHTTP
@@ -12,6 +13,34 @@ import XCTest
 final class WebDAVDiscPlaybackHostedTests: XCTestCase {
     private enum CheckFailure: Error {
         case invalidInput, engineFailed, deadlineExceeded
+    }
+
+    private actor BodyChunkPacer {
+        let interval: Duration
+        private var next = ContinuousClock.now
+
+        init(interval: Duration) {
+            self.interval = interval
+        }
+
+        func wait() async throws {
+            try Task.checkCancellation()
+            let deadline = max(next, .now) + interval
+            next = deadline
+            try await Task.sleep(until: deadline, clock: .continuous)
+        }
+    }
+
+    func testLocalBodyPacingIsSharedAcrossRequests() async throws {
+        let pacer = BodyChunkPacer(interval: .milliseconds(20))
+        let started = ContinuousClock.now
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<4 {
+                group.addTask { try await pacer.wait() }
+            }
+            try await group.waitForAll()
+        }
+        XCTAssertGreaterThanOrEqual(started.duration(to: .now), .milliseconds(80))
     }
 
     func testSyntheticDVDISOPlaysAndSeeksOverWebDAV() async throws {
@@ -49,6 +78,42 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         )
     }
 
+    func testExplicitLocalISOPlaybackWithLatency() async throws {
+        try await checkExplicitLocalPlayback(
+            fixtureKey: "PLOZZ_WEBDAV_LOCAL_ISO_FIXTURE", extensions: ["iso"], requiresNativeHLS: true
+        )
+    }
+
+    func testExplicitLocalContainerPlaybackWithLatency() async throws {
+        try await checkExplicitLocalPlayback(
+            fixtureKey: "PLOZZ_WEBDAV_LOCAL_CONTAINER_FIXTURE", extensions: ["mp4", "mkv"],
+            requiresNativeHLS: false
+        )
+    }
+
+    private func checkExplicitLocalPlayback(
+        fixtureKey: String, extensions: Set<String>, requiresNativeHLS: Bool
+    ) async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let name = environment[fixtureKey] else {
+            throw XCTSkip("Requires a staged synthetic local file; never contacts a public server.")
+        }
+        let fileExtension = (name as NSString).pathExtension.lowercased()
+        guard name == (name as NSString).lastPathComponent,
+              extensions.contains(fileExtension),
+              let start = Double(environment["PLOZZ_WEBDAV_LOCAL_START_POSITION"] ?? "0"),
+              start.isFinite, start >= 0 else {
+            throw CheckFailure.invalidInput
+        }
+        let file = try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+            .appendingPathComponent(name)
+        try await checkFixturePlayback(
+            file: file, fileExtension: fileExtension, seekPositions: [30], startPosition: start,
+            sustainedPlaybackSeconds: 60, headerDelay: .milliseconds(250), bodyDelay: .milliseconds(10),
+            requiresNativeHLS: requiresNativeHLS
+        )
+    }
+
     private func checkFixturePlayback(
         named name: String, fileExtension: String, startPosition: Double = 0
     ) async throws {
@@ -63,10 +128,11 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
     private func checkFixturePlayback(
         file: URL, fileExtension: String, seekPositions: [Double],
         startPosition: Double = 0, sustainedPlaybackSeconds: Int = 0,
-        headerDelay: Duration = .zero, bodyDelay: Duration = .zero
+        headerDelay: Duration = .zero, bodyDelay: Duration = .zero,
+        requiresNativeHLS: Bool = false
     ) async throws {
         let path = "fixture.\(fileExtension)"
-        let data = try Data(contentsOf: file, options: .mappedIfSafe)
+        let fileSize = try XCTUnwrap(file.resourceValues(forKeys: [.fileSizeKey]).fileSize)
         let etag = "\"synthetic-disc\""
         let collection = """
         <D:response><D:href>/dav/</D:href><D:propstat><D:prop>
@@ -76,13 +142,17 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         let fileProperties = """
         <D:response>
         <D:href>/dav/\(path)</D:href><D:propstat><D:prop>
-        <D:getcontentlength>\(data.count)</D:getcontentlength>
+        <D:getcontentlength>\(fileSize)</D:getcontentlength>
         <D:getetag>\(etag)</D:getetag>
         <D:getcontenttype>application/octet-stream</D:getcontenttype>
         </D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>
         </D:response>
         """
-        let server = try IPTVTestHTTPServer { request in
+        let aggregate = ProcessInfo.processInfo.environment["PLOZZ_WEBDAV_AGGREGATE_BANDWIDTH"] == "1"
+        let pacer = aggregate && bodyDelay != .zero ? BodyChunkPacer(interval: bodyDelay) : nil
+        let server = try IPTVTestHTTPServer(beforeBodyChunk: {
+            try await pacer?.wait()
+        }) { request in
             if request.hasPrefix("OPTIONS ") {
                 return .init(headers: ["DAV": "1, 2"])
             }
@@ -108,22 +178,29 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                   })?.split(separator: "=").last?.split(separator: "-"),
                   range.count == 2,
                   let start = Int(range[0]), let end = Int(range[1]),
-                  start >= 0, end >= start, end < data.count else {
+                  start >= 0, end >= start, end < fileSize else {
                 return .init(status: 416)
             }
-            return .init(data: data.subdata(in: start..<(end + 1)), status: 206, headers: [
-                "Content-Range": "bytes \(start)-\(end)/\(data.count)",
+            return .init(file: file, status: 206, headers: [
+                "Content-Range": "bytes \(start)-\(end)/\(fileSize)",
                 "ETag": etag,
                 "Content-Type": "application/octet-stream"
-            ], headerDelay: headerDelay, delay: bodyDelay)
+            ], headerDelay: headerDelay, delay: pacer == nil ? bodyDelay : .zero, range: start..<(end + 1))
         }
-        addTeardownBlock { await server.stop() }
+        let recordIO: @Sendable (String) async -> Void = { phase in
+            print("WEBDAV_LOCAL phase=\(phase) requests=\(await server.requestCount) peakActive=\(await server.peakActiveRequestCount) bodyBytes=\(await server.bodyBytesSent)")
+        }
+        addTeardownBlock {
+            await server.stop()
+            await recordIO("teardown")
+        }
         let base = try await server.start().appendingPathComponent("dav")
+        print("WEBDAV_LOCAL bandwidth=\(pacer == nil ? "per-connection" : "aggregate") headerDelay=\(headerDelay) chunkDelay=\(bodyDelay)")
         try await checkPlayback(
             base: base, path: path, credential: .anonymous, seekPositions: seekPositions,
-            startPosition: startPosition, sustainedPlaybackSeconds: sustainedPlaybackSeconds
+            startPosition: startPosition, sustainedPlaybackSeconds: sustainedPlaybackSeconds,
+            requiresNativeHLS: requiresNativeHLS, recordIO: recordIO
         )
-        print("WEBDAV_LOCAL requests=\(await server.requestCount) peakActive=\(await server.peakActiveRequestCount)")
     }
 
     func testExplicitLiveWebDAVISOPlaysAndSeeks() async throws {
@@ -169,8 +246,29 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
 
     private func checkPlayback(
         base: URL, path: String, credential: WebDAVCredential, seekPositions: [Double],
-        startPosition: Double = 0, sustainedPlaybackSeconds: Int = 0
+        startPosition: Double = 0, sustainedPlaybackSeconds: Int = 0,
+        requiresNativeHLS: Bool = false, recordIO: (@Sendable (String) async -> Void)? = nil
     ) async throws {
+        let environment = ProcessInfo.processInfo.environment
+        let detailPlayDelay: Duration?
+        if let value = environment["PLOZZ_WEBDAV_DETAIL_PLAY_DELAY_SECONDS"] {
+            guard environment["PLOZZ_WEBDAV_DETAIL_PREPARATION"] == "1",
+                  let seconds = Double(value), [2.0, 3.0].contains(seconds) else {
+                throw CheckFailure.invalidInput
+            }
+            detailPlayDelay = .seconds(seconds)
+        } else {
+            detailPlayDelay = nil
+        }
+        let earlyHandoff = environment["PLOZZ_WEBDAV_EARLY_HANDOFF"] == "1"
+        guard !earlyHandoff || detailPlayDelay != nil else { throw CheckFailure.invalidInput }
+        let sceneDeadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < sceneDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
         let scheme = try XCTUnwrap(base.scheme.flatMap(WebDAVScheme.init(rawValue:)))
         let account = "webdav-playback-\(UUID().uuidString)"
         let revision = CredentialRevision()
@@ -209,61 +307,182 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             catalogCoordinator: ShareCatalogCoordinator(initialWorkScope: .paused)
         )
         addTeardownBlock { await provider.teardown() }
-        let preparationStarted = ContinuousClock.now
+        let registry = MediaTransportResolverRegistry(adapter: adapter)
+        let resolver = MediaTransportNetworkFileResolver(
+            registry: registry,
+            sourcePreparer: PlozzigenNetworkFileStreamProber.preparePlaybackSource,
+            sessionKeyProvider: { _ in key }
+        )
+        let coordinator = DetailPlaybackPreparationCoordinator()
+        defer { coordinator.invalidate() }
+        var preparationHandle: MediaTransportPreparation?
+        let preparationStarted: ContinuousClock.Instant
+        if let detailPlayDelay {
+            var detailItem = item
+            detailItem.sourceAccountID = account
+            detailItem.resumePosition = startPosition
+            let candidate = try XCTUnwrap(DetailPlaybackPreparationCandidate(
+                detailItem, exactFileRelativePath: ShareProvider.exactFileRelativePath(for: detailItem)
+            ))
+            let detailScope = DetailPlaybackPreparationScope(
+                profileID: "fixture", authorizationID: "fixture", accountID: account,
+                serverUserID: "fixture", credentialRevision: revision
+            )
+            let detailStarted = ContinuousClock.now
+            let preparationEnvironment = DetailPlaybackPreparationEnvironment(
+                scope: { $0 == account ? detailScope : nil },
+                exactFileRelativePath: { ShareProvider.exactFileRelativePath(for: $0) },
+                provider: { $0 == account ? provider : nil },
+                reserve: { locator, position in
+                    if earlyHandoff {
+                        let handle = try resolver.beginPreparation(locator, startPosition: position)
+                        preparationHandle = handle
+                        print("WEBDAV_DISC detailPreparationTicketSeconds=\(detailStarted.duration(to: .now))")
+                        return DetailPlaybackPreparationReservation(
+                            cancel: { handle.cancel() },
+                            requestPlaybackHandoff: { handle.requestPlaybackHandoff() }
+                        )
+                    }
+                    let handle = try await resolver.prepare(locator, startPosition: position)
+                    preparationHandle = handle
+                    print("WEBDAV_DISC detailPreparationSeconds=\(detailStarted.duration(to: .now))")
+                    return DetailPlaybackPreparationReservation { handle.cancel() }
+                }
+            )
+            await recordIO?("detail")
+            let detailVisible = ContinuousClock.now
+            coordinator.update(candidate: candidate, environment: preparationEnvironment, isActive: true)
+            try await Task.sleep(for: detailPlayDelay)
+            preparationStarted = .now
+            let readyAtPlay = preparationHandle?.warmupOutcome != nil
+            coordinator.handoff(detailItem)
+            coordinator.stop()
+            print("WEBDAV_DISC detailPlayDelaySeconds=\(detailVisible.duration(to: preparationStarted)) preparationReadyAtPlay=\(readyAtPlay) earlyHandoff=\(earlyHandoff)")
+        } else if environment["PLOZZ_WEBDAV_DETAIL_PREPARATION"] == "1" {
+            let detailStarted = ContinuousClock.now
+            let detailLocator = try await provider.playbackPreparationLocator(
+                for: item.id, mediaSourceID: path
+            )
+            let locator = try XCTUnwrap(detailLocator)
+            do {
+                preparationHandle = try await resolver.prepare(locator, startPosition: startPosition)
+            } catch {
+                print("WEBDAV_DISC preparationFailureType=\(String(reflecting: type(of: error))) cancelled=\(Task.isCancelled)")
+                if let transportError = error as? MediaTransportError {
+                    switch transportError {
+                    case .timeout: print("WEBDAV_DISC preparationFailure=timeout")
+                    case .cancelled: print("WEBDAV_DISC preparationFailure=cancelled")
+                    case .transport(let code): print("WEBDAV_DISC preparationFailure=transport code=\(code)")
+                    default: print("WEBDAV_DISC preparationFailure=otherTransport")
+                    }
+                }
+                throw error
+            }
+            print("WEBDAV_DISC detailPreparationSeconds=\(detailStarted.duration(to: .now))")
+            preparationStarted = .now
+        } else {
+            preparationStarted = .now
+        }
+        let prepared = preparationHandle
+        defer { withExtendedLifetime(prepared) {} }
+        await recordIO?("play")
         let request = try await provider.playbackInfo(for: item.id, mediaSourceID: nil, forceTranscode: false)
         let preparationDuration = preparationStarted.duration(to: .now)
         print("WEBDAV_DISC preparationSeconds=\(preparationDuration)")
         guard case .networkFile = request.playbackSource else {
             return XCTFail("Disc playback must use the production network-file path")
         }
-        let registry = MediaTransportResolverRegistry(adapter: adapter)
-        let resolver = MediaTransportNetworkFileResolver(registry: registry, sessionKeyProvider: { _ in key })
-        let engine = try PlozzigenVideoEngine(networkFileResolver: resolver)
+        let engine = try PlozzigenVideoEngine(
+            networkFileResolver: resolver
+        )
         engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let initiallyRendered = await engine.hasRenderedVideoFrame()
+        XCTAssertFalse(initiallyRendered)
         addTeardownBlock {
             await engine.stop()
             await engine.drainTransport()
             await registry.retire(accountID: account, credentialRevision: revision)
         }
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive })
+        let previousWindow = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         let controller = UIViewController()
         controller.view = engine.makeVideoOutputView()
         window.rootViewController = controller
         window.makeKeyAndVisible()
-        defer { window.isHidden = true; window.rootViewController = nil }
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKeyAndVisible()
+        }
 
         let started = ContinuousClock.now
         try await perform(engine: engine) { await engine.load(request: request, startPosition: startPosition) }
-        try await wait(engine: engine, seconds: 45) {
-            engine.isPlaybackPositionReady && engine.hasPresentedVideoFrame
+        if requiresNativeHLS {
+            XCTAssertEqual(engine.diagnosticRoute, .localHLS, "The native ISO workload must not use a software fallback")
         }
+        if let prepared {
+            XCTAssertTrue(prepared.wasConsumed, "A prepared sample must consume its exact reservation")
+        }
+        try await wait(engine: engine, seconds: 45) {
+            guard engine.isPlaybackPositionReady else { return false }
+            let rendered = await engine.hasRenderedVideoFrame()
+            return rendered && engine.isPlaybackPositionReady
+        }
+        let renderedAt = ContinuousClock.now
+        let firstRenderedDuration = started.duration(to: renderedAt)
+        let playToFirstRenderedDuration = preparationStarted.duration(to: renderedAt)
         let firstPresentedPosition = engine.currentTime
+        await recordIO?("firstFrame")
         XCTAssertGreaterThanOrEqual(firstPresentedPosition, max(0, startPosition - 1))
         XCTAssertLessThan(firstPresentedPosition, startPosition + 5)
-        try await waitForPlayback(engine, after: startPosition + 0.5, before: startPosition + 5)
-        XCTAssertGreaterThan(engine.duration, max(startPosition, seekPositions.max()!) + 1)
+        try await waitForPlayback(engine, after: firstPresentedPosition + 0.5, before: startPosition + 5)
+        let startupDuration = preparationStarted.duration(to: .now)
+        if environment["PLOZZ_WEBDAV_REQUIRE_SUBTHREE_START"] == "1" {
+            if detailPlayDelay == nil {
+                XCTAssertNotNil(prepared, "The prepared-start acceptance run must consume a reservation")
+            }
+            XCTAssertLessThan(startupDuration, .seconds(3), "Play-to-render-and-advance exceeded the target")
+        }
+        XCTAssertGreaterThan(
+            engine.duration, max(startPosition, seekPositions.max()!) + Double(max(1, sustainedPlaybackSeconds))
+        )
         print("WEBDAV_DISC startPosition=\(startPosition) firstPresentedPosition=\(firstPresentedPosition)")
-        print("WEBDAV_DISC firstFrameSeconds=\(started.duration(to: .now)) duration=\(engine.duration)")
-        print("WEBDAV_DISC preparationAndFirstFrameSeconds=\(preparationDuration + started.duration(to: .now))")
+        print("WEBDAV_DISC firstRenderedFrameSeconds=\(firstRenderedDuration) duration=\(engine.duration)")
+        print("WEBDAV_DISC playToFirstRenderedFrameSeconds=\(playToFirstRenderedDuration)")
+        print("WEBDAV_DISC population=\(detailPlayDelay == nil ? (prepared == nil ? "cold" : "prepared") : "timed-detail") reservationConsumed=\(prepared?.wasConsumed ?? false)")
+        print("WEBDAV_DISC warmupOutcome=\(prepared?.warmupOutcome.map { String(describing: $0) } ?? "none")")
+        print("WEBDAV_DISC startupSeconds=\(startupDuration) route=\(engine.diagnosticRoute?.rawValue ?? "unknown")")
+        try await checkSustainedPlayback(
+            engine, seconds: sustainedPlaybackSeconds, phase: "startup"
+        )
         for target in seekPositions {
             let seekStart = ContinuousClock.now
             try await perform(engine: engine) { await engine.seek(to: target) }
             try await waitForPlayback(engine, after: target + 0.3, before: target + 5)
             print("WEBDAV_DISC seek=\(target) landed=\(engine.currentTime) elapsed=\(seekStart.duration(to: .now))")
         }
-        if sustainedPlaybackSeconds > 0 {
-            let initialPosition = engine.currentTime
-            let started = ContinuousClock.now
-            while started.duration(to: .now) < .seconds(sustainedPlaybackSeconds) {
-                if case .failed = engine.status { throw CheckFailure.engineFailed }
-                try await Task.sleep(for: .milliseconds(250))
-            }
-            let progress = engine.currentTime - initialPosition
-            XCTAssertGreaterThan(progress, Double(sustainedPlaybackSeconds) - 2)
-            print("WEBDAV_DISC sustainedSeconds=\(sustainedPlaybackSeconds) progressed=\(progress)")
+        try await checkSustainedPlayback(
+            engine, seconds: sustainedPlaybackSeconds, phase: "afterSeek"
+        )
+        engine.stop()
+        await engine.drainTransport()
+        let renderedAfterStop = await engine.hasRenderedVideoFrame()
+        XCTAssertFalse(renderedAfterStop)
+    }
+
+    private func checkSustainedPlayback(
+        _ engine: PlozzigenVideoEngine, seconds: Int, phase: String
+    ) async throws {
+        guard seconds > 0 else { return }
+        let initialPosition = engine.currentTime
+        let started = ContinuousClock.now
+        while started.duration(to: .now) < .seconds(seconds) {
+            if case .failed = engine.status { throw CheckFailure.engineFailed }
+            try await Task.sleep(for: .milliseconds(250))
         }
+        let progress = engine.currentTime - initialPosition
+        XCTAssertGreaterThan(progress, Double(seconds) - 2, "Sustained playback stalled during \(phase)")
+        print("WEBDAV_DISC sustainedSeconds=\(seconds) progressed=\(progress) phase=\(phase)")
     }
 
     private func perform(
@@ -286,16 +505,18 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         _ engine: PlozzigenVideoEngine, after: Double, before: Double = .greatestFiniteMagnitude
     ) async throws {
         try await wait(engine: engine, seconds: 45) {
-            engine.isPlaybackPositionReady && engine.hasPresentedVideoFrame
+            guard engine.isPlaybackPositionReady else { return false }
+            let rendered = await engine.hasRenderedVideoFrame()
+            return rendered && engine.isPlaybackPositionReady
                 && engine.currentTime > after && engine.currentTime < before
         }
     }
 
     private func wait(
-        engine: PlozzigenVideoEngine, seconds: Int, condition: () -> Bool
+        engine: PlozzigenVideoEngine, seconds: Int, condition: @MainActor () async -> Bool
     ) async throws {
         let deadline = ContinuousClock.now + .seconds(seconds)
-        while !condition() {
+        while !(await condition()) {
             if case .failed = engine.status { throw CheckFailure.engineFailed }
             guard ContinuousClock.now < deadline else { throw CheckFailure.deadlineExceeded }
             try await Task.sleep(for: .milliseconds(50))

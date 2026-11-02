@@ -95,11 +95,153 @@ challenges are reused only inside the exact ephemeral account/revision/origin/
 trust/role session; anonymous delivery remains separate. Origin revalidation,
 complete-response validation and server authentication refusals remain enforced.
 
+Detail-page WebDAV preparation retains one exact file, not a row, season or
+collection of versions. Its provider locator path omits playback sidecar
+discovery/materialization and watch-state work. It opens the ordinary
+representation-bound source without taking playback admission. MP4/MOV and
+Matroska/WebM retain up to 8 MiB from the beginning and 4 MiB from the end,
+without overlapping those windows. ISO and other formats retain up to 4 MiB
+from the beginning and do not blindly fetch a container tail.
+
+ISO and nonzero resume positions additionally use Aether's bounded
+`prepareSource` operation through a borrowed reader. It discovers disc extents
+and timestamp origins through the engine, seeks to the actual presentation
+position, and traverses two seconds of compressed video/audio coverage for
+ordinary containers or four seconds for a disc's native HLS startup segment.
+It neither creates a player nor decodes video. Packet-level coverage is not a
+decoded-frame, complete-track-inventory or cache-residency guarantee. The
+normal playback open remains authoritative; its stream analysis is unchanged.
+Preparation alone limits analysis to 2 MiB and two media seconds without opening
+decoders. Recognized discs with a declared title duration also warm the native
+duration-estimation reads through the disc adapter, within the same budgets;
+arbitrary container tails are not substituted for those reads.
+If a DVD seek exposes only a late keyframe, preparation may seek at most two
+seconds earlier once, reset its coverage evidence and retry the unchanged target
+window. Packet/input/time budgets remain cumulative; Blu-ray seeking is unchanged.
+Default audio selection during decoder-free preparation can differ from playback
+selection. Preparation does not change the user's audio preferences or promise
+coverage for the ultimately selected track.
+Closing the borrowed reader drains its work without consuming the single-use
+playback reservation.
+
+The source cache retains at most 64 ranges and 40 MiB of payload (64 MiB for
+ISO), including the opening and optional tail windows. Ordinary initial starts retain only their
+opening/tail bytes. This is in addition to
+the existing 256 KiB opening probe; these are source-level buffers, not decoder
+or process-memory limits. Full caches do not evict or grow; publication freezes
+the cache so subsequent playback reads cannot add to it. Native preparation
+allows at most 28 MiB of reader input (48 MiB for ISO), 4,096 packets, 4 MiB per packet and
+20 seconds (30 for ISO) inside the overall 30-second deadline. Reader input is not a
+wire-byte cap: validated read-ahead can fetch unused bytes, while repeated
+cached reads still count as input. Preparation read-ahead is capped at 4 MiB,
+including clones. Incomplete native coverage fails preparation rather than
+being labeled complete. No incomplete HTTP response becomes readable.
+
+During playback, prepared-source demand reads preserve positive short cache
+boundaries. They do not wait for an uncached remainder merely to fill a larger
+adaptive window before delivering already-validated bytes to the demuxer.
+HTTP(S) playback uses two independently validated response slots of at most
+8 MiB each, shared across the reader and its clones, plus at most 2 MiB of small
+probes. A complete response can be consumed while its successor is still loading;
+partial HTTP bodies are never exposed. Other transports retain the normal
+32 MiB steady-state read-ahead limit. Cancellation must drain a response before
+its slot can be reused. These bounds exclude the source's prepared cache and
+the engine's decoded-frame and packet buffers.
+The engine's software consumer also services parked video on a bounded 20 ms
+wait while its producer is blocked on source I/O. It does not lower the existing
+125 ms video lead or 250 ms clock scheduling requirements, enlarge buffers or
+treat a servicing deadline as end of stream.
+
+Play must still obtain its ordinary provider request and playback admission.
+Only an exact locator and current account/credential/trust/session match can
+consume the preparation, after fresh DAV identity and size validation. The
+delivery URL and conditional-read validator remain fixed; authorization or
+representation failures are not hidden by reopening or serving stale success.
+Unprepared and prepared startup are separate measurement populations. Preparation
+time, whether the reservation was actually consumed, renderer readiness and
+subsequent playback-clock advancement must be reported separately; a ready
+callback alone is not a displayed-frame measurement, and clock advancement is
+not proof that additional frames reached a physical display.
+The hosted live benchmark checks a full minute of advancing playback immediately
+after startup and again after seeking, so a quick first frame followed by a stall
+does not pass.
+Preparation does not guarantee a startup deadline: fresh provider metadata and
+DAV revalidation remain on the Play path, and continued playback still needs
+sufficient source throughput. Increasing preparation coverage cannot compensate
+for an unavailable server or an arbitrarily delayed range response.
+
 Share sidecar discovery lists the video's parent once and visits only advertised
 `Subs`/`Subtitles` folders, using their actual casing. An unlistable parent retains
 the legacy folder-name probes; ordinary optional-listing failures are logged,
 while cancellation stops discovery. Own-folder exact-stem matching, dedicated
 folder boundary matching and extras' exact-stem rule are unchanged.
+For WebDAV, the same fresh, request-local parent listing also supplies the playback locator
+when it contains exactly one matching physical path with a file size and strong
+ETag or modification time. Missing, incomplete or ambiguous entries retain the
+ordinary opening-stat fallback. This avoids a redundant metadata round trip,
+not the final source-open/prepared-claim revalidation. Listings are never reused
+across Play requests, and detail preparation still does no sidecar discovery.
+Other share transports retain opening-stat metadata; their directory-listing and
+file-stat representations need not carry the same precision or completeness.
+
+The opt-in hosted `testExplicitLocalISOPlaybackWithLatency` uses a synthetic ISO
+staged in the owned test host's caches directory, selected by
+`PLOZZ_WEBDAV_LOCAL_ISO_FIXTURE` (a filename only). The optional
+`PLOZZ_WEBDAV_LOCAL_START_POSITION` selects a nonnegative resume position.
+Its loopback-only server reads bounded chunks from the file rather than retaining
+the whole image. GET responses wait 250 ms before headers and 10 ms before each
+64 KiB body chunk (6.25 MiB/s nominal per connection, before scheduling overhead).
+The test requires the actual `localHLS` route and enough duration for both
+minute-long continuity windows; software fallback does not satisfy this workload.
+Request counts and sent body bytes expose extra I/O. This is a controlled
+per-connection delivery model, not shared-link bandwidth or physical-device proof.
+The companion `testExplicitLocalContainerPlaybackWithLatency` accepts an MP4 or
+MKV filename through `PLOZZ_WEBDAV_LOCAL_CONTAINER_FIXTURE`, under the same
+delivery schedule and continuity checks, without forcing a particular engine
+route. The reported route remains part of the evidence. I/O snapshots at Play,
+first render and teardown separate startup requests/bytes from later playback.
+`playToFirstRenderedFrameSeconds` includes provider work before engine load;
+`startupSeconds` additionally requires at least 0.5 seconds of clock advancement.
+Set `PLOZZ_WEBDAV_AGGREGATE_BANDWIDTH=1` for concurrent-read comparisons.
+One shared pacer then grants a body-chunk slot every 10 ms across all responses,
+instead of granting that rate to each connection. A slot carries at most 64 KiB;
+short metadata/final chunks conservatively consume a full slot. Header latency
+remains per response. Keep this mode identical for baseline and candidate:
+additional connections must not manufacture additional source bandwidth.
+
+For an early-Play scenario, set `PLOZZ_WEBDAV_DETAIL_PREPARATION=1` and
+`PLOZZ_WEBDAV_DETAIL_PLAY_DELAY_SECONDS` to `2` or `3`. The hosted benchmark
+uses the production detail coordinator, including its 750 ms dwell, and invokes
+the normal handoff without waiting for preparation to complete. Its timer starts
+at that Play action, including cancellation/drain and ordinary provider work.
+It reports readiness at Play and actual reservation consumption; an incomplete
+preparation cannot be relabeled as a prepared start. Set
+`PLOZZ_WEBDAV_REQUIRE_SUBTHREE_START=1` for an additional sub-three-second
+assertion, including when Play falls back to a cold open. Matched baseline
+comparisons need not enable that stretch target. This models the
+already-resolved detail's lifecycle, not full UI navigation, artwork loading or
+physical remote/touch input. Runs without the delay still wait for complete
+preparation and must not be used as evidence for this early-Play scenario.
+Both app shells retain a pending preparation ticket and request interruption of
+optional warming at Play, preserving complete validated ranges without waiting
+for the entire warmup. The hosted `PLOZZ_WEBDAV_EARLY_HANDOFF=1` mode exercises
+that path; omitting it retains the older completed-reservation comparison.
+Ticket registration is not readiness: the benchmark snapshots the
+warmup outcome before handoff and reports the sealed outcome and actual
+consumption after resolution. Interrupted warming must never be reported as
+complete native coverage.
+An explicit native preparation budget limit, end-of-source or unavailable seek
+discards and drains the reservation before ordinary playback opens afresh.
+Waiting for that reservation still reports incomplete preparation, never ready
+coverage or a consumed source. Transport timeouts and actual read, authorization,
+trust and representation failures remain failures; they are not hidden by this
+optional-preparation fallback.
+The range pipeline requires an
+HTTP(S) transport identifier from the resolved source's pinned session at reader
+creation, not a second account lookup. DEBUG benchmarks may set
+`PLOZZ_WEBDAV_RANGE_PIPELINE=0` to compare the old reader; Release builds always
+use the bounded pipeline for eligible sources. Compare this separately and together with early handoff,
+using the same aggregate bandwidth cap rather than per-connection throughput.
 
 Related upstream designs separate request sizing from buffered consumption:
 [FFmpeg HTTP](https://github.com/FFmpeg/FFmpeg/blob/b7e835e06913e4374a4567003fe8c75cebfffb98/libavformat/http.c)
@@ -272,15 +414,25 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/c1ce4cf48bad416e6be5230032a2b7f332e833d8)
-at commit `c1ce4cf48bad416e6be5230032a2b7f332e833d8`, integrating upstream
-**7.51.0** (`a877941bd3402d5f531edad0cbe4c9b33eefa856`).
-Playback diagnostics show `AetherEngine v7.51.0`, read from the linked engine
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/3c035a3f62d7cb40e2cad93d28c7296746d94174)
+at commit `3c035a3f62d7cb40e2cad93d28c7296746d94174`, integrating upstream
+**7.53.1** (`0839aeee18dd0818c5c307a3c5ecba8ea3161b22`).
+Playback diagnostics show `AetherEngine v7.53.1`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in
 attributions because the upstream version does not identify Plozz's patches.
 The 7.51.0 integration includes 7.50.0's 24-bit PCM spatial-bed output with
-route-selected APAC for AirPlay. FFmpegBuild 3.10.1, LibDovi 2.1.0 and
-LibTrueHD 3.1.0 remain unchanged in the resolved graph.
+route-selected APAC for AirPlay. The 7.53.1 update advances FFmpegBuild to
+3.11.1; LibDovi 2.1.0 and LibTrueHD 3.1.0 remain unchanged.
+It corrects the remote-HLS buffered frontier, uses measured producer throughput
+for short forward seeks, bounds bitmap subtitle retention after backward seeks,
+and supports HLS byte-range segments. The fork preserves AAC timing compensation,
+ASS duration handling, dynamic linkage and active-picture APIs, including seam
+invalidation in the upstream weak-session callback.
+It also retains bounded position-aware WebDAV preparation, video servicing
+during source reads, and active-picture cleanup compatible with older runtimes.
+New audio shaping and low-resolution SDR upscaling remain disabled by default.
+The engine uses upstream's single privacy manifest, including local-media file
+timestamps; FFmpeg's applicable frameworks now carry their own manifests.
 The update retains overlapped VOD/HDR preparation and adds the upstream
 subtitle, HLG, chapter-timing, bounded-loading and cache fixes. Bitmap subtitle
 OCR is armed only for a native rendition used by PiP, AirPlay or an external
@@ -364,7 +516,7 @@ LibDTSX **1.0.1**. Upstream 7.36.0 added another object-audio rendering path, co
 spatial speaker positions and a tvOS spatial-output activator for receivers that need it.
 It also includes live-replay recovery, software-video recovery after a screen lock,
 and the intervening 7.35.x playback fixes; these are upstream changes, not new
-Plozz-specific implementations. The current pin uses FFmpegBuild **3.10.1**
+Plozz-specific implementations. The current pin uses FFmpegBuild **3.11.1**
 and LibDovi **2.1.x**, with LibTrueHD **3.1.0** enabled in Plozz and LibDTSX
 removed. It also includes
 single-connection spatial-audio probe safeguards and system-composited Dolby Vision
@@ -559,7 +711,7 @@ on iOS/iPadOS. Enabling the option is not evidence that a particular file took
 the route or that a physical display applied its metadata. The engine logs
 `DV P7 dual-layer route: taken` or the reason it was not taken; actual picture
 and HDMI output require a suitable physical-device sample.
-See the pinned [FEL design and evidence](https://github.com/brandomoore/AetherEngine/blob/c1ce4cf48bad416e6be5230032a2b7f332e833d8/docs/dolby-vision-fel.md).
+See the pinned [FEL design and evidence](https://github.com/brandomoore/AetherEngine/blob/3c035a3f62d7cb40e2cad93d28c7296746d94174/docs/dolby-vision-fel.md).
 
 ## Remote AV1 Matroska startup
 

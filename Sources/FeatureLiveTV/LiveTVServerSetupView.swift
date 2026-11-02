@@ -35,7 +35,7 @@ struct LiveTVServerSetupView: View {
                     )
                     if let connectServer {
                         Button(action: connectServer) {
-                            LiveTVSetupActionLabel(title: "Connect a server", symbol: "plus")
+                            LiveTVSetupActionLabel(title: SettingsCopy.addSource, symbol: "plus")
                         }
                             .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                     } else {
@@ -120,7 +120,7 @@ struct LiveTVServerSetupView: View {
             if !choices.isEmpty, let connectServer {
                 SettingsSectionGroup {
                     Button(action: connectServer) {
-                        LiveTVSetupActionLabel(title: "Connect another server", symbol: "plus")
+                        LiveTVSetupActionLabel(title: SettingsCopy.addSource, symbol: "plus")
                     }
                         .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                 }

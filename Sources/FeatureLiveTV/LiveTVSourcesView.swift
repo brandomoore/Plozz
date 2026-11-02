@@ -166,7 +166,7 @@ public struct LiveTVSourcesView: View {
                     content
                 }
             } else {
-                LiveTVSettingsPage(title: "Sources") {
+                LiveTVSettingsPage(title: SettingsCopy.tvSources) {
                     catalogStatus
                     content
                 }
@@ -342,7 +342,7 @@ private struct LiveTVSourcesContent: View {
                     LiveTVSettingsSourceList(sources: configuredSources) { source in
                         sourceRow(source)
                     } setup: {
-                        LiveTVSettingsPage(title: "Add TV source") { setupActions }
+                        LiveTVSettingsPage(title: SettingsCopy.addTVSource) { setupActions }
                     }
                 } else {
                     if !model.configuration.playlists.isEmpty || !model.configuration.servers.isEmpty {
@@ -561,7 +561,7 @@ private struct LiveTVSourcesContent: View {
     }
 
     private var setupActions: some View {
-        SettingsSectionGroup("Add a source") {
+        SettingsSectionGroup(SettingsCopy.addTVSource) {
             if connectIPTV != nil || providerSetupRouter != nil {
                 Button {
                     if let connectIPTV { connectIPTV(nil, .playlist) }

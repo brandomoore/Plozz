@@ -298,6 +298,39 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   metadata or generic source errors. Retry failures remain visible and secondary
   mobile actions continue to overflow before the primary label is squeezed.
 
+- **Bounded detail playback preparation** — The visible, active detail page may
+  prepare one already-known WebDAV file after a 750 ms dwell. Movies use the
+  resolved server/version; series use only the hero's resolved playable episode,
+  not the displayed series container or every rail card. A versionless episode or
+  raw movie qualifies only when ProviderShare's canonical physical-file ID proves
+  its exact relative path; a logical title ID or synthetic presentation version
+  alone is never that proof. Ambiguous or unauthorized selections do no work. Multi-version preparation
+  additionally requires an explicit exact selection and automatic version mode.
+  HTTP(S) network-share accounts and `networkFile` locators are both required;
+  other providers and SMB/SFTP/FTP/NFS shares are not implicitly WebDAV.
+  This approved exception uses `MediaProvider.playbackPreparationLocator`, not
+  full `playbackInfo`: it cannot inventory/materialize sidecar subtitles or mutate
+  watch state. It does not call `loadPlaybackVersions`, discover alternate
+  inventories, instantiate an engine, or add another stream-facts probe.
+  Preparation uses the item's already-loaded resume position (zero when absent);
+  nonfinite or negative positions are ineligible. Progress changes supersede the
+  old candidate without fetching watch state. Resume/Start Over still choose the
+  actual playback time, and may reuse a valid file cache prepared for another time.
+  The shared `FeatureHomeCore` coordinator checks live profile, authorization,
+  account, server-user and credential identity around awaits. Source/version/
+  episode changes, covered pages, inactivity and disappearance cancel work, with
+  a 30-second preparation deadline. Background failures are logged without
+  credential-bearing descriptions or user error sheets.
+  A deliberate exact Play handoff retains an in-flight or completed reservation
+  in the shell and asks optional preparation to yield while the normal
+  resume/version/admission gates run. Profile/auth changes still
+  evict it; abandonment is bounded by the resolver's 30-second TTL. Play must
+  freshly validate and claim the exact locator, and a different choice plays
+  normally without borrowing the prepared file. Preparation is an optimization,
+  never authorization or evidence that playback succeeded.
+  Performance reports must separate cold starts from detail-prepared starts and
+  include dwell/byte costs; sub-three-second tap-to-play is not a cold-start claim.
+
 - **Kids Discovery policy** — both shells consume the live profile's effective
   Hero settings, not a destructive rewrite of saved preferences. Kids profiles
   exclude external Discovery, including Showcase, cached attributed titles, and
@@ -331,9 +364,13 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   selecting the already active preset does nothing.
   **Include Next Up** is a profile-scoped setting inside the **Continue Watching**
   section's configuration on every platform, alongside its artwork choice.
-  **Continue Watching action** chooses **Play** (the unchanged default) or
-  **Open details** for movie/episode cards on Home, including merged Next Up
-  entries and every TV Home layout. It persists and transfers with the profile.
+  **Continue Watching action** chooses **Open details** (the default) or **Play**
+  for movie/episode cards on Home, including merged Next Up entries and every TV
+  Home layout. Existing saved choices are preserved; profiles without a saved
+  action open details. The choice persists and transfers with the profile.
+  Opening an episode from Continue Watching shows that episode's own details,
+  rather than the parent show's page. Other browsing keeps its show-context
+  navigation.
   Artwork, progress overlays, context menus and Live TV tuning are unchanged.
   Library Recommended rows retain their existing detail navigation.
   On Apple TV, the remote's center button follows this choice, while Play/Pause
@@ -768,6 +805,11 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   unavailable rows and unsupported tabs retain saved intent. Browse remains
   accessible when no preferred tab is supported. Collection/playlist member
   routes remain plain Browse destinations.
+  Mobile Home's no-account and connected-but-empty states share
+  `PlozziOSHomeEmptyState`: the small blue Plozz mascot without its wordmark, a state-specific explanation,
+  and one native **Add Source** action. Only the no-account state also offers
+  device transfer. Both remain scrollable at large text sizes and in landscape;
+  empty-state presentation does not alter provider loading or profile inclusion.
   Library modes and series seasons both use CoreUI's `PlozzContentTabs`, with
   the same selected glass pill, inactive text, touch sizing, and reveal behavior.
   Tabs retain their identity through loading, empty, and failure states and

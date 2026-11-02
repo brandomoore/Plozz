@@ -9,10 +9,12 @@ public struct IPTVSignInView: View {
     @State private var showsAdvanced: Bool
     @Environment(\.themePalette) private var palette
     private let onCancel: () -> Void
+    private let showsCancelButton: Bool
 
     public init(
         deviceID: String, address: String = "", name: String = "", guideAddress: String = "",
         guideURLs: [URL] = [], reconnecting: UserSession? = nil, initialMode: IPTVCredential.Mode = .playlist,
+        showsCancelButton: Bool = true,
         onAuthenticated: @escaping (UserSession) throws -> Void, onCancel: @escaping () -> Void
     ) {
         let model = IPTVAuthViewModel(
@@ -23,12 +25,14 @@ public struct IPTVSignInView: View {
         _model = State(initialValue: model)
         _showsAdvanced = State(initialValue: model.hasAdvancedConfiguration)
         self.onCancel = onCancel
+        self.showsCancelButton = showsCancelButton
     }
 
-    public init(model: IPTVAuthViewModel, onCancel: @escaping () -> Void) {
+    public init(model: IPTVAuthViewModel, showsCancelButton: Bool = true, onCancel: @escaping () -> Void) {
         _model = State(initialValue: model)
         _showsAdvanced = State(initialValue: model.hasAdvancedConfiguration)
         self.onCancel = onCancel
+        self.showsCancelButton = showsCancelButton
     }
 
     public var body: some View {
@@ -42,17 +46,25 @@ public struct IPTVSignInView: View {
                     IPTVConnectionFields(model: model, showsAdvanced: $showsAdvanced)
                     IPTVConnectionStatus(model: model)
                 }
-                Button(role: .cancel) {
-                    model.cancel()
-                    onCancel()
-                } label: {
-                    Text("Cancel").frame(maxWidth: .infinity)
+                if showsCancelButton {
+                    Button(role: .cancel) {
+                        model.cancel()
+                        onCancel()
+                    } label: {
+                        Text("Cancel").frame(maxWidth: .infinity).plozzPageActionLabel()
+                    }
+                    .plozzPageActionButton(role: .secondary)
+                    .accessibilityIdentifier("iptv-cancel")
                 }
-                .plozzActionButton(role: .secondary)
-                .accessibilityIdentifier("iptv-cancel")
             }
+            #if os(iOS)
+            .controlSize(.large)
+            .frame(maxWidth: 640)
+            .padding(20)
+            #else
             .frame(maxWidth: 840)
             .padding(32)
+            #endif
             .frame(maxWidth: .infinity)
         }
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
@@ -321,9 +333,9 @@ private struct IPTVConnectionStatus: View {
             }
 
             Button(action: model.connect) {
-                Text("Connect").frame(maxWidth: .infinity)
+                Text("Connect").frame(maxWidth: .infinity).plozzPageActionLabel()
             }
-            .plozzActionButton(role: .primary)
+            .plozzPageActionButton(role: .primary)
             .disabled(!model.canConnect)
             .accessibilityIdentifier("iptv-connect")
         }

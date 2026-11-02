@@ -7,41 +7,48 @@ import FeatureAuth
 import FeatureDiscoveryCore
 import FeatureLiveTV
 import ProviderPlex
+import ProviderSilo
 import SwiftUI
 
 struct AddServerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.themePalette) private var palette
-    @State private var provider: ProviderKind
+    @State private var chosenProvider: ProviderKind?
     @State private var address: String
     @State private var server: MediaServer?
-    @State private var jellyfinDiscovery = ServerPickerViewModel(provider: .jellyfin)
-    @State private var embyDiscovery = ServerPickerViewModel(provider: .emby)
-    @State private var siloDiscovery = ServerPickerViewModel(provider: .silo)
-    @State private var showingPlexSignIn = false
+    @State private var jellyfinDiscovery: ServerPickerViewModel
+    @State private var embyDiscovery: ServerPickerViewModel
+    @State private var siloDiscovery: ServerPickerViewModel
     @State private var validationMessage: LocalizedStringResource?
     @State private var isValidating = false
     @State private var validationTask: Task<Void, Never>?
 
     let appModel: PlozziOSAppModel
+    private let initialProvider: ProviderKind?
+    private var startsAtProvider: Bool { initialProvider != nil }
+    private let http: any HTTPClient
     private let initialIPTVPlaylist: LiveTVPlaylistSource?
     private let initialIPTVAccount: Account?
     private let initialProfileID: String
     private let initialIPTVMode: IPTVCredential.Mode
 
     init(
-        appModel: PlozziOSAppModel, initialProvider: ProviderKind = .jellyfin, initialAddress: String = "",
+        appModel: PlozziOSAppModel, initialProvider: ProviderKind? = nil, initialAddress: String = "",
         initialIPTVPlaylist: LiveTVPlaylistSource? = nil, initialIPTVAccount: Account? = nil,
-        initialIPTVMode: IPTVCredential.Mode = .playlist
+        initialIPTVMode: IPTVCredential.Mode = .playlist,
+        http: any HTTPClient = URLSessionHTTPClient(),
+        discoveryModel: @MainActor (ProviderKind) -> ServerPickerViewModel = { ServerPickerViewModel(provider: $0) }
     ) {
         self.appModel = appModel
+        self.http = http
+        _jellyfinDiscovery = State(initialValue: discoveryModel(.jellyfin))
+        _embyDiscovery = State(initialValue: discoveryModel(.emby))
+        _siloDiscovery = State(initialValue: discoveryModel(.silo))
+        self.initialProvider = initialProvider
         self.initialIPTVPlaylist = initialIPTVPlaylist
         self.initialIPTVAccount = initialIPTVAccount
         initialProfileID = appModel.profiles.activeProfileID
         self.initialIPTVMode = initialIPTVMode
-        // Media Share isn't a media *server*; callers route it elsewhere. Guard
-        // against it here so the provider picker never lands on an invalid state.
-        _provider = State(initialValue: initialProvider == .mediaShare ? .jellyfin : initialProvider)
         // Pre-fill the address when adopting a server synced from another device, so
         // the user only has to sign in. Plex is account-based (no address field).
         _address = State(initialValue: initialProvider == .plex ? "" : initialAddress)
@@ -49,6 +56,41 @@ struct AddServerView: View {
 
     var body: some View {
         NavigationStack {
+            if let initialProvider {
+                connectionContent(for: initialProvider)
+            } else {
+                ServerOnboardingPage(provider: nil, title: Text(SettingsCopy.addSource)) {
+                    ServerProviderChoices { selected in
+                        validationTask?.cancel()
+                        isValidating = false
+                        address = ""
+                        server = nil
+                        validationMessage = nil
+                        chosenProvider = selected
+                    }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
+                }
+                .navigationDestination(item: $chosenProvider) { selected in
+                    connectionContent(for: selected)
+                }
+            }
+        }
+        .onChange(of: appModel.profiles.activeProfileID) { _, profileID in
+            if profileID != initialProfileID { dismiss() }
+        }
+        .guidePreparationOverlay(
+            model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
+            palette: palette
+        )
+    }
+
+    @ViewBuilder
+    private func connectionContent(for provider: ProviderKind) -> some View {
+        Group {
             if provider == .iptv {
                 IPTVSignInView(
                     deviceID: appModel.deviceID,
@@ -60,6 +102,7 @@ struct AddServerView: View {
                         $0.session(token: appModel.accountStore.token(for: $0.id) ?? "")
                     },
                     initialMode: initialIPTVMode,
+                    showsCancelButton: false,
                     onAuthenticated: {
                         guard appModel.profiles.activeProfileID == initialProfileID,
                               initialIPTVAccount.map({ previous in
@@ -74,119 +117,107 @@ struct AddServerView: View {
                     },
                     onCancel: { dismiss() }
                 )
+            } else if provider == .mediaShare {
+                PlozziOSUnifiedAddShareView(
+                    appModel: appModel, embedsNavigationStack: false, isNavigationRoot: startsAtProvider,
+                    onComplete: { dismiss() }
+                )
+            } else if provider == .plex {
+                PlexServerSignInView(
+                    appModel: appModel, http: http, isNavigationRoot: startsAtProvider,
+                    onComplete: { dismiss() }
+                )
             } else {
-            Form {
-                Section {
-                    ManagedProviderPicker(provider: $provider)
-
-                    if provider != .plex {
-                        ManagedServerDiscoverySection(
-                            model: discoveryModel,
-                            showsEmptyState: provider == .silo,
-                            onSelect: selectDiscoveredServer
-                        )
-
+                ServerOnboardingPage(
+                    provider: provider, title: Text(verbatim: provider.displayName)
+                ) {
+                    ManagedServerDiscoverySection(
+                        model: discoveryModel(for: provider),
+                        onSelect: { selectDiscoveredServer($0, provider: provider) }
+                    )
+                    SettingsSectionGroup("Enter address") {
                         TextField("Server address", text: $address)
                             .textContentType(.URL)
                             .keyboardType(.URL)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .submitLabel(.continue)
-                            .onSubmit(continueSignIn)
+                            .onSubmit { continueSignIn(provider: provider) }
                             .disabled(isValidating)
-                    }
-                } header: {
-                    Text("Media server")
-                } footer: {
-                    if provider == .plex {
-                        Text("Plex sign-in finds every server linked to your account.")
-                    } else if provider == .silo {
-                        Text("Select a saved or nearby server to continue. If it isn't listed, enter the address you use to open Silo in a browser. An IP address alone uses port 8090.")
-                    } else {
-                        Text("Use a hostname, IP address, or full URL.")
-                    }
-                }
-
-                if let validationMessage {
-                    Section {
-                        Label(validationMessage, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                    }
-                }
-
-                Section {
-                    Button {
-                        continueSignIn()
-                    } label: {
-                        if isValidating {
-                            ProgressView("Checking server…")
+                            .accessibilityIdentifier("add-server-address")
+                    } footer: {
+                        if provider == .silo {
+                            Text("Use the address you open Silo with in a browser. An IP address alone uses port 8090; include a different port or path if your server needs it.")
                         } else {
-                            Text(provider == .plex ? "Link Plex account" : "Continue")
+                            Text("Use a hostname, IP address, or full URL.")
                         }
                     }
-                    .frame(maxWidth: .infinity)
-                    .disabled(isValidating || (provider != .plex && address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                    if let validationMessage {
+                        Label(validationMessage, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Button {
+                        continueSignIn(provider: provider)
+                    } label: {
+                        Group {
+                            if isValidating {
+                                ProgressView("Checking server…")
+                            } else {
+                                Text("Connect")
+                            }
+                        }
+                        .plozzPageActionLabel()
+                    }
+                    .plozzPageActionButton()
+                    .controlSize(.large)
+                    .disabled(isValidating || address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("add-server-connect")
+                }
+                .navigationDestination(item: $server) { server in
+                    ManagedServerSignInView(
+                        server: server, appModel: appModel,
+                        onComplete: { dismiss() }, http: http
+                    )
+                }
+                .task(id: provider) {
+                    let model = discoveryModel(for: provider)
+                    let accounts = appModel.accounts.filter { $0.server.provider == provider }
+                    let grouped = Dictionary(grouping: accounts, by: { $0.server.identityKey })
+                    model.setSignedInServers(grouped.values.compactMap { accounts in
+                        guard let first = accounts.first else { return nil }
+                        return SignedInServer(server: first.server, userNames: accounts.map(\.userName))
+                    }.sorted { $0.server.name.localizedStandardCompare($1.server.name) == .orderedAscending })
+                    model.startScan()
+                    defer { model.stopScan() }
+                    try? await Task.sleep(for: .seconds(86_400))
+                }
+                .onDisappear {
+                    validationTask?.cancel()
+                    isValidating = false
                 }
             }
-            .settingsPageSurface()
-            .navigationTitle("Add Server")
-            .toolbar {
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if startsAtProvider && provider != .mediaShare && provider != .plex {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
             }
-            .navigationDestination(item: $server) { server in
-                ManagedServerSignInView(
-                    server: server,
-                    appModel: appModel,
-                    onComplete: { dismiss() }
-                )
-            }
-            .navigationDestination(isPresented: $showingPlexSignIn) {
-                PlexServerSignInView(
-                    appModel: appModel,
-                    onComplete: { dismiss() }
-                )
-            }
-            .task(id: provider) {
-                guard provider != .plex else { return }
-                let model = discoveryModel
-                model.startScan()
-                defer { model.stopScan() }
-                try? await Task.sleep(for: .seconds(86_400))
-            }
-            .onChange(of: provider) { _, _ in
-                validationTask?.cancel()
-                validationMessage = nil
-                isValidating = false
-            }
-            .onDisappear {
-                validationTask?.cancel()
-                isValidating = false
-            }
-            }
         }
-        .guidePreparationOverlay(
-            model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
-            palette: palette
-        )
     }
 
-    private func continueSignIn() {
+    private func continueSignIn(provider: ProviderKind) {
         guard !isValidating else { return }
         validationMessage = nil
-        if provider == .plex {
-            showingPlexSignIn = true
-            return
-        }
-        let model = discoveryModel
-        let selectedProvider = provider
+        let model = discoveryModel(for: provider)
         model.manualURLText = address
         guard model.canSubmitManualURL else { return }
         isValidating = true
         validationTask = Task {
             let validated = await model.submitManualURL()
-            guard !Task.isCancelled, provider == selectedProvider else { return }
+            guard !Task.isCancelled, (initialProvider ?? chosenProvider) == provider else { return }
             isValidating = false
             guard appModel.profiles.activeProfileID == initialProfileID else { return }
             if let validated { server = validated }
@@ -194,7 +225,7 @@ struct AddServerView: View {
         }
     }
 
-    private var discoveryModel: ServerPickerViewModel {
+    private func discoveryModel(for provider: ProviderKind) -> ServerPickerViewModel {
         switch provider {
         case .silo: siloDiscovery
         case .emby: embyDiscovery
@@ -202,92 +233,67 @@ struct AddServerView: View {
         }
     }
 
-    private func selectDiscoveredServer(_ selectedServer: MediaServer) {
+    private func selectDiscoveredServer(_ selectedServer: MediaServer, provider: ProviderKind) {
+        guard !isValidating, appModel.profiles.activeProfileID == initialProfileID else { return }
         address = selectedServer.baseURL.absoluteString
         validationMessage = nil
-        if provider == .silo {
-            siloDiscovery.select(selectedServer)
-            server = selectedServer
-        }
+        discoveryModel(for: provider).select(selectedServer)
+        server = selectedServer
     }
 
 }
 
-private struct ManagedServerDiscoverySection: View {
+struct ManagedServerDiscoverySection: View {
     let model: ServerPickerViewModel
-    var showsEmptyState = false
     let onSelect: (MediaServer) -> Void
 
     var body: some View {
-        if !discoveryServers.isEmpty || model.phase == .scanning || showsEmptyState {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Label("Saved and nearby servers", systemImage: "dot.radiowaves.left.and.right")
-                        .font(.headline)
-
-                    Spacer()
-
-                    if model.phase == .scanning {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Button("Scan Again") {
-                            model.startScan()
-                        }
-                        .font(.subheadline)
-                        .disabled(model.phase == .validating)
-                    }
-                }
-
-                if discoveryServers.isEmpty {
-                    if model.phase == .scanning {
-                        Text("Looking on your local network…")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    } else if showsEmptyState {
-                        Text("No nearby servers found. Enter an address below, or scan again.")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                }
-                ForEach(discoveryServers) { server in
-                    Button {
-                        model.select(server)
-                        onSelect(server)
-                    } label: {
-                        HStack(spacing: 12) {
-                            ProviderBrandMark(
-                                provider: server.provider,
-                                size: 30
-                            )
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(server.name)
-                                    .foregroundStyle(.primary)
-                                Text(server.baseURL.absoluteString)
-                                    .font(.caption)
-                                    .plozzForeground(.secondary)
-                                    .lineLimit(1)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: server.provider == .silo ? "chevron.forward" : "arrow.up.backward")
-                                .plozzForeground(.tertiary)
-                        }
-                    }
-                    .buttonStyle(.plain)
+        SettingsSectionGroup("Servers") {
+            if model.phase == .scanning {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("Scan Again") { model.startScan() }
                     .disabled(model.phase == .validating)
-                }
             }
-            .padding(.vertical, 4)
+        } content: {
+            if discoveryServers.isEmpty {
+                Text(model.phase == .scanning
+                     ? "Looking on your local network…"
+                     : "No nearby servers found. Enter an address below, or scan again.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(discoveryServers) { server in
+                Button {
+                    onSelect(server)
+                } label: {
+                    HStack(spacing: 12) {
+                        ProviderBrandMark(provider: server.provider, size: 32)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(verbatim: server.name).font(.headline)
+                            Text(verbatim: server.baseURL.absoluteString)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.forward")
+                            .foregroundStyle(.secondary).accessibilityHidden(true)
+                    }
+                    .frame(minHeight: 44)
+                }
+                .disabled(model.phase == .validating)
+                .accessibilityIdentifier("discovered-server-\(server.id)")
+            }
         }
     }
 
     private var discoveryServers: [MediaServer] {
-        model.recentServers + model.discoveredServers
+        model.signedInServers.map(\.server) + model.recentServers + model.discoveredServers
     }
 }
 
-private struct ManagedServerSignInView: View {
+struct ManagedServerSignInView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var usesPassword: Bool
     let server: MediaServer
@@ -295,6 +301,7 @@ private struct ManagedServerSignInView: View {
     let onAuthenticated: (UserSession) throws -> Void
     let verificationOnly: Bool
     let onCancel: (() -> Void)?
+    private let http: any HTTPClient
 
     init(
         server: MediaServer,
@@ -302,13 +309,17 @@ private struct ManagedServerSignInView: View {
         onComplete: @escaping () -> Void,
         verificationOnly: Bool = false,
         onCancel: (() -> Void)? = nil,
-        onAuthenticated: ((UserSession) throws -> Void)? = nil
+        onAuthenticated: ((UserSession) throws -> Void)? = nil,
+        http: any HTTPClient = URLSessionHTTPClient()
     ) {
         self.server = server
         self.appModel = appModel
         self.verificationOnly = verificationOnly
         self.onCancel = onCancel
+        self.http = http
+        let profileID = appModel.profiles.activeProfileID
         self.onAuthenticated = onAuthenticated ?? {
+            guard appModel.profiles.activeProfileID == profileID else { throw AppError.cancelled }
             guard appModel.persist([$0]) else { throw AppError.unknown("") }
             onComplete()
         }
@@ -316,14 +327,34 @@ private struct ManagedServerSignInView: View {
     }
 
     var body: some View {
+        signInContent
+            .navigationBarBackButtonHidden(onCancel == nil)
+            .toolbar {
+                if onCancel == nil {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Back", systemImage: "chevron.backward") { dismiss() }
+                            .labelStyle(.iconOnly)
+                            .accessibilityIdentifier("server-sign-in-back")
+                    }
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var signInContent: some View {
         if server.provider == .silo {
             SiloSignInView(
-                server: server, deviceID: appModel.deviceID, verificationOnly: verificationOnly,
-                onAuthenticated: { session in
-                    try onAuthenticated(session)
-                    var store = UserDefaultsLastServerStore()
-                    store.remember(session.server)
-                },
+                viewModel: SiloAuthViewModel(
+                    server: server, deviceID: appModel.deviceID,
+                    service: SiloAuthentication(baseURL: server.baseURL, http: http),
+                    verificationOnly: verificationOnly,
+                    onAuthenticated: { session in
+                        try onAuthenticated(session)
+                        var store = UserDefaultsLastServerStore()
+                        store.remember(session.server)
+                    }
+                ),
+                server: server, showsCancelButton: false,
                 onCancel: {
                     if let onCancel { onCancel() } else { dismiss() }
                 })
@@ -331,6 +362,7 @@ private struct ManagedServerSignInView: View {
             PasswordServerSignInView(
                 server: server,
                 appModel: appModel,
+                http: http,
                 onAuthenticated: onAuthenticated,
                 onUseQuickConnect: server.provider == .jellyfin
                     ? { usesPassword = false }
@@ -340,6 +372,7 @@ private struct ManagedServerSignInView: View {
             QuickConnectServerSignInView(
                 server: server,
                 appModel: appModel,
+                http: http,
                 onAuthenticated: onAuthenticated,
                 onUsePassword: { usesPassword = true }
             )
@@ -347,7 +380,7 @@ private struct ManagedServerSignInView: View {
     }
 }
 
-private struct QuickConnectServerSignInView: View {
+struct QuickConnectServerSignInView: View {
     @State private var viewModel: QuickConnectViewModel
     private let server: MediaServer
     private let onUsePassword: () -> Void
@@ -355,6 +388,7 @@ private struct QuickConnectServerSignInView: View {
     init(
         server: MediaServer,
         appModel: PlozziOSAppModel,
+        http: any HTTPClient = URLSessionHTTPClient(),
         onAuthenticated: @escaping (UserSession) throws -> Void,
         onUsePassword: @escaping () -> Void
     ) {
@@ -364,7 +398,8 @@ private struct QuickConnectServerSignInView: View {
             initialValue: QuickConnectViewModel(
                 service: QuickConnectService(
                     server: server,
-                    deviceID: appModel.deviceID
+                    deviceID: appModel.deviceID,
+                    http: http
                 ),
                 onAuthenticated: onAuthenticated
             )
@@ -372,33 +407,21 @@ private struct QuickConnectServerSignInView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                Text(
-                    """
-                    Open Jellyfin on another device, choose Quick Connect, \
-                    and enter this code.
-                    """
-                )
-                .plozzForeground(.secondary)
-                Text(server.baseURL.absoluteString)
-                    .font(.caption)
-                    .plozzForeground(.secondary)
+        ServerOnboardingPage(
+            provider: .jellyfin, title: Text(verbatim: server.name),
+            subtitle: Text("Open Jellyfin on another device, choose **Quick Connect**, and enter this code.")
+        ) {
+            phaseContent
+                .frame(maxWidth: .infinity)
+            Button {
+                onUsePassword()
+            } label: {
+                Text("Use Password")
+                    .plozzPageActionLabel()
             }
-
-            Section {
-                phaseContent
-                    .frame(maxWidth: .infinity)
-            }
-
-            Section("Other options") {
-                Button("Sign in with username and password", systemImage: "person.fill") {
-                    onUsePassword()
-                }
-            }
+            .plozzPageActionButton(role: .secondary)
+            .controlSize(.large)
         }
-        .settingsPageSurface()
-        .navigationTitle(server.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { viewModel.start() }
         .onDisappear { viewModel.cancel() }
@@ -410,22 +433,7 @@ private struct QuickConnectServerSignInView: View {
         case .idle, .requesting:
             ProgressView("Requesting a code…")
         case let .awaitingApproval(code, expiresAt):
-            VStack(spacing: 20) {
-                Text(code)
-                    .font(.system(size: 52, weight: .bold, design: .rounded))
-                    .tracking(8)
-                    .monospaced()
-                    .textSelection(.enabled)
-                    .accessibilityLabel("Quick Connect code \(code)")
-                PlozziOSQuickConnectCountdown(
-                    expiresAt: expiresAt,
-                    lifetime: viewModel.codeLifetime
-                )
-                Text("Waiting for approval…")
-                    .font(.subheadline)
-                    .plozzForeground(.secondary)
-            }
-            .padding(.vertical, 12)
+            ServerConnectionCode(code: code, expiresAt: expiresAt, lifetime: viewModel.codeLifetime)
         case .success:
             Label("Signed in", systemImage: "checkmark.circle.fill")
                 .font(.title2)
@@ -436,48 +444,22 @@ private struct QuickConnectServerSignInView: View {
             } description: {
                 Text(message)
             } actions: {
-                Button("Try Again") { viewModel.retry() }
-                Button("Use Password") { onUsePassword() }
+                Button {
+                    viewModel.retry()
+                } label: {
+                    Text("Try Again").plozzPageActionLabel()
+                }
+                .plozzPageActionButton()
+                .controlSize(.large)
             }
         }
     }
 }
 
-private struct PlozziOSQuickConnectCountdown: View {
-    let expiresAt: Date
-    let lifetime: TimeInterval
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let remaining = max(0, expiresAt.timeIntervalSince(context.date))
-            let fraction = lifetime > 0 ? remaining / lifetime : 0
-            let tint: Color = remaining <= 15 ? .orange : .accentColor
-
-            ZStack {
-                Circle()
-                    .stroke(tint.opacity(0.16), lineWidth: 6)
-                Circle()
-                    .trim(from: 0, to: fraction)
-                    .stroke(
-                        tint,
-                        style: StrokeStyle(lineWidth: 6, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                Text(Int(remaining.rounded(.up)), format: .number)
-                    .font(.title3.monospacedDigit().bold())
-                    .foregroundStyle(tint)
-                    .contentTransition(.numericText())
-            }
-            .frame(width: 76, height: 76)
-            .accessibilityLabel(
-                "Code expires in \(Int(remaining.rounded(.up))) seconds"
-            )
-        }
-    }
-}
-
-private struct PasswordServerSignInView: View {
+struct PasswordServerSignInView: View {
     @State private var viewModel: PasswordSignInViewModel
+    @FocusState private var field: Field?
+    private enum Field { case username, password }
 
     private let server: MediaServer
     private let onUseQuickConnect: (() -> Void)?
@@ -485,6 +467,7 @@ private struct PasswordServerSignInView: View {
     init(
         server: MediaServer,
         appModel: PlozziOSAppModel,
+        http: any HTTPClient = URLSessionHTTPClient(),
         onAuthenticated: @escaping (UserSession) throws -> Void,
         onUseQuickConnect: (() -> Void)? = nil
     ) {
@@ -494,7 +477,8 @@ private struct PasswordServerSignInView: View {
             initialValue: PasswordSignInViewModel(
                 service: PasswordSignInService(
                     server: server,
-                    deviceID: appModel.deviceID
+                    deviceID: appModel.deviceID,
+                    http: http
                 ),
                 onAuthenticated: onAuthenticated
             )
@@ -502,75 +486,93 @@ private struct PasswordServerSignInView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
+        ServerOnboardingPage(
+            provider: server.provider, title: Text("Sign In"),
+            subtitle: Text(verbatim: server.name)
+        ) {
+            SettingsSectionGroup {
                 TextField("Username", text: $viewModel.username)
                     .textContentType(.username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .submitLabel(.next)
+                    .focused($field, equals: .username)
+                    .onSubmit { field = .password }
+                    .accessibilityIdentifier("server-sign-in-username")
 
                 SecureField("Password", text: $viewModel.password)
                     .textContentType(.password)
+                    .submitLabel(.go)
+                    .focused($field, equals: .password)
                     .onSubmit { viewModel.submit() }
-            } header: {
-                Text(server.name)
+                    .accessibilityIdentifier("server-sign-in-password")
             } footer: {
-                Text(server.baseURL.absoluteString)
+                Text(verbatim: server.baseURL.absoluteString)
             }
+            .disabled(viewModel.phase == .submitting)
 
             if case let .error(message) = viewModel.phase {
-                Section {
-                    Label(message, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                }
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section {
-                Button {
-                    viewModel.submit()
-                } label: {
-                    if case .submitting = viewModel.phase {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        Text("Sign In")
-                            .frame(maxWidth: .infinity)
-                    }
+            Button {
+                field = nil
+                viewModel.submit()
+            } label: {
+                Group {
+                    if case .submitting = viewModel.phase { ProgressView() }
+                    else { Text("Sign In") }
                 }
-                .disabled(!viewModel.canSubmit)
+                .plozzPageActionLabel()
             }
+            .plozzPageActionButton()
+            .controlSize(.large)
+            .disabled(!viewModel.canSubmit)
+            .accessibilityIdentifier("server-sign-in-submit")
 
             if let onUseQuickConnect {
-                Section("Other options") {
-                    Button("Use Quick Connect", systemImage: "qrcode") {
-                        onUseQuickConnect()
-                    }
+                Button {
+                    onUseQuickConnect()
+                } label: {
+                    Text("Use Quick Connect")
+                        .plozzPageActionLabel()
                 }
+                .plozzPageActionButton(role: .secondary)
+                .controlSize(.large)
             }
         }
-        .settingsPageSurface()
-        .navigationTitle("Sign In")
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear { viewModel.cancel() }
     }
 }
 
-private struct PlexServerSignInView: View {
+struct PlexServerSignInView: View {
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var viewModel: PlexAuthViewModel
+    @State private var selectedServerIDs = Set<String>()
+    @State private var didSeedSelection = false
+    @State private var showCancelConfirm = false
+    @State private var browserOpenFailed = false
+    private let isNavigationRoot: Bool
 
-    private let onComplete: () -> Void
-
-    init(appModel: PlozziOSAppModel, onComplete: @escaping () -> Void) {
-        self.onComplete = onComplete
+    init(appModel: PlozziOSAppModel, http: any HTTPClient = URLSessionHTTPClient(),
+         isNavigationRoot: Bool = true,
+         onComplete: @escaping () -> Void) {
+        self.isNavigationRoot = isNavigationRoot
+        let profileID = appModel.profiles.activeProfileID
         _viewModel = State(
             initialValue: PlexAuthViewModel(
-                service: PlexAuthService(deviceID: appModel.deviceID),
+                service: PlexAuthService(deviceID: appModel.deviceID, http: http),
                 onAuthenticated: {
+                    guard appModel.profiles.activeProfileID == profileID else { throw AppError.cancelled }
                     guard appModel.persist([$0]) else { throw AppError.unknown("") }
                     onComplete()
                 },
                 onAuthenticatedMany: {
+                    guard appModel.profiles.activeProfileID == profileID else { throw AppError.cancelled }
                     guard appModel.persist($0) else { throw AppError.unknown("") }
                     onComplete()
                 }
@@ -578,57 +580,110 @@ private struct PlexServerSignInView: View {
         )
     }
 
+    init(viewModel: PlexAuthViewModel) {
+        _viewModel = State(initialValue: viewModel)
+        isNavigationRoot = true
+    }
+
     var body: some View {
-        List {
+        ServerOnboardingPage(
+            provider: .plex,
+            title: isChoosingServers ? Text("Choose your servers") : Text("Link your Plex account")
+        ) {
             switch viewModel.phase {
             case .idle, .requesting:
                 ProgressView("Requesting a Plex link code…")
                     .frame(maxWidth: .infinity)
-            case let .awaitingLink(code, authorizationURL, _):
-                Section("Link your Plex account") {
-                    Text(code)
-                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                        .monospaced()
-                        .frame(maxWidth: .infinity)
-                        .textSelection(.enabled)
-
-                    Button("Open Plex to link") {
-                        openURL(authorizationURL)
+            case let .awaitingLink(code, authorizationURL, expiresAt):
+                Button {
+                    openURL(authorizationURL) { accepted in
+                        browserOpenFailed = !accepted
                     }
+                } label: {
+                    Label("Open Plex to link", systemImage: "safari")
+                        .plozzPageActionLabel()
                 }
+                .plozzPageActionButton()
+                .controlSize(.large)
+                if browserOpenFailed {
+                    Label("Could not open the browser. Enter the code at plex.tv/link on another device.",
+                          systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                VStack(spacing: 16) {
+                    VStack(spacing: 4) {
+                        Text("Or enter a code at")
+                            .foregroundStyle(.secondary)
+                        Text(verbatim: "plex.tv/link").font(.title3.bold())
+                    }
+                    ServerConnectionCode(code: code, expiresAt: expiresAt, lifetime: viewModel.codeLifetime)
+                }
+                .frame(maxWidth: .infinity)
             case .loadingServers:
                 ProgressView("Loading your Plex servers…")
                     .frame(maxWidth: .infinity)
             case let .selectingServer(servers):
-                Section("Choose a server") {
-                    ForEach(servers) { server in
-                        Button {
-                            viewModel.selectServer(server)
-                        } label: {
-                            VStack(alignment: .leading) {
-                                Text(server.name)
-                                Text(server.baseURL.host() ?? server.baseURL.absoluteString)
-                                    .font(.caption)
-                                    .plozzForeground(.secondary)
-                            }
-                        }
-                    }
+                PlexServerSelection(servers: servers, selected: $selectedServerIDs)
+                Button {
+                    viewModel.selectServers(servers.filter { selectedServerIDs.contains($0.id) })
+                } label: {
+                    Text("Continue").plozzPageActionLabel()
                 }
+                .plozzPageActionButton()
+                .controlSize(.large)
+                .disabled(selectedServerIDs.isEmpty)
+                .accessibilityIdentifier("plex-servers-continue")
             case let .error(message):
                 ContentUnavailableView {
                     Label("Unable to link Plex", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(message)
                 } actions: {
-                    Button("Try Again") { viewModel.start() }
+                    Button {
+                        didSeedSelection = false
+                        viewModel.retry()
+                    } label: {
+                        Text("Try Again").plozzPageActionLabel()
+                    }
+                    .plozzPageActionButton()
+                    .controlSize(.large)
                 }
             }
         }
-        .settingsPageSurface()
-        .navigationTitle(Text(verbatim: "Plex"))
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden()
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button {
+                    if isChoosingServers { showCancelConfirm = true }
+                    else { dismiss() }
+                } label: {
+                    if isNavigationRoot { Text("Cancel") }
+                    else { Label("Back", systemImage: "chevron.backward").labelStyle(.iconOnly) }
+                }
+                .confirmationDialog("Start over?", isPresented: $showCancelConfirm, titleVisibility: .visible) {
+                    Button("Start Over", role: .destructive) { dismiss() }
+                    Button("Keep Going", role: .cancel) {}
+                } message: {
+                    Text("You'll go back to the start and no server will be added.")
+                }
+            }
+        }
+        .interactiveDismissDisabled(isChoosingServers)
+        .onChange(of: viewModel.phase, initial: true) { _, phase in
+            if case let .selectingServer(servers) = phase, !didSeedSelection {
+                didSeedSelection = true
+                selectedServerIDs = Set(servers.filter(\.isOwned).map(\.id))
+            }
+        }
         .task { viewModel.startIfNeeded() }
         .onDisappear { viewModel.cancel() }
+    }
+
+    private var isChoosingServers: Bool {
+        if case .selectingServer = viewModel.phase { return true }
+        return false
     }
 }
 

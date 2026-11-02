@@ -240,6 +240,13 @@ public protocol MediaProvider: Sendable {
     /// conformers and test doubles need no changes.
     func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest
 
+    /// Resolve only an already selected file for bounded detail preparation.
+    /// Never discovers versions, downloads sidecars or starts a playback session.
+    /// Unsupported providers return nil; ordinary Play still uses playbackInfo.
+    func playbackPreparationLocator(
+        for itemID: String, mediaSourceID: String
+    ) async throws -> NetworkFileLocator?
+
     /// Report progress so the server keeps resume points in sync.
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws
 
@@ -696,6 +703,10 @@ public extension MediaProvider {
     func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest {
         try await playbackInfo(for: itemID, forceTranscode: forceTranscode)
     }
+
+    func playbackPreparationLocator(
+        for itemID: String, mediaSourceID: String
+    ) async throws -> NetworkFileLocator? { nil }
 
     /// Default: classify locality from the session's persisted `baseURL` host.
     /// Correct for single-URL backends (Jellyfin, manually-entered hosts); Plex

@@ -108,6 +108,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     public var hasPresentedVideoFrame: Bool {
         status == .ready && engine.isSessionReady && engine.hasFirstFrameReadyForDisplay
     }
+    public func hasRenderedVideoFrame() async -> Bool {
+        await engine.hasRenderedVideoFrame()
+    }
     public var isPlaybackPositionReady: Bool {
         status == .ready && engine.isSessionReady && engine.hasFirstFrameReadyForDisplay
             && !engine.isSeeking && !outputLoadInProgress && outputPolicyReload == nil

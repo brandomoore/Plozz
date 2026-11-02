@@ -79,16 +79,25 @@ final class HomeLibraryVisibilityTests: XCTestCase {
 
     // MARK: - Continue Watching artwork treatment
 
-    func testContinueWatchingActionDefaultsToPlayForNewAndExistingProfiles() throws {
-        XCTAssertEqual(ContinueWatchingAction.default, .play)
-        XCTAssertEqual(HomeLibraryVisibility.default.continueWatchingAction, .play)
+    func testContinueWatchingActionDefaultsToDetailsWithoutASavedChoice() throws {
+        XCTAssertEqual(ContinueWatchingAction.default, .openDetails)
+        XCTAssertEqual(HomeLibraryVisibility.default.continueWatchingAction, .openDetails)
+        XCTAssertEqual(HomeLibraryVisibility().continueWatchingAction, .openDetails)
         let legacy = try JSONDecoder().decode(
             HomeLibraryVisibility.self,
             from: Data(#"{"continueWatchingShowsSeriesArtwork":false,"disabledKeys":["account:library"]}"#.utf8)
         )
-        XCTAssertEqual(legacy.continueWatchingAction, .play)
+        XCTAssertEqual(legacy.continueWatchingAction, .openDetails)
         XCTAssertFalse(legacy.continueWatchingShowsSeriesArtwork)
         XCTAssertEqual(legacy.disabledKeys, ["account:library"])
+    }
+
+    func testContinueWatchingActionPreservesSavedChoices() throws {
+        for action in ContinueWatchingAction.allCases {
+            let data = Data(#"{"continueWatchingAction":"\#(action.rawValue)"}"#.utf8)
+            let restored = try JSONDecoder().decode(HomeLibraryVisibility.self, from: data)
+            XCTAssertEqual(restored.continueWatchingAction, action)
+        }
     }
 
     func testContinueWatchingActionRoundTripsIndependentlyOfPresentation() throws {
@@ -302,17 +311,17 @@ final class HomeLibraryVisibilityStoreTests: XCTestCase {
         let primary = HomeLibraryVisibilityStore(defaults: defaults)
         let other = HomeLibraryVisibilityStore(defaults: defaults, namespace: "other")
         let model = HomeLibraryVisibilityModel(store: primary)
-        model.setContinueWatchingAction(.openDetails)
+        model.setContinueWatchingAction(.play)
         for preset: HomeRowCustomization.Defaults in [.matchServer, .combined, .custom] {
             model.useRowDefaults(preset)
             model.setGlobalRowEnabled(false, for: .continueWatching)
             model.setGlobalRowEnabled(true, for: .continueWatching)
-            XCTAssertEqual(HomeLibraryVisibilityModel(store: primary).continueWatchingAction, .openDetails)
-            XCTAssertEqual(HomeLibraryVisibilityModel(store: other).continueWatchingAction, .play)
+            XCTAssertEqual(HomeLibraryVisibilityModel(store: primary).continueWatchingAction, .play)
+            XCTAssertEqual(HomeLibraryVisibilityModel(store: other).continueWatchingAction, .openDetails)
         }
         let restored = HomeLibraryVisibilityModel(store: primary)
-        restored.setContinueWatchingAction(.play)
-        XCTAssertEqual(primary.load().continueWatchingAction, .play)
+        restored.setContinueWatchingAction(.openDetails)
+        XCTAssertEqual(primary.load().continueWatchingAction, .openDetails)
     }
 
     @MainActor

@@ -117,7 +117,7 @@ final class ProductionHomeNavigationTests: XCTestCase {
                     XCTAssertEqual(playback.label, "2:home-movie-1", "Opening details must not also play.")
                 } else {
                     waitForLabel("3:home-movie-1", on: playback)
-                    XCTAssertEqual(depth.label, "0", "The default center-button action remains playback.")
+                    XCTAssertEqual(depth.label, "0", "The saved Play action must not open details.")
                 }
             }
         }
@@ -142,6 +142,38 @@ final class ProductionHomeNavigationTests: XCTestCase {
             add(screenshot)
         }
         XCTAssertEqual(result, .completed, file: file, line: line)
+    }
+
+    func testDefaultContinueWatchingOpensEpisodeSubjectAcrossHomeLayouts() throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        for layout in [["--hero-disabled-home"], [], ["--immersive-home"], ["--hero-showcase-home"]] {
+            let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+            app.launchArguments = [
+                "--production-home-fixture", "--continue-watching-action-probe",
+                "--continue-watching-use-default", "--continue-watching-episode"
+            ] + layout
+            app.launch()
+            defer { app.terminate() }
+            XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
+            let episode = app.descendants(matching: .any).matching(
+                NSPredicate(format: "label == %@ AND hasFocus == true", "Fixture show")
+            ).firstMatch
+            if layout.isEmpty || layout.contains("--hero-showcase-home") {
+                for _ in 0..<3 {
+                    if episode.waitForExistence(timeout: 3) { break }
+                    XCUIRemote.shared.press(.down)
+                }
+            }
+            XCTAssertTrue(episode.waitForExistence(timeout: 10), app.debugDescription)
+            XCUIRemote.shared.press(.select)
+            waitForLabel("subject", on: app.staticTexts["home-detail-route-probe"])
+            XCTAssertTrue(app.staticTexts["Episode-specific synopsis for fixture 0."].waitForExistence(timeout: 15))
+            XCTAssertEqual(app.staticTexts["home-playback-probe"].label, "0:")
+        }
+        #else
+        throw XCTSkip("Uses an isolated simulator with local fixture data.")
+        #endif
     }
 
     func testNavigateProductionHomeWithNativeCards() throws {

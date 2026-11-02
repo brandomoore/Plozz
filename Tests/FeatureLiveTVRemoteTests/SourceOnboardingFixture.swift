@@ -46,7 +46,7 @@ struct SourceOnboardingFixture: View {
                 .navigationDestination(for: Destination.self) { _ in settings }
             } else if usesTypedNavigation {
                 List {
-                    NavigationLink("Sources", value: Destination.sources)
+                    NavigationLink("TV Sources", value: Destination.sources)
                         .accessibilityIdentifier("fixture-sources")
                 }
                 .navigationTitle("Source navigation fixture")
@@ -150,7 +150,7 @@ private struct SourceSmokeSourcesPane: View {
             #if os(iOS)
             if presentation == .settingsPane && settingsPreferences == nil {
                 SettingsPageScroll { sourceContent }
-                    .navigationTitle("Sources")
+                    .navigationTitle(Text(SettingsCopy.tvSources))
             } else {
                 sourceContent
             }

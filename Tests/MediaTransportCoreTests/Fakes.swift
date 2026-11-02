@@ -1,5 +1,6 @@
 import CoreModels
 import Foundation
+import XCTest
 @testable import MediaTransportCore
 
 final class AsyncTestGate: @unchecked Sendable {
@@ -53,6 +54,7 @@ final class FakeByteSource: MediaTransportByteSource, @unchecked Sendable {
     private let lock = NSLock()
     private var shutdownCountStorage = 0
     let data: Data
+    let didShutdown = XCTestExpectation(description: "byte source shut down")
 
     init(data: Data) {
         self.data = data
@@ -69,6 +71,7 @@ final class FakeByteSource: MediaTransportByteSource, @unchecked Sendable {
 
     func shutdown() async {
         lock.withLock { shutdownCountStorage += 1 }
+        didShutdown.fulfill()
     }
 }
 

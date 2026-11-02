@@ -8,8 +8,14 @@ struct LiveTVSettingsSourceList<Source: Identifiable, Content: View, Setup: View
     @State private var addingSource = false
 
     var body: some View {
-        SettingsSectionGroup("TV sources", accessory: {
-            Button("Add source", systemImage: "plus") { addingSource = true }
+        SettingsSectionGroup(SettingsCopy.tvSources, accessory: {
+            Button { addingSource = true } label: {
+                Label {
+                    Text(SettingsCopy.addTVSource)
+                } icon: {
+                    Image(systemName: "plus")
+                }
+            }
                 .font(.body)
                 .buttonStyle(.bordered)
                 .controlSize(.regular)

@@ -22,10 +22,9 @@ struct PlozziOSItemDetailView: View {
     /// Show this episode as the page's own subject instead of redirecting to its
     /// series.
     ///
-    /// Every other way of reaching an episode — a tapped card, a deep link —
-    /// means "show me this episode in context", which is the series page with it
-    /// fronted. "Episode Info" means the opposite: this episode's own synopsis,
-    /// air date and the file that would play.
+    /// Continue Watching and "Episode Info" show the episode's own synopsis,
+    /// air date and the file that would play. Other browsing and deep links show
+    /// the series page with that episode fronted.
     let presentsEpisodeAsSubject: Bool
 
     @State private var resolvedSeries: MediaItem?
@@ -191,6 +190,9 @@ private struct PlozziOSCanonicalItemDetailView: View {
     @Environment(\.mediaItemArtworkNavigator) private var artworkItemNavigator
     @State private var viewModel: ItemDetailViewModel
     @State private var isPageVisible = false
+    @State private var playbackPreparation = DetailPlaybackPreparationCoordinator()
+    @State private var preparationSourceSwitch = UUID()
+    @State private var isPreparationSourceSwitching = false
     @State private var playbackRequest: PlozziOSPlaybackRequest?
     @State private var pendingResumeRequest: PlozziOSPlaybackRequest?
     @State private var downloadRecord: DownloadedMediaRecord?
@@ -448,6 +450,12 @@ private struct PlozziOSCanonicalItemDetailView: View {
             if isPresented { seasonRequestRetryToken &+= 1 }
         }
         .task { await viewModel.load() }
+        .detailPlaybackPreparation(
+            for: preparationItem,
+            isActive: isPageVisible && playbackRequest == nil && pendingResumeRequest == nil
+                && !isPreparationSourceSwitching,
+            coordinator: playbackPreparation
+        )
         .onChange(of: viewModel.serverResumeEpisode) { _, resume in
             guard seriesPlayTarget == nil,
                   let series = viewModel.state.value?.item,
@@ -990,6 +998,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private func play(_ item: MediaItem, fromBeginning: Bool = false) {
+        playbackPreparation.handoff(item)
         if item.isYouTubeTrailer {
             Task { await trailerOpening.open(item) }
             return
@@ -1088,12 +1097,20 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private func selectSource(_ accountID: String) {
+        playbackPreparation.invalidate()
         sourceOverride = accountID
         versionOverride = nil
-        Task { await viewModel.switchToSource(accountID: accountID) }
+        let generation = UUID()
+        preparationSourceSwitch = generation
+        isPreparationSourceSwitching = true
+        Task { @MainActor in
+            await viewModel.switchToSource(accountID: accountID)
+            if preparationSourceSwitch == generation { isPreparationSourceSwitching = false }
+        }
     }
 
     private func selectVersion(_ id: String, for item: MediaItem) {
+        playbackPreparation.invalidate()
         versionOverride = id
         guard appModel.versionPreferences.shouldRememberVersion(for: item) else { return }
         let key = DetailPlaybackSelection.versionPreferenceKey(for: item)
@@ -1104,6 +1121,15 @@ private struct PlozziOSCanonicalItemDetailView: View {
             return
         }
         appModel.versionPreferences.rememberVersion(version, forTitle: key)
+    }
+
+    private var preparationItem: MediaItem? {
+        guard !isDiscoveryItem, let detail = viewModel.state.value,
+              let target = detail.item.kind == .series ? seriesPlayTarget : detail.item,
+              !target.isUpcomingUnaired, !viewModel.hasNoPlaybackStreams(for: target),
+              target.sourceAccountID == viewModel.currentSourceForDisplay?.accountID,
+              detail.item.kind != .series || target.seriesID == detail.item.id else { return nil }
+        return playbackItem(for: target)
     }
 
     private func beginRequest(_ item: MediaItem, seasons: [Int]? = nil) {

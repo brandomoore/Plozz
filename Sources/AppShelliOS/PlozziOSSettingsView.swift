@@ -119,7 +119,7 @@ struct PlozziOSSettingsView: View {
         ) {
             AddServerView(
                 appModel: appModel,
-                initialProvider: iptvSetup == nil ? addUserServer?.provider ?? .jellyfin : .iptv,
+                initialProvider: iptvSetup == nil ? addUserServer?.provider : .iptv,
                 initialAddress: addUserServer?.baseURL.absoluteString ?? "",
                 initialIPTVPlaylist: iptvSetup?.playlist, initialIPTVAccount: iptvSetup?.account,
                 initialIPTVMode: iptvSetup?.mode ?? .playlist
@@ -572,7 +572,7 @@ private struct PlozziOSSettingsSplitView: View {
                         SettingsSectionGroup(deviceSettingsTitle) {
                             settingsRow(
                                 .servers,
-                                title: "Servers",
+                                title: SettingsCopy.sources,
                                 systemImage: "externaldrive.connected.to.line.below"
                             )
                             Button {
@@ -1166,7 +1166,11 @@ private struct PlozziOSSettingsCompactMenu: View {
                                 onAddServer: onAddServer
                             )
                         } label: {
-                            Label("Servers", systemImage: "externaldrive.connected.to.line.below")
+                            Label {
+                                Text(SettingsCopy.sources)
+                            } icon: {
+                                Image(systemName: "externaldrive.connected.to.line.below")
+                            }
                         }
                         NavigationLink {
                             PlozziOSProfilesView(

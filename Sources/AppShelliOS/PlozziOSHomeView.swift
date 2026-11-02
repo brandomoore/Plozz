@@ -66,6 +66,76 @@ struct PlozziOSHomeLoadID: Equatable {
     }
 }
 
+struct PlozziOSHomeEmptyState: View {
+    let hasAccounts: Bool
+    let onAddSource: () -> Void
+    var onReceiveSetup: (() -> Void)?
+
+    private var title: LocalizedStringResource {
+        hasAccounts ? "Nothing to watch yet" : "Build your library"
+    }
+
+    private var explanation: LocalizedStringResource {
+        hasAccounts
+            ? "Add media to a source, or connect another."
+            : "Connect a media server, network share, or IPTV provider."
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 28) {
+                    VStack(spacing: 16) {
+                        Image("PlozzLogo")
+                            .renderingMode(.original)
+                            .resizable()
+                            .interpolation(.none)
+                            .scaledToFit()
+                            .frame(width: 64, height: 64)
+                            .accessibilityHidden(true)
+                        VStack(spacing: 8) {
+                            Text(title)
+                                .font(.title2.weight(.semibold))
+                                .plozzForeground(.primary)
+                                .accessibilityAddTraits(.isHeader)
+                            Text(explanation)
+                                .font(.subheadline)
+                                .plozzForeground(.secondary)
+                        }
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    VStack(spacing: 12) {
+                        Button(action: onAddSource) {
+                            Label {
+                                Text(SettingsCopy.addSource)
+                            } icon: {
+                                Image(systemName: "plus")
+                            }
+                            .plozzPageActionLabel()
+                        }
+                        .plozzPageActionButton()
+                        .accessibilityIdentifier("home-add-source")
+                        if let onReceiveSetup {
+                            Button(action: onReceiveSetup) {
+                                Text("Set Up from Another Device")
+                                    .plozzPageActionLabel()
+                            }
+                            .plozzPageActionButton(role: .secondary)
+                        }
+                    }
+                    .frame(maxWidth: 320)
+                }
+                .frame(maxWidth: 360)
+                .frame(maxWidth: .infinity)
+                .padding(24)
+                .frame(minHeight: geometry.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+    }
+}
+
 struct PlozziOSHomeView: View {
     @Environment(\.homeLiveTVSnapshot) private var liveTV
     @Environment(\.openWatchlist) private var openWatchlist
@@ -215,16 +285,7 @@ struct PlozziOSHomeView: View {
                     )
                 )
             case .empty:
-                ContentUnavailableView {
-                    Label("Your Home is empty", systemImage: "house")
-                } description: {
-                    Text("Add media to your server or connect another source.")
-                } actions: {
-                    Button("Add Server", action: onAddServer)
-                    NavigationLink("Add Network Share") {
-                        PlozziOSAddShareView(appModel: appModel)
-                    }
-                }
+                PlozziOSHomeEmptyState(hasAccounts: true, onAddSource: onAddServer)
             case let .failed(error):
                 ContentUnavailableView {
                     Label(
@@ -2465,6 +2526,7 @@ private struct PlozziOSHomeRowView: View {
                     interaction: row.playsOnSelect(
                         continueWatchingAction: appModel.settings.homeVisibility.continueWatchingAction
                     ) ? .play : .openDetail,
+                    presentsEpisodeAsSubject: row.kind == .continueWatching,
                     showsResumeChip: row.kind == .continueWatching,
                     prefetchesArtwork: row.kind == .continueWatching,
                     pendingRemovalIDs: pendingWatchlistRemovalIDs,
@@ -2599,6 +2661,7 @@ struct PlozziOSHomeMediaRail: View {
     /// from the card's shape — a landscape rail is a presentation choice, not a
     /// promise that the row is Continue Watching.
     var interaction: PlozziOSRailInteraction = .openDetail
+    var presentsEpisodeAsSubject = false
     var showsResumeChip: Bool = false
     /// Continue Watching opts in because its backdrop + logo composition costs
     /// more than an ordinary card. Keeping this scoped avoids warming every Home
@@ -2652,6 +2715,7 @@ struct PlozziOSHomeMediaRail: View {
                                 item: item,
                                 isLandscape: style == .landscape,
                                 interaction: interaction,
+                                presentsEpisodeAsSubject: presentsEpisodeAsSubject,
                                 showsResumeChip: showsResumeChip,
                                 showsSeriesArtwork: showsSeriesArtwork,
                                 isPendingRemoval: pendingRemovalIDs.contains(
@@ -2910,6 +2974,7 @@ struct PlozziOSHomeMediaCard: View {
     let item: MediaItem
     let isLandscape: Bool
     var interaction: PlozziOSRailInteraction = .openDetail
+    var presentsEpisodeAsSubject = false
     var showsResumeChip: Bool = false
     var showsSeriesArtwork: Bool = false
     var isPendingRemoval: Bool = false
@@ -2931,7 +2996,10 @@ struct PlozziOSHomeMediaCard: View {
                     .buttonStyle(.plain)
             } else if provider != nil || !appModel.accountsProviders.resolvedActiveAccounts.isEmpty {
                 MediaArtworkZoomLink(id: item.stablePresentationID) {
-                    PlozziOSHomeCardDetail(item: item, fallbackProvider: provider)
+                    PlozziOSHomeCardDetail(
+                        item: item, fallbackProvider: provider,
+                        presentsEpisodeAsSubject: presentsEpisodeAsSubject
+                    )
                     .environment(\.plozzMetrics, .touch(
                         density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize))
                     .environment(\.plozzCardCaptionView, .related)
@@ -3007,6 +3075,7 @@ private struct PlozziOSHomeCardDetail: View {
     @Environment(PlozziOSAppModel.self) private var appModel
     let item: MediaItem
     let fallbackProvider: (any MediaProvider)?
+    var presentsEpisodeAsSubject = false
 
     var body: some View {
         // NavigationLink constructs its destination value while browsing. Keep
@@ -3014,7 +3083,8 @@ private struct PlozziOSHomeCardDetail: View {
         let target = PlozziOSHomeMediaCard.resolvedItem(item, appModel: appModel, playsDirectly: false)
         if let provider = appModel.provider(for: target) ?? fallbackProvider {
             PlozziOSItemDetailView(
-                appModel: appModel, provider: provider, item: target, seerService: appModel.seerService
+                appModel: appModel, provider: provider, item: target, seerService: appModel.seerService,
+                presentsEpisodeAsSubject: presentsEpisodeAsSubject
             )
         } else {
             ContentUnavailableView(

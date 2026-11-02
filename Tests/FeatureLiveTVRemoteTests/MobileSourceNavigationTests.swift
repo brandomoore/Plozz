@@ -21,7 +21,7 @@ final class MobileSourceNavigationTests: XCTestCase {
         let action = app.buttons["live-tv-playlist-action"]
         XCTAssertTrue(action.waitForExistence(timeout: 5), app.debugDescription)
         capture("playlist-editor", in: app)
-        XCTAssertEqual(action.label, "Add source", app.debugDescription)
+        XCTAssertEqual(action.label, "Add TV Source", app.debugDescription)
         XCTAssertEqual(app.textFields["live-tv-playlist-url"].value as? String, "https://example.com/channels.m3u")
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
@@ -43,7 +43,7 @@ final class MobileSourceNavigationTests: XCTestCase {
         assertInlineTitle("Live TV", in: app)
         capture("source-list", in: app)
         sources.tap()
-        XCTAssertTrue(app.navigationBars["Add TV source"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Add TV Source"].waitForExistence(timeout: 5))
 
         for (identifier, title) in [
             ("live-tv-add-playlist", "IPTV source"),
@@ -54,7 +54,7 @@ final class MobileSourceNavigationTests: XCTestCase {
             XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5), app.debugDescription)
             assertInlineTitle(title, in: app)
             app.navigationBars.buttons.firstMatch.tap()
-            XCTAssertTrue(app.navigationBars["Add TV source"].waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertTrue(app.navigationBars["Add TV Source"].waitForExistence(timeout: 5), app.debugDescription)
         }
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Live TV"].waitForExistence(timeout: 5))
@@ -132,7 +132,7 @@ final class MobileSourceNavigationTests: XCTestCase {
         XCTAssertTrue(confirmation.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(app.staticTexts["fixture-source-metrics"].label, "Sources 1 writes 0 requests 0")
         confirmation.tap()
-        XCTAssertTrue(app.navigationBars["Sources"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.navigationBars["TV Sources"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(source.exists)
         XCTAssertEqual(app.staticTexts["fixture-source-metrics"].label, "Sources 0 writes 1 requests 0")
     }

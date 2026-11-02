@@ -820,6 +820,7 @@ private struct ProductionHomeContent: View {
     var isActive = true
     @State private var playbackCount = 0
     @State private var lastPlayedID = ""
+    @State private var lastDetailRoute = ""
     private var isLibrarySequence: Bool {
         ProcessInfo.processInfo.arguments.contains("--library-detail-sequence")
     }
@@ -860,7 +861,10 @@ private struct ProductionHomeContent: View {
                             : (ProcessInfo.processInfo.arguments.contains("--native-sidebar-home")
                                 ? .sidebar : (ProcessInfo.processInfo.arguments.contains("--top-bar-home")
                                     ? .tabBar : .default)),
-                        onSelectItem: { item in withCinematicDetailNavigation(for: item) { path.append(item) } },
+                        onSelectItem: { item in
+                            lastDetailRoute = "browse"
+                            withCinematicDetailNavigation(for: item) { path.append(item) }
+                        },
                         onPlayItem: { item in
                             playbackCount += 1
                             lastPlayedID = item.id
@@ -870,6 +874,10 @@ private struct ProductionHomeContent: View {
                     .modifier(NavigationRailRootContentInset())
                     .navigationDestination(for: MediaItem.self) { item in
                         detailPage(for: item)
+                    }
+                    .mediaItemNavigator { item in
+                        lastDetailRoute = "subject"
+                        withCinematicDetailNavigation(for: item) { path.append(item) }
                     }
                 }
                 .cinematicDetailNavigation(path: $path)
@@ -889,6 +897,8 @@ private struct ProductionHomeContent: View {
                         .accessibilityIdentifier("home-playback-probe")
                     Text(verbatim: "\(path.count)")
                         .accessibilityIdentifier("home-detail-depth-probe")
+                    Text(verbatim: lastDetailRoute)
+                        .accessibilityIdentifier("home-detail-route-probe")
                 }
                 .font(.caption2)
                 .allowsHitTesting(false)
@@ -995,7 +1005,8 @@ private final class ProductionHomeState {
         )
         if ProcessInfo.processInfo.arguments.contains("--continue-watching-action-probe") {
             visibility.setContinueWatchingAction(
-                ProcessInfo.processInfo.arguments.contains("--continue-watching-open-details") ? .openDetails : .play
+                ProcessInfo.processInfo.arguments.contains("--continue-watching-use-default") ? .default
+                    : ProcessInfo.processInfo.arguments.contains("--continue-watching-open-details") ? .openDetails : .play
             )
             visibility.setContinueWatchingLayout(
                 ProcessInfo.processInfo.arguments.contains("--continue-watching-posters") ? .portrait : .landscape
@@ -1304,6 +1315,15 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
         item.runtime = 7200
         item.resumePosition = index < rowCount ? 1800 : nil
         item.overview = "A locally supplied movie for measuring the production Home view."
+        if ProcessInfo.processInfo.arguments.contains("--continue-watching-episode"), index < rowCount {
+            item.kind = .episode
+            item.title = "Fixture episode \(index)"
+            item.parentTitle = "Fixture show"
+            item.seriesID = "fixture-show"
+            item.seasonNumber = 1
+            item.episodeNumber = index + 1
+            item.overview = "Episode-specific synopsis for fixture \(index)."
+        }
         if ProcessInfo.processInfo.arguments.contains("--held-home-artwork") {
             item.posterURL = nil
             item.backdropURL = nil

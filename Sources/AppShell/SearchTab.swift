@@ -27,6 +27,7 @@ struct SearchTab: View {
     /// The rail's chrome model, present only under ``NavigationStyle/rail``. This
     /// stack reports its depth so the rail steps aside on a detail page.
     @Environment(NavigationChromeModel.self) private var navigationChrome: NavigationChromeModel?
+    @Environment(\.detailPlaybackPreparationAllowed) private var playbackPreparationAllowed
     let accounts: [ResolvedAccount]
     /// Detail-snapshot cache scoped to the active content identity, threaded from
     /// `MainTabView` so revisit paints never cross a profile/account/credential.
@@ -353,6 +354,7 @@ struct SearchTab: View {
             // Inside the stack, after the destinations — see HomeTab. Outside it,
             // pushed pages never see the router.
             .mediaItemNavigator { navigateToItem($0) }
+            .environment(\.detailPlaybackPreparationAllowed, playbackPreparationAllowed && isActiveTab)
         }
         .cinematicDetailNavigation(path: $path)
         // See HomeTab: reports detail-page depth so the custom rail steps aside.

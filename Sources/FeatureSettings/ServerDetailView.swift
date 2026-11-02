@@ -76,7 +76,7 @@ struct ServerDetailView: View {
                     // Safety net if the group vanishes while viewing (e.g. a remote
                     // "Remove Everywhere" landed): offer a working way back.
                     VStack(alignment: .leading, spacing: 16) {
-                        SettingsPageHeader("Servers")
+                        SettingsPageHeader(SettingsCopy.sources)
                         Text("This server is no longer signed in.")
                             .font(.headline)
                             .plozzForeground(.secondary)

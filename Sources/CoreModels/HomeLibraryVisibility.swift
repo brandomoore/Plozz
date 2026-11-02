@@ -463,7 +463,7 @@ public enum ContinueWatchingPlaybackDetails: String, CaseIterable, Codable, Send
 public enum ContinueWatchingAction: String, CaseIterable, Codable, Sendable {
     case play, openDetails
 
-    public static let `default`: Self = .play
+    public static let `default`: Self = .openDetails
 }
 
 /// A global (cross-server, cross-library) row on Home. The hero is handled

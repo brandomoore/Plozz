@@ -103,21 +103,23 @@ struct PrototypeBrowser: View {
                     ContentUnavailableView {
                         Label("Channels unavailable", systemImage: "wifi.exclamationmark")
                     } description: {
-                        Text("Check your connection or open Sources to review what needs attention.")
+                        Text("Check your connection or open TV Sources to review what needs attention.")
                     } actions: {
                         Button("Retry", action: reload).buttonStyle(PrototypeButtonStyle())
                             .focused($recoveryFocused)
-                        Button("Sources", action: openSources).buttonStyle(PrototypeButtonStyle())
+                        Button(action: openSources) { Text(SettingsCopy.tvSources) }
+                            .buttonStyle(PrototypeButtonStyle())
                     }
                 } else if model.channels.isEmpty {
                     ContentUnavailableView {
                         Label("No channels available", systemImage: "antenna.radiowaves.left.and.right")
                     } description: {
-                        Text("Your enabled sources haven't provided any channels. Open Sources to check their status or add another source.")
+                        Text("Your enabled sources haven't provided any channels. Open TV Sources to check their status or add another source.")
                     } actions: {
                         Button("Refresh channels", action: reload).buttonStyle(PrototypeButtonStyle())
                             .focused($recoveryFocused)
-                        Button("Sources", action: openSources).buttonStyle(PrototypeButtonStyle())
+                        Button(action: openSources) { Text(SettingsCopy.tvSources) }
+                            .buttonStyle(PrototypeButtonStyle())
                     }
                 } else if allChannelsHidden {
                     ContentUnavailableView {
@@ -1064,7 +1066,13 @@ struct PrototypeGuideRow: View {
                                             libraryItem: channel.source == .plozz ? program.libraryItem : nil,
                                             openLibraryItem: openLibraryItem)
                                         Button("Search channels", systemImage: "magnifyingglass", action: controls)
-                                        Button("Sources", systemImage: "antenna.radiowaves.left.and.right", action: sources)
+                                        Button(action: sources) {
+                                            Label {
+                                                Text(SettingsCopy.tvSources)
+                                            } icon: {
+                                                Image(systemName: "antenna.radiowaves.left.and.right")
+                                            }
+                                        }
                                         Button("Guide time", systemImage: "calendar", action: guideTime)
                                         Button("Back to top", systemImage: "arrow.up.to.line", action: top)
                                         Button("Now", systemImage: "clock", action: goToNow)
@@ -1183,7 +1191,13 @@ struct PrototypeGuideRow: View {
                 primaryTitle: selectionAction ?? "Play channel", isSelection: selectionAction != nil,
                 libraryItem: currentLibraryItem, openLibraryItem: openLibraryItem)
             Button("Search channels", systemImage: "magnifyingglass", action: controls)
-            Button("Sources", systemImage: "antenna.radiowaves.left.and.right", action: sources)
+            Button(action: sources) {
+                Label {
+                    Text(SettingsCopy.tvSources)
+                } icon: {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                }
+            }
             Button("Back to top", systemImage: "arrow.up.to.line", action: top)
         }
     }
@@ -1283,7 +1297,13 @@ struct PrototypeGuideStation: View {
             )
             Divider()
             Button("Search channels", systemImage: "magnifyingglass", action: controls)
-            Button("Sources", systemImage: "antenna.radiowaves.left.and.right", action: sources)
+            Button(action: sources) {
+                Label {
+                    Text(SettingsCopy.tvSources)
+                } icon: {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                }
+            }
             if let guideTime {
                 Button("Guide time", systemImage: "calendar", action: guideTime)
             }

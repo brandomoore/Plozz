@@ -49,6 +49,8 @@ struct NavigationRailFocusHost<Content: View>: UIViewControllerRepresentable {
             target.themeMusicPreviewController = source.themeMusicPreviewController
             target.themeMusicDetailAllowed = source.themeMusicDetailAllowed
             target.themeMusicAuthorization = source.themeMusicAuthorization
+            target.detailPlaybackPreparation = source.detailPlaybackPreparation
+            target.detailPlaybackPreparationAllowed = source.detailPlaybackPreparationAllowed
             target.seasonRequestContextID = source.seasonRequestContextID
             target.libraryPresentationLoader = source.libraryPresentationLoader
             target[NavigationChromeModel.self] = source[NavigationChromeModel.self]

@@ -29,6 +29,36 @@ struct SharePlaybackSourceService: Sendable {
 
     func networkFileLocator(for relativePath: String) async throws -> NetworkFileLocator {
         let entry = try await store.statForOpening(relativePath: relativePath)
+        return try networkFileLocator(for: relativePath, entry: entry)
+    }
+
+    func playbackOpening(
+        for relativePath: String, reuseDirectoryMetadata: Bool
+    ) async throws -> (locator: NetworkFileLocator, directoryEntries: [RemoteFileEntry]?) {
+        let statLocator = reuseDirectoryMetadata ? nil : try await networkFileLocator(for: relativePath)
+        let directory = (relativePath as NSString).deletingLastPathComponent
+        let entries = try await sidecarDirectoryEntries(directory)
+        try Task.checkCancellation()
+        let matchingEntries = entries?.filter { $0.relativePath == relativePath } ?? []
+        let locator: NetworkFileLocator
+        if let statLocator {
+            locator = statLocator
+        } else if matchingEntries.count == 1, let entry = matchingEntries.first,
+           entry.kind == .file, entry.size != nil,
+           entry.strongETag != nil || entry.modifiedAt != nil {
+            // This listing is fresh for this Play request, not a browsing cache.
+            // Opening/claiming the source still revalidates its identity and size.
+            locator = try networkFileLocator(for: relativePath, entry: entry)
+        } else {
+            locator = try await networkFileLocator(for: relativePath)
+        }
+        try Task.checkCancellation()
+        return (locator, entries)
+    }
+
+    private func networkFileLocator(
+        for relativePath: String, entry: RemoteFileEntry
+    ) throws -> NetworkFileLocator {
         guard entry.kind == .file, let size = entry.size else {
             throw MediaTransportError.protocolViolation(
                 reason: "network file lacks a stable size"
@@ -77,6 +107,18 @@ struct SharePlaybackSourceService: Sendable {
         forVideoRelPath relPath: String,
         exactStemOnly: Bool = false
     ) async throws -> [MediaTrack] {
+        let directory = (relPath as NSString).deletingLastPathComponent
+        let entries = try await sidecarDirectoryEntries(directory)
+        return try await discoverSidecarSubtitles(
+            forVideoRelPath: relPath, exactStemOnly: exactStemOnly, directoryEntries: entries
+        )
+    }
+
+    func discoverSidecarSubtitles(
+        forVideoRelPath relPath: String,
+        exactStemOnly: Bool,
+        directoryEntries ownEntries: [RemoteFileEntry]?
+    ) async throws -> [MediaTrack] {
         try Task.checkCancellation()
         let dir = (relPath as NSString).deletingLastPathComponent
         let videoStem = ShareMediaParser.videoStem((relPath as NSString).lastPathComponent)
@@ -86,7 +128,6 @@ struct SharePlaybackSourceService: Sendable {
         // case-insensitive share, casing aliases must not duplicate tracks.
         var candidates: [(dir: String, name: String, dedicated: Bool)] = []
         var seenCandidateKeys = Set<String>()
-        let ownEntries = try await sidecarDirectoryEntries(dir)
         // Use the real directory names rather than four speculative network
         // requests. Keep the legacy probes when the parent cannot be listed.
         let subFolderNames = ownEntries.map { entries in

@@ -82,9 +82,10 @@ let package = Package(
         // Powers the native HLS-fMP4 remux path for MKV → DoVi + Atmos + seek.
         // See docs/playback-engines.md for integration and fork corrections.
         //
-        // Pinned to the playback-corrected fork integrating upstream 7.51.0
-        // (263dc11579274e83458bd3839715caf99f3d8969). This retains Plozz's
-        // AAC timing, ASS duration, dynamic linkage, frame/cache APIs and privacy manifest.
+        // Pinned to the playback-corrected fork integrating upstream 7.53.1
+        // (0839aeee18dd0818c5c307a3c5ecba8ea3161b22). This retains Plozz's
+        // AAC timing, ASS duration, dynamic linkage, frame/cache APIs and privacy manifest,
+        // plus bounded position-aware compressed-source preparation and older-runtime cleanup.
         //
         // Everything the old `plozz-pin-*` stack existed for is upstream
         // as of 5.23.2:
@@ -238,14 +239,17 @@ let package = Package(
         // bridge; the engine's legacy SMB URL product is not linked.
         // 7.48.0 adds VP9 hardware decoding where available, AV1 Dolby Vision,
         // software-path spatial audio, and bounded MPEG-DASH VOD support.
-        // FFmpegBuild 3.10.1 and LibTrueHD 3.1.x are owned by the engine.
+        // FFmpegBuild 3.11.1 and LibTrueHD 3.1.x are owned by the engine.
         // New host-controlled Now Playing and background retention remain opt-in.
         // 7.51.0 includes route-selected lossless PCM spatial beds from 7.50.0.
         // The fork retains Plozz's timing, subtitle, diagnostics and linkage fixes.
         // Shared SDR/HDR active-picture measurements include host-owned native players.
+        // 7.53.1 corrects remote-HLS buffering, short forward seeks and tvOS MetalFX
+        // availability. FFmpegBuild 3.11.1 adds AV1 forward-keyframe detection.
+        // Audio shaping and low-resolution upscaling remain opt-in and disabled.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "feb41e58fb88ce7e693947f2148dbd0ea1df8483",
+            revision: "3c035a3f62d7cb40e2cad93d28c7296746d94174",
             traits: [
                 "TrueHDObjectAudio", "DTSXObjectAudio",
                 "DualLayerDolbyVision", "DolbyVisionStillReshaping",

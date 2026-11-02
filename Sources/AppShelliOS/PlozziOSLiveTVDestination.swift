@@ -323,7 +323,7 @@ private struct PlozziOSLiveTVSourcesContent: View {
                 sourceContent
             } else {
                 SettingsPageScroll { sourceContent }
-                    .navigationTitle("Sources")
+                    .navigationTitle(Text(SettingsCopy.tvSources))
             }
         }
         .navigationDestination(isPresented: $managesChannels) {
