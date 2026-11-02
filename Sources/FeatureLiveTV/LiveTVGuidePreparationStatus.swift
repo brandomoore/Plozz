@@ -13,20 +13,29 @@ public struct LiveTVGuidePreparationStatus: View {
         VStack(alignment: .leading, spacing: 6) {
             switch status.phase {
             case .loading:
-                if let progress = status.progress {
-                    if let fraction = progress.fractionCompleted {
-                        ProgressView(value: fraction) {
-                            Text(progress.title)
-                        } currentValueLabel: {
-                            Text(fraction, format: .percent.precision(.fractionLength(0)))
+                HStack(spacing: 12) {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let progress = status.progress {
+                            if let fraction = progress.fractionCompleted {
+                                ProgressView(value: fraction) {
+                                    Text(progress.title)
+                                } currentValueLabel: {
+                                    Text(fraction, format: .percent.precision(.fractionLength(0)))
+                                }
+                                .progressViewStyle(.linear)
+                            } else {
+                                Text(progress.title)
+                            }
+                            if let detail = progress.detail { Text(detail).font(.caption).monospacedDigit() }
+                        } else {
+                            if status.isRefresh { Text("Refreshing guide") }
+                            else { Text("Adding guide") }
                         }
-                    } else {
-                        ProgressView { Text(progress.title) }
                     }
-                    if let detail = progress.detail { Text(detail).font(.caption).monospacedDigit() }
-                } else {
-                    if status.isRefresh { ProgressView("Refreshing guide") }
-                    else { ProgressView("Adding guide") }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             case .loaded:
                 Label("Guide ready", systemImage: "checkmark.circle")

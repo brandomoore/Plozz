@@ -23,6 +23,9 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
             accountStore: AccountStore(secureStore: InMemorySecureStore()),
             profileStore: ProfileStore(defaults: defaults)
         )
+        let previousTheme = app.settings.theme.theme
+        app.settings.theme.theme = .dark
+        defer { app.settings.theme.theme = previousTheme }
         app.accountsProviders.registry.register(.iptv) { _ in provider }
         XCTAssertTrue(app.persist([provider.session]))
         await fulfillment(of: [started], timeout: 3)
@@ -81,6 +84,17 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
             let surface = try grayToastBounds(in: image, caption: caption)
             XCTAssertEqual(surface.minX, 16, accuracy: 2, page)
             XCTAssertEqual(surface.maxX, window.bounds.maxX - 16, accuracy: 2, page)
+            if reading {
+                let detail = try textFrame("listings scanned", in: image)
+                XCTAssertEqual(caption.minX, detail.minX, accuracy: 2, page)
+                let spinner = try XCTUnwrap(activityIndicators(in: window).first { indicator in
+                    !indicator.isHidden && surface.contains(indicator.convert(indicator.bounds, to: window))
+                })
+                let spinnerFrame = spinner.convert(spinner.bounds, to: window)
+                XCTAssertLessThan(spinnerFrame.maxX, caption.minX, page)
+                XCTAssertEqual(spinnerFrame.midY, surface.midY, accuracy: 2, page)
+                XCTAssertLessThanOrEqual(surface.height, 90, "Two-line feedback should remain a compact row.")
+            }
             if page.hasPrefix("settings") {
                 let search = try XCTUnwrap(searchFields(in: window).last)
                 let frame = search.convert(search.bounds, to: window)
@@ -94,6 +108,10 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
                 XCTAssertEqual(surface.maxY, frame.minY - 16, accuracy: 3, page)
             }
         }
+    }
+
+    private func activityIndicators(in view: UIView) -> [UIActivityIndicatorView] {
+        (view as? UIActivityIndicatorView).map { [$0] } ?? view.subviews.flatMap { activityIndicators(in: $0) }
     }
 
     func testToastUsesNativeSidebarContentAreaWithoutBottomBarClearance() async throws {
@@ -962,13 +980,18 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
         }
         let left = try XCTUnwrap(xs.first)
         let right = try XCTUnwrap(xs.last)
-        let x = (left + right) / 2
-        var bottom = Int(caption.maxY)
+        // The leading inset clears both the rounded corners and the row's content.
+        let x = left + 20
+        var top = y
+        while top > 0, try isSurface(CGPoint(x: x, y: top - 1)) {
+            top -= 1
+        }
+        var bottom = y
         while bottom + 1 < Int(image.size.height),
               try isSurface(CGPoint(x: x, y: bottom + 1)) {
             bottom += 1
         }
-        return CGRect(x: left, y: y, width: right - left + 1, height: bottom - y + 1)
+        return CGRect(x: left, y: top, width: right - left + 1, height: bottom - top + 1)
     }
 
     private func tabController(in controller: UIViewController) -> UITabBarController? {
