@@ -8,7 +8,7 @@ public enum HeroLogoSizing {
     }
 
     public enum Layout: Sendable {
-        case television, showcase, compact, regular
+        case television, showcase, compact, regular, desktop
 
         public var budget: CGSize {
             switch self {
@@ -16,6 +16,7 @@ public enum HeroLogoSizing {
             case .showcase: CGSize(width: 440, height: 124)
             case .compact: CGSize(width: 330, height: 95)
             case .regular: CGSize(width: 480, height: 130)
+            case .desktop: CGSize(width: 320, height: 90)
             }
         }
 
@@ -39,6 +40,7 @@ public enum HeroLogoSizing {
         case .showcase: 186
         case .compact: 240
         case .regular: 330
+        case .desktop: 220
         }
         return CGSize(
             width: min(base.width * scale, max(1, availableWidth) / widthFlex),

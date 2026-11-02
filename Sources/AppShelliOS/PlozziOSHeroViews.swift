@@ -176,10 +176,12 @@ enum PlozziOSPageLayout {
         style == .compactPortrait ? 500 : 480
     }
 
-    static func homeTextMaxWidth(for style: HeroArtworkStyle, logoSize: HeroLogoSize) -> CGFloat {
+    static func homeTextMaxWidth(
+        for style: HeroArtworkStyle, logoSize: HeroLogoSize, isRunningOnMac: Bool = false
+    ) -> CGFloat {
         HeroLogoSizing.homeTextWidth(
-            for: style == .compactPortrait ? .compact : .regular,
-            logoSize: logoSize, minimumWidth: heroTextMaxWidth(for: style)
+            for: isRunningOnMac ? .desktop : (style == .compactPortrait ? .compact : .regular),
+            logoSize: logoSize, minimumWidth: isRunningOnMac ? 360 : heroTextMaxWidth(for: style)
         )
     }
 
@@ -207,10 +209,10 @@ enum PlozziOSPageLayout {
     /// width, and returns the width it takes as height so no logo shrinks.
     static func heroLogoBox(
         for style: HeroArtworkStyle, size: HeroLogoSize = .default,
-        availableWidth: CGFloat = .infinity
+        availableWidth: CGFloat = .infinity, isRunningOnMac: Bool = false
     ) -> CGSize {
         HeroLogoSizing.box(
-            for: style == .compactPortrait ? .compact : .regular,
+            for: isRunningOnMac ? .desktop : (style == .compactPortrait ? .compact : .regular),
             size: size, availableWidth: availableWidth
         )
     }
@@ -235,6 +237,7 @@ enum PlozziOSPageLayout {
 /// real hero — wrong indent, wrong vertical position. Screen sizes vary, so the
 /// two must derive from the same code, not from matching numbers.
 struct PlozziOSHeroForegroundPlacement: ViewModifier {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     let style: HeroArtworkStyle
     var logoSize: HeroLogoSize = .default
 
@@ -250,7 +253,9 @@ struct PlozziOSHeroForegroundPlacement: ViewModifier {
             // too wide to fit, so an oversized child overhangs both edges and
             // moves the column's origin instead of just its own trailing edge.
             .frame(
-                maxWidth: PlozziOSPageLayout.homeTextMaxWidth(for: style, logoSize: logoSize),
+                maxWidth: PlozziOSPageLayout.homeTextMaxWidth(
+                    for: style, logoSize: logoSize, isRunningOnMac: isRunningOnMac
+                ),
                 alignment: style == .compactPortrait ? .center : .leading
             )
             .frame(
@@ -259,7 +264,7 @@ struct PlozziOSHeroForegroundPlacement: ViewModifier {
                 alignment: style == .compactPortrait ? .bottom : .bottomLeading
             )
             .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: style))
-            .padding(.bottom, style == .compactPortrait ? 30 : 42)
+            .padding(.bottom, isRunningOnMac ? 36 : (style == .compactPortrait ? 30 : 42))
     }
 }
 
@@ -2536,6 +2541,7 @@ struct PlozziOSDetailHeroForeground: View {
 }
 
 struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     let kind: TouchHeroActionButtonStyle.Kind
     var circular = false
     var minimumWidth: CGFloat?
@@ -2550,12 +2556,12 @@ struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
                     .buttonBorderShape(.circle)
                     .buttonSizing(.flexible)
                     .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                    .frame(width: 48, height: 48)
+                    .frame(width: isRunningOnMac ? 44 : 48, height: isRunningOnMac ? 44 : 48)
             } else {
                 nativeButton(configuration)
                     .buttonBorderShape(.roundedRectangle(radius: 24))
                     .buttonSizing(minimumWidth == nil ? .fitted : .flexible)
-                    .frame(minWidth: minimumWidth, minHeight: 48)
+                    .frame(minWidth: minimumWidth, minHeight: isRunningOnMac ? 44 : 48)
                     .fixedSize(horizontal: minimumWidth != nil, vertical: true)
             }
         } else {
@@ -2564,7 +2570,7 @@ struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
                     .tint(kind == .primary ? palette.backgroundBase : palette.primaryText)
             }
             .buttonStyle(TouchHeroActionButtonStyle(
-                kind: kind, circular: circular, minimumWidth: minimumWidth
+                kind: kind, circular: circular, minimumWidth: minimumWidth, compact: isRunningOnMac
             ))
         }
     }
@@ -2574,14 +2580,14 @@ struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
     private func nativeButton(_ configuration: Configuration) -> some View {
         let button = Button(role: configuration.role, action: configuration.trigger) {
             configuration.label
-                .font(.headline.weight(.semibold))
+                .font((isRunningOnMac ? Font.subheadline : .headline).weight(.semibold))
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(kind == .primary ? palette.backgroundBase : palette.primaryText)
                 // Keep the native icon slot stable even for short glyphs such as ellipsis.
                 .frame(width: circular ? 18 : nil, height: circular ? 18 : nil)
         }
-        .controlSize(.large)
+        .controlSize(isRunningOnMac ? .regular : .large)
 
         if kind == .primary {
             button
@@ -2594,6 +2600,7 @@ struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
 }
 
 struct PlozziOSHeroMetadata: View {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     enum Mode {
         case home
         case detail
@@ -2711,7 +2718,8 @@ struct PlozziOSHeroMetadata: View {
                     let logoBox = PlozziOSPageLayout.heroLogoBox(
                         for: style, size: logoSize,
                         availableWidth: availableWidth > 0
-                            ? availableWidth : PlozziOSPageLayout.heroLogoMaxWidth(for: style)
+                            ? availableWidth : PlozziOSPageLayout.heroLogoMaxWidth(for: style),
+                        isRunningOnMac: isRunningOnMac && mode == .home
                     )
                     HeroLogoArtwork(
                         references: titlePresentation.logoReferences,
@@ -2723,7 +2731,9 @@ struct PlozziOSHeroMetadata: View {
                         alignment: style == .compactPortrait ? .center : .leading
                     ) {
                         Text(titlePresentation.title)
-                            .font(textScale == 1 ? .largeTitle : .system(size: titleFontSize * textScale))
+                            .font(isRunningOnMac && mode == .home
+                                ? .system(size: titleFontSize * textScale * 28 / 34)
+                                : (textScale == 1 ? .largeTitle : .system(size: titleFontSize * textScale)))
                             .fontWeight(.bold)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(2)
@@ -2772,7 +2782,9 @@ struct PlozziOSHeroMetadata: View {
                         .lineLimit(textSize.descriptionLineLimit(base: mode == .home ? 2 : 3))
                         .frame(
                             maxWidth: mode == .home
-                                ? PlozziOSPageLayout.homeTextMaxWidth(for: style, logoSize: logoSize)
+                                ? PlozziOSPageLayout.homeTextMaxWidth(
+                                    for: style, logoSize: logoSize, isRunningOnMac: isRunningOnMac
+                                )
                                 : PlozziOSPageLayout.heroTextMaxWidth(for: style),
                             alignment: style == .compactPortrait
                                 ? .center

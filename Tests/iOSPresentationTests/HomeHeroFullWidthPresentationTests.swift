@@ -227,7 +227,9 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             .environment(HeroTrailerController())
             .environment(\.themePalette, .dark)
             .environment(\.colorScheme, .dark)
-            .environment(\.plozzMetrics, .touch(density: .standard))
+            .environment(\.plozzMetrics, PlozziOSMediaLayout.metrics(
+                density: .standard, dynamicTypeSize: .large, isRunningOnMac: isRunningOnMac
+            ))
             .environment(\.plozziOSHeroContainerHeight, size.height)
             .environment(\.plozziOSIsRunningOnMac, isRunningOnMac)
             .environment(\.locale, Locale(identifier: "en_US"))

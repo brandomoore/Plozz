@@ -25,6 +25,7 @@ public struct PlozzMetrics: Equatable, Sendable {
     public let density: UIDensity
     /// The multiplier applied to every size/gap below (1.0 == standard).
     public let scale: CGFloat
+    public let usesDesktopSizing: Bool
     private let geometryScale: CGFloat
 
     // MARK: Card artwork sizes (scaled)
@@ -373,12 +374,28 @@ public struct PlozzMetrics: Equatable, Sendable {
         PlozzMetrics(density: density, geometryScale: 0.5, dynamicTypeSize: dynamicTypeSize)
     }
 
-    private init(density: UIDensity, geometryScale: CGFloat, dynamicTypeSize: DynamicTypeSize) {
+    /// Stable desktop artwork targets; controls and typography keep the touch
+    /// system's native sizing rather than growing with the pictures.
+    public static func desktop(
+        density: UIDensity,
+        dynamicTypeSize: DynamicTypeSize = .large
+    ) -> PlozzMetrics {
+        PlozzMetrics(
+            density: density, geometryScale: 0.5, dynamicTypeSize: dynamicTypeSize,
+            usesDesktopSizing: true
+        )
+    }
+
+    private init(
+        density: UIDensity, geometryScale: CGFloat, dynamicTypeSize: DynamicTypeSize,
+        usesDesktopSizing: Bool = false
+    ) {
         let densityScale = CGFloat(density.scale)
         let s = densityScale * geometryScale
         self.density = density
         self.scale = densityScale
         self.geometryScale = geometryScale
+        self.usesDesktopSizing = usesDesktopSizing
 
         #if canImport(UIKit)
         // Resolve typography against the size we were HANDED rather than whatever
@@ -406,11 +423,11 @@ public struct PlozzMetrics: Equatable, Sendable {
             return (base * effectiveScale).rounded()
         }
 
-        // Card sizes derive from the standard-density constants in PlozzTheme.
-        self.posterWidth = step(PlozzTheme.Metrics.posterWidth)
-        self.posterHeight = step(PlozzTheme.Metrics.posterHeight)
-        self.landscapeWidth = step(PlozzTheme.Metrics.landscapeWidth)
-        self.landscapeHeight = step(PlozzTheme.Metrics.landscapeHeight)
+        // Desktop artwork has its own targets; other surfaces retain theme geometry.
+        self.posterWidth = usesDesktopSizing ? (180 * densityScale).rounded() : step(PlozzTheme.Metrics.posterWidth)
+        self.posterHeight = usesDesktopSizing ? (270 * densityScale).rounded() : step(PlozzTheme.Metrics.posterHeight)
+        self.landscapeWidth = usesDesktopSizing ? (320 * densityScale).rounded() : step(PlozzTheme.Metrics.landscapeWidth)
+        self.landscapeHeight = usesDesktopSizing ? (180 * densityScale).rounded() : step(PlozzTheme.Metrics.landscapeHeight)
 
         // How much bigger the reader has asked the chip's text style to be. 1 at
         // the default size on every platform, so nothing below changes until
@@ -430,12 +447,13 @@ public struct PlozzMetrics: Equatable, Sendable {
         // ordinary large sizes people actually use.
         let cardTypeGrowth = min(1.6, max(1, 1 + (chipTypeGrowth - 1) * 0.75))
         self.continueWatchingWidth = (
-            self.landscapeWidth * ContinueWatchingCardShape.widthScale * cardTypeGrowth
+            (usesDesktopSizing ? 300 * densityScale : self.landscapeWidth * ContinueWatchingCardShape.widthScale)
+                * cardTypeGrowth
         ).rounded()
         self.cardInset = step(PlozzTheme.Metrics.cardInset)
 
         self.artistTileDiameter = step(PlozzTheme.Metrics.artistTileDiameter)
-        self.castTileDiameter = step(PlozzTheme.Metrics.castTileDiameter)
+        self.castTileDiameter = usesDesktopSizing ? (140 * densityScale).rounded() : step(PlozzTheme.Metrics.castTileDiameter)
         self.circleFocusPadding = step(PlozzTheme.Metrics.circleFocusPadding)
 
         self.focusCaptionPush = step(PlozzTheme.Metrics.focusCaptionPush)
@@ -449,11 +467,11 @@ public struct PlozzMetrics: Equatable, Sendable {
             geometryScale < 1 ? 20 : PlozzTheme.Metrics.watchedBadgeMinSize
         )
 
-        self.cardSpacing = step(PlozzTheme.Metrics.cardSpacing)
-        self.gridSpacing = step(PlozzTheme.Metrics.gridSpacing)
+        self.cardSpacing = usesDesktopSizing ? damped(20, 0.5) : step(PlozzTheme.Metrics.cardSpacing)
+        self.gridSpacing = usesDesktopSizing ? damped(20, 0.5) : step(PlozzTheme.Metrics.gridSpacing)
         // Inter-row dead space is dampened so it doesn't grow 1:1 with the cards
         // — that's what keeps the next row peeking into view at high densities.
-        self.rowSpacing = damped(PlozzTheme.Metrics.rowSpacing, PlozzTheme.Metrics.rowSpacingDamping)
+        self.rowSpacing = damped(usesDesktopSizing ? 40 : PlozzTheme.Metrics.rowSpacing, PlozzTheme.Metrics.rowSpacingDamping)
         // The header-to-row gap follows the (dampened) header type so each header
         // keeps hugging its own row at every density.
         self.sectionTitleSpacing = damped(PlozzTheme.Metrics.sectionTitleSpacing, PlozzTheme.Metrics.headerScaleDamping)

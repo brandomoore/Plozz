@@ -13,6 +13,12 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+`PlozzMetrics.desktop` supplies fixed artwork targets for the iOS-on-Mac shell
+without scaling touch controls, captions, or overlays with the artwork.
+`HeroLogoSizing.Layout.desktop` retains the same logo-preference scaling and
+width containment as other hero layouts. The shell selects these policies;
+shared components do not infer their platform from a wide viewport.
+
 Mobile full-width page actions use `plozzPageActionLabel()` inside a native
 `plozzPageActionButton`. The label owns body typography, multiline expansion, and a
 24-point minimum height; primary and secondary actions differ in prominence,

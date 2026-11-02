@@ -318,15 +318,18 @@ struct PlozziOSHomeView: View {
         .navigationDestination(item: $rowBrowser) { browser in
             HomeRowBrowseView(
                 model: browser,
-                columns: appModel.settings.density.density.iOSPosterGridColumns(horizontalSizeClass: horizontalSizeClass)
+                columns: appModel.settings.density.density.iOSPosterGridColumns(
+                    horizontalSizeClass: horizontalSizeClass, isRunningOnMac: isRunningOnMac
+                )
             ) { item in
                 PlozziOSHomeMediaCard(
                     item: item, isLandscape: false,
                     provider: item.sourceAccountID.flatMap { appModel.accountsProviders.provider(forAccountID: $0) }
                 )
             }
-            .environment(\.plozzMetrics, .touch(
-                density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize
+            .environment(\.plozzMetrics, PlozziOSMediaLayout.metrics(
+                density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize,
+                isRunningOnMac: isRunningOnMac
             ))
         }
         .onChange(of: ObjectIdentifier(viewModel)) { _, _ in
@@ -2469,6 +2472,7 @@ private struct PlozziOSHomeRowFailure: View {
 }
 
 private struct PlozziOSHomeRowView: View {
+    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.homeLiveTVSnapshot) private var liveTV
     let row: HomeRow
@@ -2566,7 +2570,7 @@ private struct PlozziOSHomeRowView: View {
 
     private var libraryRow: some View {
         ScrollView(.horizontal) {
-            LazyHStack(spacing: PlozziOSMediaRailLayout.visibleSpacing) {
+            LazyHStack(spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)) {
                 ForEach(row.libraries) { library in
                     // Still gated on the account having a live provider; the route
                     // resolves it again at push time so this row holds no reference.
@@ -2586,7 +2590,8 @@ private struct PlozziOSHomeRowView: View {
                                 artworkSource: viewModel.libraryArtworkSource(for: library),
                                 width: appModel.settings.density.density
                                     .iOSHomeLibraryWidth(
-                                        horizontalSizeClass: horizontalSizeClass
+                                        horizontalSizeClass: horizontalSizeClass,
+                                        isRunningOnMac: metrics.usesDesktopSizing
                                     )
                             )
                         }
@@ -2975,6 +2980,7 @@ struct PlozziOSHomeMediaCard: View {
     #endif
     @Environment(PlozziOSAppModel.self) private var appModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     let item: MediaItem
     let isLandscape: Bool
     var interaction: PlozziOSRailInteraction = .openDetail
@@ -3004,8 +3010,9 @@ struct PlozziOSHomeMediaCard: View {
                         item: item, fallbackProvider: provider,
                         presentsEpisodeAsSubject: presentsEpisodeAsSubject
                     )
-                    .environment(\.plozzMetrics, .touch(
-                        density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize))
+                    .environment(\.plozzMetrics, PlozziOSMediaLayout.metrics(
+                        density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize,
+                        isRunningOnMac: isRunningOnMac))
                     .environment(\.plozzCardCaptionView, .related)
                 } label: {
                     card

@@ -92,6 +92,16 @@ registry.
   effect. Native sidebar, tab, and profile controls remain available with their
   system appearance. iPhone/iPad backgrounds and other scroll edges are unchanged.
 
+- **Mac media sizes stay stable as windows widen.** Home, library/search grids,
+  Watchlist, related titles, extras, and episode rails share desktop card metrics:
+  standard-density posters are 180 points wide, landscape artwork 320, Continue
+  Watching 300, and cast circles 140. Wider windows reveal more rail cards;
+  adaptive grids allow only bounded growth. Loading and loaded rows use the same
+  policy, including after navigation. Profile density and Dynamic Type still
+  apply. Home uses a smaller logo/copy column and hero actions retain at least
+  44-point targets in both native-glass and reduced-effects presentations.
+  iPhone/iPad and TV retain their existing sizes.
+
 - **Preference sync is not a profile switch.** Mobile cloud apply rebuilds active
   settings and track/version preferences without restarting downloads, provider
   caches, identity indexing, or tracker/watchlist imports. Inactive-profile

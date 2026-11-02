@@ -41,7 +41,7 @@ struct PlozziOSHomeSkeletonRail: View {
                 // opposite of what a "never show a blank row" placeholder is for.
                 HStack(
                     alignment: .top,
-                    spacing: isLibraryRow ? PlozziOSMediaRailLayout.visibleSpacing : PlozziOSMediaRailLayout.stackSpacing(
+                    spacing: isLibraryRow ? PlozziOSMediaRailLayout.visibleGap(metrics: metrics) : PlozziOSMediaRailLayout.stackSpacing(
                         metrics: metrics,
                         cardStyle: cardStyle
                     )
@@ -50,7 +50,9 @@ struct PlozziOSHomeSkeletonRail: View {
                         if isLibraryRow {
                             PlozziOSHomeLibraryCard(
                                 library: nil, artworkSource: nil,
-                                width: metrics.density.iOSHomeLibraryWidth(horizontalSizeClass: horizontalSizeClass)
+                                width: metrics.density.iOSHomeLibraryWidth(
+                                    horizontalSizeClass: horizontalSizeClass, isRunningOnMac: metrics.usesDesktopSizing
+                                )
                             )
                             .environment(\.plozzCardCaptionSettings, CardCaptionSettings(showsLabels: showsCaption))
                         } else {
@@ -191,13 +193,20 @@ struct PlozziOSHomeHeroSkeleton: View {
         VStack(alignment: isCompact ? .center : .leading, spacing: 9) {
             // Title block — the real hero shows a logo capped at this height, or
             // a two-line .largeTitle. Reserve the same box.
-            bar(width: isCompact ? 260 : 380, height: isCompact ? 95 : 130)
+            if isRunningOnMac {
+                let budget = HeroLogoSizing.Layout.desktop.budget
+                bar(width: budget.width * logoSize.scale, height: budget.height * logoSize.scale)
+            } else {
+                bar(width: isCompact ? 260 : 380, height: isCompact ? 95 : 130)
+            }
             // Genres — .subheadline, one line.
             textBar(font: .subheadline, width: isCompact ? 220 : 300)
             // Overview — .subheadline, up to three lines.
-            textBar(font: .subheadline, width: isCompact ? 300 : 460)
-            textBar(font: .subheadline, width: isCompact ? 280 : 430)
-            textBar(font: .subheadline, width: isCompact ? 200 : 320)
+            textBar(font: .subheadline, width: isRunningOnMac ? 360 : (isCompact ? 300 : 460))
+            textBar(font: .subheadline, width: isRunningOnMac ? 320 : (isCompact ? 280 : 430))
+            if !isRunningOnMac {
+                textBar(font: .subheadline, width: isCompact ? 200 : 320)
+            }
         }
     }
 
@@ -208,7 +217,7 @@ struct PlozziOSHomeHeroSkeleton: View {
     private var actionRow: some View {
         HStack(spacing: 12) {
             pill(width: 150)
-            pill(width: 48)
+            pill(width: isRunningOnMac ? 44 : 48)
         }
     }
 
@@ -228,11 +237,11 @@ struct PlozziOSHomeHeroSkeleton: View {
 
     private func pill(width: CGFloat) -> some View {
         Text(verbatim: " ")
-            .font(.headline.weight(.semibold))
+            .font((isRunningOnMac ? Font.subheadline : .headline).weight(.semibold))
             .hidden()
-            .padding(.vertical, 12)
+            .padding(.vertical, isRunningOnMac ? 10 : 12)
             .frame(width: width)
-            .frame(minHeight: 48)
+            .frame(minHeight: isRunningOnMac ? 44 : 48)
             .background {
                 Capsule(style: .continuous).fill(palette.fill)
             }

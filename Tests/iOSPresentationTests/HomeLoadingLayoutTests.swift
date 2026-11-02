@@ -12,6 +12,169 @@ import XCTest
 
 @MainActor
 final class HomeLoadingLayoutTests: XCTestCase {
+    func testMacSizingPreservesMobileMetricsAndProfileDensity() {
+        var previousWidth: CGFloat = 0
+        for density in UIDensity.allCases {
+            for size in [DynamicTypeSize.large, .accessibility3] {
+                let mobile = PlozziOSMediaLayout.metrics(density: density, dynamicTypeSize: size, isRunningOnMac: false)
+                let desktop = PlozziOSMediaLayout.metrics(density: density, dynamicTypeSize: size, isRunningOnMac: true)
+                XCTAssertEqual(mobile, .touch(density: density, dynamicTypeSize: size))
+                XCTAssertFalse(mobile.usesDesktopSizing)
+                XCTAssertTrue(desktop.usesDesktopSizing)
+                XCTAssertEqual(desktop.posterWidth, (180 * density.scale).rounded())
+                XCTAssertEqual(desktop.landscapeWidth, (320 * density.scale).rounded())
+                XCTAssertEqual(desktop.castTileDiameter, (140 * density.scale).rounded())
+                XCTAssertEqual(desktop.cardInset, mobile.cardInset)
+                XCTAssertEqual(desktop.watchedBadgeSize, mobile.watchedBadgeSize)
+                XCTAssertEqual(PlozziOSMediaLayout.episodeWidth(metrics: desktop, sizeClass: .regular), desktop.landscapeWidth)
+                XCTAssertEqual(PlozziOSMediaLayout.episodeWidth(metrics: mobile, sizeClass: .regular), 360)
+                XCTAssertEqual(PlozziOSMediaLayout.episodeWidth(metrics: mobile, sizeClass: .compact), 300)
+            }
+            let desktop = PlozzMetrics.desktop(density: density)
+            XCTAssertGreaterThan(desktop.posterWidth, previousWidth)
+            previousWidth = desktop.posterWidth
+            XCTAssertGreaterThan(
+                PlozzMetrics.desktop(density: density, dynamicTypeSize: .accessibility3).continueWatchingWidth,
+                desktop.continueWatchingWidth
+            )
+        }
+        XCTAssertEqual(PlozzMetrics.desktop(density: .standard).continueWatchingWidth, 300)
+    }
+
+    func testMacRailsRevealMoreCardsInsteadOfEnlargingThem() {
+        for density in UIDensity.allCases {
+            let metrics = PlozzMetrics.desktop(density: density)
+            for style in [CardStyle.borderless, .framed] {
+                var previousCount: CGFloat = 0
+                for width: CGFloat in [760, 1280, 1920, 2560] {
+                    let resolved = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
+                        in: width, inset: 36, metrics: metrics, cardStyle: style
+                    )
+                    XCTAssertEqual(resolved, metrics)
+                    let slot = resolved.cardSlotWidth(for: .poster, cardStyle: style)
+                    let spacing = PlozziOSMediaRailLayout.stackSpacing(metrics: resolved, cardStyle: style)
+                    let count = floor((width - 72 + spacing) / (slot + spacing))
+                    XCTAssertGreaterThan(count, previousCount)
+                    previousCount = count
+                }
+            }
+            let grid = density.iOSPosterGridColumns(horizontalSizeClass: .regular, isRunningOnMac: true)
+            guard case .adaptive(let minimum, let maximum) = grid[0].size else {
+                return XCTFail("Desktop grids must adapt their column count.")
+            }
+            XCTAssertEqual(minimum, metrics.posterWidth)
+            XCTAssertEqual(maximum, minimum * 1.18, accuracy: 0.001)
+            XCTAssertEqual(density.iOSHomeLibraryWidth(horizontalSizeClass: .regular, isRunningOnMac: true),
+                           metrics.landscapeWidth)
+        }
+    }
+
+    func testMacHeroLogoRemainsCompactAndHonorsEverySizePreference() {
+        XCTAssertEqual(PlozziOSPageLayout.homeTextMaxWidth(for: .landscape, logoSize: .default), 480)
+        XCTAssertEqual(PlozziOSPageLayout.homeTextMaxWidth(
+            for: .landscape, logoSize: .default, isRunningOnMac: true
+        ), 360)
+        for size in HeroLogoSize.allSizes {
+            let width = PlozziOSPageLayout.homeTextMaxWidth(for: .landscape, logoSize: size, isRunningOnMac: true)
+            let box = PlozziOSPageLayout.heroLogoBox(
+                for: .landscape, size: size, availableWidth: width, isRunningOnMac: true
+            )
+            let mobileBox = PlozziOSPageLayout.heroLogoBox(for: .landscape, size: size)
+            XCTAssertLessThan(box.width, mobileBox.width)
+            XCTAssertLessThan(box.height, mobileBox.height)
+            for aspect: CGFloat in [0.08, 0.75, 3] {
+                let fitted = HeroLogoFit.fittedSize(
+                    for: CGSize(width: 1000, height: 1000 * aspect),
+                    maxWidth: box.width, maxHeight: box.height
+                )
+                XCTAssertLessThanOrEqual(fitted.width, width + 0.001)
+                XCTAssertLessThanOrEqual(fitted.height, 220)
+            }
+        }
+    }
+
+    func testMacLoadingAndLoadedCardsKeepMatchingGeometryAcrossWindowSizes() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let items = fixture.items.map {
+            MediaItem(id: $0.id, title: $0.title, kind: .movie, productionYear: 2024,
+                      allowsTitleBasedMetadataMatching: false)
+        }
+        for width: CGFloat in [760, 1440] {
+            for cardStyle in [CardStyle.borderless, .framed] {
+                for (style, seriesArtwork) in [(PosterCardView.Style.poster, false), (.landscape, false), (.landscape, true)] {
+                    let heights = Heights()
+                    fixture.mount(
+                        ScrollView {
+                            VStack(spacing: 40) {
+                                PlozziOSHomeSkeletonRail(
+                                    title: Text("Recently Added"), style: style,
+                                    showsCaption: true, showsSeriesArtwork: seriesArtwork
+                                )
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights.loading = $0 }
+                                PlozziOSHomeMediaRail(
+                                    title: Text("Recently Added"), items: items,
+                                    style: style, appModel: fixture.app, showsSeriesArtwork: seriesArtwork,
+                                    onBrowse: {}
+                                )
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights.loaded = $0 }
+                            }
+                        }
+                        .environment(\.plozzMetrics, .desktop(density: .standard))
+                        .environment(\.plozziOSIsRunningOnMac, true)
+                        .environment(\.plozziOSHomeViewportWidth, width)
+                        .environment(\.plozzCardStyle, cardStyle),
+                        width: width
+                    )
+                    try await fixture.settle()
+                    XCTAssertGreaterThan(heights.loaded, 0)
+                    XCTAssertEqual(heights.loading, heights.loaded, accuracy: 1,
+                                   "\(width), \(cardStyle), \(style), series=\(seriesArtwork)")
+                    let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+                        fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true)
+                    }
+                    let attachment = XCTAttachment(image: image)
+                    attachment.name = "mac-cards-\(Int(width))-\(cardStyle)-\(style)-series-\(seriesArtwork)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+            }
+        }
+    }
+
+    func testMacHeroActionsKeepMinimumTargetsWithAndWithoutGlass() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        for isMac in [false, true] {
+            for reduced in [false, true] {
+                for size in [DynamicTypeSize.large, .accessibility3] {
+                    let heights = Heights()
+                    fixture.mount(
+                        VStack {
+                            Button("Play") {}
+                                .buttonStyle(PlozziOSHeroActionButtonStyle(kind: .primary))
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights.loading = $0 }
+                            Button("Info", systemImage: "info") {}
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(PlozziOSHeroActionButtonStyle(kind: .secondary, circular: true))
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights.loaded = $0 }
+                        }
+                        .environment(\.plozziOSIsRunningOnMac, isMac)
+                        .environment(\.plozzReducePanelGlass, reduced)
+                        .environment(\.dynamicTypeSize, size),
+                        width: 760
+                    )
+                    try await fixture.settle()
+                    XCTAssertGreaterThanOrEqual(heights.loading, isMac ? 44 : 48)
+                    XCTAssertEqual(heights.loaded, isMac ? 44 : 48, accuracy: 0.1)
+                    if size.isAccessibilitySize {
+                        XCTAssertGreaterThan(heights.loading, isMac ? 44 : 48)
+                    }
+                }
+            }
+        }
+    }
+
     func testBrowseActionDoesNotChangeTheHeightOfALoadingRow() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }

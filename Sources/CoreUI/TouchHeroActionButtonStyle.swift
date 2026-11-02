@@ -11,12 +11,14 @@ public struct TouchHeroActionButtonStyle: ButtonStyle {
     private let circular: Bool
     /// Optional emphasis for a primary action; nil keeps its natural size and wrapping fallback.
     private let minimumWidth: CGFloat?
+    private let compact: Bool
     @Environment(\.themePalette) private var palette
 
-    public init(kind: Kind, circular: Bool = false, minimumWidth: CGFloat? = nil) {
+    public init(kind: Kind, circular: Bool = false, minimumWidth: CGFloat? = nil, compact: Bool = false) {
         self.kind = kind
         self.circular = circular
         self.minimumWidth = minimumWidth
+        self.compact = compact
     }
 
     public func makeBody(configuration: Configuration) -> some View {
@@ -33,7 +35,7 @@ public struct TouchHeroActionButtonStyle: ButtonStyle {
             configuration.label
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .foregroundStyle(kind == .primary ? palette.backgroundBase : palette.primaryText)
-                .frame(width: 48, height: 48)
+                .frame(width: compact ? 44 : 48, height: compact ? 44 : 48)
                 .background {
                     Circle()
                         .fill(backgroundColor)
@@ -47,11 +49,11 @@ public struct TouchHeroActionButtonStyle: ButtonStyle {
             configuration.label
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
-                .font(.headline.weight(.semibold))
+                .font((compact ? Font.subheadline : .headline).weight(.semibold))
                 .foregroundStyle(kind == .primary ? palette.backgroundBase : palette.primaryText)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .frame(minWidth: minimumWidth, minHeight: 48)
+                .padding(.horizontal, compact ? 16 : 20)
+                .padding(.vertical, compact ? 10 : 12)
+                .frame(minWidth: minimumWidth, minHeight: compact ? 44 : 48)
                 .background {
                     // Bounded corners keep multiline and accessibility-size text
                     // inside the surface instead of turning tall buttons into ovals.

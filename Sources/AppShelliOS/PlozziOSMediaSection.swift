@@ -9,6 +9,14 @@ enum PlozziOSMediaRailLayout {
     static let visibleSpacing: CGFloat = 12
     static let shadowClearance: CGFloat = 10
 
+    static func sectionGap(metrics: PlozzMetrics) -> CGFloat {
+        metrics.usesDesktopSizing ? metrics.rowSpacing : sectionSpacing
+    }
+
+    static func visibleGap(metrics: PlozzMetrics) -> CGFloat {
+        metrics.usesDesktopSizing ? metrics.cardSpacing : visibleSpacing
+    }
+
     static func artworkAlignedInset(_ pageInset: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle) -> CGFloat {
         pageInset - (cardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin)
     }
@@ -16,9 +24,10 @@ enum PlozziOSMediaRailLayout {
     /// Exclude the card's invisible side margins from the visible artwork gap.
     static func stackSpacing(
         metrics: PlozzMetrics, cardStyle: CardStyle,
-        visibleSpacing: CGFloat = PlozziOSMediaRailLayout.visibleSpacing
+        visibleSpacing: CGFloat? = nil
     ) -> CGFloat {
-        switch cardStyle {
+        let visibleSpacing = visibleSpacing ?? visibleGap(metrics: metrics)
+        return switch cardStyle {
         case .framed:
             visibleSpacing
         case .borderless:
@@ -30,6 +39,8 @@ enum PlozziOSMediaRailLayout {
 struct PlozziOSMediaSection<Content: View>: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    @ScaledMetric(relativeTo: .headline) private var desktopHeadingSize: CGFloat = 18
     let title: Text
     var horizontalInset: CGFloat?
     var artworkInset: CGFloat = 0
@@ -44,7 +55,7 @@ struct PlozziOSMediaSection<Content: View>: View {
                     if let onBrowse { BrowseRowHeading(title: title, action: onBrowse) }
                     else { title }
                 }
-                    .font(.title3.weight(.semibold))
+                    .font(isRunningOnMac ? .system(size: desktopHeadingSize, weight: .semibold) : .title3.weight(.semibold))
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
