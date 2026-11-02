@@ -2301,8 +2301,6 @@ private struct PlozziOSPullResponsiveHomeBackdrop<Backdrop: View>: View {
 
 struct PlozziOSHeroPagingControls: View {
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
-    @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(\.legibilityWeight) private var legibilityWeight
     let itemCount: Int
     let isEnabled: Bool
     let onPage: (Bool) -> Void
@@ -2320,18 +2318,96 @@ struct PlozziOSHeroPagingControls: View {
     }
 
     private func pagingButton(forward: Bool) -> some View {
-        Button { onPage(forward) } label: {
-            Image(systemName: forward ? "chevron.compact.right" : "chevron.compact.left")
-                .font(.system(size: 30, weight: legibilityWeight == .bold ? .semibold : .regular))
-                .foregroundStyle(.white.opacity(contrast == .increased ? 1 : 0.6))
-                .frame(width: 44, height: 64)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .contentShape(.hoverEffect, Capsule().inset(by: 10))
-        .hoverEffect(.highlight)
-        .accessibilityLabel(forward ? Text("Next") : Text("Previous"))
-        .accessibilityIdentifier(forward ? "home-hero-next" : "home-hero-previous")
+        PlozziOSHeroPagingButton(forward: forward, action: { onPage(forward) })
+            .frame(width: 44, height: 64)
+    }
+}
+
+private struct PlozziOSHeroPagingButton: UIViewRepresentable {
+    let forward: Bool
+    let action: () -> Void
+
+    func makeUIView(context: Context) -> PlozziOSHeroPagingUIButton {
+        PlozziOSHeroPagingUIButton(frame: .zero)
+    }
+
+    func updateUIView(_ button: PlozziOSHeroPagingUIButton, context: Context) {
+        button.forward = forward
+        button.increasedContrast = context.environment.colorSchemeContrast == .increased
+        button.boldText = context.environment.legibilityWeight == .bold
+        button.reduceTransparency = context.environment.accessibilityReduceTransparency
+        button.isEnabled = context.environment.isEnabled
+        button.isAccessibilityElement = true
+        button.accessibilityTraits = button.isEnabled ? .button : [.button, .notEnabled]
+        button.onActivate = action
+        button.accessibilityLabel = String(
+            localized: forward ? "Next" : "Previous",
+            locale: context.environment.locale
+        )
+        button.accessibilityIdentifier = forward ? "home-hero-next" : "home-hero-previous"
+        button.setNeedsUpdateConfiguration()
+    }
+}
+
+final class PlozziOSHeroPagingUIButton: UIButton, UIGestureRecognizerDelegate {
+    var forward = false
+    var increasedContrast = false
+    var boldText = false
+    var reduceTransparency = false
+    var onActivate: (() -> Void)?
+    private var pointerInside = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        configuration = .plain()
+        // iPad-on-Mac does not draw the system pointer highlight. Track real
+        // hover events and let the native button configuration paint its state.
+        isPointerInteractionEnabled = false
+        let hover = UIHoverGestureRecognizer(target: self, action: #selector(hoverChanged))
+        hover.cancelsTouchesInView = false
+        hover.delegate = self
+        addGestureRecognizer(hover)
+        addAction(UIAction { [weak self] _ in
+            guard let self, self.isEnabled else { return }
+            self.onActivate?()
+        }, for: .primaryActionTriggered)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    @objc func hoverChanged(_ recognizer: UIHoverGestureRecognizer) {
+        let inside = recognizer.state == .began || recognizer.state == .changed
+        guard pointerInside != inside else { return }
+        pointerInside = inside
+        setNeedsUpdateConfiguration()
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        gestureRecognizer is UIHoverGestureRecognizer
+    }
+
+    override func updateConfiguration() {
+        let emphasized = isEnabled && (pointerInside || isHighlighted || isFocused)
+        var appearance = UIButton.Configuration.plain()
+        appearance.image = UIImage(systemName: forward ? "chevron.compact.right" : "chevron.compact.left")
+        appearance.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: 24, weight: boldText ? .semibold : .regular
+        )
+        appearance.baseForegroundColor = .white.withAlphaComponent(increasedContrast ? 1 : 0.6)
+        appearance.contentInsets = .zero
+        appearance.cornerStyle = .fixed
+        appearance.background.cornerRadius = 10
+        appearance.background.backgroundInsets = NSDirectionalEdgeInsets(
+            top: 10, leading: 12, bottom: 10, trailing: 12
+        )
+        appearance.background.backgroundColor = emphasized
+            ? UIColor(white: 0.15, alpha: increasedContrast || reduceTransparency ? 1 : 0.55)
+            : .clear
+        configuration = appearance
     }
 }
 

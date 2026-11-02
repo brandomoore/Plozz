@@ -142,7 +142,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                                 XCTAssertEqual(bounds.midX, centerX, accuracy: 2)
                                 XCTAssertEqual(bounds.midY, 360, accuracy: 2)
                                 XCTAssertGreaterThan(bounds.height, 25)
-                                XCTAssertLessThan(bounds.height, 40)
+                                XCTAssertLessThan(bounds.height, 28)
                                 XCTAssertLessThan(bounds.width, bounds.height * 0.4)
                                 // The native hover highlight must not leave a permanent pill.
                                 XCTAssertEqual(try pixel(image, at: CGPoint(x: centerX, y: 335))[0], 0)
@@ -190,6 +190,91 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             }
             XCTAssertGreaterThan(Int(samples[1].peak), Int(samples[0].peak) + 20)
             XCTAssertGreaterThan(samples[2].pixels, samples[0].pixels)
+        }
+    }
+
+    func testMacHeroHoverPaintsAndClearsTheBackgroundWithoutShrinkingTheButton() async throws {
+        let item = try await artworkItem()
+        try await withWindow(
+            item: item, size: CGSize(width: 1280, height: 720), sizeClass: .regular,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            var pages: [Bool] = []
+            host.rootView = AnyView(
+                ZStack {
+                    Color(white: 0.75)
+                    PlozziOSHeroPagingControls(
+                        itemCount: 3, isEnabled: true, onPage: { pages.append($0) }
+                    )
+                }
+                .ignoresSafeArea()
+                .environment(\.plozziOSIsRunningOnMac, true)
+                .environment(\.locale, Locale(identifier: "en_US"))
+            )
+            try await waitForHostedLayout(window)
+            let buttons = descendants(window).compactMap { $0 as? PlozziOSHeroPagingUIButton }
+            let previous = try XCTUnwrap(buttons.first { $0.accessibilityIdentifier == "home-hero-previous" })
+            let next = try XCTUnwrap(buttons.first { $0.accessibilityIdentifier == "home-hero-next" })
+            for button in [previous, next] {
+                XCTAssertEqual(button.bounds.size, CGSize(width: 44, height: 64))
+                XCTAssertTrue(button.point(inside: CGPoint(x: 0.5, y: 0.5), with: nil))
+                XCTAssertTrue(button.point(inside: CGPoint(x: 43.5, y: 63.5), with: nil))
+                XCTAssertTrue(button.isAccessibilityElement)
+                XCTAssertTrue(button.accessibilityTraits.contains(.button))
+                XCTAssertTrue(button.gestureRecognizers?.contains { $0 is UIHoverGestureRecognizer } == true)
+            }
+            XCTAssertEqual(previous.accessibilityLabel, "Previous")
+            XCTAssertEqual(next.accessibilityLabel, "Next")
+            let leftPoint = previous.convert(CGPoint(x: 22, y: 14), to: window)
+            let rightPoint = next.convert(CGPoint(x: 22, y: 14), to: window)
+            let idle = snapshot(window, name: "hero-hover-idle")
+            let idlePixel = Int(try pixel(idle, at: leftPoint)[0])
+            let hover = HeroHoverGestureFixture()
+            hover.phase = .began
+            previous.hoverChanged(hover)
+            try await waitForHostedLayout(window)
+            let hovered = snapshot(window, name: "hero-hover-enter")
+            XCTAssertLessThan(Int(try pixel(hovered, at: leftPoint)[0]), idlePixel - 30)
+            XCTAssertLessThanOrEqual(abs(Int(try pixel(hovered, at: rightPoint)[0]) - idlePixel), 2)
+
+            previous.sendActions(for: .primaryActionTriggered)
+            next.sendActions(for: .primaryActionTriggered)
+            XCTAssertEqual(pages, [false, true])
+            for ending in [UIGestureRecognizer.State.ended, .cancelled] {
+                hover.phase = .began
+                previous.hoverChanged(hover)
+                hover.phase = ending
+                previous.hoverChanged(hover)
+                try await waitForHostedLayout(window)
+                let exited = snapshot(window, name: "hero-hover-exit-\(ending.rawValue)")
+                XCTAssertLessThanOrEqual(abs(Int(try pixel(exited, at: leftPoint)[0]) - idlePixel), 2)
+            }
+            previous.isEnabled = false
+            hover.phase = .began
+            previous.hoverChanged(hover)
+            previous.sendActions(for: .primaryActionTriggered)
+            try await waitForHostedLayout(window)
+            XCTAssertEqual(pages, [false, true])
+            let disabled = snapshot(window, name: "hero-hover-disabled")
+            XCTAssertLessThanOrEqual(abs(Int(try pixel(disabled, at: leftPoint)[0]) - idlePixel), 2)
+        }
+    }
+
+    func testMacHeroHoverUsesAnOpaqueBackgroundForAccessibilityPreferences() throws {
+        let button = PlozziOSHeroPagingUIButton(frame: CGRect(x: 0, y: 0, width: 44, height: 64))
+        let hover = HeroHoverGestureFixture()
+        hover.phase = .began
+        button.hoverChanged(hover)
+        for (increasedContrast, reduceTransparency, alpha) in [
+            (false, false, CGFloat(0.55)),
+            (true, false, 1),
+            (false, true, 1)
+        ] {
+            button.increasedContrast = increasedContrast
+            button.reduceTransparency = reduceTransparency
+            button.updateConfiguration()
+            let color = try XCTUnwrap(button.configuration?.background.backgroundColor)
+            XCTAssertEqual(color.cgColor.alpha, alpha, accuracy: 0.001)
         }
     }
 
@@ -557,6 +642,14 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         XCTAssertGreaterThan(pixel[0], 180, "The top-of-art marker must survive a wide crop.")
         XCTAssertLessThan(pixel[1], 70)
         XCTAssertGreaterThan(pixel[2], 180)
+    }
+}
+
+private final class HeroHoverGestureFixture: UIHoverGestureRecognizer {
+    var phase: UIGestureRecognizer.State = .possible
+    override var state: UIGestureRecognizer.State {
+        get { phase }
+        set { phase = newValue }
     }
 }
 

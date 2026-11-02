@@ -104,13 +104,15 @@ registry.
   iPhone/iPad and TV retain their existing sizes.
 
 - **Mac hero paging controls** sit at the left/right midpoint only when the
-  carousel has multiple titles. Plain native buttons use the system highlight
-  hover effect for a subtle background without a permanent pill. They share the
+  carousel has multiple titles. Native buttons use explicit hover recognition
+  and a configured subtle background, since the system pointer highlight is not
+  drawn in iPad-on-Mac. There is no permanent pill. They share the
   swipe/auto-advance transition path and are disabled during a swipe or transition.
   iPhone/iPad retain swipe-only manual paging.
-  The compact chevrons are tall and narrow, with a slim native hover highlight.
+  The compact chevrons are tall and narrow, with a slim rounded hover background.
   Their lighter glyphs retain 44-by-64-point hit targets and spoken labels;
   Increase Contrast raises their opacity and Bold Text strengthens their stroke.
+  Increase Contrast and Reduce Transparency make the hovered background opaque.
   Mouse movement over the Mac hero freezes automatic paging and its gauge until
   1.5 seconds of pointer inactivity (or pointer exit). Trailers keep playing;
   trailer-end paging waits until the pause ends. Manual paging remains available.
