@@ -1585,6 +1585,13 @@ struct PlozziOSHomeHeroCarousel: View {
             }
         }
         .frame(height: heroHeight)
+        .overlay {
+            PlozziOSHeroPagingControls(
+                itemCount: items.count,
+                isEnabled: isActive && !transitionInProgress && dragOffset == 0,
+                onPage: { page(forward: $0) }
+            )
+        }
         .heroArtworkSource(
             id: currentItem?.id,
             isActive: isFrontmost
@@ -2243,6 +2250,40 @@ private struct PlozziOSPullResponsiveHomeBackdrop<Backdrop: View>: View {
             )
         }
         .offset(y: -pullDistance)
+    }
+}
+
+struct PlozziOSHeroPagingControls: View {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    let itemCount: Int
+    let isEnabled: Bool
+    let onPage: (Bool) -> Void
+
+    var body: some View {
+        if isRunningOnMac, itemCount > 1 {
+            HStack {
+                pagingButton(forward: false)
+                Spacer(minLength: 0)
+                pagingButton(forward: true)
+            }
+            .padding(.horizontal, 8)
+            .disabled(!isEnabled)
+        }
+    }
+
+    private func pagingButton(forward: Bool) -> some View {
+        Button { onPage(forward) } label: {
+            Image(systemName: forward ? "chevron.right" : "chevron.left")
+                .font(.system(size: 24, weight: .regular))
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(width: 44, height: 64)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contentShape(.hoverEffect, Capsule().inset(by: 8))
+        .hoverEffect(.highlight)
+        .accessibilityLabel(forward ? Text("Next") : Text("Previous"))
+        .accessibilityIdentifier(forward ? "home-hero-next" : "home-hero-previous")
     }
 }
 

@@ -10,6 +10,51 @@ import XCTest
 
 @MainActor
 final class HomeHeroFullWidthPresentationTests: XCTestCase {
+    func testMacHeroPagingControlsAppearAtBothEdgesOnlyForMultipleTitles() async throws {
+        let item = try await artworkItem()
+        try await withWindow(
+            item: item, size: CGSize(width: 1280, height: 720), sizeClass: .regular,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            for width in [CGFloat(390), 1280, 1920] {
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 720)
+                for isRunningOnMac in [false, true] {
+                    for count in [0, 1, 3] {
+                        host.rootView = AnyView(
+                            ZStack {
+                                Color.black
+                                PlozziOSHeroPagingControls(
+                                    itemCount: count, isEnabled: true, onPage: { _ in }
+                                )
+                            }
+                            .ignoresSafeArea()
+                            .environment(\.plozziOSIsRunningOnMac, isRunningOnMac)
+                        )
+                        try await waitForHostedLayout(window)
+                        let image = snapshot(
+                            window, name: "hero-arrows-\(Int(width))-mac-\(isRunningOnMac)-count-\(count)"
+                        )
+                        for centerX in [CGFloat(30), width - 30] {
+                            let region = CGRect(x: centerX - 22, y: 328, width: 44, height: 64)
+                            let ink = try pagingControlInk(in: image, region: region)
+                            if isRunningOnMac, count > 1 {
+                                let bounds = try XCTUnwrap(ink)
+                                XCTAssertEqual(bounds.midX, centerX, accuracy: 2)
+                                XCTAssertEqual(bounds.midY, 360, accuracy: 2)
+                                XCTAssertGreaterThan(bounds.height, 14)
+                                XCTAssertLessThan(bounds.height, 30)
+                                // The native hover highlight must not leave a permanent pill.
+                                XCTAssertEqual(try pixel(image, at: CGPoint(x: centerX, y: 335))[0], 0)
+                            } else {
+                                XCTAssertNil(ink, "Only a multi-title Mac hero should have paging arrows.")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testMacNavigationBackgroundKeepsArtworkClearAndNativeControlsVisible() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -73,7 +118,14 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         ]
         try await withWindow(
             item: item, size: sizes[0], sizeClass: .regular, insets: .zero,
-            pull: PlozziOSHomeHeroPullModel(), isRunningOnMac: true, tracksWindowHeight: true
+            pull: PlozziOSHomeHeroPullModel(), isRunningOnMac: true, tracksWindowHeight: true,
+            heroItems: [
+                item,
+                MediaItem(
+                    id: "next-hero", title: "NEXT HERO", kind: .movie,
+                    backdropURL: item.backdropURL, allowsTitleBasedMetadataMatching: false
+                )
+            ]
         ) { window, _ in
             for size in sizes + sizes.reversed() {
                 window.frame = CGRect(origin: .zero, size: size)
@@ -207,6 +259,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         insets: UIEdgeInsets, pull: PlozziOSHomeHeroPullModel, nativeTabs: Bool = false,
         isRunningOnMac: Bool = false,
         tracksWindowHeight: Bool = false,
+        heroItems: [MediaItem]? = nil,
         exercise: (UIWindow, UIHostingController<AnyView>) async throws -> Void
     ) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -219,7 +272,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         app.settings.heroBackground.settings.homeTrailerEnabled = false
         let sidebar = PlozziOSSidebarGeometryModel()
         let root = HomeHeroWidthFixture(
-            item: item, pull: pull, nativeTabs: nativeTabs, sidebar: sidebar,
+            items: heroItems ?? [item], pull: pull, nativeTabs: nativeTabs, sidebar: sidebar,
             tracksWindowHeight: tracksWindowHeight
         )
             .environment(app)
@@ -287,6 +340,33 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             context.draw(sample, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         }
         return pixel
+    }
+
+    private func pagingControlInk(in image: UIImage, region: CGRect) throws -> CGRect? {
+        let crop = try XCTUnwrap(image.cgImage?.cropping(to: region.applying(
+            CGAffineTransform(scaleX: image.scale, y: image.scale)
+        )))
+        var bytes = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+        try bytes.withUnsafeMutableBytes { buffer in
+            let context = try XCTUnwrap(CGContext(
+                data: buffer.baseAddress, width: crop.width, height: crop.height,
+                bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        }
+        var bounds = CGRect.null
+        for y in 0..<crop.height {
+            for x in 0..<crop.width where bytes[(y * crop.width + x) * 4] > 80 {
+                bounds = bounds.union(CGRect(
+                    x: region.minX + CGFloat(x) / image.scale,
+                    y: region.minY + CGFloat(y) / image.scale,
+                    width: 1 / image.scale, height: 1 / image.scale
+                ))
+            }
+        }
+        return bounds.isNull ? nil : bounds
     }
 
     private func assertArtworkAtBothEdges(
@@ -367,7 +447,7 @@ private struct MacNavigationBackgroundFixture: View {
 }
 
 private struct HomeHeroWidthFixture: View {
-    let item: MediaItem
+    let items: [MediaItem]
     let pull: PlozziOSHomeHeroPullModel
     let nativeTabs: Bool
     let sidebar: PlozziOSSidebarGeometryModel
@@ -402,7 +482,7 @@ private struct HomeHeroWidthFixture: View {
         NavigationStack {
             PlozziOSHomeScrollView(heroActive: true) {
                 PlozziOSHomeHeroCarousel(
-                    items: [item], autoAdvance: false, autoAdvanceSeconds: 30,
+                    items: items, autoAdvance: false, autoAdvanceSeconds: 30,
                     onPlay: { _ in }, pullModel: pull
                 )
             } rows: {

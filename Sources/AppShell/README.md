@@ -103,6 +103,12 @@ registry.
   48-point minimum in both glass and reduced-effects presentations.
   iPhone/iPad and TV retain their existing sizes.
 
+- **Mac hero paging controls** sit at the left/right midpoint only when the
+  carousel has multiple titles. Plain native buttons use the system highlight
+  hover effect for a subtle background without a permanent pill. They share the
+  swipe/auto-advance transition path and are disabled during a swipe or transition.
+  iPhone/iPad retain swipe-only manual paging.
+
 - **Preference sync is not a profile switch.** Mobile cloud apply rebuilds active
   settings and track/version preferences without restarting downloads, provider
   caches, identity indexing, or tracker/watchlist imports. Inactive-profile
