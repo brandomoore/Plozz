@@ -17,9 +17,10 @@ first-class backends; co-equal with `ProviderJellyfin`.
 - `PlexConnectionResolver` + `PlexConnectionSelector` — pick the best
   reachable server connection from `plex.tv` (LAN vs WAN vs relayed),
   prioritising local & direct over relayed.
-- `PlexDeviceProfile` — the direct-play / transcode capability matrix sent
-  to the server, parameterised by whether the on-device decode engine
-  (Plozzigen) is linked.
+- `PlexDeviceProfile` — the client identity sent to Plex.tv and media servers.
+  Defaults report the runtime device family, friendly device name, OS version,
+  and app bundle version on both platforms. The per-install client identifier
+  stays stable; playback capabilities remain separate from this identity.
 - `PlexDTOs` — Plex JSON shapes, mapped into `CoreModels` at the seam.
 
 ## Invariants
