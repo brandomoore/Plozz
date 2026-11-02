@@ -741,17 +741,22 @@ class TestFlightGuideTests(unittest.TestCase):
         self.assertEqual(len(self.discord.messages[THREAD]), 1)
         self.assertEqual(len(self.discord.writes), 1)
 
-    def test_missing_duplicate_wrong_server_or_writable_channel_stops_before_writing(self):
+    def test_missing_duplicate_or_wrong_server_channel_stops_before_writing(self):
         original = copy.deepcopy(self.discord.threads)
         for channels in (
             [], original * 2, [{**original[0], "guild_id": "another-server"}],
             [{**original[0], "type": 15}],
-            [{**original[0], "permission_overwrites": []}],
         ):
             self.discord.threads = channels
             with self.subTest(channels=channels), self.assertRaises(BRIDGE.BridgeError):
                 self.publish()
             self.assertEqual(self.discord.writes, [])
+
+    def test_ordinary_publication_leaves_existing_channel_permissions_alone(self):
+        self.discord.threads[0]["permission_overwrites"] = []
+        self.publish()
+        self.assertEqual([write[0] for write in self.discord.writes], ["POST"])
+        self.assertEqual(self.discord.threads[0]["permission_overwrites"], [])
 
     def test_bot_send_permission_and_unique_marker_are_required(self):
         self.discord.threads[0]["permission_overwrites"].pop()

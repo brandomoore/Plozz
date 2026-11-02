@@ -135,7 +135,7 @@ rediscovers a successfully created guide.
 
 ### TestFlight information channel
 
-The existing read-only `#testflight` text channel can receive a separate bot-owned
+The existing `#testflight` text channel can receive a separate bot-owned
 beta guide. Run **Discord issue bridge -> publish-testflight-guide** explicitly.
 This manual-only mode uses the existing Discord bot secret, no model or GitHub
 write token, and does not change the issue bridge or release-announcement schedule.
@@ -145,8 +145,8 @@ an App Store fallback, beta reliability/expiry, Apple TV joining steps and the
 public bug-report notice. `TESTFLIGHT_GUIDE` in `tools/discord-bridge.py` owns
 its content. The bot finds one existing `testflight` channel in the configured
 Plozz server, verifies its identity and effective send/embed/history permissions,
-and requires an explicit `@everyone` Send Messages denial. It never creates a
-channel. Ordinary publication does not change permissions. Give the bot a
+before posting. It never creates a channel. Ordinary publication works with the
+channel's existing permissions and does not change them. Give the bot a
 channel-specific Send Messages allow if needed; Administrator is not required.
 
 With explicit owner approval, the manual `make_testflight_read_only` input can

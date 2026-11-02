@@ -563,14 +563,6 @@ def publish_testflight_guide(discord, *, make_read_only=False):
         require_channel_permissions(discord, channel, {
             "View Channel": 10, "Send Messages": 11, "Embed Links": 14, "Read Message History": 16,
         })
-    read_only = any(
-        overwrite.get("id") == GUILD and overwrite.get("type") == 0
-        and int(overwrite.get("deny", 0)) & (1 << 11)
-        and not int(overwrite.get("allow", 0)) & (1 << 11)
-        for overwrite in channel.get("permission_overwrites", [])
-    )
-    if not read_only:
-        raise BridgeError("Set #testflight to deny Send Messages for @everyone before publishing its read-only guide. No permissions were changed.")
     messages = thread_messages(discord, channel["id"])
     key = "guide:testflight"
     discord_upsert(discord, channel, messages, key, TESTFLIGHT_GUIDE)
