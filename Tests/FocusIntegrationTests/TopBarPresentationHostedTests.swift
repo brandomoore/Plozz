@@ -36,7 +36,6 @@ final class TopBarPresentationHostedTests: XCTestCase {
     func testScrollMovesOnlyTheBarAndKeepsOffscreenNavigationIneligible() async throws {
         let (window, previous) = try await makeWindow()
         let model = Model()
-        model.selection = .settings
         window.rootViewController = UIHostingController(rootView: Fixture(model: model))
         window.makeKeyAndVisible()
         defer {
@@ -44,8 +43,7 @@ final class TopBarPresentationHostedTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await waitForPage(.settings, model: model, window: window)
-        try await focusPage(.settings, model: model, window: window)
+        try await openSettings(model: model, window: window)
         try await Task.sleep(for: .milliseconds(350))
         let scroll = try XCTUnwrap(model.scroll)
         let source = UUID()
@@ -125,7 +123,6 @@ final class TopBarPresentationHostedTests: XCTestCase {
     func testOffscreenChromeHidesAndReturnsWithoutAnimation() async throws {
         let (window, previous) = try await makeWindow()
         let model = Model()
-        model.selection = .settings
         window.rootViewController = UIHostingController(rootView: Fixture(model: model))
         window.makeKeyAndVisible()
         defer {
@@ -133,8 +130,7 @@ final class TopBarPresentationHostedTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await waitForPage(.settings, model: model, window: window)
-        try await focusPage(.settings, model: model, window: window)
+        try await openSettings(model: model, window: window)
         try await Task.sleep(for: .milliseconds(350))
         let scroll = try XCTUnwrap(model.scroll)
         let source = UUID()
@@ -272,7 +268,6 @@ final class TopBarPresentationHostedTests: XCTestCase {
         for reduceMotion in [false, true] {
             let (window, previous) = try await makeWindow()
             let model = Model()
-            model.selection = .settings
             model.reduceMotion = reduceMotion
             window.rootViewController = UIHostingController(rootView: Fixture(model: model))
             window.makeKeyAndVisible()
@@ -281,7 +276,7 @@ final class TopBarPresentationHostedTests: XCTestCase {
                 window.rootViewController = nil
                 previous?.makeKeyAndVisible()
             }
-            try await waitForPage(.settings, model: model, window: window)
+            try await openSettings(model: model, window: window)
             try await Task.sleep(for: .milliseconds(350))
             let marker = try XCTUnwrap(navigationMarkers(in: window).first)
             let initial = marker.convert(marker.bounds, to: window)
@@ -343,13 +338,25 @@ final class TopBarPresentationHostedTests: XCTestCase {
         XCTFail("Missing horizontal destination: \(destination)")
     }
 
-    private func focusPage(_ destination: NavigationRailDestination, model: Model, window: UIWindow) async throws {
-        let page = try XCTUnwrap(model.buttons[destination])
+    private func openSettings(model: Model, window: UIWindow) async throws {
+        try await waitForPage(.home, model: model, window: window)
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
-        system.requestFocusUpdate(to: page)
-        system.updateFocusIfNeeded()
-        let deadline = ContinuousClock.now + .seconds(5)
+        var deadline = ContinuousClock.now + .seconds(5)
+        while system.focusedItem == nil, ContinuousClock.now < deadline {
+            window.setNeedsFocusUpdate()
+            window.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertNotNil(system.focusedItem)
+        model.selection = .settings
+        try await waitForPage(.settings, model: model, window: window)
+        let page = try XCTUnwrap(model.buttons[.settings])
+        let owner = try XCTUnwrap(NavigationRailFocusHostController.containing(page))
+        deadline = ContinuousClock.now + .seconds(5)
         while !page.isFocused, ContinuousClock.now < deadline {
+            if page.canBecomeFocused {
+                owner.requestFocus(to: page, using: system)
+            }
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertTrue(page.isFocused, "Establish content focus before testing whether navigation preserves it.")

@@ -18,7 +18,11 @@ local MP4 may select the software decoder and cannot prove AVPlayer item reuse.
 Keep decoded-frame sampling independent of concurrent guide/network requests so
 their retry waits are not counted as video stalls. Hosted focus comparisons must
 establish the starting focus and observe presented geometry, not just a layout
-target published before an animation finishes.
+target published before an animation finishes. Top-bar chrome fixtures open
+Settings through the mounted destination handoff and request focus through the
+containing native owner, not directly from an unfocused leaf. Fade captures must
+prove an intermediate rendered state; screenshot capture time can allow a later
+sample to reach the final state sooner than its nominal sleep interval suggests.
 
 ## The two speed wins
 
@@ -386,6 +390,10 @@ the original root without widening its browse boundary. Deep scrolling must
 realize onscreen native focus targets. The bounded folder viewport uses recycled
 native cells: fewer than 20 are visible for the large fixture, short lists retain
 their natural height, and the table/cells do not clip horizontal focus overflow.
+Before each folder open, the root's presented geometry and finite animations
+must settle. Fixture presentation is outside the unchanged 150 ms navigation
+ceiling; the timed window still includes the folder request and its resulting
+native layout.
 This is isolated UI coverage, not a live-server network benchmark.
 
 `ShareFolderNavigationTests` launches `PlozzFocusHost --share-folder-fixture`

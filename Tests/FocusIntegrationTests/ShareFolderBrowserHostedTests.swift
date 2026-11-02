@@ -56,6 +56,9 @@ final class ShareFolderBrowserHostedTests: XCTestCase {
         XCTAssertLessThan(rootTable.bounds.height, 250, "Short lists must retain their natural height.")
 
         for _ in 0..<2 {
+            let setupStart = ContinuousClock.now
+            try await waitForHostedLayout(window)
+            print("Folder fixture settling: \(setupStart.duration(to: .now))")
             let movies = try XCTUnwrap(model.locations.first { $0.name == "Movies" })
             model.selectLocation(movies)
             let clock = ContinuousClock()
@@ -109,7 +112,6 @@ final class ShareFolderBrowserHostedTests: XCTestCase {
             try await wait { model.currentPath == "/media" && model.locationLoad == .loaded }
             XCTAssertEqual(model.locations.map(\.name), ["Movies", "TV Shows"])
             XCTAssertFalse(model.canNavigateUp, "Browsing must retain the originally entered root boundary.")
-            try await Task.sleep(for: .milliseconds(100))
         }
     }
 
