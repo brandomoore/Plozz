@@ -39,10 +39,22 @@ public extension View {
         model: LiveTVGuidePreparationModel, presenter: TransientStatusPresenter,
         palette: ThemePalette, isEnabled: Bool = true
     ) -> some View {
-        overlay(alignment: .bottom) {
+        modifier(GuidePreparationOverlay(model: model, presenter: presenter, palette: palette, isEnabled: isEnabled))
+    }
+}
+
+private struct GuidePreparationOverlay: ViewModifier {
+    let model: LiveTVGuidePreparationModel
+    let presenter: TransientStatusPresenter
+    let palette: ThemePalette
+    let isEnabled: Bool
+
+    func body(content: Content) -> some View {
+        content.adaptiveStatusOverlay(
+            isPresented: isEnabled && presenter.message == nil && model.notificationStatus != nil
+        ) {
             if isEnabled {
                 LiveTVGuidePreparationToast(model: model, presenter: presenter, palette: palette)
-                    .padding(.bottom, TransientStatusLayout.bottomPadding)
             }
         }
     }

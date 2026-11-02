@@ -28,8 +28,11 @@ saving and channel checks. Percentages describe only the current stage: download
 totals are omitted for unknown lengths or HTTP-decoded bodies, and listing totals
 come from the completed metadata pass. Progress is throttled and shared with
 foreground consumers joining an existing import, not a second download.
-The dismissible toast stays above bottom navigation and Settings search controls,
-without adding an inline progress block or resizing the guide. It briefly shows
+The dismissible toast stays 16 points above the visible native bottom navigation
+or Settings search controls on mobile, or the bottom safe area when neither is
+present. Side-mounted navigation instead constrains its horizontal content area.
+Position changes animate unless Reduce Motion is enabled. It does not
+add an inline progress block or resize the guide. It briefly shows
 the outcome. Dismissal hides only that request's notification; loading continues
 and its final result remains in Sources. Unrelated transient messages
 take priority. Ordinary background refreshes stay quiet.

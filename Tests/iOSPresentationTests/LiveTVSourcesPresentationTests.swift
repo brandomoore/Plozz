@@ -12,6 +12,134 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesPresentationTests: XCTestCase {
+    func testToastUsesNativeSidebarContentAreaWithoutBottomBarClearance() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native content layout guide requires iOS 26.") }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for direction in [UISemanticContentAttribute.forceLeftToRight, .forceRightToLeft] {
+            let host = UIHostingController(rootView:
+                TabView {
+                    Tab("Home", systemImage: "house") { Color.white }
+                    Tab("Library", systemImage: "square.stack") { Color.white }
+                    Tab("Live TV", systemImage: "tv") { Color.white }
+                    Tab("Settings", systemImage: "gear") { Color.white }
+                }
+                    .tabViewStyle(.sidebarAdaptable)
+                    .adaptiveStatusOverlay(isPresented: true) {
+                        Text("Toast position")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .transientStatusSurface(palette: .dark)
+                    }
+            )
+            host.view.semanticContentAttribute = direction
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            try await settle(window)
+            try await Task.sleep(for: .milliseconds(400))
+            let tabs = try XCTUnwrap(tabController(in: host))
+            let area = tabs.view.convert(tabs.contentLayoutGuide.layoutFrame, to: window)
+            guard area.width < window.bounds.width - 40 else {
+                throw XCTSkip("Run on iPhone Duo or another device with native side-mounted tabs.")
+            }
+            XCTAssertLessThan(area.width, window.bounds.width - 40, "Exercise a real native side-mounted navigation area.")
+            let image = snapshot(window)
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "adaptive-toast-native-sidebar-\(direction.rawValue)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let label = try textFrame("Toast position", in: image)
+            XCTAssertEqual(label.midX, area.midX, accuracy: 3)
+            XCTAssertGreaterThan(label.minX, area.minX)
+            XCTAssertLessThan(label.maxX, area.maxX)
+            XCTAssertEqual(
+                try toastSurfaceBottom(in: image, x: area.midX),
+                window.safeAreaLayoutGuide.layoutFrame.maxY - TransientStatusLayout.controlSpacing,
+                accuracy: 2
+            )
+        }
+    }
+
+    func testToastTracksNativeBottomNavigationAndAnimatesWithoutReduceMotion() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for reduceMotion in [false, true] {
+            let host = UIHostingController(rootView:
+                Color.white
+                    .adaptiveStatusOverlay(isPresented: true) {
+                        Text("Toast position")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .transientStatusSurface(palette: .dark)
+                    }
+                    .environment(\._accessibilityReduceMotion, reduceMotion)
+            )
+            host.tabBarItem = UITabBarItem(title: "Live TV", image: UIImage(systemName: "tv"), tag: 0)
+            let tabs = UITabBarController()
+            tabs.viewControllers = [host]
+            window.rootViewController = tabs
+            window.makeKeyAndVisible()
+            try await settle(window)
+            try await Task.sleep(for: .milliseconds(200))
+            let barFrame = tabs.tabBar.convert(tabs.tabBar.bounds, to: window)
+            let beforeImage = snapshot(window)
+            captureToastFrame(beforeImage, name: "before-\(reduceMotion)")
+            let before = try toastSurfaceBottom(in: beforeImage)
+            XCTAssertEqual(before, barFrame.minY - TransientStatusLayout.controlSpacing, accuracy: 2)
+
+            tabs.setTabBarHidden(true, animated: false)
+            window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(90))
+            let middleImage = snapshot(window)
+            try await Task.sleep(for: .milliseconds(300))
+            let afterImage = snapshot(window)
+            captureToastFrame(middleImage, name: "middle-\(reduceMotion)")
+            captureToastFrame(afterImage, name: "after-\(reduceMotion)")
+            let middle = try toastSurfaceBottom(in: middleImage)
+            let after = try toastSurfaceBottom(in: afterImage)
+            let availableBottom = window.safeAreaLayoutGuide.layoutFrame.maxY
+            XCTAssertEqual(after, availableBottom - TransientStatusLayout.controlSpacing, accuracy: 2)
+            XCTAssertGreaterThan(after, before + 20)
+            if reduceMotion {
+                XCTAssertEqual(middle, after, accuracy: 1)
+            } else {
+                XCTAssertGreaterThan(middle, before + 1)
+                XCTAssertLessThan(middle, after - 1, "Capture a real intermediate position, not a snap.")
+            }
+            tabs.setTabBarHidden(false, animated: false)
+            window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(90))
+            let returningImage = snapshot(window)
+            try await Task.sleep(for: .milliseconds(300))
+            let returnedImage = snapshot(window)
+            captureToastFrame(returningImage, name: "returning-\(reduceMotion)")
+            captureToastFrame(returnedImage, name: "returned-\(reduceMotion)")
+            let returning = try toastSurfaceBottom(in: returningImage)
+            let returned = try toastSurfaceBottom(in: returnedImage)
+            XCTAssertEqual(returned, before, accuracy: 2)
+            if reduceMotion {
+                XCTAssertEqual(returning, returned, accuracy: 1)
+            } else {
+                XCTAssertGreaterThan(returning, returned + 1)
+                XCTAssertLessThan(returning, after - 1)
+            }
+        }
+    }
+
     func testSharedToastsClearSettingsSearchAcrossThemesAndTextSizes() async throws {
         let suite = "ToastSettingsPresentation.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -715,6 +843,34 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
             context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         }
         return bytes.prefix(3).map(Int.init)
+    }
+
+    private func toastSurfaceBottom(in image: UIImage, x: CGFloat? = nil) throws -> CGFloat {
+        // Sample the flat surface beside the compact tab pill, which can cover its center during motion.
+        for y in stride(from: Int(image.size.height) - 1, through: Int(image.size.height / 2), by: -1) {
+            let color = try pixel(image, at: CGPoint(x: x ?? image.size.width / 2 - 60, y: CGFloat(y)))
+            if color.allSatisfy({ (50...110).contains($0) }) {
+                return CGFloat(y + 1)
+            }
+        }
+        XCTFail("Missing visible toast surface.")
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "missing-toast-surface"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        throw NSError(domain: "ToastPresentationTests", code: 1)
+    }
+
+    private func captureToastFrame(_ image: UIImage, name: String) {
+        let attachment = XCTAttachment(image: image)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    private func tabController(in controller: UIViewController) -> UITabBarController? {
+        if let tabs = controller as? UITabBarController { return tabs }
+        return controller.children.lazy.compactMap { self.tabController(in: $0) }.first
     }
 }
 

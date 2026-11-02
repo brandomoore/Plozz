@@ -197,10 +197,12 @@ public extension EnvironmentValues {
 }
 
 public enum TransientStatusLayout {
-    /// Leave the bottom navigation or search controls available beneath feedback.
+    public static let controlSpacing: CGFloat = 16
+    public static let placementAnimationDuration: TimeInterval = 0.25
+
     public static var bottomPadding: CGFloat {
         #if os(iOS)
-        88
+        controlSpacing
         #else
         48
         #endif
@@ -232,16 +234,18 @@ public extension View {
         presenter: TransientStatusPresenter,
         placement: TransientStatusPlacement = .root,
         alignment: Alignment = .bottom,
-        bottomPadding: CGFloat = TransientStatusLayout.bottomPadding,
+        bottomPadding: CGFloat? = nil,
         palette: ThemePalette = .dark
     ) -> some View {
-        overlay(alignment: alignment) {
+        adaptiveStatusOverlay(
+            isPresented: presenter.message?.placement == placement,
+            alignment: alignment, bottomPadding: bottomPadding
+        ) {
             TransientStatusView(
                 presenter: presenter,
                 placement: placement,
                 palette: palette
             )
-            .padding(.bottom, bottomPadding)
         }
         .transientStatusPresenter(presenter)
     }

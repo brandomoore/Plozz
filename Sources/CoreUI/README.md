@@ -770,8 +770,15 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Ordinary feedback and guide-progress toasts share `transientStatusSurface`:
   an 18-point rounded rectangle, 24-point horizontal / 16-point vertical insets,
   and the lighter `ThemePalette.toast` surface rather than modal overlay colors.
-  Root toast placement uses `TransientStatusLayout.bottomPadding` on both
-  platforms so mobile feedback clears bottom navigation and Settings search.
+  Mobile feedback uses `adaptiveStatusOverlay` to keep a 16-point gap above the
+  visible native bottom navigation, toolbar, or search bar, falling back to the
+  bottom safe area when none is present. Layout changes animate over 0.25 seconds;
+  Reduce Motion changes position without animation. The passive UIKit layout
+  reader measures the current presentation without polling or changing its controls.
+  Side-mounted navigation constrains the toast's horizontal content area instead
+  of adding bottom clearance; native tab containers supply their unobscured
+  content layout guide on iOS 26 and later.
+  tvOS retains its 48-point bottom clearance.
   Manual watched actions retain the immediate tap and separate confirmation of
   durable outbox acceptance, not eventual server synchronization.
   Favorites confirm successful writes. Capture asynchronous completion haptics
