@@ -435,7 +435,8 @@ struct FocusHeroHomeView<RowContent: View>: View {
                         state: featuredState, usesNativeSidebar: navigationStyle == .sidebar
                     ) { inset in
                         AnyView(scrollingRows(topInset: inset))
-                    })
+                    }),
+                    usesNativeSidebar: navigationStyle == .sidebar
                 )
                 .overlay(alignment: .topLeading) {
                     HeroShowcaseFeaturedContent(state: featuredState) { active in

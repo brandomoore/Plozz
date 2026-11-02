@@ -10,6 +10,26 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testNativeScrollOriginCanFollowAnAlreadyAdmittedStage() {
+        let state = HeroShowcaseState()
+        state.setExpanded(false, deferNativeRows: true)
+        XCTAssertFalse(state.isExpanded)
+        XCTAssertTrue(state.nativeRowsExpanded)
+        state.synchronizeNativeRows()
+        XCTAssertFalse(state.nativeRowsExpanded)
+        state.setExpanded(true)
+        XCTAssertTrue(state.isExpanded)
+        XCTAssertTrue(state.nativeRowsExpanded)
+    }
+
+    func testNativeScrollOriginSynchronizationUsesTheLatestDestination() {
+        let state = HeroShowcaseState()
+        state.setExpanded(false, deferNativeRows: true)
+        state.setExpanded(true, deferNativeRows: true)
+        state.synchronizeNativeRows()
+        XCTAssertTrue(state.nativeRowsExpanded)
+    }
+
     func testContentOriginRebasesScrollWithoutRestartingViewportMotion() throws {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         let root = UIViewController()

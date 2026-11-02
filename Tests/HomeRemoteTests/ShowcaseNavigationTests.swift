@@ -4,7 +4,45 @@ import notify
 
 @MainActor
 final class ShowcaseNavigationTests: XCTestCase {
+    func testHeroBoundaryLatencyAcrossNavigationStyles() throws {
+        for style in ["--pinned-home", "--top-bar-home", "--native-sidebar-home"] {
+            let start = "com.thatcube.Plozz.HeroBoundary.\(UUID().uuidString)"
+            let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+            app.launchEnvironment["PLOZZ_HERO_BOUNDARY_START"] = start
+            app.launchArguments = [
+                "--production-home-fixture", style, "--hero-showcase-home", "--cached-home-hero",
+                "--home-performance-fixture", "--held-home-artwork", "--hero-showcase-latency-probe"
+            ]
+            app.launch()
+            defer { app.terminate() }
+            let hero = app.buttons["home-hero-action-row"]
+            XCTAssertTrue(hero.waitForExistence(timeout: 30))
+            if !hero.hasFocus { XCUIRemote.shared.press(style == "--top-bar-home" ? .down : .select) }
+            let report = app.staticTexts["hero-boundary-latency"]
+            XCTAssertTrue(report.waitForExistence(timeout: 30))
+            let ready = NSPredicate { _, _ in report.label == "ready" && hero.hasFocus }
+            XCTAssertEqual(XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: ready, object: nil)], timeout: 15
+            ), .completed)
+            XCTAssertEqual(notify_post(start), UInt32(NOTIFY_STATUS_OK))
+            let completed = NSPredicate { _, _ in !["waiting", "ready"].contains(report.label) }
+            XCTAssertEqual(XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: completed, object: nil)], timeout: 40
+            ), .completed)
+            print("HERO_BOUNDARY_LATENCY \(style) \(report.label)")
+            let data = Data(report.label.utf8)
+            let samples = try JSONDecoder().decode([[String: Double]].self, from: data)
+            XCTAssertEqual(samples.count, 10)
+            XCTAssertTrue(samples.allSatisfy { ($0["firstFrameMS"] ?? .infinity) < 2000 })
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+            attachment.name = "Hero boundary latency \(style)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testFeaturedHeroAndShowcaseRestoreTheSameSlideAndCard() throws {
+        continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = [
             "--production-home-fixture", "--pinned-home", "--hero-showcase-home",
@@ -17,7 +55,7 @@ final class ShowcaseNavigationTests: XCTestCase {
         let heroFocused = NSPredicate { _, _ in hero.hasFocus }
         XCTAssertEqual(XCTWaiter.wait(
             for: [XCTNSPredicateExpectation(predicate: heroFocused, object: nil)], timeout: 10
-        ), .completed)
+        ), .completed, app.debugDescription)
         let slide = hero.label
         XCUIRemote.shared.press(.down)
         waitForStableCard(in: app)

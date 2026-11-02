@@ -1182,12 +1182,20 @@ when returning to the hero. This padding is a coordinate origin, separate from
 the row destination and height stops. Changing it rebases the native scroll
 target without adding a spring or restarting the in-flight viewport-height
 path, including when Up reaches the hero before the first row settles.
+For an animated native-Sidebar boundary, focus and compositor motion are admitted
+before changing that scroll origin. A one-shot display-link observer applies the
+padding/offset pair after it observes motion, rather than making native chrome
+layout block the first frame. It publishes once, not on every animation frame,
+and is bounded by the spring's settling duration. Reversal uses the latest
+destination; reset, disappearance, teardown and nonanimated updates synchronize
+immediately. This reorders the native layout work; it does not remove its CPU
+cost or replace the native Home control.
 The boundary handoff keeps Up directed at the hero
 instead of the native Home control. Standalone Showcase keeps its existing
 first-row behavior, and the Pinned Sidebar is unchanged.
 The bar travels only far enough to clear the screen and receives an additive
 native translation in the stage's own animation transaction, including reversals.
-There is no display-link-to-SwiftUI follower or independent SwiftUI animation.
+Top Bar has no display-link-to-SwiftUI follower or independent SwiftUI animation.
 Using the full stage distance would hide it early and reveal it late.
 Detach and reduced-motion updates clear owned animations. The return chevron sits 48 points from the top in all navigation styles,
 without reserving space for the now-hidden Top Bar.
@@ -1254,6 +1262,21 @@ native focus and invokes the same boundary handoff used by remote input. It
 checks the actual `UIFocusSystem.focusedItem` in the running app scene, not only
 the requested destination. This is separate from physical press/swipe delivery
 and presented-frame measurements in the remote test suite.
+`--hero-showcase-latency-probe` waits for native navigation to admit the hero,
+then measures ten boundary handoffs. When `PLOZZ_HERO_BOUNDARY_START` names a
+Darwin notification, the fixture registers it before reporting `ready`; the
+driver signals it only after hero focus is confirmed, so setup cannot race
+the measured navigation. It records queue, preparation, layout and
+focus-request durations plus the first observed moving presentation layer and
+destination focus. `ShowcaseNavigationTests.testHeroBoundaryLatencyAcrossNavigationStyles`
+retains the same measurements for Pinned, Top Bar and native Sidebar. Build it
+with `PlozzHomeFixtureTests` so the driver and fixture are both current.
+The 16 ms observation interval quantizes the latter two measurements; these
+exclude physical input delivery and are not display-photon latency or FPS.
+Keep first-entry and warm samples separate when comparing captures.
+The native first-motion callback is also recorded: subsequent chrome layout can
+delay the polling task even when compositor motion is already underway. Every
+sample requires native origin synchronization as well as focus and motion.
 `--hero-showcase-navigation-probe` first changes destinations and returns Home
 through pinned or top-bar navigation, then supplies presses to the boundary
 recognizer and checks actual focus while rejecting escape during each queued

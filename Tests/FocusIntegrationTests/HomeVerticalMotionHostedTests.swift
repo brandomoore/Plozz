@@ -11,6 +11,69 @@ import XCTest
 
 @MainActor
 final class HomeVerticalMotionHostedTests: XCTestCase {
+    func testNativeOriginWaitsForMotionWithoutDelayingFocusAndCancelsOnReversal() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let state = HeroShowcaseState()
+        let stage = HeroShowcaseStage.Controller(
+            state: state,
+            hero: AnyView(Button("Play") {}.frame(width: 300, height: 80).padding(.top, 300)),
+            showcase: AnyView(Text("Showcase")),
+            rows: AnyView(Button("First card") {}.frame(width: 300, height: 160).padding(.top, 650)),
+            usesNativeSidebar: true
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = stage
+        window.makeKeyAndVisible()
+        stage.updatePeek(firstRowHeight: 300)
+        defer {
+            stage.stopAnimations()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(400))
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: stage.view))
+        XCTAssertTrue(stage.contains(system.focusedItem, in: stage.hero))
+        var motionFrames = 0
+        stage.onBoundaryPhase = { phase in
+            if phase == "native-motion-frame" { motionFrames += 1 }
+        }
+        for expanded in [false, true] {
+            stage.present(expanded: expanded, focus: true)
+            XCTAssertEqual(state.isExpanded, expanded)
+            XCTAssertNotEqual(state.nativeRowsExpanded, expanded, "Native chrome must not block focus admission.")
+            XCTAssertTrue(stage.contains(system.focusedItem, in: expanded ? stage.hero : stage.rows))
+            let deadline = ContinuousClock.now + .seconds(2)
+            while state.nativeRowsExpanded != expanded, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertEqual(state.nativeRowsExpanded, expanded)
+            try await Task.sleep(for: .seconds(1))
+        }
+        XCTAssertEqual(motionFrames, 2, "Each origin change must follow an observed moving compositor frame.")
+        stage.present(expanded: false, focus: true)
+        stage.present(expanded: true, focus: true)
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertTrue(state.nativeRowsExpanded)
+        XCTAssertEqual(motionFrames, 2, "A superseded collapse must not publish after the return.")
+        stage.present(expanded: false, focus: true)
+        stage.stopAnimations()
+        XCTAssertFalse(state.nativeRowsExpanded)
+        state.setExpanded(true)
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertTrue(state.nativeRowsExpanded, "Stopping must remove the pending frame callback.")
+        stage.present(expanded: false, focus: true)
+        stage.usesNativeSidebar = false
+        XCTAssertFalse(state.nativeRowsExpanded, "Leaving native navigation must synchronize immediately.")
+        stage.usesNativeSidebar = true
+        stage.present(expanded: true, focus: true)
+        stage.viewDidDisappear(false)
+        XCTAssertTrue(state.nativeRowsExpanded, "Disappearance must finish the pending origin change.")
+    }
+
     func testHeroBoundaryMatchesRowSpringThroughRapidReversals() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
