@@ -18,9 +18,9 @@ struct PlozziOSServersSettingsView: View {
 
     var body: some View {
         SettingsPageList {
-            SettingsSectionGroup("Servers") {
+            SettingsSectionGroup(SettingsCopy.sources) {
                 if groups.isEmpty {
-                    Text("You’re not signed in to any servers yet.")
+                    Text("No sources have been added yet.")
                         .plozzForeground(.secondary)
                 } else {
                     ForEach(groups, id: \.serverKey) { group in
@@ -42,21 +42,17 @@ struct PlozziOSServersSettingsView: View {
             }
 
             SettingsSectionGroup {
-                Button("Add Server", systemImage: "plus", action: onAddServer)
-                NavigationLink {
-                    PlozziOSAddShareView(appModel: appModel)
-                } label: {
-                    HStack(spacing: 12) {
-                        ProviderBrandMark(
-                            provider: .mediaShare,
-                            size: 24
-                        )
-                        Text("Add Network Share")
+                Button(action: onAddServer) {
+                    Label {
+                        Text(SettingsCopy.addSource)
+                    } icon: {
+                        Image(systemName: "plus")
                     }
                 }
+                .accessibilityIdentifier("sources-add-source")
             }
         }
-        .navigationTitle("Servers")
+        .navigationTitle(Text(SettingsCopy.sources))
         .navigationDestination(item: $selectedServerKey) { key in
             PlozziOSServerSettingsDetailView(appModel: appModel, serverKey: key)
         }
@@ -299,13 +295,26 @@ struct PlozziOSMyLibrariesSettingsView: View {
             }
             if groups.isEmpty {
                 SettingsSectionGroup {
-                    Text("No servers are available on this \(deviceName).")
+                    Text("No sources are available on this \(deviceName).")
                         .plozzForeground(.secondary)
-                    Button("Add Server", systemImage: "plus", action: onAddServer)
                 }
             } else {
                 ForEach(groups, id: \.serverKey) { group in
                     serverGroup(group)
+                }
+            }
+            if presentation == .settings || groups.isEmpty {
+                SettingsSectionGroup {
+                    Button(action: onAddServer) {
+                        Label {
+                            Text(SettingsCopy.addSource)
+                        } icon: {
+                            Image(systemName: "plus")
+                        }
+                    }
+                    .accessibilityIdentifier("libraries-add-source")
+                } footer: {
+                    Text("New sources are available to every profile on this \(deviceName).")
                 }
             }
         }

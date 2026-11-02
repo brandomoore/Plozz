@@ -592,8 +592,8 @@ public struct SettingsView: View {
 
             SettingsControlRows(dividerLeadingInset: SettingsRowMetrics.iconTitleInset) {
                 // Shared server sign-ins (the household's full inventory). The
-                // list screen opens with a prominent Add Server button.
-                sectionRow("Servers", icon: "externaldrive.connected.to.line.below",
+                // list screen opens with a prominent Add Source button.
+                sectionRow(SettingsCopy.sources, icon: "externaldrive.connected.to.line.below",
                        value: householdServersSummary,
                        route: .servers)
 
@@ -1312,11 +1312,11 @@ public struct SettingsView: View {
 
     // MARK: - Helpers
 
-    /// Global summary for the This Apple TV › Servers row: how many distinct
+    /// Global summary for the Sources row: how many distinct
     /// servers the household is signed in to (device scope, not profile).
     private var householdServersSummary: Text {
-        if accounts.isEmpty { return Text("Add a server") }
-        // Row already says "Servers", so show a bare count (no repeated noun).
+        if accounts.isEmpty { return Text(SettingsCopy.addSource) }
+        // Row already says "Sources", so show a bare count (no repeated noun).
         // `.formatted()` so the digits follow the user's locale.
         return Text(verbatim: Set(accounts.map { $0.server.id }).count.formatted())
     }

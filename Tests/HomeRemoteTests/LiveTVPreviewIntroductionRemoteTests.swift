@@ -10,7 +10,7 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.menu)
         _ = focusFirstGuideContent(in: app)
         XCUIRemote.shared.press(.select, forDuration: 1)
-        let sources = app.cells.containing(.any, identifier: "Sources").firstMatch
+        let sources = app.cells.containing(.any, identifier: "TV Sources").firstMatch
         XCTAssertTrue(sources.waitForExistence(timeout: 5), app.debugDescription)
         for _ in 0..<10 where !containsFocus(sources) {
             XCUIRemote.shared.press(.down)
@@ -55,7 +55,7 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
                        "Automatic entry must retain the saved empty catalog")
         if fromSources {
             XCUIRemote.shared.press(.down)
-            assertFocused(app.buttons["Sources"])
+            assertFocused(app.buttons["TV Sources"])
             XCUIRemote.shared.press(.select)
             let sourceRefresh = app.buttons["Refresh sources"]
             for _ in 0..<20 where !containsFocus(sourceRefresh) {

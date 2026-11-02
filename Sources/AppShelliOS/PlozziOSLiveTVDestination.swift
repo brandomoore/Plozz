@@ -161,7 +161,6 @@ struct PlozziOSLiveTVDestination: View {
                 onPlaybackUpdate: playback.playbackUpdate,
                 onPlaybackFailed: playback.playbackFailed,
                 onVideoAspectRatioChange: playback.videoAspectRatioChanged,
-                preparingChannelName: playback.preparingChannelName,
                 onMultiview: playback.canOpenMultiview ? playback.openMultiview : nil,
                 outputGroup: liveOutputGroup,
                 outputID: playback.paneID,
@@ -323,7 +322,7 @@ private struct PlozziOSLiveTVSourcesContent: View {
                 sourceContent
             } else {
                 SettingsPageScroll { sourceContent }
-                    .navigationTitle("Sources")
+                    .navigationTitle(Text(SettingsCopy.tvSources))
             }
         }
         .navigationDestination(isPresented: $managesChannels) {

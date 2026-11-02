@@ -504,6 +504,8 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSPresentationHost
+      - path: Tests/AuthPresentationSupport/MobileServerOnboardingFixture.swift
+      - path: Tests/AuthPresentationSupport/OnboardingPreviewHTTP.swift
       - path: Tests/FeatureLiveTVRemoteTests/SourceOnboardingFixture.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureFixture.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationFixture.swift

@@ -27,6 +27,9 @@ public struct ConnectionCodeView: View {
             .foregroundStyle(palette.primaryText)
             .padding(.horizontal, baseSize / 2)
             .padding(.vertical, baseSize / 4)
+            #if os(iOS)
+            .settingsGroupSurface(cornerRadius: PlozzTheme.Metrics.Radius.panel)
+            #else
             .background {
                 RoundedRectangle(cornerRadius: PlozzTheme.Metrics.Radius.panel)
                     .fill(palette.cardSurface)
@@ -35,6 +38,7 @@ public struct ConnectionCodeView: View {
                             .fill(.black.opacity(palette.isLight ? 0.06 : 0.26))
                     }
             }
+            #endif
             .accessibilityIdentifier("connection-code")
     }
 }
