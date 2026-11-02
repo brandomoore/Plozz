@@ -193,6 +193,14 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testEnableOngoingWatchedImport() throws {
+        try enableOngoingImport(category: "watched", label: "Watched")
+    }
+
+    func testEnableOngoingResumeImport() throws {
+        try enableOngoingImport(category: "resume", label: "Resume points")
+    }
+
+    private func enableOngoingImport(category: String, label: String) throws {
         try openHistoryComparison()
         try tapVisible(app.buttons["tracker-history.ongoing-sync"])
         let accountID = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"])
@@ -204,7 +212,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertEqual(watched.value as? String, "0")
         XCTAssertEqual(app.switches["tracker-history.sync-resume"].value as? String, "0")
         try tapVisible(destination.switches.firstMatch)
-        try tapVisible(watched.switches.firstMatch)
+        try tapVisible(app.switches["tracker-history.sync-\(category)"].switches.firstMatch)
         try tapVisible(app.buttons["tracker-history.enable-sync"])
         let confirm = app.buttons.matching(NSPredicate(
             format: "label == %@ AND identifier != %@", "Enable sync", "tracker-history.enable-sync"
@@ -214,10 +222,18 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         confirm.tap()
         try require(app.buttons["tracker-history.disable-sync"].waitForExistence(timeout: 30),
                     "Expected separate ongoing-import permission")
-        XCTAssertTrue(app.staticTexts["Watched"].exists)
+        XCTAssertTrue(app.staticTexts[label].exists)
     }
 
     func testSynchronizeOngoingImport() throws {
+        try synchronizeOngoingImport(expectingReview: false)
+    }
+
+    func testOngoingSyncReportsReviewRequirement() throws {
+        try synchronizeOngoingImport(expectingReview: true)
+    }
+
+    private func synchronizeOngoingImport(expectingReview: Bool) throws {
         try openHistoryComparison()
         try tapVisible(app.buttons["tracker-history.ongoing-sync"])
         try require(app.buttons["tracker-history.disable-sync"].exists, "Expected existing sync permission")
@@ -226,8 +242,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             predicate: NSPredicate(format: "enabled == true"), object: app.buttons["tracker-history.sync-now"]
         )
         try require(XCTWaiter.wait(for: [completed], timeout: 65) == .completed, "Expected bounded sync completion")
-        XCTAssertFalse(app.staticTexts["Some changes need review. Compare with server history before retrying."].exists,
-                       "A deferred conflict is not confirmed ongoing delivery")
+        XCTAssertEqual(app.staticTexts["Some changes need review. Compare with server history before retrying."].exists,
+                       expectingReview, "Review deferral and confirmed ongoing delivery are different outcomes")
     }
 
     func testDisableOngoingImport() throws {
@@ -424,10 +440,35 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testReplayMovieToCompletion() async throws {
+        let duration = try verifiedRuntime()
+        try await seekAndPlay(
+            fraction: 0.9 - 20 / duration, minimumElapsedSeconds: Int(ceil(duration * 0.9))
+        )
+    }
+
+    func testPlayMovieFromResumePosition() async throws {
+        let duration = try verifiedRuntime()
+        let fraction = try XCTUnwrap(Double(
+            ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_SEEK_FRACTION"] ?? ""
+        ))
+        try require(fraction.isFinite && (0.03...0.6).contains(fraction), "Expected an in-range resume seek")
+        try await seekAndPlay(
+            fraction: fraction, minimumElapsedSeconds: Int(duration * fraction),
+            maximumElapsedSeconds: Int(duration * 0.8)
+        )
+    }
+
+    private func verifiedRuntime() throws -> Double {
         let duration = try XCTUnwrap(Double(
             ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_RUNTIME_SECONDS"] ?? ""
         ))
         try require(duration.isFinite && (100...86_400).contains(duration), "Expected independently verified runtime")
+        return duration
+    }
+
+    private func seekAndPlay(
+        fraction: Double, minimumElapsedSeconds: Int, maximumElapsedSeconds: Int? = nil
+    ) async throws {
         try require(detailPlayButton.exists && detailPlayButton.isHittable, "Expected the exact movie detail")
         startedPlayback = true
         detailPlayButton.tap()
@@ -438,13 +479,15 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(scrubber.exists && scrubber.isHittable, "Expected the real player timeline")
         scrubber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.2, thenDragTo: scrubber.coordinate(
-                withNormalizedOffset: CGVector(dx: 0.9 - 20 / duration, dy: 0.5)
+                withNormalizedOffset: CGVector(dx: fraction, dy: 0.5)
             ))
         try require(app.buttons["Play"].waitForExistence(timeout: 5) && app.buttons["Play"].isHittable,
                     "Expected paused playback after the real seek")
         app.buttons["Play"].tap()
         try await Task.sleep(for: .seconds(27))
-        try pauseAndClose(minimumElapsedSeconds: Int(ceil(duration * 0.9)))
+        try pauseAndClose(
+            maximumElapsedSeconds: maximumElapsedSeconds, minimumElapsedSeconds: minimumElapsedSeconds
+        )
     }
 
     private func pauseAndClose(maximumElapsedSeconds: Int? = nil, minimumElapsedSeconds: Int? = nil) throws {

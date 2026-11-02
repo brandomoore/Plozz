@@ -473,8 +473,19 @@ that new play to the dedicated Jellyfin user. A repeated sync after relaunch
 changed neither server state nor tracker history. Ordinary cross-server playback
 mirroring was disabled through Settings to isolate this route. A destination
 with prior-play recency correctly remained a review conflict, not an automatic
-overwrite. Ongoing resume imports, independent-device delivery, episodes and
-the remaining provider/tracker routes are still outside this evidence.
+overwrite. Independent-device delivery, episodes and the remaining
+provider/tracker routes are still outside this evidence.
+
+Further real resume-only checks confirmed category isolation, revocation and
+re-enrollment without backfill, followed by exact import of newly reported
+progress into an empty Jellyfin destination. Watched state/count stayed unchanged;
+the existing provider resume setter updated recency for Continue Watching.
+Relaunch and repeated sync were no-ops. **Continuous progress updates are not yet
+proven:** the current comparison treats any differing existing server resume as
+a conflict, including an unchanged position previously written by this sync.
+The next real source update was therefore held for review rather than advanced.
+This limitation needs an explicit continuation policy before describing the
+route as continuous two-way resume synchronization.
 
 The unbound `PublicMetaDBLiveHistoryTests` driver uses normally configured
 production-app UI, not seeded profiles or substituted media. Its individual
