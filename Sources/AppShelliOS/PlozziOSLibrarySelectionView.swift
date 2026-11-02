@@ -10,6 +10,8 @@ import SwiftUI
 struct PlozziOSLibrarySelectionView: View {
     let appModel: PlozziOSAppModel
     let accountIDs: [String]
+    var hostsGuideProgress = true
+    @Environment(\.themePalette) private var palette
 
     private var visibility: HomeLibraryVisibilityModel { appModel.settings.homeVisibility }
     private func onContinue() { appModel.completeLibrarySelection() }
@@ -33,6 +35,10 @@ struct PlozziOSLibrarySelectionView: View {
                 librarySelection
             }
         }
+        .guidePreparationOverlay(
+            model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
+            palette: palette, isEnabled: hostsGuideProgress
+        )
         .task(id: loadID) {
             guard appModel.plexHomeUsers.pendingPlexPINRequest == nil else { return }
             await loadLibraries()
@@ -51,7 +57,6 @@ struct PlozziOSLibrarySelectionView: View {
             Group {
                 if isLoading {
                     SettingsPageScroll {
-                        ForEach(guides) { LiveTVGuidePreparationStatus(status: $0) }
                         SetupProgressCard(
                             title: "Finding your libraries",
                             detail: "Checking your connected sources for available libraries.",
@@ -98,7 +103,6 @@ struct PlozziOSLibrarySelectionView: View {
         if !guides.isEmpty {
             Section {
                 if libraries.isEmpty { Label("Playlist added", systemImage: "checkmark.circle") }
-                ForEach(guides) { LiveTVGuidePreparationStatus(status: $0) }
             } footer: {
                 Text("You can start watching while the guide loads.")
             }

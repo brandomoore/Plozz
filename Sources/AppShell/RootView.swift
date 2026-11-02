@@ -948,6 +948,10 @@ public struct RootView: View {
             onDismiss: rootPresentationDidDismiss
         ) {
             rootPresentationContent
+                .guidePreparationOverlay(
+                    model: appState.guidePreparation, presenter: appState.transientStatusPresenter,
+                    palette: resolvedPalette
+                )
                 .environment(\.themePalette, resolvedPalette)
                 .environment(\.gradientBackgroundsEnabled, appState.profileSettings.themeModel.gradientEnabled)
                 .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)

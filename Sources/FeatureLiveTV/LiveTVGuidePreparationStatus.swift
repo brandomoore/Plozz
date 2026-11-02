@@ -5,13 +5,8 @@ import SwiftUI
 
 public struct LiveTVGuidePreparationStatus: View {
     private let status: LiveTVGuidePreparationModel.Status
-    private let tracksInlinePresentation: Bool
-    @State private var presentationID = UUID()
-    @Environment(LiveTVGuidePreparationModel.self) private var model: LiveTVGuidePreparationModel?
-
-    public init(status: LiveTVGuidePreparationModel.Status, tracksInlinePresentation: Bool = true) {
+    public init(status: LiveTVGuidePreparationModel.Status) {
         self.status = status
-        self.tracksInlinePresentation = tracksInlinePresentation
     }
 
     public var body: some View {
@@ -56,15 +51,6 @@ public struct LiveTVGuidePreparationStatus: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("live-tv-guide-preparation-\(status.id)")
-        .onAppear {
-            if tracksInlinePresentation { model?.setInlinePresentation(presentationID, accountID: status.id) }
-        }
-        .onDisappear {
-            if tracksInlinePresentation { model?.setInlinePresentation(presentationID, accountID: nil) }
-        }
-        .onChange(of: status.id) {
-            if tracksInlinePresentation { model?.setInlinePresentation(presentationID, accountID: status.id) }
-        }
     }
 }
 

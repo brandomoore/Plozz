@@ -196,17 +196,29 @@ public extension EnvironmentValues {
     }
 }
 
+public enum TransientStatusLayout {
+    /// Leave the bottom navigation or search controls available beneath feedback.
+    public static var bottomPadding: CGFloat {
+        #if os(iOS)
+        88
+        #else
+        48
+        #endif
+    }
+}
+
 public extension View {
     func transientStatusSurface(palette: ThemePalette) -> some View {
-        padding(.horizontal, 22)
-            .padding(.vertical, 13)
-            .background(palette.overlay.fill, in: Capsule())
+        padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .background(palette.toast.fill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay {
-                if let border = palette.overlay.border {
-                    Capsule().strokeBorder(border, lineWidth: palette.overlay.borderWidth)
+                if let border = palette.toast.border {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(border, lineWidth: palette.toast.borderWidth)
                 }
             }
-            .modifier(OptionalSurfaceShadow(shadow: palette.overlay.shadow))
+            .modifier(OptionalSurfaceShadow(shadow: palette.toast.shadow))
     }
 
     func transientStatusPresenter(
@@ -220,7 +232,7 @@ public extension View {
         presenter: TransientStatusPresenter,
         placement: TransientStatusPlacement = .root,
         alignment: Alignment = .bottom,
-        bottomPadding: CGFloat = 48,
+        bottomPadding: CGFloat = TransientStatusLayout.bottomPadding,
         palette: ThemePalette = .dark
     ) -> some View {
         overlay(alignment: alignment) {

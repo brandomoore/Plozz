@@ -133,7 +133,6 @@ struct SelectLibrariesView: View {
         switch discovery.state {
         case .idle, .loading:
             VStack(alignment: .leading, spacing: 16) {
-                ForEach(guides) { LiveTVGuidePreparationStatus(status: $0) }
                 SetupProgressCard(
                     title: "Finding your libraries",
                     detail: "Checking your connected sources for available libraries.",
@@ -148,7 +147,6 @@ struct SelectLibrariesView: View {
                     Text("No libraries were found on the servers you added.")
                 } else {
                     Label("Playlist added", systemImage: "checkmark.circle")
-                    ForEach(guides) { LiveTVGuidePreparationStatus(status: $0) }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -173,7 +171,6 @@ struct SelectLibrariesView: View {
             PlozzScrollCard {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
-                        ForEach(guides) { LiveTVGuidePreparationStatus(status: $0) }
                         ForEach(groups(from: all)) { group in
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack(spacing: 16) {

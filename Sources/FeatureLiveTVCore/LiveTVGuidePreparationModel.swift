@@ -27,7 +27,6 @@ public final class LiveTVGuidePreparationModel {
     public private(set) var completionRevision = 0
     private var notificationOrder: [String] = []
     private var dismissedNotifications = Set<String>()
-    private var inlinePresentations: [UUID: String] = [:]
     @ObservationIgnored private var notificationTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private let resolver: LiveTVServerProviderResolver
     @ObservationIgnored private let clock: @MainActor () -> Date
@@ -50,16 +49,11 @@ public final class LiveTVGuidePreparationModel {
     }
 
     public var notificationStatus: Status? {
-        let visible = Set(inlinePresentations.values)
         let candidates = notificationOrder.compactMap { id -> Status? in
-            guard !visible.contains(id), !dismissedNotifications.contains(id) else { return nil }
+            guard !dismissedNotifications.contains(id) else { return nil }
             return statuses[id]
         }
         return candidates.first { $0.phase == .loading } ?? candidates.first
-    }
-
-    public func setInlinePresentation(_ token: UUID, accountID: String?) {
-        inlinePresentations[token] = accountID
     }
 
     public func dismissNotification(accountID: String, requestID: UUID) {

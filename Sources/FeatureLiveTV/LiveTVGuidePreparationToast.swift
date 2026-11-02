@@ -10,7 +10,7 @@ private struct LiveTVGuidePreparationToast: View {
     var body: some View {
         if presenter.message == nil, let status = model.notificationStatus {
             HStack(spacing: 16) {
-                LiveTVGuidePreparationStatus(status: status, tracksInlinePresentation: false)
+                LiveTVGuidePreparationStatus(status: status)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .lineLimit(2)
                 Button {
@@ -37,12 +37,13 @@ private struct LiveTVGuidePreparationToast: View {
 public extension View {
     func guidePreparationOverlay(
         model: LiveTVGuidePreparationModel, presenter: TransientStatusPresenter,
-        palette: ThemePalette, bottomPadding: CGFloat = 48
+        palette: ThemePalette, isEnabled: Bool = true
     ) -> some View {
         overlay(alignment: .bottom) {
-            LiveTVGuidePreparationToast(model: model, presenter: presenter, palette: palette)
-                .environment(model)
-                .padding(.bottom, bottomPadding)
+            if isEnabled {
+                LiveTVGuidePreparationToast(model: model, presenter: presenter, palette: palette)
+                    .padding(.bottom, TransientStatusLayout.bottomPadding)
+            }
         }
     }
 }

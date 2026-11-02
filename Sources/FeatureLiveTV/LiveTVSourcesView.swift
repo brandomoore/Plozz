@@ -1315,7 +1315,9 @@ struct LiveTVServerSourceSummary: View {
                     Text("Ready to load").font(.caption)
                 }
                 if let preparation = guidePreparation?.statuses[source.accountID] {
-                    LiveTVGuidePreparationStatus(status: preparation)
+                    if preparation.phase != .loading {
+                        LiveTVGuidePreparationStatus(status: preparation)
+                    }
                 } else if status.guidePhase == .loading {
                     ProgressView("Loading guide")
                         .accessibilityIdentifier("live-tv-source-guide-loading-\(source.id)")

@@ -18,8 +18,9 @@ unchanged. Ordinary account reconnection does not undo a later manual Hide.
 Playlist sign-in imports the channel catalog, then starts a separately owned
 guide preparation task for the active account/profile. Setup shows the guide
 state instead of dismissing an empty library chooser. Continuing setup or
-watching a channel does not cancel that task. Live TV and Sources show its
-progress independently of channel availability. A quick sign-in alone never
+watching a channel does not cancel that task. Progress stays in the same bottom
+toast across setup, Live TV and Sources, independently of channel availability.
+A quick sign-in alone never
 confirms that a guide downloaded or matched channels.
 
 Explicit preparation reports download bytes, guide scanning, listing processing,
@@ -27,10 +28,10 @@ saving and channel checks. Percentages describe only the current stage: download
 totals are omitted for unknown lengths or HTTP-decoded bodies, and listing totals
 come from the completed metadata pass. Progress is throttled and shared with
 foreground consumers joining an existing import, not a second download.
-While setup or Sources displays that account's status, no duplicate toast appears.
-After leaving it, a dismissible status toast continues reporting the work and
-briefly shows its outcome. Dismissal hides only that request's notification;
-loading continues and its status remains in Sources. Unrelated transient messages
+The dismissible toast stays above bottom navigation and Settings search controls,
+without adding an inline progress block or resizing the guide. It briefly shows
+the outcome. Dismissal hides only that request's notification; loading continues
+and its final result remains in Sources. Unrelated transient messages
 take priority. Ordinary background refreshes stay quiet.
 
 Source details offers **Refresh guide**, which revalidates the guide without

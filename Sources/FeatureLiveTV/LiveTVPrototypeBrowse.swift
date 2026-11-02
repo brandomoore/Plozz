@@ -74,15 +74,6 @@ struct PrototypeBrowser: View {
         let preparationRevision: Int
     }
 
-    private var guidePreparationStatuses: [LiveTVGuidePreparationModel.Status] {
-        let statuses = imports.configuration.servers.filter(\.isEnabled).compactMap {
-            guidePreparation?.statuses[$0.accountID]
-        }
-        return statuses.filter { $0.phase == .loading } + statuses.filter {
-            $0.phase != .loading && $0.phase != .loaded && $0.phase != .notConfigured
-        }
-    }
-
     var body: some View {
         let guideRequest = serverGuideRequest
         let cachedWindowRequest = cachedGuideRequest
@@ -91,17 +82,6 @@ struct PrototypeBrowser: View {
         GeometryReader { geometry in
             let focusReturnTarget = returnTarget
             VStack(spacing: PrototypeLayout.rulerGap) {
-                if !isEmbeddedInPlayer {
-                    if let preparing = guidePreparationStatuses.first {
-                        LiveTVGuidePreparationStatus(status: preparing).font(.caption)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else if imports.serverSources.contains(where: {
-                        $0.guidePhase == .loading && $0.programCount == 0
-                    }) {
-                        ProgressView("Loading guide").font(.caption)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
                 if !model.guideChannels.isEmpty || isLoading {
                     if geometry.size.width > 0 {
                         PrototypeTimelineReader(timeline: timeline) { offset in

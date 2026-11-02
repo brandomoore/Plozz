@@ -99,12 +99,11 @@ struct PlozziOSSettingsView: View {
         .background { SettingsPageBackground() }
         .transientStatusOverlay(
             presenter: appModel.transientStatusPresenter,
-            bottomPadding: 24,
             palette: palette
         )
         .guidePreparationOverlay(
             model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
-            palette: palette, bottomPadding: 24
+            palette: palette
         )
         .environment(appModel.guidePreparation)
         .environment(\.themePalette, palette)

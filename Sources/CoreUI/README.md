@@ -767,6 +767,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Their shared toast uses "Added to Watchlist" / "Removed from Watchlist" for
   the optimistic local change, not lingering progress wording. A failed save
   replaces that confirmation with "Couldn't update Watchlist".
+  Ordinary feedback and guide-progress toasts share `transientStatusSurface`:
+  an 18-point rounded rectangle, 24-point horizontal / 16-point vertical insets,
+  and the lighter `ThemePalette.toast` surface rather than modal overlay colors.
+  Root toast placement uses `TransientStatusLayout.bottomPadding` on both
+  platforms so mobile feedback clears bottom navigation and Settings search.
   Manual watched actions retain the immediate tap and separate confirmation of
   durable outbox acceptance, not eventual server synchronization.
   Favorites confirm successful writes. Capture asynchronous completion haptics

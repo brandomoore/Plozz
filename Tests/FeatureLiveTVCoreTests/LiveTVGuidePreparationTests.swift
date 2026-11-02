@@ -13,7 +13,7 @@ final class LiveTVGuidePreparationTests: XCTestCase {
         XCTAssertEqual(ServerLiveTVGuideProgress(stage: .downloading, completed: 20, total: 100).fractionCompleted, 0.2)
     }
 
-    func testProgressContinuesAfterToastDismissalWithoutDuplicatingInlineStatus() async {
+    func testProgressContinuesAfterToastDismissalAndNewRefreshRestoresIt() async {
         let started = expectation(description: "Guide request started")
         let provider = PreparationProvider(started: { started.fulfill() }, suspended: true)
         let model = model(provider)
@@ -24,14 +24,6 @@ final class LiveTVGuidePreparationTests: XCTestCase {
         await provider.emit(progress)
         for _ in 0..<100 where model.statuses["one"]?.progress != progress { await Task.yield() }
         XCTAssertEqual(model.notificationStatus?.progress, progress)
-        let first = UUID()
-        let second = UUID()
-        model.setInlinePresentation(first, accountID: "one")
-        model.setInlinePresentation(second, accountID: "one")
-        XCTAssertNil(model.notificationStatus)
-        model.setInlinePresentation(first, accountID: nil)
-        XCTAssertNil(model.notificationStatus)
-        model.setInlinePresentation(second, accountID: nil)
         let requestID = model.statuses["one"]!.requestID
         XCTAssertNotNil(model.notificationStatus)
         model.dismissNotification(accountID: "one", requestID: requestID)

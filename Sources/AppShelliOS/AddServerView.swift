@@ -5,11 +5,13 @@ import CoreUI
 import FeatureAuthCore
 import FeatureAuth
 import FeatureDiscoveryCore
+import FeatureLiveTV
 import ProviderPlex
 import SwiftUI
 
 struct AddServerView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.themePalette) private var palette
     @State private var provider: ProviderKind
     @State private var address: String
     @State private var server: MediaServer?
@@ -164,6 +166,10 @@ struct AddServerView: View {
             }
             }
         }
+        .guidePreparationOverlay(
+            model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
+            palette: palette
+        )
     }
 
     private func continueSignIn() {

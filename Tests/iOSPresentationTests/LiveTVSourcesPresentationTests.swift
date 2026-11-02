@@ -12,7 +12,92 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesPresentationTests: XCTestCase {
-    func testGuideProgressMovesFromInlineToToastAndExpiresAfterCompletion() async throws {
+    func testSharedToastsClearSettingsSearchAcrossThemesAndTextSizes() async throws {
+        let suite = "ToastSettingsPresentation.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let started = expectation(description: "Guide requested")
+        let provider = SetupGuideProvider(started: { started.fulfill() })
+        let app = PlozziOSAppModel(
+            appAdmissionStore: AppAdmissionStore(defaults: defaults),
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        app.accountsProviders.registry.register(.iptv) { _ in provider }
+        XCTAssertTrue(app.persist([provider.session]))
+        let id = try XCTUnwrap(app.accountsProviders.accounts.first?.id)
+        await fulfillment(of: [started], timeout: 3)
+        app.completeLibrarySelection()
+        await provider.emit(.init(stage: .preparingListings, completed: 264_000, total: 2_863_983))
+        defer {
+            app.guidePreparation.cancel(accountID: id)
+            Task { await provider.resume() }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for theme in [AppTheme.dark, .pureBlack, .light] {
+            app.settings.theme.theme = theme
+            let palette = ThemePalette.palette(for: theme, systemColorScheme: .dark)
+            for (width, textSize) in [
+                (CGFloat(390), DynamicTypeSize.large),
+                (CGFloat(320), DynamicTypeSize.large),
+                (CGFloat(390), DynamicTypeSize.accessibility2)
+            ] {
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 844)
+                window.rootViewController = UIHostingController(rootView:
+                    PlozziOSSettingsView(appModel: app, onClose: {}, systemColorScheme: .dark)
+                        .environment(AppLanguageSettingsModel())
+                        .environment(\.horizontalSizeClass, .compact)
+                        .environment(\.dynamicTypeSize, textSize)
+                        .environment(\.locale, Locale(identifier: "en_US"))
+                )
+                window.makeKeyAndVisible()
+                try await settle(window)
+                let search = try XCTUnwrap(searchFields(in: window).first { field in
+                    !field.isHidden && field.convert(field.bounds, to: window).intersects(window.bounds)
+                })
+                let searchFrame = search.convert(search.bounds, to: window)
+                XCTAssertGreaterThan(searchFrame.minY, window.bounds.midY, "Exercise the native bottom search bar.")
+                let image = snapshot(window)
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "guide-toast-settings-\(theme)-\(Int(width))-\(textSize)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                XCTAssertEqual(app.guidePreparation.statuses[id]?.progress?.stage, .preparingListings)
+                let caption = try textFrame("2,863,983", in: image)
+                XCTAssertGreaterThan(caption.minY, window.bounds.midY)
+                XCTAssertLessThan(caption.maxY + 24, searchFrame.minY, "Guide progress must clear the search field.")
+                let target = try XCTUnwrap(window.hitTest(
+                    CGPoint(x: searchFrame.midX, y: searchFrame.midY), with: nil
+                ))
+                XCTAssertTrue(target === search || target.isDescendant(of: search), "Search must remain tappable.")
+                let sample = try pixel(image, at: CGPoint(x: width / 2, y: caption.maxY + 8))
+                if !palette.isLight {
+                    XCTAssertGreaterThan(sample.min() ?? 0, 50, "Dark feedback must not use the near-black modal surface.")
+                }
+                app.transientStatusPresenter.present(icon: "bookmark", text: "Added to Watchlist")
+                try await settle(window)
+                let feedbackImage = snapshot(window)
+                let feedback = try textFrame("Watchlist", in: feedbackImage)
+                XCTAssertLessThan(feedback.maxY + 16, searchFrame.minY)
+                let feedbackAttachment = XCTAttachment(image: feedbackImage)
+                feedbackAttachment.name = "watchlist-toast-settings-\(theme)-\(Int(width))-\(textSize)"
+                feedbackAttachment.lifetime = .keepAlways
+                add(feedbackAttachment)
+                app.transientStatusPresenter.dismiss()
+                try await settle(window)
+                XCTAssertNotNil(app.guidePreparation.notificationStatus)
+            }
+        }
+    }
+
+    func testGuideProgressStaysInBottomToastAcrossSourcesAndBrowsing() async throws {
         let started = expectation(description: "Guide requested")
         let provider = SetupGuideProvider(started: { started.fulfill() })
         let preparation = LiveTVGuidePreparationModel { id in
@@ -37,9 +122,9 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        func render(inline: Bool) {
+        func render(sources: Bool) {
             host.rootView = AnyView(
-                GuideProgressFixture(model: preparation, inline: inline)
+                GuideProgressFixture(sources: sources)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.white)
                     .guidePreparationOverlay(model: preparation, presenter: presenter, palette: .light)
@@ -55,18 +140,22 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
             try VNImageRequestHandler(cgImage: XCTUnwrap(snapshot(window).cgImage)).perform([request])
             return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
         }
-        render(inline: true)
+        render(sources: true)
         await provider.emit(.init(stage: .downloading, completed: 2_500_000, total: 10_000_000))
         try await settle(window)
-        XCTAssertNil(preparation.notificationStatus)
+        XCTAssertNotNil(preparation.notificationStatus)
         var text = try visibleText()
         XCTAssertEqual(text.components(separatedBy: "Downloading guide").count - 1, 1, text)
-        render(inline: false)
+        let sourcesFrame = try textFrame("Downloading guide", in: snapshot(window))
+        render(sources: false)
         try await settle(window)
         XCTAssertNotNil(preparation.notificationStatus)
         text = try visibleText()
         XCTAssertTrue(text.contains("Downloading guide"), text)
         XCTAssertTrue(text.contains("25%"), text)
+        let browseFrame = try textFrame("Downloading guide", in: snapshot(window))
+        XCTAssertEqual(browseFrame.minY, sourcesFrame.minY, accuracy: 1)
+        XCTAssertGreaterThan(browseFrame.minY, window.bounds.midY)
         let attachment = XCTAttachment(image: snapshot(window))
         attachment.name = "guide-progress-toast-download"
         attachment.lifetime = .keepAlways
@@ -200,6 +289,7 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
         let preparation = LiveTVGuidePreparationModel { id in
             .init(accountID: id, authorizationID: "fixture", kind: .iptv, provider: provider)
         }
+        let presenter = TransientStatusPresenter()
         defer {
             preparation.cancel(accountID: source.accountID)
             Task { await provider.resume() }
@@ -212,6 +302,7 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
             NavigationStack {
                 LiveTVServerSourceDetails(model: model, imports: imports, sourceID: source.id, removeSource: { _ in false })
             }
+            .guidePreparationOverlay(model: preparation, presenter: presenter, palette: .light)
             .environment(preparation)
             .environment(\.themePalette, .light)
             .environment(\.colorScheme, .light)
@@ -242,6 +333,7 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
         await fulfillment(of: [started], timeout: 3)
         let loading = try await visibleText()
         XCTAssertTrue(loading.contains("Refreshing guide"), loading)
+        XCTAssertEqual(loading.components(separatedBy: "Refreshing guide").count - 1, 1, loading)
         XCTAssertFalse(loading.contains("0 loaded program listings"), loading)
         XCTAssertFalse(loading.contains("0 channels"), loading)
         XCTAssertFalse(loading.contains("Ready to load"), loading)
@@ -573,6 +665,25 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
         }
     }
 
+    private func textFrame(_ text: String, in image: UIImage) throws -> CGRect {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        let match = try XCTUnwrap(request.results?.first {
+            $0.topCandidates(1).first?.string.contains(text) == true
+        }, "Missing visible text: \(text). Observed: \((request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " | "))")
+        let rect = match.boundingBox
+        return CGRect(
+            x: rect.minX * image.size.width, y: (1 - rect.maxY) * image.size.height,
+            width: rect.width * image.size.width, height: rect.height * image.size.height
+        )
+    }
+
+    private func searchFields(in view: UIView) -> [UISearchTextField] {
+        (view as? UISearchTextField).map { [$0] } ?? view.subviews.flatMap { searchFields(in: $0) }
+    }
+
     private func leadingInkEdge(_ image: UIImage, background: UIImage, header: CGRect) throws -> CGFloat {
         let top = max(0, Int(floor(header.minY)) - 2)
         let bottom = min(Int(image.size.height), Int(ceil(header.maxY)) + 2)
@@ -608,14 +719,15 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
 }
 
 private struct GuideProgressFixture: View {
-    let model: LiveTVGuidePreparationModel
-    let inline: Bool
+    let sources: Bool
     var body: some View {
         VStack {
-            if inline, let status = model.statuses["account"] {
-                LiveTVGuidePreparationStatus(status: status)
+            if sources {
+                let source = LiveTVServerSource(id: "fixture", name: "Live channels", accountID: "account")
+                LiveTVServerSourceSummary(source: source, status: .init(source: source))
+            } else {
+                Text("Live TV")
             }
-            Text("Live TV")
         }
         .padding()
     }
