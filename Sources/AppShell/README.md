@@ -42,6 +42,13 @@ registry.
 
 ## Invariants
 
+- **Mobile Settings does not require an inherited language model.** The mobile
+  app model owns the existing app-wide language preference and passes that same
+  instance to the root `AppLanguageScope` and every Settings language picker,
+  including search destinations. A detached Settings presentation cannot trap
+  on a missing observable environment object or create a second preference model.
+  The existing mobile persistence key and tvOS profile-scoped behavior are unchanged.
+
 - **Returning from Settings restores pinned-page focus.** Settings is hosted
   outside the navigation rail. Its Back action uses the same destination
   presentation fence and native content-focus request as selecting a rail

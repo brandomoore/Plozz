@@ -32,6 +32,8 @@ BUNDLE = "com.thatcube.Plozz"
 GROUP = "Plozz External"
 TESTFLIGHT = "https://testflight.apple.com/join/EKfReNMu"
 PLATFORMS = {"TV_OS": "Apple TV", "IOS": "iPhone and iPad"}
+NOTE_PLATFORMS = {"TV_OS": "tvOS", "IOS": "iOS"}
+DESCRIPTION_LIMIT = 4096
 
 
 def apple_token():
@@ -194,6 +196,41 @@ def announcement_catalog(release, catalog, github_releases, github):
     return tagged
 
 
+def with_release_notes(description, entry, platforms, url):
+    parts = []
+    for section in entry["sections"]:
+        first = True
+        for item in section["items"]:
+            text, scope = NOTES.normalized_item(item, entry["id"])
+            visible = [
+                platform for platform in PLATFORMS
+                if platform in platforms and (scope is None or NOTE_PLATFORMS[platform] in scope)
+            ]
+            if not visible:
+                continue
+            prefix = ""
+            if set(visible) != platforms:
+                prefix = f"**{' and '.join(PLATFORMS[platform] for platform in visible)}:** "
+            heading = f"\n\n**{section['category']}**" if first else ""
+            parts.append(f"{heading}\n• {prefix}{text}")
+            first = False
+    if not parts:
+        return description + "\n\nNo changes for this platform in this build."
+    # Discord counts astral characters as two UTF-16 units.
+    units = lambda value: len(value.encode("utf-16-le")) // 2
+    complete = description + "".join(parts)
+    if units(complete) <= DESCRIPTION_LIMIT:
+        return complete
+    notice = f"\n\nNotes shortened to fit Discord. [Read the full release notes]({url})."
+    if units(description + notice) > DESCRIPTION_LIMIT:
+        raise Error("Announcement links exceed Discord's description limit.")
+    for part in parts:
+        if units(description + part + notice) > DESCRIPTION_LIMIT:
+            break
+        description += part
+    return description + notice
+
+
 def announcement(release, catalog, github_releases):
     build, marketing = release["build"], release["marketing"]
     entries = [
@@ -206,7 +243,11 @@ def announcement(release, catalog, github_releases):
     platforms = " and ".join(f"**{label}**" for platform, label in PLATFORMS.items() if platform in release["platforms"])
     description = f"Available now for {platforms}.\n\n[Update in TestFlight]({TESTFLIGHT})"
     if published_release(build, github_releases) is not None:
-        description += f" | [Release notes](https://github.com/{BRIDGE.REPO}/releases/tag/{tag})"
+        url = f"https://github.com/{BRIDGE.REPO}/releases/tag/{tag}"
+        description += f" | [Full release notes]({url})"
+        description = with_release_notes(
+            description, only(entries, "matching tagged release-note entry"), release["platforms"], url,
+        )
     else:
         description += "\nRelease notes are available in TestFlight."
     return {

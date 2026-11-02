@@ -73,6 +73,7 @@ public struct HomeHeroBackdrop: View {
     /// Last-resort async art lookup (e.g. TMDb) when none of `urls` load.
     let asyncFallbackURL: (@Sendable () async -> URL?)?
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
+    let artworkPlacement: ArtworkPlacement?
     let sharedResolutionIdentity: String?
     /// Stable identity of the fronted slide (the item id). A *change* in this is
     /// what triggers a wipe — never a mere `urls` array rebuild for the same slide.
@@ -135,9 +136,11 @@ public struct HomeHeroBackdrop: View {
         scrimOpacity: Double = 1,
         sharedResolutionIdentity: String? = nil,
         transition: Transition = .wipe,
-        scrimStyle: ScrimStyle = .carousel
+        scrimStyle: ScrimStyle = .carousel,
+        artworkPlacement: ArtworkPlacement? = nil
     ) {
         self.references = references
+        self.artworkPlacement = artworkPlacement
         self.asyncFallbackURL = asyncFallbackURL
         self.sharedResolutionIdentity = sharedResolutionIdentity
         self.slideID = slideID
@@ -274,18 +277,19 @@ public struct HomeHeroBackdrop: View {
     @ViewBuilder
     private var backdropImage: some View {
         #if canImport(UIKit)
+        let policy = artworkPolicy.forPlacement(artworkPlacement ?? artworkPolicy.placement)
         WipeImageView(
             references: references,
             asyncFallbackURL: asyncFallbackURL,
-            prefersOnlineArtwork: artworkPolicy.prefersOnlineArtwork,
-            sharedResolutionIdentity: sharedResolutionIdentity.map { "\($0)|\(artworkPolicy.identity)" },
+            prefersOnlineArtwork: policy.prefersOnlineArtwork,
+            sharedResolutionIdentity: sharedResolutionIdentity.map { "\($0)|\(policy.identity)" },
             slideID: slideID,
             forward: forward,
             transition: transition,
             width: width,
             height: height + topOverscan
         )
-        .id(artworkPolicy.identity)
+        .id(policy.identity)
         #else
         Rectangle().fill(.tertiary)
         #endif

@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import urllib.error
+import urllib.request
 from unittest.mock import patch, MagicMock
 from xml.etree import ElementTree
 
@@ -13,6 +15,34 @@ spec.loader.exec_module(runner)
 
 
 class ProviderPlaybackRunnerTests(unittest.TestCase):
+    def test_plex_fixture_accepts_authenticated_native_part_audio_selection(self):
+        spec = importlib.util.spec_from_file_location(
+            "playback_fixture", ROOT / "tools/provider-playback-fixture-server.py"
+        )
+        fixture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixture)
+        with tempfile.TemporaryDirectory() as directory:
+            server = fixture.FixtureServer(directory)
+            base = server.start()
+            try:
+                request = urllib.request.Request(
+                    base + "/library/parts/8?audioStreamID=1&allParts=1",
+                    method="PUT", headers={"X-Plex-Token": server.token}
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    self.assertEqual(response.status, 200)
+                for query in ("audioStreamID=2&allParts=1", "audioStreamID=1"):
+                    request = urllib.request.Request(
+                        base + "/library/parts/8?" + query,
+                        method="PUT", headers={"X-Plex-Token": server.token}
+                    )
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urllib.request.urlopen(request, timeout=5)
+                    self.assertEqual(error.exception.code, 400)
+                    error.exception.close()
+            finally:
+                server.close()
+
     def fixture(self, folder):
         token = folder / "token"
         token.write_text("private-test-token")

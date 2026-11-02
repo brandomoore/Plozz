@@ -4,6 +4,46 @@ import CoreModels
 
 /// Unclassified library art must not change preference when a hero logo arrives.
 final class HeroArtworkPlacementTests: XCTestCase {
+    func testCompactHeroesPreferSquareBackgroundWithoutChangingPostersOrLogos() throws {
+        let square = try XCTUnwrap(URL(string: "https://library.example.test/square.jpg"))
+        var item = makeItem(hasLogo: true)
+        item.artworkSelections = [.init(placement: .squareHero, references: [.remote(square)])]
+
+        for surface in [HeroPresentationSurface.home, .detail] {
+            let compact = HeroPresentation(item: item, artworkStyle: .compactPortrait, surface: surface)
+            XCTAssertEqual(compact.artworkPlacement, .squareHero)
+            for preference in ArtworkPreference.allCases {
+                XCTAssertEqual(compact.artworkReferences(preference: preference).first, .remote(square))
+            }
+            XCTAssertEqual(compact.logoReferences, [.remote(item.logoURL!)])
+            XCTAssertEqual(item.artworkReferences(for: .poster), [.remote(item.posterURL!)])
+            XCTAssertTrue(compact.artworkReferences.contains(.remote(item.backdropURL!)))
+
+            let landscape = HeroPresentation(item: item, artworkStyle: .landscape, surface: surface)
+            XCTAssertNotEqual(landscape.artworkPlacement, .squareHero)
+            XCTAssertFalse(landscape.artworkReferences.contains(.remote(square)))
+            XCTAssertEqual(landscape.artworkReferences.first, .remote(item.backdropURL!))
+        }
+    }
+
+    func testSquareHeroPolicyPreservesExplicitOnlineOverrideAndMissingArtFallback() {
+        var item = makeItem(hasLogo: true)
+        for surface in [HeroPresentationSurface.home, .detail] {
+            let area: ArtworkArea = surface == .home ? .home : .details
+            let fallback = HeroPresentation(item: item, artworkStyle: .compactPortrait, surface: surface)
+            XCTAssertNotEqual(fallback.artworkPlacement, .squareHero)
+            XCTAssertTrue(ArtworkSettings.default.prefersOnlineArtwork(in: area, placement: fallback.artworkPlacement))
+
+            item.artworkSelections = [.init(placement: .squareHero, references: [.remote(item.posterURL!)])]
+            let square = HeroPresentation(item: item, artworkStyle: .compactPortrait, surface: surface)
+            XCTAssertFalse(ArtworkSettings.default.prefersOnlineArtwork(in: area, placement: square.artworkPlacement))
+            XCTAssertFalse(ArtworkSettings(preference: .library).prefersOnlineArtwork(in: area, placement: square.artworkPlacement))
+            XCTAssertTrue(ArtworkSettings(preference: .online).prefersOnlineArtwork(in: area, placement: square.artworkPlacement))
+            XCTAssertTrue(ArtworkSettings(overrides: [area: .online]).prefersOnlineArtwork(in: area, placement: square.artworkPlacement))
+            item.artworkSelections = []
+        }
+    }
+
     private func makeItem(hasLogo: Bool) -> MediaItem {
         var item = MediaItem(id: "1", title: "Futurama", kind: .series)
         item.posterURL = URL(string: "https://example.test/poster.jpg")

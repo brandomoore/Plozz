@@ -65,6 +65,25 @@ private final class PinnedSeriesTestState: @unchecked Sendable {
 }
 
 final class HeroMetadataEnricherTests: XCTestCase {
+    func testHydratedSquareArtworkKeepsItsSourceAccount() async throws {
+        let square = try XCTUnwrap(URL(string: "https://selected.test/square.jpg"))
+        let seed = MediaItem(id: "movie", title: "Movie", kind: .movie, sourceAccountID: "original")
+        var root = seed
+        root.overview = "Description"
+        root.artworkSelections = [.init(placement: .squareHero, references: [.remote(square)])]
+        root = root.taggingSource("selected")
+        let target = root
+        let enricher = HeroMetadataEnricher(
+            accounts: [resolved("selected", details: [root.id: root])],
+            targetSelector: { _ in target }
+        )
+        let items = await enricher.enrich([seed])
+        let item = try XCTUnwrap(items.first)
+        XCTAssertEqual(item.artworkReferences(for: .squareHero), [.remote(square)])
+        XCTAssertEqual(item.artworkSourceAccountID(for: square), "selected")
+        XCTAssertEqual(item.sourceAccountID, "original")
+    }
+
     func testHomeUsesOnlyMemoryCachedServerRatingsForSparseAndCompleteItems() async throws {
         let native = ExternalRating(source: .community, value: 7, scale: .outOfTen)
         let supplied = ExternalRating(source: .imdb, value: 8.7, scale: .outOfTen)

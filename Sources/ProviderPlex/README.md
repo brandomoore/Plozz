@@ -17,9 +17,10 @@ first-class backends; co-equal with `ProviderJellyfin`.
 - `PlexConnectionResolver` + `PlexConnectionSelector` — pick the best
   reachable server connection from `plex.tv` (LAN vs WAN vs relayed),
   prioritising local & direct over relayed.
-- `PlexDeviceProfile` — the direct-play / transcode capability matrix sent
-  to the server, parameterised by whether the on-device decode engine
-  (Plozzigen) is linked.
+- `PlexDeviceProfile` — the client identity sent to Plex.tv and media servers.
+  Defaults report the runtime device family, friendly device name, OS version,
+  and app bundle version on both platforms. The per-install client identifier
+  stays stable; playback capabilities remain separate from this identity.
 - `PlexDTOs` — Plex JSON shapes, mapped into `CoreModels` at the seam.
 
 ## Invariants
@@ -113,6 +114,21 @@ excluded. The library Recommended view retains `libraryHubs` behavior.
 Home continues to use the canonical Continue Watching feed rather than
 duplicating a resume/on-deck hub inside each library.
 
+Match server retains each promoted row's sanitized native shelf key separately
+from its stable row identity. If the content response omits that row or truncates
+its inline items, Home loads that exact shelf rather than substituting the full
+recommendation menu. Older rows without a shelf key get one shared retry per
+library; unrecoverable rows report an error without discarding successful siblings.
+Surviving shelves match their saved keys before positional recommendation slots,
+so an omitted sibling cannot shift another shelf into two rows. Unmatched slots
+can still adopt genuinely new recommendation subjects.
+Explicitly empty shelves remain empty. Key-only promotions have a stable identity
+derived from the credential-free key, never the translated display title.
+Persisted keys are revalidated before use, and recovery keeps the active viewer's
+credentials and library filtering. Browse continuation verifies preview anchors
+before falling back to a saved shelf, so a rotating recommendation cannot silently
+open an unrelated subject.
+
 Home and library Continue Watching share the same endpoint selection: items hub,
 plain hub, then legacy on-deck only after an initial unsupported, invalid-response,
 or decode failure. An empty successful hub is authoritative. Authentication,
@@ -128,6 +144,16 @@ validation remain strict.
 Failed reads also record the failing endpoint category and paging invariant for
 the shared Details sheet. These opt-in diagnostics preserve error/fallback
 behavior and never export item identities or response bodies.
+
+## Hero artwork
+
+Plex's selected `Image` entry with type `backgroundSquare` is retained as
+`.squareHero`, separately from posters, logos, and landscape backgrounds.
+Compact iPhone Home and detail heroes prefer it under Recommended or Library
+artwork preferences; an explicit Metadata providers preference still wins.
+Relative paths use the existing server-authenticated artwork route, while
+Discover paths remain on Discover. Missing square art retains the existing
+fallback, and landscape heroes and poster cards are unchanged.
 
 ## Continue Watching artwork
 
@@ -255,6 +281,15 @@ Player track identities remain container indexes. Only the outbound transcode
 options translate selected audio/subtitle indexes to Plex's database stream
 IDs, using the selected media version's stream inventory. Decision and playback
 requests must carry identical selections and limits.
+
+Before negotiating a server rendition with a selected audio track, Plozz awaits
+`PUT /library/parts/{partID}?audioStreamID={streamID}&allParts=1` using the active
+Plex user's credentials. Plex can ignore the audio selection in decision/start
+URLs alone. The part and database stream ID come from the selected version;
+the player's container index remains unchanged. Selection failures or cancellation
+stop negotiation rather than silently playing the previous language. Direct-file
+playback does not write the server's track selection. This follows
+[`MediaPart.setSelectedAudioStream` in PlexAPI](https://github.com/pushingkarmaorg/python-plexapi/blob/master/plexapi/media.py).
 
 Bounded video encoding reserves the quality policy's audio budget. Plex receives
 the documented `audioChannelCount` parameter and a `videoAudioCodec` /
