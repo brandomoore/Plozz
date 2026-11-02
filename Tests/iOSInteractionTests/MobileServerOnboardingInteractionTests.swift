@@ -26,6 +26,7 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
             for provider in ["jellyfin", "plex", "emby", "silo", "iptv"] {
                 XCTAssertTrue(app.buttons["add-server-provider-\(provider)"].exists, page)
             }
+            attach(app, name: "Source-destination-\(page)")
             share.tap()
             XCTAssertTrue(app.buttons["Enter an address manually"].waitForExistence(timeout: 5))
             app.navigationBars.buttons.firstMatch.tap()

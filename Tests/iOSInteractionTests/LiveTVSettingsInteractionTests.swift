@@ -62,8 +62,10 @@ final class LiveTVSettingsInteractionTests: XCTestCase {
         XCTAssertTrue(add.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["live-tv-source-details-fixture"].exists)
         XCTAssertTrue(app.navigationBars["Live TV"].exists)
+        captureSourceEntry("TV-sources-overview", in: app)
         add.tap()
         XCTAssertTrue(app.navigationBars["Add TV Source"].waitForExistence(timeout: 5))
+        captureSourceEntry("Add-TV-source", in: app)
         for (identifier, title) in [
             ("live-tv-add-playlist", "IPTV source"),
             ("live-tv-add-server", "Media server"),
@@ -71,6 +73,9 @@ final class LiveTVSettingsInteractionTests: XCTestCase {
         ] {
             tapVisible(app.buttons[identifier], in: app)
             XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5), app.debugDescription)
+            if identifier == "live-tv-add-server" {
+                captureSourceEntry("TV-media-server-setup", in: app)
+            }
             app.navigationBars.buttons.firstMatch.tap()
             XCTAssertTrue(app.navigationBars["Add TV Source"].waitForExistence(timeout: 5))
         }
@@ -94,6 +99,13 @@ final class LiveTVSettingsInteractionTests: XCTestCase {
         app.switches["Favorites only"].tap()
         waitForSavedPreferences("Recent false favorites true", in: app)
         XCTAssertEqual(app.staticTexts["fixture-source-metrics"].label, "Sources 1 writes 0 requests 0")
+    }
+
+    private func captureSourceEntry(_ name: String, in app: XCUIApplication) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     func testBrowsingChoicesChangeInlineAndSaveImmediately() {
