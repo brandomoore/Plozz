@@ -45,7 +45,7 @@ final class IPTVGuideDiagnostics {
         func parsing() { lock.withLock { stage = .parse } }
         func redirected() { lock.withLock { redirects += 1 } }
         func blockedRedirect(_ reason: RedirectFailure) { lock.withLock { redirectFailure = reason } }
-        func reuseMissingGuide() { lock.withLock { reusedFailure = true } }
+        func reuseGuideFailure() { lock.withLock { reusedFailure = true } }
         func cacheHit(bytes: Int) {
             lock.withLock {
                 cached = true

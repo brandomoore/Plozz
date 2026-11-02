@@ -55,6 +55,11 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
 
 ## Invariants
 
+- **Account selections survive removals.** An explicit profile selection only
+  admits its locally present accounts. Deleting its last selected account,
+  locally or everywhere, leaves no active sources instead of enabling excluded
+  household accounts. Saved IDs remain available for sync and reconnection;
+  only a profile that has never chosen a subset inherits the household defaults.
 - **tvOS profile selection on return.** Automatically Sign In is the only
   device-wide access preference. When it is on, warm returns keep the current
   profile authorized. When it is off, `CoreModels.ProfileReturnPolicy` derives

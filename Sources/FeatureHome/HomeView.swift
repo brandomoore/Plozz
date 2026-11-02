@@ -1464,7 +1464,7 @@ public struct HomeView: View {
         #endif
     }
 
-    private enum FocusHomeRowSource {
+    enum FocusHomeRowSource {
         case home(HomeRow, HomePresentationRow?)
         case section(HomeLibrarySectionGroup.Row, HomePresentationRow)
         case liveTV([HomeLiveTVChannel])
@@ -1691,7 +1691,7 @@ public struct HomeView: View {
 
     /// The same rows as ``rowView(_:)``, reporting focus to the hero.
     @ViewBuilder
-    private func focusHomeRowView(
+    func focusHomeRowView(
         _ source: FocusHomeRowSource, reporter: FocusHeroRowReporter, reservesLoadingFocus: Bool
     ) -> some View {
         let onFocusChange: (MediaItem?) -> Void = { item in
@@ -1816,12 +1816,6 @@ public struct HomeView: View {
                 rowFailureView(
                     title: section.displayName, error: failure, onFocusEntered: reporter.entered
                 )
-            } else if row.collectionCardStyle == .featured, !row.isLoading {
-                featuredRow(row, onBrowse: onBrowse) { item in
-                    reporter.entered()
-                    reporter.cardFocused(item)
-                    onFocusChange(item)
-                }
             } else {
                 MediaRowView(
                     title: section.displayName,
@@ -1881,7 +1875,7 @@ public struct HomeView: View {
     /// browse entry points into each library's full grid. Poster rows open detail
     /// on select; a landscape row plays — matching the merged rows' behaviour.
     @ViewBuilder
-    private func libraryRowView(_ row: HomeLibrarySectionGroup.Row, onBrowse: (() -> Void)?) -> some View {
+    func libraryRowView(_ row: HomeLibrarySectionGroup.Row, onBrowse: (() -> Void)?) -> some View {
             let section = row.section
             let playsOnSelect = row.browseItem == nil && section.style == .landscape
                 && !CollectionCoverLayout.isCollectionGroup(section.items)

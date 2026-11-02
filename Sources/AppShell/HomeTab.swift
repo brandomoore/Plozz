@@ -262,15 +262,17 @@ struct HomeTab: View {
                                 item: item, placement: item.kind == .episode ? .seriesPoster : .poster,
                                 policy: policy
                             )
-                            return await source.resolve(variant: .posterCard, maxAspectRatio: 1)?
-                                .image.pngData()
+                            guard let artwork = await source.resolve(variant: .posterCard, maxAspectRatio: 1)
+                            else { return nil }
+                            return await TopShelfArtworkEncoder.shared.data(for: artwork.image, format: .png)
                         },
                         resolveBackdrop: { item in
                             let subject = item.kind == .episode ? ArtworkRouter.seriesArtworkItem(for: item) : item
                             let source = MediaArtworkSource(
                                 item: subject, placements: [.detailBackdrop, .poster], policy: policy
                             )
-                            return await source.resolve(variant: .heroBackdrop)?.image.jpegData(compressionQuality: 0.9)
+                            guard let artwork = await source.resolve(variant: .heroBackdrop) else { return nil }
+                            return await TopShelfArtworkEncoder.shared.data(for: artwork.image, format: .jpeg)
                         }
                     )
                 }

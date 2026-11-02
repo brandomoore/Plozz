@@ -38,6 +38,7 @@ struct ProductionHomeFixture: View {
     @State private var prematureNativeHomeFocusCount = 0
     @State private var nativeSidebarFocus = NavigationDestinationFocusHandoff()
     @State private var nativeFocusHistory: [String] = []
+    @State private var heroBoundaryLatencyReport = "waiting"
 
     private var isPinned: Bool { ProcessInfo.processInfo.arguments.contains("--pinned-home") }
     /// `--focus-style=<name>` picks a card focus style; native system focus otherwise.
@@ -292,12 +293,22 @@ struct ProductionHomeFixture: View {
         }
         .task {
             guard ProcessInfo.processInfo.arguments.contains("--hero-showcase-focus-probe")
-                || ProcessInfo.processInfo.arguments.contains("--hero-showcase-geometry-probe") else { return }
+                || ProcessInfo.processInfo.arguments.contains("--hero-showcase-geometry-probe")
+                || ProcessInfo.processInfo.arguments.contains("--hero-showcase-latency-probe") else { return }
             do {
                 try await Task.sleep(for: .seconds(3))
-                await Self.probeHeroShowcaseFocus()
+                await Self.probeHeroShowcaseFocus(onLatencyReport: { heroBoundaryLatencyReport = $0 })
             } catch {
                 print("HERO_STAGE_PROBE cancelled: \(error)")
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if ProcessInfo.processInfo.arguments.contains("--hero-showcase-latency-probe") {
+                Text(verbatim: heroBoundaryLatencyReport)
+                    .font(.system(size: 1))
+                    .frame(width: 1, height: 1)
+                    .accessibilityIdentifier("hero-boundary-latency")
+                    .allowsHitTesting(false)
             }
         }
         .task {
@@ -452,7 +463,74 @@ struct ProductionHomeFixture: View {
     }
 
     @MainActor
-    private static func probeHeroShowcaseFocus() async {
+    private static func measureHeroBoundary(
+        _ stage: HeroShowcaseStage.Controller, system: UIFocusSystem
+    ) async throws -> String {
+        let entryDeadline = ContinuousClock.now + .seconds(15)
+        while !stage.contains(system.focusedItem, in: stage.hero), ContinuousClock.now < entryDeadline {
+            try await Task.sleep(for: .milliseconds(16))
+        }
+        guard stage.contains(system.focusedItem, in: stage.hero) else {
+            throw NSError(domain: "HeroBoundaryProbe", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Native navigation did not admit hero focus"])
+        }
+        try await Task.sleep(for: .milliseconds(700))
+        var samples: [[String: Double]] = []
+        defer { stage.onBoundaryPhase = nil }
+        for index in 0..<10 {
+            let expanded = index % 2 == 1
+            var phases: [String: TimeInterval] = [:]
+            stage.onBoundaryPhase = { phases[$0] = CACurrentMediaTime() }
+            let initialY = stage.rows.view.layer.presentation()?.transform.m42 ?? stage.rows.view.transform.ty
+            let started = CACurrentMediaTime()
+            stage.beginBoundaryMove(expanded ? .up : .down)
+            var firstFrame: TimeInterval?
+            var focused: TimeInterval?
+            repeat {
+                try await Task.sleep(for: .milliseconds(16))
+                let now = CACurrentMediaTime()
+                if focused == nil, stage.contains(system.focusedItem, in: expanded ? stage.hero : stage.rows) {
+                    focused = now
+                }
+                if firstFrame == nil, let layer = stage.rows.view.layer.presentation(),
+                   abs(layer.transform.m42 - initialY) > 1 {
+                    firstFrame = now
+                }
+            } while (firstFrame == nil || focused == nil) && CACurrentMediaTime() - started < 2
+            guard let firstFrame, let focused, let queued = phases["queued"], let present = phases["present"],
+                  let layoutBegin = phases["layout-begin"], let layoutEnd = phases["layout-end"],
+                  let focusEnd = phases["focus-end"] else {
+                throw NSError(domain: "HeroBoundaryProbe", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey:
+                                "Boundary \(index) incomplete: phases=\(phases.keys.sorted()) frame=\(firstFrame != nil) focus=\(focused != nil) canEnter=\(stage.canEnterRows())"])
+            }
+            while stage.state.nativeRowsExpanded != expanded, CACurrentMediaTime() - started < 2 {
+                try await Task.sleep(for: .milliseconds(16))
+            }
+            guard stage.state.nativeRowsExpanded == expanded else {
+                throw NSError(domain: "HeroBoundaryProbe", code: 3,
+                              userInfo: [NSLocalizedDescriptionKey: "Native scroll origin did not settle"])
+            }
+            var sample: [String: Double] = [
+                "expanded": expanded ? 1 : 0,
+                "firstFrameMS": (firstFrame - started) * 1000,
+                "focusedMS": (focused - started) * 1000,
+                "queueMS": (present - queued) * 1000,
+                "prepareMS": (layoutBegin - present) * 1000,
+                "layoutMS": (layoutEnd - layoutBegin) * 1000,
+                "focusMS": (focusEnd - layoutEnd) * 1000
+            ]
+            if let frame = phases["native-motion-frame"] {
+                sample["nativeMotionFrameMS"] = (frame - started) * 1000
+            }
+            samples.append(sample)
+            try await Task.sleep(for: .milliseconds(700))
+        }
+        let data = try JSONSerialization.data(withJSONObject: samples, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func probeHeroShowcaseFocus(onLatencyReport: ((String) -> Void)? = nil) async {
         let geometryOnly = ProcessInfo.processInfo.arguments.contains("--hero-showcase-geometry-probe")
         print("HERO_STAGE_PROBE mode=\(geometryOnly ? "geometry-only" : "native-focus")")
         let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -465,6 +543,21 @@ struct ProductionHomeFixture: View {
         }
         guard let stage, let system = UIFocusSystem.focusSystem(for: stage.view) else {
             print("HERO_STAGE_PROBE missing stage or focus system")
+            onLatencyReport?("error: missing stage or focus system")
+            return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--hero-showcase-latency-probe") {
+            let gate = ProductionHomeProvider.ProductionHomeRowsGate(
+                notificationKey: "PLOZZ_HERO_BOUNDARY_START"
+            )
+            onLatencyReport?("ready")
+            do {
+                await gate.wait()
+                try Task.checkCancellation()
+                onLatencyReport?(try await measureHeroBoundary(stage, system: system))
+            } catch {
+                onLatencyReport?("error: \(error.localizedDescription)")
+            }
             return
         }
         if ProcessInfo.processInfo.arguments.contains("--pending-featured-hero") {
@@ -1425,7 +1518,7 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
         )
     }
 
-    private final class ProductionHomeRowsGate: @unchecked Sendable {
+    fileprivate final class ProductionHomeRowsGate: @unchecked Sendable {
         private let lock = NSLock()
         private var opened = false
         private var waiters: [CheckedContinuation<Void, Never>] = []

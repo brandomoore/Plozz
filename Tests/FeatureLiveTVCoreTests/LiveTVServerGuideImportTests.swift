@@ -163,6 +163,55 @@ final class LiveTVServerGuideImportTests: XCTestCase {
         XCTAssertEqual(imports.programCount, 4)
     }
 
+    func testPartialGuidePublishesNewListingsPreservesMissingChannelsAndRemainsRetryable() async throws {
+        let provider = WindowGuideProvider(channels: channels, programs: [
+            program("old-one"), program("old-two", channelID: "two")
+        ])
+        let (imports, model) = makeImport(provider, kind: .iptv)
+        await imports.reload(into: model)
+        let one = try globalID("one", in: imports)
+        let two = try globalID("two", in: imports)
+        await provider.replacePrograms([program("new-one")])
+        await provider.setPartialFailure(AppError.serverUnreachable)
+        let end = now.addingTimeInterval(21_600)
+        let result = await imports.reloadServerGuidesResult(
+            channelIDs: [one, two], from: now, to: end, into: model, force: true
+        )
+        XCTAssertEqual(result, .failed)
+        XCTAssertEqual(model.currentProgram(for: one)?.title, "new-one")
+        XCTAssertEqual(model.currentProgram(for: two)?.title, "old-two")
+        XCTAssertEqual(imports.serverSources[0].guideFailure, .guideUnavailable)
+        XCTAssertEqual(imports.serverGuideState(channelID: two, from: now, to: end), .failed)
+        await provider.setPartialFailure(nil)
+        await provider.replacePrograms([program("new-two", channelID: "two")])
+        await imports.reloadServerGuides(channelIDs: [one, two], from: now, to: end, into: model)
+        XCTAssertNil(imports.serverSources[0].guideFailure)
+        XCTAssertNil(model.currentProgram(for: one), "Only a complete successful response may establish empty coverage.")
+        XCTAssertEqual(model.currentProgram(for: two)?.title, "new-two")
+    }
+
+    func testPartialGuideDoesNotBypassRevokedAuthorizationOrCancellation() async throws {
+        let failures: [any Error] = [AppError.unauthorized, CancellationError()]
+        for failure in failures {
+            let provider = WindowGuideProvider(channels: channels, programs: [program("saved")])
+            let (imports, model) = makeImport(provider)
+            await imports.reload(into: model)
+            let id = try globalID("one", in: imports)
+            await provider.replacePrograms([program("must-not-publish")])
+            await provider.setPartialFailure(failure)
+            await imports.reloadServerGuides(
+                channelIDs: [id], from: now, to: now.addingTimeInterval(21_600), into: model, force: true
+            )
+            if failure is CancellationError {
+                XCTAssertEqual(model.currentProgram(for: id)?.title, "saved")
+                XCTAssertNil(imports.serverSources[0].guideFailure)
+            } else {
+                XCTAssertNil(model.currentProgram(for: id))
+                XCTAssertEqual(imports.serverSources[0].guideFailure, .permissionDenied)
+            }
+        }
+    }
+
     func testNeighborhoodRequestsReuseLoadedCoverageAndOnlyFetchMissingChannels() async throws {
         let provider = WindowGuideProvider(channels: channels)
         let (imports, model) = makeImport(provider)
@@ -656,6 +705,7 @@ private actor WindowGuideProvider: ServerLiveTVProviding {
     var continuation: CheckedContinuation<Void, Never>?
     var guideFailure: ServerLiveTVError?
     private var nextGuideFailure: ServerLiveTVError?
+    private var partialFailure: (any Error)?
     private(set) var guideCalls: [GuideCall] = []
     private(set) var catalogLoads = 0
     private(set) var opens = 0
@@ -670,6 +720,7 @@ private actor WindowGuideProvider: ServerLiveTVProviding {
     func replaceChannels(_ value: [ServerLiveTVChannel]) { channels = value }
     func setGuideFailure(_ value: ServerLiveTVError?) { guideFailure = value }
     func failNextGuide(_ value: ServerLiveTVError) { nextGuideFailure = value }
+    func setPartialFailure(_ value: (any Error)?) { partialFailure = value }
     func suspendNextGuide(_ expectation: XCTestExpectation) { suspended = expectation }
 
     func liveTVAvailability() async throws -> ServerLiveTVAvailability {
@@ -695,6 +746,9 @@ private actor WindowGuideProvider: ServerLiveTVProviding {
             }
         }
         if let failure { throw failure }
+        if let partialFailure {
+            throw ServerLiveTVPartialGuideError(programmes: response, failure: partialFailure)
+        }
         return response
     }
 

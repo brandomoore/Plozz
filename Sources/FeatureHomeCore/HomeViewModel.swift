@@ -508,6 +508,7 @@ public final class HomeViewModel {
     /// A load is running right now. See ``load(showLoadingState:)``.
     @ObservationIgnored private var isLoading = false
     @ObservationIgnored private var loadingVisibility: HomeLibraryVisibility?
+    @ObservationIgnored private var retryCancelledPreparation = false
     /// A load was requested while one was already running; run once more after.
     @ObservationIgnored private var wantsReloadAfterCurrent = false
 
@@ -689,6 +690,7 @@ public final class HomeViewModel {
     /// change: hiding/showing/disabling a library, or flipping the merge switch.
     public func loadIfNeeded(for visibility: HomeLibraryVisibility) async {
         if isLoading {
+            if !Task.isCancelled { retryCancelledPreparation = true }
             if loadingVisibility?.intent != visibility.intent {
                 wantsReloadAfterCurrent = true
                 aggregationTask?.cancel()
@@ -771,6 +773,7 @@ public final class HomeViewModel {
         var diagnosticMetrics = PerformanceDiagnostics.Metrics()
         defer { diagnostic?.finish(diagnosticOutcome, metrics: diagnosticMetrics) }
         isLoading = true
+        retryCancelledPreparation = false
         collectionRefreshTask?.cancel()
         collectionRefreshTask = nil
         collectionRefreshWorkerGeneration &+= 1
@@ -791,6 +794,7 @@ public final class HomeViewModel {
             }
             isLoading = false
             loadingVisibility = nil
+            retryCancelledPreparation = false
             if wantsReloadAfterCurrent {
                 wantsReloadAfterCurrent = false
                 Task { await load(showLoadingState: false) }
@@ -802,7 +806,13 @@ public final class HomeViewModel {
         PlozzLog.boot("HomeVM.load START vm=\(UInt(bitPattern: ObjectIdentifier(self).hashValue)) accounts=\(accounts.count) state=\(state.diagnosticName) silent=\(!showLoadingState)")
         loadingVisibility = currentVisibility()
         await prepareVisibility()
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else {
+            // A replacement view task may already have coalesced into this load.
+            // No aggregation started, so do not lose its request when we exit.
+            if retryCancelledPreparation { wantsReloadAfterCurrent = true }
+            PlozzLog.boot("HomeVM.load CANCELLED-PREPARATION replacement=\(wantsReloadAfterCurrent)")
+            return
+        }
         let previousContent = state.value
         let hadLiveContent = hasReceivedLiveContent
         let onScreenWatchlist = previousContent?.watchlist ?? []

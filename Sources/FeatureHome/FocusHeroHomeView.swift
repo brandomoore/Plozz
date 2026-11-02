@@ -435,7 +435,8 @@ struct FocusHeroHomeView<RowContent: View>: View {
                         state: featuredState, usesNativeSidebar: navigationStyle == .sidebar
                     ) { inset in
                         AnyView(scrollingRows(topInset: inset))
-                    })
+                    }),
+                    usesNativeSidebar: navigationStyle == .sidebar
                 )
                 .overlay(alignment: .topLeading) {
                     HeroShowcaseFeaturedContent(state: featuredState) { active in
@@ -812,12 +813,11 @@ private struct FocusHeroScrollPosition: View {
         FocusHeroNativeScrollPosition(
             rowID: model.resolvedActiveRowID(in: rows),
             y: model.top(ofRowAt: index, in: rows, rowSpacing: spacing)
-                + model.activeHeight(in: rows) - model.scrollOrigin(in: rows) + topInset,
+                + model.activeHeight(in: rows) - model.scrollOrigin(in: rows),
+            contentOrigin: topInset,
             motion: model.motion,
             height: model.activeHeight(in: rows),
-            heightStops: model.heightStops(in: rows).map {
-                FocusHeroHeightStop(offset: $0.offset + topInset, height: $0.height)
-            },
+            heightStops: model.heightStops(in: rows),
             rowOffsets: model.tuckOffsets(in: rows),
             onReturnToTop: {
                 model.returnToTop(in: rows)
@@ -1114,6 +1114,7 @@ private final class FocusHeroTransformMotion {
 struct FocusHeroNativeScrollPosition: UIViewRepresentable {
     let rowID: String?
     let y: CGFloat
+    var contentOrigin: CGFloat = 0
     var motion: FocusHeroRowMotion? = nil
     var height: CGFloat? = nil
     var heightStops: [FocusHeroHeightStop] = []
@@ -1134,7 +1135,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
         motion?.rowOffsets = rowOffsets
         view.navigation = context.environment.plozzTopNavigationScroll
         view.onReturnToTop = onReturnToTop
-        view.move(to: y, rowID: rowID, heightChanged: heightChanged)
+        view.move(to: y, rowID: rowID, heightChanged: heightChanged, contentOrigin: contentOrigin)
         view.bindShowcaseMotion(context.environment.heroShowcaseMotion)
     }
 
@@ -1161,6 +1162,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
         private var wasScrollEnabled = true
         private var rowID: String?
         private var y: CGFloat = 0
+        private var contentOrigin: CGFloat = 0
         private var navigationOffset: CGFloat = 0
         private var navigationProgress: CGFloat?
         private weak var showcaseMotion: HeroShowcaseScrollMotion?
@@ -1181,21 +1183,27 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
             bindScrollView()
         }
 
-        func move(to y: CGFloat, rowID: String?, heightChanged: Bool = false) {
-            let changed = self.y != y || self.rowID != rowID
+        func move(to y: CGFloat, rowID: String?, heightChanged: Bool = false, contentOrigin: CGFloat = 0) {
+            let contentChanged = self.y - self.contentOrigin != y || self.rowID != rowID
+            let originDelta = contentOrigin - self.contentOrigin
+            let changed = contentChanged || originDelta != 0
             let animated = self.rowID != nil && self.rowID != rowID
             self.rowID = rowID
-            self.y = y
+            self.y = y + contentOrigin
+            self.contentOrigin = contentOrigin
+            // Padding and bounds move together; existing additive springs keep
+            // their distance, clock and velocity in row-local coordinates.
+            compositorTarget += originDelta
             bindScrollView()
             guard let scroller else { return }
             if changed || (heightChanged && isMoving) {
-                moveWithCompositor(in: scroller, animated: animated)
+                moveWithCompositor(in: scroller, animated: animated, updateViewport: contentChanged || heightChanged)
             } else {
                 rowMotion?.applyTargets(animated: isMoving)
             }
         }
 
-        private func moveWithCompositor(in scroller: UIScrollView, animated: Bool) {
+        private func moveWithCompositor(in scroller: UIScrollView, animated: Bool, updateViewport: Bool) {
             let beganAt = CACurrentMediaTime()
             let timing = FocusHeroLayout.rowSpring
             scrollSteps.removeAll { scroller.layer.animation(forKey: $0.key) == nil }
@@ -1236,8 +1244,10 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
                     scrollSteps.append(ScrollStep(key: key, distance: distance))
                 }
                 CATransaction.commit()
-                rowMotion?.applyTargets(animated: true)
-                rowMotion?.followViewport(from: departure, to: y, velocity: velocity)
+                if updateViewport {
+                    rowMotion?.applyTargets(animated: true)
+                    rowMotion?.followViewport(from: departure - contentOrigin, to: y - contentOrigin, velocity: velocity)
+                }
             } else {
                 for step in scrollSteps { scroller.layer.removeAnimation(forKey: step.key) }
                 scrollSteps.removeAll()
@@ -1295,9 +1305,9 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
             reportNavigation(offset: isMoving ? scroller?.layer.presentation()?.bounds.origin.y ?? y : y)
         }
 
-        func animateNavigation(from progress: CGFloat, duration: TimeInterval, timingFunction: CAMediaTimingFunction, key: String) {
+        func animateNavigation(from progress: CGFloat, spring: Spring, key: String) {
             navigation?.animateStage(
-                from: progress, duration: duration, timingFunction: timingFunction, key: key, source: navigationScrollID
+                from: progress, spring: spring, key: key, source: navigationScrollID
             )
         }
 

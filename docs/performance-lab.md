@@ -378,7 +378,12 @@ five times, then changes the inputs; full encoding count must fall without
 suppressing that final change. Neither scenario measures CloudKit delivery.
 `guide-large-batches` downloads a generated 23.8 MB, 48,000-programme XMLTV file
 for two 2,000-channel batches. Request/byte reductions must preserve all 32,000
-requested rows; parse count is separate. It uses loopback, not a real provider.
+requested rows; parse count is separate. It now includes encrypted indexing of
+all 6,000 candidate channels, with separate cold-first-batch and warm-second-batch
+timings. Generation identity verifies one completed import across both queries.
+The older fixture parsed twice without persistence; comparing total time includes
+the new full-catalog write cost, not just a warm-cache speedup. It uses loopback,
+not a real provider, and does not measure rendered scrolling or physical devices.
 
 `collection-discovery` runs the production Jellyfin collection provider over
 356 native collections, with 5-ms synthetic request latency. The fixture retains

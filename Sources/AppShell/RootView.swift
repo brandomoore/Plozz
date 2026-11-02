@@ -898,6 +898,8 @@ public struct RootView: View {
         // Injected so deep settings screens can read household profile
         // state without another argument on an already ~60-argument chain.
         .environment(appState.profilesModel)
+        .environment(appState.profileSettings.navigationStyleModel)
+        .environment(appState.guidePreparation)
         .environment(glassPerformance)
         .environment(displayVeil)
         #if os(tvOS)
@@ -918,6 +920,10 @@ public struct RootView: View {
         .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
         .transientStatusOverlay(
             presenter: appState.transientStatusPresenter,
+            palette: resolvedPalette
+        )
+        .guidePreparationOverlay(
+            model: appState.guidePreparation, presenter: appState.transientStatusPresenter,
             palette: resolvedPalette
         )
         // Resumes setup that was abandoned part-way — quit mid-flow, or synced
@@ -946,6 +952,10 @@ public struct RootView: View {
             onDismiss: rootPresentationDidDismiss
         ) {
             rootPresentationContent
+                .guidePreparationOverlay(
+                    model: appState.guidePreparation, presenter: appState.transientStatusPresenter,
+                    palette: resolvedPalette
+                )
                 .environment(\.themePalette, resolvedPalette)
                 .environment(\.gradientBackgroundsEnabled, appState.profileSettings.themeModel.gradientEnabled)
                 .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)

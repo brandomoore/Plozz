@@ -2,7 +2,7 @@ import CoreModels
 import CoreNetworking
 import CryptoKit
 import Darwin
-import FeatureLiveTVCore
+@testable import FeatureLiveTVCore
 import Foundation
 @testable import ProviderIPTV
 @testable import TestSupportPerformance
@@ -10,6 +10,15 @@ import XCTest
 
 @MainActor
 final class IPTVPerformanceProbeTests: XCTestCase {
+    private final class GuidePerformanceSecureStore: SecureStoring, @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [String: String] = [:]
+        func string(for key: String) -> String? { lock.withLock { values[key] } }
+        func readString(for key: String) throws -> String? { string(for: key) }
+        func setString(_ value: String, for key: String) throws { lock.withLock { values[key] = value } }
+        func removeValue(for key: String) throws { _ = lock.withLock { values.removeValue(forKey: key) } }
+    }
+
     func testPerformanceLargeGuideBatches() async throws {
         try PerformanceProbe.requireEnabled()
         let channelCount = 6_000
@@ -44,6 +53,13 @@ final class IPTVPerformanceProbeTests: XCTestCase {
                 )
             }
         }
+        let catalog = (0..<channelCount).map { channel in
+            LiveTVPrototypeChannel(
+                id: "channel-\(channel)", number: channel, name: "Channel \(channel)",
+                category: "Live TV", symbol: "tv", accent: 0, source: .iptv, tagline: "",
+                guideID: "c\(channel)"
+            )
+        }
         try await PerformanceProbe.measure(self, scenario: "guide-large-batches") {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -65,28 +81,50 @@ final class IPTVPerformanceProbeTests: XCTestCase {
                 )
             } catch { await server.stop(); throw error }
             do {
+                let cache = LiveTVIndexedCache(
+                    url: root.appendingPathComponent("guide.sqlite"), namespace: "performance",
+                    authorizationScope: "fixture", secureStore: GuidePerformanceSecureStore()
+                )
+                let index = LiveTVGuideIndex(cache: cache)
+                let guideURL = base.appendingPathComponent("guide.xml")
                 var rows = 0
+                var generations = Set<UUID>()
+                var batchNanoseconds: [Int] = []
                 for channels in batches {
-                    let data = try await client.guideData(from: base.appendingPathComponent("guide.xml"))
-                    XCTAssertEqual(data.count, payload.count)
-                    let guide = try LiveTVXMLTVParser().parseXML(data: data, channels: channels, now: now)
-                    XCTAssertEqual(guide.programs.count, 16_000)
-                    XCTAssertEqual(Set(guide.programs.map(\.channelID)), Set(channels.map(\.id)))
-                    rows += guide.programs.count
+                    let start = DispatchTime.now().uptimeNanoseconds
+                    let programs = try await index.programs(
+                        from: guideURL, catalog: catalog, channels: channels,
+                        range: DateInterval(start: now, duration: 8 * 3_600),
+                        download: { try await client.guideDocument(from: guideURL) }
+                    )
+                    batchNanoseconds.append(Int(DispatchTime.now().uptimeNanoseconds - start))
+                    XCTAssertEqual(programs.count, 16_000)
+                    XCTAssertEqual(Set(programs.map(\.channelID)), Set(channels.map(\.id)))
+                    let state = try await cache.guideIndexState(
+                        sourceID: LiveTVGuideIndex.sourceID(guideURL), sourceURL: guideURL
+                    )
+                    generations.insert(try XCTUnwrap(state).generation)
+                    rows += programs.count
                 }
                 let requests = await server.requestCount
+                XCTAssertEqual(generations.count, 1)
+                XCTAssertEqual(requests, 1)
+                await index.cancel()
                 await client.cancel()
                 await server.stop()
                 return [
                     "guideBytes": payload.count, "httpRequests": requests,
-                    "downloadedBytes": requests * payload.count, "parseInvocations": batches.count,
-                    "retainedRows": rows, "requestedChannels": batches.reduce(0) { $0 + $1.count }
+                    "downloadedBytes": requests * payload.count, "parseInvocations": generations.count,
+                    "retainedRows": rows, "requestedChannels": batches.reduce(0) { $0 + $1.count },
+                    "coldBatchNanoseconds": batchNanoseconds[0], "warmBatchNanoseconds": batchNanoseconds[1],
+                    "indexedChannels": catalog.count
                 ]
             } catch {
                 await client.cancel()
                 await server.stop()
                 throw error
             }
+
         }
     }
 
