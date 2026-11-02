@@ -2131,6 +2131,12 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         from dto: PlexMetadata,
         relativeURL: ((String) -> URL?)? = nil
     ) -> [ArtworkSelection] {
+        let squareReferences = (dto.Image ?? [])
+            .filter { $0.type?.lowercased() == "backgroundsquare" }
+            .compactMap { backgroundURL($0, relativeURL: relativeURL) }
+            .map(ArtworkReference.remote)
+        let squareSelections: [ArtworkSelection] = squareReferences.isEmpty
+            ? [] : [.init(placement: .squareHero, references: squareReferences)]
         var candidates: [HeroArtworkCandidate] = []
         if let art = artworkURL(
             dto.art,
@@ -2165,13 +2171,13 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
                 + "types=[\((dto.Image ?? []).compactMap(\.type).joined(separator: ","))] "
                 + "title=\(dto.title ?? "?") — NO SELECTION"
             }
-            return []
+            return squareSelections
         }
         HeroArtDiagnostics.emitOnce(stage: "plex-pool", key: dto.ratingKey ?? "?") {
             "plex pool=\(candidates.count) art=\(dto.art != nil) "
             + "images=\((dto.Image ?? []).count) title=\(dto.title ?? "?")"
         }
-        return HeroArtworkPlanner.selections(for: candidates)
+        return HeroArtworkPlanner.selections(for: candidates) + squareSelections
     }
 
     /// An `Image` entry's URL, handling the absolute-vs-server-path split the same

@@ -28,6 +28,7 @@ final class PlexDiscoverMetadataTests: XCTestCase {
        "summary":"Ex-cop Brian teams up with an old friend to bring down a drug lord.",
        "Image":[
          {"type":"clearLogo","url":"/library/metadata/5d7768265af944001f1f6977/logo/3"},
+         {"type":"backgroundSquare","url":"/library/metadata/5d7768265af944001f1f6977/squareArt/5"},
          {"type":"background","url":"/library/metadata/5d7768265af944001f1f6977/art/4"}
        ],
        "Genre":[{"tag":"Action"},{"tag":"Crime"}],
@@ -81,6 +82,10 @@ final class PlexDiscoverMetadataTests: XCTestCase {
         XCTAssertEqual(item.backdropURL?.host, "discover.provider.plex.tv")
         XCTAssertEqual(item.heroBackdropURL?.host, "discover.provider.plex.tv")
         XCTAssertEqual(item.logoURL?.host, "discover.provider.plex.tv")
+        let square = try XCTUnwrap(item.artworkReferences(for: .squareHero).first)
+        guard case .remote(let squareURL) = square else { return XCTFail("Expected remote square art") }
+        XCTAssertEqual(squareURL.host, "discover.provider.plex.tv")
+        XCTAssertTrue(squareURL.path.contains("/squareArt/5"))
         XCTAssertTrue(
             item.artworkSelections
                 .flatMap(\.references)

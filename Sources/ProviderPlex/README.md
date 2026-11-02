@@ -130,6 +130,16 @@ Failed reads also record the failing endpoint category and paging invariant for
 the shared Details sheet. These opt-in diagnostics preserve error/fallback
 behavior and never export item identities or response bodies.
 
+## Hero artwork
+
+Plex's selected `Image` entry with type `backgroundSquare` is retained as
+`.squareHero`, separately from posters, logos, and landscape backgrounds.
+Compact iPhone Home and detail heroes prefer it under Recommended or Library
+artwork preferences; an explicit Metadata providers preference still wins.
+Relative paths use the existing server-authenticated artwork route, while
+Discover paths remain on Discover. Missing square art retains the existing
+fallback, and landscape heroes and poster cards are unchanged.
+
 ## Continue Watching artwork
 
 Persisted artwork first matches the connection resolver's live in-memory origins.
