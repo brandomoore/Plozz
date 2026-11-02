@@ -30,7 +30,7 @@ private actor HeldHomeArtworkLoader: ArtworkNetworkFileLoading {
 
 struct ProductionHomeFixture: View {
     @State private var fixture: ProductionHomeState?
-    @State private var path: [MediaItem] = []
+    @State private var path = NavigationPath()
     @State private var libraryPath = NavigationPath()
     @State private var selection = NavigationRailDestination.home
     @State private var profile = Profile(name: "Viewer")
@@ -230,6 +230,10 @@ struct ProductionHomeFixture: View {
                 .overlay(alignment: .topTrailing) {
                     VStack {
                         Text("Production Home ready")
+                        if ProcessInfo.processInfo.arguments.contains("--home-browse-fixture") {
+                            Text(verbatim: "\(path.count)")
+                                .accessibilityIdentifier("home-detail-depth-probe")
+                        }
                         if ProcessInfo.processInfo.arguments.contains("--partial-home-failure") {
                             Text(verbatim: fixture.resumePublication.isWaiting ? "waiting" : "ready")
                                 .accessibilityIdentifier("home-resume-publication")
@@ -907,7 +911,7 @@ private final class HeroBoundaryProbePress: UIPress {
 
 private struct ProductionHomeContent: View {
     let fixture: ProductionHomeState
-    @Binding var path: [MediaItem]
+    @Binding var path: NavigationPath
     @Binding var libraryPath: NavigationPath
     let isPinned: Bool
     var isActive = true
@@ -962,9 +966,32 @@ private struct ProductionHomeContent: View {
                             playbackCount += 1
                             lastPlayedID = item.id
                         },
-                        onSelectLibrary: { _ in }
+                        onSelectLibrary: { _ in },
+                        onBrowse: { path.append($0) }
                     )
                     .modifier(NavigationRailRootContentInset())
+                    .navigationDestination(for: HomeBrowseDestination.self) { destination in
+                        Group {
+                            switch destination {
+                            case let .row(browser):
+                                HomeRowBrowseView(model: browser, columns: PlozzMetrics.standard.posterColumns) { item in
+                                    PosterCardView(item: item, style: .poster) {
+                                        withCinematicDetailNavigation(for: item) { path.append(item) }
+                                    }
+                                    .navigationEntryFocus(.content)
+                                }
+                            case .watchlist:
+                                WatchlistBrowseView(
+                                    viewModel: fixture.model, visibility: fixture.visibility.visibility,
+                                    onSelect: { item in
+                                        withCinematicDetailNavigation(for: item) { path.append(item) }
+                                    }
+                                )
+                            }
+                        }
+                        .toolbar(.hidden, for: .tabBar)
+                        .environment(\.plozzTopNavigationScroll, nil)
+                    }
                     .navigationDestination(for: MediaItem.self) { item in
                         detailPage(for: item)
                     }
@@ -1110,6 +1137,14 @@ private final class ProductionHomeState {
         visibility.setMergeLibrariesOnHome(!libraryRows)
         for row in HomeGlobalRow.allCases {
             visibility.setGlobalRowEnabled(!libraryRows || row == .continueWatching, for: row)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--home-browse-fixture") {
+            visibility.useRowDefaults(.combined)
+            let selected: HomeGlobalRow = ProcessInfo.processInfo.arguments.contains("--home-browse-watchlist")
+                ? .watchlist : .recentlyAdded
+            for row in HomeGlobalRow.allCases {
+                visibility.setGlobalRowEnabled(row == selected, for: row)
+            }
         }
         if libraryRows {
             for index in 0..<20 {

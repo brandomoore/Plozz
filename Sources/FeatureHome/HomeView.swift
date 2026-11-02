@@ -129,11 +129,15 @@ final class HomeNavigationActivity {
     }
 }
 
+public enum HomeBrowseDestination: Hashable {
+    case row(HomeRowBrowseModel)
+    case watchlist
+}
+
 /// The Home screen: an optional cinematic **hero** carousel followed by
 /// Continue Watching, Latest, and library shortcuts.
 public struct HomeView: View {
     @Environment(\.homeLiveTVSnapshot) private var liveTV
-    @Environment(\.openWatchlist) private var openWatchlist
     @Environment(\.mediaItemNavigator) private var itemNavigator
     @Environment(LibraryPresentationSettingsModel.self) private var libraryPresentation: LibraryPresentationSettingsModel?
     @State private var viewModel: HomeViewModel
@@ -142,6 +146,7 @@ public struct HomeView: View {
     private let onSelectItem: (MediaItem) -> Void
     private let onPlayItem: (MediaItem) -> Void
     private let onSelectLibrary: (MediaLibrary) -> Void
+    private let onBrowse: (HomeBrowseDestination) -> Void
     /// Servers added to the device, and how many this profile has switched on.
     /// Both are needed to tell "no servers yet" from "all of them turned off".
     private let configuredServerCount: Int
@@ -190,8 +195,7 @@ public struct HomeView: View {
     @State private var navigationActivity = HomeNavigationActivity()
     @State private var featuredTrailers = FeaturedTrailerCoordinator()
     private let heroTrailerResolver: HeroTrailerResolving
-    private let parentIsFrontmost: Bool
-    private var heroIsFrontmost: Bool { parentIsFrontmost && rowBrowser == nil }
+    private let heroIsFrontmost: Bool
     private let heroCurator: HeroCurator
     private let heroFeaturedProvider: FeaturedContentProviding
     private let heroDiscoveryProvider: HeroDiscoveryContentProviding?
@@ -318,6 +322,7 @@ public struct HomeView: View {
         onSelectItem: @escaping (MediaItem) -> Void,
         onPlayItem: @escaping (MediaItem) -> Void,
         onSelectLibrary: @escaping (MediaLibrary) -> Void,
+        onBrowse: @escaping (HomeBrowseDestination) -> Void,
         configuredServerCount: Int = 1,
         enabledServerCount: Int = 1
     ) {
@@ -329,7 +334,7 @@ public struct HomeView: View {
         self.heroTrailerController = heroTrailerController
         self.onPollShares = onPollShares
         self.heroTrailerResolver = heroTrailerResolver
-        self.parentIsFrontmost = heroIsFrontmost
+        self.heroIsFrontmost = heroIsFrontmost
         self.heroRuntime = heroRuntime
         self.heroCurator = heroCurator
         self.heroFeaturedProvider = heroFeaturedProvider
@@ -360,6 +365,7 @@ public struct HomeView: View {
         self.onSelectItem = onSelectItem
         self.onPlayItem = onPlayItem
         self.onSelectLibrary = onSelectLibrary
+        self.onBrowse = onBrowse
         self.configuredServerCount = configuredServerCount
         self.enabledServerCount = enabledServerCount
         if !heroRuntime.hasHydratedCache {
@@ -379,22 +385,7 @@ public struct HomeView: View {
                 .environment(\.mediaRowHeaderTrailingInset,
                              navigationStyle == .rail ? geometry.safeAreaInsets.trailing : 0)
         }
-        .navigationDestination(item: $rowBrowser) { browser in
-            HomeRowBrowseView(model: browser, columns: metrics.posterColumns) { item in
-                PosterCardView(item: item, style: .poster, spoilerSettings: spoilerSettings) {
-                    onSelectItem(item)
-                }
-                .navigationEntryFocus(.content)
-            }
-            .scrollsTopNavigation()
-        }
-        .onChange(of: ObjectIdentifier(viewModel)) { _, _ in
-            rowBrowser?.invalidate()
-            rowBrowser = nil
-        }
     }
-
-    @State private var rowBrowser: HomeRowBrowseModel?
 
     private var screen: some View {
         let _ = PlozzBodyRate.tick("HomeView")
@@ -1364,8 +1355,8 @@ public struct HomeView: View {
 
     private func browseAction(for row: HomePresentationRow) -> (() -> Void)? {
         guard row.canBrowse else { return nil }
-        if row.id == .global(.watchlist) { return openWatchlist }
-        return { rowBrowser = viewModel.browseRow(row) }
+        if row.id == .global(.watchlist) { return { onBrowse(.watchlist) } }
+        return { onBrowse(.row(viewModel.browseRow(row))) }
     }
 
     private func openContinueWatchingDetails(_ item: MediaItem) {

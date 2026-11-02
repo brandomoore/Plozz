@@ -43,7 +43,7 @@ extension HomeRowArrangementHostedTests {
             heroTrailerController: HeroTrailerController(), heroIsFrontmost: false,
             heroRuntime: HomeHeroRuntimeState(),
             onSelectItem: { selected = $0 }, onPlayItem: { _ in XCTFail("Collection cards open details.") },
-            onSelectLibrary: { _ in }
+            onSelectLibrary: { _ in }, onBrowse: { _ in }
         )
         let reporter = FocusHeroRowReporter(
             entered: { entered += 1 }, cardFocused: { focused = $0 },
@@ -151,23 +151,14 @@ extension HomeRowArrangementHostedTests {
 
     func testHomeBrowseNavigationReturnsFocusToAction() async throws {
         let route = HomeBrowseNavigationProbe()
+        let chrome = NavigationChromeModel()
         var actionFrame = CGRect.zero
         let model = HomeRowBrowseModel(
             title: "Complete shelf", snapshot: [MediaItem(id: "one", title: "One", kind: .movie)]
         )
         try await withWindow {
-            NavigationStack {
-                MediaRowBrowseCard(width: 240, action: { route.browser = model })
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { actionFrame = $0 }
-                    .navigationDestination(item: Binding(
-                        get: { route.browser }, set: { route.browser = $0 }
-                    )) { browser in
-                        HomeRowBrowseView(model: browser, columns: [GridItem(.flexible())]) { item in
-                            Button(item.title) {}
-                        }
-                    }
-            }
-            .environment(\.plozzCardFocusStyle, .system)
+            HomeBrowseNavigationFixture(route: route, browser: model, chrome: chrome) { actionFrame = $0 }
+                .environment(\.plozzCardFocusStyle, .system)
         } inspect: { window in
             _ = try await self.snapshot(window, name: "Home browse before navigation")
             let point = CGPoint(x: actionFrame.midX, y: actionFrame.minY + 40)
@@ -178,8 +169,12 @@ extension HomeRowArrangementHostedTests {
             try XCTUnwrap(action as? UIControl).sendActions(for: .primaryActionTriggered)
             let destination = try await self.capture(window, name: "Home browse destination")
             XCTAssertTrue(destination.contains { $0.0.contains("Complete shelf") })
-            route.browser = nil
+            XCTAssertEqual(chrome.stackDepth, 1)
+            XCTAssertTrue(chrome.isChromeHidden)
+            route.path.removeLast()
             _ = try await self.snapshot(window, name: "Home browse returned")
+            XCTAssertEqual(chrome.stackDepth, 0)
+            XCTAssertFalse(chrome.isChromeHidden)
             let restored = try XCTUnwrap(self.focusableItem(at: point, in: window))
             let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
             let returned = XCTNSPredicateExpectation(
@@ -343,11 +338,33 @@ extension HomeRowArrangementHostedTests {
 }
 #endif
 
+#if os(tvOS)
 @MainActor
 @Observable
 private final class HomeBrowseNavigationProbe {
-    var browser: HomeRowBrowseModel?
+    var path = NavigationPath()
 }
+
+private struct HomeBrowseNavigationFixture: View {
+    @Bindable var route: HomeBrowseNavigationProbe
+    let browser: HomeRowBrowseModel
+    let chrome: NavigationChromeModel
+    let onFrame: (CGRect) -> Void
+
+    var body: some View {
+        NavigationStack(path: $route.path) {
+            MediaRowBrowseCard(width: 240, action: { route.path.append(browser) })
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onFrame($0) }
+                .navigationDestination(for: HomeRowBrowseModel.self) { browser in
+                    HomeRowBrowseView(model: browser, columns: [GridItem(.flexible())]) { item in
+                        Button(item.title) {}
+                    }
+                }
+        }
+        .reportsNavigationDepth(route.path.count, to: chrome)
+    }
+}
+#endif
 
 final class HomeRowsFocusHost: UIHostingController<AnyView> {
     weak var target: (any UIFocusEnvironment)?

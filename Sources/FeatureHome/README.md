@@ -49,16 +49,21 @@ card on Apple TV. The TV action is a separate native control, not a synthetic
 media item, and follows the rail's poster, landscape, or featured geometry.
 All TV Home layouts retain the complete `HomePresentationRow` source when
 opening the shared browser. Libraries and Live TV keep their existing navigation.
+TV row browsers use Home's navigation path, hiding top-level navigation as soon
+as they open. Opening a title adds another level; Back returns to the browser
+before returning to the original Home action. Browser scrolling does not move
+Home's retained top navigation.
 Browse actions appear only when the feed confirms additional eligible titles
 beyond the Home preview, not merely because the preview reaches its limit.
 Home requests one lookahead item in the existing bounded fetch; it does not
 probe every shelf again. Complete rows, including single-item shelves and
 uncapped Continue Watching snapshots, have no redundant browse action.
 Watchlist previews the first 20 titles in its existing Home order. When there
-are more, its action selects the existing Watchlist destination instead of
-opening a separate row browser. The full profile-scoped Watchlist and its saved
-sorting/filtering preferences remain intact. A hidden Watchlist navigation entry
-is available temporarily for this explicit visit without changing the saved layout.
+are more, TV pushes the existing Watchlist view beneath Home rather than switching
+top-level destinations. Mobile retains its existing Watchlist destination handoff,
+temporarily admitting a hidden navigation entry without changing the saved layout.
+Both reuse the full profile-scoped Watchlist and its saved sorting/filtering
+preferences instead of creating a separate row browser.
 The shared row browser's sort and filter menus sit at the trailing end of the
 TV heading and in the top-right navigation toolbar on iPhone/iPad. Watchlist
 and library grids use that same mobile toolbar placement, keeping supported

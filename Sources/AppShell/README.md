@@ -191,9 +191,12 @@ iPhone and iPad retain their existing carousel presentation.
 
 Settings is a normal destination in all three navigation shells. Its root keeps
 app navigation visible and available; categories and nested pages hide it.
-In the custom pinned and top-bar shells, programmatic destination changes,
-including Home's Watchlist See all action,
+In the custom pinned and top-bar shells, programmatic destination changes
 use the same rendered-presentation focus handoff as navigation selections.
+Home's See all pages, including Watchlist, instead push onto Home's existing
+navigation path. All three navigation styles hide their top-level controls
+until Back returns to Home; title details opened from a browser return to that
+browser first.
 An already pending handoff is preserved, including Back's navigation-focus target.
 Root Back restores navigation focus, while child Back restores its Settings row.
 The top-bar root reserves foreground clearance without moving subpage headers.

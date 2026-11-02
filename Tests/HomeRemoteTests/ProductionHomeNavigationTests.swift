@@ -2,6 +2,76 @@ import XCTest
 
 @MainActor
 final class ProductionHomeNavigationTests: XCTestCase {
+    func testShowAllPagesStayNestedAcrossNavigationStyles() throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        for navigation in ["--top-bar-home", "--pinned-home", "--native-sidebar-home"] {
+            for watchlist in [false, true] {
+                let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+                app.launchArguments = [
+                    "--production-home-fixture", "--home-browse-fixture",
+                    "--hero-disabled-home", "--real-root-pages", navigation
+                ] + (watchlist ? ["--home-browse-watchlist"] : [])
+                app.launch()
+                defer { app.terminate() }
+                XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
+                XCTAssertTrue(app.buttons[navigation == "--top-bar-home" ? "top-navigation-home" : "Home"].exists,
+                              app.debugDescription)
+                let action = app.buttons["See all"].firstMatch
+                if navigation == "--top-bar-home" { XCUIRemote.shared.press(.down) }
+                if navigation == "--native-sidebar-home" { XCUIRemote.shared.press(.right) }
+                for _ in 0..<30 {
+                    if action.exists && action.hasFocus { break }
+                    XCUIRemote.shared.press(.right)
+                }
+                XCTAssertTrue(action.exists, app.debugDescription)
+                XCTAssertTrue(action.hasFocus, app.debugDescription)
+                XCUIRemote.shared.press(.select)
+
+                let title = app.staticTexts[watchlist ? "watchlist-title" : "home-row-browser-title"]
+                let depth = app.staticTexts["home-detail-depth-probe"]
+                XCTAssertTrue(title.waitForExistence(timeout: 10), app.debugDescription)
+                waitForLabel("1", on: depth)
+                assertGlobalNavigationHidden(app, navigation: navigation)
+
+                let focusedMovie = app.buttons.matching(NSPredicate(
+                    format: "label BEGINSWITH %@ AND hasFocus == true", "Fixture movie "
+                )).firstMatch
+                for _ in 0..<3 {
+                    if focusedMovie.exists { break }
+                    XCUIRemote.shared.press(.down)
+                }
+                XCTAssertTrue(focusedMovie.exists, app.debugDescription)
+                let movie = focusedMovie.label
+                XCUIRemote.shared.press(.select)
+                XCTAssertTrue(app.staticTexts["Detail fixture \(movie)"].waitForExistence(timeout: 15))
+                waitForLabel("2", on: depth)
+                XCUIRemote.shared.press(.menu)
+                XCTAssertTrue(title.waitForExistence(timeout: 10), app.debugDescription)
+                waitForLabel("1", on: depth)
+                assertGlobalNavigationHidden(app, navigation: navigation)
+
+                XCUIRemote.shared.press(.menu)
+                waitForLabel("0", on: depth)
+                XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in action.exists && action.hasFocus }, object: nil
+                )], timeout: 5), .completed, app.debugDescription)
+                XCTAssertFalse(title.exists)
+            }
+        }
+        #else
+        throw XCTSkip("Uses an owned simulator with local fixture data.")
+        #endif
+    }
+
+    private func assertGlobalNavigationHidden(_ app: XCUIApplication, navigation: String) {
+        let controls = navigation == "--top-bar-home"
+            ? [app.buttons["top-navigation-home"], app.buttons["top-navigation-search"]]
+            : [app.buttons["Home"], app.buttons["Search"], app.buttons["Settings"]]
+        XCTAssertFalse(controls.contains(where: \.isHittable),
+                       "A nested browser must not expose global navigation: \(app.debugDescription)")
+    }
+
     func testHorizontalHomeWatchlistAndSearchForegroundClearance() throws {
         #if targetEnvironment(simulator)
         continueAfterFailure = false
