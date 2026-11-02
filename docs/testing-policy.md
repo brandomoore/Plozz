@@ -34,7 +34,10 @@ Native subtitle coverage adopts externally selected HLS renditions both
 immediately and after fixed callback-scheduling delays. Every case must retain
 the paused position and fence the previous extraction output; the delays are
 separate required cases, not retries. Failure diagnostics retain decoded cue
-timing, visible text, and the actual native selection.
+timing, visible text, and the actual native selection, plus the last 32 cue
+updates with their selection phase, extraction-output identity, and native
+rendering suppression. This distinguishes missing delivery from cues that
+arrived and were subsequently cleared without logging production captions.
 
 ## The two speed wins
 
@@ -405,7 +408,8 @@ their natural height, and the table/cells do not clip horizontal focus overflow.
 Before each folder open, the root's presented geometry and finite animations
 must settle. Fixture presentation is outside the unchanged 150 ms navigation
 ceiling; the timed window still includes the folder request and its resulting
-native layout.
+native layout. The worst sample also reports wake delay and forced-layout
+duration separately; neither component is subtracted from the asserted delay.
 This is isolated UI coverage, not a live-server network benchmark.
 
 `ShareFolderNavigationTests` launches `PlozzFocusHost --share-folder-fixture`
