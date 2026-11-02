@@ -13,11 +13,18 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
     public var id: HomeRowID { choice.id }
 
     public var canBrowse: Bool {
+        supportsBrowsing()
+    }
+
+    /// A loaded-count threshold changes the browse action, not the rail's items or paging.
+    public func supportsBrowsing(loadedItemThreshold: Int? = nil) -> Bool {
         switch source {
         case let .home(row):
-            return row.hasMore && !row.items.isEmpty && row.loadingPlaceholderCount == 0 && row.failure == nil
+            return (loadedItemThreshold.map { row.items.count > $0 } ?? row.hasMore) && !row.items.isEmpty
+                && row.loadingPlaceholderCount == 0 && row.failure == nil
         case let .library(row):
-            return row.section.hasMore && !row.section.items.isEmpty && !row.isLoading
+            return (loadedItemThreshold.map { row.section.items.count > $0 } ?? row.section.hasMore)
+                && !row.section.items.isEmpty && !row.isLoading
                 && row.failure == nil && row.issue == nil
         case .liveTV:
             return false

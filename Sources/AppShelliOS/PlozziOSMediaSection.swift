@@ -8,6 +8,7 @@ enum PlozziOSMediaRailLayout {
     static let headingSpacing: CGFloat = 12
     static let visibleSpacing: CGFloat = 12
     static let shadowClearance: CGFloat = 10
+    static let desktopBrowseThreshold = 10
 
     static func sectionGap(metrics: PlozzMetrics) -> CGFloat {
         metrics.usesDesktopSizing ? metrics.rowSpacing : sectionSpacing

@@ -2,7 +2,7 @@
 import CoreModels
 import CoreUI
 import FeatureAuth
-import FeatureHomeCore
+@testable import FeatureHomeCore
 import HeroUI
 import Observation
 import SwiftUI
@@ -12,6 +12,129 @@ import XCTest
 
 @MainActor
 final class HomeLoadingLayoutTests: XCTestCase {
+    func testMacBrowseThresholdDoesNotShortenLoadedRowsOrChangeMobilePolicy() throws {
+        let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(.continueWatching) })
+        let threshold = PlozziOSMediaRailLayout.desktopBrowseThreshold
+        XCTAssertEqual(threshold, 10)
+        for count in [0, 1, 10, 11, 20, 40] {
+            let items = (0..<count).map { MediaItem(id: "\($0)", title: "Movie", kind: .movie) }
+            for hasMore in [false, true] {
+                var home = HomeRow(kind: .continueWatching, items: items)
+                home.hasMore = hasMore
+                let section = LibrarySection(id: "shelf", title: "Shelf", items: items, hasMore: hasMore)
+                for row in [
+                    HomePresentationRow(choice: choice, source: .home(home)),
+                    HomePresentationRow(choice: choice, source: .library(
+                        .init(section: section, isLoading: false, failure: nil)
+                    ))
+                ] {
+                    XCTAssertEqual(row.supportsBrowsing(loadedItemThreshold: threshold), count > 10)
+                    XCTAssertEqual(row.canBrowse, hasMore && count > 0)
+                    switch row.source {
+                    case let .home(value): XCTAssertEqual(value.items.count, count)
+                    case let .library(value): XCTAssertEqual(value.section.items.count, count)
+                    case .liveTV: XCTFail("Unexpected source")
+                    }
+                }
+                for (loading, failure): (Bool, AppError?) in [(true, nil), (false, .serverUnreachable)] {
+                    home.loadingPlaceholderCount = loading ? 20 : 0
+                    home.failure = failure
+                    XCTAssertFalse(HomePresentationRow(choice: choice, source: .home(home))
+                        .supportsBrowsing(loadedItemThreshold: threshold))
+                    XCTAssertFalse(HomePresentationRow(choice: choice, source: .library(
+                        .init(section: section, isLoading: loading, failure: failure)
+                    )).supportsBrowsing(loadedItemThreshold: threshold))
+                }
+            }
+        }
+        XCTAssertFalse(HomePresentationRow(choice: choice, source: .liveTV([]))
+            .supportsBrowsing(loadedItemThreshold: threshold))
+    }
+
+    func testRelatedBrowserKeepsTheWholeRowAndInvalidatesAfterProfileSwitch() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let entries = fixture.items.map {
+            RelatedEntry(related: .init(title: $0.title, kind: .movie, source: .tmdb), libraryItem: $0)
+        }
+        let model = PlozziOSRelatedSection.makeBrowser(entries: entries, appModel: fixture.app)
+        XCTAssertEqual(model.items.map(\.stablePresentationID), fixture.items.map(\.stablePresentationID))
+        XCTAssertEqual(model.items.count, 20)
+        XCTAssertFalse(model.hasMore)
+        await model.load()
+        XCTAssertNil(model.error)
+        XCTAssertEqual(model.items.count, 20)
+        let next = fixture.app.profiles.add(name: "Other", isAwaitingSetup: false)
+        defer {
+            fixture.app.profiles.remove(next.id)
+            for key in UserDefaults.standard.dictionaryRepresentation().keys
+            where key.components(separatedBy: ".").contains(next.id) {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        fixture.app.selectProfile(next.id)
+        await model.load()
+        XCTAssertFalse(model.scopeIsCurrent)
+        XCTAssertTrue(model.items.isEmpty)
+        XCTAssertEqual(model.error, .notFound)
+    }
+
+    func testRelatedChevronAppearsOnlyAboveTenItemsOnMac() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        var plainEdge: CGFloat?
+        for (isMac, count) in [(true, 10), (true, 11), (false, 11)] {
+            let entries = fixture.items.prefix(count).map {
+                RelatedEntry(related: .init(title: $0.title, kind: .movie, source: .tmdb), libraryItem: $0)
+            }
+            fixture.mount(
+                ScrollView {
+                    PlozziOSRelatedSection(entries: entries, inset: 52, onSelect: { _, _ in })
+                }
+                .environment(\.plozziOSIsRunningOnMac, isMac),
+                width: 1039
+            )
+            try await fixture.settle()
+            let image = renderedImage(fixture.window)
+            let edge = try rightmostHeaderInk(in: image)
+            if let plainEdge {
+                if isMac { XCTAssertGreaterThan(edge, plainEdge + 8) }
+                else { XCTAssertEqual(edge, plainEdge, accuracy: 1) }
+            } else { plainEdge = edge }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "related-chevron-mac-\(isMac)-items-\(count)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    private func rightmostHeaderInk(in image: UIImage) throws -> CGFloat {
+        let cgImage = try XCTUnwrap(image.cgImage)
+        let header = try XCTUnwrap(cgImage.cropping(to: CGRect(
+            x: 0, y: 0, width: 300 * image.scale, height: 32 * image.scale
+        )))
+        var pixels = [UInt8](repeating: 0, count: header.width * header.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: header.width, height: header.height, bitsPerComponent: 8,
+                bytesPerRow: header.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            ))
+            context.draw(header, in: CGRect(x: 0, y: 0, width: header.width, height: header.height))
+        }
+        var rightmost = 0
+        for y in 0..<header.height {
+            for x in 0..<header.width {
+                let offset = (y * header.width + x) * 4
+                if pixels[offset] > 72, pixels[offset + 1] > 72, pixels[offset + 2] > 72 {
+                    rightmost = max(rightmost, x)
+                }
+            }
+        }
+        XCTAssertGreaterThan(rightmost, 0)
+        return CGFloat(rightmost) / image.scale
+    }
+
     func testMacSizingPreservesMobileMetricsAndProfileDensity() {
         var previousWidth: CGFloat = 0
         for density in UIDensity.allCases {

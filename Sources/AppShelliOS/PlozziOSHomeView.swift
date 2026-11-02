@@ -210,7 +210,9 @@ struct PlozziOSHomeView: View {
     private let heroMetadataEnricher: HeroMetadataEnricher
 
     private func browseAction(for row: HomePresentationRow) -> (() -> Void)? {
-        guard row.canBrowse else { return nil }
+        guard row.supportsBrowsing(
+            loadedItemThreshold: isRunningOnMac ? PlozziOSMediaRailLayout.desktopBrowseThreshold : nil
+        ) else { return nil }
         if row.id == .global(.watchlist) { return openWatchlist }
         return { rowBrowser = viewModel.browseRow(row) }
     }
