@@ -27,7 +27,13 @@ struct ProfileSelectionView: View {
     @State private var profileOrder: [String] = []
     @State private var selectionAllowsManagement = false
     @State private var hasPresentedAuthorization = false
+    @State private var handoffPhase: HandoffPhase = .picker
+    @State private var handoffID = UUID()
     private var handoffAnimation: Animation? { reduceMotion ? nil : .smooth(duration: 0.48) }
+
+    private enum HandoffPhase {
+        case picker, clearing, moving
+    }
 
     private var presentsAuthorization: Bool {
         selectedProfileID != nil && (hasPresentedAuthorization
@@ -128,37 +134,63 @@ struct ProfileSelectionView: View {
             picker
                 .disabled(presentsAuthorization)
                 .accessibilityHidden(presentsAuthorization)
-            if presentsAuthorization {
+            if presentsAuthorization && handoffPhase == .moving {
                 ProfileAccessGateView(appState: appState, selectedProfile: selectedProfile) {
-                    withAnimation(handoffAnimation) {
-                        appState.profileFlow.cancelPickerAuthorization()
-                        selectedProfileID = nil
-                        hasPresentedAuthorization = false
-                    }
+                    cancelAuthorization()
                 }
                 .environment(\.pinProfileTransition, selectedProfile.map {
                     PINProfileTransition(
-                        profileID: $0.id, namespace: profileIdentity, avatarSize: ProfilePickerView.avatarSize
+                        profileID: $0.id, namespace: profileIdentity, avatarSize: ProfilePickerView.avatarSize,
+                        nameFont: ProfilePickerView.nameFont
                     )
                 })
                 .transition(.identity)
                 .zIndex(1)
             }
         }
-        .animation(handoffAnimation, value: presentsAuthorization)
         .onChange(of: presentsAuthorization) { _, presented in
-            if presented { hasPresentedAuthorization = true }
+            if presented {
+                hasPresentedAuthorization = true
+                beginHandoff()
+            }
+        }
+        .onExitCommand {
+            if presentsAuthorization { cancelAuthorization() }
         }
         .onChange(of: appState.profileFlow.profilePickerSelectionID) { _, selection in
             if selection == nil {
                 selectedProfileID = nil
                 hasPresentedAuthorization = false
+                handoffID = UUID()
+                handoffPhase = .picker
             }
         }
         .onDisappear {
+            handoffID = UUID()
             if !appState.profileFlow.isChoosingProfile {
                 appState.profileFlow.finishProfilePickerPresentation()
             }
+        }
+    }
+
+    private func beginHandoff() {
+        let requestID = UUID()
+        handoffID = requestID
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2), completionCriteria: .removed) {
+            handoffPhase = .clearing
+        } completion: {
+            guard handoffID == requestID, presentsAuthorization, handoffPhase == .clearing else { return }
+            withAnimation(handoffAnimation) { handoffPhase = .moving }
+        }
+    }
+
+    private func cancelAuthorization() {
+        handoffID = UUID()
+        withAnimation(handoffAnimation) {
+            appState.profileFlow.cancelPickerAuthorization()
+            selectedProfileID = nil
+            hasPresentedAuthorization = false
+            handoffPhase = .picker
         }
     }
 
@@ -173,6 +205,7 @@ struct ProfileSelectionView: View {
                 selectionAllowsManagement = !appState.profileFlow.managementRequiresParentalPIN
                 selectedProfileID = profile.id
                 hasPresentedAuthorization = false
+                handoffPhase = .picker
                 appState.profileFlow.selectProfileFromPicker(to: profile.id)
             },
             // Withheld inside an enforced Kids Profile: creating a profile
@@ -186,7 +219,8 @@ struct ProfileSelectionView: View {
             onOpenSettings: { appState.profileFlow.requestSettingsFromProfileSelection() },
             showsPINLock: appState.accountsProviders.profileShowsPINLock,
             identityNamespace: profileIdentity,
-            isCovered: presentsAuthorization
+            isCovered: handoffPhase == .moving,
+            isClearingForHandoff: handoffPhase != .picker
         )
         // tvOS Menu button: the picker is rendered as a top-level view (not a
         // sheet / NavigationStack push), so without this handler Menu falls
@@ -196,7 +230,11 @@ struct ProfileSelectionView: View {
         // - !canCancel: first launch / no active profile yet — consume the event
         //   silently so Menu can't exit the app from the mandatory picker.
         .onExitCommand {
-            if canCancel { appState.profileFlow.cancelProfileSelection() }
+            if presentsAuthorization {
+                cancelAuthorization()
+            } else if canCancel {
+                appState.profileFlow.cancelProfileSelection()
+            }
         }
         .plozzSheet(item: $route, onDismiss: {
             // Perform a parked hand-off only now that the previous sheet is

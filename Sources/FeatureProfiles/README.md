@@ -58,6 +58,9 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
 - **Continuous tvOS PIN handoff.** Selecting a profile retains the picker behind
   its parental, local, and Plex authorization steps. Its avatar and name share
   the mobile PIN transition; Plex verification keeps the selected Plozz identity.
+  The surrounding picker elements fade and lift away before the identity moves.
+  Animation completion, not a timer, advances that handoff; cancelled or replaced
+  selections cannot advance it. The name and lock keep their picker typography.
   Recency changes do not move the source tile during authorization. The covered
   picker cannot receive input or accessibility focus. Menu returns to the chosen
   tile using the normal visible-layout focus entry, without a timed correction.

@@ -31,7 +31,7 @@ final class ProfilePINTransitionInteractionTests: XCTestCase {
         let sourceFrame = viewer.frame
         capture(app, name: "Profile handoff source, reduced motion \(reduceMotion)")
         XCUIRemote.shared.press(.select)
-        let identity = app.staticTexts["profile-pin-name"]
+        let identity = app.descendants(matching: .any)["profile-pin-name"]
         XCTAssertTrue(identity.waitForExistence(timeout: 5))
         XCTAssertTrue(identity.label.contains("Locked viewer"))
         XCTAssertFalse(viewer.isHittable, "The retained picker must not remain interactive.")

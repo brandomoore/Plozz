@@ -13,6 +13,7 @@ import CoreUI
 /// Profiles"); the launch picker hides it.
 public struct ProfilePickerView: View {
     public static var avatarSize: CGFloat { ProfilePickerLayout.avatarSize }
+    public static var nameFont: Font { ProfilePickerLayout.nameFont }
     private let profiles: [Profile]
     private let activeProfileID: String?
     private let title: LocalizedStringResource
@@ -32,6 +33,8 @@ public struct ProfilePickerView: View {
     private let showsPINLock: (Profile) -> Bool
     private let identityNamespace: Namespace.ID?
     private let isCovered: Bool
+    private let isClearingForHandoff: Bool
+    private var isTransitioning: Bool { isCovered || isClearingForHandoff }
     @Namespace private var fallbackIdentity
     @State private var selectedForReturnID: String?
 
@@ -49,7 +52,8 @@ public struct ProfilePickerView: View {
         onOpenSettings: (() -> Void)? = nil,
         showsPINLock: @escaping (Profile) -> Bool = { $0.showsPINLock },
         identityNamespace: Namespace.ID? = nil,
-        isCovered: Bool = false
+        isCovered: Bool = false,
+        isClearingForHandoff: Bool = false
     ) {
         self.profiles = profiles
         self.activeProfileID = activeProfileID
@@ -63,6 +67,7 @@ public struct ProfilePickerView: View {
         self.showsPINLock = showsPINLock
         self.identityNamespace = identityNamespace
         self.isCovered = isCovered
+        self.isClearingForHandoff = isClearingForHandoff
     }
 
 
@@ -164,6 +169,7 @@ public struct ProfilePickerView: View {
             Text(title)
                 .font(.system(size: 56, weight: .bold))
                 .foregroundStyle(palette.primaryText)
+                .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
 
             // One horizontal run rather than a wrapping grid. Profiles are a
             // short list you scan left-to-right, and a single row keeps the
@@ -176,6 +182,7 @@ public struct ProfilePickerView: View {
                         VStack(spacing: 20) {
                             ProfileTile(
                                 profile: profile, showsLock: showsPINLock(profile),
+                                isSelected: isTransitioning && profile.id == selectedForReturnID,
                                 identity: PINProfileTransition(
                                     profileID: isCovered ? "retained-\(profile.id)" : profile.id,
                                     namespace: identityNamespace ?? fallbackIdentity
@@ -192,9 +199,13 @@ public struct ProfilePickerView: View {
                             .animation(nil) { content in
                                 content.opacity(isCovered && profile.id == selectedForReturnID ? 0 : 1)
                             }
+                            .modifier(ProfilePickerDeparture(
+                                isDeparting: isClearingForHandoff && profile.id != selectedForReturnID
+                            ))
 
                             if let onEditProfile {
                                 editButton(for: profile, onEdit: onEditProfile)
+                                    .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
                             }
                         }
                         // Keep each profile's tile and its Edit button in one
@@ -211,6 +222,7 @@ public struct ProfilePickerView: View {
                         )
                         .focused($focus, equals: .add)
                         .disabled(awaitingInitialProfileFocus)
+                        .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
                     }
                     if let onAddKidsProfile {
                         AddProfileTile(
@@ -221,6 +233,7 @@ public struct ProfilePickerView: View {
                         )
                         .focused($focus, equals: .addKids)
                         .disabled(awaitingInitialProfileFocus)
+                        .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
                     }
                 }
                 .padding(.horizontal, ProfilePickerLayout.rowPadding)
@@ -236,6 +249,7 @@ public struct ProfilePickerView: View {
                     .disabled(awaitingInitialProfileFocus)
                     .padding(.top, 8)
                     .focusSection()
+                    .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -256,17 +270,18 @@ public struct ProfilePickerView: View {
                 .padding(.horizontal, ProfilePickerLayout.rowPadding)
                 .padding(.top, 32)
                 .focusSection()
+                .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
             }
         }
         .opacity(isCovered ? 0 : 1)
-        .disabled(isCovered)
+        .disabled(isTransitioning)
         .background {
             ProfilePickerFocusEntry(isPending: awaitingInitialProfileFocus) {
                 if let id = defaultFocusID { focus = .profile(id) }
             }
-            .id(isCovered)
+            .id(isTransitioning)
         }
-        .onChange(of: isCovered) { _, covered in
+        .onChange(of: isTransitioning) { _, covered in
             focus = nil
             if !covered { hasFocusedProfile = false }
         }
@@ -449,12 +464,13 @@ private struct TileCentersKey: PreferenceKey {
 private struct ProfileTile: View {
     let profile: Profile
     let showsLock: Bool
+    let isSelected: Bool
     let identity: PINProfileTransition
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            ProfileTileLabel(profile: profile, showsLock: showsLock, identity: identity)
+            ProfileTileLabel(profile: profile, showsLock: showsLock, isSelected: isSelected, identity: identity)
         }
         .plozzCardFocusButtonStyle(
             ProfileTileButtonStyle(), cornerRadius: ProfilePickerLayout.avatarSize / 2,
@@ -518,6 +534,7 @@ private extension EnvironmentValues {
 private struct ProfileTileLabel: View {
     let profile: Profile
     let showsLock: Bool
+    let isSelected: Bool
     let identity: PINProfileTransition
 
     @Environment(\.isFocused) private var isFocused
@@ -532,10 +549,21 @@ private struct ProfileTileLabel: View {
 
             ProfileNameLabel(profile: profile, showsLock: showsLock)
                 .font(ProfilePickerLayout.nameFont)
-                .foregroundStyle(isFocused ? palette.primaryText : palette.secondaryText)
+                .foregroundStyle(isFocused || isSelected ? palette.primaryText : palette.secondaryText)
                 .lineLimit(1)
                 .matchedGeometryEffect(id: identity.nameID, in: identity.namespace, properties: .position)
         }
+    }
+}
+
+private struct ProfilePickerDeparture: ViewModifier {
+    let isDeparting: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isDeparting ? 0 : 1)
+            .offset(y: isDeparting && !reduceMotion ? -12 : 0)
     }
 }
 

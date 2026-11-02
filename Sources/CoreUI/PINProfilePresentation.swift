@@ -6,11 +6,16 @@ public struct PINProfileTransition: Equatable {
     public let profileID: String
     public let namespace: Namespace.ID
     public let avatarSize: CGFloat
+    public let nameFont: Font
 
-    public init(profileID: String, namespace: Namespace.ID, avatarSize: CGFloat = 88) {
+    public init(
+        profileID: String, namespace: Namespace.ID, avatarSize: CGFloat = 88,
+        nameFont: Font = .title2.weight(.bold)
+    ) {
         self.profileID = profileID
         self.namespace = namespace
         self.avatarSize = avatarSize
+        self.nameFont = nameFont
     }
 
     public var avatarID: String { "\(profileID).avatar" }
@@ -123,8 +128,8 @@ private struct PINProfileIdentity<Badge: View>: View {
             badge()
                 .matchedGeometryEffect(id: transition.avatarID, in: transition.namespace)
                 .accessibilityHidden(true)
-            PINIdentityName(name: name, showsLock: showsLock)
-                .font(.title2.weight(.bold))
+            identityName
+                .font(transition.nameFont)
                 .foregroundStyle(palette.primaryText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -156,6 +161,24 @@ private struct PINProfileIdentity<Badge: View>: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profile-pin-identity")
+    }
+
+    private var identityName: some View {
+        #if os(tvOS)
+        HStack(spacing: 6) {
+            name
+            if showsLock {
+                Image(systemName: "lock.fill")
+                    .font(.caption2.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(name)
+        .accessibilityValue(showsLock ? Text(ProfileLockCopy.title) : Text(verbatim: ""))
+        #else
+        PINIdentityName(name: name, showsLock: showsLock)
+        #endif
     }
 }
 
