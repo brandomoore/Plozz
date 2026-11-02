@@ -23,7 +23,9 @@ public struct LiveTVGuidePreparationStatus: View {
                                 ProgressView(value: fraction) {
                                     Text(progress.title)
                                 } currentValueLabel: {
-                                    Text(fraction, format: .percent.precision(.fractionLength(0)))
+                                    if progress.stage != .downloading {
+                                        Text(fraction, format: .percent.precision(.fractionLength(0)))
+                                    }
                                 }
                                 .progressViewStyle(.linear)
                             } else {

@@ -773,6 +773,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Guide progress uses a leading spinner centered beside a left-aligned title and
   detail column, with dismissal centered at the trailing edge. Determinate
   progress stays in the text column so stage changes preserve horizontal alignment.
+  Downloads show transferred and total bytes below the bar, without a redundant
+  numeric percentage.
   Mobile feedback uses `adaptiveStatusOverlay` to keep a 16-point gap above the
   visible native bottom navigation, toolbar, or search bar, falling back to the
   bottom safe area when none is present. Layout changes animate over 0.25 seconds;

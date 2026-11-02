@@ -434,7 +434,8 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
         XCTAssertNotNil(preparation.notificationStatus)
         text = try visibleText()
         XCTAssertTrue(text.contains("Downloading guide"), text)
-        XCTAssertTrue(text.contains("25%"), text)
+        XCTAssertFalse(text.contains("%"), text)
+        XCTAssertTrue(text.contains("2.5 MB of 10 MB"), text)
         let browseFrame = try textFrame("Downloading guide", in: snapshot(window))
         XCTAssertEqual(browseFrame.minY, sourcesFrame.minY, accuracy: 1)
         XCTAssertGreaterThan(browseFrame.minY, window.bounds.midY)
@@ -442,6 +443,12 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
         attachment.name = "guide-progress-toast-download"
         attachment.lifetime = .keepAlways
         add(attachment)
+
+        await provider.emit(.init(stage: .downloading, completed: 2_500_000))
+        try await settle(window)
+        text = try visibleText()
+        XCTAssertTrue(text.contains("2.5 MB downloaded"), text)
+        XCTAssertFalse(text.contains("%"), text)
 
         await provider.emit(.init(stage: .readingGuide, completed: 35_000))
         try await settle(window)
