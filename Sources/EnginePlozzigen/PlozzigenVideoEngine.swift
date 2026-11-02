@@ -306,6 +306,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         format: VideoFormat,
         generation: UInt
     ) {
+        // Native live HLS returns before inspecting its video track. Its reset
+        // SDR value is not source evidence until a video description arrives.
+        if liveAttemptGate.activeGeneration != nil {
+            guard engine.sourceVideoWidth > 0, engine.sourceVideoHeight > 0 else { return }
+        }
         let range = sourceRange(for: format)
         guard probePublicationGate.record(range, generation: generation) else { return }
         let facts = makeProbedSourceFacts(range: range)
@@ -320,9 +325,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         sourceFormatCancellable = engine.$sourceVideoFormat
             .dropFirst()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] format in
-                self?.publishProbedSourceFacts(
-                    format: format,
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.publishProbedSourceFacts(
+                    format: self.engine.sourceVideoFormat,
                     generation: generation
                 )
             }
@@ -691,7 +697,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         defer { finishOutputLoad(outputGeneration, policy: outputPolicy) }
         let liveGeneration = beginLiveAttempt()
         liveDeliveryFailure = PlaybackDeliveryFailure.state(for: url)
-        _ = probePublicationGate.beginLoad()
+        let probeGeneration = probePublicationGate.beginLoad()
         sourceFormatCancellable?.cancel()
         sourceFormatCancellable = nil
         suppressFailureCallbackForForegroundReload = false
@@ -721,7 +727,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             var options = liveLoadOptions(httpHeaders: httpHeaders, url: url, sourceFormat: sourceFormat)
             Self.applyLiveOutputPolicy(outputPolicy, to: &options)
             try await engine.load(url: url, options: options)
-            guard liveAttemptGate.accepts(liveGeneration) else { return }
+            guard liveAttemptGate.accepts(liveGeneration),
+                  probePublicationGate.accepts(probeGeneration), !Task.isCancelled else { return }
             if case .error(let message) = engine.state {
                 reportLiveFailure(
                     message,
@@ -730,6 +737,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 )
                 return
             }
+            beginObservingLateSourceFormatChanges(generation: probeGeneration)
+            publishProbedSourceFacts(format: engine.sourceVideoFormat, generation: probeGeneration)
+            guard liveAttemptGate.accepts(liveGeneration), !Task.isCancelled else { return }
             stage = .audioSession
             // Aether's load prologue awaits its detached category/multichannel
             // declaration. Activate only after that boundary: the bare

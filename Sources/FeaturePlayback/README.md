@@ -345,6 +345,10 @@ The retained preview clears its local exit veil after collapse. Profile
 dynamic-range and frame-rate fade preferences apply; guide channel browsing,
 secondary multiview panes, and mobile playback do not acquire an HDMI veil.
 Ready SDR preview/fullscreen transitions still use the in-place engine path.
+Live loads publish generation-fenced source range after probing and when native
+HLS discovers its video description later. The native mount's provisional SDR
+default is not evidence; confirmed source facts release the probe-aware veil
+without waiting for its safety timeout.
 
 Mobile transport buttons, timelines, and tabs use native **clear** Liquid Glass,
 without tint or a colored backing. Like AVKit video chrome, their symbols and
