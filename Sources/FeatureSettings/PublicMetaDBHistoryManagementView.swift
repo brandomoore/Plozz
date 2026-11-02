@@ -102,8 +102,10 @@ struct PublicMetaDBHistoryRecordView: View {
             } label: { Text(action.label) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(action.explanation)
-            Text("Other apps connected to PublicMetaDB may also react to this change.")
+            publicMetaDBConfirmationMessage(
+                Text(action.explanation),
+                Text("Other apps connected to PublicMetaDB may also react to this change.")
+            )
         }
         .onChange(of: service.connectionID) { _, _ in
             confirming = false
@@ -140,6 +142,13 @@ struct PublicMetaDBHistoryDateView: View {
     private struct Draft {
         let date: PublicMetaDB.WatchDate
         let connectionID: UUID
+
+        var dateLabel: Text {
+            if case .known(let date) = date {
+                return Text(date, format: .dateTime.year().month().day().hour().minute())
+            }
+            return Text("Watch date unknown")
+        }
     }
 
     private var selectedDate: PublicMetaDB.WatchDate? {
@@ -227,13 +236,11 @@ struct PublicMetaDBHistoryDateView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { draft in
-            if case .known(let date) = draft.date {
-                Text(date, format: .dateTime.year().month().day().hour().minute())
-            } else {
-                Text("Watch date unknown")
-            }
-            if existing == nil { Text("This creates another play; it does not replace earlier plays.") }
-            Text("Other apps connected to PublicMetaDB may also react to this change.")
+            publicMetaDBConfirmationMessage(
+                draft.dateLabel,
+                existing == nil ? Text("This creates another play; it does not replace earlier plays.") : nil,
+                Text("Other apps connected to PublicMetaDB may also react to this change.")
+            )
         }
         .task {
             guard !initialized else { return }

@@ -67,8 +67,10 @@ struct PublicMetaDBBulkHistoryView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { draft in
-            Text("Only these \(draft.records.count) selected records will be removed. This cannot be undone by Plozz.")
-            Text("Other apps connected to PublicMetaDB may also react to this change.")
+            publicMetaDBConfirmationMessage(
+                Text("Only these \(draft.records.count) selected records will be removed. This cannot be undone by Plozz."),
+                Text("Other apps connected to PublicMetaDB may also react to this change.")
+            )
         }
         .task(id: Request(connection: service.connectionID, page: page, reload: reload)) {
             let request = UUID()

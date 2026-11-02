@@ -175,6 +175,14 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testCreatePrivateAcceptanceList() throws {
+        try createAcceptanceList(isPublic: false)
+    }
+
+    func testCreatePublicAcceptanceList() throws {
+        try createAcceptanceList(isPublic: true)
+    }
+
+    private func createAcceptanceList(isPublic: Bool) throws {
         let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"])
         try require(!name.isEmpty, "Expected the explicit test-list name")
         try openPublicMetaDBAccount()
@@ -183,12 +191,19 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(field)
         field.typeText(name)
         XCTAssertEqual(app.switches["Public list"].value as? String, "0")
+        if isPublic {
+            try tapVisible(app.switches["Public list"].switches.firstMatch)
+            XCTAssertEqual(app.switches["Public list"].value as? String, "1")
+        }
         app.swipeUp()
         let confirm = app.buttons.matching(NSPredicate(
             format: "label == %@ AND identifier != %@", "Create list", "publicmetadb.list.create"
         )).firstMatch
         try tapVisible(app.buttons["publicmetadb.list.create"])
         try require(confirm.waitForExistence(timeout: 5), "Expected list confirmation")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", isPublic ? "will be public" : "will be private"
+        )).firstMatch.exists)
         try dismissConfirmation()
         try require(confirm.waitForNonExistence(timeout: 5), "Expected cancellation to dismiss confirmation")
         XCTAssertTrue(app.textFields["publicmetadb.list.name"].exists)
@@ -197,7 +212,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(confirm.isHittable, "Expected the confirmation action, not the underlying form")
         confirm.tap()
         try require(app.staticTexts["List created on PublicMetaDB"].waitForExistence(timeout: 45),
-                    "Expected independently confirmed private-list creation")
+                    "Expected independently confirmed list creation")
     }
 
     func testBrowseExactAcceptanceList() throws {
@@ -205,6 +220,93 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Private"].exists)
         try tapVisible(app.buttons["Browse items"])
         try require(app.staticTexts["No records"].waitForExistence(timeout: 30), "Expected an empty new list")
+    }
+
+    func testBrowseEmptyPublicAcceptanceList() throws {
+        try openAcceptanceList()
+        XCTAssertTrue(app.staticTexts["Public"].exists)
+        try tapVisible(app.buttons["Browse items"])
+        try require(app.staticTexts["No records"].waitForExistence(timeout: 30), "Expected an empty public list")
+    }
+
+    func testPrepareAcceptanceListAddition() throws {
+        try testBrowseUnknownHistoryPlay()
+        try tapVisible(app.buttons["Title controls"])
+        try tapVisible(app.buttons["Add to a list"])
+        let choice = try acceptanceListChoice()
+        try tapVisible(choice)
+        try require(app.buttons["Add to list"].waitForExistence(timeout: 5), "Expected list-add confirmation")
+        let disclosure = app.popovers.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "This list is public. Other people can see its contents."
+        )).firstMatch
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 5))
+        XCTAssertTrue(disclosure.label.contains("Changes to a watchlist destination can propagate"))
+    }
+
+    func testCancelAcceptanceListAddition() throws {
+        try require(app.buttons["Add to list"].exists, "Expected the prepared list addition")
+        try dismissConfirmation()
+        XCTAssertTrue(app.buttons["Add to list"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(try acceptanceListChoice().isEnabled)
+    }
+
+    func testConfirmAcceptanceListAddition() throws {
+        try require(app.buttons["Add to list"].exists, "Expected the prepared list addition")
+        try tapVisible(app.buttons["Add to list"])
+        try require(app.alerts["PublicMetaDB"].staticTexts["Added to list"].waitForExistence(timeout: 30),
+                    "Expected confirmed list membership")
+        try tapVisible(app.alerts["PublicMetaDB"].buttons["OK"])
+    }
+
+    func testPrepareAcceptanceListRemoval() throws {
+        try openAcceptanceList()
+        XCTAssertTrue(app.staticTexts["Public"].exists)
+        try tapVisible(app.buttons["Browse items"])
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        let item = app.buttons.containing(.staticText, identifier: title)
+        try require(item.firstMatch.waitForExistence(timeout: 30) && item.count == 1,
+                    "Expected exactly the independently verified list item")
+        try tapVisible(item.element)
+        try tapVisible(app.buttons["Remove from list"])
+        try require(app.popovers.buttons["Remove from list"].waitForExistence(timeout: 5),
+                    "Expected the exact-entry removal confirmation")
+    }
+
+    func testCancelAcceptanceListRemoval() throws {
+        try require(app.popovers.buttons["Remove from list"].exists, "Expected the prepared list removal")
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Remove from list"].exists)
+    }
+
+    func testConfirmAcceptanceListRemoval() throws {
+        try tapVisible(app.popovers.buttons["Remove from list"])
+        try require(app.staticTexts["Item removed from this list"].waitForExistence(timeout: 30),
+                    "Expected confirmed exact-entry removal")
+    }
+
+    func testOpenPublicAcceptanceListURL() throws {
+        let value = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_URL"])
+        let url = try XCTUnwrap(URLComponents(string: value))
+        try require(url.scheme == "https" && url.host == "publicmetadb.com"
+                    && url.user == nil && url.password == nil && url.query == nil && url.fragment == nil,
+                    "Expected the verified public list URL")
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["Open a public list"])
+        let field = app.textFields["PublicMetaDB list URL"]
+        try tapVisible(field)
+        field.typeText(value)
+        try tapVisible(app.buttons["Open list"])
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        try require(app.staticTexts[title].waitForExistence(timeout: 30), "Expected the real public-list item")
+    }
+
+    private func acceptanceListChoice() throws -> XCUIElement {
+        let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"])
+        let choices = app.buttons.containing(.staticText, identifier: name)
+        try require(choices.firstMatch.waitForExistence(timeout: 10) && choices.count == 1,
+                    "Expected exactly the named test-owned list")
+        return choices.element
     }
 
     func testBrowseUnknownHistoryPlay() throws {
@@ -221,6 +323,38 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertEqual(app.buttons["publicmetadb.history.action"].label, "Delete this play")
         XCTAssertTrue(app.staticTexts["Watch date unknown"].exists)
         XCTAssertTrue(app.buttons["Change watch date"].exists)
+    }
+
+    func testCancelHistoryDateChange() throws {
+        try cancelHistoryDateConfirmation(addingPlay: false)
+    }
+
+    func testCancelNewHistoryPlay() throws {
+        try cancelHistoryDateConfirmation(addingPlay: true)
+    }
+
+    private func cancelHistoryDateConfirmation(addingPlay: Bool) throws {
+        try testBrowseUnknownHistoryPlay()
+        try tapVisible(app.buttons[addingPlay ? "Add another play" : "Change watch date"])
+        let unknown = app.switches["Watch date unknown"]
+        try tapVisible(unknown, tapping: false)
+        if addingPlay {
+            XCTAssertEqual(unknown.value as? String, "0")
+            try tapVisible(unknown.switches.firstMatch)
+        }
+        XCTAssertEqual(unknown.value as? String, "1")
+        try tapVisible(app.buttons["publicmetadb.history.review-date"])
+        try require(app.buttons["Save play"].waitForExistence(timeout: 5), "Expected the reviewed play draft")
+        let disclosure = app.popovers.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "Other apps connected to PublicMetaDB may also react to this change."
+        )).firstMatch
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 5))
+        XCTAssertTrue(disclosure.label.contains("Watch date unknown"))
+        XCTAssertEqual(disclosure.label.contains("This creates another play; it does not replace earlier plays."),
+                       addingPlay)
+        try dismissConfirmation()
+        XCTAssertTrue(app.buttons["Save play"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["publicmetadb.history.review-date"].exists)
     }
 
     func testPrepareExactListDeletion() throws {

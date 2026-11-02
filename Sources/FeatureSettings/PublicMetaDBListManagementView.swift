@@ -4,6 +4,11 @@ import Observation
 import PublicMetaDBService
 import SwiftUI
 
+// Native dialogs can drop sibling message views; retain all paragraphs in one Text.
+func publicMetaDBConfirmationMessage(_ first: Text, _ remaining: Text?...) -> Text {
+    remaining.compactMap { $0 }.reduce(first) { Text("\($0)\n\n\($1)") }
+}
+
 @MainActor
 @Observable
 final class PublicMetaDBMutationOperation {
@@ -252,8 +257,10 @@ struct PublicMetaDBAddToListView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { list in
-            Text("Adds this title to “\(list.name)”. PublicMetaDB also undrops shows when added. Changes to a watchlist destination can propagate to other enabled destinations.")
-            if list.isPublic { Text("This list is public. Other people can see its contents.") }
+            publicMetaDBConfirmationMessage(
+                Text("Adds this title to “\(list.name)”. PublicMetaDB also undrops shows when added. Changes to a watchlist destination can propagate to other enabled destinations."),
+                list.isPublic ? Text("This list is public. Other people can see its contents.") : nil
+            )
         }
         .alert("PublicMetaDB", isPresented: Binding(
             get: { operation.succeeded || operation.failure != nil },

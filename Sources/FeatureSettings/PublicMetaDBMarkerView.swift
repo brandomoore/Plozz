@@ -76,22 +76,37 @@ private struct PublicMetaDBSkipDescription: View {
     let skip: PublicMetaDB.Skip
     var body: some View {
         VStack(alignment: .leading) {
-            switch skip.source {
-            case .streaming: Text("Streaming release")
-            case .physical: Text("Physical release")
-            case nil: Text("Release source unknown")
-            }
+            sourceLabel
             if let segment = skip.intro { LabeledContent("Intro") { PublicMetaDBSegmentLabel(segment: segment) } }
             if let segment = skip.credits { LabeledContent("Credits") { PublicMetaDBSegmentLabel(segment: segment) } }
             if let segment = skip.recap { LabeledContent("Recap") { PublicMetaDBSegmentLabel(segment: segment) } }
             if let segment = skip.preview { LabeledContent("Preview") { PublicMetaDBSegmentLabel(segment: segment) } }
         }
     }
+
+    private var sourceLabel: Text {
+        switch skip.source {
+        case .streaming: Text("Streaming release")
+        case .physical: Text("Physical release")
+        case nil: Text("Release source unknown")
+        }
+    }
+
+    var confirmationText: Text {
+        publicMetaDBConfirmationMessage(
+            sourceLabel,
+            skip.intro.map { Text("\(Text("Intro")): \(PublicMetaDBSegmentLabel(segment: $0).text)") },
+            skip.credits.map { Text("\(Text("Credits")): \(PublicMetaDBSegmentLabel(segment: $0).text)") },
+            skip.recap.map { Text("\(Text("Recap")): \(PublicMetaDBSegmentLabel(segment: $0).text)") },
+            skip.preview.map { Text("\(Text("Preview")): \(PublicMetaDBSegmentLabel(segment: $0).text)") }
+        )
+    }
 }
 
 private struct PublicMetaDBSegmentLabel: View {
     let segment: PublicMetaDB.Segment
-    var body: some View {
+    var body: some View { text }
+    var text: Text {
         Text("\(segment.startMilliseconds.formatted())–\(segment.endMilliseconds.formatted()) ms")
     }
 }
@@ -238,10 +253,17 @@ private struct PublicMetaDBMarkerEditor: View {
             Button("Cancel", role: .cancel) {}
         } message: { draft in
             switch draft {
-            case .skip(let skip, _): PublicMetaDBSkipDescription(skip: skip)
-            case .highlight(let highlight, _): PublicMetaDBSegmentLabel(segment: highlight.segment)
+            case .skip(let skip, _):
+                publicMetaDBConfirmationMessage(
+                    PublicMetaDBSkipDescription(skip: skip).confirmationText,
+                    Text("Public on PublicMetaDB. Plozz does not change server markers or enable automatic skipping.")
+                )
+            case .highlight(let highlight, _):
+                publicMetaDBConfirmationMessage(
+                    PublicMetaDBSegmentLabel(segment: highlight.segment).text,
+                    Text("Public on PublicMetaDB. Plozz does not change server markers or enable automatic skipping.")
+                )
             }
-            Text("Public on PublicMetaDB. Plozz does not change server markers or enable automatic skipping.")
         }
         .onChange(of: service.connectionID) { _, _ in
             confirming = false

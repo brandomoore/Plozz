@@ -96,12 +96,11 @@ private struct PublicMetaDBWatchlistConsent: View {
     let name: String
     let isPublic: Bool
     var body: some View {
-        Text("Your existing and future Plozz watchlist choices can add or remove movies and shows in “\(name)”. Its items appear in Plozz, and changes can propagate to your other enabled watchlist destinations. PublicMetaDB also undrops shows when added. Watched history and progress are not imported.")
-        if isPublic {
-            Text("This list is public. Other people can see its contents.")
-        } else {
-            Text("This list is currently private on PublicMetaDB.")
-        }
+        publicMetaDBConfirmationMessage(
+            Text("Your existing and future Plozz watchlist choices can add or remove movies and shows in “\(name)”. Its items appear in Plozz, and changes can propagate to your other enabled watchlist destinations. PublicMetaDB also undrops shows when added. Watched history and progress are not imported."),
+            isPublic ? Text("This list is public. Other people can see its contents.")
+                : Text("This list is currently private on PublicMetaDB.")
+        )
     }
 }
 #endif

@@ -259,8 +259,9 @@ struct PublicMetaDBVoteView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { draft in
-            voteLabel(draft.vote)
-            Text("This affects only your vote on this community contribution.")
+            publicMetaDBConfirmationMessage(
+                voteLabel(draft.vote), Text("This affects only your vote on this community contribution.")
+            )
         }
         .onChange(of: service.connectionID) { _, _ in
             confirming = false
@@ -276,7 +277,7 @@ struct PublicMetaDBVoteView: View {
         confirming = true
     }
 
-    @ViewBuilder private func voteLabel(_ vote: PublicMetaDB.Vote?) -> some View {
+    private func voteLabel(_ vote: PublicMetaDB.Vote?) -> Text {
         switch vote {
         case .up: Text("Upvote")
         case .down: Text("Downvote")

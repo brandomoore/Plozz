@@ -6,6 +6,11 @@ in Plozz** uses the shell's normal detail route rather than a second playback or
 request implementation. Child history uses **Open show in Plozz** because server
 episode numbering must be resolved by the normal show page.
 
+PublicMetaDB confirmations compose every paragraph into one localized `Text`
+through `publicMetaDBConfirmationMessage`. Native dialogs can omit sibling
+message views, hiding visibility, propagation or publication disclosures.
+Keep the reviewed date, vote or timestamp details in that same message.
+
 Mobile customization choice groups use the same Settings cards and content
 insets, including contained groups such as Hero content sources. TV row sizing
 does not select a different mobile section style. Enabled switches keep the

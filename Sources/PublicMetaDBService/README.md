@@ -273,6 +273,21 @@ never automatically repeated. Ambiguous addition/removal/deletion is accepted
 only when complete readback proves the requested result. Deleting the selected
 destination first stops its automatic writes without deleting server history.
 Profile/key changes close the account browser and fence all outstanding requests.
+
+Real iPhone-simulator acceptance covers private/public creation, visibility
+confirmation, public-URL resolution, exact movie membership add/remove, and
+cancelled/confirmed owned-list deletion. The public URL was obtained from the
+actual anonymous website, not inferred from the credential's local label.
+Independent API reads verified the same list and movie, cancellation preserving
+membership, and HTTP 404 by both ID and URL after deleting the disposable list.
+Other lists and the tracked movie/episode histories on the dedicated Emby,
+Jellyfin and Plex identities stayed unchanged.
+
+This testing exposed a native dialog dropping sibling message paragraphs.
+Shared Settings confirmations now compose the reviewed details and disclosures
+into one localized `Text`. Real public-add and play-date/new-play cancellation
+screens verified complete messages; this does not establish live acceptance
+of the remaining watchlist or community-contribution workflows.
 The live API stores omitted list descriptions as empty strings. Creation and
 readback treat those two empty representations equally, while still rejecting
 changed nonempty descriptions or visibility.
