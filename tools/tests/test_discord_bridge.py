@@ -663,6 +663,103 @@ class APITests(unittest.TestCase):
             BRIDGE.inspect_discord(discord)
 
 
+class TestFlightGuideTests(unittest.TestCase):
+    def setUp(self):
+        channel = {
+            "id": THREAD, "guild_id": BRIDGE.GUILD, "name": "testflight", "type": 0,
+            "permission_overwrites": [
+                {"id": BRIDGE.GUILD, "type": 0, "allow": "0", "deny": str(1 << 11)},
+                {"id": BRIDGE.BOT, "type": 1, "allow": str(1 << 11), "deny": "0"},
+            ],
+        }
+
+        class GuideDiscord(Discord):
+            def call(self, method, path, data=None, query=None):
+                if method == "GET":
+                    if path == "/users/@me":
+                        return {"id": BRIDGE.BOT, "bot": True}
+                    if path == f"/guilds/{BRIDGE.GUILD}/channels":
+                        return copy.deepcopy(self.threads)
+                    if path == f"/guilds/{BRIDGE.GUILD}/members/{BRIDGE.BOT}":
+                        return {"roles": []}
+                    if path == f"/guilds/{BRIDGE.GUILD}/roles":
+                        return [{"id": BRIDGE.GUILD, "permissions": str(sum(1 << bit for bit in (10, 11, 14, 16)))}]
+                result = super().call(method, path, data, query)
+                if self.fail_after_create and method == "POST":
+                    self.fail_after_create = False
+                    raise BRIDGE.BridgeError("Ambiguous guide creation.")
+                return result
+
+        self.discord = GuideDiscord([channel])
+        self.discord.messages[THREAD] = []
+
+    def publish(self):
+        with redirect_stdout(io.StringIO()):
+            BRIDGE.publish_testflight_guide(self.discord)
+
+    def test_existing_channel_gets_one_verified_bot_guide_without_pings(self):
+        self.publish()
+        self.publish()
+        self.assertEqual(len(self.discord.messages[THREAD]), 1)
+        self.assertEqual(len(self.discord.writes), 1)
+        method, path, data = self.discord.writes[0]
+        self.assertEqual((method, path), ("POST", f"/channels/{THREAD}/messages"))
+        self.assertEqual(data["allowed_mentions"]["parse"], [])
+        self.assertTrue(data["enforce_nonce"])
+        embed = data["embeds"][0]
+        self.assertEqual(embed["footer"]["text"], BRIDGE.FOOTER + "guide:testflight")
+        for text in ("https://plozz.app/testflight/", "https://testflight.apple.com/join/EKfReNMu",
+                     "App Store release", "Expect bugs", "90 days", "same App Store account",
+                     "public GitHub issues"):
+            self.assertIn(text, embed["description"])
+        self.assertLessEqual(len(embed["description"].encode("utf-16-le")) // 2, 4096)
+
+    def test_republication_updates_the_bot_guide_but_never_a_human_message(self):
+        self.publish()
+        human = copy.deepcopy(self.discord.messages[THREAD][0])
+        human.update(id=SECOND, author={"id": PERSON, "bot": False})
+        self.discord.messages[THREAD].append(human)
+        self.discord.messages[THREAD][0]["embeds"][0]["description"] = "Outdated beta instructions."
+        self.publish()
+        self.assertEqual(len(self.discord.messages[THREAD]), 2)
+        self.assertEqual(self.discord.writes[-1][0], "PATCH")
+        self.assertEqual(self.discord.messages[THREAD][-1], human)
+
+    def test_ambiguous_send_recovers_without_duplicate(self):
+        self.discord.fail_after_create = True
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "Ambiguous"):
+            self.publish()
+        self.publish()
+        self.assertEqual(len(self.discord.messages[THREAD]), 1)
+        self.assertEqual(len(self.discord.writes), 1)
+
+    def test_missing_duplicate_wrong_server_or_writable_channel_stops_before_writing(self):
+        original = copy.deepcopy(self.discord.threads)
+        for channels in (
+            [], original * 2, [{**original[0], "guild_id": "another-server"}],
+            [{**original[0], "type": 15}],
+            [{**original[0], "permission_overwrites": []}],
+        ):
+            self.discord.threads = channels
+            with self.subTest(channels=channels), self.assertRaises(BRIDGE.BridgeError):
+                self.publish()
+            self.assertEqual(self.discord.writes, [])
+
+    def test_bot_send_permission_and_unique_marker_are_required(self):
+        self.discord.threads[0]["permission_overwrites"].pop()
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "Send Messages"):
+            self.publish()
+        self.assertEqual(self.discord.writes, [])
+        self.discord.threads[0]["permission_overwrites"].append(
+            {"id": BRIDGE.BOT, "type": 1, "allow": str(1 << 11), "deny": "0"}
+        )
+        self.publish()
+        self.discord.messages[THREAD].append(copy.deepcopy(self.discord.messages[THREAD][0]))
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "Duplicate"):
+            self.publish()
+        self.assertEqual(len(self.discord.writes), 1)
+
+
 class PostingGuideTests(unittest.TestCase):
     def setUp(self):
         self.discord = Discord(threads=[])
@@ -783,6 +880,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("COPILOT", guides)
         self.assertNotIn("issues:", guides)
         self.assertIn("inputs.mode != 'publish-guides'", WORKFLOW)
+        self.assertIn("inputs.mode == 'publish-testflight-guide'", guides)
+        self.assertIn("inputs.mode != 'publish-testflight-guide'", WORKFLOW)
 
     def test_guide_cli_requires_explicit_repository_dispatch_without_github_or_model_access(self):
         with patch.object(BRIDGE.sys, "argv", ["discord-bridge.py", "--mode", "publish-guides"]):
@@ -798,6 +897,23 @@ class WorkflowTests(unittest.TestCase):
                 BRIDGE.main()
                 api.assert_called_once_with("Discord", "test-token", write=True)
                 publish.assert_called_once_with(api.return_value, inspect.return_value)
+                matcher.assert_not_called()
+
+    def test_testflight_guide_dispatch_uses_only_the_existing_bot(self):
+        with patch.object(BRIDGE.sys, "argv", ["discord-bridge.py", "--mode", "publish-testflight-guide"]):
+            with patch.dict(os.environ, {}, clear=True), self.assertRaisesRegex(BRIDGE.BridgeError, "explicit workflow"):
+                BRIDGE.main()
+            with patch.dict(os.environ, {
+                "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REPOSITORY": BRIDGE.REPO,
+                "DISCORD_BOT_TOKEN": "test-token",
+            }, clear=True), patch.object(BRIDGE, "API") as api, \
+                    patch.object(BRIDGE, "publish_testflight_guide") as publish, \
+                    patch.object(BRIDGE, "inspect_discord") as inspect, \
+                    patch.object(BRIDGE, "CopilotMatcher") as matcher:
+                BRIDGE.main()
+                api.assert_called_once_with("Discord", "test-token", write=True)
+                publish.assert_called_once_with(api.return_value)
+                inspect.assert_not_called()
                 matcher.assert_not_called()
 
 

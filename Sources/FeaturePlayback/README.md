@@ -1126,6 +1126,10 @@ AetherEngine analysis measures encoded borders in SDR, HDR10/HDR10+, HLG, and
 Dolby Vision output, using existing frames
 and no additional decoder or stream. It scales and translates the original surface
 uniformly, including asymmetric borders, and caps automatic magnification at 2x.
+The detected picture fits the full player bounds, not the safe area, preserving
+its aspect ratio without deliberately trimming picture content. Video may extend
+behind the Dynamic Island or other display cutouts; controls retain their safe-area
+placement. Aspect-ratio differences can still leave bars.
 Unknown, stale, unsupported or invalid measurements use Normal. Sparse detection
 can miss changing edge content; fitting is best effort, not a guarantee against
 clipping tickers or burned-in captions. Dark or uninformative frames cannot

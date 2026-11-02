@@ -31,6 +31,25 @@ MODEL = "gpt-6.1-sol"
 EFFORT = "high"
 THUMBS_UP = "\U0001f44d"
 PUBLIC_NOTICE = "Posts and replies automatically sync to GitHub"
+TESTFLIGHT_GUIDE = {
+    "title": "Try the Plozz TestFlight beta",
+    "url": "https://plozz.app/testflight/",
+    "description": (
+        "TestFlight is for trying upcoming changes, not the usual App Store release. "
+        "Expect bugs, unfinished features, and occasional playback or settings problems.\n\n"
+        "**[Join the beta](https://testflight.apple.com/join/EKfReNMu)**\n"
+        "[Setup and beta details](https://plozz.app/testflight/) · "
+        "[App Store release](https://apps.apple.com/app/plozz-player/id6782668147)\n\n"
+        "The beta replaces the App Store copy on that device. Builds expire after up to "
+        "90 days, so keep TestFlight updated.\n\n"
+        "**Apple TV:** Install TestFlight on your Apple TV and an iPhone or iPad. "
+        "Accept the public invitation on the iPhone or iPad, then open TestFlight on "
+        "Apple TV using the same App Store account.\n\n"
+        "Send feedback through TestFlight or post in the bugs forum. Include your device "
+        "and Plozz version/build. Discord bug reports sync to public GitHub issues, "
+        "so leave out passwords and private information."
+    ),
+}
 POSTING_GUIDES = {
     "bug": (
         "Start here: How to report a bug",
@@ -490,6 +509,53 @@ def publish_guides(discord, channels):
     print("Pin each guide in its forum using a moderator account. Bot-created guides are excluded from issue mirroring.")
 
 
+def publish_testflight_guide(discord):
+    user = discord.call("GET", "/users/@me")
+    if user.get("id") != BOT or user.get("bot") is not True:
+        raise BridgeError("The Discord credential does not identify the configured bot.")
+    channels = discord.call("GET", f"/guilds/{GUILD}/channels")
+    matches = [
+        channel for channel in channels
+        if channel.get("name", "").casefold() == "testflight" and channel.get("type") in (0, 5)
+    ]
+    if len(matches) != 1:
+        raise BridgeError("Expected one existing #testflight text channel; no channel was created.")
+    channel = discord.call("GET", f"/channels/{snowflake(matches[0]['id'])}")
+    if channel.get("guild_id") != GUILD or channel.get("name", "").casefold() != "testflight" or channel.get("type") not in (0, 5):
+        raise BridgeError("The TestFlight channel changed or belongs to another server.")
+    require_channel_permissions(discord, channel, {
+        "View Channel": 10, "Send Messages": 11, "Embed Links": 14, "Read Message History": 16,
+    })
+    read_only = any(
+        overwrite.get("id") == GUILD and overwrite.get("type") == 0
+        and int(overwrite.get("deny", 0)) & (1 << 11)
+        and not int(overwrite.get("allow", 0)) & (1 << 11)
+        for overwrite in channel.get("permission_overwrites", [])
+    )
+    if not read_only:
+        raise BridgeError("Set #testflight to deny Send Messages for @everyone before publishing its read-only guide. No permissions were changed.")
+    messages = thread_messages(discord, channel["id"])
+    key = "guide:testflight"
+    discord_upsert(discord, channel, messages, key, TESTFLIGHT_GUIDE)
+    matches = [
+        message for message in messages
+        if message.get("author", {}).get("id") == BOT
+        and len(message.get("embeds", [])) == 1
+        and message["embeds"][0].get("footer", {}).get("text") == FOOTER + key
+    ]
+    if len(matches) != 1:
+        raise BridgeError("The bot guide was not uniquely identified after publication.")
+    message = discord.call("GET", f"/channels/{channel['id']}/messages/{snowflake(matches[0]['id'])}")
+    expected = {**TESTFLIGHT_GUIDE, "footer": {"text": FOOTER + key}}
+    if (
+        message.get("author", {}).get("id") != BOT or message.get("author", {}).get("bot") is not True
+        or len(message.get("embeds", [])) != 1
+        or any(message["embeds"][0].get(name) != value for name, value in expected.items())
+    ):
+        raise BridgeError("The published TestFlight guide did not pass readback verification.")
+    print(f"TestFlight guide verified: {message_link(channel['id'], message['id'])}")
+
+
 def voters(discord, thread, starter, channel):
     default = channel.get("default_reaction_emoji") or {"emoji_name": THUMBS_UP}
     users = set()
@@ -873,13 +939,16 @@ def sync(discord, github, matcher, channels, since, dry_run=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("preflight", "dry-run", "sync", "publish-guides"), default="preflight")
+    parser.add_argument("--mode", choices=("preflight", "dry-run", "sync", "publish-guides", "publish-testflight-guide"), default="preflight")
     args = parser.parse_args()
-    if args.mode == "publish-guides":
+    if args.mode in ("publish-guides", "publish-testflight-guide"):
         if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch" or os.environ.get("GITHUB_REPOSITORY") != REPO:
             raise BridgeError("Posting guides require an explicit workflow dispatch in this repository.")
         discord = API("Discord", os.environ.get("DISCORD_BOT_TOKEN"), write=True)
-        publish_guides(discord, inspect_discord(discord))
+        if args.mode == "publish-testflight-guide":
+            publish_testflight_guide(discord)
+        else:
+            publish_guides(discord, inspect_discord(discord))
         return
     if args.mode == "sync":
         if os.environ.get("DISCORD_BRIDGE_ENABLED") != "true":
