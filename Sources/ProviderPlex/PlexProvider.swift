@@ -1113,10 +1113,13 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         // Player selection uses container indexes; Plex's transcoder takes its
         // database stream IDs. Keep the player's identities out of this mapping.
         var transcodeOptions = streaming
-        if let audio = streaming?.audioTrack {
-            transcodeOptions?.audioTrack?.id = (part.Stream ?? []).first {
+        let audioStream = streaming?.audioTrack.flatMap { audio in
+            (part.Stream ?? []).first {
                 $0.streamType == 2 && ($0.index ?? $0.id) == audio.id
-            }?.id ?? audio.id
+            }
+        }
+        if let streamID = audioStream?.id {
+            transcodeOptions?.audioTrack?.id = streamID
         }
         if let subtitle = streaming?.subtitleTrack {
             transcodeOptions?.subtitleTrack?.id = (part.Stream ?? []).first {
@@ -1138,6 +1141,16 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         var negotiatedCodec: DirectPlayVideoCodec?
         var deliveryMode: PlaybackDiagnostics.PlaybackMode = resolved.isTranscoding ? .transcode : .directPlay
         if let streaming, resolved.isTranscoding {
+            if streaming.audioTrack != nil {
+                guard let partID = part.id, partID > 0,
+                      let streamID = audioStream?.id, streamID > 0 else {
+                    PlozzLog.playback.error("Plex audio selection is missing a native part or stream identifier.")
+                    throw StreamingQualityError.sourceUnavailable
+                }
+                // Plex's transcoder reads the user's part selection, not just
+                // audioStreamID in the decision/start query.
+                try await client.selectAudioStream(streamID, partID: partID)
+            }
             do {
                 let decision = try await client.validateStreamingTranscode(url: resolved.url, options: streaming)
                 negotiatedCodec = decision.codec

@@ -129,6 +129,11 @@ class FixtureServer:
                                         "languageCode": "eng", "default": True}
                                    ]}]}]
                     }]}})
+                elif endpoint == "/library/parts/8" and self.command == "PUT":
+                    if query.get("audioStreamID") != "1" or query.get("allParts") != "1":
+                        self.send_error(400)
+                        return
+                    self.reply({})
                 elif endpoint.endswith("/decision"):
                     session = query.get("session")
                     if not session:
@@ -181,6 +186,7 @@ class FixtureServer:
             do_GET = handle_request
             do_HEAD = handle_request
             do_POST = handle_request
+            do_PUT = handle_request
             do_DELETE = handle_request
 
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)

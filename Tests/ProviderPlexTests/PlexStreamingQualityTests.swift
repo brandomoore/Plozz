@@ -137,6 +137,7 @@ final class PlexStreamingQualityTests: XCTestCase {
         decision: String? = nil, status: Int = 200, http: StubHTTPClient = StubHTTPClient(),
         container: String = "mp4", videoCodec: String = "h264", audioCodec: String = "aac",
         streams: String = #"{"id":2,"streamType":2,"codec":"aac","languageCode":"eng","default":true}"#,
+        partID: Int? = 8,
         transport: (any HTTPClient)? = nil
     ) -> PlexProvider {
         http.stub(pathSuffix: "/video/:/transcode/universal/decision", json: decision ?? """
@@ -144,11 +145,12 @@ final class PlexStreamingQualityTests: XCTestCase {
           "Metadata":[{"Media":[{"container":"mp4","videoCodec":"h264","width":426,"height":240}]}]}}
         """, status: status)
         http.stub(pathSuffix: "/video/:/transcode/universal/stop", json: "{}")
+        http.stub(pathSuffix: "/library/parts/8", json: "", status: 204)
         http.stub(pathSuffix: "/library/metadata/movie", json: """
         {"MediaContainer":{"Metadata":[{"ratingKey":"movie","title":"Movie","type":"movie","Media":[
           {"id":7,"container":"\(container)","videoCodec":"\(videoCodec)","audioCodec":"\(audioCodec)",
            "bitrate":\(bitrate.map(String.init) ?? "null"),"width":\(width),"height":\(height),
-           "Part":[{"id":8,"key":"/library/parts/8/file.mp4","Stream":[\(streams)]}]}]}]}}
+           "Part":[{"id":\(partID.map(String.init) ?? "null"),"key":"/library/parts/8/file.mp4","Stream":[\(streams)]}]}]}]}}
         """)
         return PlexProvider(session: .init(
             server: .init(id: "plex", name: "Plex", baseURL: URL(string: "https://plex.example.test")!, provider: .plex),
@@ -162,6 +164,150 @@ final class PlexStreamingQualityTests: XCTestCase {
             throw AppError.invalidResponse
         }
         return locator
+    }
+
+    func testAudioSwitchPersistsTheServerStreamBeforeEachTranscodeDecision() async throws {
+        let http = StubHTTPClient()
+        let provider = fixture(http: http, streams: """
+        {"id":101,"index":1,"streamType":2,"codec":"aac","languageTag":"rus","selected":true},
+        {"id":202,"index":2,"streamType":2,"codec":"aac","languageTag":"eng"}
+        """)
+        var sessions = Set<String>()
+        for (index, language, streamID) in [(1, "rus", 101), (2, "eng", 202), (1, "rus", 101)] {
+            var options = StreamingPlaybackOptions(quality: .hd720, codec: .preferH264)
+            options.audioTrack = .init(id: index, kind: .audio, displayTitle: language, language: language)
+            let request = try await provider.playbackInfo(
+                for: "movie", mediaSourceID: "7", forceTranscode: false, streaming: options
+            )
+            XCTAssertEqual(Array(http.sentPaths.suffix(3)), [
+                "/library/metadata/movie", "/library/parts/8", "/video/:/transcode/universal/decision"
+            ])
+            XCTAssertEqual(http.method(forPathSuffix: "/library/parts/8"), .put)
+            let selection = try XCTUnwrap(http.queryItems(forPathSuffix: "/library/parts/8"))
+            XCTAssertEqual(selection.first { $0.name == "audioStreamID" }?.value, String(streamID))
+            XCTAssertEqual(selection.first { $0.name == "allParts" }?.value, "1")
+            XCTAssertFalse(selection.contains { $0.name == "subtitleStreamID" })
+            let selectionIndex = try XCTUnwrap(http.sentPaths.lastIndex(of: "/library/parts/8"))
+            XCTAssertEqual(http.sentHeaders[selectionIndex]["X-Plex-Token"], "fixture")
+            XCTAssertEqual(http.sentHeaders[selectionIndex]["X-Plex-Client-Identifier"], "device")
+            let decision = try XCTUnwrap(http.queryItems(forPathSuffix: "/decision"))
+            XCTAssertEqual(decision.first { $0.name == "audioStreamID" }?.value, String(streamID))
+            XCTAssertEqual(try locator(request).resource.queryItems.first { $0.name == "audioStreamID" }?.value,
+                           String(streamID))
+            XCTAssertEqual(request.streamingOptions?.audioTrack?.id, index)
+            XCTAssertEqual(request.streamingOptions?.quality, .hd720)
+            XCTAssertTrue(sessions.insert(try XCTUnwrap(request.streamingSessionID)).inserted)
+        }
+    }
+
+    func testAudioSelectionUsesTheChosenVersionsPartAndDatabaseStreamID() async throws {
+        let http = StubHTTPClient()
+        http.stub(pathSuffix: "/library/metadata/movie", json: """
+        {"MediaContainer":{"Metadata":[{"ratingKey":"movie","title":"Movie","type":"movie","Media":[
+          {"id":7,"container":"mp4","videoCodec":"h264","audioCodec":"aac","bitrate":30000,
+           "Part":[{"id":8,"key":"/library/parts/8/file.mp4","Stream":[
+             {"id":101,"index":1,"streamType":2,"codec":"aac","languageCode":"eng"}]}]},
+          {"id":9,"container":"mp4","videoCodec":"h264","audioCodec":"aac","bitrate":30000,
+           "Part":[{"id":10,"key":"/library/parts/10/file.mp4","Stream":[
+             {"id":303,"index":1,"streamType":2,"codec":"aac","languageCode":"eng"}]}]}
+        ]}]}}
+        """)
+        http.stub(pathSuffix: "/library/parts/10", json: "")
+        let request = try await fixture(http: http).playbackInfo(
+            for: "movie", mediaSourceID: "9", forceTranscode: false,
+            streaming: .init(quality: .hd720)
+        )
+        XCTAssertFalse(http.sentPaths.contains("/library/parts/8"))
+        XCTAssertEqual(http.queryItems(forPathSuffix: "/library/parts/10")?.first { $0.name == "audioStreamID" }?.value,
+                       "303")
+        XCTAssertEqual(http.queryItems(forPathSuffix: "/decision")?.first { $0.name == "mediaIndex" }?.value, "1")
+        XCTAssertEqual(try locator(request).mediaSourceID, "9")
+        XCTAssertEqual(request.streamingOptions?.audioTrack?.id, 1)
+    }
+
+    func testInitialTranscodePersistsTheResolvedAudioSelection() async throws {
+        let http = StubHTTPClient()
+        let provider = fixture(http: http, streams: """
+        {"id":101,"index":1,"streamType":2,"codec":"aac","languageTag":"rus","default":true},
+        {"id":202,"index":2,"streamType":2,"codec":"aac","languageTag":"eng"}
+        """)
+        let request = try await provider.playbackInfo(
+            for: "movie", mediaSourceID: "7", forceTranscode: false,
+            streaming: .init(quality: .hd720)
+        )
+        XCTAssertEqual(http.queryItems(forPathSuffix: "/library/parts/8")?.first { $0.name == "audioStreamID" }?.value,
+                       "101")
+        XCTAssertEqual(request.streamingOptions?.audioTrack?.id, 1)
+    }
+
+    func testDirectPlaybackDoesNotWriteServerAudioSelection() async throws {
+        let http = StubHTTPClient()
+        var options = StreamingPlaybackOptions(quality: .original)
+        options.audioTrack = .init(id: 2, kind: .audio, displayTitle: "English", language: "eng")
+        let request = try await fixture(http: http, streams: """
+        {"id":101,"index":1,"streamType":2,"codec":"aac","languageTag":"rus","default":true},
+        {"id":202,"index":2,"streamType":2,"codec":"aac","languageTag":"eng"}
+        """).playbackInfo(for: "movie", mediaSourceID: "7", forceTranscode: false, streaming: options)
+        XCTAssertFalse(request.isTranscoding)
+        XCTAssertEqual(request.streamingOptions?.audioTrack?.id, 2)
+        XCTAssertEqual(http.sentPaths, ["/library/metadata/movie"])
+    }
+
+    func testFailedAudioSelectionDoesNotNegotiateOrPublishTheWrongTrack() async {
+        for (status, error) in [(401, AppError.unauthorized), (404, .notFound), (500, .invalidResponse)] {
+            let http = StubHTTPClient()
+            http.stub(pathSuffix: "/library/parts/8", json: "", status: status)
+            do {
+                _ = try await fixture(http: http).playbackInfo(
+                    for: "movie", mediaSourceID: "7", forceTranscode: false,
+                    streaming: .init(quality: .hd720)
+                )
+                XCTFail("An audio selection failure must not publish the default soundtrack")
+            } catch let actual as AppError {
+                XCTAssertEqual(actual, error)
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/decision") || $0.hasSuffix("/stop") })
+        }
+    }
+
+    func testTranscodeAudioSelectionRejectsMissingNativeIdentifiers() async {
+        for (partID, streamID) in [(nil, 101), (0, 101), (8, nil), (8, 0)] as [(Int?, Int?)] {
+            let http = StubHTTPClient()
+            do {
+                _ = try await fixture(http: http, streams: """
+                {"id":\(streamID.map(String.init) ?? "null"),"index":1,"streamType":2,"codec":"aac","default":true}
+                """, partID: partID).playbackInfo(
+                    for: "movie", mediaSourceID: "7", forceTranscode: false,
+                    streaming: .init(quality: .hd720)
+                )
+                XCTFail("A container index must never replace a missing Plex database identifier")
+            } catch {
+                XCTAssertEqual(error as? StreamingQualityError, .sourceUnavailable)
+            }
+            XCTAssertEqual(http.sentPaths, ["/library/metadata/movie"])
+        }
+    }
+
+    func testCancellationAfterAudioSelectionDoesNotStartANewRendition() async {
+        let http = StubHTTPClient()
+        let provider = fixture(
+            http: http, transport: CancellationCheckingHTTPClient(stub: http, cancelAfterAudioSelection: true)
+        )
+        let attempt = Task {
+            try await provider.playbackInfo(
+                for: "movie", mediaSourceID: "7", forceTranscode: false,
+                streaming: .init(quality: .hd720)
+            )
+        }
+        do {
+            _ = try await attempt.value
+            XCTFail("Cancellation must not publish a rendition")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(http.sentPaths, ["/library/metadata/movie", "/library/parts/8"])
     }
 
     func testCompatibilityDeliveryAllowsCopyWithoutRelaxingQualityOrChangingTheSession() async throws {
@@ -846,11 +992,15 @@ private struct CancellationCheckingHTTPClient: HTTPClient {
     let stub: StubHTTPClient
     var cancelAfterDecision = false
     var cancelAfterPing = false
+    var cancelAfterAudioSelection = false
 
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
         try Task.checkCancellation()
         let result = try await stub.send(endpoint, baseURL: baseURL)
         if cancelAfterPing, endpoint.path.hasSuffix("/ping") {
+            withUnsafeCurrentTask { $0?.cancel() }
+        }
+        if cancelAfterAudioSelection, endpoint.method == .put, endpoint.path.hasPrefix("/library/parts/") {
             withUnsafeCurrentTask { $0?.cancel() }
         }
         return result
