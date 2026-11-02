@@ -256,8 +256,8 @@ replaying an old delivery after someone independently changes the remote list.
 Read-before-write cannot provide a transaction against concurrent remote editors.
 
 Confirmation discloses existing/future watchlist changes, propagation to other
-enabled destinations, public-list visibility and PublicMetaDB's automatic
-undropping of shows added to lists. It does not authorize watched-history or
+enabled destinations, public-list visibility and the possibility of PublicMetaDB
+undropping shows added to lists. It does not authorize watched-history or
 progress imports.
 
 ## List management
@@ -342,6 +342,15 @@ preserved the newer state. After a fresh confirmation, the selected resume staye
 absent across relaunch. Other tracker resumes, watched plays, lists and drops,
 and dedicated media-server positions/history remained unchanged. Those controlled
 API edits are concurrency setup, not evidence of additional playback.
+
+Real show-drop testing verified cancellation, exact drop/undrop across relaunch,
+movie/episode controls excluding show-level drops, and automatic undropping after
+an explicitly added episode play. A documented upstream side effect did not
+occur in the live list tests: adding that show to either a custom list or a
+watchlist created the correct membership but left the dropped record intact.
+List-add and sync consent therefore disclose possible undropping, not a guarantee.
+Plozz does not issue an additional undrop request to manufacture the side effect;
+the explicit undrop action remains available.
 
 ## Optional community ratings
 

@@ -182,7 +182,11 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try createAcceptanceList(isPublic: true)
     }
 
-    private func createAcceptanceList(isPublic: Bool) throws {
+    func testCreatePrivateWatchlistAcceptanceList() throws {
+        try createAcceptanceList(isPublic: false, watchlist: true)
+    }
+
+    private func createAcceptanceList(isPublic: Bool, watchlist: Bool = false) throws {
         let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"])
         try require(!name.isEmpty, "Expected the explicit test-list name")
         try openPublicMetaDBAccount()
@@ -194,6 +198,12 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         if isPublic {
             try tapVisible(app.switches["Public list"].switches.firstMatch)
             XCTAssertEqual(app.switches["Public list"].value as? String, "1")
+        }
+        if watchlist {
+            let kind = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "List type")).firstMatch
+            try tapVisible(kind)
+            try tapVisible(app.buttons["Watchlist"])
+            XCTAssertTrue(kind.label.contains("Watchlist") || kind.value as? String == "Watchlist")
         }
         app.swipeUp()
         let confirm = app.buttons.matching(NSPredicate(
@@ -583,6 +593,148 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertFalse(app.buttons.matching(NSPredicate(
             format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "publicmetadb.resume.record.", title
         )).firstMatch.exists)
+    }
+
+    private func openSelectedTitleControls() throws {
+        let card = try selectedTitleCard()
+        card.press(forDuration: 1)
+        try tapVisible(app.buttons["PublicMetaDB"])
+        try require(app.buttons["publicmetadb.open-title"].waitForExistence(timeout: 20),
+                    "Expected the selected title's tracker controls")
+    }
+
+    func testPrepareShowDrop() throws {
+        try openSelectedTitleControls()
+        try require(app.staticTexts["TV show"].exists, "Expected show-level identity, not the next episode")
+        try tapVisible(app.buttons["Drop show on PublicMetaDB"])
+        XCTAssertEqual(app.buttons["publicmetadb.history.action"].label, "Drop show")
+        try tapVisible(app.buttons["publicmetadb.history.action"])
+        try require(app.popovers.buttons["Drop show"].waitForExistence(timeout: 5), "Expected show-drop confirmation")
+        let message = app.popovers.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "Other apps connected to PublicMetaDB may also react to this change."
+        )).firstMatch
+        try require(message.waitForExistence(timeout: 5), "Expected the full show-drop disclosure")
+        XCTAssertTrue(message.label.contains("without deleting watch history"))
+        XCTAssertTrue(message.label.contains("Recording another episode or adding the show to a list can automatically undrop it."))
+        XCTAssertTrue(message.label.contains("Plozz does not change media-server state."))
+    }
+
+    func testCancelShowDrop() throws {
+        try require(app.popovers.buttons["Drop show"].exists, "Expected the prepared show drop")
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["publicmetadb.history.action"].isEnabled)
+    }
+
+    func testConfirmShowDrop() throws {
+        try tapVisible(app.popovers.buttons["Drop show"])
+        try require(app.staticTexts["Change confirmed on PublicMetaDB"].waitForExistence(timeout: 30),
+                    "Expected independently confirmed show drop")
+        XCTAssertFalse(app.buttons["publicmetadb.history.action"].exists)
+    }
+
+    func testPrepareShowUndrop() throws {
+        try openDroppedShow()
+        XCTAssertEqual(app.buttons["publicmetadb.history.action"].label, "Undrop title")
+        try tapVisible(app.buttons["publicmetadb.history.action"])
+        try require(app.popovers.buttons["Undrop title"].waitForExistence(timeout: 5), "Expected exact undrop confirmation")
+        let message = app.popovers.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "Other apps connected to PublicMetaDB may also react to this change."
+        )).firstMatch
+        try require(message.waitForExistence(timeout: 5), "Expected the full undrop disclosure")
+        XCTAssertTrue(message.label.contains("Watched history and media-server state are unchanged."))
+    }
+
+    private func openDroppedShow() throws {
+        let id = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_RECORD_ID"])
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        try require(!id.isEmpty, "Expected an independently observed dropped record")
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["Dropped titles"])
+        let record = app.buttons["publicmetadb.dropped.record.\(id)"]
+        try tapVisible(record, tapping: false)
+        XCTAssertTrue(record.label.contains(title))
+        XCTAssertTrue(record.label.contains("TV show"))
+        record.tap()
+    }
+
+    func testCancelShowUndrop() throws {
+        try require(app.popovers.buttons["Undrop title"].exists, "Expected the prepared undrop")
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["publicmetadb.history.action"].isEnabled)
+    }
+
+    func testConfirmShowUndrop() throws {
+        try tapVisible(app.popovers.buttons["Undrop title"])
+        try require(app.staticTexts["Change confirmed on PublicMetaDB"].waitForExistence(timeout: 30),
+                    "Expected the exact dropped title to be restored")
+        XCTAssertFalse(app.buttons["publicmetadb.history.action"].exists)
+    }
+
+    func testMovieHasNoShowDropControls() throws {
+        try openSelectedTitleControls()
+        try require(app.staticTexts["Movie"].exists, "Expected real movie identity")
+        XCTAssertTrue(app.buttons["Add a watched play"].exists)
+        XCTAssertFalse(app.buttons["Drop show on PublicMetaDB"].exists)
+        try tapVisible(app.buttons["Community and personal ratings"], tapping: false)
+        XCTAssertFalse(app.buttons["Drop show on PublicMetaDB"].exists)
+    }
+
+    func testPrepareShowListAddition() throws {
+        try openSelectedTitleControls()
+        try prepareShowListAddition()
+    }
+
+    func testPrepareDroppedShowListAddition() throws {
+        try openDroppedShow()
+        try tapVisible(app.buttons["Title controls"])
+        try prepareShowListAddition()
+    }
+
+    private func prepareShowListAddition() throws {
+        try require(app.staticTexts["TV show"].exists, "Expected the real show, not an episode")
+        try tapVisible(app.buttons["Add to a list"])
+        try tapVisible(acceptanceListChoice())
+        try require(app.popovers.buttons["Add to list"].waitForExistence(timeout: 5), "Expected the reviewed show addition")
+        let message = app.popovers.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "PublicMetaDB may undrop shows when added."
+        )).firstMatch
+        try require(message.waitForExistence(timeout: 5), "Expected the automatic-undrop disclosure")
+        XCTAssertTrue(message.label.contains("Changes to a watchlist destination can propagate"))
+        XCTAssertFalse(message.label.contains("This list is public."))
+    }
+
+    func testCancelWatchlistDestinationConsent() throws {
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["publicmetadb.watchlist"])
+        try require(app.staticTexts["Not syncing a list"].exists, "Expected no existing watchlist grant")
+        try tapVisible(app.buttons["publicmetadb.watchlist.choose"])
+        try tapVisible(acceptanceListChoice())
+        try require(app.popovers.buttons["Use this list"].waitForExistence(timeout: 5), "Expected separate sync consent")
+        let message = app.popovers.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "PublicMetaDB may undrop shows when added."
+        )).firstMatch
+        try require(message.waitForExistence(timeout: 5), "Expected conditional upstream effects, not guaranteed undropping")
+        XCTAssertTrue(message.label.contains("changes can propagate to your other enabled watchlist destinations"))
+        XCTAssertTrue(message.label.contains("Watched history and progress are not imported."))
+        XCTAssertTrue(message.label.contains("This list is currently private on PublicMetaDB."))
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["publicmetadb.watchlist"])
+        XCTAssertTrue(app.staticTexts["Not syncing a list"].exists)
+        XCTAssertFalse(app.buttons["publicmetadb.watchlist.disable"].exists)
+    }
+
+    func testEpisodeHasNoShowDropControls() throws {
+        try openHistoryPlay(expectedUnknownDate: true)
+        try tapVisible(app.buttons["Title controls"])
+        try require(app.staticTexts["Season 1, episode 3"].exists, "Expected exact episode identity")
+        XCTAssertTrue(app.buttons["Add a watched play"].exists)
+        XCTAssertFalse(app.buttons["Drop show on PublicMetaDB"].exists)
+        try tapVisible(app.buttons["Anime season mappings"], tapping: false)
+        XCTAssertFalse(app.buttons["Drop show on PublicMetaDB"].exists)
     }
 
     func testCancelHistoryDateChange() throws {
@@ -1012,6 +1164,11 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func openSelectedTitle() throws {
+        try selectedTitleCard().tap()
+        XCTAssertTrue(detailPlayButton.waitForExistence(timeout: 15))
+    }
+
+    private func selectedTitleCard() throws -> XCUIElement {
         let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
         app.terminate()
         app.launch()
@@ -1027,8 +1184,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         ))
         XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 30))
         try require(matches.count == 1, "Expected one exact title card in the selected libraries")
-        matches.element.tap()
-        XCTAssertTrue(detailPlayButton.waitForExistence(timeout: 15))
+        return matches.element
     }
 
     func testPlaySelectedMovie() async throws {

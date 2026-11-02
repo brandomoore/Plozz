@@ -258,7 +258,7 @@ struct PublicMetaDBAddToListView: View {
             Button("Cancel", role: .cancel) {}
         } message: { list in
             publicMetaDBConfirmationMessage(
-                Text("Adds this title to “\(list.name)”. PublicMetaDB also undrops shows when added. Changes to a watchlist destination can propagate to other enabled destinations."),
+                Text("Adds this title to “\(list.name)”. PublicMetaDB may undrop shows when added. Changes to a watchlist destination can propagate to other enabled destinations."),
                 list.isPublic ? Text("This list is public. Other people can see its contents.") : nil
             )
         }
