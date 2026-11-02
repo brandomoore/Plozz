@@ -6,6 +6,9 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     private let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz")
     private var startedPlayback = false
     private var authorizedLiveRun = false
+    private var preservesProcess: Bool {
+        ProcessInfo.processInfo.environment["PLOZZ_TRACKER_PRESERVE_PROCESS"] == "1"
+    }
 
     override func setUp() async throws {
         try await MainActor.run {
@@ -699,6 +702,99 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try openSelectedRatings()
         try assertRealRatings(evidence)
         recordState()
+    }
+
+    func testCommunityRatingLookupStartsDisabled() throws {
+        try openPublicMetaDBAccount()
+        let preference = app.switches["publicmetadb.ratings"]
+        try tapVisible(preference, tapping: false)
+        XCTAssertEqual(preference.value as? String, "0")
+        try assertRealCommunityRatingLookup(enabled: false)
+    }
+
+    func testEnableCommunityRatingLookup() throws {
+        try openPublicMetaDBAccount()
+        let preference = app.switches["publicmetadb.ratings"]
+        try tapVisible(preference, tapping: false)
+        XCTAssertEqual(preference.value as? String, "0")
+        try tapVisible(preference.switches.firstMatch)
+        XCTAssertEqual(preference.value as? String, "1")
+        recordState()
+        try openPublicMetaDBAccount()
+        XCTAssertEqual(app.switches["publicmetadb.ratings"].value as? String, "1")
+        try assertRealCommunityRatingLookup(enabled: true)
+    }
+
+    func testReadEnabledCommunityRatingLookup() throws {
+        try openPublicMetaDBAccount()
+        XCTAssertEqual(app.switches["publicmetadb.ratings"].value as? String, "1")
+        try assertRealCommunityRatingLookup(enabled: true)
+    }
+
+    func testReadCommunityRatingDetailSameProcess() throws {
+        XCTAssertTrue(preservesProcess)
+        try assertRealCommunityRatingLookup(enabled: true)
+    }
+
+    func testDisableCommunityRatingLookup() throws {
+        try openPublicMetaDBAccount()
+        let preference = app.switches["publicmetadb.ratings"]
+        try tapVisible(preference, tapping: false)
+        XCTAssertEqual(preference.value as? String, "1")
+        try tapVisible(preference.switches.firstMatch)
+        XCTAssertEqual(preference.value as? String, "0")
+        recordState()
+        try openPublicMetaDBAccount()
+        XCTAssertEqual(app.switches["publicmetadb.ratings"].value as? String, "0")
+        try assertRealCommunityRatingLookup(enabled: false)
+    }
+
+    private func assertRealCommunityRatingLookup(enabled: Bool) throws {
+        let encoded = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_RATINGS_EVIDENCE"])
+        let evidence = try JSONDecoder().decode(CommunityRatingLookupEvidence.self, from: Data(encoded.utf8))
+        try require(evidence.overall.total >= 0, "Expected independently read Overall contributions")
+        try openSelectedTitle()
+        if ProcessInfo.processInfo.environment["PLOZZ_TRACKER_RATING_SCOPE"] == "episode" {
+            let episode = try visibleSelectedEpisode()
+            let title = episode.label
+            try tapVisible(app.buttons["More actions for \(title)"])
+            try tapVisible(app.buttons["Go to Episode"])
+            try require(app.scrollViews["series-season-tabs"].waitForNonExistence(timeout: 20),
+                        "Expected the episode's own page, not its parent series")
+            try require(app.staticTexts[title].waitForExistence(timeout: 20),
+                        "Expected the exact episode title")
+            try require(detailPlayButton.exists, "Expected the real episode detail without starting playback")
+        }
+        let baseRating = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Community rating ", "TMDB rating "
+        )).firstMatch
+        if evidence.requiresBaseRating {
+            try require(baseRating.waitForExistence(timeout: 30), "Expected actual server ratings to remain visible")
+        }
+        if enabled, evidence.overall.total > 0 {
+            let average = try XCTUnwrap(evidence.overall.average)
+            let score = "\(Int(average.rounded()))/100"
+            let expected = app.descendants(matching: .any).matching(NSPredicate(
+                format: "label == %@ OR label == %@", "PublicMetaDB rating \(score)", "PublicMetaDB \(score)"
+            )).firstMatch
+            try require(expected.waitForExistence(timeout: 45), "Expected the exact independently read Overall score")
+            try tapVisible(expected, tapping: false)
+        } else {
+            if enabled { XCTAssertNil(evidence.overall.average) }
+            let unexpected = app.descendants(matching: .any).matching(NSPredicate(
+                format: "label BEGINSWITH %@ OR label MATCHES %@",
+                "PublicMetaDB rating ", "PublicMetaDB [0-9]+/100"
+            )).firstMatch
+            try require(!unexpected.waitForExistence(timeout: 10),
+                        "Disabled lookup or an empty Overall result must not invent a badge")
+        }
+        recordState()
+    }
+
+    private struct CommunityRatingLookupEvidence: Decodable {
+        struct Overall: Decodable { let total: Int; let average: Double? }
+        let overall: Overall
+        let requiresBaseRating: Bool
     }
 
     func testRefreshRealRatings() throws {
@@ -1591,16 +1687,45 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func searchForSelectedTitle() throws -> String {
         let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
-        app.terminate()
-        app.launch()
         let search = app.tabBars.buttons["Search"]
-        XCTAssertTrue(search.waitForExistence(timeout: 30))
-        search.tap()
         let query = app.textFields["Search your libraries"]
+        if preservesProcess {
+            try openTabRoot(search, anchor: query)
+        } else {
+            app.terminate()
+            app.launch()
+            XCTAssertTrue(search.waitForExistence(timeout: 30))
+            search.tap()
+        }
         XCTAssertTrue(query.waitForExistence(timeout: 10))
         query.tap()
+        if preservesProcess, let previous = query.value as? String, previous != "Search your libraries" {
+            query.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+        }
         query.typeText(title + "\n")
         return title
+    }
+
+    private func openTabRoot(_ tab: XCUIElement, anchor: XCUIElement) throws {
+        try require(!app.popovers.firstMatch.exists, "Dismiss the pending confirmation before navigating")
+        for _ in 0..<7 where !tab.isHittable {
+            if app.switches["publicmetadb.ratings"].isHittable {
+                try tapVisible(app.buttons["Done"])
+            } else if app.buttons["Close"].firstMatch.isHittable {
+                try tapVisible(app.buttons["Close"].firstMatch)
+            } else if app.buttons["publicmetadb.open-title"].exists {
+                try tapVisible(app.buttons["publicmetadb.open-title"])
+            } else {
+                try tapVisible(try XCTUnwrap(app.buttons.matching(identifier: "BackButton")
+                    .allElementsBoundByIndex.first(where: \.isHittable)))
+            }
+        }
+        try tapVisible(tab)
+        for _ in 0..<7 where !anchor.isHittable {
+            try tapVisible(try XCTUnwrap(app.buttons.matching(identifier: "BackButton")
+                .allElementsBoundByIndex.first(where: \.isHittable)))
+        }
+        try require(anchor.isHittable, "Expected the actual tab root without relaunching the app")
     }
 
     func testPlaySelectedMovie() async throws {
@@ -1705,6 +1830,13 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func startSelectedEpisodePlayback() throws {
+        let episode = try visibleSelectedEpisode()
+        startedPlayback = true
+        episode.tap()
+        try require(app.buttons["Close player"].waitForExistence(timeout: 45), "Expected real episode playback")
+    }
+
+    private func visibleSelectedEpisode() throws -> XCUIElement {
         let environment = ProcessInfo.processInfo.environment
         let title = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_EPISODE_TITLE"])
         try require(!title.isEmpty, "Expected the independently verified episode")
@@ -1749,9 +1881,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(episode.element.frame.minX >= rail.frame.minX && episode.element.frame.maxX <= rail.frame.maxX,
                     "Expected the exact horizontally visible episode")
         try tapVisible(episode.element, tapping: false)
-        startedPlayback = true
-        episode.element.tap()
-        try require(app.buttons["Close player"].waitForExistence(timeout: 45), "Expected real episode playback")
+        return episode.element
     }
 
     private func selectEpisodeSeason() throws {
@@ -1864,14 +1994,15 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func openSettings(relaunch: Bool = true) throws {
+        try require(!preservesProcess, "Use detail-only navigation for same-process cache checks")
         let user = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"])
+        let settings = app.buttons["Settings for \(user)"]
         if relaunch {
             app.terminate()
             app.launch()
         } else {
             try tapVisible(app.tabBars.buttons["Home"])
         }
-        let settings = app.buttons["Settings for \(user)"]
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
         settings.tap()
     }

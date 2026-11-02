@@ -415,6 +415,22 @@ scores until refreshed; disabling lookup stops requests rather than rewriting
 those snapshots. Contribution browsing retains each rating's own label and score;
 it does not mix unrelated labels into an average.
 
+Real production-iPhone-simulator acceptance verified native opt-in and opt-out
+across ordinary relaunches, exact movie and show Overall scores, and no badge
+for a show with 26 contributions but no Overall rating. In one unchanged app
+process, publishing an owned Overall rating displayed 50/100; deleting that
+exact record removed the badge. Both transitions completed inside the
+five-minute cache lifetime without intervening preference, profile or key
+changes. Independent reads confirmed restoration of all contributions and
+unchanged server metadata, watched/resume histories and original lists.
+This does not establish exact request counts, in-flight scope revocation,
+server-selected rating overrides, episode lookup or other-platform acceptance.
+The real episode case exposed an unresolved gap: publication and independent
+Overall readback succeeded, but the episode detail had neither its parent's
+TMDB ID nor confirmed TMDB ordering and displayed no score. Missing identity
+must remain a refusal until an exact episode match is established; successful
+contribution management does not prove episode badge lookup.
+
 ## Explicit community contributions
 
 Shared title controls support labeled movie/show/episode rating submissions,
@@ -455,7 +471,7 @@ The capped show refused publication without creating a record. An uncapped
 matching detailed server reads to verify metadata and history preservation.
 No temporary rating remains. Source/destination histories, tracker histories
 and original lists were unchanged. This is scoped single-rating acceptance,
-not proof of optional badge lookup, stale/ownership boundaries, season/batch
+not proof of stale/ownership boundaries, season/batch
 mutations or other-platform native real-data workflows.
 
 Vote reads request only the authenticated user's records and require an explicit
