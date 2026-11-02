@@ -10,6 +10,106 @@ import XCTest
 
 @MainActor
 final class HomeHeroFullWidthPresentationTests: XCTestCase {
+    func testPointerActivityFreezesProgressAndResumesOnlyAfterTheLastMovement() throws {
+        let activity = HeroPointerActivity()
+        var dwellStart = Date(timeIntervalSinceReferenceDate: 100)
+        let firstMovement = dwellStart.addingTimeInterval(4)
+        let nextMovement = firstMovement.addingTimeInterval(1)
+        var gaugeReads = 0
+        func gauge() -> HeroGaugeState {
+            gaugeReads += 1
+            return HeroGaugeState(fraction: 0.4, remaining: 6)
+        }
+
+        activity.recordMovement(at: firstMovement, gauge: gauge())
+        let pauseID = activity.pauseID
+        activity.recordMovement(at: nextMovement, gauge: gauge())
+        XCTAssertEqual(gaugeReads, 1, "Mouse movement must not resample or redraw the gauge every pixel.")
+        XCTAssertEqual(activity.pauseID, pauseID)
+        XCTAssertEqual(activity.frozenGauge, HeroGaugeState(fraction: 0.4, remaining: nil))
+        let deadline = try XCTUnwrap(activity.resumeDeadline)
+        XCTAssertEqual(deadline, nextMovement.addingTimeInterval(HeroPointerActivity.idleDelay))
+        XCTAssertNil(activity.resumeIfIdle(at: deadline.addingTimeInterval(-0.001)))
+        let resumption = try XCTUnwrap(activity.resumeIfIdle(at: deadline))
+        XCTAssertFalse(resumption.advanceAfterTrailer)
+        dwellStart += resumption.pausedDuration
+        let resumed = HeroGaugeState.resolve(
+            autoAdvance: true, dwellStart: dwellStart, dwellDuration: 10, now: deadline
+        )
+        XCTAssertEqual(resumed.fraction, 0.4, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(resumed.remaining), 6, accuracy: 0.001)
+        XCTAssertFalse(activity.isPaused)
+        XCTAssertNil(activity.resumeIfIdle(at: deadline))
+    }
+
+    func testPointerPauseHoldsTrailerProgressAndDefersItsEndOnlyOnce() throws {
+        let activity = HeroPointerActivity()
+        let start = Date(timeIntervalSinceReferenceDate: 100)
+        func trailerGauge(elapsed: Double) -> HeroGaugeState {
+            HeroGaugeState.resolve(
+                autoAdvance: true, dwellStart: start, dwellDuration: 10, now: start,
+                trailerElapsed: elapsed, trailerDuration: 120
+            )
+        }
+        activity.recordMovement(at: start, gauge: trailerGauge(elapsed: 30))
+        activity.recordMovement(at: start.addingTimeInterval(1), gauge: trailerGauge(elapsed: 60))
+        XCTAssertEqual(activity.frozenGauge, HeroGaugeState(fraction: 0.25, remaining: nil))
+        XCTAssertTrue(activity.deferAdvanceIfPaused())
+        XCTAssertTrue(activity.deferAdvanceIfPaused())
+        let deadline = try XCTUnwrap(activity.resumeDeadline)
+        let resumption = try XCTUnwrap(activity.resumeIfIdle(at: deadline))
+        XCTAssertTrue(resumption.advanceAfterTrailer)
+        XCTAssertNil(activity.resumeIfIdle(at: deadline))
+        XCTAssertFalse(activity.deferAdvanceIfPaused())
+    }
+
+    func testManualPagingDiscardsDeferredTrailerAndStartsANewPausedDwell() throws {
+        let activity = HeroPointerActivity()
+        let start = Date(timeIntervalSinceReferenceDate: 100)
+        activity.recordMovement(at: start, gauge: HeroGaugeState(fraction: 0.8, remaining: 2))
+        XCTAssertTrue(activity.deferAdvanceIfPaused())
+        activity.resetSlide(at: start.addingTimeInterval(1))
+        XCTAssertEqual(activity.frozenGauge, HeroGaugeState(fraction: 0, remaining: nil))
+        let resumption = try XCTUnwrap(activity.resumeIfIdle(at: start.addingTimeInterval(1.5)))
+        XCTAssertEqual(resumption.pausedDuration, 0.5)
+        XCTAssertFalse(resumption.advanceAfterTrailer)
+    }
+
+    func testPointerExitAndLifecycleResetCannotLeaveAStalePause() throws {
+        let activity = HeroPointerActivity()
+        let start = Date(timeIntervalSinceReferenceDate: 100)
+        activity.recordMovement(at: start, gauge: HeroGaugeState(fraction: 0.4, remaining: 6))
+        let firstID = activity.pauseID
+        let resumption = try XCTUnwrap(activity.resume(at: start.addingTimeInterval(0.25)))
+        XCTAssertEqual(resumption.pausedDuration, 0.25)
+        activity.recordMovement(at: start.addingTimeInterval(0.3), gauge: HeroGaugeState(fraction: 0.4, remaining: 6))
+        XCTAssertNotEqual(activity.pauseID, firstID, "A new pause must rearm the idle task even within one render.")
+        XCTAssertTrue(activity.deferAdvanceIfPaused())
+        activity.reset()
+        XCTAssertNil(activity.pauseID)
+        XCTAssertNil(activity.resumeDeadline)
+        XCTAssertNil(activity.frozenGauge)
+        XCTAssertNil(activity.resumeIfIdle(at: start.addingTimeInterval(100)))
+    }
+
+    func testPagingIndicatorHoldsTheCapturedGaugeWithoutDisablingAutoAdvance() {
+        let start = Date(timeIntervalSinceReferenceDate: 100)
+        var indicator = PlozziOSHeroPagingIndicator(
+            itemIDs: ["first", "second"], selectedItemID: "first", autoAdvance: true,
+            autoAdvanceSeconds: 10, dwellStart: start,
+            pausedGauge: HeroGaugeState(fraction: 0.4, remaining: nil),
+            trailerController: HeroTrailerController()
+        )
+        for offset in [4.0, 8, 20] {
+            XCTAssertEqual(
+                indicator.gauge(at: start.addingTimeInterval(offset)),
+                HeroGaugeState(fraction: 0.4, remaining: nil)
+            )
+        }
+        indicator.isTransitioning = true
+        XCTAssertEqual(indicator.gauge(at: start.addingTimeInterval(4)).fraction, 0)
+    }
+
     func testMacHeroPagingControlsAppearAtBothEdgesOnlyForMultipleTitles() async throws {
         let item = try await artworkItem()
         try await withWindow(
@@ -41,8 +141,9 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                                 let bounds = try XCTUnwrap(ink)
                                 XCTAssertEqual(bounds.midX, centerX, accuracy: 2)
                                 XCTAssertEqual(bounds.midY, 360, accuracy: 2)
-                                XCTAssertGreaterThan(bounds.height, 14)
-                                XCTAssertLessThan(bounds.height, 30)
+                                XCTAssertGreaterThan(bounds.height, 25)
+                                XCTAssertLessThan(bounds.height, 40)
+                                XCTAssertLessThan(bounds.width, bounds.height * 0.4)
                                 // The native hover highlight must not leave a permanent pill.
                                 XCTAssertEqual(try pixel(image, at: CGPoint(x: centerX, y: 335))[0], 0)
                             } else {

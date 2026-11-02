@@ -3051,9 +3051,11 @@ struct PlozziOSHeroPagingIndicator: View {
     /// `dwellStart` still belongs to the outgoing slide until the transition
     /// commits, so without this the incoming bar inherits its progress.
     var isTransitioning: Bool = false
+    var pausedGauge: HeroGaugeState?
     let trailerController: HeroTrailerController
 
     var body: some View {
+        let gauge = gauge(at: .now)
         // Drawn in Core Animation. Both the gauge and the page morph are stated
         // once and interpolated by the render server, so they run at the
         // display's full rate without the app doing per-frame work — this row
@@ -3064,8 +3066,8 @@ struct PlozziOSHeroPagingIndicator: View {
                 count: itemIDs.count,
                 activeIndex: selectedIndex,
                 autoAdvance: autoAdvance,
-                gaugeFraction: gaugeFraction,
-                gaugeRemaining: gaugeRemaining,
+                gaugeFraction: gauge.fraction,
+                gaugeRemaining: gauge.remaining,
                 rampID: "\(selectedItemID ?? "-")|\(dwellStart.timeIntervalSinceReferenceDate)"
             ),
             tint: UIColor(palette.primaryText)
@@ -3089,13 +3091,14 @@ struct PlozziOSHeroPagingIndicator: View {
 
     /// Where the gauge stands, decided by the shared rules in `HeroGaugeState`
     /// so this shell cannot drift from tvOS.
-    private var gauge: HeroGaugeState {
+    func gauge(at now: Date) -> HeroGaugeState {
+        if !isTransitioning, autoAdvance, let pausedGauge { return pausedGauge }
         let trailerIsShowing = selectedItemID.map(trailerController.isShowing) ?? false
         return HeroGaugeState.resolve(
             autoAdvance: autoAdvance,
             dwellStart: dwellStart,
             dwellDuration: Double(autoAdvanceSeconds),
-            now: Date(),
+            now: now,
             isTransitioning: isTransitioning,
             trailerElapsed: trailerIsShowing
                 ? trailerController.player.currentTime().seconds
@@ -3103,9 +3106,6 @@ struct PlozziOSHeroPagingIndicator: View {
             trailerDuration: trailerIsShowing ? trailerController.duration : nil
         )
     }
-
-    private var gaugeFraction: CGFloat { gauge.fraction }
-    private var gaugeRemaining: TimeInterval? { gauge.remaining }
 
     private var accessibilityValue: Text {
         guard let selectedItemID,

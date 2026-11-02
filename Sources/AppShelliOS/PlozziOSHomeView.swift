@@ -1383,6 +1383,7 @@ struct PlozziOSHomeHeroCarousel: View {
     /// restarting the countdown task (which a changed item set requires) resumes
     /// it rather than discarding the seconds already served.
     @State private var dwellTrailerSeconds = 0.0
+    @State private var pointerActivity = HeroPointerActivity()
     /// The slide `dwellStart` was set for. `selectedItemID` and the dwell reset
     /// on separate passes, so the id is the only reliable way to tell whether
     /// the clock on screen actually belongs to the slide being shown.
@@ -1620,24 +1621,33 @@ struct PlozziOSHomeHeroCarousel: View {
         )
         .overlay(alignment: .bottom) {
             if items.count > 1 {
-                PlozziOSHeroPagingIndicator(
-                    itemIDs: items.map(\.id),
-                    // During a committed transition the dot animates to the target
-                    // over the same window as the image slide (transitionTargetID is
-                    // set outside the disable-animations transaction, unlike
-                    // selectedItemID which snaps at the end). Falls back to the
-                    // selected id when idle.
-                    selectedItemID: transitionTargetID ?? selectedItemID,
-                    autoAdvance: autoAdvance && isActive,
-                    autoAdvanceSeconds: autoAdvanceSeconds,
-                    dwellStart: dwellStart,
-                    // The dwell counts only once it belongs to the slide on
-                    // screen; until then this slide's dwell hasn't begun.
-                    isTransitioning: dwellItemID != (transitionTargetID ?? selectedItemID),
-                    trailerController: trailerController
-                )
-                .padding(.horizontal, 20)
-                .offset(y: 10)
+                pagingIndicator
+                    .padding(.horizontal, 20)
+                    .offset(y: 10)
+            }
+        }
+        .onContinuousHover { phase in
+            guard isRunningOnMac, isActive, autoAdvance, items.count > 1 else { return }
+            let now = Date()
+            switch phase {
+            case .active:
+                pointerActivity.recordMovement(at: now, gauge: pagingIndicator.gauge(at: now))
+            case .ended:
+                resumePointerActivity(pointerActivity.resume(at: now))
+            }
+        }
+        .task(id: pointerActivity.pauseID) {
+            while let deadline = pointerActivity.resumeDeadline {
+                do {
+                    try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)))
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                if let resumption = pointerActivity.resumeIfIdle(at: .now) {
+                    resumePointerActivity(resumption)
+                    return
+                }
             }
         }
         .onChange(of: items.map(\.id), initial: true) { oldIDs, itemIDs in
@@ -1671,6 +1681,9 @@ struct PlozziOSHomeHeroCarousel: View {
                     return
                 }
                 guard !Task.isCancelled else { return }
+                // Pointer time is removed on resume. Do not also count overlapping
+                // trailer time here, or the same pause would be subtracted twice.
+                if pointerActivity.isPaused { continue }
                 if countdownItemID != selectedItemID {
                     countdownItemID = selectedItemID
                     dwellTrailerSeconds = 0
@@ -1690,6 +1703,7 @@ struct PlozziOSHomeHeroCarousel: View {
             }
         }
         .onChange(of: isActive) { _, active in
+            pointerActivity.reset()
             if active {
                 dwellStart = .now
                 dwellTrailerSeconds = 0
@@ -1698,9 +1712,13 @@ struct PlozziOSHomeHeroCarousel: View {
         }
         .onChange(of: selectedItemID, initial: true) {
             dwellStart = .now
+            pointerActivity.resetSlide(at: dwellStart)
             dwellTrailerSeconds = 0
             dwellItemID = selectedItemID
             installTrailerEndHandler()
+        }
+        .onChange(of: autoAdvance) { _, enabled in
+            if !enabled { pointerActivity.reset() }
         }
         // Both slides a committed swipe involves are on screen at once, so both
         // are off-limits to a curation folding new media in.
@@ -1722,6 +1740,9 @@ struct PlozziOSHomeHeroCarousel: View {
             playTargets = playTargets.filter { retained.contains($0.key) }
         }
         .onChange(of: exposureScopeID) { _, _ in
+            if let resumption = pointerActivity.resume(at: .now) {
+                dwellStart += resumption.pausedDuration
+            }
             let currentKeys = Dictionary(
                 items.map { ($0.id, resolutionKey(for: $0)) },
                 uniquingKeysWith: { first, _ in first }
@@ -1735,6 +1756,7 @@ struct PlozziOSHomeHeroCarousel: View {
         }
         .onAppear(perform: installTrailerEndHandler)
         .onDisappear {
+            pointerActivity.reset()
             trailerController.clearEndHandler(ownerID: endHandlerOwnerID)
             // Leaving Home — another tab, or a pushed page — means nobody can
             // see this trailer, so it should not keep streaming and decoding.
@@ -1768,6 +1790,29 @@ struct PlozziOSHomeHeroCarousel: View {
     @Environment(PlozziOSAppModel.self) private var appModel
 
     private var isActive: Bool { isFrontmost && scenePhase == .active }
+
+    private var pagingIndicator: PlozziOSHeroPagingIndicator {
+        PlozziOSHeroPagingIndicator(
+            itemIDs: items.map(\.id),
+            // Follow the incoming slide while its artwork is moving; its dwell
+            // starts only when selection commits.
+            selectedItemID: transitionTargetID ?? selectedItemID,
+            autoAdvance: autoAdvance && isActive,
+            autoAdvanceSeconds: autoAdvanceSeconds,
+            dwellStart: dwellStart,
+            isTransitioning: dwellItemID != (transitionTargetID ?? selectedItemID),
+            pausedGauge: pointerActivity.frozenGauge,
+            trailerController: trailerController
+        )
+    }
+
+    private func resumePointerActivity(_ resumption: HeroPointerActivity.Resumption?) {
+        guard let resumption else { return }
+        dwellStart += resumption.pausedDuration
+        if resumption.advanceAfterTrailer, autoAdvance, isActive {
+            page(forward: true)
+        }
+    }
 
     private var heroSeasonRefreshKey: String {
         let hasActiveRequests = currentItem.flatMap {
@@ -1982,6 +2027,7 @@ struct PlozziOSHomeHeroCarousel: View {
             return
         }
         trailerController.setEndHandler(ownerID: endHandlerOwnerID) {
+            guard !pointerActivity.deferAdvanceIfPaused() else { return }
             page(forward: true)
         }
     }
@@ -2273,14 +2319,14 @@ struct PlozziOSHeroPagingControls: View {
 
     private func pagingButton(forward: Bool) -> some View {
         Button { onPage(forward) } label: {
-            Image(systemName: forward ? "chevron.right" : "chevron.left")
-                .font(.system(size: 24, weight: .regular))
-                .foregroundStyle(.white.opacity(0.7))
+            Image(systemName: forward ? "chevron.compact.right" : "chevron.compact.left")
+                .font(.system(size: 32, weight: .medium))
+                .foregroundStyle(.white.opacity(0.6))
                 .frame(width: 44, height: 64)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contentShape(.hoverEffect, Capsule().inset(by: 8))
+        .contentShape(.hoverEffect, Capsule().inset(by: 10))
         .hoverEffect(.highlight)
         .accessibilityLabel(forward ? Text("Next") : Text("Previous"))
         .accessibilityIdentifier(forward ? "home-hero-next" : "home-hero-previous")
