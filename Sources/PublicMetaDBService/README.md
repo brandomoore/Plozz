@@ -486,8 +486,20 @@ The capped show refused publication without creating a record. An uncapped
 matching detailed server reads to verify metadata and history preservation.
 No temporary rating remains. Source/destination histories, tracker histories
 and original lists were unchanged. This is scoped single-rating acceptance,
-not proof of stale/ownership boundaries, season/batch
+not proof of all stale/ownership boundaries, season/batch
 mutations or other-platform native real-data workflows.
+
+A real concurrent-replacement check also passed. After native preparation of
+an owned rating's deletion, an independent client deleted that exact test record
+and created a new record with the same title, label and score. Confirming the
+stale native action treated only the old ID as absent and left the replacement
+unchanged. Native cleanup removed the replacement; all original contributions,
+aggregates, server metadata, histories and lists were restored or unchanged.
+Seven native passes include preparation, confirmation, cleanup and disabled
+lookup after relaunch. This proves an already-deleted ID cannot retarget a
+same-value replacement, not same-ID edit races or negative ownership enforcement.
+The documented rating API exposes creation/deletion, not an update route; no
+other person's contribution was used to test ownership.
 
 Vote reads request only the authenticated user's records and require an explicit
 `userVote` field. Neutral (zero) and absent (null) remain distinct. A fresh vote

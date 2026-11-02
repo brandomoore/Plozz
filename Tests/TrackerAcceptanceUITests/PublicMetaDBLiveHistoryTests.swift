@@ -1699,6 +1699,11 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         }
         XCTAssertTrue(query.waitForExistence(timeout: 10))
         query.tap()
+        if !app.keyboards.firstMatch.waitForExistence(timeout: 2) {
+            query.tap()
+        }
+        try require(app.keyboards.firstMatch.waitForExistence(timeout: 5),
+                    "Expected the search keyboard before entering the selected title")
         if preservesProcess, let previous = query.value as? String, previous != "Search your libraries" {
             query.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
         }
