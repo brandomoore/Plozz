@@ -804,6 +804,70 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testEpisodeBatchRejectsInvalidInput() throws {
+        _ = try openSelectedSeasonRatings()
+        try tapVisible(app.buttons["Rate multiple episodes"])
+        var previous = ""
+        for value in ["", "0", "-1"] {
+            if !value.isEmpty {
+                let field = app.textFields.matching(identifier: "TMDB episode number").firstMatch
+                try tapVisible(field)
+                field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count) + value + "\n")
+                XCTAssertEqual(field.value as? String, value)
+                previous = value
+            }
+            try tapVisible(app.buttons["Review ratings"])
+            try tapVisible(app.staticTexts["Check the entered values."], tapping: false)
+            XCTAssertFalse(app.popovers.buttons["Publish ratings"].exists)
+            XCTAssertFalse(app.staticTexts["All selected episode ratings were confirmed on PublicMetaDB"].exists)
+        }
+        let first = app.textFields.matching(identifier: "TMDB episode number").firstMatch
+        try tapVisible(first)
+        first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count) + "3\n")
+        try tapVisible(app.buttons["Add an episode"])
+        let second = app.textFields.matching(identifier: "TMDB episode number").element(boundBy: 1)
+        try tapVisible(second)
+        second.typeText("3\n")
+        try tapVisible(app.buttons["Review ratings"])
+        try tapVisible(app.staticTexts["Check the entered values."], tapping: false)
+        XCTAssertFalse(app.popovers.buttons["Publish ratings"].exists)
+        try tapVisible(second)
+        second.typeText(XCUIKeyboardKey.delete.rawValue + "4\n")
+        XCTAssertEqual(second.value as? String, "4")
+        let label = app.textFields["Rating label"]
+        try tapVisible(label)
+        XCTAssertEqual(label.value as? String, "Overall")
+        label.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Overall".count) + "Two words\n")
+        try tapVisible(app.buttons["Review ratings"])
+        try tapVisible(app.staticTexts["Use a rating label without spaces."], tapping: false)
+        XCTAssertFalse(app.popovers.buttons["Publish ratings"].exists)
+        recordState()
+    }
+
+    func testEpisodeBatchEntryLimit() throws {
+        _ = try openSelectedSeasonRatings()
+        try tapVisible(app.buttons["Rate multiple episodes"])
+        let add = app.buttons["Add an episode"]
+        for _ in 1..<50 {
+            try tapVisible(add, tapping: false)
+            XCTAssertTrue(add.isEnabled)
+            add.tap()
+        }
+        try tapVisible(add, tapping: false)
+        XCTAssertFalse(add.isEnabled)
+        let remove = app.buttons.matching(identifier: "Remove row")
+            .allElementsBoundByIndex.last(where: \.isHittable)
+        try XCTUnwrap(remove).tap()
+        try tapVisible(add, tapping: false)
+        XCTAssertTrue(add.isEnabled)
+        add.tap()
+        try tapVisible(add, tapping: false)
+        XCTAssertFalse(add.isEnabled)
+        XCTAssertFalse(app.popovers.buttons["Publish ratings"].exists)
+        XCTAssertFalse(app.staticTexts["All selected episode ratings were confirmed on PublicMetaDB"].exists)
+        recordState()
+    }
+
     func testConfirmPreparedEpisodeRatings() throws {
         XCTAssertTrue(app.popovers.buttons["Publish ratings"].exists)
         app.popovers.buttons["Publish ratings"].tap()

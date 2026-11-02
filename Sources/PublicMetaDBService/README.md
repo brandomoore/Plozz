@@ -593,7 +593,7 @@ and removed through native exact-record selection. Both publication and deletion
 cancellation preserved remote state; relaunch readback confirmed restoration of
 all 40 original contributions and aggregates. Server metadata, watched/resume
 histories and lists stayed unchanged, and optional rating lookup remained off.
-This establishes that bounded round trip, not native 50-item, partial-failure,
+This establishes that bounded round trip, not 50-item publication, partial-failure,
 ownership or TV/iPad acceptance.
 
 A separate real batch-deletion race replaced one selected test contribution
@@ -603,6 +603,15 @@ ID; the replacement survived unchanged. Native selection then removed that
 exact replacement, restoring all original season records and unrelated controls.
 This proves replacement-ID safety, not a same-ID edit or negative ownership
 check; no other person's contribution was targeted.
+
+Connected native-form checks also reject blank, zero, negative and duplicate
+episode numbers and whitespace-bearing labels without approving any write.
+Invalid values display input feedback, not a server-response error. The form
+accepts 49 additions to its initial row, disables Add at 50, re-enables it after
+one removal, and disables it again after replacement. Independent remote reads
+confirmed all original records, aggregates and unrelated controls unchanged.
+This proves the native entry limit, not a real 50-record publication or acceptance
+of fabricated episode coordinates.
 
 ## Reviewed multiple-play deletion
 
