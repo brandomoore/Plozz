@@ -1180,9 +1180,18 @@ supersedes the old refresh; profile checks still reject late results.
 ### Automatic Plozz channels
 
 Enable **Plozz channels** once to prepare a lineup from the accessible movie and
-TV libraries on Plex, Jellyfin and Emby. The automatic path does not ask for
+TV libraries on Plex, Jellyfin, Emby and native Silo. The automatic path does not ask for
 channel names, library selections or scheduling rules. **Create custom channel**
 remains available separately for users who want a particular recipe.
+
+Native Silo uses concrete file durations and its protocol-3 client-owned progress
+contract, not ordinary playback reporting or the downloads API. Owned transport
+sessions are heartbeated and released independently of watch history. Only
+seekable original files are scheduled for playback; multipart/combined-episode
+files and server-converted delivery are not supported on this path. See
+[native Silo's channel contracts](../Sources/ProviderSilo/README.md#plozz-channels).
+Unsupported sources and unavailable sign-ins are shown as source failures, not
+as missing movie or episode durations.
 
 The lineup is based on actual library metadata, not a fixed catalogue of empty
 presets. Broad movie and TV channels cover eligible content, with useful themed

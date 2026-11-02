@@ -204,6 +204,53 @@ cards without those values cannot show an accurate remaining-episode count.
 Supporting `user_data` on Silo's existing card responses would let this mapper
 consume the same rollup without additional client requests.
 
+## Plozz channels
+
+Native Silo movie and episode libraries can supply automatic and custom Plozz
+channels. Discovery checks native playback availability first. Catalog pages use
+bounded `seek` windows and exact totals; up to four detail reads at a time obtain
+the concrete file ID, size and duration in seconds. Catalog metadata runtimes
+are not file durations. Multipart and combined-episode files are excluded rather
+than scheduling an incomplete or duplicated episode. Account, selected Silo
+profile and library membership remain authoritative. Detail reads carry
+`library_id`; Silo applies its profile access and presentation-library membership
+checks. Silo's own version-visibility setting still determines which accessible
+versions it returns for a title with copies in multiple libraries.
+
+Playback revalidates the selected file, duration, size, edition and series
+relationship before requesting a protocol-3 session with
+`progress_persistence: "client"` and explicit zero start. This native contract
+keeps transport heartbeats while suppressing ordinary resume/history and server
+scrobbles, including stop and reconstruction on another replica. It is not merely
+Plozz's `suppressOrdinaryWatchReporting` flag. Only seekable, source-aligned
+`original_http` plans are accepted; server conversion plans are released.
+Plozz's scheduled controller owns the session, sends bounded transport heartbeats,
+and drains/releases it on replacement, cancellation, failure and exit. A lost
+start response is retried once with the identical attempt ID; stop retries reuse
+their idempotency key and carry no final position. Unconfirmed starts and rejected
+plans retain their cleanup ownership and must be retired before another channel
+session starts. An unreachable server can
+prevent confirmed cleanup; its native idle expiry remains the final safeguard.
+Signed media and subtitle grants stay in the existing account/revision-bound
+in-memory store, never in a schedule. No download records are created.
+
+Ordinary watched/resume state is unchanged by channel playback. Only the existing
+explicit history opt-in and actual unique-coverage threshold can invoke the
+separate watched-completion write. Silo's live/admin playback diagnostics remain
+visible; history isolation does not hide sessions from administrators.
+
+Contracts verified at upstream
+[`baf9d4267043a2fa5f41f4fdebc4a175e564e793`](https://github.com/Silo-Server/silo-server/tree/baf9d4267043a2fa5f41f4fdebc4a175e564e793):
+[progress ownership](https://github.com/Silo-Server/silo-server/blob/baf9d4267043a2fa5f41f4fdebc4a175e564e793/docs/architecture/playback-protocol-v3.md#22-post-playbackstart),
+[native requests and receipts](https://github.com/Silo-Server/silo-server/blob/baf9d4267043a2fa5f41f4fdebc4a175e564e793/internal/apiv2/playback.go),
+[progress and reconstructed sessions](https://github.com/Silo-Server/silo-server/blob/baf9d4267043a2fa5f41f4fdebc4a175e564e793/internal/api/handlers/playback_service.go),
+and [stop/history suppression](https://github.com/Silo-Server/silo-server/blob/baf9d4267043a2fa5f41f4fdebc4a175e564e793/internal/api/handlers/playback.go).
+The native request already includes this progress-ownership field at the
+provider's original `cbc13de10f4af28762be6777cab2f75403eade58` contract baseline.
+`ProviderSiloTests/SiloLibraryChannelTests.swift` covers catalog identity, wire
+isolation, ordinary-session separation and rejected-plan cleanup; shared
+playback-session tests cover cancellation, boundaries and profile revocation.
+
 ## Search
 
 TV and mobile use the shared federated search through `MediaProvider.search`.

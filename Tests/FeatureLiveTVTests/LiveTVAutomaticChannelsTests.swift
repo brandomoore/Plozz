@@ -38,6 +38,16 @@ final class LiveTVAutomaticChannelsTests: XCTestCase {
         XCTAssertEqual(state(enabled: true, issue: .sourceUnavailable, count: 5).status, .failed(.sourceUnavailable))
     }
 
+    func testUnsupportedAndUnavailableSourcesDoNotClaimMissingDurations() {
+        for error in [LibraryChannelError.sourceUnsupported, .sourceUnavailable] {
+            let value = state(enabled: true, issue: error)
+            XCTAssertFalse(String(localized: value.status.detail).contains("durations"))
+            XCTAssertEqual(value.status, .failed(error))
+        }
+        XCTAssertEqual(String(localized: state(enabled: true, issue: .sourceUnsupported).status.detail),
+                       "This source doesn't support Plozz channels.")
+    }
+
     func testEnableDisableAndRetryUseOnlyTheirInjectedActions() async {
         var enabledValues: [Bool] = []
         var retries = 0

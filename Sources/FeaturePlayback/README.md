@@ -323,6 +323,10 @@ language-only tracks. Single tracks are exposed as metadata without offering a
 redundant switch. Synthetic native-selection IDs remain separate from provider
 IDs and still route through AVPlayer's own selection group or muxed tracks.
 
+Live TV channel selection does not display an "Opening [channel]" toast in the
+guide or player. Existing in-player loading indicators, playback errors, retry
+actions, and cancellation on navigation remain unchanged.
+
 Mobile transport buttons, timelines, and tabs use native **clear** Liquid Glass,
 without tint or a colored backing. Like AVKit video chrome, their symbols and
 progress remain white in both appearances. Mobile Live TV's top presentation

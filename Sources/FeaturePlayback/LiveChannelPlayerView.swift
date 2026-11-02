@@ -91,7 +91,6 @@ public struct LiveChannelPlayerView: View {
     private let onPlaybackUpdate: @MainActor (LiveTVPlaybackUpdate) -> Void
     private let onPlaybackFailed: @MainActor (LiveChannelFailureReport) -> Void
     private let onVideoAspectRatioChange: @MainActor (Double?) -> Void
-    private let preparingChannelName: String?
     private let onMultiview: (() -> Void)?
     private let outputGroup: LiveChannelOutputGroup?
     private let outputID: UUID?
@@ -212,7 +211,6 @@ public struct LiveChannelPlayerView: View {
         onPlaybackUpdate: @escaping @MainActor (LiveTVPlaybackUpdate) -> Void = { _ in },
         onPlaybackFailed: @escaping @MainActor (LiveChannelFailureReport) -> Void = { _ in },
         onVideoAspectRatioChange: @escaping @MainActor (Double?) -> Void = { _ in },
-        preparingChannelName: String? = nil,
         onMultiview: (() -> Void)? = nil,
         outputGroup: LiveChannelOutputGroup? = nil,
         outputID: UUID? = nil,
@@ -264,7 +262,6 @@ public struct LiveChannelPlayerView: View {
         self.onPlaybackUpdate = onPlaybackUpdate
         self.onPlaybackFailed = onPlaybackFailed
         self.onVideoAspectRatioChange = onVideoAspectRatioChange
-        self.preparingChannelName = preparingChannelName
         self.onMultiview = onMultiview
         self.outputGroup = outputGroup
         self.outputID = outputID
@@ -310,7 +307,6 @@ public struct LiveChannelPlayerView: View {
         onPlaybackUpdate: @escaping @MainActor (LiveTVPlaybackUpdate) -> Void = { _ in },
         onPlaybackFailed: @escaping @MainActor (LiveChannelFailureReport) -> Void = { _ in },
         onVideoAspectRatioChange: @escaping @MainActor (Double?) -> Void = { _ in },
-        preparingChannelName: String? = nil,
         onMultiview: (() -> Void)? = nil,
         outputGroup: LiveChannelOutputGroup? = nil,
         outputID: UUID? = nil,
@@ -344,7 +340,7 @@ public struct LiveChannelPlayerView: View {
             onPlaybackStarted: onPlaybackStarted, reportingID: reportingID,
             onPlaybackUpdate: onPlaybackUpdate, onPlaybackFailed: onPlaybackFailed,
             onVideoAspectRatioChange: onVideoAspectRatioChange,
-            preparingChannelName: preparingChannelName, onMultiview: onMultiview,
+            onMultiview: onMultiview,
             outputGroup: outputGroup, outputID: outputID, isAudible: isAudible,
             countsAsWatching: countsAsWatching, isMultiview: isMultiview, trackPreferences: trackPreferences,
             touchSkipIntervals: touchSkipIntervals,
@@ -592,11 +588,6 @@ public struct LiveChannelPlayerView: View {
                         showsProgress: true
                     )
                 }
-            }
-            if let preparingChannelName {
-                LiveChannelCompactStatusView(
-                    icon: nil, title: "Opening \(preparingChannelName)", showsProgress: true
-                )
             }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: controlsVisible)
