@@ -536,7 +536,16 @@ playback remained available locally, but neither was reported. Fresh-consent
 Settings showed the identity warning, and independent reads confirmed the entire
 tracker watched/resume history and unrelated server users remained unchanged,
 including after relaunch. This verifies rejection, not automatic renumbering.
-Combined files and the remaining campaign routes still require live evidence.
+
+A real Jellyfin file explicitly spanning S4E1-E2 then verified combined-file
+rejection. Its two-episode range, file and runtime were independently confirmed.
+Actual in-range playback and a separate completed viewing updated only the
+source user's state; the entire tracker watched/resume history stayed unchanged.
+Fresh-consent Settings showed the identity warning after each scenario. Relaunch
+and restored library selection did not replay anything, and independent source
+controls stayed unchanged. This is safe rejection, not combined-episode support.
+Episode continuation, exports, independent installations and the remaining
+provider/platform routes still require their own live evidence.
 
 The unbound `PublicMetaDBLiveHistoryTests` driver uses normally configured
 production-app UI, not seeded profiles or substituted media. Its individual
@@ -548,7 +557,8 @@ successful UI interaction alone is not delivery confirmation. Keep account
 configuration, credentials, screenshots and live-state evidence private.
 Episode scenarios select the exact source library and season through native UI,
 distinguish series cards from episode search results, and bring the episode rail
-clear of navigation controls before bounded horizontal gestures.
+clear of navigation controls before bounded horizontal gestures. Season selection
+also uses bounded slow gestures and requires the whole target tab to be visible.
 Import scenarios require an already connected dedicated destination, its exact
 account and item identifiers, and test username through `PLOZZ_TRACKER_IMPORT_*`.
 Never pass a real credential to XCTest `typeText`: it logs a prefix even for

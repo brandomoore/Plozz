@@ -667,11 +667,13 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let target = tabs.buttons[season]
         for _ in 0..<8 {
             if target.exists && target.isHittable && tabs.frame.contains(target.frame) { break }
-            if target.exists && target.frame.maxX > tabs.frame.maxX {
-                tabs.swipeLeft()
-            } else {
-                tabs.swipeRight()
-            }
+            let forward = target.exists && target.frame.maxX > tabs.frame.maxX
+            tabs.coordinate(withNormalizedOffset: CGVector(dx: forward ? 0.8 : 0.2, dy: 0.5))
+                .press(
+                    forDuration: 0.1,
+                    thenDragTo: tabs.coordinate(withNormalizedOffset: CGVector(dx: forward ? 0.2 : 0.8, dy: 0.5)),
+                    withVelocity: .slow, thenHoldForDuration: 0.2
+                )
         }
         try require(target.exists && target.isHittable && tabs.frame.contains(target.frame),
                     "Expected the exact fully visible season")
