@@ -9,12 +9,16 @@ import UIKit
 @MainActor @Observable
 final class HeroShowcaseState {
     private(set) var isExpanded = true
+    private(set) var nativeRowsExpanded = true
     @ObservationIgnored var returnToHero: (() -> Void)?
     @ObservationIgnored let motion = HeroShowcaseScrollMotion()
 
-    func setExpanded(_ expanded: Bool) {
+    func setExpanded(_ expanded: Bool, deferNativeRows: Bool = false) {
         isExpanded = expanded
+        if !deferNativeRows { synchronizeNativeRows() }
     }
+
+    func synchronizeNativeRows() { nativeRowsExpanded = isExpanded }
 }
 
 @MainActor
@@ -22,8 +26,17 @@ final class HeroShowcaseScrollMotion {
     enum Surface: Hashable { case featured, featuredBackdrop, showcase, showcaseBackdrop, rows }
 
     static let backdropTravelFraction: CGFloat = 0.375
-    static let duration: TimeInterval = 0.6
-    static let timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0, 0.2, 1)
+    static let spring = FocusHeroLayout.rowSpring
+    static let duration = spring.settlingDuration
+
+    static func animation(keyPath: String) -> CASpringAnimation {
+        let animation = CASpringAnimation(keyPath: keyPath)
+        animation.mass = spring.mass
+        animation.stiffness = spring.stiffness
+        animation.damping = spring.damping
+        animation.duration = duration
+        return animation
+    }
 
     private final class Target {
         weak var view: UIView?
@@ -84,13 +97,11 @@ final class HeroShowcaseScrollMotion {
             target.offset = value
             layer.setValue(value, forKeyPath: "transform.translation.y")
             if animated, !reduceMotion, delta != 0 {
-                let animation = CABasicAnimation(keyPath: "transform.translation.y")
+                let animation = Self.animation(keyPath: "transform.translation.y")
                 animation.fromValue = -delta
                 animation.toValue = 0
                 animation.isAdditive = true
                 // Default start time is the shared transaction's commit, not before cold UI work.
-                animation.duration = Self.duration
-                animation.timingFunction = Self.timingFunction
                 layer.add(animation, forKey: key)
                 target.keys.append(key)
             } else if !animated || reduceMotion {
@@ -102,7 +113,7 @@ final class HeroShowcaseScrollMotion {
         let navigationDelta = targetNavigationProgress - departure
         if animated, !reduceMotion, navigationDelta != 0 {
             navigationPosition?.animateNavigation(
-                from: -navigationDelta, duration: Self.duration, timingFunction: Self.timingFunction, key: key
+                from: -navigationDelta, spring: Self.spring, key: key
             )
         } else if !animated || reduceMotion {
             finishNavigation()
@@ -239,7 +250,7 @@ struct HeroShowcaseNativeRows: View {
     var body: some View {
         // Native sidebar chrome follows the real ScrollView offset, not the
         // stage's compositor translation. Reserve the hidden hero above row one.
-        content(usesNativeSidebar && !state.isExpanded ? state.motion.distance : 0)
+        content(usesNativeSidebar && !state.nativeRowsExpanded ? state.motion.distance : 0)
     }
 }
 
@@ -361,13 +372,15 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
     let hero: AnyView
     let showcase: AnyView
     let rowContent: AnyView
+    var usesNativeSidebar = false
 
     func makeUIViewController(context: Context) -> Controller {
         Controller(state: state, hero: hosted(hero, context), showcase: hosted(showcase, context),
-                   rows: hosted(rowContent, context))
+                   rows: hosted(rowContent, context), usesNativeSidebar: usesNativeSidebar)
     }
 
     func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.usesNativeSidebar = usesNativeSidebar
         controller.updateContent(
             hero: hosted(hero, context), showcase: hosted(showcase, context), rows: hosted(rowContent, context)
         )
@@ -405,9 +418,26 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         private weak var rowTarget: (any UIFocusItem)?
         private var requestingFocus = false
         private var peek: CGFloat = 0
+        var usesNativeSidebar: Bool {
+            didSet { if oldValue && !usesNativeSidebar { finishNativeRows() } }
+        }
+        private var nativeRowsFrames: CADisplayLink?
+        private var nativeRowsDeparture: CGFloat = 0
+        private var nativeRowsDeadline: CFTimeInterval = 0
+        #if DEBUG
+        var onBoundaryPhase: ((String) -> Void)?
+        #endif
 
-        init(state: HeroShowcaseState, hero: AnyView, showcase: AnyView, rows: AnyView) {
+        private func recordBoundaryPhase(_ phase: String) {
+            #if DEBUG
+            onBoundaryPhase?(phase)
+            #endif
+        }
+
+        init(state: HeroShowcaseState, hero: AnyView, showcase: AnyView, rows: AnyView,
+             usesNativeSidebar: Bool = false) {
             self.state = state
+            self.usesNativeSidebar = usesNativeSidebar
             self.hero = UIHostingController(rootView: Self.viewport(hero))
             self.showcase = UIHostingController(rootView: Self.viewport(showcase))
             self.rows = UIHostingController(rootView: Self.viewport(rows))
@@ -480,6 +510,11 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
                 host.view.bounds = CGRect(origin: .zero, size: frame.size)
                 host.view.center = CGPoint(x: frame.midX, y: frame.midY)
             }
+        }
+
+        override func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
+            finishNativeRows()
         }
 
         static func featuredFrame(in bounds: CGRect, window: CGRect) -> CGRect {
@@ -589,6 +624,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             // or for the animation to finish before admitting the destination.
             guard !requestingFocus else { return }
             requestingFocus = true
+            recordBoundaryPhase("queued")
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 guard self.view.window != nil else { self.requestingFocus = false; return }
@@ -614,14 +650,18 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         }
 
         func present(expanded: Bool, focus: Bool) {
+            recordBoundaryPhase("present")
             let changed = state.isExpanded != expanded
-            state.setExpanded(expanded)
+            let animate = changed && !UIAccessibility.isReduceMotionEnabled
+            let deferRows = usesNativeSidebar && animate && focus && peek > 0
+                && state.nativeRowsExpanded != expanded
+            let departure = rows.view.layer.presentation()?.transform.m42 ?? rows.view.transform.ty
+            state.setExpanded(expanded, deferNativeRows: deferRows)
             hero.view.isUserInteractionEnabled = expanded
             rows.view.isUserInteractionEnabled = !expanded
             hero.view.accessibilityElementsHidden = !expanded
             rows.view.accessibilityElementsHidden = expanded
             showcase.view.accessibilityElementsHidden = expanded
-            let animate = changed && !UIAccessibility.isReduceMotionEnabled
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             state.motion.move(
@@ -631,14 +671,30 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             dissolve(hero.view, to: expanded ? 1 : 0, animated: animate)
             dissolve(showcase.view, to: expanded ? 0 : 1, animated: animate)
             CATransaction.commit()
+            if deferRows {
+                // Native chrome's scroll-origin update must not hold up the
+                // first compositor frame or the destination's focus admission.
+                nativeRowsDeparture = departure
+                nativeRowsDeadline = CACurrentMediaTime() + HeroShowcaseScrollMotion.duration
+                if nativeRowsFrames == nil {
+                    let frames = CADisplayLink(target: self, selector: #selector(synchronizeNativeRowsAfterFrame))
+                    nativeRowsFrames = frames
+                    frames.add(to: .main, forMode: .common)
+                }
+            } else {
+                finishNativeRows()
+            }
             if focus {
+                recordBoundaryPhase("layout-begin")
                 view.layoutIfNeeded()
+                recordBoundaryPhase("layout-end")
                 guard let system = UIFocusSystem.focusSystem(for: view) else {
                     PlozzLog.app.debug("Hero Showcase focus system is unavailable")
                     return
                 }
                 system.requestFocusUpdate(to: self)
                 system.updateFocusIfNeeded()
+                recordBoundaryPhase("focus-end")
                 if !contains(system.focusedItem, in: expanded ? hero : rows) {
                     PlozzLog.app.debug("Hero Showcase boundary focus request was not accepted")
                 }
@@ -650,17 +706,33 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             present(expanded: true, focus: false)
         }
 
+        @objc private func synchronizeNativeRowsAfterFrame() {
+            let position = rows.view.layer.presentation()?.transform.m42 ?? nativeRowsDeparture
+            let hasMotion = abs(position - nativeRowsDeparture) > 0.5
+            guard view.window == nil || hasMotion
+                    || CACurrentMediaTime() >= nativeRowsDeadline else { return }
+            if hasMotion { recordBoundaryPhase("native-motion-frame") }
+            else if view.window != nil {
+                PlozzLog.app.debug("Hero Showcase native origin synchronized after motion observation timed out")
+            }
+            finishNativeRows()
+        }
+
+        private func finishNativeRows() {
+            nativeRowsFrames?.invalidate()
+            nativeRowsFrames = nil
+            state.synchronizeNativeRows()
+        }
+
         private func dissolve(_ view: UIView, to alpha: CGFloat, animated: Bool) {
             let from = view.layer.presentation()?.opacity ?? view.layer.opacity
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             view.alpha = alpha
             if animated {
-                let animation = CABasicAnimation(keyPath: "opacity")
+                let animation = HeroShowcaseScrollMotion.animation(keyPath: "opacity")
                 animation.fromValue = from
                 animation.toValue = Float(alpha)
-                animation.duration = HeroShowcaseScrollMotion.duration
-                animation.timingFunction = HeroShowcaseScrollMotion.timingFunction
                 view.layer.add(animation, forKey: "plozz.hero-showcase.opacity")
             } else {
                 view.layer.removeAnimation(forKey: "plozz.hero-showcase.opacity")
@@ -669,6 +741,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         }
 
         func stopAnimations() {
+            finishNativeRows()
             state.motion.stopAnimations()
             hero.view.layer.removeAnimation(forKey: "plozz.hero-showcase.opacity")
             showcase.view.layer.removeAnimation(forKey: "plozz.hero-showcase.opacity")

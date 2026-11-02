@@ -131,6 +131,12 @@ behavior and never export item identities or response bodies.
 
 ## Continue Watching artwork
 
+Persisted artwork first matches the connection resolver's live in-memory origins.
+Only unmatched URLs load historical origins from preferences, avoiding a
+preferences read for each poster and cast credit during cached Home restoration.
+Historical origins remain server-scoped and live, including reverse-proxy paths;
+reauthentication still uses the current provider's credentials and route.
+
 The existing parent-series metadata batches (at most 50 referenced series per
 request) provide both recency and artwork context. Episodes retain their own
 playable IDs, external IDs, resume positions, and watched state; the parent fills

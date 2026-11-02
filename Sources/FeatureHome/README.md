@@ -466,6 +466,11 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   and this does not add support for third-party plugins with separate watchlist storage.
   Featured is available only for authored collection rows. Large artwork cards
   place the title logo (or text fallback) and real metadata at the lower left.
+  On tvOS, Classic rows retain these large cards with or without the Home hero.
+  Showcase and Hero + Showcase instead render standard poster cards, leaving
+  the focused title's artwork and metadata to Showcase. This presentation-only
+  adaptation preserves the saved Featured preference, row order, and contents;
+  iPhone and iPad continue to use large Featured cards.
   TV rows reuse the standard media-row heading and See all action, with the same
   pinned-navigation keyline, leading fade and card-slot parking as ordinary rows.
   System-focus Featured cards share the image-based native poster renderer.
@@ -1125,6 +1130,12 @@ removing successful rows. Cancellation stops queued requests. Parent-series
 identity lookups are coalesced per account and load, and incomplete Home content
 does not overwrite the durable snapshot.
 
+If SwiftUI replaces Home's view task during library-settings preparation, a
+coalesced replacement request retries the cancelled preparation once. The rows
+must not wait for another trip away from Home and back. Cancellation without a
+replacement does not start background loading; an already-running aggregation
+still completes without a duplicate fetch.
+
 Showcase keeps its first-row anchor while that row loads; a lower row finishing
 does not choose focus or scroll the page. Its leading loading card has a visible
 progress indicator and can hold focus without making the other skeletons
@@ -1172,12 +1183,24 @@ both the rows and featured stage. With the native Sidebar, the first Showcase ro
 also includes the hidden hero's distance in its real scroll offset, balanced by
 matching content padding so card placement does not change. Native Home chrome
 therefore disappears on the first Down, not the second row, and reappears only
-when returning to the hero. The boundary handoff keeps Up directed at the hero
+when returning to the hero. This padding is a coordinate origin, separate from
+the row destination and height stops. Changing it rebases the native scroll
+target without adding a spring or restarting the in-flight viewport-height
+path, including when Up reaches the hero before the first row settles.
+For an animated native-Sidebar boundary, focus and compositor motion are admitted
+before changing that scroll origin. A one-shot display-link observer applies the
+padding/offset pair after it observes motion, rather than making native chrome
+layout block the first frame. It publishes once, not on every animation frame,
+and is bounded by the spring's settling duration. Reversal uses the latest
+destination; reset, disappearance, teardown and nonanimated updates synchronize
+immediately. This reorders the native layout work; it does not remove its CPU
+cost or replace the native Home control.
+The boundary handoff keeps Up directed at the hero
 instead of the native Home control. Standalone Showcase keeps its existing
 first-row behavior, and the Pinned Sidebar is unchanged.
 The bar travels only far enough to clear the screen and receives an additive
 native translation in the stage's own animation transaction, including reversals.
-There is no display-link-to-SwiftUI follower or independent SwiftUI animation.
+Top Bar has no display-link-to-SwiftUI follower or independent SwiftUI animation.
 Using the full stage distance would hide it early and reveal it late.
 Detach and reduced-motion updates clear owned animations. The return chevron sits 48 points from the top in all navigation styles,
 without reserving space for the now-hidden Top Bar.
@@ -1205,10 +1228,12 @@ the foreground speed (about 120 points at the standard peek distance): the
 featured image rises out while the first Showcase image rises into place from
 below, reversing together on return. Their nested foregrounds compensate for
 that parent movement so their total travel still matches the rows. The
-transition uses a 0.6-second cubic easing `(0.32, 0, 0.2, 1)` with a gradual
-start and longer deceleration, shared by movement and crossfade. This timing
-is specific to the Hero boundary; ordinary Showcase row transitions are
-unchanged and keep their artwork pinned. The return chevron lives outside the
+transition uses the same zero-bounce spring as ordinary Showcase rows
+(0.4-second perceptual duration, running through its settling duration).
+Foregrounds, artwork, navigation, and crossfade share those spring parameters
+and the transaction's commit time. Additive movement retains running springs
+through rapid reversals instead of restarting from rest. Ordinary Showcase row
+transitions are unchanged and keep their artwork pinned. The return chevron lives outside the
 moving hosts and stays stationary.
 The incoming image includes top overscan equal to its travel, keeping its upper
 edge offscreen throughout the transition. This adds a modest aspect-fill crop
@@ -1242,6 +1267,21 @@ native focus and invokes the same boundary handoff used by remote input. It
 checks the actual `UIFocusSystem.focusedItem` in the running app scene, not only
 the requested destination. This is separate from physical press/swipe delivery
 and presented-frame measurements in the remote test suite.
+`--hero-showcase-latency-probe` waits for native navigation to admit the hero,
+then measures ten boundary handoffs. When `PLOZZ_HERO_BOUNDARY_START` names a
+Darwin notification, the fixture registers it before reporting `ready`; the
+driver signals it only after hero focus is confirmed, so setup cannot race
+the measured navigation. It records queue, preparation, layout and
+focus-request durations plus the first observed moving presentation layer and
+destination focus. `ShowcaseNavigationTests.testHeroBoundaryLatencyAcrossNavigationStyles`
+retains the same measurements for Pinned, Top Bar and native Sidebar. Build it
+with `PlozzHomeFixtureTests` so the driver and fixture are both current.
+The 16 ms observation interval quantizes the latter two measurements; these
+exclude physical input delivery and are not display-photon latency or FPS.
+Keep first-entry and warm samples separate when comparing captures.
+The native first-motion callback is also recorded: subsequent chrome layout can
+delay the polling task even when compositor motion is already underway. Every
+sample requires native origin synchronization as well as focus and motion.
 `--hero-showcase-navigation-probe` first changes destinations and returns Home
 through pinned or top-bar navigation, then supplies presses to the boundary
 recognizer and checks actual focus while rejecting escape during each queued
