@@ -193,14 +193,18 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testEnableOngoingWatchedImport() throws {
-        try enableOngoingImport(category: "watched", label: "Watched")
+        try enableOngoingImport(categories: [("watched", "Watched")])
     }
 
     func testEnableOngoingResumeImport() throws {
-        try enableOngoingImport(category: "resume", label: "Resume points")
+        try enableOngoingImport(categories: [("resume", "Resume points")])
     }
 
-    private func enableOngoingImport(category: String, label: String) throws {
+    func testEnableOngoingWatchedAndResumeImport() throws {
+        try enableOngoingImport(categories: [("watched", "Watched"), ("resume", "Resume points")])
+    }
+
+    private func enableOngoingImport(categories: [(id: String, label: String)]) throws {
         try openHistoryComparison()
         try tapVisible(app.buttons["tracker-history.ongoing-sync"])
         let accountID = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"])
@@ -212,7 +216,9 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertEqual(watched.value as? String, "0")
         XCTAssertEqual(app.switches["tracker-history.sync-resume"].value as? String, "0")
         try tapVisible(destination.switches.firstMatch)
-        try tapVisible(app.switches["tracker-history.sync-\(category)"].switches.firstMatch)
+        for category in categories {
+            try tapVisible(app.switches["tracker-history.sync-\(category.id)"].switches.firstMatch)
+        }
         try tapVisible(app.buttons["tracker-history.enable-sync"])
         let confirm = app.buttons.matching(NSPredicate(
             format: "label == %@ AND identifier != %@", "Enable sync", "tracker-history.enable-sync"
@@ -222,7 +228,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         confirm.tap()
         try require(app.buttons["tracker-history.disable-sync"].waitForExistence(timeout: 30),
                     "Expected separate ongoing-import permission")
-        XCTAssertTrue(app.staticTexts[label].exists)
+        let summary = categories.count == 2 ? "Watched and resume points" : categories[0].label
+        XCTAssertTrue(app.staticTexts[summary].exists)
     }
 
     func testSynchronizeOngoingImport() throws {
@@ -332,7 +339,13 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testConfirmFreshHistoryConflict() throws {
         try openHistoryComparison()
-        XCTAssertTrue(app.staticTexts["Server resume: 90 seconds"].exists)
+        try tapVisible(importSelection, tapping: false)
+        let expected = try XCTUnwrap(Double(
+            ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_EXPECTED_RESUME_SECONDS"] ?? "90"
+        ))
+        XCTAssertTrue(app.staticTexts[
+            "Server resume: \(expected.formatted(.number.precision(.fractionLength(0)))) seconds"
+        ].exists)
         XCTAssertTrue(app.staticTexts["Different from server — selecting replaces its current state"].exists)
         try confirmSelectedHistoryImport()
     }
@@ -374,7 +387,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func selectHistoryImport() throws {
-        XCTAssertTrue(importSelection.exists && importSelection.isHittable)
+        try tapVisible(importSelection, tapping: false)
         XCTAssertEqual(importSelection.value as? String, "0")
         try tapVisible(importSelection.switches.firstMatch)
         let apply = app.buttons["tracker-history.apply"]
@@ -382,7 +395,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(XCTWaiter.wait(for: [selected], timeout: 5) == .completed, "Expected the selected import action")
         XCTAssertEqual(importSelection.value as? String, "1")
         XCTAssertEqual(apply.label, "Apply 1 selected changes")
-        apply.tap()
+        try tapVisible(apply)
     }
 
     private func enableReporting() throws {

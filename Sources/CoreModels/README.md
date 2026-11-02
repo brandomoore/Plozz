@@ -3,6 +3,25 @@
 The Foundation-only, **zero-dependency** core of Plozz. Defines the domain
 language every other module speaks.
 
+## Ongoing tracker import
+
+`TrackerHistorySyncController` keeps device-local, profile/tracker/server-user
+consent and delivery receipts. Enrollment excludes existing tracker observations;
+it does not backfill. New forward resume updates and watched completion may
+continue a previously synchronized resume only when the fresh destination
+baseline exactly matches its persisted confirmed fingerprint. That baseline
+includes the available played/history flags, resume, runtime, last-played date
+and identities, not a reconstructed server play log.
+
+Confirmed write readbacks and already-matching resume observations establish
+proof. Independent destination changes, rewinds, incompatible runtimes, competing
+tracker records and active playback remain protected. Every continuation still
+uses the existing fresh-tracker, scope and dispatch-time baseline checks.
+Uncertain targets stay held until readback proof and all receipts are durable.
+An explicit reviewed import can restore continuation for its original enabled
+grant; revoked or replacement grants cannot inherit that approval. Legacy
+ledgers without proof remain readable but never authorize an inferred override.
+
 ## Reviewed tracker export
 
 `TrackerHistoryExportSession` reads one explicitly selected server-user/library

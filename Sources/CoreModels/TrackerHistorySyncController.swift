@@ -78,6 +78,7 @@ public final class TrackerHistorySyncController {
         var baseline: Set<String> = []
         var receipts: [String: Receipt] = [:]
         var blockedTargets: Set<String> = []
+        var confirmedTargets: [String: String]?
     }
 
     public init(
@@ -239,13 +240,7 @@ public final class TrackerHistorySyncController {
             grant = persisted
             confirmedCount = 0
             hasMoreChanges = false
-            var buckets: [Bucket] = []
-            for index in 0..<Self.bucketCount {
-                guard let bucket: Bucket = try store.load(for: bucketKey(initial, index)) else {
-                    throw DurableLocalStateError.malformedPayload
-                }
-                buckets.append(bucket)
-            }
+            var buckets = try loadBuckets(initial)
             for account in initial.scope.accounts {
                 try requireGrant(initial, current)
                 let scope = try initial.scope.selectingAccounts([account.accountID])
@@ -290,14 +285,18 @@ public final class TrackerHistorySyncController {
                 guard let plan = session.plan else { throw TrackerHistoryError.incompleteSnapshot }
                 let rows = plan.rows.filter { !considered.isDisjoint(with: $0.recordIDs) }
                 var selected: Set<UUID> = []
+                var continuations: Set<UUID> = []
                 for row in rows {
                     if row.comparison == .playing { continue }
                     let receipt: Receipt
                     let targetKey = row.target.map { Self.digest(Data($0.id.utf8)) }
                     let blocked = targetKey.map { buckets[Self.bucket($0)].blockedTargets.contains($0) } ?? false
-                    if row.comparison == .ready, let change = row.change, !change.isDestructive, !blocked {
+                    let continues = try canContinue(row, buckets: buckets)
+                    if (row.comparison == .ready || continues), let change = row.change,
+                       !change.isDestructive, !blocked {
                         receipt = .pending
                         selected.insert(row.id)
+                        if continues { continuations.insert(row.id) }
                     } else if row.comparison == .alreadyMatches {
                         receipt = .matched
                     } else {
@@ -313,12 +312,14 @@ public final class TrackerHistorySyncController {
                     persisted.reviewCount = Self.reviewCount(buckets)
                     try store.save(persisted, for: grantKey())
                     grant = persisted
-                    await session.apply(rowIDs: selected, overridingConflicts: [], confirmsDestructiveChanges: false)
+                    await session.apply(
+                        rowIDs: selected, overridingConflicts: continuations, confirmsDestructiveChanges: false
+                    )
                     try requireGrant(initial, current)
                     for row in rows where session.outcomes[row.id] == .confirmed {
                         try record(
                             .confirmed, row: row, hashes: hashes, accountID: account.accountID,
-                            grant: initial, buckets: &buckets
+                            grant: initial, buckets: &buckets, confirmedBaseline: session.confirmedBaselines[row.id]
                         )
                         confirmedCount += 1
                     }
@@ -338,13 +339,26 @@ public final class TrackerHistorySyncController {
 
     private func record(
         _ value: Receipt, row: TrackerHistoryImportPlan.Row, hashes: [String: String],
-        accountID: String, grant: TrackerHistorySyncGrant, buckets: inout [Bucket]
+        accountID: String, grant: TrackerHistorySyncGrant, buckets: inout [Bucket],
+        confirmedBaseline: TrackerServerHistoryBaseline? = nil
     ) throws {
-        if let target = row.target, value == .pending || value == .confirmed {
+        if let target = row.target {
             let key = Self.digest(Data(target.id.utf8))
             let index = Self.bucket(key)
-            if value == .pending { buckets[index].blockedTargets.insert(key) }
-            else { buckets[index].blockedTargets.remove(key) }
+            if value == .pending || value == .confirmed { buckets[index].blockedTargets.insert(key) }
+            var confirmed = buckets[index].confirmedTargets ?? [:]
+            if value == .confirmed || value == .matched {
+                guard let baseline = value == .confirmed ? confirmedBaseline : row.baseline else {
+                    throw TrackerHistoryError.incompleteSnapshot
+                }
+                if case .resume(let seconds) = row.change, seconds > 0, !baseline.played,
+                   value == .confirmed || !buckets[index].blockedTargets.contains(key) {
+                    confirmed[key] = try Self.baselineFingerprint(baseline)
+                } else { confirmed[key] = nil }
+            } else if value == .review {
+                confirmed[key] = nil
+            }
+            buckets[index].confirmedTargets = confirmed
             try store.save(buckets[index], for: bucketKey(grant, index))
         }
         for recordID in row.recordIDs {
@@ -354,6 +368,79 @@ public final class TrackerHistorySyncController {
             buckets[index].receipts[key] = value
             try store.save(buckets[index], for: bucketKey(grant, index))
         }
+        if value == .confirmed, let target = row.target {
+            let key = Self.digest(Data(target.id.utf8))
+            let index = Self.bucket(key)
+            // Release the hold only after both the readback proof and receipts are durable.
+            buckets[index].blockedTargets.remove(key)
+            try store.save(buckets[index], for: bucketKey(grant, index))
+        }
+    }
+
+    private func canContinue(_ row: TrackerHistoryImportPlan.Row, buckets: [Bucket]) throws -> Bool {
+        guard row.comparison == .serverConflict, let target = row.target,
+              let baseline = row.baseline, !baseline.played,
+              let position = baseline.resumePosition, position > 0 else { return false }
+        let key = Self.digest(Data(target.id.utf8))
+        guard buckets[Self.bucket(key)].confirmedTargets?[key] == (try Self.baselineFingerprint(baseline)) else {
+            return false
+        }
+        switch row.change {
+        case .resume(let next): return next > position
+        case .watched(true): return true
+        default: return false
+        }
+    }
+
+    func recordReviewedImport(
+        _ plan: TrackerHistoryImportPlan, baselines: [UUID: TrackerServerHistoryBaseline], expectedGrantID: UUID?
+    ) throws {
+        guard let expectedGrantID, !baselines.isEmpty else { return }
+        reload()
+        if let error { throw error }
+        guard isEnabled, let grant, grant.id == expectedGrantID else { return }
+        guard plan.serverScope == contextScope, plan.snapshot.trackerID == identity.trackerID,
+              plan.snapshot.observations.count <= Self.maximumObservations else {
+            throw TrackerHistoryError.scopeChanged
+        }
+        let accounts = Set(grant.scope.accounts.map(\.accountID))
+        let rows = plan.rows.filter { row in
+            baselines[row.id] != nil && row.target.map { accounts.contains($0.accountID) } == true
+                && grant.categories.contains { $0.includes(row.observation.fact) }
+        }
+        guard !rows.isEmpty else { return }
+        if isBusy { stop() }
+        try requireGrant(grant, generation)
+        var buckets = try loadBuckets(grant)
+        let hashes = try Dictionary(uniqueKeysWithValues: plan.snapshot.observations.map {
+            ($0.recordID, try Self.fingerprint($0))
+        })
+        for row in rows {
+            guard let target = row.target else { throw TrackerHistoryError.invalidSelection }
+            try record(
+                .confirmed, row: row, hashes: hashes, accountID: target.accountID,
+                grant: grant, buckets: &buckets, confirmedBaseline: baselines[row.id]
+            )
+        }
+        var updated = grant
+        updated.reviewCount = Self.reviewCount(buckets)
+        try store.save(updated, for: grantKey())
+        self.grant = updated
+    }
+
+    private func loadBuckets(_ grant: TrackerHistorySyncGrant) throws -> [Bucket] {
+        try (0..<Self.bucketCount).map { index in
+            guard let bucket: Bucket = try store.load(for: bucketKey(grant, index)) else {
+                throw DurableLocalStateError.malformedPayload
+            }
+            return bucket
+        }
+    }
+
+    private static func baselineFingerprint(_ baseline: TrackerServerHistoryBaseline) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return digest(try encoder.encode(baseline))
     }
 
     private func requireContext(_ current: UUID) throws {

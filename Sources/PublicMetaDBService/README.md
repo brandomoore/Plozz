@@ -480,12 +480,23 @@ Further real resume-only checks confirmed category isolation, revocation and
 re-enrollment without backfill, followed by exact import of newly reported
 progress into an empty Jellyfin destination. Watched state/count stayed unchanged;
 the existing provider resume setter updated recency for Continue Watching.
-Relaunch and repeated sync were no-ops. **Continuous progress updates are not yet
-proven:** the current comparison treats any differing existing server resume as
-a conflict, including an unchanged position previously written by this sync.
-The next real source update was therefore held for review rather than advanced.
-This limitation needs an explicit continuation policy before describing the
-route as continuous two-way resume synchronization.
+Relaunch and repeated sync were no-ops. These checks exposed a continuation gap:
+any differing existing resume required review, even when this sync had written
+the unchanged destination. The shared controller now retains confirmed
+destination fingerprints, permitting only safe forward progress or completion.
+See [ongoing import invariants](../CoreModels/README.md#ongoing-tracker-import).
+
+Real iPhone-simulator playback then verified forward continuation from
+1548.218 to 2307.588 seconds, preserving the Jellyfin user's unwatched/count-zero
+state. An independent destination-only edit to 2500 seconds was preserved when
+later source playback reported 3067.161 seconds. Explicit native review restored
+synchronization; a subsequent real source rewind remained review-only.
+Separately enabling both categories did not backfill. Following explicit
+review, actual source completion became one dated PublicMetaDB play and an
+ongoing Jellyfin watched update/count one with resume cleared. Independent reads
+confirmed no tracker echo or unrelated title/server changes, and relaunch/repeat
+remained a no-op. This verifies the tested movie continuation route, not
+foreground timing, independent-device delivery, episodes or provider parity.
 
 The unbound `PublicMetaDBLiveHistoryTests` driver uses normally configured
 production-app UI, not seeded profiles or substituted media. Its individual

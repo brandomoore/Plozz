@@ -44,6 +44,7 @@ public final class TrackerHistoryImportSession {
     public private(set) var isBusy = false
     public private(set) var error: (any Error)?
     public private(set) var outcomes: [UUID: Outcome] = [:]
+    private(set) var confirmedBaselines: [UUID: TrackerServerHistoryBaseline] = [:]
     public let destinations: [Destination]
     public let scope: WatchMutationServerScope
     public var ongoingSync: TrackerHistorySyncController?
@@ -78,6 +79,7 @@ public final class TrackerHistoryImportSession {
         approvedGeneration = nil
         finishUnconfirmedOutcomes()
         plan = nil
+        confirmedBaselines = [:]
         isBusy = false
     }
 
@@ -100,6 +102,7 @@ public final class TrackerHistoryImportSession {
         plan = nil
         error = nil
         outcomes = [:]
+        confirmedBaselines = [:]
         isBusy = true
         defer { if generation == current { isBusy = false } }
         do {
@@ -137,6 +140,8 @@ public final class TrackerHistoryImportSession {
     ) async {
         guard !isBusy else { return }
         let current = generation
+        let sync = ongoingSync
+        let syncGrantID = sync?.isEnabled == true ? sync?.grant?.id : nil
         error = nil
         isBusy = true
         defer {
@@ -177,6 +182,7 @@ public final class TrackerHistoryImportSession {
             await reconciler.drainAndWait()
             try requireCurrent(current)
             try await readBack(rows: approval.rows, generation: current)
+            try sync?.recordReviewedImport(plan, baselines: confirmedBaselines, expectedGrantID: syncGrantID)
             approvedGeneration = nil
         } catch {
             if generation == current {
@@ -232,6 +238,9 @@ public final class TrackerHistoryImportSession {
                 confirmed = item.resumePosition.map { abs($0 - value) <= 0.5 } ?? (value == 0)
             }
             outcomes[row.id] = row.observation.matches(item) && confirmed ? .confirmed : .unconfirmed
+            if outcomes[row.id] == .confirmed {
+                confirmedBaselines[row.id] = .init(item: item)
+            }
         }
     }
 
