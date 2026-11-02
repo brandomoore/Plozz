@@ -58,6 +58,80 @@ final class ProfileFlowModelTests: XCTestCase {
         XCTAssertFalse(model.isChoosingProfile)
     }
 
+    func testPickerAuthorizationCancellationPreservesMandatorySelection() async {
+        let (model, profiles) = makeModel()
+        var active = profiles.activeProfile
+        active.replaceLock(with: ProfileLock.make(pin: "2468", iterations: 1))
+        profiles.update(active)
+        model.prepareLaunchPicker()
+        model.selectProfileFromPicker(to: active.id)
+        XCTAssertTrue(model.profilePickerOwnsAuthorization)
+        XCTAssertTrue(model.isPresentingProfileSelection)
+        XCTAssertTrue(model.activeProfileAwaitsUnlock)
+        model.cancelPickerAuthorization()
+        XCTAssertNil(model.pendingLockedProfile)
+        XCTAssertTrue(model.isChoosingProfile)
+        XCTAssertFalse(model.isProfileSelectionCancelable)
+        model.cancelProfileSelection()
+        XCTAssertTrue(model.isChoosingProfile)
+        model.selectProfileFromPicker(to: active.id)
+        let accepted = await model.submitProfileLockPIN("2468")
+        XCTAssertTrue(accepted)
+        XCTAssertFalse(model.isPresentingProfileSelection)
+        model.finishProfilePickerPresentation()
+        XCTAssertFalse(model.profilePickerOwnsAuthorization)
+    }
+
+    func testPickerHandoffRetainsOwnershipThroughLocalAndLivePlexPINs() async throws {
+        let env = try makeEnv(accounts: [("plex", .plex)])
+        env.hub.reloadAccounts()
+        let probe = ForegroundPINProbe()
+        env.plex.plexHomeUsersFetch = { _, _ in
+            [PlexHomeUser(id: "parent", name: "Server name", requiresPIN: true)]
+        }
+        env.plex.plexHomeUserSwitch = { _, pin, _, _ in try await probe.authenticate(pin) }
+        env.plex.plexServerTokenResolve = { _, _, _ in "parent-server" }
+        var profile = env.profiles.activeProfile.settingHomeUserBinding(
+            .init(homeUserID: "parent", name: "Server name", requiresPIN: true), forPlexAccount: "plex"
+        )
+        profile.replaceLock(with: ProfileLock.make(pin: "2468", iterations: 1))
+        env.profiles.update(profile)
+        env.flow.prepareLaunchPicker()
+        env.flow.selectProfileFromPicker(to: profile.id)
+        XCTAssertEqual(env.flow.pendingLockedProfile?.id, profile.id)
+        let localAccepted = await env.flow.submitProfileLockPIN("2468")
+        XCTAssertTrue(localAccepted)
+        XCTAssertFalse(env.flow.isChoosingProfile)
+        XCTAssertTrue(env.flow.isPresentingProfileSelection)
+        XCTAssertTrue(env.flow.profilePickerOwnsAuthorization)
+        await env.plex.waitForPlexPINRequirementCheck()
+        XCTAssertNotNil(env.plex.pendingPlexPINRequest)
+        env.plex.submitPlexPIN("0000")
+        await env.plex.waitForPlexPINRequirementCheck()
+        XCTAssertTrue(env.flow.isPresentingProfileSelection)
+        env.plex.submitPlexPIN("4821")
+        await env.plex.waitForPlexPINRequirementCheck()
+        XCTAssertFalse(env.flow.isPresentingProfileSelection)
+        XCTAssertNil(env.plex.pendingPlexPINRequest)
+    }
+
+    func testForegroundDepartureRevokesPickerPresentationAndPINAttempt() {
+        let (model, profiles) = makeModel()
+        var active = profiles.activeProfile
+        active.replaceLock(with: ProfileLock.make(pin: "2468", iterations: 1))
+        profiles.update(active)
+        profiles.noteProfileUnlocked(active.id)
+        model.lockForForegroundIfNeeded()
+        model.selectProfileFromPicker(to: active.id)
+        XCTAssertTrue(model.profilePickerOwnsAuthorization)
+        model.cancelForegroundProfileSelection()
+        XCTAssertFalse(model.profilePickerOwnsAuthorization)
+        XCTAssertNil(model.pendingLockedProfile)
+        XCTAssertTrue(model.isChoosingProfile)
+        XCTAssertTrue(model.isForegroundLocked)
+        XCTAssertFalse(model.canFinishForegroundUnlock)
+    }
+
     func testPickerSettingsReturnsToCurrentProfileWithoutReactivatingIt() {
         let (model, profiles) = makeModel()
         let selection = profiles.selectionGeneration

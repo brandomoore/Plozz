@@ -12,6 +12,7 @@ import CoreUI
 /// caller passes a non-nil `onAddProfile` (i.e. from Settings → "Manage
 /// Profiles"); the launch picker hides it.
 public struct ProfilePickerView: View {
+    public static var avatarSize: CGFloat { ProfilePickerLayout.avatarSize }
     private let profiles: [Profile]
     private let activeProfileID: String?
     private let title: LocalizedStringResource
@@ -29,6 +30,10 @@ public struct ProfilePickerView: View {
     private let onCancel: (() -> Void)?
     private let onOpenSettings: (() -> Void)?
     private let showsPINLock: (Profile) -> Bool
+    private let identityNamespace: Namespace.ID?
+    private let isCovered: Bool
+    @Namespace private var fallbackIdentity
+    @State private var selectedForReturnID: String?
 
     @Environment(\.themePalette) private var palette
 
@@ -42,7 +47,9 @@ public struct ProfilePickerView: View {
         onAddKidsProfile: (() -> Void)? = nil,
         onCancel: (() -> Void)? = nil,
         onOpenSettings: (() -> Void)? = nil,
-        showsPINLock: @escaping (Profile) -> Bool = { $0.showsPINLock }
+        showsPINLock: @escaping (Profile) -> Bool = { $0.showsPINLock },
+        identityNamespace: Namespace.ID? = nil,
+        isCovered: Bool = false
     ) {
         self.profiles = profiles
         self.activeProfileID = activeProfileID
@@ -54,6 +61,8 @@ public struct ProfilePickerView: View {
         self.onCancel = onCancel
         self.onOpenSettings = onOpenSettings
         self.showsPINLock = showsPINLock
+        self.identityNamespace = identityNamespace
+        self.isCovered = isCovered
     }
 
 
@@ -97,7 +106,8 @@ public struct ProfilePickerView: View {
     /// last-active profile (so resuming is a single click), falling back to the
     /// first profile on a first-ever launch with no active profile.
     private var defaultFocusID: String? {
-        profiles.first { $0.id == activeProfileID }?.id ?? profiles.first?.id
+        profiles.first { $0.id == selectedForReturnID }?.id
+            ?? profiles.first { $0.id == activeProfileID }?.id ?? profiles.first?.id
     }
 
     private var awaitingInitialProfileFocus: Bool {
@@ -164,13 +174,23 @@ public struct ProfilePickerView: View {
                 HStack(alignment: .top, spacing: ProfilePickerLayout.tileSpacing) {
                     ForEach(profiles) { profile in
                         VStack(spacing: 20) {
-                            ProfileTile(profile: profile, showsLock: showsPINLock(profile)) {
+                            ProfileTile(
+                                profile: profile, showsLock: showsPINLock(profile),
+                                identity: PINProfileTransition(
+                                    profileID: isCovered ? "retained-\(profile.id)" : profile.id,
+                                    namespace: identityNamespace ?? fallbackIdentity
+                                )
+                            ) {
+                                selectedForReturnID = profile.id
                                 onSelect(profile)
                             }
                             .focused($focus, equals: .profile(profile.id))
                             .disabled(awaitingInitialProfileFocus && profile.id != defaultFocusID)
                             .anchorPreference(key: TileCentersKey.self, value: .center) {
                                 [profile.id: $0]
+                            }
+                            .animation(nil) { content in
+                                content.opacity(isCovered && profile.id == selectedForReturnID ? 0 : 1)
                             }
 
                             if let onEditProfile {
@@ -238,10 +258,17 @@ public struct ProfilePickerView: View {
                 .focusSection()
             }
         }
+        .opacity(isCovered ? 0 : 1)
+        .disabled(isCovered)
         .background {
             ProfilePickerFocusEntry(isPending: awaitingInitialProfileFocus) {
                 if let id = defaultFocusID { focus = .profile(id) }
             }
+            .id(isCovered)
+        }
+        .onChange(of: isCovered) { _, covered in
+            focus = nil
+            if !covered { hasFocusedProfile = false }
         }
         .onChange(of: focus) { _, target in
             if case .profile? = target {
@@ -422,11 +449,12 @@ private struct TileCentersKey: PreferenceKey {
 private struct ProfileTile: View {
     let profile: Profile
     let showsLock: Bool
+    let identity: PINProfileTransition
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            ProfileTileLabel(profile: profile, showsLock: showsLock)
+            ProfileTileLabel(profile: profile, showsLock: showsLock, identity: identity)
         }
         .plozzCardFocusButtonStyle(
             ProfileTileButtonStyle(), cornerRadius: ProfilePickerLayout.avatarSize / 2,
@@ -435,6 +463,7 @@ private struct ProfileTile: View {
         .plozzCircularFocusStyle()
         .accessibilityLabel(profile.name)
         .accessibilityValue(showsLock ? Text(ProfileLockCopy.title) : Text(verbatim: ""))
+        .accessibilityIdentifier("profile-picker-\(profile.id)")
     }
 }
 
@@ -489,6 +518,7 @@ private extension EnvironmentValues {
 private struct ProfileTileLabel: View {
     let profile: Profile
     let showsLock: Bool
+    let identity: PINProfileTransition
 
     @Environment(\.isFocused) private var isFocused
     @Environment(\.themePalette) private var palette
@@ -497,12 +527,14 @@ private struct ProfileTileLabel: View {
         VStack(spacing: 12) {
             FocusGlassAvatar {
                 ProfileAvatarView(profile: profile, size: ProfilePickerLayout.avatarSize)
+                    .matchedGeometryEffect(id: identity.avatarID, in: identity.namespace)
             }
 
             ProfileNameLabel(profile: profile, showsLock: showsLock)
                 .font(ProfilePickerLayout.nameFont)
                 .foregroundStyle(isFocused ? palette.primaryText : palette.secondaryText)
                 .lineLimit(1)
+                .matchedGeometryEffect(id: identity.nameID, in: identity.namespace, properties: .position)
         }
     }
 }

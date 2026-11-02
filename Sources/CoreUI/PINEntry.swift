@@ -362,6 +362,15 @@ public struct PINEntryScaffold<Badge: View>: View {
 
     // MARK: Pad column
 
+    private var animatesKeyEntrance: Bool {
+        #if os(tvOS)
+        // Native focus must never land on a key that has not appeared yet.
+        false
+        #else
+        profileTransition != nil
+        #endif
+    }
+
     @ViewBuilder
     private var padColumn: some View {
         VStack(spacing: 28) {
@@ -372,9 +381,9 @@ public struct PINEntryScaffold<Badge: View>: View {
                     ProgressView().controlSize(.large)
                 }
             }
-            .modifier(PINKeyEntrance(enabled: profileTransition != nil, position: 0, reduceMotion: reduceMotion))
+            .modifier(PINKeyEntrance(enabled: animatesKeyEntrance, position: 0, reduceMotion: reduceMotion))
             PINDialPad(
-                animatesEntrance: profileTransition != nil,
+                animatesEntrance: animatesKeyEntrance,
                 onDigit: appendDigit, onDelete: deleteDigit
             )
                 .disabled(isSubmitting || entry.isCommitting)

@@ -21,6 +21,31 @@ struct ProfileSelectionView: View {
     let canCancel: Bool
 
     @Environment(\.themePalette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var profileIdentity
+    @State private var selectedProfileID: String?
+    @State private var profileOrder: [String] = []
+    @State private var selectionAllowsManagement = false
+    @State private var hasPresentedAuthorization = false
+    private var handoffAnimation: Animation? { reduceMotion ? nil : .smooth(duration: 0.48) }
+
+    private var presentsAuthorization: Bool {
+        selectedProfileID != nil && (hasPresentedAuthorization
+            || appState.profileFlow.pendingLockedProfile != nil
+            || appState.profileFlow.pendingParentalSwitch != nil
+            || appState.plexHomeUsers.pendingPlexPINRequest != nil)
+    }
+
+    private var selectedProfile: Profile? {
+        appState.profilesModel.profiles.first { $0.id == selectedProfileID }
+    }
+
+    private var displayedProfiles: [Profile] {
+        let recent = appState.profilesModel.profilesByRecency
+        let byID = Dictionary(uniqueKeysWithValues: recent.map { ($0.id, $0) })
+        let retainedIDs = Set(profileOrder)
+        return profileOrder.compactMap { byID[$0] } + recent.filter { !retainedIDs.contains($0.id) }
+    }
 
     /// The profile whose actions sheet is open (Edit), held as an **id**.
     ///
@@ -94,16 +119,62 @@ struct ProfileSelectionView: View {
     /// Whether profile management is withheld right now — see
     /// `ProfilesModel.managementRequiresParentalPIN`.
     private var managementGated: Bool {
-        appState.profileFlow.managementRequiresParentalPIN
+        selectedProfileID == nil
+            ? appState.profileFlow.managementRequiresParentalPIN : !selectionAllowsManagement
     }
 
     var body: some View {
+        ZStack {
+            picker
+                .disabled(presentsAuthorization)
+                .accessibilityHidden(presentsAuthorization)
+            if presentsAuthorization {
+                ProfileAccessGateView(appState: appState, selectedProfile: selectedProfile) {
+                    withAnimation(handoffAnimation) {
+                        appState.profileFlow.cancelPickerAuthorization()
+                        selectedProfileID = nil
+                        hasPresentedAuthorization = false
+                    }
+                }
+                .environment(\.pinProfileTransition, selectedProfile.map {
+                    PINProfileTransition(
+                        profileID: $0.id, namespace: profileIdentity, avatarSize: ProfilePickerView.avatarSize
+                    )
+                })
+                .transition(.identity)
+                .zIndex(1)
+            }
+        }
+        .animation(handoffAnimation, value: presentsAuthorization)
+        .onChange(of: presentsAuthorization) { _, presented in
+            if presented { hasPresentedAuthorization = true }
+        }
+        .onChange(of: appState.profileFlow.profilePickerSelectionID) { _, selection in
+            if selection == nil {
+                selectedProfileID = nil
+                hasPresentedAuthorization = false
+            }
+        }
+        .onDisappear {
+            if !appState.profileFlow.isChoosingProfile {
+                appState.profileFlow.finishProfilePickerPresentation()
+            }
+        }
+    }
+
+    private var picker: some View {
         ProfilePickerView(
             // Whoever watched on this Apple TV most recently leads the row, since
             // tvOS opens focus on the first tile and that's the likeliest pick.
-            profiles: appState.profilesModel.profilesByRecency,
+            profiles: displayedProfiles,
             activeProfileID: appState.profilesModel.activeProfileID,
-            onSelect: { appState.profileFlow.switchProfile(to: $0.id) },
+            onSelect: { profile in
+                profileOrder = displayedProfiles.map(\.id)
+                selectionAllowsManagement = !appState.profileFlow.managementRequiresParentalPIN
+                selectedProfileID = profile.id
+                hasPresentedAuthorization = false
+                appState.profileFlow.selectProfileFromPicker(to: profile.id)
+            },
             // Withheld inside an enforced Kids Profile: creating a profile
             // switches into it, so offering it here would let a child walk
             // straight into an unrestricted profile without the Parental PIN.
@@ -113,7 +184,9 @@ struct ProfileSelectionView: View {
             onAddKidsProfile: managementGated ? nil : { request(.add(isKids: true)) },
             onCancel: canCancel ? { appState.profileFlow.cancelProfileSelection() } : nil,
             onOpenSettings: { appState.profileFlow.requestSettingsFromProfileSelection() },
-            showsPINLock: appState.accountsProviders.profileShowsPINLock
+            showsPINLock: appState.accountsProviders.profileShowsPINLock,
+            identityNamespace: profileIdentity,
+            isCovered: presentsAuthorization
         )
         // tvOS Menu button: the picker is rendered as a top-level view (not a
         // sheet / NavigationStack push), so without this handler Menu falls

@@ -55,6 +55,16 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
 
 ## Invariants
 
+- **Continuous tvOS PIN handoff.** Selecting a profile retains the picker behind
+  its parental, local, and Plex authorization steps. Its avatar and name share
+  the mobile PIN transition; Plex verification keeps the selected Plozz identity.
+  Recency changes do not move the source tile during authorization. The covered
+  picker cannot receive input or accessibility focus. Menu returns to the chosen
+  tile using the normal visible-layout focus entry, without a timed correction.
+  Reduce Motion removes the handoff movement, and TV keys appear immediately so
+  native focus cannot land on an invisible key. Presentation ownership does not
+  unlock a profile: existing local, parental, and live Plex checks still decide
+  access, including cancellation and foreground reauthorization.
 - **tvOS profile selection on return.** Automatically Sign In is the only
   device-wide access preference. When it is on, warm returns keep the current
   profile authorized. When it is off, `CoreModels.ProfileReturnPolicy` derives

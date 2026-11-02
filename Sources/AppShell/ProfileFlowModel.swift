@@ -31,6 +31,15 @@ public final class ProfileFlowModel {
     /// When `true`, `RootView` shows the profile picker instead of the signed-in
     /// UI (shown at launch with >1 profile, and from "Switch Profile").
     public private(set) var isChoosingProfile = false
+    /// Presentation ownership only; never authorizes profile or server access.
+    public private(set) var profilePickerSelectionID: String?
+    public var profilePickerOwnsAuthorization: Bool { profilePickerSelectionID != nil }
+    public var isPresentingProfileSelection: Bool {
+        isChoosingProfile || (profilePickerOwnsAuthorization && (
+            pendingLockedProfile != nil || pendingParentalSwitch != nil
+                || plexHomeUsers.pendingPlexPINRequest != nil
+        ))
+    }
     /// Whether the profile picker may be dismissed without choosing (false at the
     /// mandatory launch picker; true when opened from Settings behind an active
     /// profile).
@@ -135,6 +144,7 @@ public final class ProfileFlowModel {
     public func dismissPicker() {
         clearSettingsEntry()
         isChoosingProfile = false
+        profilePickerSelectionID = nil
     }
 
     /// Clears new-profile appearance setup once its cover is dismissed.
@@ -156,6 +166,7 @@ public final class ProfileFlowModel {
     /// Opens the profile picker (from Settings → "Switch Profile").
     public func requestProfileSelection() {
         clearSettingsEntry()
+        profilePickerSelectionID = nil
         isProfileSelectionCancelable = !isForegroundLocked
         isChoosingProfile = true
     }
@@ -166,6 +177,33 @@ public final class ProfileFlowModel {
         guard isProfileSelectionCancelable, !isForegroundLocked else { return }
         clearSettingsEntry()
         isChoosingProfile = false
+        profilePickerSelectionID = nil
+    }
+
+    public func selectProfileFromPicker(to id: String) {
+        cancelProfileLockPrompt()
+        cancelParentalSwitch()
+        switchProfile(to: id)
+        profilePickerSelectionID = id
+    }
+
+    public func cancelPickerAuthorization() {
+        if isForegroundLocked {
+            cancelForegroundProfileSelection()
+        } else if pendingParentalSwitch != nil {
+            cancelParentalSwitch()
+        } else if pendingLockedProfile != nil {
+            cancelProfileLockPrompt()
+        } else {
+            plexHomeUsers.cancelPlexPIN()
+        }
+        // A cancelled Plex activation can leave a guarded fallback pending.
+        // Keep selection above that gate until the next explicit choice.
+        isChoosingProfile = true
+    }
+
+    public func finishProfilePickerPresentation() {
+        profilePickerSelectionID = nil
     }
 
     /// Called only by the tvOS browsing lifecycle, never by an inactive-only interruption.
@@ -195,6 +233,7 @@ public final class ProfileFlowModel {
 
     public func cancelForegroundProfileSelection() {
         guard isForegroundLocked else { return }
+        profilePickerSelectionID = nil
         profilesModel.forgetProfileUnlock(profilesModel.activeProfileID)
         cancelProfileLockPrompt()
         cancelParentalSwitch()
@@ -209,6 +248,7 @@ public final class ProfileFlowModel {
             return
         }
         clearSettingsEntry()
+        profilePickerSelectionID = nil
         let id = profilesModel.activeProfileID
         if isProfileSelectionCancelable, !isForegroundLocked, !activeProfileAwaitsUnlock, parentalFallThrough == nil {
             pendingSettingsProfileID = id
