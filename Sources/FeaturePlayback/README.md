@@ -311,6 +311,30 @@ Native and tvOS track menus share `TrackLabeling` and `TrackMenuBuilder`.
 Bare language titles no longer suppress known codec/channel facts, for example
 `English (Opus 5.1)`. Custom names and commentary are retained, existing format
 facts are not duplicated, and unknown formats are not invented.
+Explicit French audio-version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
+`VOQ`) survive generated server titles, matching-track provider enrichment, and
+app-locale changes. These are source-authored community conventions, rendered
+verbatim, not codec names or proof of a particular dub inferred from `fr`.
+For example, `fr` plus `VFQ` and DTS six-channel metadata becomes
+`French (VFQ, DTS 5.1)`. A container's existing version tag takes precedence over
+conflicting provider hints. Release-wide counts such as `VF2`, subtitle labels
+such as `VOSTFR`, and encoder-name substrings do not identify an audio version.
+
+Audio display preserves explicit BCP 47 details, including Brazilian/European
+Portuguese (`pt-BR`/`pt-PT`), Latin American/Spain Spanish (`es-419`/`es-ES`),
+Canadian/France French (`fr-CA`/`fr-FR`), and Cantonese (`yue`/`zh-yue`).
+If the OS collapses an explicit tag such as Mandarin `cmn` to a macrolanguage
+name, the supplied tag remains visible. Script subtags describe writing, not
+proof of an audio dialect; generic `zh`, `fr`, `es`, or `pt` never acquires an
+inferred regional version. Language matching, preferred ordering, selection IDs,
+and subtitle formatting are unchanged. Locale extensions such as calendar
+preferences are not audio-language details. This preserves metadata actually
+supplied by the provider/engine, not distinctions missing from that metadata.
+
+Conventions: [French version tags](https://github.com/TRaSH-Guides/Guides/blob/master/includes/cf-descriptions/french-vfq.md),
+[BCP 47 language tags](https://www.w3.org/International/articles/language-tags/),
+and [Matroska language handling](https://mkvtoolnix.download/doc/mkvmerge.html#mkvmerge.language_handling).
+
 Audio labels retain per-track codec profiles and confirmed spatial-format flags:
 for example `Dolby TrueHD Atmos`, `Dolby Digital+ Atmos`, or
 `DTS-HD MA + DTS:X IMAX`. These identify the encoded source independently of

@@ -30,6 +30,29 @@ public enum TrackLabeling {
         return name.prefix(1).uppercased() + name.dropFirst()
     }
 
+    private static func audioLanguageName(forCode code: String?, in locale: Locale) -> String? {
+        guard let code, let base = LanguageMatch.normalized(code),
+              let baseName = languageName(forCode: code, in: locale) else { return nil }
+        // Locale extensions (calendar, numbering system, private use) are not
+        // audio-language distinctions. Keep explicitly supplied language subtags.
+        let parts = code.replacingOccurrences(of: "_", with: "-").split(separator: "-")
+            .prefix { $0.count > 1 }
+        let suffix: [String] = parts.dropFirst().map { String($0) }
+        let tag = ([base] + suffix).joined(separator: "-")
+        let canonical = Locale.canonicalLanguageIdentifier(from: tag)
+        guard let name = locale.localizedString(forIdentifier: tag)
+                ?? locale.localizedString(forIdentifier: canonical),
+              !name.isEmpty, name.caseInsensitiveCompare(tag) != .orderedSame else { return baseName }
+        let display = name.prefix(1).uppercased() + name.dropFirst()
+        // Some system locale tables collapse a specific language (cmn) into a
+        // macrolanguage (zh). Retain the supplied tag rather than lose that fact.
+        if display == baseName,
+           tag != base || LanguageMatch.normalized(canonical) != base {
+            return "\(display) (\(tag))"
+        }
+        return display
+    }
+
     /// A short uppercase format hint for an image/subtitle codec token, or `nil`
     /// when nothing useful can be said. Text codecs return `nil` (the language is
     /// the useful fact); image codecs surface their family so a bitmap track
@@ -222,6 +245,27 @@ public enum TrackLabeling {
         return TrackLabel(base: base, qualifiers: qualifiers)
     }
 
+    private static func audioVersions(in title: String) -> [String] {
+        let known: Set<String> = ["VFQ", "VFF", "VFI", "VFB", "VQ", "VOF", "VOQ"]
+        return title.uppercased().split { !$0.isLetter && !$0.isNumber }
+            .map(String.init).reduce(into: []) { versions, word in
+                if known.contains(word), !versions.contains(word) { versions.append(word) }
+            }
+    }
+
+    /// Retain explicit container-version tags when a server or engine supplies
+    /// a less descriptive title. Existing title tags win over conflicting hints.
+    public static func audioDisplayTitle(_ title: String, sourceTitles: [String?]) -> String { // l10n:content - source-authored track version tags.
+        guard audioVersions(in: title).isEmpty else { return title }
+        for source in sourceTitles.compactMap({ $0 }) {
+            let versions = audioVersions(in: source)
+            if !versions.isEmpty {
+                return ([title] + versions).filter { !$0.isEmpty }.joined(separator: " ")
+            }
+        }
+        return title
+    }
+
     /// Builds the audio menu label. Leads with the resolved **language** (like
     /// Plex's "Japanese (OPUS 5.1)") because provider audio titles are often a
     /// release/encoder tag that omits the language entirely ("[HR] 5.1 Channels
@@ -246,7 +290,8 @@ public enum TrackLabeling {
         trackID: Int,
         locale: Locale = .current
     ) -> TrackLabel {
-        let languageNm = languageName(forCode: language, in: locale)
+        let languageNm = audioLanguageName(forCode: language, in: locale)
+        let baseLanguageNm = languageName(forCode: language, in: locale)
         let title = displayTitle.replacingOccurrences(
             of: #"\s*\(default\)\s*$"#, with: "", options: [.regularExpression, .caseInsensitive]
         ).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -255,7 +300,7 @@ public enum TrackLabeling {
             codec: codec, channels: channels, isAtmos: isAtmos, profile: profile, isDTSX: isDTSX
         )
         let generatedFormatTitle = isAudioFormatTitle(
-            title, languageName: languageNm, codec: codec, channels: channels, format: format,
+            title, languageName: baseLanguageNm, codec: codec, channels: channels, format: format,
             profile: source.name != audioCodecName(codec) ? profile : nil
         )
 
@@ -263,8 +308,14 @@ public enum TrackLabeling {
         var formatIsBase = false
         if let languageNm,
            !generatedFormatTitle, !isGenericTitle(title),
-           title.range(of: languageNm, options: .caseInsensitive) != nil {
-            base = .content(title)
+           let range = title.range(of: baseLanguageNm ?? languageNm, options: .caseInsensitive) {
+            if title.range(of: languageNm, options: .caseInsensitive) == nil {
+                var detailedTitle = title
+                detailedTitle.replaceSubrange(range, with: languageNm)
+                base = .content(detailedTitle)
+            } else {
+                base = .content(title)
+            }
         } else if let languageNm {
             base = .content(languageNm)
         } else if generatedFormatTitle, let format {
@@ -279,6 +330,10 @@ public enum TrackLabeling {
         var qualifiers: [TrackLabel.Qualifier] = []
         let baseTitle: String
         if case .content(let value) = base { baseTitle = value } else { baseTitle = "" }
+        let retainedVersions = audioVersions(in: baseTitle)
+        for version in audioVersions(in: title) where !retainedVersions.contains(version) {
+            qualifiers.append(.audioVersion(version))
+        }
         if let format, !formatIsBase,
            !audioTitleContainsFormat(baseTitle, codec: codec, channels: channels, source: source) {
             qualifiers.append(.format(format))
@@ -354,8 +409,8 @@ public enum TrackLabeling {
 ///
 /// Kept in `CoreModels` (Foundation-only) so `TrackLabeling` can stay
 /// unit-testable without SwiftUI, but the label is never assembled into one
-/// `String` here — `base` and `.format` qualifiers are resolved *content*
-/// (a language name, a provider title, a codec/format token) while the other
+/// `String` here — `base`, `.format`, and `.audioVersion` are resolved *content*
+/// (a language name, a provider title, a codec or version token) while the other
 /// qualifiers are Plozz's *own words* ("Forced", "SDH", "Commentary", "auto").
 /// Joining those into a single `String` up front would permanently hide the
 /// copy from the localization catalog. The caller (`TrackMenuBuilder`, in
@@ -390,6 +445,9 @@ public struct TrackLabel: Equatable, Sendable {
         /// format ("PGS", "VobSub", "Image"), or "Dolby Atmos" — content, never
         /// translated, rendered verbatim.
         case format(String)
+        /// Explicit source-authored audio-version tag (e.g. VFQ), not a codec
+        /// or an inferred regional language.
+        case audioVersion(String)
         /// Fallback wording for an audio track whose channel count has no named
         /// layout convention (9+ channels; no known file has ever hit this) —
         /// copy, count-bearing (needs plural variations).
@@ -422,7 +480,8 @@ public extension MediaTrack {
     /// provider (Plex/Jellyfin) frequently probes the same streams with richer
     /// tags. We trust the engine wherever it already has a value and only *fill
     /// gaps* from the provider — never overwriting real engine data — so an
-    /// already-labelled track is left untouched. Callers match the provider track
+    /// already-labelled track keeps its title, with missing explicit audio-version
+    /// tags appended when the languages agree. Callers match the provider track
     /// by stream `id`; when the two id spaces don't line up there is simply no
     /// match (`provider == nil`) and nothing changes.
     func enriched(withProvider provider: MediaTrack?) -> MediaTrack {
@@ -442,6 +501,11 @@ public extension MediaTrack {
         if TrackLabeling.isGenericTitle(merged.displayTitle),
            !TrackLabeling.isGenericTitle(provider.displayTitle) {
             merged.displayTitle = provider.displayTitle
+        } else if kind == .audio, provider.kind == .audio,
+                  language == nil || provider.language == nil || LanguageMatch.matches(language, provider.language) {
+            merged.displayTitle = TrackLabeling.audioDisplayTitle(
+                merged.displayTitle, sourceTitles: [provider.displayTitle]
+            )
         }
         return merged
     }
