@@ -1125,6 +1125,12 @@ removing successful rows. Cancellation stops queued requests. Parent-series
 identity lookups are coalesced per account and load, and incomplete Home content
 does not overwrite the durable snapshot.
 
+If SwiftUI replaces Home's view task during library-settings preparation, a
+coalesced replacement request retries the cancelled preparation once. The rows
+must not wait for another trip away from Home and back. Cancellation without a
+replacement does not start background loading; an already-running aggregation
+still completes without a duplicate fetch.
+
 Showcase keeps its first-row anchor while that row loads; a lower row finishing
 does not choose focus or scroll the page. Its leading loading card has a visible
 progress indicator and can hold focus without making the other skeletons

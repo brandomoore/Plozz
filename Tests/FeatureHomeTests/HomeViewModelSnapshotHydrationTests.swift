@@ -772,6 +772,85 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
         )
     }
 
+    func testViewTaskReplacementDuringPreparationStillLoadsRowsWithoutAnotherAppearance() async {
+        for cached in [false, true] {
+            for merged in [false, true] {
+                let gate = HomeRefreshGate()
+                defer { gate.open() }
+                let enteredPreparation = expectation(description: "Home is preparing visibility")
+                var preparations = 0
+                let visibility = HomeLibraryVisibility(mergeLibrariesOnHome: merged)
+                let provider = FakeMediaProvider(allItems: [])
+                provider.continueWatchingItems = [MediaItem(id: "resume", title: "Resume", kind: .movie)]
+                provider.latestItems = [MediaItem(id: "latest", title: "Latest", kind: .movie)]
+                let store = InMemoryHomeContentStore(cached ? snapshot(cwIDs: ["cached"]) : nil)
+                let vm = HomeViewModel(
+                    accounts: [resolved(provider, accountID: "a")],
+                    layoutStore: InMemoryHomeLayoutStore(),
+                    contentStore: store,
+                    currentVisibility: { visibility },
+                    prepareVisibility: {
+                        preparations += 1
+                        if preparations == 1 { enteredPreparation.fulfill() }
+                        await gate.wait()
+                    }
+                )
+                let first = Task { await vm.loadIfNeeded(for: visibility) }
+                await fulfillment(of: [enteredPreparation], timeout: 2)
+                first.cancel()
+                await vm.loadIfNeeded(for: visibility)
+                gate.open()
+                await first.value
+
+                let deadline = Date().addingTimeInterval(2)
+                while Date() < deadline,
+                      vm.isRefreshing || vm.state.value?.continueWatching.first?.id != "resume" {
+                    await Task.yield()
+                }
+                XCTAssertEqual(preparations, 2, "Retry the dropped preparation once for the waiting appearance.")
+                XCTAssertEqual(vm.state.value?.continueWatching.map(\.id), ["resume"],
+                               "Continue Watching must load without leaving Home and returning.")
+                XCTAssertEqual(vm.state.value?.latest.map(\.id), ["latest"])
+                XCTAssertFalse(vm.isShowingCachedSnapshot)
+                XCTAssertFalse(vm.isRefreshing)
+                XCTAssertTrue(vm.loadingRows.isEmpty)
+                XCTAssertEqual(provider.librariesCallCount, 1)
+                await vm.loadIfNeeded(for: visibility)
+                XCTAssertEqual(provider.librariesCallCount, 1, "Reappearance must not duplicate the completed load.")
+            }
+        }
+    }
+
+    func testCancelledPreparationWithoutReplacementDoesNotStartBackgroundLoad() async {
+        let gate = HomeRefreshGate()
+        defer { gate.open() }
+        let enteredPreparation = expectation(description: "Home is preparing visibility")
+        let provider = FakeMediaProvider(allItems: [])
+        var preparations = 0
+        let vm = HomeViewModel(
+            accounts: [resolved(provider, accountID: "a")],
+            layoutStore: InMemoryHomeLayoutStore(),
+            contentStore: InMemoryHomeContentStore(),
+            prepareVisibility: {
+                preparations += 1
+                if preparations == 1 { enteredPreparation.fulfill() }
+                await gate.wait()
+            }
+        )
+        let first = Task { await vm.loadIfNeeded(for: .default) }
+        await fulfillment(of: [enteredPreparation], timeout: 2)
+        first.cancel()
+        gate.open()
+        await first.value
+
+        XCTAssertFalse(vm.isRefreshing)
+        XCTAssertEqual(preparations, 1)
+        XCTAssertEqual(provider.librariesCallCount, 0)
+        await vm.loadIfNeeded(for: .default)
+        XCTAssertEqual(preparations, 2)
+        XCTAssertEqual(provider.librariesCallCount, 1)
+    }
+
     func testSuccessfulLoadPersistsSnapshotForNextLaunch() async {
         let store = InMemoryHomeContentStore()
         let provider = FakeMediaProvider(allItems: [])
