@@ -797,6 +797,13 @@ actor IPTVClient {
             receivedResponse: receivedResponse
         )
         defer { bytes.task.cancel() }
+        let progress = ServerLiveTVGuideProgress.report
+        // URLSession may decode Content-Encoding before yielding bytes.
+        let encoding = response.value(forHTTPHeaderField: "Content-Encoding")?.lowercased()
+        let total = (encoding == nil || encoding == "identity") && response.expectedContentLength > 0
+            ? Int(exactly: response.expectedContentLength) : nil
+        progress?(.init(stage: .downloading, total: total))
+        var lastProgress = ContinuousClock.now
         let limit = XMLTVResourceLimits.expandedBytes
         guard response.expectedContentLength <= limit else { throw LiveTVSourceImportError.guideTooLarge }
         let writer = try TemporaryMappedData.Writer(maximumBytes: limit)
@@ -821,11 +828,16 @@ actor IPTVClient {
             if buffer.count == 65_536 {
                 try writer.append(buffer)
                 buffer.removeAll(keepingCapacity: true)
+                if ContinuousClock.now - lastProgress >= .milliseconds(250) {
+                    progress?(.init(stage: .downloading, completed: received, total: total))
+                    lastProgress = .now
+                }
             }
         }
         try Task.checkCancellation()
         try writer.append(buffer)
         let data = try writer.finish()
+        progress?(.init(stage: .downloading, completed: received, total: total))
         let directives = (response.value(forHTTPHeaderField: "Cache-Control") ?? "").lowercased()
             .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         let maxAge = directives.first { $0.hasPrefix("max-age=") }

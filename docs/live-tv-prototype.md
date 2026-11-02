@@ -22,6 +22,17 @@ watching a channel does not cancel that task. Live TV and Sources show its
 progress independently of channel availability. A quick sign-in alone never
 confirms that a guide downloaded or matched channels.
 
+Explicit preparation reports download bytes, guide scanning, listing processing,
+saving and channel checks. Percentages describe only the current stage: download
+totals are omitted for unknown lengths or HTTP-decoded bodies, and listing totals
+come from the completed metadata pass. Progress is throttled and shared with
+foreground consumers joining an existing import, not a second download.
+While setup or Sources displays that account's status, no duplicate toast appears.
+After leaving it, a dismissible status toast continues reporting the work and
+briefly shows its outcome. Dismissal hides only that request's notification;
+loading continues and its status remains in Sources. Unrelated transient messages
+take priority. Ordinary background refreshes stay quiet.
+
 Source details offers **Refresh guide**, which revalidates the guide without
 refreshing the playlist or interrupting playback. Existing listings survive a
 failed refresh. Completion distinguishes missing guide configuration, no current

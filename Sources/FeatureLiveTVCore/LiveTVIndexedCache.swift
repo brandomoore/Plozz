@@ -651,6 +651,7 @@ public actor LiveTVIndexedCache {
                 }
             }
             guard let parsed = result else { throw LiveTVCacheError.invalidRecord }
+            ServerLiveTVGuideProgress.report?(.init(stage: .saving))
             let totalPrograms = try db.rows("SELECT count(*) FROM programs").first?.real(0) ?? 0
             guard totalPrograms <= 5_000_000 else { throw LiveTVCacheError.tooLarge }
             let summary = LiveTVGuideImport(

@@ -1,10 +1,48 @@
 import CoreModels
 import CoreNetworking
 import Foundation
+import Synchronization
 import XCTest
 @testable import FeatureLiveTVCore
 
 final class LiveTVGuideIndexTests: XCTestCase {
+    func testForegroundWaiterReceivesExistingFlightProgressAndParserStageTotals() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let index = LiveTVGuideIndex(cache: fixture.cache)
+        let channels = [channel("a")]
+        let url = url
+        let range = range
+        let download = HeldDownload(response(document()))
+        let first = Task {
+            try await index.programs(from: url, catalog: channels, channels: channels, range: range) {
+                ServerLiveTVGuideProgress.report?(.init(stage: .downloading, completed: 50, total: 100))
+                return try await download.get()
+            }
+        }
+        await download.waitUntilStarted()
+        let events = Mutex<[ServerLiveTVGuideProgress]>([])
+        let second = Task {
+            try await ServerLiveTVGuideProgress.$report.withValue({ value in events.withLock { $0.append(value) } }) {
+                try await index.programs(from: url, catalog: channels, channels: channels, range: range) {
+                    XCTFail("Joining a guide must not download again.")
+                    return try await download.get()
+                }
+            }
+        }
+        await index.waitForWaitersForTesting(2)
+        XCTAssertEqual(events.withLock { $0.first }, .init(stage: .downloading, completed: 50, total: 100))
+        await download.release()
+        _ = try await first.value
+        _ = try await second.value
+        let progress = events.withLock { $0 }
+        XCTAssertTrue(progress.contains(.init(stage: .readingGuide, completed: 2)))
+        XCTAssertTrue(progress.contains(.init(stage: .preparingListings, completed: 2, total: 2)))
+        XCTAssertEqual(progress.last?.stage, .saving)
+        let count = await download.count
+        XCTAssertEqual(count, 1)
+    }
+
     private let url = URL(string: "https://fixture.test/guide.xml")!
     private let now = Date(timeIntervalSince1970: 100)
     private var range: DateInterval { DateInterval(start: now, duration: 400) }

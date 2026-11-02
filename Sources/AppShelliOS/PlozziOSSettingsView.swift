@@ -4,6 +4,7 @@ import CoreModels
 import CoreNetworking
 import CoreUI
 import FeaturePlayback
+import FeatureLiveTV
 import FeatureAuth
 import FeatureProfiles
 import FeatureSettings
@@ -101,6 +102,11 @@ struct PlozziOSSettingsView: View {
             bottomPadding: 24,
             palette: palette
         )
+        .guidePreparationOverlay(
+            model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
+            palette: palette, bottomPadding: 24
+        )
+        .environment(appModel.guidePreparation)
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
         .tint(palette.primaryText)

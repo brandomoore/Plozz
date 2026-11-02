@@ -14,7 +14,9 @@ public final class LiveTVGuidePreparationModel {
         }
 
         public let id: String
+        public let requestID = UUID()
         public var phase: Phase
+        public var progress: ServerLiveTVGuideProgress?
         public let isRefresh: Bool
         public var channelCount: Int?
         public var channelsWithListings = 0
@@ -23,6 +25,10 @@ public final class LiveTVGuidePreparationModel {
 
     public private(set) var statuses: [String: Status] = [:]
     public private(set) var completionRevision = 0
+    private var notificationOrder: [String] = []
+    private var dismissedNotifications = Set<String>()
+    private var inlinePresentations: [UUID: String] = [:]
+    @ObservationIgnored private var notificationTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private let resolver: LiveTVServerProviderResolver
     @ObservationIgnored private let clock: @MainActor () -> Date
     @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
@@ -40,6 +46,25 @@ public final class LiveTVGuidePreparationModel {
 
     deinit {
         for task in tasks.values { task.cancel() }
+        for task in notificationTasks.values { task.cancel() }
+    }
+
+    public var notificationStatus: Status? {
+        let visible = Set(inlinePresentations.values)
+        let candidates = notificationOrder.compactMap { id -> Status? in
+            guard !visible.contains(id), !dismissedNotifications.contains(id) else { return nil }
+            return statuses[id]
+        }
+        return candidates.first { $0.phase == .loading } ?? candidates.first
+    }
+
+    public func setInlinePresentation(_ token: UUID, accountID: String?) {
+        inlinePresentations[token] = accountID
+    }
+
+    public func dismissNotification(accountID: String, requestID: UUID) {
+        guard statuses[accountID]?.requestID == requestID else { return }
+        dismissedNotifications.insert(accountID)
     }
 
     public func canPrepare(accountID: String) -> Bool {
@@ -60,8 +85,12 @@ public final class LiveTVGuidePreparationModel {
         status.channelsWithListings = statuses[accountID]?.channelsWithListings ?? 0
         status.refreshedAt = statuses[accountID]?.refreshedAt
         statuses[accountID] = status
+        notificationTasks.removeValue(forKey: accountID)?.cancel()
+        dismissedNotifications.remove(accountID)
+        notificationOrder.removeAll { $0 == accountID }
+        notificationOrder.append(accountID)
         tasks[accountID] = Task { [weak self] in
-            await self?.prepare(context, request: request, refresh: refresh)
+            await self?.prepareReportingProgress(context, request: request, refresh: refresh)
         }
         observeAuthorization()
     }
@@ -72,6 +101,7 @@ public final class LiveTVGuidePreparationModel {
         if statuses[accountID]?.phase == .loading {
             statuses[accountID]?.phase = .paused
         }
+        dismissedNotifications.insert(accountID)
     }
 
     func waitForCompletion(accountID: String) async {
@@ -81,6 +111,37 @@ public final class LiveTVGuidePreparationModel {
     private func isCurrent(_ context: LiveTVAuthorizedServerProvider, request: UUID) -> Bool {
         requests[context.accountID] == request
             && resolver(context.accountID)?.authorizationID == context.authorizationID
+    }
+
+    private func prepareReportingProgress(
+        _ context: LiveTVAuthorizedServerProvider, request: UUID, refresh: Bool
+    ) async {
+        let (stream, continuation) = AsyncStream<ServerLiveTVGuideProgress>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        let observer = Task { [weak self] in
+            for await progress in stream {
+                guard let self, self.isCurrent(context, request: request),
+                      self.statuses[context.accountID]?.phase == .loading else { continue }
+                self.statuses[context.accountID]?.progress = progress
+            }
+        }
+        await ServerLiveTVGuideProgress.$report.withValue({ continuation.yield($0) }) {
+            await prepare(context, request: request, refresh: refresh)
+        }
+        continuation.finish()
+        await observer.value
+        guard isCurrent(context, request: request), let status = statuses[context.accountID] else { return }
+        notificationTasks[context.accountID] = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(5)) }
+            catch is CancellationError { return }
+            catch {
+                PlozzLog.app.error("Guide notification dismissal wait failed")
+                return
+            }
+            self?.dismissNotification(accountID: status.id, requestID: status.requestID)
+            self?.notificationTasks[status.id] = nil
+        }
     }
 
     private func prepare(
@@ -133,6 +194,9 @@ public final class LiveTVGuidePreparationModel {
                     matched.formUnion(programs.filter {
                         requested.contains($0.channelID) && $0.startDate < to && $0.endDate > from
                     }.map(\.channelID))
+                    statuses[id]?.progress = .init(
+                        stage: .matching, completed: min(offset + ids.count, channels.count), total: channels.count
+                    )
                 }
             }
             guard isCurrent(context, request: request) else { return }
@@ -164,6 +228,9 @@ public final class LiveTVGuidePreparationModel {
                     if self.resolver(id)?.authorizationID != authorization {
                         self.cancel(accountID: id)
                         self.statuses[id] = nil
+                        self.notificationTasks.removeValue(forKey: id)?.cancel()
+                        self.notificationOrder.removeAll { $0 == id }
+                        self.dismissedNotifications.remove(id)
                         self.authorizations[id] = nil
                     }
                 }

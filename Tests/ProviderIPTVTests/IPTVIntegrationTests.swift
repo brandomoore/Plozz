@@ -1,10 +1,36 @@
 import CoreModels
 import CoreNetworking
 import Foundation
+import Synchronization
 @testable import ProviderIPTV
 import XCTest
 
 final class IPTVIntegrationTests: XCTestCase {
+    func testGuideDownloadReportsBytesWithoutInventingTotalsForDecodedOrUnknownBodies() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
+        let url = try XCTUnwrap(URL(string: "https://provider.test/guide.xml"))
+        let client = try IPTVClient(
+            credential: IPTVCredential(mode: .playlist, address: url),
+            directory: root, configuration: configuration()
+        )
+        addTeardownBlock { await client.cancel() }
+        for headers in [
+            ["Content-Length": "5"], [:], ["Content-Length": "5", "Content-Encoding": "gzip"]
+        ] {
+            IPTVFixture.state.handler = { _ in (200, headers, Data("<tv/>".utf8)) }
+            let events = Mutex<[ServerLiveTVGuideProgress]>([])
+            _ = try await ServerLiveTVGuideProgress.$report.withValue({ event in events.withLock { $0.append(event) } }) {
+                try await client.guideDocument(from: url)
+            }
+            let progress = events.withLock { $0 }
+            XCTAssertEqual(progress.first?.completed, 0)
+            XCTAssertEqual(progress.last?.completed, 5)
+            XCTAssertEqual(progress.last?.stage, .downloading)
+            XCTAssertEqual(progress.last?.total, headers["Content-Length"] != nil && headers["Content-Encoding"] == nil ? 5 : nil)
+        }
+    }
+
     func testIndexedGuideDownloadExposesCachePolicyAndDoesNotReuseRawBytes() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try FileManager.default.removeItem(at: root) }

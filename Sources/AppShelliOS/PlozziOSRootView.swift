@@ -335,6 +335,10 @@ public struct PlozziOSRootView: View {
             bottomPadding: 72,
             palette: resolvedPalette
         )
+        .guidePreparationOverlay(
+            model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
+            palette: resolvedPalette, bottomPadding: 72
+        )
         .environment(appModel)
         .environment(appModel.settings.navigation)
         .environment(appModel.guidePreparation)

@@ -1,22 +1,37 @@
+import CoreModels
 import CoreUI
 import FeatureLiveTVCore
 import SwiftUI
 
 public struct LiveTVGuidePreparationStatus: View {
     private let status: LiveTVGuidePreparationModel.Status
+    private let tracksInlinePresentation: Bool
+    @State private var presentationID = UUID()
+    @Environment(LiveTVGuidePreparationModel.self) private var model: LiveTVGuidePreparationModel?
 
-    public init(status: LiveTVGuidePreparationModel.Status) {
+    public init(status: LiveTVGuidePreparationModel.Status, tracksInlinePresentation: Bool = true) {
         self.status = status
+        self.tracksInlinePresentation = tracksInlinePresentation
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             switch status.phase {
             case .loading:
-                if status.isRefresh {
-                    ProgressView("Refreshing guide")
+                if let progress = status.progress {
+                    if let fraction = progress.fractionCompleted {
+                        ProgressView(value: fraction) {
+                            Text(progress.title)
+                        } currentValueLabel: {
+                            Text(fraction, format: .percent.precision(.fractionLength(0)))
+                        }
+                    } else {
+                        ProgressView { Text(progress.title) }
+                    }
+                    if let detail = progress.detail { Text(detail).font(.caption).monospacedDigit() }
                 } else {
-                    ProgressView("Adding guide")
+                    if status.isRefresh { ProgressView("Refreshing guide") }
+                    else { ProgressView("Adding guide") }
                 }
             case .loaded:
                 Label("Guide ready", systemImage: "checkmark.circle")
@@ -41,5 +56,47 @@ public struct LiveTVGuidePreparationStatus: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("live-tv-guide-preparation-\(status.id)")
+        .onAppear {
+            if tracksInlinePresentation { model?.setInlinePresentation(presentationID, accountID: status.id) }
+        }
+        .onDisappear {
+            if tracksInlinePresentation { model?.setInlinePresentation(presentationID, accountID: nil) }
+        }
+        .onChange(of: status.id) {
+            if tracksInlinePresentation { model?.setInlinePresentation(presentationID, accountID: status.id) }
+        }
+    }
+}
+
+private extension ServerLiveTVGuideProgress {
+    var title: LocalizedStringResource {
+        switch stage {
+        case .downloading: "Downloading guide"
+        case .readingGuide: "Reading guide"
+        case .preparingListings: "Preparing listings"
+        case .saving: "Saving guide"
+        case .matching: "Checking channels"
+        }
+    }
+
+    var detail: LocalizedStringResource? {
+        switch stage {
+        case .downloading:
+            let received = Int64(completed).formatted(.byteCount(style: .file))
+            if let total {
+                let expected = Int64(total).formatted(.byteCount(style: .file))
+                return "\(received) of \(expected)"
+            }
+            return "\(received) downloaded"
+        case .readingGuide:
+            return completed == 0 ? nil : "\(completed) listings scanned"
+        case .preparingListings:
+            if let total { return "\(completed) of \(total) listings" }
+            return "\(completed) listings processed"
+        case .matching:
+            if let total { return "\(completed) of \(total) channels" }
+            return nil
+        case .saving: return nil
+        }
     }
 }

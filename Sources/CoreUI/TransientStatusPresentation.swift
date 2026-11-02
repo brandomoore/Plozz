@@ -166,15 +166,7 @@ public struct TransientStatusView: View {
                 .font(messageFont)
                 .foregroundStyle(palette.primaryText)
                 .tint(palette.primaryText)
-                .padding(.horizontal, 22)
-                .padding(.vertical, 13)
-                .background(palette.overlay.fill, in: Capsule())
-                .overlay {
-                    if let border = palette.overlay.border {
-                        Capsule().strokeBorder(border, lineWidth: palette.overlay.borderWidth)
-                    }
-                }
-                .modifier(OptionalSurfaceShadow(shadow: palette.overlay.shadow))
+                .transientStatusSurface(palette: palette)
                 .transition(.opacity)
             }
         }
@@ -205,6 +197,18 @@ public extension EnvironmentValues {
 }
 
 public extension View {
+    func transientStatusSurface(palette: ThemePalette) -> some View {
+        padding(.horizontal, 22)
+            .padding(.vertical, 13)
+            .background(palette.overlay.fill, in: Capsule())
+            .overlay {
+                if let border = palette.overlay.border {
+                    Capsule().strokeBorder(border, lineWidth: palette.overlay.borderWidth)
+                }
+            }
+            .modifier(OptionalSurfaceShadow(shadow: palette.overlay.shadow))
+    }
+
     func transientStatusPresenter(
         _ presenter: TransientStatusPresenter?
     ) -> some View {

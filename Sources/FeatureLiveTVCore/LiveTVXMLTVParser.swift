@@ -181,7 +181,8 @@ public struct LiveTVXMLTVParser: Sendable {
             channelsByGuideID: channelsByGuideID,
             initialRetainedTextBytes: metadataDelegate.retainedTextBytes,
             preferredLanguage: preferredLanguage,
-            now: now, lookbackDays: lookbackDays, lookaheadDays: lookaheadDays, sink: sink
+            now: now, lookbackDays: lookbackDays, lookaheadDays: lookaheadDays,
+            totalPrograms: metadataDelegate.sourceProgramCount, sink: sink
         )
         try parseXML(stream: makeStream(), delegate: programmeDelegate)
         try checkCancellation()
@@ -193,6 +194,7 @@ public struct LiveTVXMLTVParser: Sendable {
     }
 
     private func parseXML(stream: InputStream, delegate: XMLTVDelegate) throws {
+        delegate.reportProgress(force: true)
         stream.open()
         defer { stream.close() }
         let guardedStream = EntityRejectingXMLInputStream(source: stream)
@@ -205,6 +207,7 @@ public struct LiveTVXMLTVParser: Sendable {
         parser.shouldResolveExternalEntities = false
         parser.externalEntityResolvingPolicy = .never
         let parsed = parser.parse()
+        if parsed { delegate.reportProgress(force: true) }
         if let streamError = guardedStream.streamError as? LiveTVSourceImportError {
             delegate.logFailure(
                 parser, error: streamError,
@@ -270,7 +273,10 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
     private var closedTV = false
     private var depth = 0
     private var channelDeclarationCount = 0
-    private var sourceProgramCount = 0
+    private(set) var sourceProgramCount = 0
+    private var totalPrograms: Int?
+    private let progress = ServerLiveTVGuideProgress.report
+    private var lastProgress = ContinuousClock.now
     private(set) var mergedChannelDeclarations = 0
     private(set) var skippedChannelDeclarations = 0
     private var failureReason = FailureReason.structure
@@ -316,6 +322,7 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
         initialRetainedTextBytes: Int,
         preferredLanguage: String?,
         now: Date, lookbackDays: Int = 1, lookaheadDays: Int = 7,
+        totalPrograms: Int? = nil,
         sink: ((LiveTVPrototypeProgram) throws -> Void)? = nil
     ) {
         pass = .programmes
@@ -325,7 +332,17 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
         upperBound = now.addingTimeInterval(Double(lookaheadDays) * 86_400)
         retainedTextBytes = initialRetainedTextBytes
         self.sink = sink
+        self.totalPrograms = totalPrograms
         super.init()
+    }
+
+    func reportProgress(force: Bool = false) {
+        guard let progress, force || ContinuousClock.now - lastProgress >= .milliseconds(250) else { return }
+        lastProgress = .now
+        progress(.init(
+            stage: pass == .metadata ? .readingGuide : .preparingListings,
+            completed: sourceProgramCount, total: totalPrograms
+        ))
     }
 
     func makeResult(
@@ -622,6 +639,7 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
                 finishChannel(parser)
             case "programme":
                 finishProgramme(parser)
+                if sourceProgramCount.isMultiple(of: 1_000) { reportProgress() }
             default:
                 break
             }

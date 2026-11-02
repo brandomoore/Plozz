@@ -44,6 +44,7 @@ public actor LiveTVGuideIndex {
         let projection: String
         let epoch: UUID
         let task: Task<Void, Never>
+        let progress: GuideProgressRelay
         var cancelling = false
         var waiters: [UUID: CheckedContinuation<Resolution, any Error>] = [:]
     }
@@ -99,14 +100,17 @@ public actor LiveTVGuideIndex {
             case .transient(let data):
                 let language = language
                 let transientID = UUID()
+                let progress = ServerLiveTVGuideProgress.report
                 let task = Task.detached(priority: .utility) {
-                    let parser = LiveTVXMLTVParser(
-                        provider: LiveTVGuideSource.provider(for: url), preferredLanguage: language
-                    )
-                    let guide = try data.starts(with: [0x1f, 0x8b])
-                        ? parser.parse(gzipData: data, channels: channels, now: range.start)
-                        : parser.parseXML(data: data, channels: channels, now: range.start)
-                    return guide.programs.filter { $0.start < range.end && $0.end > range.start }
+                    try ServerLiveTVGuideProgress.$report.withValue(progress) {
+                        let parser = LiveTVXMLTVParser(
+                            provider: LiveTVGuideSource.provider(for: url), preferredLanguage: language
+                        )
+                        let guide = try data.starts(with: [0x1f, 0x8b])
+                            ? parser.parse(gzipData: data, channels: channels, now: range.start)
+                            : parser.parseXML(data: data, channels: channels, now: range.start)
+                        return guide.programs.filter { $0.start < range.end && $0.end > range.start }
+                    }
                 }
                 transientTasks[transientID] = task
                 defer { transientTasks.removeValue(forKey: transientID) }
@@ -161,19 +165,25 @@ public actor LiveTVGuideIndex {
                     let force = requiresValidation && validated[url] != epoch
                     let cache = cache
                     let language = language
+                    let progress = GuideProgressRelay()
                     let task = Task(priority: .utility) {
                         let result: Result<Resolution, any Error>
                         do {
-                            result = .success(try await Self.resolve(
-                                url: url, catalog: catalog, projection: projection, range: range,
-                                cache: cache, language: language, force: force, download: download
-                            ))
+                            result = .success(try await ServerLiveTVGuideProgress.$report.withValue(progress.send) {
+                                try await Self.resolve(
+                                    url: url, catalog: catalog, projection: projection, range: range,
+                                    cache: cache, language: language, force: force, download: download
+                                )
+                            })
                         } catch { result = .failure(error) }
                         self.finish(id: id, epoch: requestEpoch, result: result)
                     }
-                    flight = Flight(id: id, url: url, projection: projection, epoch: requestEpoch, task: task)
+                    flight = Flight(id: id, url: url, projection: projection, epoch: requestEpoch, task: task, progress: progress)
                 }
                 flight?.waiters[waiterID] = continuation
+                if let report = ServerLiveTVGuideProgress.report {
+                    flight?.progress.add(waiterID, report)
+                }
             }
         } onCancel: {
             Task { await self.cancelWaiter(waiterID) }
@@ -182,6 +192,7 @@ public actor LiveTVGuideIndex {
 
     private func cancelWaiter(_ id: UUID) {
         guard let continuation = flight?.waiters.removeValue(forKey: id) else { return }
+        flight?.progress.remove(id)
         continuation.resume(throwing: CancellationError())
         if flight?.waiters.isEmpty == true {
             flight?.cancelling = true
@@ -228,6 +239,7 @@ public actor LiveTVGuideIndex {
             return .indexed(eligible)
         }
         let response = try await download()
+        ServerLiveTVGuideProgress.report?(.init(stage: .readingGuide))
         // A no-store replacement revokes persistence even when its XML is bad.
         if !response.permitsPersistence {
             let revoke = Task.detached(priority: .utility) {
@@ -278,5 +290,33 @@ public actor LiveTVGuideIndex {
             ))
         }
         return LiveTVIdentityDigest.hex(hasher.finalize())
+    }
+}
+
+/// Foreground consumers can join a quiet background import without downloading again.
+private final class GuideProgressRelay: @unchecked Sendable {
+    private let lock = NSLock()
+    private var latest: ServerLiveTVGuideProgress?
+    private var handlers: [UUID: ServerLiveTVGuideProgress.Handler] = [:]
+
+    func add(_ id: UUID, _ handler: @escaping ServerLiveTVGuideProgress.Handler) {
+        lock.lock()
+        defer { lock.unlock() }
+        handlers[id] = handler
+        // Consumers enqueue only; serialize replay with updates so old progress cannot win.
+        if let latest { handler(latest) }
+    }
+
+    func remove(_ id: UUID) {
+        lock.lock()
+        handlers[id] = nil
+        lock.unlock()
+    }
+
+    func send(_ progress: ServerLiveTVGuideProgress) {
+        lock.lock()
+        defer { lock.unlock() }
+        latest = progress
+        for callback in handlers.values { callback(progress) }
     }
 }

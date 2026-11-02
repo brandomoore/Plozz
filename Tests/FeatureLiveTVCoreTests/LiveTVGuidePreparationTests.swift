@@ -6,6 +6,61 @@ import XCTest
 
 @MainActor
 final class LiveTVGuidePreparationTests: XCTestCase {
+    func testProgressUsesOnlyReliableStageTotals() {
+        XCTAssertNil(ServerLiveTVGuideProgress(stage: .downloading, completed: 20).fractionCompleted)
+        XCTAssertNil(ServerLiveTVGuideProgress(stage: .downloading, completed: 20, total: 0).fractionCompleted)
+        XCTAssertNil(ServerLiveTVGuideProgress(stage: .downloading, completed: 20, total: 10).fractionCompleted)
+        XCTAssertEqual(ServerLiveTVGuideProgress(stage: .downloading, completed: 20, total: 100).fractionCompleted, 0.2)
+    }
+
+    func testProgressContinuesAfterToastDismissalWithoutDuplicatingInlineStatus() async {
+        let started = expectation(description: "Guide request started")
+        let provider = PreparationProvider(started: { started.fulfill() }, suspended: true)
+        let model = model(provider)
+        XCTAssertNil(model.notificationStatus)
+        model.start(accountID: "one")
+        await fulfillment(of: [started], timeout: 3)
+        let progress = ServerLiveTVGuideProgress(stage: .downloading, completed: 512, total: 1_024)
+        await provider.emit(progress)
+        for _ in 0..<100 where model.statuses["one"]?.progress != progress { await Task.yield() }
+        XCTAssertEqual(model.notificationStatus?.progress, progress)
+        let first = UUID()
+        let second = UUID()
+        model.setInlinePresentation(first, accountID: "one")
+        model.setInlinePresentation(second, accountID: "one")
+        XCTAssertNil(model.notificationStatus)
+        model.setInlinePresentation(first, accountID: nil)
+        XCTAssertNil(model.notificationStatus)
+        model.setInlinePresentation(second, accountID: nil)
+        let requestID = model.statuses["one"]!.requestID
+        XCTAssertNotNil(model.notificationStatus)
+        model.dismissNotification(accountID: "one", requestID: requestID)
+        XCTAssertNil(model.notificationStatus)
+        await provider.resume()
+        await model.waitForCompletion(accountID: "one")
+        XCTAssertEqual(model.statuses["one"]?.phase, .loaded)
+        XCTAssertNil(model.notificationStatus)
+        model.start(accountID: "one", refresh: true)
+        model.dismissNotification(accountID: "one", requestID: requestID)
+        XCTAssertNotNil(model.notificationStatus, "An old toast cannot dismiss a new refresh.")
+        await model.waitForCompletion(accountID: "one")
+    }
+
+    func testCancelledRequestIgnoresLateProgress() async {
+        let started = expectation(description: "Guide request started")
+        let provider = PreparationProvider(started: { started.fulfill() }, suspended: true)
+        let model = model(provider)
+        model.start(accountID: "one")
+        await fulfillment(of: [started], timeout: 3)
+        model.cancel(accountID: "one")
+        await provider.emit(.init(stage: .downloading, completed: 100))
+        await provider.resume()
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(model.statuses["one"]?.phase, .paused)
+        XCTAssertNil(model.statuses["one"]?.progress)
+        XCTAssertNil(model.notificationStatus)
+    }
+
     @Observable final class Authorization {
         var identity: String? = "first"
     }
@@ -145,6 +200,7 @@ private actor PreparationProvider: ServerLiveTVProviding {
     var shouldFail = false
     var batches: [Int] = []
     var counts = (requests: 0, invalidations: 0, catalogRefreshes: 0)
+    var report: ServerLiveTVGuideProgress.Handler?
 
     init(
         channelCount: Int = 1, supportsGuide: Bool = true, hasListings: Bool = true,
@@ -178,7 +234,8 @@ private actor PreparationProvider: ServerLiveTVProviding {
     func liveTVGuide(channelIDs: [String], from: Date, to: Date) async throws -> [ServerLiveTVProgramme] {
         counts.requests += 1
         batches.append(channelIDs.count)
-        started()
+        report = ServerLiveTVGuideProgress.report
+        if counts.requests == 1 { started() }
         if suspended { await withCheckedContinuation { continuation = $0 } }
         try Task.checkCancellation()
         if shouldFail { throw URLError(.notConnectedToInternet) }
@@ -188,6 +245,7 @@ private actor PreparationProvider: ServerLiveTVProviding {
     }
 
     func invalidateLiveTVGuideCache() { counts.invalidations += 1 }
+    func emit(_ progress: ServerLiveTVGuideProgress) { report?(progress) }
     func fail() { shouldFail = true }
     func resume() {
         suspended = false

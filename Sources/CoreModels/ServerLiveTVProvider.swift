@@ -43,6 +43,30 @@ public final class ServerLiveTVGuideRefreshScope: Sendable {
     public init() {}
 }
 
+/// Progress for the current stage, never an estimate of the entire guide job.
+public struct ServerLiveTVGuideProgress: Equatable, Sendable {
+    public enum Stage: Sendable {
+        case downloading, readingGuide, preparingListings, saving, matching
+    }
+
+    public typealias Handler = @Sendable (ServerLiveTVGuideProgress) -> Void
+    @TaskLocal public static var report: Handler?
+
+    public let stage: Stage
+    public let completed: Int
+    public let total: Int?
+
+    public init(stage: Stage, completed: Int = 0, total: Int? = nil) {
+        self.stage = stage
+        self.completed = max(0, completed)
+        self.total = total.flatMap { $0 > 0 && $0 >= completed ? $0 : nil }
+    }
+
+    public var fractionCompleted: Double? {
+        total.map { Double(completed) / Double($0) }
+    }
+}
+
 /// Usable listings from an incomplete request. Consumers must retain the failure
 /// and must not interpret omitted channels as successfully empty coverage.
 public struct ServerLiveTVPartialGuideError: Error, Sendable {

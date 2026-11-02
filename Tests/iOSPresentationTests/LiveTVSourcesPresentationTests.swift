@@ -12,6 +12,82 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesPresentationTests: XCTestCase {
+    func testGuideProgressMovesFromInlineToToastAndExpiresAfterCompletion() async throws {
+        let started = expectation(description: "Guide requested")
+        let provider = SetupGuideProvider(started: { started.fulfill() })
+        let preparation = LiveTVGuidePreparationModel { id in
+            .init(accountID: id, authorizationID: "fixture", kind: .iptv, provider: provider)
+        }
+        let presenter = TransientStatusPresenter()
+        preparation.start(accountID: "account")
+        await fulfillment(of: [started], timeout: 3)
+        defer {
+            preparation.cancel(accountID: "account")
+            Task { await provider.resume() }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        window.rootViewController = host
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        func render(inline: Bool) {
+            host.rootView = AnyView(
+                GuideProgressFixture(model: preparation, inline: inline)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.white)
+                    .guidePreparationOverlay(model: preparation, presenter: presenter, palette: .light)
+                    .environment(preparation)
+                    .environment(\.colorScheme, .light)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+            )
+        }
+        func visibleText() throws -> String {
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(snapshot(window).cgImage)).perform([request])
+            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+        }
+        render(inline: true)
+        await provider.emit(.init(stage: .downloading, completed: 2_500_000, total: 10_000_000))
+        try await settle(window)
+        XCTAssertNil(preparation.notificationStatus)
+        var text = try visibleText()
+        XCTAssertEqual(text.components(separatedBy: "Downloading guide").count - 1, 1, text)
+        render(inline: false)
+        try await settle(window)
+        XCTAssertNotNil(preparation.notificationStatus)
+        text = try visibleText()
+        XCTAssertTrue(text.contains("Downloading guide"), text)
+        XCTAssertTrue(text.contains("25%"), text)
+        let attachment = XCTAttachment(image: snapshot(window))
+        attachment.name = "guide-progress-toast-download"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        await provider.emit(.init(stage: .readingGuide, completed: 35_000))
+        try await settle(window)
+        text = try visibleText()
+        XCTAssertTrue(text.contains("Reading guide"), text)
+        XCTAssertTrue(text.contains("listings scanned"), text)
+        XCTAssertFalse(text.contains("%"), text)
+        await provider.resume()
+        await preparation.waitForCompletion(accountID: "account")
+        try await settle(window)
+        text = try visibleText()
+        XCTAssertTrue(text.contains("Guide ready"), text)
+        try await Task.sleep(for: .milliseconds(5_100))
+        XCTAssertNil(preparation.notificationStatus)
+        XCTAssertEqual(preparation.statuses["account"]?.phase, .loaded)
+    }
+
     func testPlaylistSetupShowsGuideWorkAndContinuingDoesNotCancelIt() async throws {
         let suite = "GuideSetupPresentation.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -531,6 +607,20 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
     }
 }
 
+private struct GuideProgressFixture: View {
+    let model: LiveTVGuidePreparationModel
+    let inline: Bool
+    var body: some View {
+        VStack {
+            if inline, let status = model.statuses["account"] {
+                LiveTVGuidePreparationStatus(status: status)
+            }
+            Text("Live TV")
+        }
+        .padding()
+    }
+}
+
 private struct SetupBackgroundFixture: View {
     let showsWelcome: Bool
     @Environment(\.themePalette) private var palette
@@ -569,6 +659,7 @@ private actor SetupGuideProvider: MediaProvider, ServerLiveTVProviding {
     var pending: CheckedContinuation<Void, Never>?
     var resumed = false
     var librariesSuspended: Bool
+    var progress: ServerLiveTVGuideProgress.Handler?
     var pendingLibraries: [CheckedContinuation<Void, Never>] = []
     init(started: @escaping @Sendable () -> Void, librariesSuspended: Bool = false) {
         self.started = started
@@ -599,10 +690,12 @@ private actor SetupGuideProvider: MediaProvider, ServerLiveTVProviding {
     }
     func liveTVChannels() -> [ServerLiveTVChannel] { [.init(id: "one", name: "One")] }
     func liveTVGuide(channelIDs: [String], from: Date, to: Date) async -> [ServerLiveTVProgramme] {
+        progress = ServerLiveTVGuideProgress.report
         started()
         if !resumed { await withCheckedContinuation { pending = $0 } }
         return [.init(id: "show", channelID: "one", title: "Show", startDate: from, endDate: to)]
     }
+    func emit(_ value: ServerLiveTVGuideProgress) { progress?(value) }
     func resume() {
         resumed = true
         pending?.resume()
