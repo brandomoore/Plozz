@@ -363,8 +363,17 @@ A separately created private list verified show-entry navigation across
 relaunches, matching all six season IDs and the synopsis read independently from
 the real server. The temporary list was deleted afterward; original metadata,
 history and the control list remained unchanged. A real account with no Picks
-now shows an explicit empty result after loading and refresh. Nonempty Picks,
-recommendation pagination and unowned-title routing remain unverified.
+now shows an explicit empty result after loading and refresh.
+
+An independently verified unowned movie was added to a disposable private list
+through the real API as fixture setup. Native library Search returned no results;
+the list entry opened the correct external title and release year across two
+relaunches, without a library Play control. Independent Plex, Jellyfin and Emby
+reads confirmed the title remained unowned. The list was deleted through native
+confirmation; original lists and server/tracker histories remained unchanged.
+This verifies the configured TMDB fallback, not native list-add coverage or
+playback of an unowned title. Nonempty Picks and recommendation pagination remain
+unverified.
 
 ## Optional community ratings
 

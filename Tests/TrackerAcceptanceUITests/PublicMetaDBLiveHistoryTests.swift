@@ -685,6 +685,40 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testUnownedCatalogTitleIsAbsentFromLibraries() throws {
+        let title = try searchForSelectedTitle()
+        let empty = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "No results")).firstMatch
+        try require(empty.waitForExistence(timeout: 30), "Expected no library search results")
+        XCTAssertFalse(app.buttons.containing(.staticText, identifier: title).firstMatch.exists)
+        recordState()
+    }
+
+    func testCatalogUnownedListEntryOpensWithoutPlayback() throws {
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        let year = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_CATALOG_YEAR"])
+        try require(Int(year) != nil && year.count == 4, "Expected the independently verified release year")
+        try openAcceptanceList()
+        try tapVisible(app.buttons["Browse items"])
+        let row = app.buttons.containing(.staticText, identifier: title)
+        try require(row.firstMatch.waitForExistence(timeout: 30) && row.count == 1,
+                    "Expected the real external movie's resolved list label")
+        try tapVisible(row.element)
+        try tapVisible(app.buttons["Title controls"])
+        try require(app.staticTexts["Movie"].exists, "Expected a movie, not an unrelated show sharing its number")
+        try tapVisible(app.buttons["publicmetadb.open-title"])
+        let name = app.staticTexts[title]
+        try require(name.waitForExistence(timeout: 30) || app.images[title].exists,
+                    "Expected real external title metadata")
+        try require(app.buttons["publicmetadb.open-title"].waitForNonExistence(timeout: 10),
+                    "Expected dismissal of tracker controls")
+        let metadata = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", year + "  ·")).firstMatch
+        try require(metadata.waitForExistence(timeout: 15), "Expected the real external movie's release year")
+        XCTAssertTrue(app.buttons["Add to Watchlist"].exists)
+        XCTAssertFalse(detailPlayButton.exists, "An unowned external title must not claim a playable library source")
+        XCTAssertFalse(app.buttons["Close player"].exists)
+        recordState()
+    }
+
     private func openCatalogLibraryDetail() throws {
         let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
         try tapVisible(app.buttons["publicmetadb.open-title"])
@@ -1259,6 +1293,16 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func selectedTitleCard() throws -> XCUIElement {
+        let title = try searchForSelectedTitle()
+        let matches = app.buttons.containing(.staticText, identifier: title).matching(NSPredicate(
+            format: "NOT (label MATCHES %@)", ".*, S[0-9]+ · E[0-9]+ · .*"
+        ))
+        XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 30))
+        try require(matches.count == 1, "Expected one exact title card in the selected libraries")
+        return matches.element
+    }
+
+    private func searchForSelectedTitle() throws -> String {
         let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
         app.terminate()
         app.launch()
@@ -1269,12 +1313,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(query.waitForExistence(timeout: 10))
         query.tap()
         query.typeText(title + "\n")
-        let matches = app.buttons.containing(.staticText, identifier: title).matching(NSPredicate(
-            format: "NOT (label MATCHES %@)", ".*, S[0-9]+ · E[0-9]+ · .*"
-        ))
-        XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 30))
-        try require(matches.count == 1, "Expected one exact title card in the selected libraries")
-        return matches.element
+        return title
     }
 
     func testPlaySelectedMovie() async throws {
