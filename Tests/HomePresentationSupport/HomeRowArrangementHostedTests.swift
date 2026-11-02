@@ -1,7 +1,7 @@
 import CoreImage
 import CoreModels
 @testable import CoreUI
-import FeatureHomeCore
+@testable import FeatureHomeCore
 import HeroUI
 import MetadataKit
 #if os(tvOS)
@@ -19,6 +19,80 @@ import XCTest
 #if os(tvOS)
 @MainActor
 extension HomeRowArrangementHostedTests {
+    func testShowcaseAdaptsFeaturedRowsWithoutChangingClassicOrSavedStyle() async throws {
+        let suite = "ShowcaseFeaturedRows.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let item = MediaItem(id: "featured-member", title: "Featured member", kind: .movie)
+        let collection = MediaItem(id: "collection", title: "Collection", kind: .collection)
+        var row = HomeLibrarySectionGroup.Row(
+            section: LibrarySection(id: "collection-row", title: "Collection row", items: [item]),
+            isLoading: false, failure: nil, browseItem: collection, collectionCardStyle: .featured
+        )
+        let choice = HomeRowChoice(
+            id: .global(.recentlyAdded), title: "Collection row", isProviderDefault: false
+        )
+        var selected: MediaItem?
+        var focused: MediaItem?
+        var entered = 0
+        let home = HomeView(
+            viewModel: HomeViewModel(accounts: [], profileNamespace: suite),
+            visibility: visibility,
+            heroBackground: HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore()),
+            heroTrailerController: HeroTrailerController(), heroIsFrontmost: false,
+            heroRuntime: HomeHeroRuntimeState(),
+            onSelectItem: { selected = $0 }, onPlayItem: { _ in XCTFail("Collection cards open details.") },
+            onSelectLibrary: { _ in }
+        )
+        let reporter = FocusHeroRowReporter(
+            entered: { entered += 1 }, cardFocused: { focused = $0 },
+            focusedItem: { focused = $0 }, focusedLibrary: { _ in }, focusedLiveChannel: { _ in }
+        )
+        var standardSize = CGSize.zero
+        for style: CollectionSection.CardStyle in [.poster, .featured] {
+            row.collectionCardStyle = style
+            var frame = CGRect.zero
+            let presentation = HomePresentationRow(choice: choice, source: .library(row))
+            try await withWindow {
+                home.focusHomeRowView(
+                    .section(row, presentation), reporter: reporter, reservesLoadingFocus: false
+                )
+                .environment(\.plozzCardFocusStyle, .system)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+            } inspect: { window in
+                _ = try await self.snapshot(window, name: "Showcase collection \(style)")
+                XCTAssertGreaterThan(frame.height, 100)
+                if style == .poster {
+                    standardSize = frame.size
+                } else {
+                    XCTAssertEqual(frame.size, standardSize, "Featured must use standard Showcase row geometry.")
+                }
+                let point = CGPoint(x: frame.minX + 150, y: frame.minY + 150)
+                let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+                try await self.focus(target, in: window)
+                XCTAssertEqual(focused?.id, item.id)
+                XCTAssertGreaterThan(entered, 0)
+                try XCTUnwrap(target as? UIControl).sendActions(for: .primaryActionTriggered)
+                XCTAssertEqual(selected?.id, item.id)
+                selected = nil
+                focused = nil
+                entered = 0
+            }
+        }
+        var classicSize = CGSize.zero
+        try await withWindow {
+            home.libraryRowView(row, onBrowse: nil)
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { classicSize = $0 }
+        } inspect: { window in
+            _ = try await self.snapshot(window, name: "Classic retains Featured")
+            XCTAssertGreaterThan(classicSize.height, standardSize.height + 100)
+        }
+        XCTAssertEqual(row.collectionCardStyle, .featured)
+        XCTAssertEqual(row.section.items, [item])
+        XCTAssertEqual(row.browseItem, collection)
+    }
+
     func testHomeBrowseActionMatchesMediaCardAndOwnsNativeFocus() async throws {
         for cardStyle in CardStyle.allCases {
             for style: PosterCardView.Style in [.poster, .landscape] {

@@ -466,6 +466,11 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   and this does not add support for third-party plugins with separate watchlist storage.
   Featured is available only for authored collection rows. Large artwork cards
   place the title logo (or text fallback) and real metadata at the lower left.
+  On tvOS, Classic rows retain these large cards with or without the Home hero.
+  Showcase and Hero + Showcase instead render standard poster cards, leaving
+  the focused title's artwork and metadata to Showcase. This presentation-only
+  adaptation preserves the saved Featured preference, row order, and contents;
+  iPhone and iPad continue to use large Featured cards.
   TV rows reuse the standard media-row heading and See all action, with the same
   pinned-navigation keyline, leading fade and card-slot parking as ordinary rows.
   System-focus Featured cards share the image-based native poster renderer.
