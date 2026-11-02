@@ -35,6 +35,12 @@ generation checks reject suspended artwork from before a settings change or a
 newer publication, including a quick off/on cycle. Disabled publication does not
 resolve artwork. The extension returns no media for the empty snapshot.
 
+Artwork selection remains on the main actor, but `TopShelfArtworkEncoder`
+serializes PNG poster and JPEG backdrop compression on its own actor so an
+export cannot block Home navigation. Cancellation skips queued compression and
+discards a result cancelled during encoding; publication generation checks still
+reject superseded work. The encoder retains no images or credentialed URLs.
+
 **Posters** remains the default. **Full Screen** publishes the same limited feeds
 as a native `TVTopShelfCarouselContent` with `.details`: Continue Watching first,
 then Recently Added, deduplicated by account-qualified identity. tvOS owns the

@@ -55,11 +55,13 @@ extension HomeRowArrangementHostedTests {
             var frame = CGRect.zero
             let presentation = HomePresentationRow(choice: choice, source: .library(row))
             try await withWindow {
-                home.focusHomeRowView(
-                    .section(row, presentation), reporter: reporter, reservesLoadingFocus: false
-                )
+                ScrollView {
+                    home.focusHomeRowView(
+                        .section(row, presentation), reporter: reporter, reservesLoadingFocus: false
+                    )
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+                }
                 .environment(\.plozzCardFocusStyle, .system)
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
             } inspect: { window in
                 _ = try await self.snapshot(window, name: "Showcase collection \(style)")
                 XCTAssertGreaterThan(frame.height, 100)
@@ -82,8 +84,10 @@ extension HomeRowArrangementHostedTests {
         }
         var classicSize = CGSize.zero
         try await withWindow {
-            home.libraryRowView(row, onBrowse: nil)
-                .onGeometryChange(for: CGSize.self) { $0.size } action: { classicSize = $0 }
+            ScrollView {
+                home.libraryRowView(row, onBrowse: nil)
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { classicSize = $0 }
+            }
         } inspect: { window in
             _ = try await self.snapshot(window, name: "Classic retains Featured")
             XCTAssertGreaterThan(classicSize.height, standardSize.height + 100)
