@@ -573,13 +573,28 @@ retry. These are API-contract and fixture guarantees, not authenticated proof
 of live cache invalidation or ownership behavior.
 
 Season browsing validates the full grouped response, individual records and
-per-label aggregates. It rejects the potentially capped 5,000-record response
+per-label aggregates. The live API groups season aggregates under lowercase
+labels while retaining each contribution's original label. Validation uses
+those normalized groups, including combined counts for mixed-case labels,
+without rewriting contribution labels or exact IDs. Missing, extra, split or
+inconsistent aggregate groups still fail closed.
+It rejects the potentially capped 5,000-record response
 rather than calling it a complete season. Rated episodes are not presented as
 an authoritative episode roster. Explicit batch submission/deletion supports
 up to 50 unique episodes/record IDs and independently checks the complete season
 afterward. Partial HTTP 207 outcomes retain confirmed IDs and unconfirmed
 episodes/IDs, block blind replay, and never become a full success. Deletions
 recheck every selected record before dispatch and never become season-wide resets.
+
+Real production iPhone-simulator acceptance compared all ten rated episodes of
+one season against independent API reads. Two explicitly selected episode
+ratings were published through the native batch form, independently identified,
+and removed through native exact-record selection. Both publication and deletion
+cancellation preserved remote state; relaunch readback confirmed restoration of
+all 40 original contributions and aggregates. Server metadata, watched/resume
+histories and lists stayed unchanged, and optional rating lookup remained off.
+This establishes that bounded round trip, not native 50-item, partial-failure,
+stale-batch, ownership or TV/iPad acceptance.
 
 ## Reviewed multiple-play deletion
 

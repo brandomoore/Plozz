@@ -560,14 +560,20 @@ final class PublicMetaDBContributionManagementTests: XCTestCase {
         #"{"id":"\#(id ?? "episode-\(episode)")","tmdb_id":550,"media_type":"tv","season":1,"episode":\#(episode),"label":"Overall","score":85,"contributor":"author"}"#
     }
 
-    private func seasonJSON(_ records: [String]) throws -> String {
+    private func seasonJSON(
+        _ records: [String], aggregateOverride: [String: [String: Any]]? = nil
+    ) throws -> String {
         let values = try records.map { try XCTUnwrap(JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]) }
         let groups = Dictionary(grouping: values) { $0["episode"] as? Int ?? 0 }
         let episodes: [[String: Any]] = groups.keys.sorted().map { number in
             let ratings = groups[number] ?? []
+            let labels = Dictionary(grouping: ratings) { ($0["label"] as? String ?? "").lowercased() }
+            let aggregates: [String: [String: Any]] = Dictionary(uniqueKeysWithValues: labels.map { label, records in
+                (label, ["label": label, "count": records.count, "average": 85])
+            })
             return [
                 "episode": number, "total": ratings.count, "ratings": ratings,
-                "aggregates": ["Overall": ["label": "Overall", "count": ratings.count, "average": 85]]
+                "aggregates": aggregateOverride ?? aggregates
             ]
         }
         let response: [String: Any] = [
@@ -576,6 +582,67 @@ final class PublicMetaDBContributionManagementTests: XCTestCase {
             "seasonAverage": records.isEmpty ? NSNull() : 85
         ]
         return String(decoding: try JSONSerialization.data(withJSONObject: response), as: UTF8.self)
+    }
+
+    func testSeasonUsesNormalizedAggregateGroupsWithoutRelabelingContributions() async throws {
+        try await withService { service, http, connection in
+            let labels = ["IM", "im", "Im", "Overall"]
+            let records = labels.enumerated().map { index, label in
+                episodeJSON(1, id: "rating-\(index)")
+                    .replacingOccurrences(of: #""label":"Overall""#, with: #""label":"\#(label)""#)
+            }
+            http.stub(pathSuffix: "/episode-ratings/batch", json: try seasonJSON(records))
+            let result = try await service.seasonRatingsForManagement(
+                tmdbID: 550, season: 1, expectedConnectionID: connection
+            )
+            let episode = try XCTUnwrap(result.episodes.first)
+            XCTAssertEqual(result.totalRatings, 4)
+            XCTAssertEqual(episode.ratings.map(\.value.label), labels)
+            XCTAssertEqual(episode.ratings.map(\.id), (0..<4).map { "rating-\($0)" })
+            XCTAssertEqual(Set(episode.aggregates.keys), ["im", "overall"])
+            XCTAssertEqual(episode.aggregates["im"]?.count, 3)
+            XCTAssertEqual(episode.aggregates["im"]?.average, 85)
+            XCTAssertEqual(episode.aggregates["overall"]?.count, 1)
+            XCTAssertFalse(http.sent.contains { $0.body != nil })
+        }
+    }
+
+    func testSeasonRejectsMissingExtraSplitOrMismatchedNormalizedAggregates() async throws {
+        let records = ["IM", "im"].enumerated().map { index, label in
+            episodeJSON(1, id: "rating-\(index)")
+                .replacingOccurrences(of: #""label":"Overall""#, with: #""label":"\#(label)""#)
+        }
+        let invalid: [[String: [String: Any]]] = [
+            [:],
+            ["IM": ["label": "IM", "count": 2, "average": 85]],
+            ["im": ["label": "IM", "count": 2, "average": 85]],
+            ["im": ["label": "im", "count": 1, "average": 85]],
+            ["im": ["label": "im", "count": 2, "average": 101]],
+            [
+                "im": ["label": "im", "count": 1, "average": 85],
+                "IM": ["label": "IM", "count": 1, "average": 85],
+            ],
+            [
+                "im": ["label": "im", "count": 2, "average": 85],
+                "overall": ["label": "overall", "count": 0, "average": 85],
+            ],
+        ]
+        for aggregates in invalid {
+            try await withService { service, http, connection in
+                http.stub(pathSuffix: "/episode-ratings/batch", json: try seasonJSON(
+                    records, aggregateOverride: aggregates
+                ))
+                do {
+                    _ = try await service.seasonRatingsForManagement(
+                        tmdbID: 550, season: 1, expectedConnectionID: connection
+                    )
+                    XCTFail("An inconsistent normalized season aggregate was accepted")
+                } catch {
+                    XCTAssertEqual(error as? PublicMetaDB.Failure, .incompleteResponse)
+                }
+                XCTAssertFalse(http.sent.contains { $0.body != nil })
+            }
+        }
     }
 
     func testSeasonCompleteBoundaryRejectsPotentiallyCappedFiveThousandRecords() async throws {

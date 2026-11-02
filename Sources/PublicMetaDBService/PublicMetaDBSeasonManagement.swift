@@ -29,7 +29,8 @@ public extension PublicMetaDBService {
                       $0.value.content.tmdbID == tmdbID && $0.value.content.mediaType == .tv
                         && $0.value.content.season == season && $0.value.content.episode == episode.episode
                   }) else { throw PublicMetaDB.Failure.incompleteResponse }
-            let groups = Dictionary(grouping: episode.ratings, by: \.value.label)
+            // Season aggregates use lowercase keys; individual contributions retain their original labels.
+            let groups = Dictionary(grouping: episode.ratings) { $0.value.label.lowercased() }
             guard Set(groups.keys) == Set(episode.aggregates.keys) else { throw PublicMetaDB.Failure.incompleteResponse }
             for (label, aggregate) in episode.aggregates {
                 guard aggregate.label == label, aggregate.count == groups[label]?.count,

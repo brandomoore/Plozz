@@ -194,6 +194,7 @@ private struct PublicMetaDBEpisodeRatingsDeletionView: View {
                                 if let contributor = record.contributor { Text(verbatim: contributor) }
                             }
                         }
+                        .accessibilityIdentifier("publicmetadb.episode-rating.record.\(record.id)")
                         .disabled(!operation.permitsWrite || (selected.count >= 50 && selected[record.id] == nil))
                     }
                 }

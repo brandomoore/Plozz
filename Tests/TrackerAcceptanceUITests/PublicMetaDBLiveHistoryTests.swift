@@ -132,7 +132,9 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testFinishOnboarding() throws {
         if app.navigationBars["Choose Your Libraries"].exists {
             let shows = app.switches["TV shows"]
-            if shows.value as? String == "1" { shows.tap() }
+            let includeShows = ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_INCLUDE_SHOWS"] == "1"
+            if (shows.value as? String == "1") != includeShows { shows.tap() }
+            XCTAssertEqual(shows.value as? String, includeShows ? "1" : "0")
             XCTAssertEqual(app.switches["Movies"].value as? String, "1")
             app.buttons["Continue"].tap()
             XCTAssertTrue(app.navigationBars["Choose Your Libraries"].waitForNonExistence(timeout: 10))
@@ -159,6 +161,30 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testEnablePlaybackReporting() throws {
         try openPlaybackReporting()
         try enableReporting()
+    }
+
+    func testConnectWithRealBrowserCode() throws {
+        let enter = app.buttons["publicmetadb.pair"]
+        XCTAssertTrue(enter.waitForExistence(timeout: 10))
+        XCTAssertEqual(enter.label, "Enter API key")
+        XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
+        enter.tap()
+        let codeLabel = app.staticTexts["publicmetadb.pair.code"]
+        XCTAssertTrue(codeLabel.waitForExistence(timeout: 50))
+        let code = codeLabel.label.replacingOccurrences(of: " ", with: "")
+        XCTAssertNotNil(code.range(of: "^[A-HJ-NP-Z2-9]{8}$", options: .regularExpression))
+        let handoff = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_CONNECTION_HANDOFF"])
+        XCTAssertTrue(handoff.hasPrefix("/") && handoff.hasSuffix("/browser-request.json"))
+        let data = try JSONSerialization.data(withJSONObject: [
+            "url": "https://plozz.app/publicmetadb",
+            "code": code,
+            "displayedProductionCode": true,
+        ])
+        try data.write(to: URL(fileURLWithPath: handoff), options: .withoutOverwriting)
+        XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 120))
+        XCTAssertEqual(enter.label, "Replace API key")
+        XCTAssertTrue(app.staticTexts["Connected"].exists)
+        XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
     }
 
     func testInspectPlaybackReporting() throws {
@@ -702,6 +728,162 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try openSelectedRatings()
         try assertRealRatings(evidence)
         recordState()
+    }
+
+    func testReadRealSeasonRatings() throws {
+        let evidence = try openSelectedSeasonRatings()
+        for episode in evidence.episodes.sorted(by: { $0.episode < $1.episode }) {
+            let row = app.buttons.matching(NSPredicate(
+                format: "label == %@ OR label BEGINSWITH %@", "Episode \(episode.episode)", "Episode \(episode.episode),"
+            )).firstMatch
+            try tapVisible(row, tapping: false)
+            for aggregate in episode.aggregates.values {
+                let expected = "\(aggregate.label): \(aggregate.average.formatted()) / 100 (\(aggregate.count) ratings)"
+                try require(row.label.contains(expected) || row.staticTexts[expected].exists,
+                            "Expected the exact independently read season aggregate")
+            }
+        }
+        recordState()
+    }
+
+    private func openSelectedSeasonRatings() throws -> SeasonRatingEvidence {
+        let encoded = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SEASON_RATINGS_EVIDENCE"])
+        let evidence = try JSONDecoder().decode(SeasonRatingEvidence.self, from: Data(encoded.utf8))
+        try require(evidence.tmdbID == 65494 && evidence.season == 1, "Expected independently verified Crown season one")
+        try openSelectedTitleControls()
+        try tapVisible(app.buttons["Season ratings"])
+        let season = app.textFields["TMDB season number"]
+        try tapVisible(season)
+        season.typeText("\(evidence.season)\n")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        try tapVisible(app.buttons["Load season"])
+        let disclosure = app.staticTexts["Episodes shown have community ratings; this is not a complete episode list."]
+        try require(disclosure.waitForExistence(timeout: 45), "Expected real season ratings rather than a rejected snapshot")
+        return evidence
+    }
+
+    func testPrepareRealEpisodeRatings() throws {
+        let evidence = try openSelectedSeasonRatings()
+        XCTAssertTrue([3, 4].allSatisfy { number in evidence.episodes.contains { $0.episode == number } })
+        try tapVisible(app.buttons["Rate multiple episodes"])
+        let label = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_RATING_LABEL"])
+        XCTAssertEqual(label, "PlozzAcceptance1121bcf0")
+        let field = app.textFields["Rating label"]
+        try tapVisible(field)
+        XCTAssertEqual(field.value as? String, "Overall")
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Overall".count))
+        field.typeText(label + "\n")
+        XCTAssertEqual(field.value as? String, label)
+        let first = app.textFields.matching(identifier: "TMDB episode number").firstMatch
+        try tapVisible(first)
+        first.typeText("3\n")
+        XCTAssertEqual(first.value as? String, "3")
+        try tapVisible(app.buttons["Add an episode"])
+        let fields = app.textFields.matching(identifier: "TMDB episode number")
+        XCTAssertEqual(fields.count, 2)
+        let second = fields.element(boundBy: 1)
+        try tapVisible(second)
+        second.typeText("4\n")
+        XCTAssertEqual(second.value as? String, "4")
+        try tapVisible(app.buttons["Review ratings"])
+        try require(app.popovers.buttons["Publish ratings"].waitForExistence(timeout: 10),
+                    "Expected explicit batch publication confirmation")
+        XCTAssertTrue(app.popovers.staticTexts.matching(NSPredicate(
+            format: "label == %@",
+            "Publish 2 “\(label)” ratings for TMDB season 1. A partial result is not a full success and will not be automatically retried."
+        )).firstMatch.exists)
+        recordState()
+    }
+
+    func testCancelPreparedEpisodeRatings() throws {
+        XCTAssertTrue(app.popovers.buttons["Publish ratings"].exists)
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Review ratings"].isEnabled)
+        XCTAssertFalse(app.staticTexts["All selected episode ratings were confirmed on PublicMetaDB"].exists)
+        recordState()
+    }
+
+    func testConfirmPreparedEpisodeRatings() throws {
+        XCTAssertTrue(app.popovers.buttons["Publish ratings"].exists)
+        app.popovers.buttons["Publish ratings"].tap()
+        try require(app.staticTexts["All selected episode ratings were confirmed on PublicMetaDB"]
+            .waitForExistence(timeout: 45), "Expected independently reconciled batch publication")
+        XCTAssertFalse(app.buttons["Review ratings"].exists)
+        recordState()
+    }
+
+    func testPrepareRealEpisodeRatingDeletion() throws {
+        let evidence = try openSelectedSeasonRatings()
+        let encoded = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_SELECTED_IDS"])
+        let identifiers = try JSONDecoder().decode([String].self, from: Data(encoded.utf8))
+        XCTAssertEqual(identifiers.count, 2)
+        XCTAssertEqual(Set(identifiers).count, 2)
+        for identifier in identifiers {
+            let episodes = evidence.episodes.filter { $0.ratings.contains { $0.id == identifier } }
+            XCTAssertEqual(episodes.count, 1)
+            let episode = try XCTUnwrap(episodes.first)
+            XCTAssertTrue([3, 4].contains(episode.episode))
+            let record = try XCTUnwrap(episode.ratings.first { $0.id == identifier })
+            XCTAssertEqual(record.label, "PlozzAcceptance1121bcf0")
+            XCTAssertEqual(record.score, 50)
+        }
+        try tapVisible(app.buttons["Delete selected episode ratings"])
+        for identifier in identifiers {
+            let control = app.switches["publicmetadb.episode-rating.record.\(identifier)"]
+            try tapVisible(control, tapping: false)
+            XCTAssertEqual(control.value as? String, "0")
+            try tapVisible(control.switches.firstMatch)
+            XCTAssertEqual(control.value as? String, "1")
+        }
+        try tapVisible(app.buttons["Delete selected ratings"])
+        try require(app.popovers.buttons["Delete selected ratings"].waitForExistence(timeout: 10),
+                    "Expected exact batch deletion confirmation")
+        XCTAssertTrue(app.popovers.staticTexts.matching(NSPredicate(
+            format: "label == %@",
+            "Requests removal of 2 exact contributions, not all ratings for the season. PublicMetaDB verifies ownership. Server ratings and history are unchanged."
+        )).firstMatch.exists)
+        recordState()
+    }
+
+    func testCancelPreparedEpisodeRatingDeletion() throws {
+        XCTAssertTrue(app.popovers.buttons["Delete selected ratings"].exists)
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["All selected ratings were confirmed removed"].exists)
+        recordState()
+    }
+
+    func testConfirmPreparedEpisodeRatingDeletion() throws {
+        XCTAssertTrue(app.popovers.buttons["Delete selected ratings"].exists)
+        app.popovers.buttons["Delete selected ratings"].tap()
+        try require(app.staticTexts["All selected ratings were confirmed removed"].waitForExistence(timeout: 45),
+                    "Expected exact batch deletion and independent app readback")
+        recordState()
+    }
+
+    private struct SeasonRatingEvidence: Decodable {
+        struct Aggregate: Decodable {
+            let label: String
+            let average: Double
+            let count: Int
+        }
+        struct Episode: Decodable {
+            struct Record: Decodable {
+                let id: String
+                let label: String
+                let score: Double
+            }
+            let episode: Int
+            let aggregates: [String: Aggregate]
+            let ratings: [Record]
+        }
+        let tmdbID: Int
+        let season: Int
+        let episodes: [Episode]
+        enum CodingKeys: String, CodingKey {
+            case tmdbID = "tmdb_id", season, episodes
+        }
     }
 
     func testCommunityRatingLookupStartsDisabled() throws {
