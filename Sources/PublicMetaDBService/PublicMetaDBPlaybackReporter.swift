@@ -197,11 +197,7 @@ actor PublicMetaDBPlaybackReporter {
     }
 
     private func readHistory(_ content: PublicMetaDB.Content) async throws -> [PublicMetaDB.Record<PublicMetaDB.Watch>] {
-        let history = try await client.completePages(maximumPages: 100) {
-            try await self.client.history(content: content, page: $0, perPage: 500)
-        }
-        guard history.allSatisfy({ $0.value.content == content }) else { throw PublicMetaDB.Failure.incompleteResponse }
-        return history
+        try await client.completeHistory(content: content)
     }
 
     private func confirmWatch(

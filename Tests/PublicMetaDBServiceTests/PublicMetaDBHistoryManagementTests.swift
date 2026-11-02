@@ -130,14 +130,27 @@ final class PublicMetaDBHistoryManagementTests: XCTestCase {
         }
     }
 
-    func testUnfilteredHistoryCannotAuthorizeDeletion() async throws {
+    func testRecordIDReboundToAnotherTitleCannotAuthorizeDeletion() async throws {
         try await withService { service, http, connection in
             http.stub(pathSuffix: "/watched", json: historyPage([
                 watchJSON.replacingOccurrences(of: "550", with: "999")
             ]))
             do { try await service.deleteHistoryPlay(try decoded(watchJSON), expectedConnectionID: connection); XCTFail("Wrong title") }
-            catch { XCTAssertEqual(error as? PublicMetaDB.Failure, .incompleteResponse) }
+            catch { XCTAssertEqual(error as? AppError, .conflict) }
             XCTAssertFalse(http.sentPaths.contains("/api/external/watched/watch-a"))
+        }
+    }
+
+    func testDeletingAnExactPlayPreservesOtherTitlesInUnfilteredHistory() async throws {
+        try await withService { service, http, connection in
+            let other = watchJSON.replacingOccurrences(of: "watch-a", with: "other-title")
+                .replacingOccurrences(of: "550", with: "999")
+            http.stub(pathSuffix: "/watched", json: historyPage([watchJSON, other]))
+            http.stub(pathSuffix: "/watch-a", json: #"{"success":true}"#)
+            http.stub(pathSuffix: "/watched", json: historyPage([other]))
+            try await service.deleteHistoryPlay(try decoded(watchJSON), expectedConnectionID: connection)
+            XCTAssertEqual(http.sentPaths.filter { $0.hasSuffix("/watch-a") }.count, 1)
+            XCTAssertFalse(http.sentPaths.contains("/api/external/watched/other-title"))
         }
     }
 

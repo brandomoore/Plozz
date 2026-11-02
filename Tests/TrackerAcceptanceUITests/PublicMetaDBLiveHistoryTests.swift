@@ -110,6 +110,134 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(app.buttons["publicmetadb.playback.enable"].waitForExistence(timeout: 5))
     }
 
+    func testDisableCrossServerWatchSync() throws {
+        try openSettings()
+        try tapVisible(app.buttons["settings-category-playback"])
+        let control = app.switches.matching(NSPredicate(format: "label BEGINSWITH %@", "Sync across servers")).firstMatch
+        try tapVisible(control, tapping: false)
+        if control.value as? String == "1" {
+            try tapVisible(control.switches.firstMatch)
+        }
+        let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: control)
+        try require(XCTWaiter.wait(for: [disabled], timeout: 5) == .completed,
+                    "Independent tracker-import tests require cross-server playback mirroring off")
+    }
+
+    func testCreatePrivateAcceptanceList() throws {
+        let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"])
+        try require(!name.isEmpty, "Expected the explicit test-list name")
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["Create a list"])
+        let field = app.textFields["publicmetadb.list.name"]
+        try tapVisible(field)
+        field.typeText(name)
+        XCTAssertEqual(app.switches["Public list"].value as? String, "0")
+        app.swipeUp()
+        let confirm = app.buttons.matching(NSPredicate(
+            format: "label == %@ AND identifier != %@", "Create list", "publicmetadb.list.create"
+        )).firstMatch
+        try tapVisible(app.buttons["publicmetadb.list.create"])
+        try require(confirm.waitForExistence(timeout: 5), "Expected list confirmation")
+        try tapVisible(app.otherElements["PopoverDismissRegion"])
+        try require(confirm.waitForNonExistence(timeout: 5), "Expected cancellation to dismiss confirmation")
+        XCTAssertTrue(app.textFields["publicmetadb.list.name"].exists)
+        try tapVisible(app.buttons["publicmetadb.list.create"])
+        try require(confirm.waitForExistence(timeout: 5), "Expected the new list confirmation")
+        try require(confirm.isHittable, "Expected the confirmation action, not the underlying form")
+        confirm.tap()
+        try require(app.staticTexts["List created on PublicMetaDB"].waitForExistence(timeout: 45),
+                    "Expected independently confirmed private-list creation")
+    }
+
+    func testBrowseExactAcceptanceList() throws {
+        try openAcceptanceList()
+        XCTAssertTrue(app.staticTexts["Private"].exists)
+        try tapVisible(app.buttons["Browse items"])
+        try require(app.staticTexts["No records"].waitForExistence(timeout: 30), "Expected an empty new list")
+    }
+
+    func testPrepareExactListDeletion() throws {
+        try openAcceptanceList()
+        try tapVisible(app.buttons["publicmetadb.list.delete"])
+        try require(listDeletionConfirmation.waitForExistence(timeout: 5), "Expected exact-list confirmation")
+    }
+
+    func testCancelExactListDeletion() throws {
+        try require(listDeletionConfirmation.exists, "Expected the pending exact-list confirmation")
+        try tapVisible(app.otherElements["PopoverDismissRegion"])
+        try require(listDeletionConfirmation.waitForNonExistence(timeout: 5), "Expected cancellation")
+        XCTAssertTrue(app.buttons["publicmetadb.list.delete"].exists)
+    }
+
+    func testConfirmExactListDeletion() throws {
+        try require(listDeletionConfirmation.exists && listDeletionConfirmation.isHittable,
+                    "Expected the pending exact-list confirmation")
+        listDeletionConfirmation.tap()
+        try require(app.staticTexts["List deleted from PublicMetaDB"].waitForExistence(timeout: 45),
+                    "Expected confirmed exact-list deletion")
+    }
+
+    private var listDeletionConfirmation: XCUIElement {
+        app.buttons.matching(NSPredicate(
+            format: "label == %@ AND identifier != %@", "Delete list", "publicmetadb.list.delete"
+        )).firstMatch
+    }
+
+    private func openAcceptanceList() throws {
+        let id = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_ID"])
+        try require(!id.isEmpty, "Expected the exact run-owned list")
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["Lists"])
+        try tapVisible(app.buttons["publicmetadb.list.record.\(id)"])
+        try require(app.buttons["publicmetadb.list.delete"].exists, "Expected owned-list controls")
+    }
+
+    func testEnableOngoingWatchedImport() throws {
+        try openHistoryComparison()
+        try tapVisible(app.buttons["tracker-history.ongoing-sync"])
+        let accountID = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"])
+        let destination = app.switches.matching(NSPredicate(
+            format: "identifier == %@", "tracker-history.sync-server.\(accountID)"
+        )).firstMatch
+        let watched = app.switches["tracker-history.sync-watched"]
+        XCTAssertEqual(destination.value as? String, "0")
+        XCTAssertEqual(watched.value as? String, "0")
+        XCTAssertEqual(app.switches["tracker-history.sync-resume"].value as? String, "0")
+        try tapVisible(destination.switches.firstMatch)
+        try tapVisible(watched.switches.firstMatch)
+        try tapVisible(app.buttons["tracker-history.enable-sync"])
+        let confirm = app.buttons.matching(NSPredicate(
+            format: "label == %@ AND identifier != %@", "Enable sync", "tracker-history.enable-sync"
+        )).firstMatch
+        try require(confirm.waitForExistence(timeout: 5) && confirm.isHittable,
+                    "Expected the native confirmation action, not the underlying Enable sync form")
+        confirm.tap()
+        try require(app.buttons["tracker-history.disable-sync"].waitForExistence(timeout: 30),
+                    "Expected separate ongoing-import permission")
+        XCTAssertTrue(app.staticTexts["Watched"].exists)
+    }
+
+    func testSynchronizeOngoingImport() throws {
+        try openHistoryComparison()
+        try tapVisible(app.buttons["tracker-history.ongoing-sync"])
+        try require(app.buttons["tracker-history.disable-sync"].exists, "Expected existing sync permission")
+        try tapVisible(app.buttons["tracker-history.sync-now"])
+        let completed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == true"), object: app.buttons["tracker-history.sync-now"]
+        )
+        try require(XCTWaiter.wait(for: [completed], timeout: 65) == .completed, "Expected bounded sync completion")
+        XCTAssertFalse(app.staticTexts["Some changes need review. Compare with server history before retrying."].exists,
+                       "A deferred conflict is not confirmed ongoing delivery")
+    }
+
+    func testDisableOngoingImport() throws {
+        try openHistoryComparison()
+        try tapVisible(app.buttons["tracker-history.ongoing-sync"])
+        try tapVisible(app.buttons["tracker-history.disable-sync"])
+        try require(app.buttons["tracker-history.enable-sync"].waitForExistence(timeout: 10),
+                    "Expected revoked ongoing-import permission")
+    }
+
     func testFinishIndependentServerLibraries() throws {
         try finishIndependentServerLibraries()
     }
@@ -225,8 +353,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertFalse(user.isEmpty || item.isEmpty || account.isEmpty)
         try openPublicMetaDBAccount()
         try tapVisible(app.buttons["publicmetadb.compare-history"])
-        XCTAssertTrue(app.buttons["tracker-history.apply"].waitForExistence(timeout: 60))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", user)).firstMatch.exists)
+        try require(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", user))
+            .firstMatch.waitForExistence(timeout: 60), "Expected the dedicated user's real comparison rows")
     }
 
     private func selectHistoryImport() throws {
@@ -295,23 +423,56 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try pauseAndClose(maximumElapsedSeconds: 3)
     }
 
-    private func pauseAndClose(maximumElapsedSeconds: Int? = nil) throws {
-        if !app.buttons["Pause"].exists {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        }
-        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 5))
-        app.buttons["Pause"].tap()
-        XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 5))
-        if let maximumElapsedSeconds {
+    func testReplayMovieToCompletion() async throws {
+        let duration = try XCTUnwrap(Double(
+            ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_RUNTIME_SECONDS"] ?? ""
+        ))
+        try require(duration.isFinite && (100...86_400).contains(duration), "Expected independently verified runtime")
+        try require(detailPlayButton.exists && detailPlayButton.isHittable, "Expected the exact movie detail")
+        startedPlayback = true
+        detailPlayButton.tap()
+        try require(app.buttons["Close player"].waitForExistence(timeout: 45), "Expected real playback")
+        try await Task.sleep(for: .seconds(1))
+        try pausePlayback()
+        let scrubber = app.otherElements["player-timeline-scrubber"]
+        try require(scrubber.exists && scrubber.isHittable, "Expected the real player timeline")
+        scrubber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.2, thenDragTo: scrubber.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.9 - 20 / duration, dy: 0.5)
+            ))
+        try require(app.buttons["Play"].waitForExistence(timeout: 5) && app.buttons["Play"].isHittable,
+                    "Expected paused playback after the real seek")
+        app.buttons["Play"].tap()
+        try await Task.sleep(for: .seconds(27))
+        try pauseAndClose(minimumElapsedSeconds: Int(ceil(duration * 0.9)))
+    }
+
+    private func pauseAndClose(maximumElapsedSeconds: Int? = nil, minimumElapsedSeconds: Int? = nil) throws {
+        try pausePlayback()
+        if maximumElapsedSeconds != nil || minimumElapsedSeconds != nil {
             let value = try XCTUnwrap(app.buttons["player-timeline-current-time"].value as? String)
             let parts = try value.split(separator: ":").map { try XCTUnwrap(Int($0)) }
             XCTAssertTrue((2...3).contains(parts.count))
-            XCTAssertLessThanOrEqual(parts.reduce(0) { $0 * 60 + $1 }, maximumElapsedSeconds)
+            let elapsed = parts.reduce(0) { $0 * 60 + $1 }
+            if let maximumElapsedSeconds { XCTAssertLessThanOrEqual(elapsed, maximumElapsedSeconds) }
+            if let minimumElapsedSeconds { XCTAssertGreaterThanOrEqual(elapsed, minimumElapsedSeconds) }
         }
         recordState()
         app.buttons["Close player"].tap()
         XCTAssertTrue(app.buttons["Close player"].waitForNonExistence(timeout: 10))
         startedPlayback = false
+    }
+
+    private func pausePlayback() throws {
+        if !app.buttons["Pause"].exists || !app.buttons["Pause"].isHittable {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            try require(app.buttons["Pause"].waitForExistence(timeout: 5),
+                        "Expected playback controls after revealing them")
+        }
+        try require(app.buttons["Pause"].exists && app.buttons["Pause"].isHittable,
+                    "Expected the visible real pause control")
+        app.buttons["Pause"].tap()
+        XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 5))
     }
 
     private var detailPlayButton: XCUIElement {

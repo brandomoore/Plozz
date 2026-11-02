@@ -404,9 +404,7 @@ public final class PublicMetaDBHistoryExportSession {
     }
 
     private func readRemote(_ content: PublicMetaDB.Content) async throws -> RemoteState {
-        let watches = try await client.completePages(maximumPages: 100) {
-            try await self.client.history(content: content, page: $0, perPage: 500)
-        }
+        let watches = try await client.completeHistory(content: content)
         let resumes = try await client.completePages(maximumPages: 100) {
             try await self.client.resumePoints(content: content, page: $0, perPage: 500)
         }

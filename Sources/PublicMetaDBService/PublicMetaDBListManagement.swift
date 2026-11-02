@@ -15,7 +15,7 @@ public extension PublicMetaDBService {
             let lists = try await completeOwnedLists(client)
             _ = try confirmedClient(expectedConnectionID)
             guard let confirmed = lists.first(where: { $0.id == created.id }),
-                  confirmed.name == name, confirmed.description == description,
+                  confirmed.name == name, (confirmed.description ?? "") == (description ?? ""),
                   confirmed.isPublic == isPublic, confirmed.type == type else {
                 throw PublicMetaDB.Failure.uncertainWrite
             }

@@ -70,6 +70,43 @@ final class PublicMetaDBListManagementTests: XCTestCase {
         }
     }
 
+    func testCreationAcceptsEmptyStoredDescriptionForOmittedOrEmptyInput() async throws {
+        let stored = listJSON.replacingOccurrences(of: #""description":null"#, with: #""description":"""#)
+        for description in [nil, ""] as [String?] {
+            try await withService(configure: { http in
+                http.stub(pathSuffix: "/lists", json: #"{"success":true,"item":\#(stored)}"#)
+                http.stub(pathSuffix: "/lists", json: page([stored]))
+            }) { service, http, _, connection in
+                let result = try await service.createOwnedList(
+                    name: "Test list", description: description, isPublic: false, type: .custom,
+                    expectedConnectionID: connection
+                )
+                XCTAssertEqual(result.description, "")
+                XCTAssertEqual(http.sent.filter { $0.body != nil }.count, 1)
+                XCTAssertEqual(http.sent.count, 3)
+            }
+        }
+    }
+
+    func testCreationStillRejectsChangedDescriptionInReplyOrReadback() async throws {
+        for changedReadback in [false, true] {
+            let stored = listJSON.replacingOccurrences(of: #""description":null"#, with: #""description":" ""#)
+            try await withService(configure: { http in
+                http.stub(pathSuffix: "/lists", json: #"{"success":true,"item":\#(changedReadback ? listJSON : stored)}"#)
+                http.stub(pathSuffix: "/lists", json: page([stored]))
+            }) { service, http, _, connection in
+                do {
+                    _ = try await service.createOwnedList(
+                        name: "Test list", description: nil, isPublic: false, type: .custom,
+                        expectedConnectionID: connection
+                    )
+                    XCTFail("Changed description acknowledged")
+                } catch { XCTAssertEqual(error as? PublicMetaDB.Failure, .uncertainWrite) }
+                XCTAssertEqual(http.sent.filter { $0.body != nil }.count, 1)
+            }
+        }
+    }
+
     func testAddConfirmsVisibilityMembershipAndReadback() async throws {
         try await withService { service, http, list, connection in
             http.stub(pathSuffix: "/items", json: itemPage([]))

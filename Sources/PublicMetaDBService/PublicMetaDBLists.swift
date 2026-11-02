@@ -144,7 +144,8 @@ public extension PublicMetaDBClient {
             PublicMetaDB.List.self, path: "/lists",
             body: NewList(name: name, description: description, isPublic: isPublic, type: type)
         )
-        guard !result.id.isEmpty, result.name == name, result.description == description,
+        // The live API stores an omitted description as an empty string.
+        guard !result.id.isEmpty, result.name == name, (result.description ?? "") == (description ?? ""),
               result.isPublic == isPublic, result.type == type else { throw PublicMetaDB.Failure.uncertainWrite }
         return result
     }

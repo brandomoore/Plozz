@@ -60,6 +60,8 @@ def transport(item=None):
         "/api/external/lists": [page([{"id": "owned-a", "name": "Private test"}])],
         "/System/Info/Public": [{"Id": "server-a"}],
         "/Users/Me": [{"Id": "user-a"}],
+        "/Sessions": [[{"UserId": "user-a", "ServerId": "server-a"}]],
+        "/Users/user-a": [{"Id": "user-a", "Policy": {"IsAdministrator": False}}],
         "/Users/user-a/Items/item-a": [item or jellyfin_item()],
         "/api/external/watched": [page([])],
         "/api/external/resume": [page([])],
@@ -86,8 +88,10 @@ class TrackerAcceptancePreflightTests(unittest.TestCase):
                 self.assertNotIn("not-for-evidence", json.dumps(result))
                 self.assertNotIn("server.test", json.dumps(result))
                 for _, path, headers, query in http.calls:
-                    if path in ("/api/external/watched", "/api/external/resume"):
+                    if path == "/api/external/resume":
                         self.assertEqual({name: query[name] for name in MOVIE}, MOVIE)
+                    if path == "/api/external/watched":
+                        self.assertEqual(query, {"page": 1, "perPage": 500})
                     if not path.startswith("/api/external/"):
                         self.assertEqual(headers, {"Authorization": f'MediaBrowser Token="{KEY}"'})
 
@@ -105,6 +109,47 @@ class TrackerAcceptancePreflightTests(unittest.TestCase):
             with self.assertRaises(reader.Failure):
                 reader.baseline(config(), http, lambda _: KEY)
             self.assertFalse(any("Items" in call[1] or "watched" in call[1] for call in http.calls))
+
+    def test_emby_requires_unambiguous_credential_sessions_and_nonadmin_user(self):
+        http = transport()
+        reader.baseline(config("emby"), http, lambda _: KEY)
+        self.assertNotIn("/Users/Me", [call[1] for call in http.calls])
+        for sessions in (
+            None, {}, [], [None], [{}],
+            [{"ServerId": "server-a"}],
+            [{"UserId": "", "ServerId": "server-a"}],
+            [{"UserId": "user-a", "ServerId": "server-a"}, {"UserId": 0, "ServerId": "server-a"}],
+            [{"UserId": "user-a", "ServerId": "server-a"}, {"ServerId": "wrong"}],
+            [{"UserId": "wrong", "ServerId": "server-a"}],
+            [{"UserId": "user-a", "ServerId": "wrong"}],
+            [{"UserId": "user-a", "ServerId": "server-a"},
+             {"UserId": "other", "ServerId": "server-a"}],
+            [{"UserId": "user-a", "ServerId": "server-a"}] * 257,
+        ):
+            http = transport()
+            http.values["/Sessions"] = [sessions]
+            with self.subTest(sessions=sessions), self.assertRaisesRegex(reader.Failure, "credential user"):
+                reader.baseline(config("emby"), http, lambda _: KEY)
+            self.assertFalse(any("Items" in call[1] or "watched" in call[1] for call in http.calls))
+        for user in (
+            None, {}, {"Id": "user-a"}, {"Id": "user-a", "Policy": {}},
+            {"Id": "user-a", "Policy": {"IsAdministrator": True}},
+            {"Id": "user-a", "Policy": {"IsAdministrator": 0}},
+            {"Id": "wrong", "Policy": {"IsAdministrator": False}},
+        ):
+            http = transport()
+            http.values["/Users/user-a"] = [user]
+            with self.subTest(user=user), self.assertRaises(reader.Failure):
+                reader.baseline(config("emby"), http, lambda _: KEY)
+            self.assertFalse(any("Items" in call[1] or "watched" in call[1] for call in http.calls))
+
+    def test_emby_userless_service_sessions_do_not_replace_the_required_user_identity(self):
+        for userless in ({"ServerId": "server-a"}, {"ServerId": "server-a", "UserId": ""},
+                         {"ServerId": "server-a", "UserId": None}):
+            http = transport()
+            http.values["/Sessions"] = [[userless, {"ServerId": "server-a", "UserId": "user-a"}]]
+            result = reader.baseline(config("emby"), http, lambda _: KEY)
+            self.assertEqual(result["cases"][0]["userID"], "user-a")
 
     def test_movies_require_authoritative_tmdb_not_title_or_episode_ids(self):
         for replacement in ({}, {"Imdb": "tt0137523"}, {"Tmdb": "999"}, {"Tmdb": "550", "TMDB": "999"}):
@@ -168,6 +213,25 @@ class TrackerAcceptancePreflightTests(unittest.TestCase):
             http.values["/api/external/watched"] = [page([record])]
             with self.assertRaises(reader.Failure):
                 reader.baseline(config(), http, lambda _: KEY)
+
+    def test_watched_endpoint_is_unfiltered_and_completed_before_selecting_exact_content(self):
+        other = dict(MOVIE, tmdb_id=999, id="other", watched_at=DATE)
+        selected = dict(MOVIE, id="selected", watched_at=None)
+        http = transport()
+        http.values["/api/external/watched"] = [
+            page([other], size=1, total=2),
+            page([selected], size=1, number=2, total=2),
+        ]
+        result = reader.baseline(config(), http, lambda _: KEY)
+        self.assertEqual(result["cases"][0]["tracker"]["watched"], [
+            {"id": "selected", "content": MOVIE, "watchedAt": None}
+        ])
+        calls = [query for _, path, _, query in http.calls if path == "/api/external/watched"]
+        self.assertEqual(calls, [{"page": 1, "perPage": 500}, {"page": 2, "perPage": 500}])
+        http = transport()
+        http.values["/api/external/watched"] = [page([other], size=1, total=2), page([], size=1, number=2, total=2)]
+        with self.assertRaises(reader.Failure):
+            reader.baseline(config(), http, lambda _: KEY)
 
     def test_unfiltered_or_ambiguous_tracker_results_do_not_pass(self):
         for records in (
@@ -233,6 +297,7 @@ class TrackerAcceptancePreflightTests(unittest.TestCase):
             lambda c: c["servers"]["jellyfin"].update(baseURL="https://server.test:bad"),
             lambda c: c["servers"].update(silo=copy.deepcopy(c["servers"]["jellyfin"])),
             lambda c: c["publicMetaDB"].pop("tokenKeychainService"),
+            lambda c: c["servers"]["jellyfin"].update(discoveryCredential={}),
         ]
         for mutation in mutations:
             cfg = config()
@@ -241,6 +306,48 @@ class TrackerAcceptancePreflightTests(unittest.TestCase):
                 reader.validate_config(cfg)
         cfg = config(episode=True)
         cfg["titles"][0]["episodeOrder"] = "aired"
+        with self.assertRaises(reader.Failure):
+            reader.validate_config(cfg)
+
+    def test_plex_managed_user_discovery_must_bind_the_exact_server_token(self):
+        cfg = config("plex")
+        cfg["servers"]["plex"]["userID"] = "42"
+        cfg["servers"]["plex"]["discoveryCredential"] = {
+            "tokenKeychainService": "test-only", "tokenKeychainAccount": "plex-cloud"
+        }
+        metadata = {"ratingKey": "item-a", "type": "movie", "duration": 100000,
+                    "Guid": [{"id": "tmdb://550"}]}
+        correct = {"clientIdentifier": "server-a", "accessToken": "server-token"}
+        for resources in ([correct], [], [dict(correct, accessToken="other-token")],
+                          [dict(correct, clientIdentifier="other-server")], [correct, correct], {}):
+            http = FakeHTTP({
+                "/api/external/lists": [page([{"id": "owned-a"}])],
+                "/identity": [{"MediaContainer": {"machineIdentifier": "server-a"}}],
+                "/api/v2/user": [{"id": 42}],
+                "/api/v2/resources": [resources],
+                "/library/metadata/item-a": [{"MediaContainer": {"Metadata": [metadata]}}],
+                "/api/external/watched": [page([])],
+                "/api/external/resume": [page([])],
+            })
+            def token(reference):
+                return {"pmdb": KEY, "plex": "server-token", "plex-cloud": "cloud-token"}[
+                    reference["tokenKeychainAccount"]
+                ]
+            if resources == [correct]:
+                result = reader.baseline(cfg, http, token)
+                self.assertEqual(result["cases"][0]["userID"], "42")
+                for base, _, headers, _ in http.calls:
+                    if base == "https://plex.tv":
+                        self.assertEqual(headers["X-Plex-Token"], "cloud-token")
+                    elif base == "https://server.test":
+                        self.assertEqual(headers["X-Plex-Token"], "server-token")
+                self.assertNotIn("cloud-token", json.dumps(result))
+                self.assertNotIn("server-token", json.dumps(result))
+            else:
+                with self.subTest(resources=resources), self.assertRaises(reader.Failure):
+                    reader.baseline(cfg, http, token)
+                self.assertFalse(any("metadata" in call[1] or "watched" in call[1] for call in http.calls))
+        cfg["servers"]["plex"]["discoveryCredential"] = {}
         with self.assertRaises(reader.Failure):
             reader.validate_config(cfg)
 

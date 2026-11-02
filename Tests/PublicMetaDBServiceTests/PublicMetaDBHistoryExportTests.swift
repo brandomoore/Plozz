@@ -110,6 +110,19 @@ final class PublicMetaDBHistoryExportTests: XCTestCase {
         await assertEqual(await http.mutationCount(), 0)
     }
 
+    func testOtherTitlesRemainUntouchedDuringBackfillAndReadback() async throws {
+        let (session, provider, http) = try fixture(items: [movie()])
+        await http.addOtherTitle()
+        await preview(session)
+        XCTAssertNil(session.error)
+        XCTAssertEqual(session.rows.map(\.status), [.ready])
+        await apply(session)
+        XCTAssertNil(session.error)
+        await assertEqual(await http.mutationCount(), 1)
+        await assertEqual(await http.watchedTMDBIDs(), [550, 999])
+        await assertEqual(await provider.writeCount(), 0)
+    }
+
     func testResumeBoundaryChecksUseExactPublicMetaDBThresholds() async throws {
         for (position, expected) in [
             (19.999, PublicMetaDBHistoryExportSession.Status.unsupported),
@@ -462,6 +475,10 @@ private actor ExportHTTP: HTTPClient {
     func setWatched(_ value: Bool) {
         watched = value ? [["id": "watch", "tmdb_id": 550, "media_type": "movie", "watched_at": NSNull()]] : []
     }
+    func addOtherTitle() {
+        watched.append(["id": "other-title", "tmdb_id": 999, "media_type": "movie", "watched_at": NSNull()])
+    }
+    func watchedTMDBIDs() -> [Int] { watched.compactMap { $0["tmdb_id"] as? Int }.sorted() }
     func setResume(position: Double) {
         resume = [["id": "resume", "tmdb_id": 550, "media_type": "movie", "position_ms": position, "runtime_ms": 1_000_000]]
     }
@@ -481,9 +498,11 @@ private actor ExportHTTP: HTTPClient {
             if endpoint.path.hasSuffix("/dropped"), let dropped {
                 rows = [["id": "drop", "tmdb_id": dropped, "media_type": "tv"]]
             }
-            for field in ["tmdb_id", "season", "episode"] {
-                if let value = endpoint.queryItems.first(where: { $0.name == field })?.value, let id = Int(value) {
-                    rows = rows.filter { ($0[field] as? Int) == id }
+            if endpoint.path.hasSuffix("/resume") {
+                for field in ["tmdb_id", "season", "episode"] {
+                    if let value = endpoint.queryItems.first(where: { $0.name == field })?.value, let id = Int(value) {
+                        rows = rows.filter { ($0[field] as? Int) == id }
+                    }
                 }
             }
             body = ["items": rows, "total": rows.count, "page": 1, "perPage": 500, "totalPages": rows.isEmpty ? 0 : 1]

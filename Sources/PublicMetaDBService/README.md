@@ -258,6 +258,9 @@ never automatically repeated. Ambiguous addition/removal/deletion is accepted
 only when complete readback proves the requested result. Deleting the selected
 destination first stops its automatic writes without deleting server history.
 Profile/key changes close the account browser and fence all outstanding requests.
+The live API stores omitted list descriptions as empty strings. Creation and
+readback treat those two empty representations equally, while still rejecting
+changed nonempty descriptions or visibility.
 
 ## Explicit history management
 
@@ -267,8 +270,17 @@ undated play, including a deliberate rewatch. These are PublicMetaDB changes,
 not server-history imports or playback events; other connected clients may
 nevertheless react to the tracker change.
 
-The service reads complete identity-filtered state before dispatch and requires
-the observed record/date/progress to remain unchanged. Removal uses an exact
+The watched-history endpoint supports pagination, not title filters. Playback
+reporting and export read every page before selecting the exact movie or episode;
+an incomplete account history never becomes an empty title history. This costs
+an account-history scan per fresh check, bounded by the existing page budget.
+Title-history browsers paginate those matched records locally; show/season
+browsing includes the matching episodes without crossing movie/TV namespaces.
+Resume lookups continue to use the documented server-side identity filters.
+
+History editing reads complete account history before dispatch and requires
+the exact record identity/date to remain unchanged, even when other titles are
+present. Removal uses an exact
 record ID, not a title-wide watched deletion. Successful replies need independent
 readback. Missing fields, foreign identities, replacement progress and uncertain
 creation are never treated as successful resets or permission to retry.
@@ -452,6 +464,18 @@ This proves the tested movie-resume import and server-staleness guard on an iOS
 simulator, not automatic ongoing sync, two-device delivery, watched imports,
 episode imports, or other tracker/provider routes.
 
+On 2 November 2026 UTC, additional real iPhone-simulator checks confirmed movie
+completion, a distinct rewatch, and multiple-title reporting. The second movie's
+resume matched the source's whole milliseconds; completing it added one dated
+play and cleared that resume without changing the first movie's records.
+Separately enrolled watched-only ongoing import did not backfill, then delivered
+that new play to the dedicated Jellyfin user. A repeated sync after relaunch
+changed neither server state nor tracker history. Ordinary cross-server playback
+mirroring was disabled through Settings to isolate this route. A destination
+with prior-play recency correctly remained a review conflict, not an automatic
+overwrite. Ongoing resume imports, independent-device delivery, episodes and
+the remaining provider/tracker routes are still outside this evidence.
+
 The unbound `PublicMetaDBLiveHistoryTests` driver uses normally configured
 production-app UI, not seeded profiles or substituted media. Its individual
 scenarios require explicit `PLOZZ_TRACKER_HISTORY_LIVE=1`, the owned
@@ -468,9 +492,19 @@ interaction targets the switch control rather than its containing row; native
 confirmation may cancel through the system popover dismissal region. The
 independent reader uses standard `Authorization: MediaBrowser Token="..."` for
 Jellyfin and Emby; servers can reject legacy `X-Emby-Token` headers.
-The full preflight's Emby current-user probe remains a separate gap: the tested
-server rejects `/Users/Me` with either header. Successful exact-item reads do
-not establish that the full multi-provider preflight passed.
+Emby does not support Jellyfin's `/Users/Me` endpoint. Its independent preflight
+instead requires at least one credential-visible session for the configured
+server user, no sessions for other users, and the expected server on every
+session, then verifies that exact user's nonadministrator policy. Userless
+service sessions such as DLNA do not provide identity proof. Empty, mixed,
+malformed or mismatched identities fail closed before item reads.
+This full read-only Emby preflight has passed against the dedicated real user,
+including rejection of an intentionally mismatched user; it is not native
+playback or a full multi-provider acceptance pass.
+For a Plex managed user with distinct cloud and server tokens, the optional
+`discoveryCredential` uses the same Keychain-reference fields as the server
+credential. The cloud user and machine must match, and that user's discovered
+resource token must equal the supplied server token before any item reads.
 
 ## Opt-in playback reporting
 

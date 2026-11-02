@@ -115,6 +115,38 @@ final class PublicMetaDBPlaybackTests: XCTestCase {
         XCTAssertTrue(http.sent.allSatisfy { $0.body == nil })
     }
 
+    func testOtherTitlesInAccountHistoryDoNotBlockResumeReporting() async throws {
+        let http = RecordingHTTPClient()
+        let other = watchRow.replacingOccurrences(of: "550", with: "999")
+        http.stub(pathSuffix: "/resume", json: emptyPage)
+        http.stub(pathSuffix: "/watched", json: page(other))
+        http.stub(pathSuffix: "/resume", json: #"{"action":"saved","item":\#(resumeRow)}"#)
+        http.stub(pathSuffix: "/resume", json: page(resumeRow))
+        try await reporter(http).report(delivery(position: 300, seconds: 300))
+        let writes = http.sent.filter { $0.body != nil }
+        XCTAssertEqual(writes.count, 1)
+        XCTAssertEqual(writes.first?.path, "/api/external/resume")
+        XCTAssertEqual(writes.first?.json?["tmdb_id"] as? Int, 550)
+    }
+
+    func testOtherTitlesInAccountHistoryDoNotBlockCompletionOrItsReadback() async throws {
+        let http = RecordingHTTPClient()
+        let other = watchRow.replacingOccurrences(of: "play-a", with: "other")
+            .replacingOccurrences(of: "550", with: "999")
+        http.stub(pathSuffix: "/resume", json: emptyPage)
+        http.stub(pathSuffix: "/watched", json: page(other))
+        http.stub(pathSuffix: "/watched", json: #"{"success":true,"item":\#(watchRow)}"#)
+        http.stub(pathSuffix: "/watched", json:
+            #"{"items":[\#(other),\#(watchRow)],"total":2,"page":1,"perPage":500,"totalPages":1}"#)
+        let writer = try reporter(http)
+        let play = try delivery()
+        try await writer.report(play)
+        try await writer.report(play)
+        let writes = http.sent.filter { $0.body != nil }
+        XCTAssertEqual(writes.count, 1)
+        XCTAssertEqual(writes.first?.json?["tmdb_id"] as? Int, 550)
+    }
+
     func testPossiblePluginWatchBlocksDuplicatePlay() async throws {
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/resume", json: emptyPage)

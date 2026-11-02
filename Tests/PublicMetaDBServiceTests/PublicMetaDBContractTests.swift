@@ -292,6 +292,59 @@ final class PublicMetaDBContractTests: XCTestCase {
         XCTAssertTrue(rows.allSatisfy { $0.value.watchedAt == nil })
     }
 
+    func testExactHistoryFilteringFollowsAllPagesAndPreservesContentNamespaces() async throws {
+        let http = RecordingHTTPClient()
+        let special = #"{"id":"special","tmdb_id":550,"media_type":"tv","season":0,"episode":1,"watched_at":null}"#
+        let otherEpisode = special.replacingOccurrences(of: "special", with: "regular")
+            .replacingOccurrences(of: #""season":0"#, with: #""season":1"#)
+        for (index, record) in [watch, special, otherEpisode].enumerated() {
+            http.stub(pathSuffix: "/watched", json:
+                #"{"items":[\#(record)],"total":3,"page":\#(index + 1),"perPage":1,"totalPages":3}"#)
+        }
+        let content = try PublicMetaDB.Content(tmdbID: 550, mediaType: .tv, season: 0, episode: 1)
+        let rows = try await client(http).completeHistory(content: content)
+        XCTAssertEqual(rows.map(\.id), ["special"])
+        XCTAssertEqual(http.sent.count, 3)
+        XCTAssertTrue(http.sent.allSatisfy { $0.queryItems.map(\.name) == ["page", "perPage"] })
+    }
+
+    func testFilteredHistoryCannotReturnEarlyWhenLaterPagesAreUnverified() async throws {
+        let http = RecordingHTTPClient()
+        http.stub(pathSuffix: "/watched", json:
+            #"{"items":[\#(watch)],"total":2,"page":1,"perPage":1,"totalPages":2}"#)
+        do {
+            _ = try await client(http).completeHistory(
+                content: .init(tmdbID: 550, mediaType: .movie), maximumPages: 1
+            )
+            XCTFail("Finding a matching play must not waive collection completeness")
+        } catch { XCTAssertEqual(error as? PublicMetaDB.Failure, .incompleteResponse) }
+        XCTAssertEqual(http.sent.count, 1)
+    }
+
+    func testTitleHistoryPaginatesOnlyItsMovieOrShowRecordsAfterReadingTheAccount() async throws {
+        let http = RecordingHTTPClient()
+        let special = #"{"id":"special","tmdb_id":550,"media_type":"tv","season":0,"episode":1,"watched_at":null}"#
+        let regular = special.replacingOccurrences(of: "special", with: "regular")
+            .replacingOccurrences(of: #""season":0"#, with: #""season":1"#)
+        http.stub(pathSuffix: "/watched", json:
+            #"{"items":[\#(watch),\#(special),\#(regular)],"total":3,"page":1,"perPage":500,"totalPages":1}"#)
+        let api = try client(http)
+        let movie = try await api.history(content: .init(tmdbID: 550, mediaType: .movie), perPage: 1)
+        XCTAssertEqual(movie.items.map(\.id), ["play1"])
+        XCTAssertEqual(movie.total, 1)
+        let show = try await api.history(content: .init(tmdbID: 550, mediaType: .tv), page: 2, perPage: 1)
+        XCTAssertEqual(show.items.map(\.id), ["regular"])
+        XCTAssertEqual(show.total, 2)
+        XCTAssertEqual(show.totalPages, 2)
+        XCTAssertEqual(show.page, 2)
+        let episode = try await api.history(content: .init(tmdbID: 550, mediaType: .tv, season: 0, episode: 1))
+        XCTAssertEqual(episode.items.map(\.id), ["special"])
+        XCTAssertEqual(episode.total, 1)
+        XCTAssertTrue(http.sent.allSatisfy {
+            $0.queryItems == [.init(name: "page", value: "1"), .init(name: "perPage", value: "500")]
+        })
+    }
+
     func testPrivateListVisibilityIsExplicit() async throws {
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/lists", json: #"{"success":true,"item":{"id":"list1","name":"Private","is_public":false,"type":"custom"}}"#)

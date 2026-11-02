@@ -75,8 +75,11 @@ def validate_config(value):
     servers = value.get("servers")
     require(isinstance(servers, dict) and servers and set(servers).issubset(PROVIDERS),
             "Choose explicit Plex, Jellyfin or Emby servers; other baseline readers are not implemented.")
-    for server in servers.values():
+    for provider, server in servers.items():
         credential_reference(server)
+        if "discoveryCredential" in server:
+            require(provider == "plex", "Separate discovery credentials are supported only for Plex.")
+            credential_reference(server["discoveryCredential"])
         identifier(server.get("serverID"))
         identifier(server.get("userID"))
         try:
@@ -194,11 +197,13 @@ def complete_pages(http, token, path, query=None):
 def tracker_state(http, token, canonical):
     snapshot = {}
     for path in ("/watched", "/resume"):
-        records = complete_pages(http, token, path, canonical)
+        records = complete_pages(http, token, path, canonical if path == "/resume" else None)
         projected = []
         for record in records:
-            require(content(record, remote=True) == canonical, "Tracker returned a different catalog identity.")
-            item = {"id": record["id"], "content": canonical}
+            observed = content(record, remote=True)
+            if path == "/resume":
+                require(observed == canonical, "Tracker returned a different catalog identity.")
+            item = {"id": record["id"], "content": observed}
             if path == "/watched":
                 require("watched_at" in record, "Watched date is absent, not explicitly unknown.")
                 item["watchedAt"] = timestamp(record["watched_at"])
@@ -208,7 +213,8 @@ def tracker_state(http, token, canonical):
                 require(runtime > 0 and position <= runtime, "Invalid remote resume point.")
                 item.update(positionMilliseconds=position, runtimeMilliseconds=runtime,
                             updatedAt=timestamp(record.get("updated")))
-            projected.append(item)
+            if observed == canonical:
+                projected.append(item)
         require(path != "/resume" or len(projected) <= 1, "Ambiguous resume points for one title.")
         snapshot[path[1:]] = sorted(projected, key=lambda item: item["id"])
     return snapshot
@@ -305,16 +311,39 @@ def baseline(config, http, token_reader=read_token):
         if provider == "plex":
             headers = {"X-Plex-Token": token, "X-Plex-Client-Identifier": "plozz-tracker-acceptance-readonly"}
             identity = http.get(server["baseURL"], "/identity", headers)
-            user = http.get("https://plex.tv", "/api/v2/user", headers)
             require(isinstance(identity, dict) and isinstance(identity.get("MediaContainer"), dict)
                     and identity["MediaContainer"].get("machineIdentifier") == server["serverID"],
                     "Plex server identity mismatch.")
+            cloud_token = token_reader(server["discoveryCredential"]) if "discoveryCredential" in server else token
+            cloud_headers = {**headers, "X-Plex-Token": cloud_token}
+            user = http.get("https://plex.tv", "/api/v2/user", cloud_headers)
             require(isinstance(user, dict) and str(user.get("id")) == server["userID"], "Plex user identity mismatch.")
+            if "discoveryCredential" in server:
+                resources = http.get("https://plex.tv", "/api/v2/resources", cloud_headers, {"includeHttps": 1})
+                require(isinstance(resources, list) and all(isinstance(resource, dict) for resource in resources),
+                        "Invalid Plex resource identities.")
+                matches = [resource for resource in resources
+                           if resource.get("clientIdentifier") == server["serverID"]]
+                require(len(matches) == 1 and matches[0].get("accessToken") == token,
+                        "Plex server credential is not bound to the verified cloud user.")
         else:
             headers = {"Authorization": f"MediaBrowser Token={json.dumps(token)}"}
             identity = http.get(server["baseURL"], "/System/Info/Public", headers)
-            user = http.get(server["baseURL"], "/Users/Me", headers)
             require(isinstance(identity, dict) and identity.get("Id") == server["serverID"], "Server identity mismatch.")
+            if provider == "emby":
+                sessions = http.get(server["baseURL"], "/Sessions", headers)
+                require(isinstance(sessions, list) and 1 <= len(sessions) <= 256
+                        and all(isinstance(session, dict)
+                                and session.get("UserId") in (None, "", server["userID"])
+                                and session.get("ServerId") == server["serverID"] for session in sessions)
+                        and any(session.get("UserId") == server["userID"] for session in sessions),
+                        "Emby credential user is missing, different or ambiguous.")
+                user = http.get(server["baseURL"], "/Users/" + server["userID"], headers)
+                require(isinstance(user, dict) and isinstance(user.get("Policy"), dict)
+                        and user["Policy"].get("IsAdministrator") is False,
+                        "Emby baseline requires a dedicated nonadministrator user.")
+            else:
+                user = http.get(server["baseURL"], "/Users/Me", headers)
             require(isinstance(user, dict) and user.get("Id") == server["userID"], "Server user identity mismatch.")
     cases = []
     for case in config["titles"]:

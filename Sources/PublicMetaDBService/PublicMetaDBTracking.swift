@@ -109,11 +109,30 @@ public extension PublicMetaDBClient {
     }
 
     func history(
-        content: PublicMetaDB.Content? = nil, page: Int = 1, perPage: Int = 100
+        page: Int = 1, perPage: Int = 100
     ) async throws -> PublicMetaDB.Page<PublicMetaDB.Record<PublicMetaDB.Watch>> {
         try await self.page(
             PublicMetaDB.Record<PublicMetaDB.Watch>.self, path: "/watched",
-            query: content?.query ?? [], page: page, perPage: perPage
+            page: page, perPage: perPage
+        )
+    }
+
+    /// Title browsers paginate a complete local snapshot, never a server-filtered page.
+    func history(
+        content: PublicMetaDB.Content, page: Int = 1, perPage: Int = 100
+    ) async throws -> PublicMetaDB.Page<PublicMetaDB.Record<PublicMetaDB.Watch>> {
+        guard page > 0, (1...500).contains(perPage) else { throw PublicMetaDB.Failure.invalidInput }
+        let records = try await completeHistory().filter {
+            let observed = $0.value.content
+            return observed.tmdbID == content.tmdbID && observed.mediaType == content.mediaType
+                && (content.season == nil || observed.season == content.season)
+                && (content.episode == nil || observed.episode == content.episode)
+        }
+        let totalPages = records.isEmpty ? 0 : (records.count - 1) / perPage + 1
+        guard page <= max(totalPages, 1) else { throw PublicMetaDB.Failure.incompleteResponse }
+        return .init(
+            items: Array(records.dropFirst((page - 1) * perPage).prefix(perPage)),
+            total: records.count, page: page, perPage: perPage, totalPages: totalPages
         )
     }
 
@@ -190,8 +209,13 @@ public extension PublicMetaDBClient {
         try await acknowledge(path: "/dropped/\(content.tmdbID)/\(content.mediaType.rawValue)")
     }
 
-    func completeHistory(maximumPages: Int = 100) async throws -> [PublicMetaDB.Record<PublicMetaDB.Watch>] {
-        try await completePages(maximumPages: maximumPages) { try await history(page: $0, perPage: 500) }
+    func completeHistory(
+        content: PublicMetaDB.Content? = nil, maximumPages: Int = 100
+    ) async throws -> [PublicMetaDB.Record<PublicMetaDB.Watch>] {
+        // The watched endpoint ignores title filters. Verify every page before selecting exact content.
+        let records = try await completePages(maximumPages: maximumPages) { try await history(page: $0, perPage: 500) }
+        guard let content else { return records }
+        return records.filter { $0.value.content == content }
     }
 
     func completeResumePoints(maximumPages: Int = 100) async throws -> [PublicMetaDB.Record<PublicMetaDB.Resume>] {

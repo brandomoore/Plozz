@@ -20,12 +20,10 @@ public extension PublicMetaDBService {
             throw PublicMetaDB.Failure.invalidInput
         }
         let client = try confirmedClient(expectedConnectionID)
-        for content in Set(records.map(\.value.content)) {
-            let current = try await historyRecords(content, client: client)
-            _ = try confirmedClient(expectedConnectionID)
-            for record in records where record.value.content == content {
-                try requireUnchangedPlay(record, in: current)
-            }
+        let current = try await client.completeHistory()
+        _ = try confirmedClient(expectedConnectionID)
+        for record in records {
+            try requireUnchangedPlay(record, in: current)
         }
         var confirmed: [String] = []
         for (index, record) in records.enumerated() {
@@ -55,13 +53,14 @@ public extension PublicMetaDBService {
     ) async throws {
         guard content.isPlayable, date != .now else { throw PublicMetaDB.Failure.invalidInput }
         let client = try confirmedClient(expectedConnectionID)
-        let before = try await historyRecords(content, client: client)
+        let before = try await client.completeHistory()
         _ = try confirmedClient(expectedConnectionID)
         let created = try await client.recordWatch(content, at: date)
         try await confirmHistoryChange(expectedConnectionID) {
-            let after = try await self.historyRecords(content, client: client)
+            let after = try await client.completeHistory()
             guard !before.contains(where: { $0.id == created.id }),
                   let confirmed = after.first(where: { $0.id == created.id }),
+                  confirmed.value.content == content,
                   date.matches(confirmed.value.watchedAt) else {
                 throw PublicMetaDB.Failure.uncertainWrite
             }
@@ -83,7 +82,7 @@ public extension PublicMetaDBService {
     ) async throws {
         guard date != .now else { throw PublicMetaDB.Failure.invalidInput }
         let client = try confirmedClient(expectedConnectionID)
-        let before = try await historyRecords(record.value.content, client: client)
+        let before = try await client.completeHistory()
         try requireUnchangedPlay(record, in: before)
         _ = try confirmedClient(expectedConnectionID)
         if date.matches(record.value.watchedAt) { return }
@@ -92,8 +91,9 @@ public extension PublicMetaDBService {
             // An exact record/date readback may establish an uncertain PATCH.
         }
         try await confirmHistoryChange(expectedConnectionID) {
-            let after = try await self.historyRecords(record.value.content, client: client)
+            let after = try await client.completeHistory()
             guard let confirmed = after.first(where: { $0.id == record.id }),
+                  confirmed.value.content == record.value.content,
                   date.matches(confirmed.value.watchedAt) else {
                 throw PublicMetaDB.Failure.uncertainWrite
             }
@@ -112,7 +112,7 @@ public extension PublicMetaDBService {
         _ record: PublicMetaDB.Record<PublicMetaDB.Watch>, expectedConnectionID: UUID
     ) async throws {
         let client = try confirmedClient(expectedConnectionID)
-        let before = try await historyRecords(record.value.content, client: client)
+        let before = try await client.completeHistory()
         _ = try confirmedClient(expectedConnectionID)
         guard before.contains(where: { $0.id == record.id }) else { return }
         try requireUnchangedPlay(record, in: before)
@@ -122,7 +122,7 @@ public extension PublicMetaDBService {
             // Only this play's absence, not a changed watched aggregate, confirms deletion.
         }
         try await confirmHistoryChange(expectedConnectionID) {
-            let after = try await self.historyRecords(record.value.content, client: client)
+            let after = try await client.completeHistory()
             guard !after.contains(where: { $0.id == record.id }) else {
                 throw PublicMetaDB.Failure.uncertainWrite
             }
@@ -219,16 +219,6 @@ public extension PublicMetaDBService {
                 throw PublicMetaDB.Failure.uncertainWrite
             }
         }
-    }
-
-    private func historyRecords(
-        _ content: PublicMetaDB.Content, client: PublicMetaDBClient
-    ) async throws -> [PublicMetaDB.Record<PublicMetaDB.Watch>] {
-        let records = try await client.completePages(maximumPages: 100) {
-            try await client.history(content: content, page: $0, perPage: 500)
-        }
-        guard records.allSatisfy({ $0.value.content == content }) else { throw PublicMetaDB.Failure.incompleteResponse }
-        return records
     }
 
     private func resumeRecords(

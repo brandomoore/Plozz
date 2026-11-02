@@ -51,6 +51,7 @@ struct PublicMetaDBAccountView: View {
                                 PublicMetaDBWatchDateLabel(date: record.value.watchedAt)
                             }
                         }
+                        .accessibilityIdentifier("publicmetadb.history.record.\(record.id)")
                     }
                 }
                 .accessibilityIdentifier("publicmetadb.history")
@@ -70,6 +71,7 @@ struct PublicMetaDBAccountView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        .accessibilityIdentifier("publicmetadb.resume.record.\(record.id)")
                     }
                 }
                 NavigationLink("Dropped titles") {
@@ -82,6 +84,7 @@ struct PublicMetaDBAccountView: View {
                         } label: {
                             PublicMetaDBContentLabel(content: record.value, allowsFocus: false)
                         }
+                        .accessibilityIdentifier("publicmetadb.dropped.record.\(record.id)")
                     }
                 }
                 NavigationLink("Lists") {
@@ -96,6 +99,7 @@ struct PublicMetaDBAccountView: View {
                                 Text(list.isPublic ? "Public" : "Private").foregroundStyle(.secondary)
                             }
                         }
+                        .accessibilityIdentifier("publicmetadb.list.record.\(list.id)")
                     }
                 }
                 NavigationLink("Create a list") { PublicMetaDBCreateListView(service: service) }
