@@ -8,6 +8,7 @@ struct PlozziOSSearchView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
+    @FocusState private var isSearchFocused: Bool
     @State private var viewModel: SearchViewModel
     private let appModel: PlozziOSAppModel
     private let onShowSettings: () -> Void
@@ -43,10 +44,13 @@ struct PlozziOSSearchView: View {
         VStack(spacing: 0) {
             PlozziOSSearchHeader(
                 query: $viewModel.query,
+                isFocused: $isSearchFocused,
                 onShowSettings: onShowSettings
             )
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .simultaneousGesture(TapGesture().onEnded { isSearchFocused = false })
         }
         // Compact tabs do not need a second bar above the explicit Search header.
         // Regular-width iPad keeps the bar so the system sidebar toggle remains
@@ -133,6 +137,7 @@ struct PlozziOSSearchView: View {
             }
             .padding(.vertical)
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private func provider(for item: MediaItem) -> (any MediaProvider)? {
@@ -150,6 +155,7 @@ private struct PlozziOSSearchHeader: View {
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
     @Binding var query: String
+    @FocusState.Binding var isFocused: Bool
     let onShowSettings: () -> Void
 
     var body: some View {
@@ -162,6 +168,7 @@ private struct PlozziOSSearchHeader: View {
                     text: $query,
                     prompt: Text("Movies, shows, and episodes").foregroundColor(palette.secondaryText)
                 )
+                .focused($isFocused)
                 .textFieldStyle(.plain)
                 .foregroundStyle(palette.primaryText)
                 .autocorrectionDisabled()

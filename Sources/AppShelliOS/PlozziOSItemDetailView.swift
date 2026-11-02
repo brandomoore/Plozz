@@ -22,10 +22,9 @@ struct PlozziOSItemDetailView: View {
     /// Show this episode as the page's own subject instead of redirecting to its
     /// series.
     ///
-    /// Every other way of reaching an episode — a tapped card, a deep link —
-    /// means "show me this episode in context", which is the series page with it
-    /// fronted. "Episode Info" means the opposite: this episode's own synopsis,
-    /// air date and the file that would play.
+    /// Continue Watching and "Episode Info" show the episode's own synopsis,
+    /// air date and the file that would play. Other browsing and deep links show
+    /// the series page with that episode fronted.
     let presentsEpisodeAsSubject: Bool
 
     @State private var resolvedSeries: MediaItem?

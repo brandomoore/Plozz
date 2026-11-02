@@ -2526,6 +2526,7 @@ private struct PlozziOSHomeRowView: View {
                     interaction: row.playsOnSelect(
                         continueWatchingAction: appModel.settings.homeVisibility.continueWatchingAction
                     ) ? .play : .openDetail,
+                    presentsEpisodeAsSubject: row.kind == .continueWatching,
                     showsResumeChip: row.kind == .continueWatching,
                     prefetchesArtwork: row.kind == .continueWatching,
                     pendingRemovalIDs: pendingWatchlistRemovalIDs,
@@ -2660,6 +2661,7 @@ struct PlozziOSHomeMediaRail: View {
     /// from the card's shape — a landscape rail is a presentation choice, not a
     /// promise that the row is Continue Watching.
     var interaction: PlozziOSRailInteraction = .openDetail
+    var presentsEpisodeAsSubject = false
     var showsResumeChip: Bool = false
     /// Continue Watching opts in because its backdrop + logo composition costs
     /// more than an ordinary card. Keeping this scoped avoids warming every Home
@@ -2713,6 +2715,7 @@ struct PlozziOSHomeMediaRail: View {
                                 item: item,
                                 isLandscape: style == .landscape,
                                 interaction: interaction,
+                                presentsEpisodeAsSubject: presentsEpisodeAsSubject,
                                 showsResumeChip: showsResumeChip,
                                 showsSeriesArtwork: showsSeriesArtwork,
                                 isPendingRemoval: pendingRemovalIDs.contains(
@@ -2971,6 +2974,7 @@ struct PlozziOSHomeMediaCard: View {
     let item: MediaItem
     let isLandscape: Bool
     var interaction: PlozziOSRailInteraction = .openDetail
+    var presentsEpisodeAsSubject = false
     var showsResumeChip: Bool = false
     var showsSeriesArtwork: Bool = false
     var isPendingRemoval: Bool = false
@@ -2992,7 +2996,10 @@ struct PlozziOSHomeMediaCard: View {
                     .buttonStyle(.plain)
             } else if provider != nil || !appModel.accountsProviders.resolvedActiveAccounts.isEmpty {
                 MediaArtworkZoomLink(id: item.stablePresentationID) {
-                    PlozziOSHomeCardDetail(item: item, fallbackProvider: provider)
+                    PlozziOSHomeCardDetail(
+                        item: item, fallbackProvider: provider,
+                        presentsEpisodeAsSubject: presentsEpisodeAsSubject
+                    )
                     .environment(\.plozzMetrics, .touch(
                         density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize))
                     .environment(\.plozzCardCaptionView, .related)
@@ -3068,6 +3075,7 @@ private struct PlozziOSHomeCardDetail: View {
     @Environment(PlozziOSAppModel.self) private var appModel
     let item: MediaItem
     let fallbackProvider: (any MediaProvider)?
+    var presentsEpisodeAsSubject = false
 
     var body: some View {
         // NavigationLink constructs its destination value while browsing. Keep
@@ -3075,7 +3083,8 @@ private struct PlozziOSHomeCardDetail: View {
         let target = PlozziOSHomeMediaCard.resolvedItem(item, appModel: appModel, playsDirectly: false)
         if let provider = appModel.provider(for: target) ?? fallbackProvider {
             PlozziOSItemDetailView(
-                appModel: appModel, provider: provider, item: target, seerService: appModel.seerService
+                appModel: appModel, provider: provider, item: target, seerService: appModel.seerService,
+                presentsEpisodeAsSubject: presentsEpisodeAsSubject
             )
         } else {
             ContentUnavailableView(

@@ -1063,8 +1063,9 @@ struct HomeTab: View {
     /// Pushes a detail page for any item — movies get a Movie Details page (with a
     /// Play button); series/seasons get their children list. A tapped episode is
     /// redirected to its *series* page (fronting that episode) so the user never
-    /// lands on a dead-end single-episode page. Immediate playback is reserved for
-    /// Continue Watching and the detail page's own Play action.
+    /// lands on a single-episode page unless that is the requested destination.
+    /// Playback remains available through the detail page and the optional
+    /// Continue Watching Play action.
     ///
     /// `libraryOrigin` carries the owning `Account.id` when the navigation springs
     /// from a single-server library tile, so the pushed detail (and any movie/
@@ -1075,10 +1076,9 @@ struct HomeTab: View {
     /// Routes a navigation to `item`.
     ///
     /// `asOwnSubject` distinguishes the two ways an episode can be navigated to.
-    /// A menu's "Episode Info" wants the episode's *own* page — its synopsis, air
-    /// date, and the file that would play. Everything else that hands over an
-    /// episode (a deep link, a tapped card) means "show me this episode in
-    /// context", which is the series page with it fronted.
+    /// Continue Watching and a menu's "Episode Info" want the episode's *own*
+    /// page — its synopsis, air date, and the file that would play. Other browsing
+    /// and deep links show the series page with that episode fronted.
     private func navigate(
         _ item: MediaItem,
         libraryOrigin: String? = nil,

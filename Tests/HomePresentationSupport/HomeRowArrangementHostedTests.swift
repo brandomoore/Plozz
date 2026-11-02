@@ -1614,7 +1614,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             #if os(tvOS)
             let actionTitle = "Center button action"
             #else
-            let actionTitle = "When tapping an item"
+            let actionTitle = "Tap action"
             #endif
             let controls = ["Playback details", "Labels", "Include Next Up", actionTitle]
             let detailsY = try self.y("Playback details", in: lines)
@@ -1651,7 +1651,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         #if os(tvOS)
         let actionTitle = "Center button action"
         #else
-        let actionTitle = "When tapping an item"
+        let actionTitle = "Tap action"
         #endif
         try await withWindow {
             ScrollView {
