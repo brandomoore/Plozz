@@ -761,6 +761,28 @@ retained 120.394 seconds, including after relaunch. Reporting and ongoing import
 were turned off afterward. This is same-installation foreground evidence, not
 independent-device or platform parity.
 
+Independent-device checks now cover a normal iPhone-simulator Emby source and a
+separately authenticated iPad-simulator Jellyfin destination. Native Quick Connect
+authorized only the dedicated nonadministrator destination user; no password was
+typed through XCTest. Reporting and import permissions stayed device-local, and
+ordinary cross-server mirroring was disabled on both installations.
+
+Actual source playback produced one watched event, which the destination imported
+once. Watched-only permission ignored a different movie's real resume. Separately
+enabling both categories did not backfill its existing 182.948-second progress;
+new source playback then delivered exactly 337.004 and 491.869 seconds. Completion
+replaced that confirmed destination resume with watched/count-one state.
+Independent server and complete tracker-history reads verified no echo with
+destination reporting enabled, no repeated write after relaunch, and unchanged
+control histories/lists. Test opt-ins were revoked afterward.
+
+The first candidate correctly required review because the destination retained a
+previous playback date despite being unwatched with count zero. A destination-only
+fixture reset did not clear that date; untouched real titles established the
+positive route instead. No conflict protection was relaxed. This is movie
+watched/resume evidence using explicit destination Sync now, not TV playback,
+reverse-device delivery, every provider/tracker, or physical-device testing.
+
 Separate read-only transport preflights fetched the same two-mebibyte movie
 prefix through dedicated SMB, NFS, WebDAV, FTP and host-key-pinned SFTP access.
 All five matched an independently authenticated media-server file range.

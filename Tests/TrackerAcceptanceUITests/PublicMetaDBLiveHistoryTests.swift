@@ -65,6 +65,46 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Libraries"].waitForExistence(timeout: 15))
     }
 
+    func testInspectServerConnections() throws {
+        try openSettings()
+        try tapVisible(app.buttons["Servers"])
+        XCTAssertTrue(app.navigationBars["Servers"].waitForExistence(timeout: 15))
+        recordState()
+    }
+
+    func testConnectIndependentServerWithQuickConnect() throws {
+        try testInspectServerConnections()
+        let environment = ProcessInfo.processInfo.environment
+        let server = try XCTUnwrap(environment["PLOZZ_TRACKER_IMPORT_SERVER"])
+        let user = try XCTUnwrap(environment["PLOZZ_TRACKER_IMPORT_USER"])
+        let url = try XCTUnwrap(URLComponents(string: server))
+        XCTAssertTrue(["http", "https"].contains(url.scheme ?? ""))
+        XCTAssertNil(url.user)
+        XCTAssertNil(url.password)
+        XCTAssertNil(url.query)
+        XCTAssertFalse(app.staticTexts["Signed in as \(user)"].exists)
+        try tapVisible(app.buttons["Add Server"])
+        let address = app.textFields["Server address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 10))
+        try tapVisible(address)
+        address.typeText(server + "\n")
+        let codeLabel = app.staticTexts.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Quick Connect code "
+        )).firstMatch
+        XCTAssertTrue(codeLabel.waitForExistence(timeout: 45))
+        XCTAssertTrue(app.staticTexts[server].exists)
+        let code = String(codeLabel.label.dropFirst("Quick Connect code ".count))
+        XCTAssertNotNil(code.range(of: "^[0-9]{6}$", options: .regularExpression))
+        let handoff = try XCTUnwrap(environment["PLOZZ_TRACKER_SERVER_HANDOFF"])
+        XCTAssertTrue(handoff.hasPrefix("/") && handoff.hasSuffix("/quickconnect-request.json"))
+        let data = try JSONSerialization.data(withJSONObject: [
+            "code": code, "server": server, "user": user, "displayedProductionCode": true,
+        ])
+        try data.write(to: URL(fileURLWithPath: handoff), options: .withoutOverwriting)
+        XCTAssertTrue(app.navigationBars["Choose Your Libraries"].waitForExistence(timeout: 120))
+        recordState()
+    }
+
     func testEnableEpisodeLibraries() throws {
         try testOpenLibrarySettings()
         let shows = app.collectionViews.buttons["TV Shows"]
@@ -163,6 +203,13 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testEnablePlaybackReporting() throws {
         try openPlaybackReporting()
         try enableReporting()
+    }
+
+    func testPlaybackReportingIsDisabled() throws {
+        try openPlaybackReporting()
+        XCTAssertTrue(app.buttons["publicmetadb.playback.enable"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["publicmetadb.playback.disable"].exists)
+        recordState()
     }
 
     func testConnectWithRealBrowserCode() throws {
@@ -1756,6 +1803,23 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try enableOngoingImport(categories: [("watched", "Watched")])
     }
 
+    func testOngoingImportIsDisabled() throws {
+        try openHistoryComparison()
+        try tapVisible(app.buttons["tracker-history.ongoing-sync"])
+        XCTAssertTrue(app.buttons["tracker-history.enable-sync"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["tracker-history.disable-sync"].exists)
+        XCTAssertEqual(app.switches["tracker-history.sync-watched"].value as? String, "0")
+        XCTAssertEqual(app.switches["tracker-history.sync-resume"].value as? String, "0")
+        let destinations = app.switches.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "tracker-history.sync-server."
+        )).allElementsBoundByIndex
+        XCTAssertFalse(destinations.isEmpty)
+        for destination in destinations {
+            XCTAssertEqual(destination.value as? String, "0")
+        }
+        recordState()
+    }
+
     func testEnableOngoingResumeImport() throws {
         try enableOngoingImport(categories: [("resume", "Resume points")])
     }
@@ -1857,6 +1921,11 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let user = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_USER"])
         try require(app.staticTexts["Signed in as \(user)"].waitForExistence(timeout: 10),
                     "Expected the dedicated destination account on the Servers page")
+    }
+
+    func testInspectHistoryComparison() throws {
+        try openHistoryComparison()
+        recordState()
     }
 
     func testOpenHistoryComparison() throws {
