@@ -80,6 +80,16 @@ they must not pass through `AppError.unknown`, which intentionally displays a
 generic fallback. The new Worker
 binding and production activation require separate deployment approval.
 
+Real production TV-simulator checks verified replacement-confirmation
+cancellation, entry cancellation with relay revocation, invalid-key rejection
+and restoration of the saved connection, and disconnect cancellation. Confirmed
+disconnect survived a normal relaunch. Actual QR/browser reconnection and
+native manual re-entry of the same dedicated key both restored authenticated
+private-list access; a final relaunch retained the connection with optional
+ratings off. Independent complete list/history/resume fingerprints were unchanged.
+This does not establish second-member key replacement, iCloud propagation,
+mobile lifecycle parity or in-flight mutation/consent boundaries.
+
 Non-idempotent writes are not automatically retried. A lost reply, malformed
 successful reply, or ambiguous server failure is an uncertain write, not proof
 that nothing happened. HTTP 207 batch outcomes retain item-level failures.
