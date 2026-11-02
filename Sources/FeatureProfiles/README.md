@@ -55,6 +55,21 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
 
 ## Invariants
 
+- **Continuous tvOS PIN handoff.** Selecting a profile retains the picker behind
+  its parental, local, and Plex authorization steps. Its avatar and name share
+  the mobile PIN transition; Plex verification keeps the selected Plozz identity.
+  The surrounding picker elements fade and lift away before the identity moves.
+  Animation completion, not a timer, advances that handoff; cancelled or replaced
+  selections cannot advance it. The name and lock keep their picker typography.
+  Recency changes do not move the source tile during authorization. The covered
+  picker cannot receive input or accessibility focus. Menu cancels authorization
+  immediately but retains the PIN identity as a geometry follower until it has
+  moved back to the original tile. Only then do the surrounding controls reappear
+  and normal visible-layout focus entry resume, without a timed correction.
+  Reduce Motion removes the handoff movement, and TV keys appear immediately so
+  native focus cannot land on an invisible key. Presentation ownership does not
+  unlock a profile: existing local, parental, and live Plex checks still decide
+  access, including cancellation and foreground reauthorization.
 - **Account selections survive removals.** An explicit profile selection only
   admits its locally present accounts. Deleting its last selected account,
   locally or everywhere, leaves no active sources instead of enabling excluded

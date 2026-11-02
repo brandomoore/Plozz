@@ -6,11 +6,18 @@ public struct PINProfileTransition: Equatable {
     public let profileID: String
     public let namespace: Namespace.ID
     public let avatarSize: CGFloat
+    public let nameFont: Font
+    public let isSource: Bool
 
-    public init(profileID: String, namespace: Namespace.ID, avatarSize: CGFloat = 88) {
+    public init(
+        profileID: String, namespace: Namespace.ID, avatarSize: CGFloat = 88,
+        nameFont: Font = .title2.weight(.bold), isSource: Bool = true
+    ) {
         self.profileID = profileID
         self.namespace = namespace
         self.avatarSize = avatarSize
+        self.nameFont = nameFont
+        self.isSource = isSource
     }
 
     public var avatarID: String { "\(profileID).avatar" }
@@ -37,6 +44,34 @@ struct PINProfileEntryLayout<Badge: View, Pad: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        #if os(tvOS)
+        HStack(spacing: PINMetrics.columnGap) {
+            PINProfileIdentity(
+                transition: transition, title: title, name: name, showsLock: showsLock,
+                availability: availability, errorMessage: errorMessage,
+                footnote: footnote, sequenceStep: sequenceStep, badge: badge
+            )
+            .frame(width: PINMetrics.proseColumnWidth)
+            ZStack {
+                if transition.isSource {
+                    Group {
+                        if availability == .available {
+                            pad()
+                        } else {
+                            PINProfileRequirementState(
+                                availability: availability, errorMessage: errorMessage, onRetry: onRetry
+                            )
+                        }
+                    }
+                    .transition(.identity)
+                }
+            }
+            .frame(width: PINMetrics.padWidth)
+        }
+        .frame(maxWidth: PINMetrics.compositionWidth, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, PINMetrics.horizontalPadding)
+        #else
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 24) {
@@ -75,6 +110,7 @@ struct PINProfileEntryLayout<Badge: View, Pad: View>: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
+        #endif
     }
 }
 
@@ -95,18 +131,22 @@ private struct PINProfileIdentity<Badge: View>: View {
         VStack(spacing: 10) {
             if let sequenceStep, sequenceStep.total > 1 {
                 PINSequenceIndicator(step: sequenceStep)
+                    .opacity(transition.isSource ? 1 : 0)
             }
             badge()
-                .matchedGeometryEffect(id: transition.avatarID, in: transition.namespace)
+                .matchedGeometryEffect(
+                    id: transition.avatarID, in: transition.namespace, isSource: transition.isSource
+                )
                 .accessibilityHidden(true)
-            PINIdentityName(name: name, showsLock: showsLock)
-                .font(.title2.weight(.bold))
+            identityName
+                .font(transition.nameFont)
                 .foregroundStyle(palette.primaryText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 // Interpolating text bounds would rewrap the larger heading in flight.
                 .matchedGeometryEffect(
-                    id: transition.nameID, in: transition.namespace, properties: .position
+                    id: transition.nameID, in: transition.namespace, properties: .position,
+                    isSource: transition.isSource
                 )
                 .accessibilityIdentifier("profile-pin-name")
                 .accessibilityAddTraits(.isHeader)
@@ -116,6 +156,7 @@ private struct PINProfileIdentity<Badge: View>: View {
                     .foregroundStyle(palette.secondaryText)
                     .accessibilityIdentifier("pin-entry-title")
                     .modifier(PINKeyEntrance(enabled: true, position: 0, reduceMotion: reduceMotion))
+                    .opacity(transition.isSource ? 1 : 0)
             } else {
                 Text(verbatim: " ").font(.subheadline).accessibilityHidden(true)
             }
@@ -123,15 +164,35 @@ private struct PINProfileIdentity<Badge: View>: View {
                 .font(.callout)
                 .foregroundStyle(availability == .available && errorMessage != nil ? Color.red : .clear)
                 .multilineTextAlignment(.center)
+                .opacity(transition.isSource ? 1 : 0)
             if let footnote {
                 Text(footnote)
                     .font(.footnote)
                     .foregroundStyle(palette.secondaryText)
                     .multilineTextAlignment(.center)
+                    .opacity(transition.isSource ? 1 : 0)
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profile-pin-identity")
+    }
+
+    private var identityName: some View {
+        #if os(tvOS)
+        HStack(spacing: 6) {
+            name
+            if showsLock {
+                Image(systemName: "lock.fill")
+                    .font(.caption2.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(name)
+        .accessibilityValue(showsLock ? Text(ProfileLockCopy.title) : Text(verbatim: ""))
+        #else
+        PINIdentityName(name: name, showsLock: showsLock)
+        #endif
     }
 }
 

@@ -9,7 +9,9 @@ import FeaturePlayback
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--large-native-navigation-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--profile-pin-transition-fixture") {
+                ProfilePINTransitionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--large-native-navigation-fixture") {
                 LargeNativeNavigationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--reorder-input-fixture") {
                 ReorderInputFixture()
