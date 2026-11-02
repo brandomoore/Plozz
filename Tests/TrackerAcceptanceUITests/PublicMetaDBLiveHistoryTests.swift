@@ -52,6 +52,26 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(app.collectionViews.buttons["TV Shows"].isSelected)
     }
 
+    func testSelectEpisodeSourceLibrary() throws {
+        let selected = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_LIBRARY"])
+        try require(["TV Shows", "TV shows"].contains(selected), "Expected an exact verified source library")
+        let excluded = selected == "TV Shows" ? "TV shows" : "TV Shows"
+        try testOpenLibrarySettings()
+        for (label, shouldSelect) in [(selected, true), (excluded, false)] {
+            let control = app.collectionViews.buttons[label]
+            try tapVisible(control, tapping: false)
+            if control.isSelected != shouldSelect { control.tap() }
+            let changed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "selected == %@", NSNumber(value: shouldSelect)), object: control
+            )
+            try require(XCTWaiter.wait(for: [changed], timeout: 10) == .completed,
+                        "Expected the exact source-library selection")
+        }
+        try testOpenLibrarySettings()
+        XCTAssertTrue(app.collectionViews.buttons[selected].isSelected)
+        XCTAssertFalse(app.collectionViews.buttons[excluded].isSelected)
+    }
+
     func testPasswordlessEmbyOnboarding() throws {
         let environment = ProcessInfo.processInfo.environment
         let address = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_SERVER"])
@@ -120,6 +140,13 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testInspectPlaybackReporting() throws {
         try openPlaybackReporting()
         XCTAssertTrue(app.staticTexts["Playback reporting enabled"].exists)
+    }
+
+    func testInspectUnsupportedEpisodeReporting() throws {
+        try openPlaybackReporting()
+        try tapVisible(app.staticTexts[
+            "A session could not be reported because its content identity or episode order was not confirmed."
+        ], tapping: false)
     }
 
     func testRenewPlaybackConsent() throws {
@@ -480,9 +507,12 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(query.waitForExistence(timeout: 10))
         query.tap()
         query.typeText(title + "\n")
-        let movie = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", title + ",")).firstMatch
-        XCTAssertTrue(movie.waitForExistence(timeout: 30))
-        movie.tap()
+        let matches = app.buttons.containing(.staticText, identifier: title).matching(NSPredicate(
+            format: "NOT (label MATCHES %@)", ".*, S[0-9]+ · E[0-9]+ · .*"
+        ))
+        XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 30))
+        try require(matches.count == 1, "Expected one exact title card in the selected libraries")
+        matches.element.tap()
         XCTAssertTrue(detailPlayButton.waitForExistence(timeout: 15))
     }
 
@@ -536,9 +566,13 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testPlaySelectedEpisodeBelowResumeThreshold() async throws {
         let duration = try verifiedRuntime()
-        try require(duration * 0.02 > 40, "Expected room below the resume threshold")
+        let maximum = Int(floor(duration * 0.02)) - 1
+        try require(maximum > 5, "Expected room below the resume threshold")
         try startSelectedEpisodePlayback()
-        try await seekActivePlayback(fraction: 0, minimumElapsedSeconds: 1, maximumElapsedSeconds: 40)
+        try await seekActivePlayback(
+            fraction: 0, minimumElapsedSeconds: 1, maximumElapsedSeconds: maximum,
+            playSeconds: min(27, maximum - 5)
+        )
     }
 
     func testPlaySelectedEpisodeFromResumePosition() async throws {
@@ -552,6 +586,10 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             fraction: fraction, minimumElapsedSeconds: Int(duration * fraction),
             maximumElapsedSeconds: Int(duration * 0.8)
         )
+    }
+
+    func testSelectEpisodeSeason() throws {
+        try selectEpisodeSeason()
     }
 
     func testReplayEpisodeToCompletion() async throws {
@@ -574,16 +612,73 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     private func startSelectedEpisodePlayback() throws {
         let environment = ProcessInfo.processInfo.environment
         let title = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_EPISODE_TITLE"])
-        let season = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_SEASON_LABEL"])
-        try require(!title.isEmpty && !season.isEmpty, "Expected the independently verified episode")
-        try require(app.scrollViews["series-season-tabs"].buttons[season].isSelected,
-                    "Expected the exact selected season")
+        try require(!title.isEmpty, "Expected the independently verified episode")
+        try selectEpisodeSeason()
         let episode = app.buttons.matching(NSPredicate(format: "label == %@", title))
+        let rails = app.scrollViews.containing(NSPredicate(
+            format: "elementType == %d AND label BEGINSWITH %@", XCUIElement.ElementType.staticText.rawValue, "EPISODE "
+        )).allElementsBoundByIndex.filter { $0.frame.height < app.frame.height * 0.8 }
+        try require(rails.count == 1, "Expected one native episode rail")
+        let rail = rails[0]
+        try tapVisible(rail, tapping: false)
+        let top = app.navigationBars.firstMatch.frame.maxY
+        let bottom = app.tabBars.firstMatch.frame.minY
+        try require(bottom > top + rail.frame.height, "Expected room for the complete episode rail")
+        for _ in 0..<8 {
+            if rail.frame.minY >= top && rail.frame.maxY <= bottom { break }
+            let downward = rail.frame.midY < (top + bottom) / 2
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: downward ? 0.35 : 0.65))
+                .press(
+                    forDuration: 0.1,
+                    thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: downward ? 0.65 : 0.35)),
+                    withVelocity: .slow, thenHoldForDuration: 0.2
+                )
+        }
+        try require(rail.frame.minY >= top && rail.frame.maxY <= bottom,
+                    "Expected the episode rail clear of navigation controls")
+        for _ in 0..<10 {
+            var forward = true
+            if episode.count == 1 {
+                let frame = episode.element.frame
+                if frame.minX >= rail.frame.minX && frame.maxX <= rail.frame.maxX { break }
+                forward = frame.minX >= rail.frame.minX
+            }
+            rail.coordinate(withNormalizedOffset: CGVector(dx: forward ? 0.8 : 0.2, dy: 0.3))
+                .press(
+                    forDuration: 0.1,
+                    thenDragTo: rail.coordinate(withNormalizedOffset: CGVector(dx: forward ? 0.2 : 0.8, dy: 0.3)),
+                    withVelocity: .slow, thenHoldForDuration: 0.2
+                )
+        }
         try require(episode.count == 1, "Expected one exact episode action")
+        try require(episode.element.frame.minX >= rail.frame.minX && episode.element.frame.maxX <= rail.frame.maxX,
+                    "Expected the exact horizontally visible episode")
         try tapVisible(episode.element, tapping: false)
         startedPlayback = true
         episode.element.tap()
         try require(app.buttons["Close player"].waitForExistence(timeout: 45), "Expected real episode playback")
+    }
+
+    private func selectEpisodeSeason() throws {
+        let season = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_SEASON_LABEL"])
+        try require(!season.isEmpty, "Expected the independently verified season")
+        let tabs = app.scrollViews["series-season-tabs"]
+        try tapVisible(tabs, tapping: false)
+        let target = tabs.buttons[season]
+        for _ in 0..<8 {
+            if target.exists && target.isHittable && tabs.frame.contains(target.frame) { break }
+            if target.exists && target.frame.maxX > tabs.frame.maxX {
+                tabs.swipeLeft()
+            } else {
+                tabs.swipeRight()
+            }
+        }
+        try require(target.exists && target.isHittable && tabs.frame.contains(target.frame),
+                    "Expected the exact fully visible season")
+        if !target.isSelected { target.tap() }
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: target)
+        try require(XCTWaiter.wait(for: [selected], timeout: 10) == .completed,
+                    "Expected the exact selected season")
     }
 
     private func verifiedRuntime() throws -> Double {
@@ -608,7 +703,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func seekActivePlayback(
-        fraction: Double, minimumElapsedSeconds: Int, maximumElapsedSeconds: Int? = nil
+        fraction: Double, minimumElapsedSeconds: Int, maximumElapsedSeconds: Int? = nil,
+        playSeconds: Int = 27
     ) async throws {
         try await Task.sleep(for: .seconds(1))
         try pausePlayback()
@@ -621,7 +717,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(app.buttons["Play"].waitForExistence(timeout: 5) && app.buttons["Play"].isHittable,
                     "Expected paused playback after the real seek")
         app.buttons["Play"].tap()
-        try await Task.sleep(for: .seconds(27))
+        try await Task.sleep(for: .seconds(playSeconds))
         try pauseAndClose(
             maximumElapsedSeconds: maximumElapsedSeconds, minimumElapsedSeconds: minimumElapsedSeconds
         )
@@ -683,7 +779,11 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         _ = target.waitForExistence(timeout: 5)
         for _ in 0..<8 {
             if target.exists && target.isHittable { break }
-            app.swipeUp()
+            if target.exists && !target.frame.isEmpty && target.frame.midY < app.frame.midY {
+                app.swipeDown()
+            } else {
+                app.swipeUp()
+            }
         }
         guard target.exists && target.isHittable else { throw Failure.expectedVisibleElement }
         if tapping { target.tap() }

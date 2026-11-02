@@ -518,10 +518,25 @@ same resume without incrementing play count. A later selected watched import
 marked only that episode watched/count 1 and cleared its resume. Relaunch and
 repeated ongoing checks did not replay either tracker plays or server counts.
 The adjacent episode, unrelated movie histories, Plex user and test lists stayed
-unchanged. Specials, combined/differently numbered files, episode continuation,
-independent installations and other provider/platform routes remain outside this
-live result. Package tests separately cover strict identity conflicts,
+unchanged. That ordinary-episode result does not establish combined-file behavior,
+episode continuation, independent installations or other provider/platform routes.
+Package tests separately cover strict identity conflicts,
 no-backfill fingerprints, stale connections, cancellation and unavailable metadata.
+
+Further real iPhone-simulator checks verified Jellyfin special-episode reporting:
+the file, source coordinates and exact child/parent external IDs agreed with the
+TMDB reference. Actual playback reported the exact 181,392-millisecond resume;
+a rewind below 2% preserved that prior remote point, crossing 80% cleared it
+without a watch, and two genuine completed viewings created two dated plays.
+Relaunch and consent replacement did not replay history.
+
+Separate real Emby specials exercised rejection: one file's child identity mapped
+to a different TMDB episode number, and another lacked child IDs. Actual in-range
+playback remained available locally, but neither was reported. Fresh-consent
+Settings showed the identity warning, and independent reads confirmed the entire
+tracker watched/resume history and unrelated server users remained unchanged,
+including after relaunch. This verifies rejection, not automatic renumbering.
+Combined files and the remaining campaign routes still require live evidence.
 
 The unbound `PublicMetaDBLiveHistoryTests` driver uses normally configured
 production-app UI, not seeded profiles or substituted media. Its individual
@@ -531,6 +546,9 @@ the runner environment. Run only the intended scenario, retain its nonzero
 XCTest result, and pair it with independent exact-title server/tracker reads;
 successful UI interaction alone is not delivery confirmation. Keep account
 configuration, credentials, screenshots and live-state evidence private.
+Episode scenarios select the exact source library and season through native UI,
+distinguish series cards from episode search results, and bring the episode rail
+clear of navigation controls before bounded horizontal gestures.
 Import scenarios require an already connected dedicated destination, its exact
 account and item identifiers, and test username through `PLOZZ_TRACKER_IMPORT_*`.
 Never pass a real credential to XCTest `typeText`: it logs a prefix even for
