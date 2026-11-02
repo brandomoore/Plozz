@@ -79,9 +79,18 @@ private struct StatusControlsReader: UIViewControllerRepresentable {
     }
 
     final class Controller: UIViewController {
-        var isActive = false
+        var isActive = false {
+            didSet {
+                if !isActive {
+                    navigationObservers.forEach { $0.removeFromSuperview() }
+                    navigationObservers = []
+                }
+            }
+        }
         var onChange: ((CGRect) -> Void)?
         private var measurementScheduled = false
+        private weak var observedTransition: (any UIViewControllerTransitionCoordinator)?
+        private var navigationObservers: [NavigationLayoutObserver] = []
 
         override func loadView() {
             view = UIView()
@@ -119,6 +128,7 @@ private struct StatusControlsReader: UIViewControllerRepresentable {
             // Each toast belongs to its own presentation, not a sheet covering its presenter.
             var surface: UIViewController = self
             while let parent = surface.parent { surface = parent }
+            observeNavigationLayouts(in: surface)
             let frame = view.convert(view.bounds, to: window)
             var area = frame.intersection(window.safeAreaLayoutGuide.layoutFrame)
             guard !area.isNull else { return }
@@ -142,8 +152,39 @@ private struct StatusControlsReader: UIViewControllerRepresentable {
             onChange?(localArea)
         }
 
+        private func observeNavigationLayouts(in surface: UIViewController) {
+            // Navigation pages can reattach their search chrome without relaying layout to the outer overlay.
+            func contentViews(in controller: UIViewController) -> [UIView] {
+                if let navigation = controller as? UINavigationController {
+                    return navigation.viewControllers.compactMap(\.viewIfLoaded)
+                }
+                return controller.children.flatMap { contentViews(in: $0) }
+            }
+            let views = contentViews(in: surface)
+            navigationObservers.removeAll { observer in
+                guard !views.contains(where: { $0 === observer.superview }) else { return false }
+                observer.removeFromSuperview()
+                return true
+            }
+            for content in views where !navigationObservers.contains(where: { $0.superview === content }) {
+                let observer = NavigationLayoutObserver(frame: content.bounds)
+                observer.isUserInteractionEnabled = false
+                observer.accessibilityElementsHidden = true
+                observer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                observer.onLayout = { [weak self] in self?.scheduleMeasurement() }
+                navigationObservers.append(observer)
+                content.insertSubview(observer, at: 0)
+            }
+        }
+
         private func constrainToNativeContent(in controller: UIViewController, window: UIWindow, area: inout CGRect) {
             guard controller.isViewLoaded, controller.view.window === window, !controller.view.isHidden else { return }
+            if let transition = controller.transitionCoordinator, observedTransition !== transition {
+                observedTransition = transition
+                transition.animate(alongsideTransition: nil) { [weak self] _ in
+                    self?.scheduleMeasurement()
+                }
+            }
             if #available(iOS 26.0, *), let tabs = controller as? UITabBarController {
                 // The native guide covers sidebars on either side, including overlapping layouts.
                 let content = tabs.view.convert(tabs.contentLayoutGuide.layoutFrame, to: window)
@@ -168,6 +209,25 @@ private struct StatusControlsReader: UIViewControllerRepresentable {
                 if !bounds.isEmpty { return [bounds] }
             }
             return candidate.subviews.flatMap { controls(in: $0, window: window) }
+        }
+
+        private final class NavigationLayoutObserver: UIView {
+            var onLayout: (() -> Void)?
+
+            override func didMoveToWindow() {
+                super.didMoveToWindow()
+                onLayout?()
+            }
+
+            override func safeAreaInsetsDidChange() {
+                super.safeAreaInsetsDidChange()
+                onLayout?()
+            }
+
+            override func layoutSubviews() {
+                super.layoutSubviews()
+                onLayout?()
+            }
         }
     }
 }

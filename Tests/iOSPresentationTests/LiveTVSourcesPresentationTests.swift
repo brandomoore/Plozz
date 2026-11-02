@@ -12,6 +12,46 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesPresentationTests: XCTestCase {
+    func testToastClearsSearchOnFirstNavigationReturn() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let state = ToastNavigationFixtureState()
+        let host = UIHostingController(rootView: ToastNavigationFixture(state: state))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await settle(window)
+        for page in ["detail", "first-return", "detail-again", "second-return"] {
+            state.path = page.hasPrefix("detail") ? [1] : []
+            try await Task.sleep(for: .milliseconds(1000))
+            if page == "detail" {
+                state.showToast = true
+                try await settle(window)
+            }
+            if page.hasPrefix("detail") { continue }
+            let image = snapshot(window)
+            captureToastFrame(image, name: "guide-toast-navigation-\(page)")
+            let search = try XCTUnwrap(searchFields(in: window).first {
+                !$0.isHidden && $0.convert($0.bounds, to: window).intersects(window.bounds)
+            })
+            let searchFrame = search.convert(search.bounds, to: window)
+            guard searchFrame.minY > window.bounds.maxY - 120 else {
+                throw XCTSkip("Requires native bottom search; iPhone Duo places search beside the content.")
+            }
+            XCTAssertGreaterThan(searchFrame.minY, window.bounds.midY)
+            let caption = try textFrame("Reading guide", in: image)
+            let surface = try grayToastBounds(in: image, caption: caption)
+            XCTAssertGreaterThanOrEqual(searchFrame.minY - surface.maxY, 14, page)
+            XCTAssertLessThanOrEqual(searchFrame.minY - surface.maxY, 30, page)
+        }
+    }
+
     func testGuideToastUsesCurrentSheetBoundsAndClearsNativeNavigation() async throws {
         let suite = "ToastSheets.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -53,7 +93,8 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
         }
         for page in [
             "idle-root", "idle-settings", "source", "settings-return", "root-return",
-            "root-live", "root-downloads", "root-search", "settings-reopened"
+            "root-live", "root-downloads", "root-search", "settings-reopened",
+            "settings-scrolled", "settings-top"
         ] {
             switch page {
             case "idle-settings", "settings-reopened": state.settings = true
@@ -67,6 +108,17 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
             }
             try await settle(window)
             try await Task.sleep(for: .milliseconds(650))
+            if page == "settings-scrolled" || page == "settings-top" {
+                let settings = try XCTUnwrap(host.presentedViewController)
+                let scroll = try XCTUnwrap(sourceScrollViews(in: settings.view).first {
+                    $0.contentSize.height > $0.bounds.height && !$0.isHidden
+                })
+                scroll.setContentOffset(
+                    CGPoint(x: 0, y: page == "settings-scrolled" ? 250 : -scroll.adjustedContentInset.top),
+                    animated: true
+                )
+                try await Task.sleep(for: .milliseconds(700))
+            }
             if page.hasPrefix("idle") { continue }
             if page == "source" {
                 app.transientStatusPresenter.dismiss()
@@ -1031,6 +1083,43 @@ private struct ToastSheetFixture: View {
                     )
                 }
         }
+    }
+}
+
+@MainActor @Observable
+private final class ToastNavigationFixtureState {
+    var path: [Int] = []
+    var showToast = false
+}
+
+private struct ToastNavigationFixture: View {
+    @Bindable var state: ToastNavigationFixtureState
+    @State private var query = ""
+
+    var body: some View {
+        NavigationStack(path: $state.path) {
+            List { Text("Settings") }
+                .searchable(text: $query, placement: .automatic, prompt: "Search settings")
+                .toolbar {
+                    if #available(iOS 26.0, *) {
+                        DefaultToolbarItem(kind: .search, placement: .bottomBar)
+                    }
+                }
+                .navigationDestination(for: Int.self) { _ in
+                    Text("Live TV settings")
+                        .navigationTitle("Live TV")
+                }
+        }
+        .adaptiveStatusOverlay(isPresented: state.showToast) {
+            if state.showToast {
+                Text("Reading guide")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(.white)
+                    .transientStatusSurface(palette: .dark)
+                    .padding(.horizontal, 16)
+            }
+        }
+        .environment(\.horizontalSizeClass, .compact)
     }
 }
 

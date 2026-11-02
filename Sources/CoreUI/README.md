@@ -785,6 +785,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   of the native tab content guide. Window measurements are converted back into
   the host's local coordinates so sheet presentation scaling cannot leave stale
   widths or offsets in the covered screen.
+  While feedback is visible, passive observers in loaded navigation pages also
+  trigger measurement when a page reattaches, its safe area changes, or a native
+  transition completes. This covers search bars returning after a navigation pop
+  without polling or waiting for another progress update.
   tvOS retains its 48-point bottom clearance.
   Manual watched actions retain the immediate tap and separate confirmation of
   durable outbox acceptance, not eventual server synchronization.
