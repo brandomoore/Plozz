@@ -22,6 +22,7 @@ actor FTPNetworkBackend: FTPBackend {
 
     private var control: FTPControlConnection?
     private var features: Set<String> = []
+    private var restartSupported = false
     private var activeTransfer: ActiveTransfer?
     private var isClosed = false
 
@@ -89,11 +90,15 @@ actor FTPNetworkBackend: FTPBackend {
             guard greeting.code == 220 else {
                 throw FTPProtocolError.unexpectedReply(code: greeting.code)
             }
-            try await loadFeatures(control)
+            try await loadFeatures(control, beforeLogin: true)
             if features.contains("UTF8") {
                 _ = try? await control.send("OPTS UTF8 ON")
             }
             try await login(control)
+            try await loadFeatures(control, beforeLogin: false)
+            if features.contains("UTF8") {
+                _ = try? await control.send("OPTS UTF8 ON")
+            }
             if configuration.security.usesTLS {
                 // Protect the data channel too (RFC 4217): PBSZ 0 then PROT P.
                 _ = try? await control.send("PBSZ 0")
@@ -103,6 +108,7 @@ actor FTPNetworkBackend: FTPBackend {
                 }
             }
             try await control.sendExpectingCompletion("TYPE I")
+            restartSupported = try await detectRestartSupport(control)
         } catch {
             control.cancel()
             self.control = nil
@@ -111,12 +117,15 @@ actor FTPNetworkBackend: FTPBackend {
     }
 
     func supportsRestart() async -> Bool {
-        // `REST STREAM` in FEAT is the server's affirmation of restart support.
-        features.contains("REST")
+        restartSupported
     }
 
-    private func loadFeatures(_ control: FTPControlConnection) async throws {
-        guard let reply = try? await control.send("FEAT"), reply.code == 211 else {
+    private func loadFeatures(_ control: FTPControlConnection, beforeLogin: Bool) async throws {
+        let reply = try await control.send("FEAT")
+        guard reply.code == 211 else {
+            guard [500, 502, 504].contains(reply.code) || (beforeLogin && reply.code == 530) else {
+                throw FTPProtocolError.unexpectedReply(code: reply.code)
+            }
             features = []
             return
         }
@@ -127,6 +136,26 @@ actor FTPNetworkBackend: FTPBackend {
             found.insert(token.uppercased())
         }
         features = found
+    }
+
+    private func detectRestartSupport(_ control: FTPControlConnection) async throws -> Bool {
+        if features.contains("REST") { return true }
+
+        // FEAT is optional on older servers. Probe a nonzero offset in binary
+        // mode, then clear the marker so browsing/whole-file reads start at zero.
+        let restart = try await control.send("REST 1")
+        switch restart.code {
+        case 350:
+            let reset = try await control.send("REST 0")
+            guard reset.code == 350 else {
+                throw FTPProtocolError.unexpectedReply(code: reset.code)
+            }
+            return true
+        case 500, 501, 502, 504:
+            return false
+        default:
+            throw FTPProtocolError.unexpectedReply(code: restart.code)
+        }
     }
 
     private func login(_ control: FTPControlConnection) async throws {
