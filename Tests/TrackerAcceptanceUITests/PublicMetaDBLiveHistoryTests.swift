@@ -14,7 +14,13 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             XCTAssertEqual(environment["PLOZZ_TRACKER_HISTORY_LIVE"], "1")
             let simulator = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_SIMULATOR"])
             XCTAssertEqual(simulator, environment["SIMULATOR_UDID"])
-            XCTAssertEqual(app.state, .runningForeground)
+            let returnsFromBackground = environment["PLOZZ_TRACKER_HISTORY_METHOD"]
+                == "testReturnToForegroundWithoutManualSync"
+            if returnsFromBackground {
+                XCTAssertTrue([.runningBackground, .runningBackgroundSuspended].contains(app.state))
+            } else {
+                XCTAssertEqual(app.state, .runningForeground)
+            }
             XCTAssertTrue(app.launchArguments.isEmpty)
             XCTAssertTrue(app.launchEnvironment.isEmpty)
             authorizedLiveRun = true
@@ -30,6 +36,21 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testInspectLiveApp() {
+        recordState()
+    }
+
+    func testLeaveAppInBackground() throws {
+        recordState()
+        XCUIDevice.shared.press(.home)
+        try require(app.wait(for: .runningBackground, timeout: 10), "Expected the actual app to enter background")
+    }
+
+    func testReturnToForegroundWithoutManualSync() throws {
+        try require([.runningBackground, .runningBackgroundSuspended].contains(app.state),
+                    "Expected the previously backgrounded installation")
+        app.activate()
+        try require(app.wait(for: .runningForeground, timeout: 15), "Expected a real foreground transition")
+        try require(app.tabBars.buttons["Search"].waitForExistence(timeout: 30), "Expected normal application UI")
         recordState()
     }
 
@@ -973,6 +994,14 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try synchronizeOngoingImport(expectingReview: false)
     }
 
+    func testInspectOngoingImportWithoutManualSync() throws {
+        try openHistoryComparison(relaunch: false)
+        recordState()
+        try tapVisible(app.buttons["tracker-history.ongoing-sync"])
+        try require(app.buttons["tracker-history.disable-sync"].exists, "Expected the retained sync permission")
+        recordState()
+    }
+
     func testOngoingSyncReportsReviewRequirement() throws {
         try synchronizeOngoingImport(expectingReview: true)
     }
@@ -1033,6 +1062,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(importSelection, tapping: false)
         XCTAssertTrue(importSelection.exists)
         XCTAssertEqual(importSelection.value as? String, "0")
+        recordState()
         try tapVisible(app.buttons["tracker-history.apply"], tapping: false)
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
     }
@@ -1247,12 +1277,12 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         )).firstMatch
     }
 
-    private func openHistoryComparison() throws {
+    private func openHistoryComparison(relaunch: Bool = true) throws {
         let user = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_USER"])
         let item = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ITEM"])
         let account = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"])
         XCTAssertFalse(user.isEmpty || item.isEmpty || account.isEmpty)
-        try openPublicMetaDBAccount()
+        try openPublicMetaDBAccount(relaunch: relaunch)
         try tapVisible(app.buttons["publicmetadb.compare-history"])
         try require(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", user))
             .firstMatch.waitForExistence(timeout: 60), "Expected the dedicated user's real comparison rows")
@@ -1570,16 +1600,20 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(app.buttons["publicmetadb.playback"])
     }
 
-    private func openPublicMetaDBAccount() throws {
-        try openSettings()
+    private func openPublicMetaDBAccount(relaunch: Bool = true) throws {
+        try openSettings(relaunch: relaunch)
         try tapVisible(app.buttons["settings-category-trackers"])
         try tapVisible(app.buttons["publicmetadb.browse"])
     }
 
-    private func openSettings() throws {
+    private func openSettings(relaunch: Bool = true) throws {
         let user = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"])
-        app.terminate()
-        app.launch()
+        if relaunch {
+            app.terminate()
+            app.launch()
+        } else {
+            try tapVisible(app.tabBars.buttons["Home"])
+        }
         let settings = app.buttons["Settings for \(user)"]
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
         settings.tap()
@@ -1630,6 +1664,13 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func recordState() {
+        guard app.state == .runningForeground else {
+            let state = XCTAttachment(string: "Application state: \(app.state.rawValue)")
+            state.name = "live-history-native-app-state"
+            state.lifetime = .keepAlways
+            add(state)
+            return
+        }
         let tree = XCTAttachment(string: app.debugDescription)
         tree.name = "live-history-native-state"
         tree.lifetime = .keepAlways

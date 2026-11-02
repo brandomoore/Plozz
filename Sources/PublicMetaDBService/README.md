@@ -170,6 +170,9 @@ the app; it does not claim revocation survived a restart.
 Only non-destructive, conflict-free changes use the existing guarded outbox.
 Current playback is deferred. Changed server state, incompatible or ambiguous
 matches, unsupported facts, removals, and unconfirmed deliveries require review.
+Category consent limits which new changes can be imported; it does not hide
+competing records from the complete tracker snapshot. An existing watched record
+can therefore hold a new resume for review even with resume-only consent.
 In particular, a later resume change that conflicts with an existing server
 resume is not silently advanced. Imported flags do not recreate play dates or
 counts, and imports never dispatch another tracker scrobble.
@@ -581,6 +584,28 @@ ongoing Jellyfin watched update/count one with resume cleared. Independent reads
 confirmed no tracker echo or unrelated title/server changes, and relaunch/repeat
 remained a no-op. This verifies the tested movie continuation route, not
 foreground timing, independent-device delivery, episodes or provider parity.
+
+Real foreground testing also verified conservative conflict deferral: a new
+movie resume alongside existing tracker watches left the empty Jellyfin
+destination unchanged after the automatic cooldown. Native comparison identified
+the competing records, and Ongoing sync displayed its review requirement.
+The original delivery assertion remains failed evidence, not a positive import.
+
+A separate clean movie then verified actual automatic delivery: enrollment did
+not backfill; an early foreground return left the destination unchanged; after
+the real fifteen-minute cooldown, foreground activation imported exactly
+120.394 seconds without pressing Sync now. Watched/count stayed false/zero;
+the normal Jellyfin resume setter updated Continue Watching recency. Relaunch
+and an explicit repeat did not replay the write. After revocation, new actual
+source playback advanced the tracker to 242.374 seconds while the destination
+retained 120.394 seconds, including after relaunch. Reporting and ongoing import
+were turned off afterward. This is same-installation foreground evidence, not
+independent-device or platform parity.
+
+Separate read-only transport preflights fetched the same two-mebibyte movie
+prefix through dedicated SMB, NFS, WebDAV, FTP and host-key-pinned SFTP access.
+All five matched an independently authenticated media-server file range.
+This verifies real media access, not native share onboarding or tracker delivery.
 
 On 2 November 2026 UTC, real Emby playback of The Crown S1E1 exposed missing
 episode-order evidence. Exact TMDB child/parent verification repaired the route

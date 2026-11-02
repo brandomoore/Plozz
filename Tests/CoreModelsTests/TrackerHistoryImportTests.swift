@@ -984,6 +984,30 @@ final class TrackerHistoryImportTests: XCTestCase {
     }
 
     @MainActor
+    func testOngoingResumeOnlyImportDefersExistingWatchedHistoryConflict() async throws {
+        let watched = try observation(id: "existing-watch")
+        let evidence = ImportEvidence(try snapshot([watched]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let original = item()
+        let provider = ImportProvider(item: original)
+        let sync = syncController(provider: provider, evidence: evidence, store: store)
+        await enable(sync, evidence: evidence, categories: [.resume])
+        evidence.snapshot = try snapshot([
+            watched,
+            observation(id: "new-resume", fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil))
+        ])
+
+        await sync.synchronize(manual: false)
+        XCTAssertNil(sync.error)
+        XCTAssertEqual(sync.grant?.reviewCount, 1)
+        XCTAssertEqual(sync.confirmedCount, 0)
+        let actual = try await provider.item(id: "server-item")
+        XCTAssertEqual(TrackerServerHistoryBaseline(item: actual), .init(item: original))
+        let writes = await provider.writes
+        XCTAssertEqual(writes, 0)
+    }
+
+    @MainActor
     func testOngoingSyncEnrollmentRejectsChangedReviewAndEmptySelections() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
