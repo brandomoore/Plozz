@@ -114,6 +114,10 @@ private struct PublicMetaDBEpisodeRatingsEditor: View {
                         Picker("Score out of 100", selection: $entry.score) {
                             ForEach(0...100, id: \.self) { score in Text(score, format: .number).tag(score) }
                         }
+                        .pickerStyle(.menu)
+                        .accessibilityLabel("Score out of 100")
+                        .accessibilityValue(Text(entry.score, format: .number))
+                        .accessibilityIdentifier("publicmetadb.episode-rating.score.\(entry.id)")
                         Button("Remove row", role: .destructive) { entries.removeAll { $0.id == entry.id } }
                     }
                 }

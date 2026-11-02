@@ -17,6 +17,9 @@ PublicMetaDB contribution reads belong to the enclosing page's
 The shared read model fences connection, selection, refresh and disabled scopes;
 each action remains a separate native row. Rating browsing can show an explicitly
 capped collection, but contribution changes still require complete readback.
+Single and batch rating scores use native menu pickers with explicit accessible
+labels and values. Do not rely on the automatic tvOS picker style: it compresses
+all 101 scores into an unreadable segmented control.
 
 Mobile customization choice groups use the same Settings cards and content
 insets, including contained groups such as Hero content sources. TV row sizing

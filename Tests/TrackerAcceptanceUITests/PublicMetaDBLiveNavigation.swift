@@ -21,7 +21,8 @@ enum PublicMetaDBLiveNavigation {
             }
             try select(settings, moving: .down)
         }
-        try select(integrations, moving: .down)
+        let towardIntegrations: XCUIRemote.Button = integrations.frame.maxY < app.frame.minY ? .up : .down
+        try select(integrations, moving: towardIntegrations)
         try select(app.buttons["settings-page-publicmetadb"], moving: .down)
         #else
         throw Failure.unavailableControl("Open PublicMetaDB settings before this iOS run.")
@@ -32,19 +33,31 @@ enum PublicMetaDBLiveNavigation {
     }
 
     #if os(tvOS)
-    static func select(_ target: XCUIElement, moving direction: XCUIRemote.Button) throws {
-        try focus(target, moving: direction)
+    static func select(
+        _ target: XCUIElement, moving direction: XCUIRemote.Button, maximumPresses: Int = 24
+    ) throws {
+        try focus(target, moving: direction, maximumPresses: maximumPresses)
         XCUIRemote.shared.press(.select)
     }
 
-    static func focus(_ target: XCUIElement, moving direction: XCUIRemote.Button) throws {
-        for _ in 0..<24 {
-            if target.exists && target.hasFocus { break }
+    static func focus(
+        _ target: XCUIElement, moving direction: XCUIRemote.Button, maximumPresses: Int = 24
+    ) throws {
+        for _ in 0..<maximumPresses {
+            if hasFocus(target) { break }
             XCUIRemote.shared.press(direction)
         }
-        guard target.exists, target.hasFocus, target.isEnabled else {
+        guard hasFocus(target) else {
             throw Failure.unavailableControl("Required control did not become focused.")
         }
+    }
+
+    private static func hasFocus(_ target: XCUIElement) -> Bool {
+        guard target.exists, target.isEnabled else { return false }
+        // Settings categories expose their actual native FocusState through selection.
+        if target.identifier.hasPrefix("settings-section-"), target.isSelected { return true }
+        return target.hasFocus || target.descendants(matching: .any)
+            .matching(NSPredicate(format: "hasFocus == true")).firstMatch.exists
     }
     #endif
 }

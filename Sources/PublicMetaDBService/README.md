@@ -624,6 +624,20 @@ frontmost confirmation backdrop; iPhone navigation, input and cancellation
 regressions passed. This is platform UI coverage, not an independent-destination
 history-sync round trip or proof of the remaining ownership/lifecycle boundaries.
 
+Real production TV-simulator acceptance now verifies the same two-record season
+round trip using native remote navigation. Publication/deletion cancellation
+preserved the exact remote state; exact deletion and a final native read restored
+all 40 original records and aggregates. Unrelated histories, lists and metadata
+remained unchanged. Saved-key relaunch and disabled optional rating lookup also
+passed on the final TV build.
+
+That workflow exposed the automatic TV score picker's unreadable 101-segment
+layout. Both single and batch forms now use accessible native menus. Actual
+0/100/50 selection passed on TV, and 49/50 selection passed on fresh iPhone and
+iPad builds, alongside real season reads, invalid-input and cancellation
+regressions. These are simulator platform checks, not physical-device delivery,
+partial/refused-result coverage or ownership/lifecycle-race acceptance.
+
 ## Reviewed multiple-play deletion
 
 The account history screen supports selecting up to 50 records from a page.

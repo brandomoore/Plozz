@@ -175,6 +175,9 @@ private struct PublicMetaDBSubmitRatingView: View {
                 Picker("Score out of 100", selection: $score) {
                     ForEach(0...100, id: \.self) { value in Text(value, format: .number).tag(value) }
                 }
+                .pickerStyle(.menu)
+                .accessibilityLabel("Score out of 100")
+                .accessibilityValue(Text(score, format: .number))
                 .accessibilityIdentifier("publicmetadb.rating.score")
                 Text("The rating and your PublicMetaDB contributor name will be public. This does not change your media server's rating.")
                     .foregroundStyle(.secondary)

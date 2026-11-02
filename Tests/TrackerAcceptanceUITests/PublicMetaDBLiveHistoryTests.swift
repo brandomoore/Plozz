@@ -746,6 +746,39 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testEpisodeRatingScoreMenu() throws {
+        _ = try openSelectedSeasonRatings()
+        try tapVisible(app.buttons["Rate multiple episodes"])
+        let score = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "publicmetadb.episode-rating.score."
+        )).firstMatch
+        try verifyRatingScoreMenu(score)
+        XCTAssertFalse(app.popovers.buttons["Publish ratings"].exists)
+        recordState()
+    }
+
+    func testSingleRatingScoreMenu() throws {
+        try openSelectedTitleControls()
+        try tapVisible(app.buttons["Community and personal ratings"])
+        try tapVisible(app.buttons["Submit a rating"])
+        try verifyRatingScoreMenu(app.buttons["publicmetadb.rating.score"])
+        XCTAssertFalse(app.popovers.buttons["Publish rating"].exists)
+        recordState()
+    }
+
+    private func verifyRatingScoreMenu(_ score: XCUIElement) throws {
+        try tapVisible(score, tapping: false)
+        XCTAssertEqual(score.value as? String, "50")
+        for value in [49, 50] {
+            try tapVisible(score)
+            let choice = app.buttons[String(value)].firstMatch
+            XCTAssertTrue(choice.waitForExistence(timeout: 5))
+            try tapVisible(choice)
+            XCTAssertTrue(choice.waitForNonExistence(timeout: 5))
+            XCTAssertEqual(score.value as? String, String(value))
+        }
+    }
+
     private func openSelectedSeasonRatings() throws -> SeasonRatingEvidence {
         let encoded = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SEASON_RATINGS_EVIDENCE"])
         let evidence = try JSONDecoder().decode(SeasonRatingEvidence.self, from: Data(encoded.utf8))
