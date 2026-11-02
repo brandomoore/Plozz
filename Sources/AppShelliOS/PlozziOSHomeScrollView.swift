@@ -22,6 +22,7 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
             .padding(.bottom)
             .coordinateSpace(name: PlozziOSHomeScrollSpace.content)
             .environment(\.plozziOSHomeViewportWidth, viewportWidth)
+            .plozzDesktopMediaRailLayout()
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
         .scrollPosition($position)

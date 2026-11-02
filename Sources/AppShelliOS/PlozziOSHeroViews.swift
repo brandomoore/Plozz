@@ -164,8 +164,10 @@ private extension EnvironmentValues {
 }
 
 enum PlozziOSPageLayout {
-    static func horizontalInset(for sizeClass: UserInterfaceSizeClass?) -> CGFloat {
-        sizeClass == .compact ? 22 : 36
+    static func horizontalInset(
+        for sizeClass: UserInterfaceSizeClass?, usesDesktopSizing: Bool = false
+    ) -> CGFloat {
+        usesDesktopSizing ? DesktopMediaRailLayout.pageInset : (sizeClass == .compact ? 22 : 36)
     }
 
     static func horizontalInset(for style: HeroArtworkStyle) -> CGFloat {
@@ -263,7 +265,8 @@ struct PlozziOSHeroForegroundPlacement: ViewModifier {
                 maxHeight: .infinity,
                 alignment: style == .compactPortrait ? .bottom : .bottomLeading
             )
-            .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: style))
+            .padding(.horizontal, isRunningOnMac
+                ? DesktopMediaRailLayout.pageInset : PlozziOSPageLayout.horizontalInset(for: style))
             .padding(.bottom, isRunningOnMac ? 36 : (style == .compactPortrait ? 30 : 42))
     }
 }
@@ -2541,7 +2544,6 @@ struct PlozziOSDetailHeroForeground: View {
 }
 
 struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
-    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     let kind: TouchHeroActionButtonStyle.Kind
     var circular = false
     var minimumWidth: CGFloat?
@@ -2556,12 +2558,12 @@ struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
                     .buttonBorderShape(.circle)
                     .buttonSizing(.flexible)
                     .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                    .frame(width: isRunningOnMac ? 44 : 48, height: isRunningOnMac ? 44 : 48)
+                    .frame(width: 48, height: 48)
             } else {
                 nativeButton(configuration)
                     .buttonBorderShape(.roundedRectangle(radius: 24))
                     .buttonSizing(minimumWidth == nil ? .fitted : .flexible)
-                    .frame(minWidth: minimumWidth, minHeight: isRunningOnMac ? 44 : 48)
+                    .frame(minWidth: minimumWidth, minHeight: 48)
                     .fixedSize(horizontal: minimumWidth != nil, vertical: true)
             }
         } else {
@@ -2570,7 +2572,7 @@ struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
                     .tint(kind == .primary ? palette.backgroundBase : palette.primaryText)
             }
             .buttonStyle(TouchHeroActionButtonStyle(
-                kind: kind, circular: circular, minimumWidth: minimumWidth, compact: isRunningOnMac
+                kind: kind, circular: circular, minimumWidth: minimumWidth
             ))
         }
     }
@@ -2580,14 +2582,14 @@ struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
     private func nativeButton(_ configuration: Configuration) -> some View {
         let button = Button(role: configuration.role, action: configuration.trigger) {
             configuration.label
-                .font((isRunningOnMac ? Font.subheadline : .headline).weight(.semibold))
+                .font(.headline.weight(.semibold))
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(kind == .primary ? palette.backgroundBase : palette.primaryText)
                 // Keep the native icon slot stable even for short glyphs such as ellipsis.
                 .frame(width: circular ? 18 : nil, height: circular ? 18 : nil)
         }
-        .controlSize(isRunningOnMac ? .regular : .large)
+        .controlSize(.large)
 
         if kind == .primary {
             button

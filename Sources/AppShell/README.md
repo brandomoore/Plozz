@@ -92,14 +92,15 @@ registry.
   effect. Native sidebar, tab, and profile controls remain available with their
   system appearance. iPhone/iPad backgrounds and other scroll edges are unchanged.
 
-- **Mac media sizes stay stable as windows widen.** Home, library/search grids,
-  Watchlist, related titles, extras, and episode rails share desktop card metrics:
-  standard-density posters are 180 points wide, landscape artwork 320, Continue
-  Watching 300, and cast circles 140. Wider windows reveal more rail cards;
-  adaptive grids allow only bounded growth. Loading and loaded rows use the same
-  policy, including after navigation. Profile density and Dynamic Type still
-  apply. Home uses a smaller logo/copy column and hero actions retain at least
-  44-point targets in both native-glass and reduced-effects presentations.
+- **Mac rails fit complete cards plus a next-card preview.** Home, library
+  recommendations, related titles, extras, episodes, and cast derive widths from
+  their actual content viewport. `DesktopMediaRailLayout` chooses a whole-card
+  count below density-scaled width limits, then distributes the width while
+  preserving a gap-sized trailing peek. Featured rows use the same inset and
+  heading style, with 4:5 cards; they do not inherit the fixed mobile width.
+  Loading and loaded rows share this geometry. Profile density and Dynamic Type
+  still apply. Hero actions keep their original native large control size and
+  48-point minimum in both glass and reduced-effects presentations.
   iPhone/iPad and TV retain their existing sizes.
 
 - **Preference sync is not a profile switch.** Mobile cloud apply rebuilds active

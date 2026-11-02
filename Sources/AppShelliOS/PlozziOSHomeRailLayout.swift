@@ -37,7 +37,10 @@ struct PlozziOSHomeRailLayout<Content: View>: View {
     static func posterMetrics(
         in width: CGFloat, inset: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle
     ) -> PlozzMetrics {
-        guard width > 0, !metrics.usesDesktopSizing else { return metrics }
+        if metrics.usesDesktopSizing {
+            return metrics.fittingDesktopRail(in: width, cardStyle: cardStyle)
+        }
+        guard width > 0 else { return metrics }
         let gap = PlozziOSMediaRailLayout.visibleSpacing + (cardStyle == .framed ? 2 * metrics.cardInset : 0)
         // Phones get three complete pictures plus a 28% preview. Wider windows
         // add columns instead of stretching phone posters to tablet size.

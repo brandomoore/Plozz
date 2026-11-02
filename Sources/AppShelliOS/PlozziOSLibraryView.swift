@@ -248,7 +248,7 @@ struct PlozziOSLibraryGridView: View {
                     }
                     Group {
                         if viewModel.contentMode == .recommended {
-                            recommendedContent
+                            recommendedContent.plozzDesktopMediaRailLayout()
                         } else {
                             browseContent(generation: generation)
                         }
@@ -588,7 +588,9 @@ struct PlozziOSLibraryRecommendationRow: View {
     let onSelect: (MediaItem, MediaArtworkZoomSource) -> Void
 
     var body: some View {
-        let inset = PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
+        let inset = PlozziOSPageLayout.horizontalInset(
+            for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing
+        )
         let style: PosterCardView.Style = section.id == "continueWatching"
             ? continueWatchingLayout.cardStyle
             : (section.style == .poster ? .poster : .landscape)

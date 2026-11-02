@@ -13,8 +13,12 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
-`PlozzMetrics.desktop` supplies fixed artwork targets for the iOS-on-Mac shell
+`PlozzMetrics.desktop` supplies artwork width limits for the iOS-on-Mac shell
 without scaling touch controls, captions, or overlays with the artwork.
+`fittingDesktopRail` resolves those limits against the content viewport, leaving
+a gap-sized preview of the next card at every width. Page containers publish
+the resolved metrics through `plozzDesktopMediaRailLayout`; Featured rows use
+the same fitting policy for their 4:5 cards.
 `HeroLogoSizing.Layout.desktop` retains the same logo-preference scaling and
 width containment as other hero layouts. The shell selects these policies;
 shared components do not infer their platform from a wide viewport.

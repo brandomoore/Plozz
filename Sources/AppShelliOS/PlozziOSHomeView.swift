@@ -2407,7 +2407,7 @@ private struct PlozziOSFeaturedRow: View {
             .contentMargins(
                 .horizontal,
                 PlozziOSMediaRailLayout.artworkAlignedInset(
-                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
                     metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
@@ -2473,6 +2473,7 @@ private struct PlozziOSHomeRowFailure: View {
 
 private struct PlozziOSHomeRowView: View {
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzCardStyle) private var artworkStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.homeLiveTVSnapshot) private var liveTV
     let row: HomeRow
@@ -2588,7 +2589,7 @@ private struct PlozziOSHomeRowView: View {
                             PlozziOSHomeLibraryCard(
                                 library: library,
                                 artworkSource: viewModel.libraryArtworkSource(for: library),
-                                width: appModel.settings.density.density
+                                width: metrics.usesDesktopSizing ? metrics.landscapeWidth : appModel.settings.density.density
                                     .iOSHomeLibraryWidth(
                                         horizontalSizeClass: horizontalSizeClass,
                                         isRunningOnMac: metrics.usesDesktopSizing
@@ -2602,7 +2603,8 @@ private struct PlozziOSHomeRowView: View {
         }
         .contentMargins(
             .horizontal,
-            PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+            PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing)
+                - (metrics.usesDesktopSizing && artworkStyle == .framed ? metrics.cardInset : 0),
             for: .scrollContent
         )
         .plozziOSMediaRailClearance()
@@ -2774,7 +2776,7 @@ struct PlozziOSHomeMediaRail: View {
             .contentMargins(
                 .horizontal,
                 PlozziOSMediaRailLayout.artworkAlignedInset(
-                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
                     metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )

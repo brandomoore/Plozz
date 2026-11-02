@@ -675,6 +675,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
             // background sitting under the band: the tint stopped short of the
             // bottom of the page. The band carries the trailing space itself.
             .frame(maxWidth: .infinity, alignment: .leading)
+            .plozzDesktopMediaRailLayout()
         }
 
         .scrollClipDisabled()
@@ -739,7 +740,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private var pageInset: CGFloat {
-        PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
+        PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing)
     }
 
     /// Whether this page's subject is an episode in its own right, rather than a
@@ -3542,6 +3543,7 @@ private struct PlozziOSSeasonDownloadPrompt: Identifiable {
 
 struct PlozziOSInlineEpisodeRail: View {
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var scrollPositionID: String?
     let episodes: [MediaItem]?
@@ -3597,8 +3599,8 @@ struct PlozziOSInlineEpisodeRail: View {
             .contentMargins(
                 .horizontal,
                 PlozziOSPageLayout.horizontalInset(
-                    for: horizontalSizeClass
-                ),
+                    for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing
+                ) - (metrics.usesDesktopSizing && cardStyle == .framed ? metrics.cardInset : 0),
                 for: .scrollContent
             )
             .scrollIndicators(.hidden)
@@ -3618,6 +3620,7 @@ struct PlozziOSInlineEpisodeRail: View {
 
 private struct PlozziOSInlineEpisodeSkeletonRail: View {
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
@@ -3633,7 +3636,8 @@ private struct PlozziOSInlineEpisodeSkeletonRail: View {
         }
         .contentMargins(
             .horizontal,
-            PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+            PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing)
+                - (metrics.usesDesktopSizing && cardStyle == .framed ? metrics.cardInset : 0),
             for: .scrollContent
         )
         .scrollIndicators(.hidden)
@@ -3685,7 +3689,7 @@ private struct PlozziOSInlineEpisodeSkeleton: View {
             }
         }
         .frame(width: cardWidth, alignment: .leading)
-        .padding(cardStyle == .framed ? (metrics.usesDesktopSizing ? metrics.cardInset : 10) : 0)
+        .padding(cardStyle == .framed && !metrics.usesDesktopSizing ? 10 : 0)
         .shimmering()
     }
 
@@ -3823,7 +3827,7 @@ struct PlozziOSInlineEpisodeEntry: View {
             }
         }
         .frame(width: cardWidth, alignment: .leading)
-        .padding(cardStyle == .framed ? (metrics.usesDesktopSizing ? metrics.cardInset : 10) : 0)
+        .padding(cardStyle == .framed && !metrics.usesDesktopSizing ? 10 : 0)
         .contextMenu { episodeMenuActions }
         .mediaItemMenuNavigation(target: $pendingNavigationTarget)
         .task(id: "\(episode.id)|\(episode.selectedVersionID ?? "")") {
@@ -4095,7 +4099,7 @@ private struct PlozziOSCastSection: View {
     }
 
     private var pageInset: CGFloat {
-        PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
+        PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing)
     }
 
     /// Desktop cast circles stay smaller than posters; mobile retains its poster scale.

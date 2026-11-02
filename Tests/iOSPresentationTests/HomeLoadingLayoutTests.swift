@@ -21,9 +21,9 @@ final class HomeLoadingLayoutTests: XCTestCase {
                 XCTAssertEqual(mobile, .touch(density: density, dynamicTypeSize: size))
                 XCTAssertFalse(mobile.usesDesktopSizing)
                 XCTAssertTrue(desktop.usesDesktopSizing)
-                XCTAssertEqual(desktop.posterWidth, (180 * density.scale).rounded())
-                XCTAssertEqual(desktop.landscapeWidth, (320 * density.scale).rounded())
-                XCTAssertEqual(desktop.castTileDiameter, (140 * density.scale).rounded())
+                XCTAssertEqual(desktop.posterWidth, 208 * density.scale)
+                XCTAssertEqual(desktop.landscapeWidth, 360 * density.scale)
+                XCTAssertEqual(desktop.castTileDiameter, 160 * density.scale)
                 XCTAssertEqual(desktop.cardInset, mobile.cardInset)
                 XCTAssertEqual(desktop.watchedBadgeSize, mobile.watchedBadgeSize)
                 XCTAssertEqual(PlozziOSMediaLayout.episodeWidth(metrics: desktop, sizeClass: .regular), desktop.landscapeWidth)
@@ -38,24 +38,32 @@ final class HomeLoadingLayoutTests: XCTestCase {
                 desktop.continueWatchingWidth
             )
         }
-        XCTAssertEqual(PlozzMetrics.desktop(density: .standard).continueWatchingWidth, 300)
+        XCTAssertEqual(PlozzMetrics.desktop(density: .standard).continueWatchingWidth, 360)
     }
 
-    func testMacRailsRevealMoreCardsInsteadOfEnlargingThem() {
+    func testMacRailsPreserveAnExactNextCardPeekAcrossWidthsAndDensities() {
         for density in UIDensity.allCases {
             let metrics = PlozzMetrics.desktop(density: density)
             for style in [CardStyle.borderless, .framed] {
-                var previousCount: CGFloat = 0
-                for width: CGFloat in [760, 1280, 1920, 2560] {
+                for width in stride(from: CGFloat(600), through: 2600, by: 13) {
                     let resolved = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
                         in: width, inset: 36, metrics: metrics, cardStyle: style
                     )
-                    XCTAssertEqual(resolved, metrics)
-                    let slot = resolved.cardSlotWidth(for: .poster, cardStyle: style)
-                    let spacing = PlozziOSMediaRailLayout.stackSpacing(metrics: resolved, cardStyle: style)
-                    let count = floor((width - 72 + spacing) / (slot + spacing))
-                    XCTAssertGreaterThan(count, previousCount)
-                    previousCount = count
+                    XCTAssertEqual(resolved.fittingDesktopRail(in: width, cardStyle: style), resolved)
+                    for (artwork, maximum) in [
+                        (resolved.posterWidth, metrics.posterWidth),
+                        (resolved.landscapeWidth, metrics.landscapeWidth),
+                        (resolved.continueWatchingWidth, metrics.continueWatchingWidth)
+                    ] {
+                        let frameInset = style == .framed ? metrics.cardInset : 0
+                        let visibleWidth = artwork + 2 * frameInset
+                        let leading = DesktopMediaRailLayout.pageInset - frameInset
+                        let count = floor((width - leading) / (visibleWidth + metrics.cardSpacing))
+                        let peek = width - leading - count * (visibleWidth + metrics.cardSpacing)
+                        XCTAssertEqual(peek, metrics.cardSpacing, accuracy: 0.001)
+                        XCTAssertLessThanOrEqual(artwork, maximum + 0.001)
+                        XCTAssertGreaterThan(artwork, 0)
+                    }
                 }
             }
             let grid = density.iOSPosterGridColumns(horizontalSizeClass: .regular, isRunningOnMac: true)
@@ -67,6 +75,35 @@ final class HomeLoadingLayoutTests: XCTestCase {
             XCTAssertEqual(density.iOSHomeLibraryWidth(horizontalSizeClass: .regular, isRunningOnMac: true),
                            metrics.landscapeWidth)
         }
+    }
+
+    func testMacRailsMatchReferenceColumnCountsAndProportions() {
+        // Screenshots have different export scales. Normalize each measured
+        // content width/card width by its leading content inset, not image pixels.
+        let references: [(viewport: CGFloat, inset: CGFloat, landscape: CGFloat, posters: CGFloat?, cast: CGFloat?)] = [
+            (1745, 47, 312, 186, 145),
+            (1621, 65, 350, nil, nil),
+            (1422, 70, 404, 229, nil),
+            (1558, 78, 443, 250, 200)
+        ]
+        let metrics = PlozzMetrics.desktop(density: .standard)
+        for reference in references {
+            let scale = DesktopMediaRailLayout.pageInset / reference.inset
+            let resolved = metrics.fittingDesktopRail(in: reference.viewport * scale, cardStyle: .borderless)
+            XCTAssertEqual(resolved.landscapeWidth / scale, reference.landscape, accuracy: 3)
+            XCTAssertEqual(resolved.continueWatchingWidth, resolved.landscapeWidth)
+            if let posters = reference.posters {
+                XCTAssertEqual(resolved.posterWidth / scale, posters, accuracy: 3)
+            }
+            if let cast = reference.cast {
+                XCTAssertEqual(resolved.castTileDiameter / scale, cast, accuracy: 3)
+            }
+        }
+        let featured = DesktopMediaRailLayout.featuredSize(in: 1930, metrics: metrics)
+        XCTAssertEqual(featured.height / featured.width, 1.25, accuracy: 0.001)
+        let count = floor((1930 - DesktopMediaRailLayout.pageInset) / (featured.width + metrics.cardSpacing))
+        XCTAssertEqual(count, 4)
+        XCTAssertEqual(1930 - DesktopMediaRailLayout.pageInset - count * (featured.width + metrics.cardSpacing), 26)
     }
 
     func testMacHeroLogoRemainsCompactAndHonorsEverySizePreference() {
@@ -91,6 +128,140 @@ final class HomeLoadingLayoutTests: XCTestCase {
                 XCTAssertLessThanOrEqual(fitted.height, 220)
             }
         }
+    }
+
+    func testRenderedMacRowsKeepTheNextCardPeekAndMatchingHeadings() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let url = try XCTUnwrap(URL(string: "https://mac-rail.invalid/\(UUID()).png"))
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 480)).image { context in
+            UIColor(red: 0.05, green: 0.65, blue: 1, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 320, height: 480))
+        }
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=86400"]
+        ))
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(artwork.pngData())),
+            for: URLRequest(url: url)
+        )
+        let items = (0..<20).map {
+            MediaItem(id: "peek-\($0)", title: "Movie", kind: .movie, productionYear: 2024,
+                      posterURL: url, backdropURL: url, allowsTitleBasedMetadataMatching: false)
+        }
+        let episodes = (0..<20).map {
+            MediaItem(id: "episode-peek-\($0)", title: "Episode", kind: .episode,
+                      posterURL: url, backdropURL: url, allowsTitleBasedMetadataMatching: false)
+        }
+        let coordinator = FeaturedTrailerCoordinator()
+        let controller = HeroTrailerController()
+        let scenarios: [(CGFloat, CardStyle)] = [
+            (1039, .borderless), (1039, .framed),
+            (1297, .borderless), (1297, .framed),
+            (1930, .borderless), (1930, .framed)
+        ]
+        for (width, cardStyle) in scenarios {
+            var headingHeight: CGFloat?
+            for kind in 0..<4 {
+                let row: AnyView
+                if kind == 3 {
+                    row = AnyView(PlozziOSMediaSection(title: Text(verbatim: "Collection")) {
+                        PlozziOSInlineEpisodeRail(episodes: episodes, isLoading: false, onPlay: { _, _ in })
+                    })
+                } else if kind == 2 {
+                    row = AnyView(FeaturedMediaRow(
+                        title: Text(verbatim: "Collection"), items: items, scope: ObjectIdentifier(controller),
+                        coordinator: coordinator, controller: controller, settings: .default,
+                        resolver: { _ in nil }, isActive: false, onSelect: { _ in }
+                    ).browsingRow({}))
+                } else {
+                    row = AnyView(PlozziOSHomeMediaRail(
+                        title: Text(verbatim: "Collection"), items: items,
+                        style: kind == 0 ? .poster : .landscape, appModel: fixture.app, onBrowse: {}
+                    ))
+                }
+                fixture.mount(
+                    ScrollView { VStack(alignment: .leading) { row }.plozzDesktopMediaRailLayout() }
+                        .environment(\.plozzMetrics, .desktop(density: .standard))
+                        .environment(\.plozzCardStyle, cardStyle)
+                        .environment(\.plozzArtworkSettings, ArtworkSettings(preference: .library))
+                        .environment(\.plozziOSIsRunningOnMac, true)
+                        .environment(\.plozziOSHomeViewportWidth, width),
+                    width: width
+                )
+                try await fixture.settle()
+                var image = renderedImage(fixture.window)
+                var runs = try blueArtworkRuns(in: image, y: 100)
+                let deadline = ContinuousClock.now + .seconds(3)
+                while runs.isEmpty, ContinuousClock.now < deadline {
+                    try await fixture.settle()
+                    image = renderedImage(fixture.window)
+                    runs = try blueArtworkRuns(in: image, y: 100)
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "mac-reference-peek-\(Int(width))-\(cardStyle)-row-\(kind)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let first = try XCTUnwrap(runs.first)
+                let last = try XCTUnwrap(runs.last)
+                XCTAssertEqual(first.lowerBound, DesktopMediaRailLayout.pageInset, accuracy: 1.5)
+                XCTAssertEqual(last.upperBound, width, accuracy: 1)
+                let metrics = PlozzMetrics.desktop(density: .standard)
+                    .fittingDesktopRail(in: width, cardStyle: cardStyle)
+                let frameInset = cardStyle == .framed && kind != 2 ? metrics.cardInset : 0
+                XCTAssertEqual(last.upperBound - last.lowerBound, 26 - frameInset, accuracy: 1.5,
+                               "Rendered row \(kind) at width \(width) must show the next card.")
+                let expectedWidth = kind == 0 ? metrics.posterWidth
+                    : kind == 2 ? DesktopMediaRailLayout.featuredSize(in: width, metrics: metrics).width
+                    : metrics.landscapeWidth
+                XCTAssertEqual(first.upperBound - first.lowerBound, expectedWidth, accuracy: 1.5)
+                for run in runs.dropLast() {
+                    XCTAssertEqual(run.upperBound - run.lowerBound, expectedWidth, accuracy: 1.5)
+                }
+                let ink = try HeroTextInk.frames(in: image, terms: ["Collection"])
+                let heading = try XCTUnwrap(ink["Collection"])
+                if let headingHeight { XCTAssertEqual(heading.height, headingHeight, accuracy: 1) }
+                else { headingHeight = heading.height }
+            }
+        }
+    }
+
+    private func renderedImage(_ window: UIWindow) -> UIImage {
+        UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+    }
+
+    private func blueArtworkRuns(in image: UIImage, y: CGFloat) throws -> [Range<CGFloat>] {
+        let cgImage = try XCTUnwrap(image.cgImage)
+        let line = try XCTUnwrap(cgImage.cropping(to: CGRect(
+            x: 0, y: y * image.scale, width: CGFloat(cgImage.width), height: 1
+        )))
+        var pixels = [UInt8](repeating: 0, count: line.width * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: line.width, height: 1, bitsPerComponent: 8,
+                bytesPerRow: line.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(line, in: CGRect(x: 0, y: 0, width: line.width, height: 1))
+        }
+        var runs: [Range<CGFloat>] = []
+        var start: Int?
+        for x in 0...line.width {
+            let blue = x < line.width && Int(pixels[x * 4 + 2]) > Int(pixels[x * 4]) + 60
+                && pixels[x * 4 + 2] > 100
+            if blue, start == nil { start = x }
+            if !blue, let beginning = start {
+                if x - beginning > 4 {
+                    runs.append((CGFloat(beginning) / image.scale)..<(CGFloat(x) / image.scale))
+                }
+                start = nil
+            }
+        }
+        return runs
     }
 
     func testMacLoadingAndLoadedCardsKeepMatchingGeometryAcrossWindowSizes() async throws {
@@ -165,10 +336,10 @@ final class HomeLoadingLayoutTests: XCTestCase {
                         width: 760
                     )
                     try await fixture.settle()
-                    XCTAssertGreaterThanOrEqual(heights.loading, isMac ? 44 : 48)
-                    XCTAssertEqual(heights.loaded, isMac ? 44 : 48, accuracy: 0.1)
+                    XCTAssertGreaterThanOrEqual(heights.loading, 48)
+                    XCTAssertEqual(heights.loaded, 48, accuracy: 0.1)
                     if size.isAccessibilitySize {
-                        XCTAssertGreaterThan(heights.loading, isMac ? 44 : 48)
+                        XCTAssertGreaterThan(heights.loading, 48)
                     }
                 }
             }

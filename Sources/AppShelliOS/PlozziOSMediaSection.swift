@@ -39,8 +39,7 @@ enum PlozziOSMediaRailLayout {
 struct PlozziOSMediaSection<Content: View>: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
-    @ScaledMetric(relativeTo: .headline) private var desktopHeadingSize: CGFloat = 18
+    @Environment(\.plozzMetrics) private var metrics
     let title: Text
     var horizontalInset: CGFloat?
     var artworkInset: CGFloat = 0
@@ -55,7 +54,7 @@ struct PlozziOSMediaSection<Content: View>: View {
                     if let onBrowse { BrowseRowHeading(title: title, action: onBrowse) }
                     else { title }
                 }
-                    .font(isRunningOnMac ? .system(size: desktopHeadingSize, weight: .semibold) : .title3.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
@@ -66,7 +65,9 @@ struct PlozziOSMediaSection<Content: View>: View {
                         .font(.subheadline)
                 }
             }
-                .padding(.horizontal, horizontalInset ?? PlozziOSPageLayout.horizontalInset(for: sizeClass))
+                .padding(.horizontal, horizontalInset ?? PlozziOSPageLayout.horizontalInset(
+                    for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing
+                ))
             content
                 .padding(.vertical, -artworkInset)
         }

@@ -5,6 +5,56 @@ import CoreModels
 import UIKit
 #endif
 
+public enum DesktopMediaRailLayout {
+    public static let pageInset: CGFloat = 52
+    public static let posterMaximum: CGFloat = 208
+    public static let landscapeMaximum: CGFloat = 360
+    public static let castMaximum: CGFloat = 160
+
+    /// Fit complete cards and one gap-sized preview, rather than clipping a
+    /// fixed-width rail at an arbitrary point in its final card.
+    public static func width(
+        in viewportWidth: CGFloat, maximum: CGFloat,
+        leadingInset: CGFloat = pageInset, spacing: CGFloat
+    ) -> CGFloat {
+        guard viewportWidth.isFinite, viewportWidth > leadingInset + 2 * spacing else { return maximum }
+        let available = viewportWidth - leadingInset - spacing
+        let count = max(1, ceil(available / (maximum + spacing)))
+        return available / count - spacing
+    }
+
+    public static func featuredSize(in viewportWidth: CGFloat, metrics: PlozzMetrics) -> CGSize {
+        let width = width(
+            in: viewportWidth, maximum: 2 * posterMaximum * metrics.scale + metrics.cardSpacing,
+            spacing: metrics.cardSpacing
+        )
+        return CGSize(width: width, height: width * 1.25)
+    }
+}
+
+private struct DesktopMediaRailMetrics: ViewModifier {
+    @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzCardStyle) private var cardStyle
+    @State private var width: CGFloat = 0
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if metrics.usesDesktopSizing {
+            content
+                .environment(\.plozzMetrics, metrics.fittingDesktopRail(in: width, cardStyle: cardStyle))
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    public func plozzDesktopMediaRailLayout() -> some View {
+        modifier(DesktopMediaRailMetrics())
+    }
+}
+
 /// The live, density-scaled spacing + sizing tokens, resolved from the active
 /// profile's `UIDensity` and injected into the SwiftUI environment at the app
 /// root (see `RootView`).
@@ -32,8 +82,8 @@ public struct PlozzMetrics: Equatable, Sendable {
 
     public private(set) var posterWidth: CGFloat
     public private(set) var posterHeight: CGFloat
-    public let landscapeWidth: CGFloat
-    public let landscapeHeight: CGFloat
+    public private(set) var landscapeWidth: CGFloat
+    public private(set) var landscapeHeight: CGFloat
     /// Artwork width for a Continue Watching card.
     ///
     /// Narrower than an ordinary landscape card because it is taller (see
@@ -47,7 +97,8 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// the label simply ran out of card and truncated to "S1, E1 · 4…" — the
     /// episode you are being told about, cut off. A card whose contents are fixed
     /// to the text they hold has to be sized by that text.
-    public let continueWatchingWidth: CGFloat
+    public private(set) var continueWatchingWidth: CGFloat
+    private let continueWatchingTargetWidth: CGFloat
     /// Inset between a media card's glass surface and its artwork — shared by
     /// poster *and* landscape cards so the glass border is a uniform thickness.
     public let cardInset: CGFloat
@@ -57,7 +108,7 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// Diameter of an artist's circular focus tile (density-scaled).
     public let artistTileDiameter: CGFloat
     /// Diameter of a cast member's circular focus tile (density-scaled).
-    public let castTileDiameter: CGFloat
+    public private(set) var castTileDiameter: CGFloat
     /// Clearance between a circular avatar and its focus glass halo (scaled).
     public let circleFocusPadding: CGFloat
 
@@ -374,7 +425,7 @@ public struct PlozzMetrics: Equatable, Sendable {
         PlozzMetrics(density: density, geometryScale: 0.5, dynamicTypeSize: dynamicTypeSize)
     }
 
-    /// Stable desktop artwork targets; controls and typography keep the touch
+    /// Desktop artwork width limits; controls and typography keep the touch
     /// system's native sizing rather than growing with the pictures.
     public static func desktop(
         density: UIDensity,
@@ -384,6 +435,26 @@ public struct PlozzMetrics: Equatable, Sendable {
             density: density, geometryScale: 0.5, dynamicTypeSize: dynamicTypeSize,
             usesDesktopSizing: true
         )
+    }
+
+    public func fittingDesktopRail(in viewportWidth: CGFloat, cardStyle: CardStyle) -> Self {
+        guard usesDesktopSizing, viewportWidth.isFinite, viewportWidth > 0 else { return self }
+        var result = self
+        let frameInset = cardStyle == .framed ? cardInset : 0
+        func artworkWidth(_ target: CGFloat, inset: CGFloat) -> CGFloat {
+            DesktopMediaRailLayout.width(
+                in: viewportWidth, maximum: target + 2 * inset,
+                leadingInset: DesktopMediaRailLayout.pageInset - inset,
+                spacing: cardSpacing
+            ) - 2 * inset
+        }
+        result.posterWidth = artworkWidth(DesktopMediaRailLayout.posterMaximum * scale, inset: frameInset)
+        result.posterHeight = result.posterWidth * 1.5
+        result.landscapeWidth = artworkWidth(DesktopMediaRailLayout.landscapeMaximum * scale, inset: frameInset)
+        result.landscapeHeight = result.landscapeWidth * 9 / 16
+        result.continueWatchingWidth = artworkWidth(continueWatchingTargetWidth, inset: frameInset)
+        result.castTileDiameter = artworkWidth(DesktopMediaRailLayout.castMaximum * scale, inset: 0)
+        return result
     }
 
     private init(
@@ -424,10 +495,12 @@ public struct PlozzMetrics: Equatable, Sendable {
         }
 
         // Desktop artwork has its own targets; other surfaces retain theme geometry.
-        self.posterWidth = usesDesktopSizing ? (180 * densityScale).rounded() : step(PlozzTheme.Metrics.posterWidth)
-        self.posterHeight = usesDesktopSizing ? (270 * densityScale).rounded() : step(PlozzTheme.Metrics.posterHeight)
-        self.landscapeWidth = usesDesktopSizing ? (320 * densityScale).rounded() : step(PlozzTheme.Metrics.landscapeWidth)
-        self.landscapeHeight = usesDesktopSizing ? (180 * densityScale).rounded() : step(PlozzTheme.Metrics.landscapeHeight)
+        self.posterWidth = usesDesktopSizing
+            ? DesktopMediaRailLayout.posterMaximum * densityScale : step(PlozzTheme.Metrics.posterWidth)
+        self.posterHeight = usesDesktopSizing ? self.posterWidth * 1.5 : step(PlozzTheme.Metrics.posterHeight)
+        self.landscapeWidth = usesDesktopSizing
+            ? DesktopMediaRailLayout.landscapeMaximum * densityScale : step(PlozzTheme.Metrics.landscapeWidth)
+        self.landscapeHeight = usesDesktopSizing ? self.landscapeWidth * 9 / 16 : step(PlozzTheme.Metrics.landscapeHeight)
 
         // How much bigger the reader has asked the chip's text style to be. 1 at
         // the default size on every platform, so nothing below changes until
@@ -447,13 +520,15 @@ public struct PlozzMetrics: Equatable, Sendable {
         // ordinary large sizes people actually use.
         let cardTypeGrowth = min(1.6, max(1, 1 + (chipTypeGrowth - 1) * 0.75))
         self.continueWatchingWidth = (
-            (usesDesktopSizing ? 300 * densityScale : self.landscapeWidth * ContinueWatchingCardShape.widthScale)
+            (usesDesktopSizing ? self.landscapeWidth : self.landscapeWidth * ContinueWatchingCardShape.widthScale)
                 * cardTypeGrowth
         ).rounded()
+        self.continueWatchingTargetWidth = self.continueWatchingWidth
         self.cardInset = step(PlozzTheme.Metrics.cardInset)
 
         self.artistTileDiameter = step(PlozzTheme.Metrics.artistTileDiameter)
-        self.castTileDiameter = usesDesktopSizing ? (140 * densityScale).rounded() : step(PlozzTheme.Metrics.castTileDiameter)
+        self.castTileDiameter = usesDesktopSizing
+            ? DesktopMediaRailLayout.castMaximum * densityScale : step(PlozzTheme.Metrics.castTileDiameter)
         self.circleFocusPadding = step(PlozzTheme.Metrics.circleFocusPadding)
 
         self.focusCaptionPush = step(PlozzTheme.Metrics.focusCaptionPush)
@@ -467,8 +542,8 @@ public struct PlozzMetrics: Equatable, Sendable {
             geometryScale < 1 ? 20 : PlozzTheme.Metrics.watchedBadgeMinSize
         )
 
-        self.cardSpacing = usesDesktopSizing ? damped(20, 0.5) : step(PlozzTheme.Metrics.cardSpacing)
-        self.gridSpacing = usesDesktopSizing ? damped(20, 0.5) : step(PlozzTheme.Metrics.gridSpacing)
+        self.cardSpacing = usesDesktopSizing ? damped(26, 0.5) : step(PlozzTheme.Metrics.cardSpacing)
+        self.gridSpacing = usesDesktopSizing ? damped(26, 0.5) : step(PlozzTheme.Metrics.gridSpacing)
         // Inter-row dead space is dampened so it doesn't grow 1:1 with the cards
         // — that's what keeps the next row peeking into view at high densities.
         self.rowSpacing = damped(usesDesktopSizing ? 40 : PlozzTheme.Metrics.rowSpacing, PlozzTheme.Metrics.rowSpacingDamping)

@@ -50,9 +50,8 @@ struct PlozziOSHomeSkeletonRail: View {
                         if isLibraryRow {
                             PlozziOSHomeLibraryCard(
                                 library: nil, artworkSource: nil,
-                                width: metrics.density.iOSHomeLibraryWidth(
-                                    horizontalSizeClass: horizontalSizeClass, isRunningOnMac: metrics.usesDesktopSizing
-                                )
+                                width: metrics.usesDesktopSizing ? metrics.landscapeWidth
+                                    : metrics.density.iOSHomeLibraryWidth(horizontalSizeClass: horizontalSizeClass)
                             )
                             .environment(\.plozzCardCaptionSettings, CardCaptionSettings(showsLabels: showsCaption))
                         } else {
@@ -74,9 +73,11 @@ struct PlozziOSHomeSkeletonRail: View {
             }
             .contentMargins(
                 .horizontal,
-                isLibraryRow ? PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
+                isLibraryRow ? PlozziOSPageLayout.horizontalInset(
+                    for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing
+                ) - (metrics.usesDesktopSizing && cardStyle == .framed ? metrics.cardInset : 0)
                 : PlozziOSMediaRailLayout.artworkAlignedInset(
-                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
                     metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
@@ -217,7 +218,7 @@ struct PlozziOSHomeHeroSkeleton: View {
     private var actionRow: some View {
         HStack(spacing: 12) {
             pill(width: 150)
-            pill(width: isRunningOnMac ? 44 : 48)
+            pill(width: 48)
         }
     }
 
@@ -237,11 +238,11 @@ struct PlozziOSHomeHeroSkeleton: View {
 
     private func pill(width: CGFloat) -> some View {
         Text(verbatim: " ")
-            .font((isRunningOnMac ? Font.subheadline : .headline).weight(.semibold))
+            .font(.headline.weight(.semibold))
             .hidden()
-            .padding(.vertical, isRunningOnMac ? 10 : 12)
+            .padding(.vertical, 12)
             .frame(width: width)
-            .frame(minHeight: isRunningOnMac ? 44 : 48)
+            .frame(minHeight: 48)
             .background {
                 Capsule(style: .continuous).fill(palette.fill)
             }
