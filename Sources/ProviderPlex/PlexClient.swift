@@ -801,7 +801,8 @@ public struct PlexClient: Sendable {
 
     func homeShelfPage(key: String, startIndex: Int, limit: Int) async throws
         -> (items: [PlexMetadata], nextOffset: Int?) {
-        guard startIndex >= 0, limit > 0, limit <= PageRequest.defaultLimit,
+        // Native Home recovery also reads the bounded 100-item filtering window.
+        guard startIndex >= 0, limit > 0, limit <= 100,
               startIndex < Int.max - limit,
               let safeKey = Self.homeShelfKey(key), let parts = URLComponents(string: safeKey) else {
             throw AppError.invalidResponse
@@ -828,7 +829,9 @@ public struct PlexClient: Sendable {
         let items = container.Metadata ?? hub?.Metadata ?? []
         let offset = hub == nil ? container.offset ?? startIndex : hub?.offset ?? startIndex
         let total = hub == nil ? container.totalSize : hub?.totalSize
+        let size = hub == nil ? container.size : hub?.size
         guard offset == startIndex, items.count <= limit,
+              size.map({ $0 == items.count }) ?? true,
               total.map({ $0 >= startIndex + items.count }) ?? true,
               !items.isEmpty || total.map({ startIndex >= $0 }) ?? true else {
             throw AppError.invalidResponse
@@ -853,7 +856,7 @@ public struct PlexClient: Sendable {
 
     /// Server promotions, not an import of any client's pinned sidebar.
     func serverHomeHubs(sectionID: String, count: Int) async throws -> [PlexHub] {
-        try await decodeStreamEnriched(
+        let container = try await decodeStreamEnriched(
             PlexMediaContainerResponse.self,
             path: "/hubs/promoted",
             query: [
@@ -861,7 +864,20 @@ public struct PlexClient: Sendable {
                 URLQueryItem(name: "count", value: String(max(1, min(count, 100)))),
                 URLQueryItem(name: "includeGuids", value: "1")
             ]
-        ).MediaContainer.Hub ?? []
+        ).MediaContainer
+        guard let hubs = container.Hub else {
+            guard container.size == 0, (container.totalSize ?? 0) == 0 else {
+                PlozzLog.networking.error("Plex Home promotions omitted their hub payload")
+                throw AppError.invalidResponse
+            }
+            return []
+        }
+        guard container.size.map({ $0 == hubs.count }) ?? true,
+              container.totalSize.map({ $0 == hubs.count }) ?? true else {
+            PlozzLog.networking.error("Plex Home promotions returned an incomplete hub payload")
+            throw AppError.invalidResponse
+        }
+        return hubs
     }
 
     /// `GET /hubs/continueWatching/items` returns both resumes and next episodes

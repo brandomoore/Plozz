@@ -114,6 +114,18 @@ excluded. The library Recommended view retains `libraryHubs` behavior.
 Home continues to use the canonical Continue Watching feed rather than
 duplicating a resume/on-deck hub inside each library.
 
+Match server retains each promoted row's sanitized native shelf key separately
+from its stable row identity. If the content response omits that row or truncates
+its inline items, Home loads that exact shelf rather than substituting the full
+recommendation menu. Older rows without a shelf key get one shared retry per
+library; unrecoverable rows report an error without discarding successful siblings.
+Explicitly empty shelves remain empty. Key-only promotions have a stable identity
+derived from the credential-free key, never the translated display title.
+Persisted keys are revalidated before use, and recovery keeps the active viewer's
+credentials and library filtering. Browse continuation verifies preview anchors
+before falling back to a saved shelf, so a rotating recommendation cannot silently
+open an unrelated subject.
+
 Home and library Continue Watching share the same endpoint selection: items hub,
 plain hub, then legacy on-deck only after an initial unsupported, invalid-response,
 or decode failure. An empty successful hub is authoritative. Authentication,
