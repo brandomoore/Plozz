@@ -7,6 +7,70 @@ import XCTest
 
 @MainActor
 final class CloudConfigurationRefreshTests: XCTestCase {
+    func testAccountRemovalLocallyEverywhereAndViaSyncKeepsOtherSourcesDisabled() async throws {
+        enum Removal: CaseIterable { case local, everywhere, synced }
+        for removal in Removal.allCases {
+            try await withApp { app, _ in
+                let selectedID = UUID().uuidString
+                let excludedID = UUID().uuidString
+                let unselectedID = UUID().uuidString
+                app.accountsProviders.registry.register(.jellyfin) {
+                    AccountSelectionProvider(session: $0.session)
+                }
+                for id in [selectedID, excludedID, unselectedID] {
+                    try app.accountStore.add(Account(
+                        id: id,
+                        server: .init(id: id, name: "Fixture", baseURL: URL(string: "https://fixture.invalid")!, provider: .jellyfin),
+                        userID: "viewer", userName: "Viewer", deviceID: "fixture"
+                    ), token: "fixture")
+                }
+                app.accountStore.setActiveAccountIDs([selectedID, excludedID, unselectedID])
+                app.profiles.setActiveAccountIDs([selectedID], for: app.profiles.activeProfileID)
+                app.accountsProviders.reloadAccounts()
+                let libraryKey = "\(excludedID):movies"
+                app.settings.homeVisibility.setEnabled(false, for: libraryKey)
+                XCTAssertEqual(app.accountsProviders.activeAccountIDs, [selectedID])
+                app.removeAccount(id: unselectedID)
+                XCTAssertEqual(app.accountsProviders.activeAccountIDs, [selectedID])
+                XCTAssertEqual(app.profiles.storedActiveAccountIDs(for: app.profiles.activeProfileID), [selectedID])
+                defer {
+                    var removals = RemovedAccountsStore()
+                    removals.clear(selectedID)
+                }
+
+                switch removal {
+                case .local:
+                    app.removeAccount(id: selectedID)
+                case .everywhere:
+                    app.removeAccountEverywhere(id: selectedID)
+                case .synced:
+                    app.applySyncRecords([
+                        "removal:\(selectedID)": try XCTUnwrap(CanonicalJSON.encode(
+                            AccountRemovalDTO(accountID: selectedID, removedAtEpoch: 1_793_577_905)
+                        ))
+                    ])
+                }
+
+                XCTAssertEqual(app.accountsProviders.accounts.map(\.id), [excludedID])
+                XCTAssertTrue(app.accountsProviders.activeAccountIDs.isEmpty)
+                XCTAssertTrue(app.activeAccountIDs(for: app.profiles.activeProfileID).isEmpty)
+                XCTAssertTrue(app.accountsProviders.navigationAccounts.isEmpty)
+                XCTAssertTrue(app.accountsProviders.homeAccounts.isEmpty)
+                XCTAssertNil(app.accountsProviders.primaryActiveAccount)
+                XCTAssertTrue(app.accountsProviders.liveTVServerChoices.isEmpty)
+                XCTAssertFalse(app.settings.homeVisibility.isEnabled(libraryKey))
+                XCTAssertEqual(app.profiles.storedActiveAccountIDs(for: app.profiles.activeProfileID), [selectedID])
+                let captured = app.captureSyncRecords(fallback: [:])
+                let membership = try XCTUnwrap(captured["membership:\(app.profiles.activeProfileID)"])
+                XCTAssertEqual(try JSONDecoder().decode([String].self, from: membership), [selectedID])
+                if removal != .local {
+                    XCTAssertTrue(RemovedAccountsStore().isRemoved(selectedID))
+                    XCTAssertNotNil(captured["removal:\(selectedID)"])
+                }
+            }
+        }
+    }
+
     func testRebuiltMobileSettingsPreserveAutomaticDiscoveryAndExplicitChoice() {
         let namespace = "MobileDiscovery.\(UUID())"
         defer {
@@ -170,5 +234,22 @@ final class CloudConfigurationRefreshTests: XCTestCase {
         await app.ensureTrackersScopedToActiveProfile()
         try await Task.sleep(for: .milliseconds(100))
     }
+}
+
+private struct AccountSelectionProvider: MediaProvider {
+    let session: UserSession
+    var kind: ProviderKind { .jellyfin }
+    func libraries() async throws -> [MediaLibrary] { [] }
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func children(of itemID: String) async throws -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        .init(items: [], startIndex: 0, totalCount: 0)
+    }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
 }
 #endif

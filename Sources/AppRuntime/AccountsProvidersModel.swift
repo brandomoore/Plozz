@@ -41,12 +41,8 @@ public final class AccountsProvidersModel {
     /// Snapshot on reload so rendering picker badges never reads the Keychain.
     private var householdActiveAccountIDs: [String] = []
 
-    /// Whether the active profile has EXPLICITLY chosen to watch nothing.
-    ///
-    /// Distinguishes "this profile turned every server off" from "the active set
-    /// came out empty for some other reason" (nothing signed in yet, every
-    /// stored id gone stale). Both look like an empty set, but only the first is
-    /// an instruction — and the fallbacks below exist for the second.
+    /// An explicit selection has no locally available accounts, including when
+    /// its selected accounts were removed. Never substitute an excluded account.
     public private(set) var watchesNothingByChoice = false
 
     /// The persisted multi-account store (token per account in the Keychain).
@@ -406,13 +402,12 @@ public final class AccountsProvidersModel {
     }
 
     /// The active account ids for a specific profile, filtered to accounts that
-    /// are still signed in. An unset or entirely stale nonempty selection falls
-    /// back to the household-global set; an explicit empty selection stays empty.
+    /// are still signed in. Only an unset selection inherits the household set;
+    /// missing selected accounts never authorize other accounts.
     public func activeAccountIDs(forProfile id: String) -> [String] {
         let known = Set(accounts.map(\.id))
         if let stored = profilesModel.storedActiveAccountIDs(for: id) {
-            let valid = stored.filter { known.contains($0) }
-            if !valid.isEmpty || stored.isEmpty { return valid }
+            return stored.filter { known.contains($0) }
         }
         return householdActiveAccountIDs.filter { known.contains($0) }
     }
@@ -470,11 +465,9 @@ public final class AccountsProvidersModel {
         householdActiveAccountIDs = accountStore.activeAccountIDs()
         let resolved = Set(activeAccountIDs(forProfile: profilesModel.activeProfileID))
         activeAccountIDs = resolved
-        // Only an explicit, still-honoured empty selection counts as a choice:
-        // the stale-fallback branch above has already re-expanded the other case.
         watchesNothingByChoice = resolved.isEmpty
             && !accountSelectionIsUnavailable
-            && (profilesModel.storedActiveAccountIDs(for: profilesModel.activeProfileID)?.isEmpty ?? false)
+            && profilesModel.storedActiveAccountIDs(for: profilesModel.activeProfileID) != nil
         recordLiveTVAccountState(.accountsReloaded)
         onActiveAccountsChanged(resolved, accounts)
     }
