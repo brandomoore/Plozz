@@ -436,7 +436,21 @@ persistence, no resume below 2%, and resume removal above 80% without a watched
 play. Opt-out suppressed uploads; re-enabling did not backfill old sessions and
 allowed only new playback to create another resume. This is a narrow movie/
 iOS-simulator/Emby result, not acceptance of TV playback, episodes, other
-providers, watched completion, imports, or cross-device synchronization.
+providers, watched completion, or cross-device synchronization. The separate
+one-time import result below does not extend that playback coverage.
+
+The same real movie resume was then imported through native comparison and
+explicit confirmation into an independent, dedicated Jellyfin user. Connection
+and cancelled confirmation left its zero progress unchanged; approval set
+exactly 49.557 seconds without marking watched or incrementing play count.
+Independent reads confirmed the Emby source and PublicMetaDB record stayed
+unchanged. Relaunch showed both server users already matching without another
+write. A destination-only control changed progress from 75 to 90 seconds after
+preview: stale approval left 90 seconds intact and reported an unconfirmed
+result. Fresh comparison, conflict review and approval restored 49.557 seconds.
+This proves the tested movie-resume import and server-staleness guard on an iOS
+simulator, not automatic ongoing sync, two-device delivery, watched imports,
+episode imports, or other tracker/provider routes.
 
 The unbound `PublicMetaDBLiveHistoryTests` driver uses normally configured
 production-app UI, not seeded profiles or substituted media. Its individual
@@ -446,6 +460,17 @@ the runner environment. Run only the intended scenario, retain its nonzero
 XCTest result, and pair it with independent exact-title server/tracker reads;
 successful UI interaction alone is not delivery confirmation. Keep account
 configuration, credentials, screenshots and live-state evidence private.
+Import scenarios require an already connected dedicated destination, its exact
+account and item identifiers, and test username through `PLOZZ_TRACKER_IMPORT_*`.
+Never pass a real credential to XCTest `typeText`: it logs a prefix even for
+secure fields. Keep credentials out of runner arguments and environment. Native switch
+interaction targets the switch control rather than its containing row; native
+confirmation may cancel through the system popover dismissal region. The
+independent reader uses standard `Authorization: MediaBrowser Token="..."` for
+Jellyfin and Emby; servers can reject legacy `X-Emby-Token` headers.
+The full preflight's Emby current-user probe remains a separate gap: the tested
+server rejects `/Users/Me` with either header. Successful exact-item reads do
+not establish that the full multi-provider preflight passed.
 
 ## Opt-in playback reporting
 

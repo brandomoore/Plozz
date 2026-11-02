@@ -110,6 +110,137 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(app.buttons["publicmetadb.playback.enable"].waitForExistence(timeout: 5))
     }
 
+    func testFinishIndependentServerLibraries() throws {
+        try finishIndependentServerLibraries()
+    }
+
+    private func finishIndependentServerLibraries() throws {
+        let savePassword = app.sheets["Save Password?"]
+        if savePassword.waitForExistence(timeout: 3) {
+            savePassword.buttons["Not Now"].tap()
+            try require(savePassword.waitForNonExistence(timeout: 5), "Password save prompt did not close")
+        }
+        try require(app.navigationBars["Choose Your Libraries"].waitForExistence(timeout: 30),
+                    "Expected library selection after sign-in")
+        try require(app.switches["Movies"].waitForExistence(timeout: 30), "Expected destination movie library")
+        let libraries = app.switches.matching(NSPredicate(format: "label != ''")).allElementsBoundByIndex
+        try require(!libraries.isEmpty && libraries.count <= 20, "Expected a bounded library selection")
+        for library in libraries where library.label != "Movies" && library.value as? String == "1" {
+            try tapVisible(library.switches.firstMatch)
+            let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: library)
+            try require(XCTWaiter.wait(for: [disabled], timeout: 5) == .completed,
+                        "Only the movie library should remain selected")
+        }
+        try require(app.switches["Movies"].value as? String == "1", "Movies must be selected")
+        try tapVisible(app.buttons["Continue"])
+        try require(app.navigationBars["Choose Your Libraries"].waitForNonExistence(timeout: 15),
+                    "Library selection did not finish")
+        let user = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_USER"])
+        try require(app.staticTexts["Signed in as \(user)"].waitForExistence(timeout: 10),
+                    "Expected the dedicated destination account on the Servers page")
+    }
+
+    func testOpenHistoryComparison() throws {
+        try openHistoryComparison()
+        XCTAssertTrue(importSelection.exists)
+        XCTAssertEqual(importSelection.value as? String, "0")
+        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+    }
+
+    func testCancelHistoryImportAndReopen() throws {
+        try openHistoryComparison()
+        try selectHistoryImport()
+        XCTAssertTrue(app.buttons["Apply selected changes"].waitForExistence(timeout: 5))
+        if app.buttons["Cancel"].firstMatch.exists {
+            try tapVisible(app.buttons["Cancel"].firstMatch)
+        } else {
+            try tapVisible(app.otherElements["PopoverDismissRegion"])
+        }
+        XCTAssertTrue(app.buttons["Apply selected changes"].waitForNonExistence(timeout: 5))
+        XCTAssertEqual(importSelection.value as? String, "1")
+        try openHistoryComparison()
+        XCTAssertEqual(importSelection.value as? String, "0")
+        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+    }
+
+    func testConfirmSelectedHistoryImport() throws {
+        try openHistoryComparison()
+        try confirmSelectedHistoryImport()
+    }
+
+    func testPrepareStaleHistoryImport() throws {
+        try openHistoryComparison()
+        XCTAssertTrue(app.staticTexts["Server resume: 75 seconds"].exists)
+        XCTAssertTrue(app.staticTexts["Different from server — selecting replaces its current state"].exists)
+        try selectHistoryImport()
+        XCTAssertTrue(app.buttons["Apply selected changes"].waitForExistence(timeout: 5))
+    }
+
+    func testRejectStaleHistoryImport() throws {
+        XCTAssertEqual(importSelection.value as? String, "1")
+        let confirm = app.buttons["Apply selected changes"]
+        XCTAssertTrue(confirm.exists && confirm.isHittable)
+        confirm.tap()
+        XCTAssertTrue(app.staticTexts["Not confirmed. Compare again before retrying."].waitForExistence(timeout: 60))
+        XCTAssertFalse(app.staticTexts["Confirmed on server"].exists)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+    }
+
+    func testConfirmFreshHistoryConflict() throws {
+        try openHistoryComparison()
+        XCTAssertTrue(app.staticTexts["Server resume: 90 seconds"].exists)
+        XCTAssertTrue(app.staticTexts["Different from server — selecting replaces its current state"].exists)
+        try confirmSelectedHistoryImport()
+    }
+
+    private func confirmSelectedHistoryImport() throws {
+        try selectHistoryImport()
+        let confirm = app.buttons["Apply selected changes"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        XCTAssertTrue(app.staticTexts["Confirmed on server"].waitForExistence(timeout: 60))
+        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+    }
+
+    func testImportedHistoryMatchesAfterRelaunch() throws {
+        try openHistoryComparison()
+        XCTAssertFalse(importSelection.exists)
+        XCTAssertEqual(app.staticTexts.matching(identifier: "Already matches — no change").count, 2)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+    }
+
+    private var importSelection: XCUIElement {
+        let environment = ProcessInfo.processInfo.environment
+        let accountID = environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"] ?? "missing-import-account"
+        let itemID = environment["PLOZZ_TRACKER_IMPORT_ITEM"] ?? "missing-import-item"
+        return app.switches.matching(NSPredicate(
+            format: "identifier == %@", "tracker-history.select.\(accountID):\(itemID)"
+        )).firstMatch
+    }
+
+    private func openHistoryComparison() throws {
+        let user = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_USER"])
+        let item = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ITEM"])
+        let account = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"])
+        XCTAssertFalse(user.isEmpty || item.isEmpty || account.isEmpty)
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["publicmetadb.compare-history"])
+        XCTAssertTrue(app.buttons["tracker-history.apply"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", user)).firstMatch.exists)
+    }
+
+    private func selectHistoryImport() throws {
+        XCTAssertTrue(importSelection.exists && importSelection.isHittable)
+        XCTAssertEqual(importSelection.value as? String, "0")
+        try tapVisible(importSelection.switches.firstMatch)
+        let apply = app.buttons["tracker-history.apply"]
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: apply)
+        try require(XCTWaiter.wait(for: [selected], timeout: 5) == .completed, "Expected the selected import action")
+        XCTAssertEqual(importSelection.value as? String, "1")
+        XCTAssertEqual(apply.label, "Apply 1 selected changes")
+        apply.tap()
+    }
+
     private func enableReporting() throws {
         try tapVisible(app.buttons["publicmetadb.playback.enable"])
         let confirm = app.buttons["Enable reporting"]
@@ -188,24 +319,42 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func openPlaybackReporting() throws {
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["publicmetadb.playback"])
+    }
+
+    private func openPublicMetaDBAccount() throws {
+        try openSettings()
+        try tapVisible(app.buttons["settings-category-trackers"])
+        try tapVisible(app.buttons["publicmetadb.browse"])
+    }
+
+    private func openSettings() throws {
         let user = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"])
         app.terminate()
         app.launch()
         let settings = app.buttons["Settings for \(user)"]
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
         settings.tap()
-        try tapVisible(app.buttons["settings-category-trackers"])
-        try tapVisible(app.buttons["publicmetadb.browse"])
-        try tapVisible(app.buttons["publicmetadb.playback"])
     }
 
     private func tapVisible(_ target: XCUIElement, tapping: Bool = true) throws {
+        _ = target.waitForExistence(timeout: 5)
         for _ in 0..<8 {
             if target.exists && target.isHittable { break }
             app.swipeUp()
         }
-        XCTAssertTrue(target.exists && target.isHittable)
+        guard target.exists && target.isHittable else { throw Failure.expectedVisibleElement }
         if tapping { target.tap() }
+    }
+
+    private func require(_ condition: Bool, _ message: String) throws {
+        guard condition else { throw Failure.precondition(message) }
+    }
+
+    private enum Failure: Error {
+        case expectedVisibleElement
+        case precondition(String)
     }
 
     private func recordState() {

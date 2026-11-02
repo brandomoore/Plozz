@@ -262,7 +262,7 @@ def server_state(http, provider, server, token, case):
         require(state["viewOffset"] is None or state["viewOffset"] <= runtime, "Plex position exceeds runtime.")
         # Preserve absent Plex fields; the baseline must not invent an explicit reset.
         return {"runtimeMilliseconds": runtime, "state": state}
-    headers = {"X-Emby-Token": token}
+    headers = {"Authorization": f"MediaBrowser Token={json.dumps(token)}"}
     prefix = "/Users/" + server["userID"] + "/Items/"
     item = http.get(server["baseURL"], prefix + case["itemID"], headers,
                     {"Fields": "ProviderIds", "EnableUserData": "true"})
@@ -311,7 +311,7 @@ def baseline(config, http, token_reader=read_token):
                     "Plex server identity mismatch.")
             require(isinstance(user, dict) and str(user.get("id")) == server["userID"], "Plex user identity mismatch.")
         else:
-            headers = {"X-Emby-Token": token}
+            headers = {"Authorization": f"MediaBrowser Token={json.dumps(token)}"}
             identity = http.get(server["baseURL"], "/System/Info/Public", headers)
             user = http.get(server["baseURL"], "/Users/Me", headers)
             require(isinstance(identity, dict) and identity.get("Id") == server["serverID"], "Server identity mismatch.")

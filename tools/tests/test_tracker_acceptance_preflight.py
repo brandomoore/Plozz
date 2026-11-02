@@ -85,9 +85,11 @@ class TrackerAcceptancePreflightTests(unittest.TestCase):
                 self.assertNotIn(KEY, json.dumps(result))
                 self.assertNotIn("not-for-evidence", json.dumps(result))
                 self.assertNotIn("server.test", json.dumps(result))
-                for _, path, _, query in http.calls:
+                for _, path, headers, query in http.calls:
                     if path in ("/api/external/watched", "/api/external/resume"):
                         self.assertEqual({name: query[name] for name in MOVIE}, MOVIE)
+                    if not path.startswith("/api/external/"):
+                        self.assertEqual(headers, {"Authorization": f'MediaBrowser Token="{KEY}"'})
 
     def test_owned_test_list_is_required_without_inventing_an_account_profile_endpoint(self):
         http = transport()
