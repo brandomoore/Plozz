@@ -408,11 +408,115 @@ final class LibraryLiveChannelEngineTests: XCTestCase {
         try await fixture.adapter.loadChannel(fixture.inputA)
         fixture.adapter.configureLiveOutput(policies[1])
         try await fixture.adapter.loadChannel(streamA)
-        XCTAssertEqual(fixture.decoder.outputPolicies, policies)
+        var muted = policies[1]
+        muted.isAudible = false
+        XCTAssertEqual(fixture.decoder.outputPolicies, [
+            .init(isAudible: false), policies[0], policies[1], muted, policies[1]
+        ])
         fixture.adapter.stop()
         await fixture.adapter.drainTransport()
         XCTAssertTrue(fixture.decoder.stopPolicies.allSatisfy(\.sharesAudioSession))
-        XCTAssertEqual(fixture.decoder.outputPolicies, policies)
+        XCTAssertEqual(fixture.decoder.outputPolicies.last, muted)
+    }
+
+    func testStartupAudioWaitsForVisibleReadinessWithoutPausingDecoder() async throws {
+        let fixture = try UniversalLiveFixture()
+        fixture.decoder.providesFirstFrame = false
+        let policy = LiveChannelOutputPolicy(
+            isAudible: true, sharesAudioSession: true, suppressesDisplayMatching: true
+        )
+        fixture.adapter.configureLiveOutput(policy)
+        fixture.decoder.loadHook = { [weak fixture] in
+            XCTAssertEqual(fixture?.decoder.outputPolicies.last?.isAudible, false)
+        }
+        try await fixture.adapter.loadChannel(fixture.inputA)
+        XCTAssertFalse(fixture.adapter.liveSnapshot.firstFrameReady)
+        XCTAssertFalse(fixture.decoder.isPaused)
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, false)
+        fixture.decoder.liveSnapshot.firstFrameReady = true
+        fixture.decoder.onLiveOutputReadinessChanged?()
+        XCTAssertEqual(fixture.decoder.outputPolicies.last, policy)
+        let count = fixture.decoder.outputPolicies.count
+        fixture.decoder.onProgress?()
+        XCTAssertEqual(fixture.decoder.outputPolicies.count, count)
+        fixture.adapter.pause()
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, false)
+        fixture.decoder.onProgress?()
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, false)
+        fixture.adapter.play()
+        XCTAssertEqual(fixture.decoder.outputPolicies.last, policy)
+        fixture.adapter.stop()
+        await fixture.adapter.drainTransport()
+    }
+
+    func testReadinessCannotUnmuteDeselectedPaneOrStoppedSource() async throws {
+        let fixture = try UniversalLiveFixture()
+        fixture.decoder.providesFirstFrame = false
+        fixture.adapter.configureLiveOutput(.init(isAudible: true, sharesAudioSession: true))
+        try await fixture.adapter.loadChannel(streamA)
+        fixture.adapter.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true))
+        fixture.decoder.liveSnapshot.firstFrameReady = true
+        fixture.decoder.onProgress?()
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, false)
+        let staleProgress = fixture.decoder.onProgress
+        fixture.adapter.stop()
+        await fixture.adapter.drainTransport()
+        fixture.adapter.configureLiveOutput(.init(isAudible: true, sharesAudioSession: true))
+        staleProgress?()
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, false)
+    }
+
+    func testProgrammeBoundaryMutesUntilReplacementCanBePresented() async throws {
+        let fixture = try UniversalLiveFixture()
+        try await fixture.adapter.loadChannel(fixture.inputA)
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, true)
+        let session = try XCTUnwrap(fixture.adapter.librarySession)
+        let staleState = session.onStateChanged
+        let staleProgress = fixture.decoder.onProgress
+        fixture.decoder.providesFirstFrame = false
+        fixture.decoder.loadHook = { [weak fixture] in
+            XCTAssertEqual(fixture?.decoder.outputPolicies.last?.isAudible, false)
+        }
+        fixture.advanceClock(101)
+        session.tick()
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, false)
+        await settle { session.currentSlot?.item.itemID == "second" && session.state == .playing }
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, false)
+        fixture.decoder.liveSnapshot.firstFrameReady = true
+        staleProgress?()
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, false)
+        fixture.decoder.onProgress?()
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, true)
+        fixture.adapter.stop()
+        await fixture.adapter.drainTransport()
+        staleState?()
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, false)
+    }
+
+    func testFailureCannotLeaveHiddenPlaybackAudible() async throws {
+        let fixture = try UniversalLiveFixture()
+        try await fixture.adapter.loadChannel(streamA)
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, true)
+        fixture.decoder.onFailure?(.invalidResponse)
+        fixture.decoder.onProgress?()
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, false)
+        fixture.adapter.configureLiveOutput(.init(isAudible: true))
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, false)
+        fixture.adapter.stop()
+        await fixture.adapter.drainTransport()
+    }
+
+    func testConfirmedAudioOnlyOutputDoesNotWaitForAVideoFrame() async throws {
+        let fixture = try UniversalLiveFixture()
+        fixture.decoder.providesFirstFrame = false
+        try await fixture.adapter.loadChannel(streamA)
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, false)
+        fixture.decoder.isAudioOnlyPlaybackReady = true
+        fixture.decoder.onProgress?()
+        XCTAssertEqual(fixture.decoder.outputPolicies.last?.isAudible, true)
+        XCTAssertFalse(fixture.adapter.liveSnapshot.firstFrameReady)
+        fixture.adapter.stop()
+        await fixture.adapter.drainTransport()
     }
 
     #if canImport(UIKit)
@@ -983,6 +1087,8 @@ private final class UniversalLiveGate {
 
 @MainActor
 private final class UniversalLiveDecoder: LiveChannelEngine {
+    var onLiveOutputReadinessChanged: (@MainActor () -> Void)?
+    var isAudioOnlyPlaybackReady = false
     var liveStartupBuffer: LivePlaybackBuffer = .automatic
     var status: VideoEngineStatus = .idle
     var isPaused = false

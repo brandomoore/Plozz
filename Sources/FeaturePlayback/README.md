@@ -327,6 +327,15 @@ Live TV channel selection does not display an "Opening [channel]" toast in the
 guide or player. Existing in-player loading indicators, playback errors, retry
 actions, and cancellation on navigation remain unchanged.
 
+The retained channel engine keeps output muted until the current source has
+finished loading and its first-frame signal permits presentation. Scheduled
+programme boundaries and live-clock reconciliation close the same gate; decoder
+playback continues underneath it. Readiness changes are pushed immediately, not
+delayed until the watch-reporting timer. Readiness never overrides the requested mute,
+pause intent, or multiview audio owner. Confirmed audio-only output uses its own
+readiness signal; external playback retains the engine's receiver-readiness
+contract rather than waiting for a local video layer.
+
 On tvOS, opening a fullscreen HDR channel uses the same probe-aware fade as
 movies and episodes. The local veil reaches black before enabling display
 matching; playback and display-settle signals govern its reveal, with the

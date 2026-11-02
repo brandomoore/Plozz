@@ -60,7 +60,12 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     // MARK: - VideoEngine State
 
-    public private(set) var status: VideoEngineStatus = .idle
+    public private(set) var status: VideoEngineStatus = .idle {
+        didSet {
+            if status != oldValue { onLiveOutputReadinessChanged?() }
+        }
+    }
+    public var onLiveOutputReadinessChanged: (@MainActor () -> Void)?
     public private(set) var isPaused: Bool = true
     /// Our *intended* transport state — the single source of truth for whether
     /// the user wants to be playing. AetherEngine's "producer-restart" seek tears
@@ -773,6 +778,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public var supportsConcurrentPlayback: Bool { true }
+    public var isAudioOnlyPlaybackReady: Bool {
+        status == .ready && engine.isSessionReady && engine.playbackBackend == .audio
+    }
 
     public func configureLiveOutput(_ policy: LiveChannelOutputPolicy) {
         if liveOutputPolicy.suppressesDisplayMatching != policy.suppressesDisplayMatching {
@@ -1801,6 +1809,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func observeEngine() {
+        engine.$hasFirstFrameReadyForDisplay
+            .combineLatest(engine.$isSessionReady, engine.$playbackBackend)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.onLiveOutputReadinessChanged?() }
+            .store(in: &cancellables)
         engine.$playbackPhase
             .removeDuplicates()
             .receive(on: DispatchQueue.main)

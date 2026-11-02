@@ -247,9 +247,10 @@ let package = Package(
         // 7.53.1 corrects remote-HLS buffering, short forward seeks and tvOS MetalFX
         // availability. FFmpegBuild 3.11.1 adds AV1 forward-keyframe detection.
         // Audio shaping and low-resolution upscaling remain opt-in and disabled.
+        // Resume preroll backfill no longer opens a false native-scrub landing watch.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "45e37ed2e6b66ea520229a6fb8b0f973fe155fda",
+            revision: "7cd91ee1a55401d59ca385e247a5c6308b7d27ea",
             traits: [
                 "TrueHDObjectAudio", "DTSXObjectAudio",
                 "DualLayerDolbyVision", "DolbyVisionStillReshaping",

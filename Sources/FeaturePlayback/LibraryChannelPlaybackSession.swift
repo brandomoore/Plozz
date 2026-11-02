@@ -31,7 +31,11 @@ public enum LibraryChannelHistoryReporting: Sendable {
 public final class LibraryChannelPlaybackSession {
     public let channelID: UUID
     public let engine: any VideoEngine
-    public private(set) var state: LibraryChannelPlaybackState = .idle
+    public private(set) var state: LibraryChannelPlaybackState = .idle {
+        didSet {
+            if state != oldValue { onStateChanged?() }
+        }
+    }
     public private(set) var currentSlot: LibraryChannelSlot?
     public private(set) var isDelayed = false
     public private(set) var isWatching = false
@@ -39,6 +43,7 @@ public final class LibraryChannelPlaybackSession {
     public private(set) var secondsWatched: TimeInterval = 0
     /// Reset pane-derived tracks/cues; this notification must not request another tune.
     @ObservationIgnored public var onSourceReset: (@MainActor () -> Void)?
+    @ObservationIgnored public var onStateChanged: (@MainActor () -> Void)?
     @ObservationIgnored public var onPlaybackFailure: (@MainActor (LibraryChannelError) -> Void)?
     @ObservationIgnored private let schedule: @MainActor @Sendable () -> LibraryChannelSchedule?
     @ObservationIgnored private let provider: @MainActor @Sendable (LibraryChannelItem) -> (any LibraryChannelPlaybackProviding)?
