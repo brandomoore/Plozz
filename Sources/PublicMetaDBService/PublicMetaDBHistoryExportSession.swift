@@ -21,6 +21,7 @@ public final class PublicMetaDBHistoryExportSession {
         public fileprivate(set) var status: Status
         fileprivate let change: Change?
         fileprivate let remote: RemoteState
+        fileprivate let episodeIdentity: PublicMetaDBEpisodeIdentity?
     }
 
     fileprivate struct Change: Codable, Equatable, Sendable {
@@ -87,19 +88,22 @@ public final class PublicMetaDBHistoryExportSession {
     private let connectionID: UUID
     private let store: DurableLocalStateStore
     private let isConnected: @MainActor @Sendable () -> Bool
+    private let resolveEpisodeIdentity: PublicMetaDBEpisodeIdentity.Resolving?
     private var generation = UUID()
     private var isOpen = true
     private var accountID: String?
 
     init(
         source: TrackerServerHistorySource, client: PublicMetaDBClient, connectionID: UUID,
-        store: DurableLocalStateStore, isConnected: @escaping @MainActor @Sendable () -> Bool
+        store: DurableLocalStateStore, isConnected: @escaping @MainActor @Sendable () -> Bool,
+        resolveEpisodeIdentity: PublicMetaDBEpisodeIdentity.Resolving? = nil
     ) {
         self.source = source
         self.client = client
         self.connectionID = connectionID
         self.store = store
         self.isConnected = isConnected
+        self.resolveEpisodeIdentity = resolveEpisodeIdentity
     }
 
     public func cancel() {
@@ -146,6 +150,8 @@ public final class PublicMetaDBHistoryExportSession {
             let remote = try await readAllRemote()
             try requireCurrent(current)
             var compared: [Row] = []
+            var episodeIdentities: [PublicMetaDB.Content: PublicMetaDBEpisodeIdentity] = [:]
+            var resolvedEpisodes: Set<PublicMetaDB.Content> = []
             for entry in inventory {
                 try requireCurrent(current)
                 // Refresh only relevant rows; never manufacture watches from series totals.
@@ -155,7 +161,19 @@ public final class PublicMetaDBHistoryExportSession {
                 guard mode == .watched ? item.isPlayed : (item.resumePosition ?? 0) > 0 else {
                     throw TrackerHistoryError.stalePreview
                 }
-                let content = PublicMetaDB.Content.matching(item)
+                var content = PublicMetaDB.Content.matching(item)
+                var episodeIdentity: PublicMetaDBEpisodeIdentity?
+                if content == nil, let candidate = PublicMetaDB.Content.episodeCandidate(item) {
+                    if resolvedEpisodes.insert(candidate).inserted,
+                       let reference = try await resolveEpisodeIdentity?(candidate) {
+                        episodeIdentities[candidate] = try .init(content: candidate, item: reference)
+                    }
+                    try requireCurrent(current)
+                    if let identity = episodeIdentities[candidate], identity.matches(item) {
+                        content = candidate
+                        episodeIdentity = identity
+                    }
+                }
                 let baseline = TrackerServerHistoryBaseline(item: item)
                 let change = try Self.change(mode: mode, content: content, baseline: baseline)
                 var state = content.flatMap { remote.states[$0] } ?? .init()
@@ -181,7 +199,7 @@ public final class PublicMetaDBHistoryExportSession {
                 try requireCurrent(current)
                 compared.append(Row(
                     title: item.title, baseline: baseline, content: content, status: status,
-                    change: change, remote: state
+                    change: change, remote: state, episodeIdentity: episodeIdentity
                 ))
             }
             let duplicates = Dictionary(grouping: compared.compactMap(\.content), by: { $0 })
@@ -256,8 +274,10 @@ public final class PublicMetaDBHistoryExportSession {
         try await source.requireNotPlaying(accountID: accountID, itemID: row.baseline.itemID)
         let item = try await source.item(accountID: accountID, itemID: row.baseline.itemID)
         try requireCurrent(generation)
+        let content = PublicMetaDB.Content.matching(item)
+            ?? row.episodeIdentity.flatMap { $0.matches(item) ? $0.content : nil }
         guard TrackerServerHistoryBaseline(item: item) == row.baseline,
-              PublicMetaDB.Content.matching(item) == row.content else { throw TrackerHistoryError.stalePreview }
+              content == row.content else { throw TrackerHistoryError.stalePreview }
         try await source.requireNotPlaying(accountID: accountID, itemID: row.baseline.itemID)
         try requireCurrent(generation)
     }

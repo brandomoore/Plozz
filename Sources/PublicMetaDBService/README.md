@@ -190,7 +190,12 @@ The TV and mobile account pages offer a separate **Export server history** flow.
 Users choose a server user, library, and watched-title or resume mode. Read-only
 preview walks bounded provider pages, probes the advertised end, refreshes relevant
 items and parent-series identities, and rejects partial inventories and ambiguous
-duplicates. Movie IDs and single-episode TMDB ordering must be confirmed.
+duplicates. Movie IDs and single-episode TMDB identities must be confirmed.
+Episodes with another or unspecified server order require the same exact
+child/parent reference proof as playback reporting; coordinates are not translated.
+Reference reads are deduplicated within the preview, and the retained proof is
+checked against the fresh source again at approval and dispatch. Missing proof,
+conflicting IDs and combined files remain unavailable.
 
 Watched backfill adds at most one missing play. It preserves an available server
 last-play date only when there is no unfinished resume; otherwise the date is
@@ -220,6 +225,8 @@ history/resume baselines still need exact equality; a later re-drop stops the
 batch. An ambiguous response does not grant that baseline adjustment.
 Definite refusals permit a fresh preview, not automatic retry. Partial batches
 retain individual outcomes and stop at the first unconfirmed result.
+On iOS/iPadOS, controls use the native borderless button style to keep separate
+actions inside the composite list cell from activating the first server picker.
 
 ## Watchlist destination
 
@@ -544,8 +551,25 @@ source user's state; the entire tracker watched/resume history stayed unchanged.
 Fresh-consent Settings showed the identity warning after each scenario. Relaunch
 and restored library selection did not replay anything, and independent source
 controls stayed unchanged. This is safe rejection, not combined-episode support.
-Episode continuation, exports, independent installations and the remaining
+Episode continuation, independent installations and the remaining
 provider/platform routes still require their own live evidence.
+
+Real Jellyfin episode exports were subsequently verified on a rebuilt production
+iPhone-simulator app. With playback reporting disabled, actual source playback
+created 398,660.889 ms of resume while PublicMetaDB remained unchanged. Native
+preview, cancellation and reopening wrote nothing; explicit export copied
+398,660 whole milliseconds without changing either server. Relaunch recognized
+the existing record and offered no replay.
+
+A separate completed viewing then changed only the Jellyfin source. Native
+watched export showed the existing tracker resume as a conflict; cancellation
+preserved it, and explicit confirmation added one play with the server's original
+last-play date and cleared tracker resume. Both servers, other tracker titles,
+the combined-file controls and test lists stayed unchanged. Relaunch showed the
+play already present without adding another. The same live preview recognized
+previously reported ordinary/special episodes and left the combined file
+unavailable. Movie exports, unknown-date cases, live export races and broader
+provider/platform parity still need separate live acceptance.
 
 The unbound `PublicMetaDBLiveHistoryTests` driver uses normally configured
 production-app UI, not seeded profiles or substituted media. Its individual

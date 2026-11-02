@@ -351,6 +351,84 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
     }
 
+    func testPreviewServerHistoryExport() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let user = try XCTUnwrap(environment["PLOZZ_TRACKER_IMPORT_USER"])
+        let library = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_LIBRARY"])
+        let mode = try XCTUnwrap(environment["PLOZZ_TRACKER_EXPORT_MODE"])
+        try require(["Watched titles", "Resume points"].contains(mode), "Expected an explicit export category")
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["publicmetadb.export-history"])
+        try tapVisible(app.buttons["publicmetadb.export.account"])
+        let account = app.buttons.matching(NSPredicate(format: "label ENDSWITH %@", " · \(user)"))
+        try require(account.firstMatch.waitForExistence(timeout: 10) && account.count == 1,
+                    "Expected the exact dedicated export user")
+        account.element.tap()
+        try tapVisible(app.buttons["publicmetadb.export.library"])
+        try tapVisible(app.collectionViews.buttons[library])
+        try tapVisible(app.buttons["publicmetadb.export.mode"])
+        try tapVisible(app.collectionViews.buttons[mode])
+        try tapVisible(app.buttons["publicmetadb.export.preview"])
+        try require(app.buttons["publicmetadb.export.apply"].waitForExistence(timeout: 120),
+                    "Expected a complete real server-history comparison")
+        XCTAssertFalse(app.buttons["publicmetadb.export.apply"].isEnabled)
+    }
+
+    func testInspectSelectedHistoryExport() throws {
+        let expected = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_EXPORT_STATUS"])
+        let row = try exportRow()
+        try tapVisible(row, tapping: false)
+        XCTAssertTrue(row.staticTexts[expected].exists)
+        if expected == "Already present — no change"
+            || expected == "No supported exact identity, date, runtime, or resume position — not exported" {
+            XCTAssertEqual(row.switches.count, 0)
+        }
+    }
+
+    func testCancelSelectedHistoryExport() throws {
+        try selectHistoryExport()
+        try tapVisible(app.otherElements["PopoverDismissRegion"])
+        try require(app.buttons["Export selected titles"].waitForNonExistence(timeout: 5),
+                    "Expected cancellation of the exact export")
+        XCTAssertEqual(try exportSelection().value as? String, "1")
+        try testPreviewServerHistoryExport()
+        try tapVisible(try exportSelection(), tapping: false)
+        XCTAssertEqual(try exportSelection().value as? String, "0")
+    }
+
+    func testConfirmSelectedHistoryExport() throws {
+        try selectHistoryExport()
+        try tapVisible(app.buttons["Export selected titles"])
+        let row = try exportRow()
+        try tapVisible(row, tapping: false)
+        XCTAssertTrue(row.staticTexts["Confirmed on PublicMetaDB"].waitForExistence(timeout: 60))
+        XCTAssertFalse(app.buttons["publicmetadb.export.apply"].isEnabled)
+    }
+
+    private func exportRow() throws -> XCUIElement {
+        let item = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ITEM"])
+        return app.otherElements["publicmetadb.export.row.\(item)"]
+    }
+
+    private func exportSelection() throws -> XCUIElement {
+        let item = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ITEM"])
+        return app.switches["publicmetadb.export.select.\(item)"]
+    }
+
+    private func selectHistoryExport() throws {
+        let selection = try exportSelection()
+        try tapVisible(selection, tapping: false)
+        XCTAssertEqual(selection.value as? String, "0")
+        try tapVisible(selection.switches.firstMatch)
+        XCTAssertEqual(selection.value as? String, "1")
+        let apply = app.buttons["publicmetadb.export.apply"]
+        try tapVisible(apply, tapping: false)
+        XCTAssertEqual(apply.label, "Export 1 selected titles")
+        XCTAssertTrue(apply.isEnabled)
+        apply.tap()
+        XCTAssertTrue(app.buttons["Export selected titles"].waitForExistence(timeout: 5))
+    }
+
     func testCancelHistoryImportAndReopen() throws {
         try openHistoryComparison()
         try selectHistoryImport()

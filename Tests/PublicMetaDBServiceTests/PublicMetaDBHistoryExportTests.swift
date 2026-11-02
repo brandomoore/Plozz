@@ -18,7 +18,8 @@ final class PublicMetaDBHistoryExportTests: XCTestCase {
     private func fixture(
         items: [MediaItem], providerKind: ProviderKind = .jellyfin,
         http: ExportHTTP = ExportHTTP(), store: DurableLocalStateStore? = nil,
-        connectionID: UUID = UUID(), authorization: ExportAuthorization? = nil
+        connectionID: UUID = UUID(), authorization: ExportAuthorization? = nil,
+        resolveEpisodeIdentity: PublicMetaDBEpisodeIdentity.Resolving? = nil
     ) throws -> (PublicMetaDBHistoryExportSession, ExportProvider, ExportHTTP) {
         let authorization = authorization ?? ExportAuthorization()
         let provider = ExportProvider(items: items, kind: providerKind)
@@ -40,7 +41,8 @@ final class PublicMetaDBHistoryExportTests: XCTestCase {
         let session = try PublicMetaDBHistoryExportSession(
             source: source, client: client, connectionID: connectionID,
             store: store ?? DurableLocalStateStore(secureStore: InMemorySecureStore()),
-            isConnected: { authorization.connected }
+            isConnected: { authorization.connected },
+            resolveEpisodeIdentity: resolveEpisodeIdentity
         )
         return (session, provider, http)
     }
@@ -334,6 +336,158 @@ final class PublicMetaDBHistoryExportTests: XCTestCase {
         await assertEqual(await http.mutationCount(), 1)
     }
 
+    private func episode(ordering: EpisodeOrdering? = nil) -> MediaItem {
+        .init(
+            id: "episode", title: "Episode", kind: .episode,
+            seasonNumber: 1, episodeNumber: 2, episodeOrdering: ordering,
+            runtime: 1_000, resumePosition: 300, isPlayed: true,
+            providerIDs: ["Tvdb": "900", "seriesTvdb": "100", "seriesTmdb": "1399"]
+        )
+    }
+
+    private func previewEpisode(
+        _ session: PublicMetaDBHistoryExportSession, mode: PublicMetaDBHistoryExportSession.Mode = .watched
+    ) async {
+        await session.compare(
+            accountID: "account", library: .init(id: "library", title: "Shows", kind: .series), mode: mode
+        )
+    }
+
+    func testExactEpisodeProofSupportsWatchedAndResumeWithoutRelabelingSource() async throws {
+        let reference = episode(ordering: .tmdb)
+        let orderings: [EpisodeOrdering?] = [nil, .tvdbDefault]
+        for ordering in orderings {
+            for mode in PublicMetaDBHistoryExportSession.Mode.allCases {
+                let authorization = ExportAuthorization()
+                let item = episode(ordering: ordering)
+                let (session, provider, http) = try fixture(
+                    items: [item], authorization: authorization,
+                    resolveEpisodeIdentity: { content in
+                        authorization.identityLookups += 1
+                        XCTAssertEqual(content.tmdbID, 1399)
+                        XCTAssertEqual(content.season, 1)
+                        XCTAssertEqual(content.episode, 2)
+                        return reference
+                    }
+                )
+                await previewEpisode(session, mode: mode)
+                XCTAssertNil(session.error)
+                XCTAssertEqual(session.rows.map(\.status), [.ready])
+                await apply(session)
+                XCTAssertNil(session.error)
+                XCTAssertEqual(authorization.identityLookups, 1)
+                let posts = await http.posts()
+                let payload = try XCTUnwrap(posts.first?.body).jsonObject
+                XCTAssertEqual(payload?["tmdb_id"] as? Int, 1399)
+                XCTAssertEqual(payload?["season"] as? Int, 1)
+                XCTAssertEqual(payload?["episode"] as? Int, 2)
+                let unchanged = try await provider.item(id: item.id)
+                XCTAssertEqual(unchanged.episodeOrdering, ordering)
+                XCTAssertEqual(unchanged.providerIDs, item.providerIDs)
+                await assertEqual(await provider.writeCount(), 0)
+            }
+        }
+    }
+
+    func testUnprovenConflictingAndCombinedEpisodesRemainUnsupported() async throws {
+        let reference = episode(ordering: .tmdb)
+        for variant in 0..<7 {
+            var item = episode()
+            switch variant {
+            case 0: item.providerIDs["Tvdb"] = nil
+            case 1: item.providerIDs["Tvdb"] = "901"
+            case 2: item.providerIDs["seriesTvdb"] = "101"
+            case 3: item.providerIDs["tvdb"] = "901"
+            case 4: item.episodeNumberEnd = 3
+            case 5: item.providerIDs["seriesTmdb"] = nil
+            default: break
+            }
+            let authorization = ExportAuthorization()
+            let unavailable = variant == 6
+            let (session, _, http) = try fixture(
+                items: [item], resolveEpisodeIdentity: { _ in
+                    authorization.identityLookups += 1
+                    return unavailable ? nil : reference
+                }
+            )
+            await previewEpisode(session)
+            XCTAssertNil(session.error)
+            XCTAssertEqual(session.rows.map(\.status), [.unsupported])
+            if variant == 4 || variant == 5 { XCTAssertEqual(authorization.identityLookups, 0) }
+            await apply(session)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testEpisodeProofIsRecheckedAgainstFreshSourceAtApprovalAndDispatch() async throws {
+        let reference = episode(ordering: .tmdb)
+        for atDispatch in [false, true] {
+            let (session, provider, http) = try fixture(
+                items: [episode()], resolveEpisodeIdentity: { _ in reference }
+            )
+            await previewEpisode(session)
+            XCTAssertEqual(session.rows.map(\.status), [.ready])
+            var changed = episode()
+            changed.episodeNumberEnd = 3
+            let replacement = changed
+            if atDispatch {
+                await provider.onRead(number: 4) { await provider.replace([replacement]) }
+            } else {
+                await provider.replace([replacement])
+            }
+            await apply(session)
+            XCTAssertEqual(session.error as? TrackerHistoryError, .stalePreview)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testMetadataFailureCancellationAndScopeChangesCannotPublishEpisodePreview() async throws {
+        let reference = episode(ordering: .tmdb)
+        for variant in 0..<5 {
+            let authorization = ExportAuthorization()
+            let (session, _, http) = try fixture(
+                items: [episode()], authorization: authorization,
+                resolveEpisodeIdentity: { _ in
+                    switch variant {
+                    case 0: throw AppError.notFound
+                    case 1: throw CancellationError()
+                    case 2: authorization.connected = false
+                    case 3: authorization.current = false
+                    default:
+                        var wrong = reference
+                        wrong.episodeNumber = 3
+                        return wrong
+                    }
+                    return reference
+                }
+            )
+            await previewEpisode(session)
+            XCTAssertNotNil(session.error)
+            XCTAssertFalse(session.hasCompared)
+            XCTAssertTrue(session.rows.isEmpty)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testDuplicateEpisodeProofIsResolvedOnceButDoesNotAuthorizeAmbiguousExports() async throws {
+        let reference = episode(ordering: .tmdb)
+        var duplicate = episode()
+        duplicate.id = "other-file"
+        let authorization = ExportAuthorization()
+        let (session, _, http) = try fixture(
+            items: [episode(), duplicate], resolveEpisodeIdentity: { _ in
+                authorization.identityLookups += 1
+                return reference
+            }
+        )
+        await previewEpisode(session)
+        XCTAssertNil(session.error)
+        XCTAssertEqual(authorization.identityLookups, 1)
+        XCTAssertEqual(session.rows.map(\.status), [.ambiguous, .ambiguous])
+        await apply(session)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
     func testMultiPageInventoryAndPartialBulkFailureRetainIndividualOutcomes() async throws {
         let items = (0..<201).map { index -> MediaItem in
             var item = movie(id: "movie-\(index)", played: index < 2)
@@ -409,6 +563,7 @@ private final class ExportAuthorization {
     var current = true
     var connected = true
     var playing = false
+    var identityLookups = 0
 }
 
 private actor ExportProvider: MediaProvider {

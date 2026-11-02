@@ -99,6 +99,15 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
             store: receiptStore ?? DurableLocalStateStoreFactory.userIndependent(),
             isConnected: { [weak self] in
                 captured.isCurrent && self?.phase == .connected && self?.connectionID == connectionID
+            },
+            resolveEpisodeIdentity: { [weak self] content in
+                guard captured.isCurrent, let self else { throw PublicMetaDB.Failure.connectionChanged }
+                _ = try self.confirmedClient(connectionID)
+                let item = try await self.resolveEpisodeIdentity?(content)
+                try Task.checkCancellation()
+                _ = try self.confirmedClient(connectionID)
+                guard captured.isCurrent else { throw PublicMetaDB.Failure.connectionChanged }
+                return item
             }
         )
     }

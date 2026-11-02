@@ -121,6 +121,7 @@ private struct PublicMetaDBHistoryExportContent: View {
                         }
                     }
                     .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("publicmetadb.export.row.\(row.baseline.itemID)")
                 }
                 if page > 0 { Button("Previous page") { page -= 1 } }
                 if (page + 1) * 50 < session.rows.count { Button("Next page") { page += 1 } }
@@ -129,6 +130,9 @@ private struct PublicMetaDBHistoryExportContent: View {
                     .accessibilityIdentifier("publicmetadb.export.apply")
             }
         }
+        #if os(iOS)
+        .buttonStyle(.borderless)
+        #endif
         .task(id: accountID) {
             reset()
             libraryID = ""

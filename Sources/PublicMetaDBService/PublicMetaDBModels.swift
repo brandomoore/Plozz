@@ -59,11 +59,17 @@ public enum PublicMetaDB {
                 guard item.episodeOrdering == .tmdb, let season = item.seasonNumber else { return nil }
                 return try? .init(tmdbID: id, mediaType: .tv, season: season)
             case .episode:
-                guard item.episodeOrdering == .tmdb, let season = item.seasonNumber, let episode = item.episodeNumber,
-                      item.episodeNumberEnd == nil || item.episodeNumberEnd == episode else { return nil }
-                return try? .init(tmdbID: id, mediaType: .tv, season: season, episode: episode)
+                guard item.episodeOrdering == .tmdb else { return nil }
+                return episodeCandidate(item)
             default: return nil
             }
+        }
+
+        static func episodeCandidate(_ item: MediaItem) -> Self? {
+            guard item.kind == .episode, let season = item.seasonNumber, let episode = item.episodeNumber,
+                  item.episodeNumberEnd == nil || item.episodeNumberEnd == episode,
+                  let id = resolvedTMDBID(item.providerIDs, namespace: .seriesTmdb) else { return nil }
+            return try? .init(tmdbID: id, mediaType: .tv, season: season, episode: episode)
         }
 
         static func resolvedTMDBID(_ values: [String: String], namespace: ProviderIDNamespace) -> Int? {
