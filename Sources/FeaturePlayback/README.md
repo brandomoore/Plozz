@@ -693,8 +693,11 @@ iPad follows system rotation and offers no app orientation control, preserving
 multitasking. iPadOS refuses forced Portrait/Landscape changes in multitasking
 mode, even when a window fills the display.
 Rotation waits for native presentation transitions, including dismissal of the
-pre-play sheet, rather than racing the selection continuation. Transient geometry
-rejections are logged and retried at most three times within a bounded reconciliation
+pre-play sheet, rather than racing the selection continuation. A pending
+presentation permits only the requested playback orientations plus the current
+interface orientation needed to finish an existing sheet. Opening a native audio
+or options menu must not unlock portrait during landscape playback. Transient
+geometry rejections are logged and retried at most three times within a bounded reconciliation
 window; they never replace the saved preference with Auto or show a window-management
 toast. Dismissal, ownership changes, and newer requests cancel stale reconciliation.
 Returning to the foreground rechecks the active player's orientation.
