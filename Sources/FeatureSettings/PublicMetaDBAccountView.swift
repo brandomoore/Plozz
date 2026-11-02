@@ -280,6 +280,10 @@ private struct PublicMetaDBPicksView: View {
                 .foregroundStyle(.secondary)
             if loading { ProgressView() }
             if let failure { PublicMetaDBFailureMessage(error: failure) }
+            if !loading, failure == nil, let loadedConnection,
+               loadedConnection == service.connectionID, picks.isEmpty {
+                Text("No records")
+            }
             ForEach(loadedConnection == service.connectionID ? picks : []) { pick in
                 NavigationLink {
                     PublicMetaDBPickItemsView(service: service, pick: pick)

@@ -357,7 +357,14 @@ with its loading state during a long press. Same-query refreshes now retain the
 loaded grid. After rebuilding the production simulator app, three cold movie
 menu round trips, two show round trips, and an exact episode-history-to-parent
 route passed. Independent dedicated-server and tracker reads found no history
-changes from browsing. This evidence does not yet cover unowned titles or Picks.
+changes from browsing.
+
+A separately created private list verified show-entry navigation across
+relaunches, matching all six season IDs and the synopsis read independently from
+the real server. The temporary list was deleted afterward; original metadata,
+history and the control list remained unchanged. A real account with no Picks
+now shows an explicit empty result after loading and refresh. Nonempty Picks,
+recommendation pagination and unowned-title routing remain unverified.
 
 ## Optional community ratings
 

@@ -638,6 +638,53 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testCatalogShowPreservesServerMetadata() throws {
+        try openSelectedTitleControls()
+        try openCatalogLibraryDetail()
+        try assertCatalogLibraryShowMetadata()
+    }
+
+    func testCatalogListEntryOpensLibraryShow() throws {
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        try openAcceptanceList()
+        try tapVisible(app.buttons["Browse items"])
+        let row = app.buttons.containing(.staticText, identifier: title)
+        try require(row.firstMatch.waitForExistence(timeout: 30) && row.count == 1,
+                    "Expected the independently verified real list entry")
+        try tapVisible(row.element)
+        try tapVisible(app.buttons["Title controls"])
+        try require(app.staticTexts["TV show"].exists, "Expected the list entry's show identity")
+        try openCatalogLibraryDetail()
+        try assertCatalogLibraryShowMetadata()
+    }
+
+    private func assertCatalogLibraryShowMetadata() throws {
+        let ids = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_CATALOG_SEASON_IDS"])
+            .split(separator: ",").map { "season-\($0)" }
+        let synopsis = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_CATALOG_SYNOPSIS"])
+        try require(ids.count == 6 && !synopsis.isEmpty, "Expected independently read real server metadata")
+        let seasons = app.scrollViews["series-season-tabs"]
+        try require(seasons.waitForExistence(timeout: 20), "Expected library seasons")
+        XCTAssertEqual(seasons.buttons.allElementsBoundByIndex.map(\.identifier), ids)
+        XCTAssertTrue(app.buttons["More actions for Windsor"].exists)
+        try tapVisible(app.staticTexts.matching(NSPredicate(format: "label == %@", synopsis)).firstMatch,
+                       tapping: false)
+        recordState()
+    }
+
+    func testBrowseEmptyPicks() throws {
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["Picks"])
+        try require(app.staticTexts["No records"].waitForExistence(timeout: 30),
+                    "Expected an explicit empty result for the independently verified empty recipe collection")
+        XCTAssertTrue(app.staticTexts[
+            "Picks are created on PublicMetaDB. Recommendations can remain cached there for up to 24 hours."
+        ].exists)
+        try tapVisible(app.buttons["Refresh"])
+        try require(app.staticTexts["No records"].waitForExistence(timeout: 30), "Expected empty result after refresh")
+        recordState()
+    }
+
     private func openCatalogLibraryDetail() throws {
         let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
         try tapVisible(app.buttons["publicmetadb.open-title"])
