@@ -413,6 +413,7 @@ final class PlozziOSAppModel {
     let malService: MALService
     let crashReporting: CrashReportingSettingsModel
     let crashReportingController: CrashReportingController
+    let appLanguage: AppLanguageSettingsModel
     private(set) var requiresLaunchProfileSelection: Bool
     private(set) var settings: PlozziOSSettingsModel
     @ObservationIgnored
@@ -615,8 +616,10 @@ final class PlozziOSAppModel {
     init(
         appAdmissionStore: any AppAdmissionStoring = AppAdmissionStore(),
         accountStore suppliedAccountStore: AccountStore? = nil,
-        profileStore: (any ProfilePersisting)? = nil
+        profileStore: (any ProfilePersisting)? = nil,
+        appLanguage: AppLanguageSettingsModel? = nil
     ) {
+        self.appLanguage = appLanguage ?? AppLanguageSettingsModel()
         let appAdmission = AppAdmissionModel(store: appAdmissionStore)
         self.appAdmission = appAdmission
         let authenticatedHTTPResolver = ManagedAuthenticatedHTTPResolver()

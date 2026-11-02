@@ -239,6 +239,7 @@ private enum PlozziOSSettingsDestination: Hashable {
 private struct PlozziOSProfileSettingsSection<Row: View, Management: View>: View {
     let profileName: String
     let showsParentalControls: Bool
+    let appLanguage: AppLanguageSettingsModel
     @ViewBuilder let row: (ProfileSettingsCategory) -> Row
     @ViewBuilder let management: () -> Management
 
@@ -246,7 +247,7 @@ private struct PlozziOSProfileSettingsSection<Row: View, Management: View>: View
         SettingsSectionGroup(verbatim: profileName) {
             ForEach(ProfileSettingsCategory.allCases) { category in
                 if category == .language {
-                    PlozziOSSettingsLanguagePicker()
+                    PlozziOSSettingsLanguagePicker(appLanguage: appLanguage)
                         .settingsSearchAnchor("language")
                 } else if category == .libraries {
                     if !showsParentalControls { row(category) }
@@ -292,12 +293,11 @@ struct PlozziOSSettingsCategoryLabel: View {
     }
 }
 
-private struct PlozziOSSettingsLanguagePicker: View {
-    @Environment(AppLanguageSettingsModel.self) private var appLanguage
+struct PlozziOSSettingsLanguagePicker: View {
+    @Bindable var appLanguage: AppLanguageSettingsModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        @Bindable var appLanguage = appLanguage
         Menu {
             Picker("Language", selection: $appLanguage.language) {
                 ForEach(AppLanguage.available()) { language in
@@ -404,7 +404,10 @@ private struct PlozziOSProfileSettingsPage: View {
         case .trackers:
             PlozziOSTrackerSettingsView(appModel: appModel)
         case .language:
-            List { PlozziOSSettingsLanguagePicker().settingsSearchAnchor("language") }
+            List {
+                PlozziOSSettingsLanguagePicker(appLanguage: appModel.appLanguage)
+                    .settingsSearchAnchor("language")
+            }
                 .settingsPageSurface()
                 .navigationTitle("Language")
         }
@@ -512,7 +515,8 @@ private struct PlozziOSSettingsSplitView: View {
 
                     PlozziOSProfileSettingsSection(
                         profileName: appModel.profiles.activeProfile.name,
-                        showsParentalControls: showsParentalControlsSection
+                        showsParentalControls: showsParentalControlsSection,
+                        appLanguage: appModel.appLanguage
                     ) { category in
                         Button {
                             selection = .profile(category)
@@ -1064,7 +1068,8 @@ private struct PlozziOSSettingsCompactMenu: View {
 
                 PlozziOSProfileSettingsSection(
                     profileName: appModel.profiles.activeProfile.name,
-                    showsParentalControls: showsParentalControlsSection
+                    showsParentalControls: showsParentalControlsSection,
+                    appLanguage: appModel.appLanguage
                 ) { category in
                     NavigationLink {
                         PlozziOSProfileSettingsPage(
