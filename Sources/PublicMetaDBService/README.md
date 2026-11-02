@@ -600,6 +600,23 @@ These are real API race injections paired with normal native UI, not two-device
 or interrupted-network acceptance. Remaining scope/lifecycle boundaries and
 provider/platform parity still need their own live evidence.
 
+An independently identified real episode then verified unknown-date export:
+actual Emby completion followed by an unfinished rewatch produced one undated
+tracker play. Native cancellation, exact-play browsing and relaunch preserved
+the source, independent Jellyfin user and unrelated records. Explicit native
+import subsequently marked that Jellyfin episode watched with one server play,
+without copying Emby's play count or inventing a historical tracker date.
+The server's import-time recency is not the original unknown watch date.
+
+These checks also exposed intermittent Jellyfin parent-metadata request timeouts
+during comparisons. Bounded live captures aligned to the native Compare action
+verified a reduction from 60 parent reads to one on each server for the same
+series. Comparisons reuse each fresh parent within that comparison and account,
+while dispatch and readback still fetch fresh evidence. Five consecutive
+relaunch comparisons then passed, each with independent unchanged-state checks.
+This does not establish that every network timeout is resolved; original failed
+evidence is retained.
+
 The unbound `PublicMetaDBLiveHistoryTests` driver uses normally configured
 production-app UI, not seeded profiles or substituted media. Its individual
 scenarios require explicit `PLOZZ_TRACKER_HISTORY_LIVE=1`, the owned
@@ -616,9 +633,13 @@ Import scenarios require an already connected dedicated destination, its exact
 account and item identifiers, and test username through `PLOZZ_TRACKER_IMPORT_*`.
 Never pass a real credential to XCTest `typeText`: it logs a prefix even for
 secure fields. Keep credentials out of runner arguments and environment. Native switch
-interaction targets the switch control rather than its containing row; native
-confirmation may cancel through the system popover dismissal region. The
-independent reader uses standard `Authorization: MediaBrowser Token="..."` for
+interaction targets the switch control rather than its containing row.
+Confirmation cancellation prefers the native Cancel action, otherwise using
+a point outside the actual popover. Never tap the center of its full-window
+dismissal region: that point can overlap the destructive confirmation button.
+Large export inventories may use an explicitly bounded 30–600-second preview
+deadline instead of the default 120 seconds; a deadline failure is not a pass.
+The independent reader uses standard `Authorization: MediaBrowser Token="..."` for
 Jellyfin and Emby; servers can reject legacy `X-Emby-Token` headers.
 Emby does not support Jellyfin's `/Users/Me` endpoint. Its independent preflight
 instead requires at least one credential-visible session for the configured

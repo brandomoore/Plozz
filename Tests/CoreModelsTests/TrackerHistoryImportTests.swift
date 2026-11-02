@@ -428,6 +428,111 @@ final class TrackerHistoryImportTests: XCTestCase {
     }
 
     @MainActor
+    private func episodeSession(
+        accountIDs: [String] = ["account"],
+        isAuthorized: @escaping @MainActor @Sendable () -> Bool = { true }
+    ) throws -> (TrackerHistoryImportSession, [String: ImportProvider]) {
+        let observations = try (1...2).map { number in
+            let parent = MediaIdentity.external(source: "series-tmdb:s1e\(number)", value: "100")
+            return try TrackerHistoryObservation(
+                recordID: "episode-\(number)", kind: .episode, identities: [parent],
+                season: 1, episode: number, episodeOrdering: .tmdb,
+                verifiedEpisodeIdentities: [parent, .external(source: "tmdb:s1e\(number)", value: "\(200 + number)")],
+                fact: .watched(at: nil)
+            )
+        }
+        let snapshot = try snapshot(observations)
+        let providers = Dictionary(uniqueKeysWithValues: accountIDs.map { accountID in
+            let episodes = (1...2).map { number in
+                MediaItem(
+                    id: "episode-\(number)", title: "Episode \(number)", kind: .episode,
+                    seasonNumber: 1, episodeNumber: number, seriesID: "series",
+                    providerIDs: ["Tmdb": "\(200 + number)"], sourceAccountID: accountID
+                )
+            }
+            let series = MediaItem(
+                id: "series", title: "Series", kind: .series,
+                episodeOrdering: .tmdb, providerIDs: ["Tmdb": "100"], sourceAccountID: accountID
+            )
+            return (accountID, ImportProvider(item: episodes[0], relatedItems: [episodes[1], series]))
+        })
+        let index = IdentityIndexSnapshot(byIdentity: [
+            .external(source: "tmdb", value: "100"): accountIDs.map {
+                .init(accountID: $0, itemID: "series", providerKind: .jellyfin, kind: .series)
+            }
+        ])
+        let provider = try XCTUnwrap(providers[accountIDs[0]])
+        let reconciler = WatchStateReconciler(store: InMemoryWatchMutationStore(), applier: ImportApplier(provider: provider))
+        let session = TrackerHistoryImportSession(
+            scope: .init(profile: .init(id: "profile", name: "Test"), accounts: accountIDs.map { account(id: $0) }),
+            destinations: [], reconciler: reconciler, readSnapshot: { snapshot }, index: { index },
+            resolveProvider: { accountID in
+                guard let provider = providers[accountID] else { throw TrackerHistoryError.scopeChanged }
+                return provider
+            },
+            isAuthorized: isAuthorized
+        )
+        return (session, providers)
+    }
+
+    @MainActor
+    func testEpisodeComparisonReadsEachParentOncePerAccountAndComparison() async throws {
+        let (session, providers) = try episodeSession(accountIDs: ["account", "another"])
+        for comparison in 1...2 {
+            await session.compare()
+            XCTAssertNil(session.error)
+            let rows = try XCTUnwrap(session.plan?.rows)
+            XCTAssertEqual(rows.count, 4)
+            XCTAssertTrue(rows.allSatisfy { $0.comparison == .ready })
+            for provider in providers.values {
+                let reads = await provider.itemReads
+                XCTAssertEqual(reads["series"], comparison)
+                XCTAssertEqual(reads["episode-1"], comparison)
+                XCTAssertEqual(reads["episode-2"], comparison)
+                let writes = await provider.writes
+                XCTAssertEqual(writes, 0)
+            }
+        }
+    }
+
+    @MainActor
+    func testEpisodeComparisonParentCannotAuthorizeAChangedParentAtDispatch() async throws {
+        let (session, providers) = try episodeSession()
+        let provider = try XCTUnwrap(providers["account"])
+        await session.compare()
+        let row = try XCTUnwrap(session.plan?.rows.first { $0.target?.itemID == "episode-1" })
+        XCTAssertEqual(row.comparison, .ready)
+        await provider.replace(item: .init(
+            id: "series", title: "Different series", kind: .series,
+            episodeOrdering: .tmdb, providerIDs: ["Tmdb": "999"], sourceAccountID: "account"
+        ))
+        await session.apply(rowIDs: [row.id], overridingConflicts: [], confirmsDestructiveChanges: false)
+        XCTAssertEqual(session.outcomes[row.id], .unconfirmed)
+        let writes = await provider.writes
+        XCTAssertEqual(writes, 0)
+        let reads = await provider.itemReads
+        XCTAssertGreaterThan(try XCTUnwrap(reads["series"]), 1)
+    }
+
+    @MainActor
+    func testEpisodeComparisonChecksPermissionAfterAParentRead() async throws {
+        let permission = ImportPermission()
+        let (session, providers) = try episodeSession(isAuthorized: { permission.allowed })
+        let provider = try XCTUnwrap(providers["account"])
+        await provider.onNextRead {
+            await provider.onNextRead { await MainActor.run { permission.allowed = false } }
+        }
+        await session.compare()
+        XCTAssertNil(session.plan)
+        XCTAssertEqual(session.error as? TrackerHistoryError, .scopeChanged)
+        let writes = await provider.writes
+        XCTAssertEqual(writes, 0)
+        let reads = await provider.itemReads
+        XCTAssertEqual(reads["series"], 1)
+        XCTAssertNil(reads["episode-2"])
+    }
+
+    @MainActor
     func testLostReplyUsesReadbackWithoutRepeatingTheWrite() async throws {
         let provider = ImportProvider(item: item(), losesWriteReply: true)
         let (session, reconciler) = try session(provider: provider)
@@ -1342,32 +1447,44 @@ private actor ImportProvider: MediaProvider, WatchStateProviding, ResumeStateWri
         userID: "viewer", userName: "Viewer", deviceID: "device", accessToken: ""
     )
     private var current: MediaItem
+    private var relatedItems: [String: MediaItem]
     private let losesWriteReply: Bool
     private let failsReadback: Bool
     private var nextRead: (@Sendable () async -> Void)?
     private(set) var writes = 0
+    private(set) var itemReads: [String: Int] = [:]
     init(
         item: MediaItem = MediaItem(id: "server-item", title: "Movie", kind: .movie),
-        losesWriteReply: Bool = false, failsReadback: Bool = false
+        losesWriteReply: Bool = false, failsReadback: Bool = false, relatedItems: [MediaItem] = []
     ) {
         current = item
+        self.relatedItems = Dictionary(uniqueKeysWithValues: relatedItems.map { ($0.id, $0) })
         self.losesWriteReply = losesWriteReply
         self.failsReadback = failsReadback
     }
-    func replace(item: MediaItem) { current = item }
+    func replace(item: MediaItem) {
+        if item.id == current.id { current = item }
+        else { relatedItems[item.id] = item }
+    }
     func onNextRead(_ action: @escaping @Sendable () async -> Void) { nextRead = action }
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func item(id: String) async throws -> MediaItem {
-        guard id == current.id else { throw AppError.notFound }
+        itemReads[id, default: 0] += 1
+        guard id == current.id || relatedItems[id] != nil else { throw AppError.notFound }
         if failsReadback && writes > 0 { throw AppError.serverUnreachable }
         let action = nextRead
         nextRead = nil
         await action?()
-        return current
+        if id == current.id { return current }
+        guard let item = relatedItems[id] else { throw AppError.notFound }
+        return item
     }
-    func children(of itemID: String) async throws -> [MediaItem] { throw AppError.notFound }
+    func children(of itemID: String) async throws -> [MediaItem] {
+        guard relatedItems[itemID]?.kind == .series else { throw AppError.notFound }
+        return ([current] + Array(relatedItems.values)).filter { $0.kind == .episode && $0.seriesID == itemID }
+    }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         throw AppError.notFound
     }

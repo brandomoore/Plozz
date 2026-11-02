@@ -22,6 +22,13 @@ An explicit reviewed import can restore continuation for its original enabled
 grant; revoked or replacement grants cannot inherit that approval. Legacy
 ledgers without proof remain readable but never authorize an inferred override.
 
+History comparisons reuse a freshly read parent series only within that one
+comparison and account/provider. Every episode's state is still read separately.
+This avoids fetching the same series once per episode; it is not a persistent
+metadata cache. A new comparison, dispatch precondition and delivery readback all
+fetch fresh parent evidence. Scope/cancellation checks and exact parent/child
+identity validation remain required, including when comparison metadata is reused.
+
 ## Reviewed tracker export
 
 `TrackerHistoryExportSession` reads one explicitly selected server-user/library

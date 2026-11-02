@@ -278,10 +278,26 @@ public final class TrackerHistoryImportSession {
             }
         }
         var result: [TrackerServerHistoryCandidate] = []
+        // Share parent metadata only inside this comparison. Dispatch and
+        // readback still load the parent freshly through freshItem.
+        var seriesItems: [WatchMutationTarget: MediaItem] = [:]
         for target in targets.sorted(by: { $0.id < $1.id }) {
             try requireCurrent(generation)
             let provider = try resolveProvider(target.accountID)
-            let item = try await freshItem(provider: provider, target: target, generation: generation)
+            let item = try await TrackerServerHistorySource.freshItem(
+                provider: provider, accountID: target.accountID, itemID: target.itemID,
+                validate: { try self.requireCurrent(generation) },
+                loadSeries: { seriesID in
+                    let parent = WatchMutationTarget(
+                        accountID: target.accountID, itemID: seriesID, providerKind: target.providerKind
+                    )
+                    if let series = seriesItems[parent] { return series }
+                    let series = try await provider.item(id: seriesID)
+                    try self.requireCurrent(generation)
+                    seriesItems[parent] = series
+                    return series
+                }
+            )
             let isPlaying = await reconciler.isLiveSession(
                 accountID: target.accountID, itemID: target.itemID, serverScope: scope
             )

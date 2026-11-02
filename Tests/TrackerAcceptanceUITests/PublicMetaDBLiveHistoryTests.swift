@@ -189,7 +189,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         )).firstMatch
         try tapVisible(app.buttons["publicmetadb.list.create"])
         try require(confirm.waitForExistence(timeout: 5), "Expected list confirmation")
-        try tapVisible(app.otherElements["PopoverDismissRegion"])
+        try dismissConfirmation()
         try require(confirm.waitForNonExistence(timeout: 5), "Expected cancellation to dismiss confirmation")
         XCTAssertTrue(app.textFields["publicmetadb.list.name"].exists)
         try tapVisible(app.buttons["publicmetadb.list.create"])
@@ -207,6 +207,22 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(app.staticTexts["No records"].waitForExistence(timeout: 30), "Expected an empty new list")
     }
 
+    func testBrowseUnknownHistoryPlay() throws {
+        let id = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_RECORD_ID"])
+        try require(!id.isEmpty, "Expected the independently read exact play ID")
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["publicmetadb.history"])
+        let record = app.buttons["publicmetadb.history.record.\(id)"]
+        try tapVisible(record, tapping: false)
+        XCTAssertTrue(record.label.contains("Watch date unknown"))
+        record.tap()
+        try require(app.buttons["publicmetadb.history.action"].waitForExistence(timeout: 30),
+                    "Expected the exact watch record, not a title-level history action")
+        XCTAssertEqual(app.buttons["publicmetadb.history.action"].label, "Delete this play")
+        XCTAssertTrue(app.staticTexts["Watch date unknown"].exists)
+        XCTAssertTrue(app.buttons["Change watch date"].exists)
+    }
+
     func testPrepareExactListDeletion() throws {
         try openAcceptanceList()
         try tapVisible(app.buttons["publicmetadb.list.delete"])
@@ -215,7 +231,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testCancelExactListDeletion() throws {
         try require(listDeletionConfirmation.exists, "Expected the pending exact-list confirmation")
-        try tapVisible(app.otherElements["PopoverDismissRegion"])
+        try dismissConfirmation()
         try require(listDeletionConfirmation.waitForNonExistence(timeout: 5), "Expected cancellation")
         XCTAssertTrue(app.buttons["publicmetadb.list.delete"].exists)
     }
@@ -356,7 +372,9 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let user = try XCTUnwrap(environment["PLOZZ_TRACKER_IMPORT_USER"])
         let library = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_LIBRARY"])
         let mode = try XCTUnwrap(environment["PLOZZ_TRACKER_EXPORT_MODE"])
+        let timeout = try XCTUnwrap(Double(environment["PLOZZ_TRACKER_EXPORT_PREVIEW_TIMEOUT_SECONDS"] ?? "120"))
         try require(["Watched titles", "Resume points"].contains(mode), "Expected an explicit export category")
+        try require(timeout.isFinite && (30...600).contains(timeout), "Expected a bounded full-inventory deadline")
         try openPublicMetaDBAccount()
         try tapVisible(app.buttons["publicmetadb.export-history"])
         try tapVisible(app.buttons["publicmetadb.export.account"])
@@ -369,7 +387,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(app.buttons["publicmetadb.export.mode"])
         try tapVisible(app.collectionViews.buttons[mode])
         try tapVisible(app.buttons["publicmetadb.export.preview"])
-        try require(app.buttons["publicmetadb.export.apply"].waitForExistence(timeout: 120),
+        try require(app.buttons["publicmetadb.export.apply"].waitForExistence(timeout: timeout),
                     "Expected a complete real server-history comparison")
         XCTAssertFalse(app.buttons["publicmetadb.export.apply"].isEnabled)
     }
@@ -387,7 +405,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testCancelSelectedHistoryExport() throws {
         try selectHistoryExport()
-        try tapVisible(app.otherElements["PopoverDismissRegion"])
+        try dismissConfirmation()
         try require(app.buttons["Export selected titles"].waitForNonExistence(timeout: 5),
                     "Expected cancellation of the exact export")
         XCTAssertEqual(try exportSelection().value as? String, "1")
@@ -447,13 +465,18 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testCancelHistoryImportAndReopen() throws {
         try openHistoryComparison()
         try selectHistoryImport()
+        try testCancelPreparedHistoryImport()
+    }
+
+    func testCancelPreparedHistoryImport() throws {
         XCTAssertTrue(app.buttons["Apply selected changes"].waitForExistence(timeout: 5))
-        if app.buttons["Cancel"].firstMatch.exists {
-            try tapVisible(app.buttons["Cancel"].firstMatch)
-        } else {
-            try tapVisible(app.otherElements["PopoverDismissRegion"])
-        }
+        try dismissConfirmation()
         XCTAssertTrue(app.buttons["Apply selected changes"].waitForNonExistence(timeout: 5))
+        for _ in 0..<8 {
+            if importSelection.exists && importSelection.isHittable { break }
+            app.swipeDown()
+        }
+        try require(importSelection.exists && importSelection.isHittable, "Expected the retained selected import")
         XCTAssertEqual(importSelection.value as? String, "1")
         try openHistoryComparison()
         try tapVisible(importSelection, tapping: false)
@@ -465,6 +488,11 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testConfirmSelectedHistoryImport() throws {
         try openHistoryComparison()
         try confirmSelectedHistoryImport()
+    }
+
+    func testPrepareSelectedHistoryImport() throws {
+        try openHistoryComparison()
+        try selectHistoryImport()
     }
 
     func testPrepareStaleHistoryImport() throws {
@@ -876,6 +904,27 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let settings = app.buttons["Settings for \(user)"]
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
         settings.tap()
+    }
+
+    private func dismissConfirmation() throws {
+        let cancel = app.buttons["Cancel"].firstMatch
+        if cancel.waitForExistence(timeout: 1), cancel.isHittable {
+            cancel.tap()
+            return
+        }
+        let region = app.otherElements["PopoverDismissRegion"]
+        let popover = app.popovers.firstMatch
+        try require(region.exists && popover.exists, "Expected the native popup dismissal surface")
+        let bounds = region.frame
+        let popup = popover.frame.insetBy(dx: -8, dy: -8)
+        // The full-window dismissal element's center can overlap the destructive action.
+        let offsets = [CGVector(dx: 0.1, dy: 0.5), CGVector(dx: 0.9, dy: 0.5),
+                       CGVector(dx: 0.5, dy: 0.9), CGVector(dx: 0.5, dy: 0.1)]
+        let offset = try XCTUnwrap(offsets.first {
+            let point = CGPoint(x: bounds.minX + bounds.width * $0.dx, y: bounds.minY + bounds.height * $0.dy)
+            return bounds.contains(point) && !popup.contains(point)
+        })
+        region.coordinate(withNormalizedOffset: offset).tap()
     }
 
     private func tapVisible(_ target: XCUIElement, tapping: Bool = true) throws {

@@ -104,7 +104,8 @@ public final class TrackerServerHistorySource {
 
     static func freshItem(
         provider: any MediaProvider, accountID: String, itemID: String,
-        validate: @MainActor () throws -> Void
+        validate: @MainActor () throws -> Void,
+        loadSeries: (@MainActor (String) async throws -> MediaItem)? = nil
     ) async throws -> MediaItem {
         try validate()
         var item = try await provider.item(id: itemID)
@@ -113,7 +114,9 @@ public final class TrackerServerHistorySource {
             throw AppError.invalidResponse
         }
         if item.kind == .episode, let seriesID = item.seriesID {
-            let series = try await provider.item(id: seriesID)
+            let series: MediaItem
+            if let loadSeries { series = try await loadSeries(seriesID) }
+            else { series = try await provider.item(id: seriesID) }
             try validate()
             guard series.id == seriesID, series.kind == .series,
                   series.sourceAccountID == nil || series.sourceAccountID == accountID else {
