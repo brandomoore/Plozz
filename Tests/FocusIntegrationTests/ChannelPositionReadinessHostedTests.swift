@@ -7,14 +7,39 @@ import XCTest
 
 @MainActor
 final class ChannelPositionReadinessHostedTests: XCTestCase {
-    func testRealDecoderPositionSettlesAcrossPreviewDisplayReloads() async throws {
+    func testSDRPreviewFullscreenRoundTripsKeepTheDecoderPositionAndPauseState() async throws {
+        try await verifySDRPresentationRoundTrips(isLive: false)
+    }
+
+    func testNativeHLSSDRPreviewFullscreenRoundTripsKeepThePlayingItemAndPauseState() async throws {
+        try await verifySDRPresentationRoundTrips(isLive: true)
+    }
+
+    private func verifySDRPresentationRoundTrips(isLive: Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(10)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
               ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(25))
         }
-        let url = try await makeVideo()
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url: URL
+        var server: SubtitleFixtureServer?
+        var temporaryVideo: URL?
+        defer {
+            server?.stop()
+            if let temporaryVideo { try? FileManager.default.removeItem(at: temporaryVideo) }
+        }
+        if isLive {
+            let directory = try XCTUnwrap(Bundle(for: Self.self).url(
+                forResource: "Fixtures", withExtension: nil
+            )).appendingPathComponent("active-picture-hls")
+            let fixtureServer = try SubtitleFixtureServer(directory: directory)
+            server = fixtureServer
+            let port = try await fixtureServer.start()
+            url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/active-picture.m3u8"))
+        } else {
+            url = try await makeVideo()
+            temporaryVideo = url
+        }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -25,8 +50,10 @@ final class ChannelPositionReadinessHostedTests: XCTestCase {
         let engine = try PlozzigenVideoEngine()
         var failures: [AppError] = []
         var endings = 0
+        var sourcePublications = 0
         engine.onFailure = { failures.append($0) }
         engine.onEnded = { endings += 1 }
+        engine.onProbedSourceFactsChanged = { _ in sourcePublications += 1 }
         let video = engine.makeVideoOutputView()
         video.frame = window.bounds
         controller.view.addSubview(video)
@@ -40,26 +67,59 @@ final class ChannelPositionReadinessHostedTests: XCTestCase {
         }
         engine.configureLiveOutput(.init(suppressesDisplayMatching: true))
         XCTAssertFalse(engine.isPlaybackPositionReady)
-        await engine.load(
-            request: PlaybackRequest(
-                item: MediaItem(id: "readiness", title: "Readiness fixture", kind: .movie, runtime: 120),
-                streamURL: url
-            ),
-            startPosition: 20
-        )
+        if isLive {
+            await engine.loadLive(url: url, httpHeaders: [:])
+        } else {
+            await engine.load(
+                request: PlaybackRequest(
+                    item: MediaItem(id: "readiness", title: "Readiness fixture", kind: .movie, runtime: 120),
+                    streamURL: url
+                ),
+                startPosition: 20
+            )
+        }
         try await waitForPosition(engine)
         XCTAssertTrue(engine.liveSnapshot.firstFrameReady)
-        XCTAssertGreaterThanOrEqual(engine.currentTime, 19)
+        if !isLive { XCTAssertGreaterThanOrEqual(engine.currentTime, 19) }
+        let probeDeadline = ContinuousClock.now + .seconds(5)
+        while engine.probedSourceFacts == nil, ContinuousClock.now < probeDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(engine.probedSourceFacts?.range, .sdr)
+        let publications = sourcePublications
+        XCTAssertGreaterThan(publications, 0)
+        let player = engine.nowPlayingPlayer
+        let item = player?.currentItem
+        if isLive {
+            XCTAssertNotNil(player, "The HLS fixture must exercise the native AVPlayer route.")
+            XCTAssertNotNil(item)
+        }
         for suppressed in [false, true] {
             let position = engine.currentTime
             engine.configureLiveOutput(.init(suppressesDisplayMatching: suppressed))
-            XCTAssertFalse(engine.isPlaybackPositionReady, "A retained reload must not expose a provisional clock.")
-            try await waitForPosition(engine)
+            XCTAssertTrue(engine.isPlaybackPositionReady, "An SDR transition must not rebuild the decoder.")
+            try await Task.sleep(for: .milliseconds(500))
+            XCTAssertTrue(engine.isPlaybackPositionReady)
             XCTAssertGreaterThanOrEqual(engine.currentTime, position - 1)
             XCTAssertTrue(engine.liveSnapshot.firstFrameReady)
+            XCTAssertFalse(engine.isPaused)
         }
+        engine.pause()
+        let position = engine.currentTime
+        let selectedAudio = engine.currentAudioTrackID
+        for suppressed in [false, true, false, true] {
+            engine.configureLiveOutput(.init(suppressesDisplayMatching: suppressed))
+            try await Task.sleep(for: .milliseconds(500))
+            XCTAssertTrue(engine.isPlaybackPositionReady)
+            XCTAssertTrue(engine.isPaused)
+            XCTAssertEqual(engine.currentTime, position, accuracy: 0.1)
+            XCTAssertEqual(engine.currentAudioTrackID, selectedAudio)
+            XCTAssertTrue(engine.nowPlayingPlayer === player)
+            XCTAssertTrue(engine.nowPlayingPlayer?.currentItem === item)
+        }
+        XCTAssertEqual(sourcePublications, publications, "An SDR transition must retain its probed source.")
         XCTAssertTrue(failures.isEmpty, "\(failures)")
-        XCTAssertEqual(endings, 0, "A display-policy rebuild is not the end of a movie.")
+        XCTAssertEqual(endings, 0, "A presentation transition is not the end of playback.")
     }
 
     private func waitForPosition(_ engine: PlozzigenVideoEngine) async throws {

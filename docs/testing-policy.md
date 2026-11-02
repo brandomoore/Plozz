@@ -12,6 +12,14 @@ workloads once, keeps five measured repetitions, checks work-count invariants,
 and compares source-identified baseline/candidate evidence without hardware
 deployment or automatic retries. Normal suites skip those opt-in probes.
 
+Render-dependent playback transitions belong in the app-hosted suite. Use a
+mounted video surface and a real HLS fixture for native-player continuity; a
+local MP4 may select the software decoder and cannot prove AVPlayer item reuse.
+Keep decoded-frame sampling independent of concurrent guide/network requests so
+their retry waits are not counted as video stalls. Hosted focus comparisons must
+establish the starting focus and observe presented geometry, not just a layout
+target published before an animation finishes.
+
 ## The two speed wins
 
 ### 1. Build once, run many (`tools/run-tests.sh`)

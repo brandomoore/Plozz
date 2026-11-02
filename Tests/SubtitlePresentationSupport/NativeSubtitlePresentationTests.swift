@@ -1189,8 +1189,10 @@ final class SubtitleFixtureServer: @unchecked Sendable {
     init(directory: URL) throws {
         bytesPerSecond = nil
         files = try Dictionary(uniqueKeysWithValues: FileManager.default.contentsOfDirectory(
-            at: directory, includingPropertiesForKeys: nil
-        ).map { ($0.lastPathComponent, try Data(contentsOf: $0)) })
+            at: directory, includingPropertiesForKeys: [.isRegularFileKey]
+        ).filter {
+            try $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
+        }.map { ($0.lastPathComponent, try Data(contentsOf: $0)) })
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
