@@ -64,6 +64,7 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
         catalogNavigation != nil && catalogNavigation?.id != deliveredCatalogNavigationID
     }
     @ObservationIgnored public var resolveCatalogItem: (@MainActor (PublicMetaDB.Content) async throws -> MediaItem)?
+    @ObservationIgnored public var resolveEpisodeIdentity: (@MainActor @Sendable (PublicMetaDB.Content) async throws -> MediaItem?)?
 
     public struct CatalogNavigation: Identifiable {
         public let id = UUID()
@@ -338,7 +339,18 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
             key: saved.key, http: http, isCurrent: { captured.isCurrent && playback.isCurrent }
         )
         playbackReporter = try PublicMetaDBPlaybackReporter(
-            client: client, store: receiptStore ?? DurableLocalStateStoreFactory.userIndependent()
+            client: client, store: receiptStore ?? DurableLocalStateStoreFactory.userIndependent(),
+            resolveEpisodeIdentity: { [weak self] content in
+                guard captured.isCurrent, playback.isCurrent, let self else {
+                    throw TrackerPlaybackDeliveryError.connectionChanged
+                }
+                let item = try await self.resolveEpisodeIdentity?(content)
+                try Task.checkCancellation()
+                guard captured.isCurrent, playback.isCurrent else {
+                    throw TrackerPlaybackDeliveryError.connectionChanged
+                }
+                return item
+            }
         )
         playbackConsent = consent
     }

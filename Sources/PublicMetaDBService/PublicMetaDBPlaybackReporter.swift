@@ -6,10 +6,15 @@ actor PublicMetaDBPlaybackReporter {
     private let client: PublicMetaDBClient
     private let store: DurableLocalStateStore
     private let operations = ConcurrencyLimiter(limit: 1)
+    private let resolveEpisodeIdentity: PublicMetaDBEpisodeIdentity.Resolving?
 
-    init(client: PublicMetaDBClient, store: DurableLocalStateStore) {
+    init(
+        client: PublicMetaDBClient, store: DurableLocalStateStore,
+        resolveEpisodeIdentity: PublicMetaDBEpisodeIdentity.Resolving? = nil
+    ) {
         self.client = client
         self.store = store
+        self.resolveEpisodeIdentity = resolveEpisodeIdentity
     }
 
     private struct ObservedResume: Codable, Equatable {
@@ -34,6 +39,7 @@ actor PublicMetaDBPlaybackReporter {
         var watchAttemptedAt: Date?
         var baselineWatchIDs: Set<String>?
         var confirmedWatchID: String?
+        var episodeIdentity: PublicMetaDBEpisodeIdentity?
     }
 
     func report(_ delivery: TrackerPlaybackDelivery) async throws {
@@ -60,7 +66,7 @@ actor PublicMetaDBPlaybackReporter {
 
     private func deliver(_ delivery: TrackerPlaybackDelivery) async throws {
         try delivery.sample.validate()
-        let content = try Self.content(delivery.sample)
+        let content = try Self.candidateContent(delivery.sample)
         let key = try DurableLocalStateKey(
             collection: .trackerDeliveryReceipt,
             scope: .source(profileID: delivery.serverScope.profileID, sourceID: delivery.connectionID),
@@ -68,6 +74,12 @@ actor PublicMetaDBPlaybackReporter {
         )
         var receipt = try store.load(Receipt.self, for: key) ?? Receipt(content: content)
         guard receipt.content == content else { throw TrackerPlaybackDeliveryError.unsupportedIdentity }
+        if delivery.sample.kind == .episode, delivery.sample.ordering != .tmdb,
+           receipt.episodeIdentity == nil, let resolveEpisodeIdentity,
+           let item = try await resolveEpisodeIdentity(content) {
+            receipt.episodeIdentity = try PublicMetaDBEpisodeIdentity(content: content, item: item)
+        }
+        _ = try Self.content(delivery.sample, confirmedEpisode: receipt.episodeIdentity)
         try await reportResume(delivery.sample, receipt: &receipt, key: key)
         if let completedAt = delivery.completedAt {
             try await reportWatch(
@@ -77,13 +89,31 @@ actor PublicMetaDBPlaybackReporter {
         }
     }
 
-    static func content(_ sample: TrackerPlaybackSample) throws -> PublicMetaDB.Content {
+    static func content(
+        _ sample: TrackerPlaybackSample, confirmedEpisode: PublicMetaDBEpisodeIdentity? = nil
+    ) throws -> PublicMetaDB.Content {
+        let content = try candidateContent(sample)
+        if sample.kind == .episode, sample.ordering != .tmdb {
+            let item = MediaItem(
+                id: sample.id.uuidString, title: "", kind: sample.kind,
+                seasonNumber: sample.season, episodeNumber: sample.episode,
+                episodeNumberEnd: sample.episodeEnd, episodeOrdering: sample.ordering,
+                providerIDs: sample.providerIDs
+            )
+            guard confirmedEpisode?.content == content, confirmedEpisode?.matches(item) == true else {
+                throw TrackerPlaybackDeliveryError.unsupportedIdentity
+            }
+        }
+        return content
+    }
+
+    private static func candidateContent(_ sample: TrackerPlaybackSample) throws -> PublicMetaDB.Content {
         let namespace: ProviderIDNamespace = sample.kind == .movie ? .tmdb : .seriesTmdb
         guard let id = PublicMetaDB.Content.resolvedTMDBID(sample.providerIDs, namespace: namespace) else {
             throw TrackerPlaybackDeliveryError.unsupportedIdentity
         }
         if sample.kind == .movie { return try .init(tmdbID: id, mediaType: .movie) }
-        guard sample.kind == .episode, sample.ordering == .tmdb,
+        guard sample.kind == .episode,
               sample.episodeEnd == nil || sample.episodeEnd == sample.episode,
               let season = sample.season, let episode = sample.episode else {
             throw TrackerPlaybackDeliveryError.unsupportedIdentity

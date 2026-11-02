@@ -976,6 +976,20 @@ final class PlozziOSAppModel {
                 source: self.makeTrackerHistoryExportSource(), store: store
             )
         }
+        self.publicMetaDBService.resolveEpisodeIdentity = { [weak self] content in
+            guard let self else { throw CancellationError() }
+            let scope = self.accountsProviders.liveTVAuthorizationID
+            let metadata = self.metadataProviderSettingsModel.settings
+            return try await PublicMetaDBCatalogResolver.episodeIdentity(
+                content, metadataSettings: metadata,
+                isCurrent: { [weak self] in
+                    guard let self else { return false }
+                    return self.isActiveProfileAuthorized && !self.profiles.activeProfile.isKids
+                        && self.accountsProviders.liveTVAuthorizationID == scope
+                        && self.metadataProviderSettingsModel.settings == metadata
+                }
+            )
+        }
         self.publicMetaDBService.resolveCatalogItem = { [weak self] content in
             guard let self else { throw CancellationError() }
             let scope = self.accountsProviders.liveTVAuthorizationID

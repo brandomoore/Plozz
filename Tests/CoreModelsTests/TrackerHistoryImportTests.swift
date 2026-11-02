@@ -287,9 +287,45 @@ final class TrackerHistoryImportTests: XCTestCase {
             XCTAssertNil(plan.rows.first?.change)
             XCTAssertThrowsError(try plan.approve(rowIDs: Set(plan.rows.map(\.id))))
         }
+
         for percent in [-1.0, 101, .infinity, .nan] {
             XCTAssertThrowsError(try observation(fact: .resumePercentage(percent: percent, updatedAt: nil)))
         }
+    }
+
+    @MainActor
+    func testVerifiedEpisodeMatchingDoesNotTurnOldTrackerEvidenceIntoNewActivity() throws {
+        let parent = MediaIdentity.external(source: "series-tmdb:s1e2", value: "100")
+        let ids = [parent, .external(source: "tmdb:s1e2", value: "200")]
+        let original = try TrackerHistoryObservation(
+            recordID: "episode", kind: .episode, identities: [parent],
+            season: 1, episode: 2, episodeOrdering: .tmdb, fact: .watched(at: nil)
+        )
+        let verified = try TrackerHistoryObservation(
+            recordID: original.recordID, kind: original.kind, identities: original.identities,
+            season: 1, episode: 2, episodeOrdering: .tmdb, verifiedEpisodeIdentities: ids,
+            fact: original.fact
+        )
+        var episode = MediaItem(
+            id: "episode", title: "Episode", kind: .episode, seasonNumber: 1, episodeNumber: 2,
+            providerIDs: ["Tmdb": "200", "SeriesTmdb": "100"]
+        )
+        XCTAssertFalse(original.matches(episode))
+        XCTAssertTrue(verified.matches(episode))
+        XCTAssertEqual(
+            try TrackerHistorySyncController.fingerprint(original),
+            try TrackerHistorySyncController.fingerprint(verified)
+        )
+        XCTAssertNotEqual(original, verified, "A reviewed preview must notice changed matching evidence")
+        XCTAssertEqual(try plan(observations: [verified], items: [episode]).rows.first?.comparison, .ready)
+        episode.providerIDs["Tmdb"] = "201"
+        episode.episodeOrdering = .tmdb
+        XCTAssertFalse(verified.matches(episode), "Known order cannot override conflicting verified identity")
+        XCTAssertThrowsError(try TrackerHistoryObservation(
+            recordID: original.recordID, kind: original.kind, identities: original.identities,
+            season: 1, episode: 2, verifiedEpisodeIdentities: [.external(source: "tmdb:s1e2", value: "200")],
+            fact: original.fact
+        ))
     }
 
     func testApprovedMutationsHaveExactScopeNoExpansionAndNoTrackerMirrors() throws {
@@ -560,11 +596,11 @@ final class TrackerHistoryImportTests: XCTestCase {
         permission: ImportPermission? = nil, connection: String = "connection",
         serverScope: WatchMutationServerScope? = nil, reconciler existingReconciler: WatchStateReconciler? = nil,
         supportedCategories: Set<TrackerHistorySyncCategory> = [.watched, .resume],
-        allowsForegroundChecks: Bool = true
+        allowsForegroundChecks: Bool = true, indexSnapshot: IdentityIndexSnapshot? = nil
     ) -> TrackerHistorySyncController {
         let scope = serverScope ?? self.scope()
         let permission = permission ?? ImportPermission()
-        let index = IdentityIndexSnapshot(byIdentity: [
+        let index = indexSnapshot ?? IdentityIndexSnapshot(byIdentity: [
             .external(source: "tmdb", value: "550"): [
                 .init(accountID: "account", itemID: "server-item", providerKind: .jellyfin, kind: .movie)
             ]
@@ -1241,6 +1277,48 @@ final class TrackerHistoryImportTests: XCTestCase {
             try TrackerHistorySyncController.fingerprint(first),
             try TrackerHistorySyncController.fingerprint(renamed)
         )
+    }
+
+    @MainActor
+    func testAddingVerifiedEpisodeEvidenceDoesNotBackfillButNewWatchStillDelivers() async throws {
+        let parent = MediaIdentity.external(source: "series-tmdb:s1e2", value: "100")
+        let original = try TrackerHistoryObservation(
+            recordID: "episode", kind: .episode, identities: [parent],
+            season: 1, episode: 2, episodeOrdering: .tmdb, fact: .watched(at: nil)
+        )
+        func enriched(_ fact: TrackerHistoryObservation.Fact) throws -> TrackerHistoryObservation {
+            try .init(
+                recordID: original.recordID, kind: original.kind, identities: original.identities,
+                season: 1, episode: 2, episodeOrdering: .tmdb,
+                verifiedEpisodeIdentities: [parent, .external(source: "tmdb:s1e2", value: "200")],
+                fact: fact
+            )
+        }
+        let episode = MediaItem(
+            id: "server-item", title: "Episode", kind: .episode, seasonNumber: 1, episodeNumber: 2,
+            providerIDs: ["Tmdb": "200", "SeriesTmdb": "100"], sourceAccountID: "account"
+        )
+        let provider = ImportProvider(item: episode)
+        let evidence = ImportEvidence(try snapshot([original]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let index = IdentityIndexSnapshot(byIdentity: [
+            parent: [.init(accountID: "account", itemID: episode.id, providerKind: .jellyfin, kind: .episode)]
+        ])
+        let sync = syncController(provider: provider, evidence: evidence, store: store, indexSnapshot: index)
+        await enable(sync, evidence: evidence)
+        evidence.snapshot = try snapshot([enriched(original.fact)])
+        await sync.synchronize()
+        XCTAssertNil(sync.error)
+        let before = await provider.writes
+        XCTAssertEqual(before, 0)
+        evidence.snapshot = try snapshot([enriched(.watched(at: Date(timeIntervalSince1970: 123)))])
+        await sync.synchronize()
+        XCTAssertNil(sync.error)
+        let after = await provider.writes
+        XCTAssertEqual(after, 1)
+        await sync.synchronize()
+        let repeated = await provider.writes
+        XCTAssertEqual(repeated, 1)
     }
 }
 

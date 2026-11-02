@@ -130,7 +130,13 @@ Approval is never restored as a grant after relaunch.
 Imports currently express watched flags or compatible resume positions, not
 exact server play counts or historical dates. Existing watched state is left
 alone; conflicts require selection and confirmation. Episode matches require
-confirmed ordering and a single-episode file. Aggregate episode counts are not
+confirmed ordering or verified exact episode and parent external IDs at the
+same coordinates, always for a single-episode file. PublicMetaDB snapshots
+resolve each distinct episode once through the configured TMDB metadata source.
+This adds matching evidence without changing the original tracker identities or
+ongoing-sync fingerprint: newly available metadata is not new tracker activity.
+Changed evidence invalidates a reviewed preview; lookup failures or changed
+connections cannot publish a partial snapshot. Aggregate episode counts are not
 fabricated into individual plays. Server plugins can forward server changes;
 the confirmation discloses that consequence. Read-before-write checks cannot
 provide a server-side transaction against a concurrent third-party writer.
@@ -498,6 +504,25 @@ confirmed no tracker echo or unrelated title/server changes, and relaunch/repeat
 remained a no-op. This verifies the tested movie continuation route, not
 foreground timing, independent-device delivery, episodes or provider parity.
 
+On 2 November 2026 UTC, real Emby playback of The Crown S1E1 exposed missing
+episode-order evidence. Exact TMDB child/parent verification repaired the route
+without changing server ordering. On the production iPhone-simulator app,
+actual playback below 2% produced no resume, in-range playback reported exactly
+369,911 milliseconds, playback above 80% cleared resume without marking watched,
+and two separate 90%-plus viewings produced exactly two dated plays.
+
+The separate Jellyfin test user received the exact episode resume through an
+already-consented foreground check. With ongoing sync disabled, native comparison
+and cancellation left history unchanged; an explicitly selected import set the
+same resume without incrementing play count. A later selected watched import
+marked only that episode watched/count 1 and cleared its resume. Relaunch and
+repeated ongoing checks did not replay either tracker plays or server counts.
+The adjacent episode, unrelated movie histories, Plex user and test lists stayed
+unchanged. Specials, combined/differently numbered files, episode continuation,
+independent installations and other provider/platform routes remain outside this
+live result. Package tests separately cover strict identity conflicts,
+no-backfill fingerprints, stale connections, cancellation and unavailable metadata.
+
 The unbound `PublicMetaDBLiveHistoryTests` driver uses normally configured
 production-app UI, not seeded profiles or substituted media. Its individual
 scenarios require explicit `PLOZZ_TRACKER_HISTORY_LIVE=1`, the owned
@@ -543,8 +568,16 @@ manual watched toggles, imported history and another tracker's updates cannot
 manufacture a viewing. Library-channel requests suppress reporting. External
 players are not wired to this actual-clock path.
 
-The adapter supports TMDB movies and individual episodes with explicit TMDB order,
-never multi-episode files or guessed series identities. Resume uses milliseconds,
+The adapter supports TMDB movies and individual episodes with explicit TMDB order.
+For other or missing server orders, it verifies the exact TMDB episode and parent
+external IDs against the server at the same season/episode coordinates.
+Conflicting IDs or aliases, inherited show IDs, differing coordinates and
+multi-episode files remain unsupported. It does not relabel the server's order,
+translate numbering systems, or change the playable server identity.
+Verified proof stays with the viewing receipt across reporter recreation.
+The shared runtime honors current metadata preferences, credentials and profile
+authorization; unavailable proof does not authorize a guessed report.
+Resume uses milliseconds,
 with the service's 2%/80% rules; watched plays use Plozz's 90% threshold and the first
 completion timestamp. Distinct viewing IDs preserve rewatches. Receipts are saved
 before dispatch and read back independently. Uncertain writes park that session

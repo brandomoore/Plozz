@@ -30,12 +30,15 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
     public let episode: Int?
     public let episodeOrdering: EpisodeOrdering?
     public let requiresExactEpisodeIdentity: Bool
+    /// Matching evidence only; enriching an identity is not a new tracker event.
+    public let verifiedEpisodeIdentities: [MediaIdentity]?
     public let fact: Fact
 
     public init(
         recordID: String, kind: MediaItemKind, identities: [MediaIdentity], sourceTitle: String? = nil,
         season: Int? = nil, episode: Int? = nil, episodeOrdering: EpisodeOrdering? = nil,
-        requiresExactEpisodeIdentity: Bool = false, fact: Fact
+        requiresExactEpisodeIdentity: Bool = false,
+        verifiedEpisodeIdentities: [MediaIdentity]? = nil, fact: Fact
     ) throws {
         let scopedSeriesList: Bool
         if case .listState = fact {
@@ -50,6 +53,14 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
               kind != .episode || (season.map { $0 >= 0 } == true && episode.map { $0 > 0 } == true),
               kind == .episode || ((season == nil || scopedSeriesList) && episode == nil && !requiresExactEpisodeIdentity) else {
             throw TrackerHistoryError.invalidObservation
+        }
+        if let verifiedEpisodeIdentities {
+            guard kind == .episode, !verifiedEpisodeIdentities.isEmpty,
+                  Set(identities).isSubset(of: Set(verifiedEpisodeIdentities)),
+                  verifiedEpisodeIdentities.allSatisfy({
+                      if case .external(let source, let value) = $0 { return !source.isEmpty && !value.isEmpty }
+                      return false
+                  }) else { throw TrackerHistoryError.invalidObservation }
         }
         switch fact {
         case .watched(let date):
@@ -82,13 +93,15 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
         self.episode = episode
         self.episodeOrdering = episodeOrdering
         self.requiresExactEpisodeIdentity = requiresExactEpisodeIdentity
+        self.verifiedEpisodeIdentities = verifiedEpisodeIdentities
         self.fact = fact
     }
 
     public func matches(_ item: MediaItem) -> Bool {
         Self.matches(
-            item, kind: kind, identities: identities, season: season, episode: episode,
-            episodeOrdering: episodeOrdering, requiresExactEpisodeIdentity: requiresExactEpisodeIdentity
+            item, kind: kind, identities: verifiedEpisodeIdentities ?? identities,
+            season: season, episode: episode, episodeOrdering: episodeOrdering,
+            requiresExactEpisodeIdentity: verifiedEpisodeIdentities != nil || requiresExactEpisodeIdentity
         )
     }
 
@@ -106,6 +119,10 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
               !MediaItemIdentity.externalIdentitiesConflict(identities, serverIDs) else { return false }
         guard kind == .episode else { return true }
         if requiresExactEpisodeIdentity {
+            let namespaces: [ProviderIDNamespace] = [.imdb, .tmdb, .tvdb, .seriesImdb, .seriesTmdb, .seriesTvdb]
+            guard namespaces.allSatisfy({ namespace in
+                Set(item.providerIDs.compactMap { [$0.key: $0.value].providerID(namespace)?.lowercased() }).count <= 1
+            }) else { return false }
             // Both sides must distinguish the episode ID from the same parent's ID.
             // A server's inherited show IDs are not episode identity evidence.
             return identities.contains { identity in

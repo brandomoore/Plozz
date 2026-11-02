@@ -33,6 +33,25 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testOpenLibrarySettings() throws {
+        try openSettings()
+        try tapVisible(app.buttons["settings-category-libraries"])
+        XCTAssertTrue(app.navigationBars["Libraries"].waitForExistence(timeout: 15))
+    }
+
+    func testEnableEpisodeLibraries() throws {
+        try testOpenLibrarySettings()
+        let shows = app.collectionViews.buttons["TV Shows"]
+        try tapVisible(shows, tapping: false)
+        XCTAssertFalse(shows.isSelected)
+        XCTAssertTrue(app.collectionViews.buttons["TV shows"].isSelected)
+        shows.tap()
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: shows)
+        try require(XCTWaiter.wait(for: [selected], timeout: 10) == .completed, "Expected the destination TV library")
+        try testOpenLibrarySettings()
+        XCTAssertTrue(app.collectionViews.buttons["TV Shows"].isSelected)
+    }
+
     func testPasswordlessEmbyOnboarding() throws {
         let environment = ProcessInfo.processInfo.environment
         let address = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_SERVER"])
@@ -96,6 +115,11 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testEnablePlaybackReporting() throws {
         try openPlaybackReporting()
         try enableReporting()
+    }
+
+    func testInspectPlaybackReporting() throws {
+        try openPlaybackReporting()
+        XCTAssertTrue(app.staticTexts["Playback reporting enabled"].exists)
     }
 
     func testRenewPlaybackConsent() throws {
@@ -293,8 +317,10 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testOpenHistoryComparison() throws {
         try openHistoryComparison()
+        try tapVisible(importSelection, tapping: false)
         XCTAssertTrue(importSelection.exists)
         XCTAssertEqual(importSelection.value as? String, "0")
+        try tapVisible(app.buttons["tracker-history.apply"], tapping: false)
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
     }
 
@@ -310,7 +336,9 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(app.buttons["Apply selected changes"].waitForNonExistence(timeout: 5))
         XCTAssertEqual(importSelection.value as? String, "1")
         try openHistoryComparison()
+        try tapVisible(importSelection, tapping: false)
         XCTAssertEqual(importSelection.value as? String, "0")
+        try tapVisible(app.buttons["tracker-history.apply"], tapping: false)
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
     }
 
@@ -355,15 +383,41 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let confirm = app.buttons["Apply selected changes"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         confirm.tap()
-        XCTAssertTrue(app.staticTexts["Confirmed on server"].waitForExistence(timeout: 60))
+        try testInspectConfirmedHistoryImport()
+    }
+
+    func testInspectConfirmedHistoryImport() throws {
+        let rows = try historyImportRows()
+        for _ in 0..<8 {
+            if rows.firstMatch.exists && rows.firstMatch.isHittable { break }
+            app.swipeDown()
+        }
+        try require(rows.count == 1 && rows.firstMatch.isHittable, "Expected the exact selected import row")
+        XCTAssertTrue(rows.firstMatch.staticTexts["Confirmed on server"].waitForExistence(timeout: 60))
+        try tapVisible(app.buttons["tracker-history.apply"], tapping: false)
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
     }
 
     func testImportedHistoryMatchesAfterRelaunch() throws {
         try openHistoryComparison()
+        let rows = try historyImportRows()
+        try tapVisible(rows.firstMatch, tapping: false)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertTrue(rows.firstMatch.staticTexts["Already matches — no change"].exists)
         XCTAssertFalse(importSelection.exists)
-        XCTAssertEqual(app.staticTexts.matching(identifier: "Already matches — no change").count, 2)
+        try tapVisible(app.buttons["tracker-history.apply"], tapping: false)
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+    }
+
+    private func historyImportRows() throws -> XCUIElementQuery {
+        let environment = ProcessInfo.processInfo.environment
+        let episodeTitle = environment["PLOZZ_TRACKER_HISTORY_EPISODE_TITLE"] ?? ""
+        let title = try XCTUnwrap(
+            episodeTitle.isEmpty ? environment["PLOZZ_TRACKER_HISTORY_TITLE"] : episodeTitle
+        )
+        let user = try XCTUnwrap(environment["PLOZZ_TRACKER_IMPORT_USER"])
+        return app.cells.containing(.staticText, identifier: title)
+            .containing(NSPredicate(format: "label ENDSWITH %@", " · \(user)"))
     }
 
     private var importSelection: XCUIElement {
@@ -390,10 +444,11 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(importSelection, tapping: false)
         XCTAssertEqual(importSelection.value as? String, "0")
         try tapVisible(importSelection.switches.firstMatch)
+        XCTAssertEqual(importSelection.value as? String, "1")
         let apply = app.buttons["tracker-history.apply"]
+        try tapVisible(apply, tapping: false)
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: apply)
         try require(XCTWaiter.wait(for: [selected], timeout: 5) == .completed, "Expected the selected import action")
-        XCTAssertEqual(importSelection.value as? String, "1")
         XCTAssertEqual(apply.label, "Apply 1 selected changes")
         try tapVisible(apply)
     }
@@ -407,6 +462,14 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testOpenSelectedMovie() throws {
+        try openSelectedTitle()
+    }
+
+    func testOpenSelectedSeries() throws {
+        try openSelectedTitle()
+    }
+
+    private func openSelectedTitle() throws {
         let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
         app.terminate()
         app.launch()
@@ -471,6 +534,58 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         )
     }
 
+    func testPlaySelectedEpisodeBelowResumeThreshold() async throws {
+        let duration = try verifiedRuntime()
+        try require(duration * 0.02 > 40, "Expected room below the resume threshold")
+        try startSelectedEpisodePlayback()
+        try await seekActivePlayback(fraction: 0, minimumElapsedSeconds: 1, maximumElapsedSeconds: 40)
+    }
+
+    func testPlaySelectedEpisodeFromResumePosition() async throws {
+        let duration = try verifiedRuntime()
+        let fraction = try XCTUnwrap(Double(
+            ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_SEEK_FRACTION"] ?? ""
+        ))
+        try require(fraction.isFinite && (0.03...0.6).contains(fraction), "Expected an in-range resume seek")
+        try startSelectedEpisodePlayback()
+        try await seekActivePlayback(
+            fraction: fraction, minimumElapsedSeconds: Int(duration * fraction),
+            maximumElapsedSeconds: Int(duration * 0.8)
+        )
+    }
+
+    func testReplayEpisodeToCompletion() async throws {
+        let duration = try verifiedRuntime()
+        try startSelectedEpisodePlayback()
+        try await seekActivePlayback(
+            fraction: 0.9 - 20 / duration, minimumElapsedSeconds: Int(ceil(duration * 0.9))
+        )
+    }
+
+    func testPlayEpisodeAboveResumeRange() async throws {
+        let duration = try verifiedRuntime()
+        try startSelectedEpisodePlayback()
+        try await seekActivePlayback(
+            fraction: 0.82, minimumElapsedSeconds: Int(duration * 0.8) + 1,
+            maximumElapsedSeconds: Int(duration * 0.9) - 1
+        )
+    }
+
+    private func startSelectedEpisodePlayback() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let title = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_EPISODE_TITLE"])
+        let season = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_SEASON_LABEL"])
+        try require(!title.isEmpty && !season.isEmpty, "Expected the independently verified episode")
+        try require(app.scrollViews["series-season-tabs"].buttons[season].isSelected,
+                    "Expected the exact selected season")
+        let episode = app.buttons.matching(NSPredicate(format: "label == %@", title))
+        try require(episode.count == 1, "Expected one exact episode action")
+        try tapVisible(episode.element, tapping: false)
+        startedPlayback = true
+        episode.element.tap()
+        try require(app.buttons["Close player"].waitForExistence(timeout: 45), "Expected real episode playback")
+    }
+
     private func verifiedRuntime() throws -> Double {
         let duration = try XCTUnwrap(Double(
             ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_RUNTIME_SECONDS"] ?? ""
@@ -486,6 +601,15 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         startedPlayback = true
         detailPlayButton.tap()
         try require(app.buttons["Close player"].waitForExistence(timeout: 45), "Expected real playback")
+        try await seekActivePlayback(
+            fraction: fraction, minimumElapsedSeconds: minimumElapsedSeconds,
+            maximumElapsedSeconds: maximumElapsedSeconds
+        )
+    }
+
+    private func seekActivePlayback(
+        fraction: Double, minimumElapsedSeconds: Int, maximumElapsedSeconds: Int? = nil
+    ) async throws {
         try await Task.sleep(for: .seconds(1))
         try pausePlayback()
         let scrubber = app.otherElements["player-timeline-scrubber"]

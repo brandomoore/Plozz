@@ -22,11 +22,21 @@ public extension PublicMetaDBService {
         let resumes = try await client.completeResumePoints()
         try Task.checkCancellation()
         guard self.connectionID == connectionID else { throw PublicMetaDB.Failure.connectionChanged }
+        var episodeIdentities: [PublicMetaDB.Content: [MediaIdentity]] = [:]
+        var resolvedEpisodes: Set<PublicMetaDB.Content> = []
+        for content in watches.map(\.value.content) + resumes.map(\.value.content)
+        where content.mediaType == .tv && content.isPlayable && resolvedEpisodes.insert(content).inserted {
+            if let item = try await resolveEpisodeIdentity?(content) {
+                episodeIdentities[content] = try PublicMetaDBEpisodeIdentity(content: content, item: item).identities
+            }
+            _ = try confirmedClient(connectionID)
+        }
         var observations: [TrackerHistoryObservation] = []
         observations.reserveCapacity(watches.count + resumes.count)
         for record in watches {
             observations.append(try record.value.content.observation(
-                recordID: "watched/\(record.id)", fact: .watched(at: record.value.watchedAt)
+                recordID: "watched/\(record.id)", identities: episodeIdentities[record.value.content],
+                fact: .watched(at: record.value.watchedAt)
             ))
         }
         for record in resumes {
@@ -37,7 +47,7 @@ public extension PublicMetaDBService {
                 updated = nil
             }
             observations.append(try record.value.content.observation(
-                recordID: "resume/\(record.id)",
+                recordID: "resume/\(record.id)", identities: episodeIdentities[record.value.content],
                 fact: .resume(
                     seconds: record.value.positionMilliseconds / 1_000,
                     runtime: record.value.runtimeMilliseconds / 1_000, updatedAt: updated
@@ -52,7 +62,9 @@ public extension PublicMetaDBService {
 }
 
 private extension PublicMetaDB.Content {
-    func observation(recordID: String, fact: TrackerHistoryObservation.Fact) throws -> TrackerHistoryObservation {
+    func observation(
+        recordID: String, identities: [MediaIdentity]?, fact: TrackerHistoryObservation.Fact
+    ) throws -> TrackerHistoryObservation {
         guard isPlayable else { throw PublicMetaDB.Failure.incompleteResponse }
         let source: String
         if let season, let episode {
@@ -64,7 +76,7 @@ private extension PublicMetaDB.Content {
             recordID: recordID, kind: mediaType == .movie ? .movie : .episode,
             identities: [.external(source: source, value: String(tmdbID))],
             season: season, episode: episode, episodeOrdering: mediaType == .tv ? .tmdb : nil,
-            fact: fact
+            verifiedEpisodeIdentities: identities, fact: fact
         )
     }
 }

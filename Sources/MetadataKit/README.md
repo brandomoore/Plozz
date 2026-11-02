@@ -66,6 +66,12 @@ load-bearing.
 - `TMDbDiscoveryProvider.title` — exact movie/show hydration using the same
   authenticated transport and mapping as discovery, without recency filtering.
   It verifies the returned identity and does not assert library availability.
+- `TMDbMetadataProvider.episodeIdentity` — bounded exact episode and parent
+  external-ID reads for tracker identity verification, using configured metadata
+  access. Validates returned coordinates and parent ID, including season-zero
+  specials. Returns reference-only metadata, never a playable library item.
+  Disabled access and not-found are absence; transport, authorization and decoding
+  failures remain errors. Callers must retain the server's IDs and ordering.
 
 ## Community skip markers
 

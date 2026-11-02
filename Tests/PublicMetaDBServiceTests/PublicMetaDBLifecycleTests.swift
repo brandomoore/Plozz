@@ -339,6 +339,96 @@ final class PublicMetaDBLifecycleTests: XCTestCase {
         }
         XCTAssertTrue(http.sent.allSatisfy { $0.body == nil })
     }
+
+    func testEpisodeSnapshotAddsExactMatchingEvidenceWithoutChangingSourceIdentity() async throws {
+        let http = RecordingHTTPClient()
+        http.stub(pathSuffix: "/lists", json: verification)
+        http.stub(pathSuffix: "/watched", json: """
+        {"items":[{"id":"play","tmdb_id":42,"media_type":"tv","season":1,"episode":2,"watched_at":null}],
+         "total":1,"page":1,"perPage":500,"totalPages":1}
+        """)
+        http.stub(pathSuffix: "/resume", json: """
+        {"items":[{"id":"resume","tmdb_id":42,"media_type":"tv","season":1,"episode":2,
+                   "position_ms":120000,"runtime_ms":1200000}],
+         "total":1,"page":1,"perPage":500,"totalPages":1}
+        """)
+        let service = PublicMetaDBService(credentials: CredentialStore(), http: http)
+        await service.connect(key: testKey)
+        var lookups = 0
+        let server = MediaItem(
+            id: "server-episode", title: "Episode", kind: .episode,
+            seasonNumber: 1, episodeNumber: 2, providerIDs: ["SeriesTmdb": "42", "Tmdb": "123"]
+        )
+        service.resolveEpisodeIdentity = { content in
+            lookups += 1
+            XCTAssertEqual(content, try PublicMetaDB.Content(tmdbID: 42, mediaType: .tv, season: 1, episode: 2))
+            var evidence = server
+            evidence.episodeOrdering = .tmdb
+            return evidence
+        }
+        let snapshot = try await service.historySnapshot()
+        XCTAssertEqual(lookups, 1)
+        XCTAssertEqual(snapshot.observations.count, 2)
+        for observation in snapshot.observations {
+            XCTAssertEqual(observation.identities, [.external(source: "series-tmdb:s1e2", value: "42")])
+            XCTAssertFalse(observation.requiresExactEpisodeIdentity)
+            XCTAssertNotNil(observation.verifiedEpisodeIdentities)
+            XCTAssertTrue(observation.matches(server))
+        }
+        XCTAssertTrue(http.sent.allSatisfy { $0.body == nil })
+    }
+
+    func testConnectionChangeDuringEpisodeLookupCannotPublishSnapshot() async throws {
+        let http = RecordingHTTPClient()
+        http.stub(pathSuffix: "/lists", json: verification)
+        http.stub(pathSuffix: "/watched", json: """
+        {"items":[{"id":"play","tmdb_id":42,"media_type":"tv","season":1,"episode":2,"watched_at":null}],
+         "total":1,"page":1,"perPage":500,"totalPages":1}
+        """)
+        http.stub(pathSuffix: "/resume", json: #"{"items":[],"total":0,"page":1,"perPage":500,"totalPages":0}"#)
+        let service = PublicMetaDBService(credentials: CredentialStore(), http: http)
+        await service.connect(key: testKey)
+        service.resolveEpisodeIdentity = { [weak service] _ in
+            try service?.disconnect()
+            return nil
+        }
+        do {
+            _ = try await service.historySnapshot()
+            XCTFail("Stale connection published an import snapshot")
+        } catch {
+            XCTAssertEqual(error as? PublicMetaDB.Failure, .connectionChanged)
+        }
+        XCTAssertTrue(http.sent.allSatisfy { $0.body == nil })
+    }
+
+    func testFailedOrCancelledEpisodeLookupCannotPublishPartialMatchingEvidence() async throws {
+        for cancelled in [false, true] {
+            let http = RecordingHTTPClient()
+            http.stub(pathSuffix: "/lists", json: verification)
+            http.stub(pathSuffix: "/watched", json: """
+            {"items":[{"id":"play","tmdb_id":42,"media_type":"tv","season":1,"episode":2,"watched_at":null}],
+             "total":1,"page":1,"perPage":500,"totalPages":1}
+            """)
+            http.stub(pathSuffix: "/resume", json: #"{"items":[],"total":0,"page":1,"perPage":500,"totalPages":0}"#)
+            let service = PublicMetaDBService(credentials: CredentialStore(), http: http)
+            await service.connect(key: testKey)
+            service.resolveEpisodeIdentity = { _ in
+                if cancelled { throw CancellationError() }
+                throw URLError(.timedOut)
+            }
+            do {
+                _ = try await service.historySnapshot()
+                XCTFail("Failed metadata lookup produced a complete import snapshot")
+            } catch {
+                if cancelled {
+                    XCTAssertTrue(error is CancellationError)
+                } else {
+                    XCTAssertEqual((error as? URLError)?.code, .timedOut)
+                }
+            }
+            XCTAssertTrue(http.sent.allSatisfy { $0.body == nil })
+        }
+    }
 }
 
 private final class CredentialStore: PublicMetaDBCredentialStoring, @unchecked Sendable {
