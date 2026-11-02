@@ -2301,6 +2301,8 @@ private struct PlozziOSPullResponsiveHomeBackdrop<Backdrop: View>: View {
 
 struct PlozziOSHeroPagingControls: View {
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.legibilityWeight) private var legibilityWeight
     let itemCount: Int
     let isEnabled: Bool
     let onPage: (Bool) -> Void
@@ -2320,8 +2322,8 @@ struct PlozziOSHeroPagingControls: View {
     private func pagingButton(forward: Bool) -> some View {
         Button { onPage(forward) } label: {
             Image(systemName: forward ? "chevron.compact.right" : "chevron.compact.left")
-                .font(.system(size: 32, weight: .medium))
-                .foregroundStyle(.white.opacity(0.6))
+                .font(.system(size: 30, weight: legibilityWeight == .bold ? .semibold : .regular))
+                .foregroundStyle(.white.opacity(contrast == .increased ? 1 : 0.6))
                 .frame(width: 44, height: 64)
                 .contentShape(Rectangle())
         }

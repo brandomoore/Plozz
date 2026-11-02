@@ -136,7 +136,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                         )
                         for centerX in [CGFloat(30), width - 30] {
                             let region = CGRect(x: centerX - 22, y: 328, width: 44, height: 64)
-                            let ink = try pagingControlInk(in: image, region: region)
+                            let ink = try pagingControlInk(in: image, region: region).bounds
                             if isRunningOnMac, count > 1 {
                                 let bounds = try XCTUnwrap(ink)
                                 XCTAssertEqual(bounds.midX, centerX, accuracy: 2)
@@ -153,6 +153,43 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     }
                 }
             }
+        }
+    }
+
+    func testMacHeroChevronsRespectIncreasedContrastAndBoldText() async throws {
+        let item = try await artworkItem()
+        try await withWindow(
+            item: item, size: CGSize(width: 1280, height: 720), sizeClass: .regular,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            var samples: [(pixels: Int, peak: UInt8)] = []
+            for (contrast, weight) in [
+                (ColorSchemeContrast.standard, LegibilityWeight.regular),
+                (.increased, .regular),
+                (.standard, .bold)
+            ] {
+                host.traitOverrides.accessibilityContrast = contrast == .increased ? .high : .normal
+                host.rootView = AnyView(
+                    ZStack {
+                        Color.black
+                        PlozziOSHeroPagingControls(itemCount: 3, isEnabled: true, onPage: { _ in })
+                    }
+                    .ignoresSafeArea()
+                    .environment(\.plozziOSIsRunningOnMac, true)
+                    .environment(\.legibilityWeight, weight)
+                )
+                try await waitForHostedLayout(window)
+                let image = snapshot(window, name: "hero-chevron-\(contrast)-\(weight)")
+                let ink = try pagingControlInk(
+                    in: image, region: CGRect(x: 8, y: 328, width: 44, height: 64)
+                )
+                let bounds = try XCTUnwrap(ink.bounds)
+                XCTAssertEqual(bounds.midX, 30, accuracy: 2)
+                XCTAssertEqual(bounds.midY, 360, accuracy: 2)
+                samples.append((ink.pixels, ink.peak))
+            }
+            XCTAssertGreaterThan(Int(samples[1].peak), Int(samples[0].peak) + 20)
+            XCTAssertGreaterThan(samples[2].pixels, samples[0].pixels)
         }
     }
 
@@ -443,7 +480,9 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         return pixel
     }
 
-    private func pagingControlInk(in image: UIImage, region: CGRect) throws -> CGRect? {
+    private func pagingControlInk(
+        in image: UIImage, region: CGRect
+    ) throws -> (bounds: CGRect?, pixels: Int, peak: UInt8) {
         let crop = try XCTUnwrap(image.cgImage?.cropping(to: region.applying(
             CGAffineTransform(scaleX: image.scale, y: image.scale)
         )))
@@ -458,8 +497,12 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
         }
         var bounds = CGRect.null
+        var pixels = 0
+        var peak: UInt8 = 0
         for y in 0..<crop.height {
             for x in 0..<crop.width where bytes[(y * crop.width + x) * 4] > 80 {
+                pixels += 1
+                peak = max(peak, bytes[(y * crop.width + x) * 4])
                 bounds = bounds.union(CGRect(
                     x: region.minX + CGFloat(x) / image.scale,
                     y: region.minY + CGFloat(y) / image.scale,
@@ -467,7 +510,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 ))
             }
         }
-        return bounds.isNull ? nil : bounds
+        return (bounds.isNull ? nil : bounds, pixels, peak)
     }
 
     private func assertArtworkAtBothEdges(

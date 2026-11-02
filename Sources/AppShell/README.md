@@ -109,6 +109,8 @@ registry.
   swipe/auto-advance transition path and are disabled during a swipe or transition.
   iPhone/iPad retain swipe-only manual paging.
   The compact chevrons are tall and narrow, with a slim native hover highlight.
+  Their lighter glyphs retain 44-by-64-point hit targets and spoken labels;
+  Increase Contrast raises their opacity and Bold Text strengthens their stroke.
   Mouse movement over the Mac hero freezes automatic paging and its gauge until
   1.5 seconds of pointer inactivity (or pointer exit). Trailers keep playing;
   trailer-end paging waits until the pause ends. Manual paging remains available.
