@@ -358,11 +358,11 @@ public struct MyLibrariesDetailView: View {
         revision += 1
     }
 
-    // MARK: - Add a server
+    // MARK: - Add a source
 
-    /// Adding a server is a device-wide action (it affects every profile), so it
-    /// lives canonically on This Apple TV › Servers; this mirror of it is styled
-    /// identically to that page's "Add Server" row and says "this Apple TV" to
+    /// Adding a source is a device-wide action (it affects every profile), so it
+    /// lives canonically on Sources; this mirror of it is styled
+    /// identically to that page's add row and says "this Apple TV" to
     /// make the device scope obvious next to the per-profile toggles above.
     @ViewBuilder
     private var addServerSection: some View {
@@ -372,13 +372,14 @@ public struct MyLibrariesDetailView: View {
         if scope.presentation == .settings {
             SettingsPanel {
             Button(action: scope.onAddAccount) {
-                Label("Add Server to This Apple TV", systemImage: "plus.circle")
+                Label("Add Source to This Apple TV", systemImage: "plus.circle")
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 14)
                     .padding(.horizontal, 14)
                     .contentShape(Rectangle())
             }
                 .buttonStyle(SettingsFocusButtonStyle(size: .prominent))
+                .accessibilityIdentifier("libraries-add-source")
             }
         }
     }

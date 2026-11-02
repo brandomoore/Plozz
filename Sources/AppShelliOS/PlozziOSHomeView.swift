@@ -66,6 +66,73 @@ struct PlozziOSHomeLoadID: Equatable {
     }
 }
 
+struct PlozziOSHomeEmptyState: View {
+    let hasAccounts: Bool
+    let onAddSource: () -> Void
+    var onReceiveSetup: (() -> Void)?
+
+    private var title: LocalizedStringResource {
+        hasAccounts ? "Nothing to watch yet" : "Build your library"
+    }
+
+    private var explanation: LocalizedStringResource {
+        hasAccounts
+            ? "Add media to a source, or connect another."
+            : "Connect a media server, network share, or IPTV provider."
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 28) {
+                    VStack(spacing: 16) {
+                        Image(systemName: "play.rectangle.on.rectangle")
+                            .font(.system(size: 44, weight: .regular))
+                            .plozzForeground(.secondary)
+                            .accessibilityHidden(true)
+                        VStack(spacing: 8) {
+                            Text(title)
+                                .font(.title2.weight(.semibold))
+                                .plozzForeground(.primary)
+                                .accessibilityAddTraits(.isHeader)
+                            Text(explanation)
+                                .font(.subheadline)
+                                .plozzForeground(.secondary)
+                        }
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    VStack(spacing: 12) {
+                        Button(action: onAddSource) {
+                            Label {
+                                Text(SettingsCopy.addSource)
+                            } icon: {
+                                Image(systemName: "plus")
+                            }
+                            .plozzPageActionLabel()
+                        }
+                        .plozzPageActionButton()
+                        .accessibilityIdentifier("home-add-source")
+                        if let onReceiveSetup {
+                            Button(action: onReceiveSetup) {
+                                Text("Set Up from Another Device")
+                                    .plozzPageActionLabel()
+                            }
+                            .plozzPageActionButton(role: .secondary)
+                        }
+                    }
+                    .frame(maxWidth: 320)
+                }
+                .frame(maxWidth: 360)
+                .frame(maxWidth: .infinity)
+                .padding(24)
+                .frame(minHeight: geometry.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+    }
+}
+
 struct PlozziOSHomeView: View {
     @Environment(\.homeLiveTVSnapshot) private var liveTV
     @Environment(\.openWatchlist) private var openWatchlist
@@ -215,16 +282,7 @@ struct PlozziOSHomeView: View {
                     )
                 )
             case .empty:
-                ContentUnavailableView {
-                    Label("Your Home is empty", systemImage: "house")
-                } description: {
-                    Text("Add media to your server or connect another source.")
-                } actions: {
-                    Button("Add Server", action: onAddServer)
-                    NavigationLink("Add Network Share") {
-                        PlozziOSAddShareView(appModel: appModel)
-                    }
-                }
+                PlozziOSHomeEmptyState(hasAccounts: true, onAddSource: onAddServer)
             case let .failed(error):
                 ContentUnavailableView {
                     Label(

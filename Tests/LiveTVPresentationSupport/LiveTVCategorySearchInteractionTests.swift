@@ -436,7 +436,7 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Channels unavailable"].waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertTrue(app.buttons["Retry"].exists)
-        XCTAssertTrue(app.buttons["Sources"].exists)
+        XCTAssertTrue(app.buttons["TV Sources"].exists)
         XCTAssertFalse(app.otherElements["category-search-playback"].exists)
         XCTAssertFalse(app.buttons["live-tv-category-all"].exists)
     }

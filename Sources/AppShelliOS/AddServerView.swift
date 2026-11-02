@@ -57,7 +57,7 @@ struct AddServerView: View {
             if let initialProvider {
                 connectionContent(for: initialProvider)
             } else {
-                ServerOnboardingPage(provider: nil, title: Text("Add Server")) {
+                ServerOnboardingPage(provider: nil, title: Text(SettingsCopy.addSource)) {
                     ServerProviderChoices { selected in
                         validationTask?.cancel()
                         isValidating = false

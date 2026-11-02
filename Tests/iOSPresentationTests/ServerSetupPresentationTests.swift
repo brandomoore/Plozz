@@ -11,6 +11,35 @@ import XCTest
 
 @MainActor
 final class ServerSetupPresentationTests: XCTestCase {
+    func testHomeEmptyStatesKeepActionsReadableAtLargeTextAndNarrowWidths() async throws {
+        for (size, typeSize, light) in [
+            (CGSize(width: 320, height: 568), DynamicTypeSize.accessibility5, false),
+            (.init(width: 844, height: 390), .accessibility3, true),
+            (.init(width: 375, height: 1024), .accessibility3, false),
+            (.init(width: 768, height: 1024), .large, true)
+        ] {
+            for hasAccounts in [false, true] {
+                let image = try await render(
+                    PlozziOSHomeEmptyState(
+                        hasAccounts: hasAccounts, onAddSource: {},
+                        onReceiveSetup: hasAccounts ? nil : {}
+                    )
+                    .background(light ? ThemePalette.light.backgroundBase : ThemePalette.dark.backgroundBase)
+                    .environment(\.themePalette, light ? ThemePalette.light : .dark)
+                    .environment(\.dynamicTypeSize, typeSize),
+                    size: size, light: light
+                ) { window in
+                    let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+                    XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+                    try await self.scrollToBottom(scroll, in: window)
+                }
+                let text = try recognize(image).joined(separator: " ")
+                XCTAssertTrue(text.contains(hasAccounts ? "Add Source" : "Another Device"), text)
+                attach(image, name: "Home-empty-\(hasAccounts)-\(size)-\(typeSize)")
+            }
+        }
+    }
+
     func testCodeSurfaceMatchesSettingsAcrossThemesAndTransparencyModes() async throws {
         for (name, palette) in [("dark", ThemePalette.dark), ("black", .pureBlack), ("light", .light)] {
             for (gradient, reduced) in [(true, false), (false, false), (true, true)] {

@@ -40,6 +40,16 @@ session persistence.
   removal still requires confirmation, and the original address cannot be removed.
   The add action uses a native title-and-icon label so the group's muted row-icon
   color cannot override the prominent button's contrasting foreground.
+- **Source entry points** — both platforms use **Sources** for the device's
+  connected accounts and **Add Source** for the general provider chooser, using
+  `SettingsCopy` for shared labels. Mobile Home and Settings do not have a
+  separate network-share shortcut: **Media Share** is one of the chooser's
+  provider choices. Profile Libraries retains its add action even with connected
+  sources, with device-wide scope made explicit. First-run provider choices,
+  provider-specific reconnects, additional-user sign-in, and device transfer
+  remain distinct flows. **TV Sources / Add TV Source** names the narrower
+  profile-scoped channel setup; its general connection action still opens
+  **Add Source**.
 - **Mobile server onboarding** — `AppShelliOS.AddServerView` starts with the
   same provider choices as first-run setup, then uses native navigation to
   discovery and sign-in. Seeded server/user, synced-server, and IPTV reconnect
@@ -52,7 +62,7 @@ session persistence.
   selection asks for confirmation, and leaving authentication cancels its work.
   Mobile primary and secondary page actions use `plozzPageActionButton`, with matching
   20-point page insets and a 640-point content cap across the server flows.
-  Welcome, Add Server, Silo, and IPTV page actions share `plozzPageActionLabel`
+  Welcome, Add Source, Silo, and IPTV page actions share `plozzPageActionLabel`
   inside native large buttons, including alternative sign-in methods.
   The mobile navigation owner supplies top-leading Cancel at the modal root
   and Back on subsequent steps. Silo and IPTV suppress their standalone

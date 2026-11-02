@@ -6,6 +6,65 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
         continueAfterFailure = false
     }
 
+    func testSourceEntryPointsShareTheChooserAndReturnToTheirOrigin() throws {
+        for page in ["home-empty", "home-new", "sources", "libraries", "libraries-empty"] {
+            let app = launch(page)
+            defer { app.terminate() }
+            let identifier = page == "sources" ? "sources-add-source"
+                : page.hasPrefix("libraries") ? "libraries-add-source" : "home-add-source"
+            let add = app.buttons[identifier]
+            XCTAssertTrue(add.waitForExistence(timeout: 8), page)
+            if !add.isHittable { app.swipeUp() }
+            XCTAssertTrue(add.isHittable, page)
+            XCTAssertEqual(add.label, "Add Source")
+            XCTAssertEqual(app.buttons.matching(identifier: identifier).count, 1)
+            XCTAssertFalse(app.buttons["Add Network Share"].exists)
+            attach(app, name: "Source-entry-\(page)")
+            add.tap()
+            let share = app.buttons["add-server-provider-mediaShare"]
+            XCTAssertTrue(share.waitForExistence(timeout: 5), page)
+            for provider in ["jellyfin", "plex", "emby", "silo", "iptv"] {
+                XCTAssertTrue(app.buttons["add-server-provider-\(provider)"].exists, page)
+            }
+            share.tap()
+            XCTAssertTrue(app.buttons["Enter an address manually"].waitForExistence(timeout: 5))
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(share.waitForExistence(timeout: 5))
+            app.navigationBars.buttons["Cancel"].tap()
+            XCTAssertTrue(add.waitForExistence(timeout: 5), page)
+            if page == "sources" {
+                let server = app.buttons.containing(.staticText, identifier: "Living Room").firstMatch
+                XCTAssertTrue(server.exists)
+                server.tap()
+                XCTAssertTrue(app.navigationBars["Living Room"].waitForExistence(timeout: 5))
+                XCTAssertFalse(share.exists, "A source detail row must not open the add chooser")
+            }
+        }
+    }
+
+    func testHomeEmptyStatesKeepOnePrimaryActionInBothAppearances() throws {
+        for page in ["home-empty", "home-new"] {
+            for light in [false, true] {
+                let app = launch(page, arguments: light ? ["--light"] : [])
+                defer { app.terminate() }
+                let add = app.buttons["home-add-source"]
+                XCTAssertTrue(add.waitForExistence(timeout: 5))
+                XCTAssertTrue(add.isHittable)
+                XCTAssertGreaterThanOrEqual(add.frame.height, 44)
+                XCTAssertLessThanOrEqual(add.frame.width, 320 + 32)
+                XCTAssertTrue(app.staticTexts[page == "home-empty"
+                    ? "Nothing to watch yet" : "Build your library"].exists)
+                let transfer = app.buttons["Set Up from Another Device"]
+                XCTAssertEqual(transfer.exists, page == "home-new")
+                if transfer.exists {
+                    XCTAssertEqual(transfer.frame.width, add.frame.width, accuracy: 1)
+                    XCTAssertEqual(transfer.frame.height, add.frame.height, accuracy: 1)
+                }
+                attach(app, name: "Home-empty-\(page)-\(light ? "light" : "dark")")
+            }
+        }
+    }
+
     func testEveryOnboardingStageOnThisDevice() throws {
         var pageActionSize: CGSize?
         let actions = [
@@ -21,7 +80,7 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
         ]
         for (page, expected) in [
             ("welcome", "Free forever and open source."),
-            ("chooser", "Add Server"),
+            ("chooser", "Add Source"),
             ("discovery", "Living Room"),
             ("quick", "654321"),
             ("password", "Username"),
@@ -384,9 +443,9 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
         return pixels
     }
 
-    private func launch(_ page: String) -> XCUIApplication {
+    private func launch(_ page: String, arguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--onboarding-page=\(page)"]
+        app.launchArguments = ["--onboarding-page=\(page)"] + arguments
         app.launch()
         return app
     }

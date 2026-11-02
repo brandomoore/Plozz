@@ -870,7 +870,7 @@ final class SettingsInteractionTests: XCTestCase {
             XCTAssertTrue(app.buttons["English"].waitForExistence(timeout: 3), app.debugDescription)
             app.buttons["English"].tap()
             XCTAssertTrue(categoryButton("Language").isHittable)
-            for title in ["Servers", "Profiles", "Parental PIN", "Seerr", "iCloud Sync", "Metadata Providers", "Downloads"] {
+            for title in ["Sources", "Profiles", "Parental PIN", "Seerr", "iCloud Sync", "Metadata Providers", "Downloads"] {
                 let row = button(title)
                 reveal(row, settingsMenu: true)
                 XCTAssertTrue(row.isHittable)
@@ -1178,12 +1178,13 @@ final class SettingsInteractionTests: XCTestCase {
             launch(settingsRoot: true, arguments: arguments)
             XCTAssertTrue(categoryButton("Playback").exists)
             XCTAssertFalse(categoryButton("Libraries").exists)
-            XCTAssertFalse(button("Servers").exists)
+            XCTAssertFalse(button("Sources").exists)
             let library = button("Libraries")
-            reveal(library, settingsMenu: true)
+            app.scrollViews.firstMatch.swipeUp()
+            reveal(library, settingsMenu: true, fullyVisible: true)
             library.tap()
             XCTAssertTrue(app.staticTexts["Enter the Parental PIN"].waitForExistence(timeout: 5), app.debugDescription)
-            XCTAssertFalse(app.buttons["Add Server"].exists)
+            XCTAssertFalse(app.buttons["Add Source"].exists)
             capture("settings-kids-parental-gate-\(arguments.joined())")
             for digit in 0...9 {
                 let key = app.buttons[String(digit)]
@@ -1694,7 +1695,7 @@ final class SettingsInteractionTests: XCTestCase {
         for title in [
             "Playback", "Subtitles", "Live TV", "Libraries", "Appearance", "Screens & Navigation",
             "Trackers", "Customize Home", "App navigation", "Detail Page", "Theme", "Spoiler Protection", "Circadian Mode",
-            "Profiles", "Servers", "Downloads", "Seerr", "Metadata Providers", "Help & Diagnostics", "Attributions"
+            "Profiles", "Sources", "Downloads", "Seerr", "Metadata Providers", "Help & Diagnostics", "Attributions"
         ] {
             openSettingsPage(title)
             app.terminate()

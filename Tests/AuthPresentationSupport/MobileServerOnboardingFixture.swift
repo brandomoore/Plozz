@@ -17,6 +17,8 @@ struct MobileServerOnboardingFixture: View {
     @State private var http: MobileOnboardingHTTP
     @State private var completedIDs: [String] = []
     @State private var showingSetup = true
+    @State private var showingSourceChooser = false
+    @State private var showingTransfer = false
 
     init(page: String, presentsAsSheet: Bool = false) {
         self.page = page
@@ -25,7 +27,7 @@ struct MobileServerOnboardingFixture: View {
         let defaults = UserDefaults(suiteName: "MobileOnboarding.\(UUID().uuidString)")!
         let accounts = AccountStore(secureStore: InMemorySecureStore())
         let model = PlozziOSAppModel(accountStore: accounts, profileStore: ProfileStore(defaults: defaults))
-        if page == "discovery" {
+        if ["discovery", "sources", "libraries"].contains(page) {
             do {
                 try accounts.add(Account(
                     id: "fixture", server: Self.server(.jellyfin),
@@ -49,7 +51,7 @@ struct MobileServerOnboardingFixture: View {
             if !completedIDs.isEmpty {
                 Text("Added: \(completedIDs.sorted().joined(separator: ", "))")
                     .accessibilityIdentifier("onboarding-completed")
-            } else if presentsAsSheet && page != "welcome" {
+            } else if presentsAsSheet && page != "welcome" && !page.hasPrefix("home-") {
                 Text("Servers")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .plozzSheet(isPresented: $showingSetup) {
@@ -86,6 +88,32 @@ struct MobileServerOnboardingFixture: View {
             AddServerView(appModel: appModel, initialProvider: .iptv)
         case "share":
             AddServerView(appModel: appModel, initialProvider: .mediaShare)
+        case "home-empty", "home-new", "sources", "libraries", "libraries-empty":
+            NavigationStack {
+                Group {
+                    if page == "sources" {
+                        PlozziOSServersSettingsView(
+                            appModel: appModel, onAddServer: { showingSourceChooser = true }
+                        )
+                    } else if page.hasPrefix("libraries") {
+                        PlozziOSMyLibrariesSettingsView(
+                            appModel: appModel, onAddServer: { showingSourceChooser = true }
+                        )
+                    } else {
+                        PlozziOSHomeEmptyState(
+                            hasAccounts: page == "home-empty",
+                            onAddSource: { showingSourceChooser = true },
+                            onReceiveSetup: page == "home-new" ? { showingTransfer = true } : nil
+                        )
+                    }
+                }
+                .plozzSheet(isPresented: $showingSourceChooser) {
+                    addServer().presentationSizing(.page)
+                }
+                .plozzFullScreenCover(isPresented: $showingTransfer) {
+                    PlozziOSSyncSetupReceiveView(appModel: appModel) { showingTransfer = false }
+                }
+            }
         default:
             NavigationStack {
                 isolatedSignIn

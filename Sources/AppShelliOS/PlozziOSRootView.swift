@@ -2147,18 +2147,10 @@ private struct PlozziOSHomeLandingView: View {
 
     var body: some View {
         if appModel.accounts.isEmpty {
-            ContentUnavailableView {
-                Label("Build your library", systemImage: "play.rectangle.on.rectangle")
-            } description: {
-                Text("Connect a media server or an NFS network share to start watching.")
-            } actions: {
-                Button("Add Server", action: onAddServer)
-                    .buttonStyle(.borderedProminent)
-                Button("Set Up from Another Device") { showingReceive = true }
-                NavigationLink("Add Network Share") {
-                    PlozziOSAddShareView(appModel: appModel)
-                }
-            }
+            PlozziOSHomeEmptyState(
+                hasAccounts: false, onAddSource: onAddServer,
+                onReceiveSetup: { showingReceive = true }
+            )
             .navigationTitle("Home")
             .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
             .toolbar {

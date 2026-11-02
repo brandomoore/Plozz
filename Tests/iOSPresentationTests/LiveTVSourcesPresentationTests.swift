@@ -262,7 +262,7 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
                                     connectServer: {}, createChannel: {}, scanChannels: {}
                                 )
                             }
-                            .navigationTitle("Sources")
+                            .navigationTitle(Text(SettingsCopy.tvSources))
                             .navigationBarTitleDisplayMode(.inline)
                         }
                         .environment(profiles)
@@ -294,7 +294,7 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
                     host.rootView = AnyView(
                         NavigationStack {
                             Color.clear.settingsPageSurface()
-                                .navigationTitle("Sources")
+                                .navigationTitle(Text(SettingsCopy.tvSources))
                                 .navigationBarTitleDisplayMode(.inline)
                         }
                         .environment(\.themePalette, palette)

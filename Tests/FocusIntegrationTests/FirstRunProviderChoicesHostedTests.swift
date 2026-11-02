@@ -51,6 +51,15 @@ final class FirstRunProviderChoicesHostedTests: XCTestCase {
             XCTAssertFalse(labels.contains { $0.contains("Live TV") }, "\(labels)")
             XCTAssertTrue(labels.contains("Jellyfin"), "\(labels)")
             XCTAssertTrue(labels.contains("Media Share"), "\(labels)")
+            XCTAssertEqual(labels.contains("Add Source"), canReturnToApp, "\(labels)")
+            if canReturnToApp {
+                let heading = try XCTUnwrap(request.results?.first { $0.topCandidates(1).first?.string == "Add Source" })
+                let firstProvider = try XCTUnwrap(request.results?.first { $0.topCandidates(1).first?.string == "Jellyfin" })
+                XCTAssertGreaterThanOrEqual(
+                    (heading.boundingBox.minY - firstProvider.boundingBox.maxY) * window.bounds.height, 60,
+                    "The source heading must remain separated from the provider choices"
+                )
+            }
         }
     }
 }

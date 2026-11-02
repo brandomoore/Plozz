@@ -73,7 +73,7 @@ struct LiveTVPlaylistEditor: View {
                         } else if isEditing {
                             Text("Save changes")
                         } else {
-                            Text("Add source")
+                            Text(SettingsCopy.addTVSource)
                         }
                     }
                     .frame(maxWidth: .infinity)

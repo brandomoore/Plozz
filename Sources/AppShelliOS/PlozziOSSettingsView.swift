@@ -567,7 +567,7 @@ private struct PlozziOSSettingsSplitView: View {
                         SettingsSectionGroup(deviceSettingsTitle) {
                             settingsRow(
                                 .servers,
-                                title: "Servers",
+                                title: SettingsCopy.sources,
                                 systemImage: "externaldrive.connected.to.line.below"
                             )
                             Button {
@@ -1161,7 +1161,11 @@ private struct PlozziOSSettingsCompactMenu: View {
                                 onAddServer: onAddServer
                             )
                         } label: {
-                            Label("Servers", systemImage: "externaldrive.connected.to.line.below")
+                            Label {
+                                Text(SettingsCopy.sources)
+                            } icon: {
+                                Image(systemName: "externaldrive.connected.to.line.below")
+                            }
                         }
                         NavigationLink {
                             PlozziOSProfilesView(

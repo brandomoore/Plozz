@@ -8,6 +8,11 @@ import Foundation
 /// verbatim, so copy typed as `String` is invisible to both the String Catalog and
 /// the compiler's string extraction, and would silently stay English.
 public enum SettingsCopy {
+    public static let sources: LocalizedStringResource = "Sources"
+    public static let addSource: LocalizedStringResource = "Add Source"
+    public static let tvSources: LocalizedStringResource = "TV Sources"
+    public static let addTVSource: LocalizedStringResource = "Add TV Source"
+
     public static let libraries = LocalizedStringResource(
         "settings.nav.libraries",
         defaultValue: "Libraries",

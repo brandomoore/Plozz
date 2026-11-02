@@ -63,7 +63,7 @@ final class LiveTVSettingsInteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["live-tv-source-details-fixture"].exists)
         XCTAssertTrue(app.navigationBars["Live TV"].exists)
         add.tap()
-        XCTAssertTrue(app.navigationBars["Add TV source"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Add TV Source"].waitForExistence(timeout: 5))
         for (identifier, title) in [
             ("live-tv-add-playlist", "IPTV source"),
             ("live-tv-add-server", "Media server"),
@@ -72,7 +72,7 @@ final class LiveTVSettingsInteractionTests: XCTestCase {
             tapVisible(app.buttons[identifier], in: app)
             XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5), app.debugDescription)
             app.navigationBars.buttons.firstMatch.tap()
-            XCTAssertTrue(app.navigationBars["Add TV source"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.navigationBars["Add TV Source"].waitForExistence(timeout: 5))
         }
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Live TV"].waitForExistence(timeout: 5))

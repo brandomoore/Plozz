@@ -801,6 +801,11 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   unavailable rows and unsupported tabs retain saved intent. Browse remains
   accessible when no preferred tab is supported. Collection/playlist member
   routes remain plain Browse destinations.
+  Mobile Home's no-account and connected-but-empty states share
+  `PlozziOSHomeEmptyState`: a compact media symbol, state-specific explanation,
+  and one native **Add Source** action. Only the no-account state also offers
+  device transfer. Both remain scrollable at large text sizes and in landscape;
+  empty-state presentation does not alter provider loading or profile inclusion.
   Library modes and series seasons both use CoreUI's `PlozzContentTabs`, with
   the same selected glass pill, inactive text, touch sizing, and reveal behavior.
   Tabs retain their identity through loading, empty, and failure states and
