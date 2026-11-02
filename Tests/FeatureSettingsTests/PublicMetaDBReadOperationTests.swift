@@ -73,6 +73,34 @@ final class PublicMetaDBReadOperationTests: XCTestCase {
         }
     }
 
+    func testResetRevokesAnInFlightSelectionEvenIfTransportFinishes() async throws {
+        try await withService { service in
+            let model = PublicMetaDBReadOperation<Int>()
+            let started = expectation(description: "Read started")
+            var continuation: CheckedContinuation<Int, any Error>?
+            let read = Task {
+                await model.load(service: service, id: "old-selection") { _ in
+                    try await withCheckedThrowingContinuation {
+                        continuation = $0
+                        started.fulfill()
+                    }
+                }
+            }
+            await fulfillment(of: [started], timeout: 2)
+            model.reset()
+            continuation?.resume(returning: 1)
+            await read.value
+            XCTAssertNil(model.value)
+            XCTAssertNil(model.failure)
+            XCTAssertNil(model.connectionID)
+            XCTAssertNil(model.selectionID)
+            XCTAssertFalse(model.loading)
+            await model.load(service: service, id: "new-selection") { _ in 2 }
+            XCTAssertEqual(model.value, 2)
+            XCTAssertEqual(model.selectionID, AnyHashable("new-selection"))
+        }
+    }
+
     func testCancellationNeverPublishesAnOtherwiseSuccessfulResult() async throws {
         try await withService { service in
             let model = PublicMetaDBReadOperation<Int>()

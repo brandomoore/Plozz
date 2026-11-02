@@ -56,6 +56,92 @@ final class PublicMetaDBContributionManagementTests: XCTestCase {
         }
     }
 
+    func testRatingPublicationRejectsWhitespaceBeforeAnyRequestWithoutChangingReadLabels() async throws {
+        for label in ["two words", "two\twords", "two\nwords", "two\u{00a0}words"] {
+            try await withService { service, http, connection in
+                let rating = try PublicMetaDB.Rating(content: record().value.content, score: 50, label: label)
+                let before = http.sent.count
+                do {
+                    try await service.submitManagedRating(rating, expectedConnectionID: connection)
+                    XCTFail("An invalid publication label reached the API")
+                } catch {
+                    XCTAssertEqual(error as? PublicMetaDB.Failure, .invalidRatingLabel)
+                }
+                do {
+                    try await service.submitManagedEpisodeRatings(
+                        tmdbID: 550, season: 1, label: label,
+                        ratings: [.init(episode: 1, score: 50)], expectedConnectionID: connection
+                    )
+                    XCTFail("An invalid batch label reached the API")
+                } catch {
+                    XCTAssertEqual(error as? PublicMetaDB.Failure, .invalidRatingLabel)
+                }
+                XCTAssertEqual(http.sent.count, before)
+                let decoded = try PublicMetaDBClient.decoder().decode(
+                    PublicMetaDB.Rating.self, from: PublicMetaDBClient.encode(rating)
+                )
+                XCTAssertEqual(decoded.label, label, "Legacy contributions must remain readable without relabeling")
+            }
+        }
+        for label in ["Overall", "Acting", "plozzacceptance1121bcf0"] {
+            XCTAssertNoThrow(try PublicMetaDB.Rating.validateSubmissionLabel(label))
+        }
+    }
+
+    func testBrowsingRetainsCappedRatingsWithoutGrantingCompleteManagementReads() async throws {
+        try await withService { service, http, connection in
+            let capped = ratingsJSON([contributionJSON]).replacingOccurrences(of: #""total":1"#, with: #""total":35"#)
+            http.stub(pathSuffix: "/ratings", json: capped)
+            let result = try await service.ratingsForBrowsing(record().value.content, expectedConnectionID: connection)
+            XCTAssertEqual(result.items.count, 1)
+            XCTAssertEqual(result.total, 35)
+            XCTAssertFalse(result.isComplete)
+            http.stub(pathSuffix: "/ratings", json: capped)
+            do {
+                _ = try await service.ratingsForManagement(record().value.content, expectedConnectionID: connection)
+                XCTFail("Capped browsing result became a complete management snapshot")
+            } catch {
+                XCTAssertEqual(error as? PublicMetaDB.Failure, .incompleteResponse)
+            }
+            XCTAssertFalse(http.sent.contains(where: { $0.body != nil }))
+        }
+    }
+
+    func testBrowsingStillRejectsInvalidCountsDuplicateRecordsAndForeignTitles() async throws {
+        for response in [
+            ratingsJSON([]).replacingOccurrences(of: #""total":0"#, with: #""total":-1"#),
+            ratingsJSON([contributionJSON]).replacingOccurrences(of: #""total":1"#, with: #""total":0"#),
+            ratingsJSON([contributionJSON, contributionJSON]),
+            ratingsJSON([contributionJSON.replacingOccurrences(of: "550", with: "999")]),
+        ] {
+            try await withService { service, http, connection in
+                http.stub(pathSuffix: "/ratings", json: response)
+                do {
+                    _ = try await service.ratingsForBrowsing(record().value.content, expectedConnectionID: connection)
+                    XCTFail("Invalid rating records accepted for browsing")
+                } catch {
+                    XCTAssertEqual(error as? PublicMetaDB.Failure, .incompleteResponse)
+                }
+            }
+        }
+    }
+
+    func testCappedRatingReadsCannotConfirmAbsenceForDeletion() async throws {
+        try await withService { service, http, connection in
+            let other = contributionJSON.replacingOccurrences(of: "rating-a", with: "rating-b")
+            http.stub(pathSuffix: "/ratings", json: ratingsJSON([other]).replacingOccurrences(
+                of: #""total":1"#, with: #""total":35"#
+            ))
+            do {
+                try await service.deleteManagedRating(record(), expectedConnectionID: connection)
+                XCTFail("Missing record in capped results was treated as confirmed deletion")
+            } catch {
+                XCTAssertEqual(error as? PublicMetaDB.Failure, .incompleteResponse)
+            }
+            XCTAssertFalse(http.sentPaths.contains("/api/external/ratings/rating-a"))
+        }
+    }
+
     func testEpisodeSubmissionUsesEpisodeIdentityRatherThanEpisodeTMDBID() async throws {
         try await withService { service, http, connection in
             let episode = contributionJSON.replacingOccurrences(

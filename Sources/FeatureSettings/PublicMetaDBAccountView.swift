@@ -186,6 +186,8 @@ struct PublicMetaDBFailureMessage: View {
                 Text("The profile or connection changed. Open this page again for the current profile.")
             case .invalidKey:
                 Text("PublicMetaDB rejected this key. Check or replace it in Settings.")
+            case .invalidRatingLabel:
+                Text("Use a rating label without spaces.")
             default:
                 Text(failure.appError.userMessage)
             }

@@ -7,6 +7,8 @@ struct PublicMetaDBMarkerView: View {
     let service: PublicMetaDBService
     let content: PublicMetaDB.Content
     @State private var showsHighlights = false
+    @State private var skips = PublicMetaDBReadOperation<[PublicMetaDB.Record<PublicMetaDB.Skip>]>()
+    @State private var highlights = PublicMetaDBReadOperation<[PublicMetaDB.Record<PublicMetaDB.Highlight>]>()
 
     var body: some View {
         PublicMetaDBPage {
@@ -21,9 +23,7 @@ struct PublicMetaDBMarkerView: View {
                 PublicMetaDBMarkerEditor(service: service, content: content, isHighlight: true)
             }
             Text("Skip timestamps").font(.headline)
-            PublicMetaDBReadContent(service: service, load: {
-                try await service.skipsForManagement(content, expectedConnectionID: $0)
-            }) { records in
+            PublicMetaDBReadContent(service: service, operation: skips, id: content) { records in
                 if records.isEmpty { Text("No skip timestamps") }
                 ForEach(records) { record in
                     NavigationLink {
@@ -44,9 +44,7 @@ struct PublicMetaDBMarkerView: View {
             }
             Toggle("Show highlights (may contain spoilers)", isOn: $showsHighlights)
             if showsHighlights {
-                PublicMetaDBReadContent(service: service, load: {
-                    try await service.highlightsForManagement(content, expectedConnectionID: $0)
-                }) { records in
+                PublicMetaDBReadContent(service: service, operation: highlights, id: content) { records in
                     if records.isEmpty { Text("No highlights") }
                     ForEach(records) { record in
                         NavigationLink {
@@ -67,6 +65,12 @@ struct PublicMetaDBMarkerView: View {
                     }
                 }
             }
+        }
+        .publicMetaDBRead(skips, service: service, id: content) {
+            try await service.skipsForManagement(content, expectedConnectionID: $0)
+        }
+        .publicMetaDBRead(highlights, service: service, id: content, enabled: showsHighlights) {
+            try await service.highlightsForManagement(content, expectedConnectionID: $0)
         }
         .onChange(of: service.connectionID) { _, _ in showsHighlights = false }
     }

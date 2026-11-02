@@ -11,6 +11,13 @@ through `publicMetaDBConfirmationMessage`. Native dialogs can omit sibling
 message views, hiding visibility, propagation or publication disclosures.
 Keep the reviewed date, vote or timestamp details in that same message.
 
+PublicMetaDB contribution reads belong to the enclosing page's
+`publicMetaDBRead` modifier, never to the lazy rows emitted by
+`PublicMetaDBReadContent`. Result-row appearance must not start another request.
+The shared read model fences connection, selection, refresh and disabled scopes;
+each action remains a separate native row. Rating browsing can show an explicitly
+capped collection, but contribution changes still require complete readback.
+
 Mobile customization choice groups use the same Settings cards and content
 insets, including contained groups such as Hero content sources. TV row sizing
 does not select a different mobile section style. Enabled switches keep the

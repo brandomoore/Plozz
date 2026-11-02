@@ -8,6 +8,7 @@ struct PublicMetaDBSeasonRatingsView: View {
     let tmdbID: Int
     @State private var seasonText: String
     @State private var selectedSeason: Int?
+    @State private var ratings = PublicMetaDBReadOperation<PublicMetaDB.SeasonRatings>()
 
     init(service: PublicMetaDBService, tmdbID: Int, initialSeason: Int?) {
         self.service = service
@@ -31,9 +32,7 @@ struct PublicMetaDBSeasonRatingsView: View {
                 NavigationLink("Delete selected episode ratings") {
                     PublicMetaDBEpisodeRatingsDeletionView(service: service, tmdbID: tmdbID, season: season)
                 }
-                PublicMetaDBReadContent(service: service, load: {
-                    try await service.seasonRatingsForManagement(tmdbID: tmdbID, season: season, expectedConnectionID: $0)
-                }) { result in
+                PublicMetaDBReadContent(service: service, operation: ratings, id: selectedSeason) { result in
                     if result.episodes.isEmpty { Text("No episode ratings") }
                     Text("Episodes shown have community ratings; this is not a complete episode list.")
                         .foregroundStyle(.secondary)
@@ -56,6 +55,12 @@ struct PublicMetaDBSeasonRatingsView: View {
                 }
                 .id(season)
             }
+        }
+        .publicMetaDBRead(ratings, service: service, id: selectedSeason, enabled: selectedSeason != nil) { connection in
+            guard let selectedSeason else { throw PublicMetaDB.Failure.invalidInput }
+            return try await service.seasonRatingsForManagement(
+                tmdbID: tmdbID, season: selectedSeason, expectedConnectionID: connection
+            )
         }
     }
 }
@@ -121,7 +126,7 @@ private struct PublicMetaDBEpisodeRatingsEditor: View {
                     do {
                         guard let connection = service.connectionID else { throw PublicMetaDB.Failure.disconnected }
                         let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !label.isEmpty else { throw PublicMetaDB.Failure.invalidInput }
+                        try PublicMetaDB.Rating.validateSubmissionLabel(label)
                         draft = Draft(ratings: try PublicMetaDBEpisodeRatingDraft.inputs(entries), label: label, connection: connection)
                         failure = nil
                         confirming = true
@@ -162,6 +167,7 @@ private struct PublicMetaDBEpisodeRatingsDeletionView: View {
     @State private var confirming = false
     @State private var draft: Draft?
     @State private var operation = PublicMetaDBMutationOperation()
+    @State private var ratings = PublicMetaDBReadOperation<PublicMetaDB.SeasonRatings>()
 
     private struct Draft {
         let records: [PublicMetaDB.Record<PublicMetaDB.Rating>]
@@ -176,10 +182,7 @@ private struct PublicMetaDBEpisodeRatingsDeletionView: View {
             if operation.succeeded {
                 Text("All selected ratings were confirmed removed")
             } else {
-                PublicMetaDBReadContent(service: service, load: {
-                    selected.removeAll()
-                    return try await service.seasonRatingsForManagement(tmdbID: tmdbID, season: season, expectedConnectionID: $0)
-                }) { result in
+                PublicMetaDBReadContent(service: service, operation: ratings) { result in
                     ForEach(result.episodes.flatMap(\.ratings)) { record in
                         Toggle(isOn: Binding(
                             get: { selected[record.id] != nil },
@@ -202,6 +205,10 @@ private struct PublicMetaDBEpisodeRatingsDeletionView: View {
                 .disabled(selected.isEmpty || !operation.permitsWrite || service.phase != .connected)
             }
             PublicMetaDBMutationStatus(operation: operation)
+        }
+        .publicMetaDBRead(ratings, service: service, enabled: !operation.succeeded) {
+            selected.removeAll()
+            return try await service.seasonRatingsForManagement(tmdbID: tmdbID, season: season, expectedConnectionID: $0)
         }
         .confirmationDialog("Delete these exact ratings?", isPresented: $confirming, presenting: draft) { draft in
             Button("Delete selected ratings", role: .destructive) {

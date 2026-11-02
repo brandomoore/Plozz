@@ -50,6 +50,7 @@ public extension PublicMetaDBService {
         tmdbID: Int, season: Int, label: String, ratings: [PublicMetaDB.EpisodeRatingInput],
         expectedConnectionID: UUID
     ) async throws {
+        try PublicMetaDB.Rating.validateSubmissionLabel(label)
         guard (1...50).contains(ratings.count), Set(ratings.map(\.episode)).count == ratings.count,
               !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PublicMetaDB.Failure.invalidInput }
         let client = try confirmedClient(expectedConnectionID)

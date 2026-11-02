@@ -2,6 +2,7 @@ import CoreModels
 import CoreImage
 import CoreNetworking
 import CoreUI
+import Observation
 @testable import FeatureSettings
 @testable import FeaturePlayback
 import PublicMetaDBService
@@ -12,6 +13,120 @@ import XCTest
 
 @MainActor
 final class PublicMetaDBCatalogHostedTests: XCTestCase {
+    func testSuccessfulReadKeepsOneTaskAndItsRenderedRows() async throws {
+        try await withService { service in
+            var reads = 0
+            var visible = Set<String>()
+            let operation = PublicMetaDBReadOperation<[String]>()
+            let content = PublicMetaDBPage {
+                SettingsPageHeader("Read lifecycle")
+                PublicMetaDBReadContent(service: service, operation: operation) { values in
+                    ForEach(values, id: \.self) { value in
+                        Text(verbatim: value)
+                            .onAppear { visible.insert(value) }
+                            .onDisappear { visible.remove(value) }
+                    }
+                }
+            }
+            .publicMetaDBRead(operation, service: service) { _ in
+                reads += 1
+                try await Task.sleep(for: .milliseconds(50))
+                return ["First contribution", "Second contribution"]
+            }
+            try await withWindow(content) { _ in
+                try await Task.sleep(for: .milliseconds(500))
+                XCTAssertEqual(reads, 1, "Rendering loading/results must not start additional reads")
+                XCTAssertEqual(visible, ["First contribution", "Second contribution"])
+                try await Task.sleep(for: .milliseconds(500))
+                XCTAssertEqual(reads, 1, "A loaded page must remain idle until explicit refresh")
+                XCTAssertEqual(visible, ["First contribution", "Second contribution"])
+            }
+        }
+    }
+
+    func testReadTaskSurvivesResultsPushingRefreshOffscreen() async throws {
+        try await withService { service in
+            var reads = 0
+            var visible = Set<Int>()
+            let operation = PublicMetaDBReadOperation<[Int]>()
+            let content = NavigationStack {
+                PublicMetaDBPage {
+                    SettingsPageHeader("Community contributions")
+                    PublicMetaDBReadContent(service: service, operation: operation) { values in
+                        ForEach(values, id: \.self) { value in
+                            NavigationLink {
+                                Text(value, format: .number)
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text("Contribution \(value)")
+                                    Text("50 / 100")
+                                    Text("Test author")
+                                }
+                            }
+                            .onAppear { visible.insert(value) }
+                            .onDisappear { visible.remove(value) }
+                        }
+                    }
+                }
+                .publicMetaDBRead(operation, service: service) { _ in
+                    reads += 1
+                    try await Task.sleep(for: .milliseconds(50))
+                    return Array(1...21)
+                }
+            }
+            try await withWindow(content) { _ in
+                try await Task.sleep(for: .milliseconds(500))
+                XCTAssertEqual(reads, 1, "Lazy result rows must not own or restart the read task")
+                XCTAssertTrue(visible.contains(1))
+                try await Task.sleep(for: .milliseconds(500))
+                XCTAssertEqual(reads, 1, "Moving Refresh offscreen must not reload the result")
+                XCTAssertTrue(visible.contains(1))
+                operation.refresh()
+                try await Task.sleep(for: .milliseconds(500))
+                XCTAssertEqual(reads, 2, "Explicit refresh must perform exactly one new read")
+                XCTAssertTrue(visible.contains(1))
+            }
+        }
+    }
+
+    func testReadPageSelectionAndEnablementRevokeObsoleteResults() async throws {
+        try await withService { service in
+            let operation = PublicMetaDBReadOperation<[Int]>()
+            let selection = ReadSelection()
+            var reads: [Int] = []
+            let content = ReadSelectionFixture(service: service, operation: operation, selection: selection) { value in
+                reads.append(value)
+                try await Task.sleep(for: .milliseconds(100))
+                return [value]
+            }
+            try await withWindow(content) { _ in
+                try await Task.sleep(for: .milliseconds(200))
+                XCTAssertTrue(reads.isEmpty, "A hidden optional collection must not be fetched")
+                selection.enabled = true
+                try await waitFor { operation.value == [1] }
+                XCTAssertEqual(reads, [1])
+                selection.id = 2
+                try await waitFor { reads == [1, 2] }
+                XCTAssertNil(operation.value)
+                selection.enabled = false
+                try await waitFor { operation.connectionID == nil }
+                try await Task.sleep(for: .milliseconds(200))
+                XCTAssertNil(operation.value)
+                XCTAssertNil(operation.failure)
+                XCTAssertFalse(operation.loading)
+                selection.id = 3
+                selection.enabled = true
+                try await waitFor { operation.value == [3] }
+                XCTAssertEqual(reads, [1, 2, 3])
+                XCTAssertEqual(operation.selectionID, AnyHashable(3))
+                service.selectProfile(namespace: "different-profile")
+                try await waitFor { operation.failure as? PublicMetaDB.Failure == .disconnected }
+                XCTAssertNil(operation.value)
+                XCTAssertEqual(reads, [1, 2, 3], "A disconnected profile must not issue another read")
+            }
+        }
+    }
+
     #if os(tvOS)
     func testAPIKeyFieldAndScannableBrowserCodeAreVisibleTogether() async throws {
         try await withService(connected: false, http: PairingUIHTTP()) { service in
@@ -240,6 +355,34 @@ final class PublicMetaDBCatalogHostedTests: XCTestCase {
         }
         XCTFail("The expected catalog presentation did not occur", file: file, line: line)
         throw AppError.notFound
+    }
+}
+
+@MainActor
+@Observable
+private final class ReadSelection {
+    var id = 1
+    var enabled = false
+}
+
+private struct ReadSelectionFixture: View {
+    let service: PublicMetaDBService
+    let operation: PublicMetaDBReadOperation<[Int]>
+    let selection: ReadSelection
+    let load: @MainActor (Int) async throws -> [Int]
+
+    var body: some View {
+        let id = selection.id
+        PublicMetaDBPage {
+            if selection.enabled {
+                PublicMetaDBReadContent(service: service, operation: operation, id: id) { values in
+                    ForEach(values, id: \.self) { Text($0, format: .number) }
+                }
+            }
+        }
+        .publicMetaDBRead(operation, service: service, id: id, enabled: selection.enabled) { _ in
+            try await load(id)
+        }
     }
 }
 

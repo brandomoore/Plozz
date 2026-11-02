@@ -6,6 +6,7 @@ import SwiftUI
 struct PublicMetaDBAnimeMappingsView: View {
     let service: PublicMetaDBService
     let tmdbID: Int
+    @State private var mappings = PublicMetaDBReadOperation<PublicMetaDB.AnimeSeasons>()
 
     var body: some View {
         PublicMetaDBPage {
@@ -19,9 +20,7 @@ struct PublicMetaDBAnimeMappingsView: View {
             NavigationLink("Delete my mapping for a logical season") {
                 PublicMetaDBAnimeDeleteView(service: service, tmdbID: tmdbID)
             }
-            PublicMetaDBReadContent(service: service, load: {
-                try await service.animeMappingsForManagement(tmdbID: tmdbID, expectedConnectionID: $0)
-            }) { result in
+            PublicMetaDBReadContent(service: service, operation: mappings, id: tmdbID) { result in
                 if result.seasons.isEmpty { Text("No anime season mappings") }
                 ForEach(result.seasons) { group in
                     Section {
@@ -44,6 +43,9 @@ struct PublicMetaDBAnimeMappingsView: View {
                     }
                 }
             }
+        }
+        .publicMetaDBRead(mappings, service: service, id: tmdbID) {
+            try await service.animeMappingsForManagement(tmdbID: tmdbID, expectedConnectionID: $0)
         }
     }
 }
@@ -175,6 +177,7 @@ private struct PublicMetaDBAnimeReviewView: View {
     @State private var connection: UUID?
     @State private var confirming = false
     @State private var operation = PublicMetaDBMutationOperation()
+    @State private var mappings = PublicMetaDBReadOperation<PublicMetaDB.AnimeSeasons>()
 
     var body: some View {
         PublicMetaDBPage {
@@ -189,9 +192,7 @@ private struct PublicMetaDBAnimeReviewView: View {
             if operation.succeeded {
                 Text("Anime mapping confirmed on PublicMetaDB")
             } else {
-                PublicMetaDBReadContent(service: service, load: {
-                    try await service.animeMappingsForManagement(tmdbID: mapping.tmdbID, expectedConnectionID: $0)
-                }) { result in
+                PublicMetaDBReadContent(service: service, operation: mappings) { result in
                     PublicMetaDBAnimeExistingGroups(result: result, seasonNumber: mapping.seasonNumber)
                     Text("Your key selects which existing mapping is replaced. Contributor names do not prove ownership. All your old chunks for this logical season are deleted and the reviewed chunks become public.")
                     Button("Replace my mapping") {
@@ -205,6 +206,9 @@ private struct PublicMetaDBAnimeReviewView: View {
             Text("PublicMetaDB may cache these reads for five minutes. If readback is unconfirmed, inspect the mapping later rather than publishing it again.")
                 .foregroundStyle(.secondary)
             PublicMetaDBMutationStatus(operation: operation)
+        }
+        .publicMetaDBRead(mappings, service: service, enabled: !operation.succeeded) {
+            try await service.animeMappingsForManagement(tmdbID: mapping.tmdbID, expectedConnectionID: $0)
         }
         .confirmationDialog("Replace your entire logical-season mapping?", isPresented: $confirming) {
             Button("Publish replacement", role: .destructive) {
@@ -250,6 +254,7 @@ private struct PublicMetaDBAnimeDeleteView: View {
     @State private var confirming = false
     @State private var failure: (any Error)?
     @State private var operation = PublicMetaDBMutationOperation()
+    @State private var mappings = PublicMetaDBReadOperation<PublicMetaDB.AnimeSeasons>()
 
     private struct Draft {
         let season: Int
@@ -272,9 +277,7 @@ private struct PublicMetaDBAnimeDeleteView: View {
                     } else { failure = PublicMetaDB.Failure.invalidInput }
                 }
                 if let selectedSeason {
-                    PublicMetaDBReadContent(service: service, load: {
-                        try await service.animeMappingsForManagement(tmdbID: tmdbID, expectedConnectionID: $0)
-                    }) { result in
+                    PublicMetaDBReadContent(service: service, operation: mappings, id: self.selectedSeason) { result in
                         PublicMetaDBAnimeExistingGroups(result: result, seasonNumber: selectedSeason)
                         Text("PublicMetaDB deletes only the chunks owned by this API key for the selected logical season. Plozz does not identify your group from its contributor name.")
                         Button("Delete my mapping", role: .destructive) {
@@ -289,6 +292,11 @@ private struct PublicMetaDBAnimeDeleteView: View {
             }
             if let failure { PublicMetaDBFailureMessage(error: failure) }
             PublicMetaDBMutationStatus(operation: operation)
+        }
+        .publicMetaDBRead(
+            mappings, service: service, id: selectedSeason, enabled: selectedSeason != nil && !operation.succeeded
+        ) {
+            try await service.animeMappingsForManagement(tmdbID: tmdbID, expectedConnectionID: $0)
         }
         .confirmationDialog("Delete all your chunks for this logical season?", isPresented: $confirming, presenting: draft) { draft in
             Button("Delete my mapping", role: .destructive) {

@@ -6,10 +6,18 @@ public extension PublicMetaDBService {
     func ratingsForManagement(
         _ content: PublicMetaDB.Content, expectedConnectionID: UUID
     ) async throws -> PublicMetaDB.Ratings {
+        let result = try await ratingsForBrowsing(content, expectedConnectionID: expectedConnectionID)
+        guard result.isComplete else { throw PublicMetaDB.Failure.incompleteResponse }
+        return result
+    }
+
+    func ratingsForBrowsing(
+        _ content: PublicMetaDB.Content, expectedConnectionID: UUID
+    ) async throws -> PublicMetaDB.Ratings {
         let client = try confirmedClient(expectedConnectionID)
         let result = try await client.ratings(for: content)
         _ = try confirmedClient(expectedConnectionID)
-        guard result.isComplete, Set(result.items.map(\.id)).count == result.items.count,
+        guard result.total >= result.items.count, Set(result.items.map(\.id)).count == result.items.count,
               result.items.allSatisfy({ $0.value.content == content }) else {
             throw PublicMetaDB.Failure.incompleteResponse
         }
@@ -19,6 +27,7 @@ public extension PublicMetaDBService {
     func submitManagedRating(
         _ rating: PublicMetaDB.Rating, expectedConnectionID: UUID
     ) async throws {
+        try PublicMetaDB.Rating.validateSubmissionLabel(rating.label)
         let client = try confirmedClient(expectedConnectionID)
         defer { invalidateCommunityRatings(expectedConnectionID: expectedConnectionID) }
         try await createManagedContribution(rating, expectedConnectionID: expectedConnectionID) {

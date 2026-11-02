@@ -693,6 +693,168 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testReadRealRatings() throws {
+        let encoded = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_RATINGS_EVIDENCE"])
+        let evidence = try JSONDecoder().decode(RatingsEvidence.self, from: Data(encoded.utf8))
+        try openSelectedRatings()
+        try assertRealRatings(evidence)
+        recordState()
+    }
+
+    func testRefreshRealRatings() throws {
+        let encoded = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_RATINGS_EVIDENCE"])
+        let evidence = try JSONDecoder().decode(RatingsEvidence.self, from: Data(encoded.utf8))
+        try openSelectedRatings()
+        try assertRealRatings(evidence)
+        try tapVisible(app.buttons["Refresh"])
+        try assertRealRatings(evidence)
+        recordState()
+    }
+
+    private func assertRealRatings(_ evidence: RatingsEvidence) throws {
+        if evidence.items.isEmpty {
+            try require(app.staticTexts["No ratings"].waitForExistence(timeout: 30),
+                        "Expected the independently verified empty ratings")
+        } else {
+            try require(app.buttons["publicmetadb.rating.record.\(evidence.items[0].id)"].waitForExistence(timeout: 30),
+                        "Expected the completed real contribution read")
+            if evidence.items.count < evidence.total {
+                try tapVisible(app.staticTexts["Showing \(evidence.items.count) of \(evidence.total) ratings"],
+                               tapping: false)
+            }
+            for record in evidence.items {
+                let row = app.buttons["publicmetadb.rating.record.\(record.id)"]
+                try tapVisible(row, tapping: false)
+                XCTAssertTrue(row.staticTexts[record.label].exists)
+                XCTAssertTrue(row.staticTexts[record.displayScore].exists)
+            }
+        }
+    }
+
+    func testPrepareRealRating() throws {
+        let label = try fillAndSubmitRealRatingForm()
+        try require(app.popovers.buttons["Publish rating"].waitForExistence(timeout: 10),
+                    "Expected explicit rating publication confirmation")
+        XCTAssertTrue(app.popovers.staticTexts["Publish “\(label)”: 50 / 100 on PublicMetaDB."].exists)
+        recordState()
+    }
+
+    func testRejectRatingLabelWithSpaces() throws {
+        let label = try fillAndSubmitRealRatingForm()
+        try require(label.contains(" "), "Expected the actual rejected label format")
+        try require(app.staticTexts["Use a rating label without spaces."].waitForExistence(timeout: 10),
+                    "Expected actionable validation before publication")
+        XCTAssertFalse(app.popovers.buttons["Publish rating"].exists)
+        XCTAssertFalse(app.staticTexts["Rating confirmed on PublicMetaDB"].exists)
+        recordState()
+    }
+
+    private func fillAndSubmitRealRatingForm() throws -> String {
+        try openSelectedRatings()
+        try tapVisible(app.buttons["Submit a rating"])
+        let field = app.textFields["publicmetadb.rating.label"]
+        try tapVisible(field)
+        let previous = try XCTUnwrap(field.value as? String)
+        XCTAssertEqual(previous, "Overall")
+        let label = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_RATING_LABEL"])
+        try require(!label.isEmpty && label.count < 64, "Expected the explicit bounded test-account rating label")
+        if label != previous {
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+            field.typeText(label)
+            XCTAssertEqual(field.value as? String, label)
+        }
+        field.typeText("\n")
+        try tapVisible(app.staticTexts[
+            "The rating and your PublicMetaDB contributor name will be public. This does not change your media server's rating."
+        ], tapping: false)
+        try tapVisible(app.buttons["publicmetadb.rating.submit"])
+        return label
+    }
+
+    func testCancelPreparedRating() throws {
+        try require(app.popovers.buttons["Publish rating"].exists, "Expected the prepared rating")
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["publicmetadb.rating.submit"].isEnabled)
+        XCTAssertFalse(app.staticTexts["Rating confirmed on PublicMetaDB"].exists)
+        recordState()
+    }
+
+    func testConfirmPreparedRating() throws {
+        try require(app.popovers.buttons["Publish rating"].exists, "Expected the prepared rating")
+        app.popovers.buttons["Publish rating"].tap()
+        try require(app.staticTexts["Rating confirmed on PublicMetaDB"].waitForExistence(timeout: 45),
+                    "Expected exact rating publication and independent app readback")
+        XCTAssertFalse(app.buttons["publicmetadb.rating.submit"].exists)
+        recordState()
+    }
+
+    func testRejectRatingFromIncompleteSnapshot() throws {
+        try require(app.popovers.buttons["Publish rating"].exists, "Expected the prepared rating")
+        app.popovers.buttons["Publish rating"].tap()
+        try require(app.staticTexts[
+            "PublicMetaDB returned an incomplete result. The requested operation cannot be confirmed from this response."
+        ].waitForExistence(timeout: 45), "Expected a capped snapshot to block publication")
+        XCTAssertFalse(app.staticTexts["Rating confirmed on PublicMetaDB"].exists)
+        recordState()
+    }
+
+    func testPrepareRealRatingDeletion() throws {
+        let identifier = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_RATING_RECORD_ID"])
+        try require(!identifier.isEmpty, "Expected the independently confirmed owned contribution")
+        try openSelectedRatings()
+        let row = app.buttons["publicmetadb.rating.record.\(identifier)"]
+        try tapVisible(row)
+        try tapVisible(app.staticTexts[
+            "Only the author can delete a rating. PublicMetaDB verifies ownership using your API key."
+        ], tapping: false)
+        try tapVisible(app.buttons["Delete rating"])
+        try require(app.popovers.buttons["Delete rating"].waitForExistence(timeout: 10),
+                    "Expected exact contribution deletion confirmation")
+        XCTAssertTrue(app.popovers.staticTexts.matching(NSPredicate(
+            format: "label == %@",
+            "Requests deletion of this exact contribution. PublicMetaDB rejects the request if it is not yours. Server ratings and watched history are unchanged."
+        )).firstMatch.exists)
+        recordState()
+    }
+
+    func testCancelPreparedRatingDeletion() throws {
+        try require(app.popovers.buttons["Delete rating"].exists, "Expected prepared exact deletion")
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["Rating removed from PublicMetaDB"].exists)
+        recordState()
+    }
+
+    func testConfirmPreparedRatingDeletion() throws {
+        try require(app.popovers.buttons["Delete rating"].exists, "Expected prepared exact deletion")
+        app.popovers.buttons["Delete rating"].tap()
+        try require(app.staticTexts["Rating removed from PublicMetaDB"].waitForExistence(timeout: 45),
+                    "Expected independently confirmed exact deletion")
+        recordState()
+    }
+
+    private struct RatingsEvidence: Decodable {
+        struct Record: Decodable { let id: String; let label: String; let displayScore: String }
+        let total: Int
+        let items: [Record]
+    }
+
+    private func openSelectedRatings() throws {
+        let scope = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_RATING_SCOPE"])
+        try require(["movie", "show", "episode"].contains(scope), "Expected an exact independently read rating scope")
+        if scope == "episode" {
+            try openHistoryPlay(expectedUnknownDate: true)
+            try tapVisible(app.buttons["Title controls"])
+            try require(app.staticTexts["Season 1, episode 3"].exists, "Expected the actual episode identity")
+        } else {
+            try openSelectedTitleControls()
+            try require(app.staticTexts[scope == "movie" ? "Movie" : "TV show"].exists,
+                        "Expected the exact movie/show namespace")
+        }
+        try tapVisible(app.buttons["Community and personal ratings"])
+    }
+
     func testBrowseEmptyPicks() throws {
         try openPublicMetaDBAccount()
         try tapVisible(app.buttons["Picks"])

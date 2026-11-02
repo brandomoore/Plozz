@@ -11,15 +11,29 @@ final class PublicMetaDBReadOperation<Value: Sendable> {
     private(set) var failure: (any Error)?
     private(set) var loading = false
     private(set) var connectionID: UUID?
+    private(set) var selectionID: AnyHashable?
+    private(set) var revision = 0
     private var requestID = UUID()
 
+    func refresh() { revision += 1 }
+
+    func reset() {
+        requestID = UUID()
+        connectionID = nil
+        selectionID = nil
+        value = nil
+        failure = nil
+        loading = false
+    }
+
     func load(
-        service: PublicMetaDBService, operation: @MainActor (UUID) async throws -> Value
+        service: PublicMetaDBService, id: AnyHashable = 0, operation: @MainActor (UUID) async throws -> Value
     ) async {
         let request = UUID()
         let connection = service.connectionID
         requestID = request
         connectionID = connection
+        selectionID = id
         value = nil
         failure = nil
         loading = true
@@ -37,25 +51,56 @@ final class PublicMetaDBReadOperation<Value: Sendable> {
     }
 }
 
+private struct PublicMetaDBReadRequest<ID: Hashable>: Hashable {
+    let connection: UUID?
+    let selection: ID
+    let enabled: Bool
+    let revision: Int
+}
+
+extension View {
+    // Apply to the page, not its lazy rows: row appearance must never restart a read.
+    func publicMetaDBRead<Value: Sendable, ID: Hashable>(
+        _ operation: PublicMetaDBReadOperation<Value>, service: PublicMetaDBService,
+        id: ID = 0, enabled: Bool = true,
+        load: @escaping @MainActor (UUID) async throws -> Value
+    ) -> some View {
+        modifier(PublicMetaDBReadModifier(operation: operation, service: service, id: id, enabled: enabled, load: load))
+    }
+}
+
+private struct PublicMetaDBReadModifier<Value: Sendable, ID: Hashable>: ViewModifier {
+    let operation: PublicMetaDBReadOperation<Value>
+    let service: PublicMetaDBService
+    let id: ID
+    let enabled: Bool
+    let load: @MainActor (UUID) async throws -> Value
+
+    func body(content: Content) -> some View {
+        content.task(id: PublicMetaDBReadRequest(
+            connection: service.connectionID, selection: id, enabled: enabled, revision: operation.revision
+        )) {
+            if enabled { await operation.load(service: service, id: id, operation: load) }
+            else { operation.reset() }
+        }
+    }
+}
+
 struct PublicMetaDBReadContent<Value: Sendable, Content: View>: View {
     let service: PublicMetaDBService
-    let load: @MainActor (UUID) async throws -> Value
+    let operation: PublicMetaDBReadOperation<Value>
+    var id: AnyHashable = 0
     @ViewBuilder let content: (Value) -> Content
-    @State private var operation = PublicMetaDBReadOperation<Value>()
-    @State private var reload = 0
 
     var body: some View {
         Group {
             if operation.loading { ProgressView() }
             if let failure = operation.failure { PublicMetaDBFailureMessage(error: failure) }
-            if operation.connectionID == service.connectionID, let value = operation.value {
+            if operation.connectionID == service.connectionID, operation.selectionID == id, let value = operation.value {
                 content(value)
             }
-            Button("Refresh") { reload += 1 }
+            Button("Refresh") { operation.refresh() }
                 .disabled(operation.loading || service.phase != .connected)
-        }
-        .task(id: "\(service.connectionID?.uuidString ?? ""):\(reload)") {
-            await operation.load(service: service, operation: load)
         }
     }
 }
@@ -63,6 +108,7 @@ struct PublicMetaDBReadContent<Value: Sendable, Content: View>: View {
 struct PublicMetaDBContentRatingsView: View {
     let service: PublicMetaDBService
     let content: PublicMetaDB.Content
+    @State private var ratings = PublicMetaDBReadOperation<PublicMetaDB.Ratings>()
 
     var body: some View {
         PublicMetaDBPage {
@@ -71,10 +117,15 @@ struct PublicMetaDBContentRatingsView: View {
             Text("Ratings are public contributions. Contributor names do not establish which records belong to this API key.")
                 .foregroundStyle(.secondary)
             NavigationLink("Submit a rating") { PublicMetaDBSubmitRatingView(service: service, content: content) }
-            PublicMetaDBReadContent(service: service, load: {
-                try await service.ratingsForManagement(content, expectedConnectionID: $0)
-            }) { ratings in
-                if ratings.items.isEmpty { Text("No ratings") }
+            PublicMetaDBReadContent(service: service, operation: ratings, id: content) { ratings in
+                if !ratings.isComplete {
+                    Text("Showing \(ratings.items.count) of \(ratings.total) ratings")
+                        .foregroundStyle(.secondary)
+                    Text("PublicMetaDB limited this response. Changes require a complete result.")
+                        .foregroundStyle(.secondary)
+                } else if ratings.items.isEmpty {
+                    Text("No ratings")
+                }
                 ForEach(ratings.items) { record in
                     NavigationLink {
                         PublicMetaDBRatingRecordView(service: service, record: record)
@@ -87,8 +138,12 @@ struct PublicMetaDBContentRatingsView: View {
                             }
                         }
                     }
+                    .accessibilityIdentifier("publicmetadb.rating.record.\(record.id)")
                 }
             }
+        }
+        .publicMetaDBRead(ratings, service: service, id: content) {
+            try await service.ratingsForBrowsing(content, expectedConnectionID: $0)
         }
     }
 }
@@ -126,10 +181,12 @@ private struct PublicMetaDBSubmitRatingView: View {
                 Button("Submit rating") {
                     do {
                         guard let connection = service.connectionID else { throw PublicMetaDB.Failure.disconnected }
+                        let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
+                        try PublicMetaDB.Rating.validateSubmissionLabel(label)
                         draft = Draft(
                             rating: try .init(
                                 content: content, score: Double(score),
-                                label: label.trimmingCharacters(in: .whitespacesAndNewlines)
+                                label: label
                             ), connection: connection
                         )
                         failure = nil
@@ -220,6 +277,7 @@ struct PublicMetaDBVoteView: View {
     @State private var confirming = false
     @State private var draft: Draft?
     @State private var operation = PublicMetaDBMutationOperation()
+    @State private var votes = PublicMetaDBReadOperation<PublicMetaDB.Votes>()
 
     private struct Draft {
         let vote: PublicMetaDB.Vote?
@@ -233,9 +291,7 @@ struct PublicMetaDBVoteView: View {
             if operation.succeeded {
                 Text("Your vote was confirmed on PublicMetaDB")
             } else {
-                PublicMetaDBReadContent(service: service, load: {
-                    try await service.contributionVotes(category, recordID: recordID, expectedConnectionID: $0)
-                }) { votes in
+                PublicMetaDBReadContent(service: service, operation: votes) { votes in
                     Text("\(votes.summary.upvotes) upvotes, \(votes.summary.downvotes) downvotes")
                     LabeledContent("Your vote") { voteLabel(votes.userVote) }
                     ForEach(PublicMetaDB.Vote.allCases, id: \.self) { vote in
@@ -247,6 +303,9 @@ struct PublicMetaDBVoteView: View {
                 }
             }
             PublicMetaDBMutationStatus(operation: operation)
+        }
+        .publicMetaDBRead(votes, service: service, enabled: !operation.succeeded) {
+            try await service.contributionVotes(category, recordID: recordID, expectedConnectionID: $0)
         }
         .confirmationDialog("Change your PublicMetaDB vote?", isPresented: $confirming, presenting: draft) { draft in
             Button("Confirm vote") {

@@ -44,6 +44,12 @@ extension PublicMetaDB {
         public let score: Double
         public let label: String
 
+        public static func validateSubmissionLabel(_ label: String) throws {
+            guard !label.isEmpty, label.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else {
+                throw Failure.invalidRatingLabel
+            }
+        }
+
         public init(content: Content, score: Double, label: String) throws {
             guard score.isFinite, (0...100).contains(score),
                   !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Failure.invalidInput }
@@ -282,6 +288,7 @@ public extension PublicMetaDBClient {
     }
 
     func submitRating(_ rating: PublicMetaDB.Rating) async throws -> PublicMetaDB.Record<PublicMetaDB.Rating> {
+        try PublicMetaDB.Rating.validateSubmissionLabel(rating.label)
         guard rating.content.season == nil || rating.content.episode != nil else { throw PublicMetaDB.Failure.invalidInput }
         let result = try await create(
             PublicMetaDB.Record<PublicMetaDB.Rating>.self,
@@ -302,6 +309,7 @@ public extension PublicMetaDBClient {
     func submitEpisodeRatings(
         tmdbID: Int, season: Int, label: String, ratings: [PublicMetaDB.EpisodeRatingInput]
     ) async throws -> PublicMetaDB.RatingBatchResult {
+        try PublicMetaDB.Rating.validateSubmissionLabel(label)
         let content = try PublicMetaDB.Content(tmdbID: tmdbID, mediaType: .tv, season: season)
         guard (1...50).contains(ratings.count), Set(ratings.map(\.episode)).count == ratings.count,
               !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PublicMetaDB.Failure.invalidInput }

@@ -425,6 +425,39 @@ Ambiguous creation is not retried. Deletion rechecks the observed value,
 contributor and revision and addresses only that exact record. The server
 authorizes deletion; contributor names and vote state never establish ownership.
 
+New rating labels cannot contain whitespace. The live API rejects such labels
+with HTTP 422 even though its parameter documentation describes a generic
+string. Single and batch publication validate this before requesting approval
+or sending requests; existing contributions remain readable without relabeling.
+
+Rating browsing validates identities, unique records and returned/total counts
+without treating a capped collection as complete. The page discloses the limit.
+Managed creation and deletion still require complete, unfiltered snapshots:
+an omitted record cannot establish absence or confirm deletion. The live show
+endpoint has returned 30 of 35 contributions while ignoring pagination
+parameters; label filtering is not a substitute for complete management reads.
+
+The shared contribution pages own their asynchronous reads outside the lazy
+result rows. Long rating lists previously restarted the load as rows appeared;
+the iOS and tvOS hosted regressions require one read while rendering, one
+additional read on explicit refresh, and cancellation/reset when an optional
+scope is disabled. Real production-iPhone-simulator browsing matched all 21 movie,
+30 returned show and four episode contributions against independent API reads;
+IDs, labels, scores, revisions and aggregates remained unchanged afterward.
+Native refresh and ordinary relaunch repeated those checks.
+
+Single-rating acceptance on that production iPhone simulator also covered
+publication and deletion confirmation/cancellation for a real movie, show and
+episode. Independent reads verified each exact new record, unchanged original
+contributions and `Overall` aggregate, and complete restoration after deletion.
+The capped show refused publication without creating a record. An uncapped
+26-contribution show supplied the positive show case; a repeated round trip used
+matching detailed server reads to verify metadata and history preservation.
+No temporary rating remains. Source/destination histories, tracker histories
+and original lists were unchanged. This is scoped single-rating acceptance,
+not proof of optional badge lookup, stale/ownership boundaries, season/batch
+mutations or other-platform native real-data workflows.
+
 Vote reads request only the authenticated user's records and require an explicit
 `userVote` field. Neutral (zero) and absent (null) remain distinct. A fresh vote
 must match the observation approved on screen before it can be replaced; the

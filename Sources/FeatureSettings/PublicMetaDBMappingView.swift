@@ -6,6 +6,7 @@ import SwiftUI
 struct PublicMetaDBMappingsView: View {
     let service: PublicMetaDBService
     let content: PublicMetaDB.Content
+    @State private var mappings = PublicMetaDBReadOperation<[PublicMetaDB.Record<PublicMetaDB.Mapping>]>()
 
     var body: some View {
         PublicMetaDBPage {
@@ -17,9 +18,7 @@ struct PublicMetaDBMappingsView: View {
                 PublicMetaDBMappingEditor(service: service, content: content)
             }
             NavigationLink("Look up an external ID") { PublicMetaDBMappingLookupView(service: service) }
-            PublicMetaDBReadContent(service: service, load: {
-                try await service.mappingsForManagement(content, expectedConnectionID: $0)
-            }) { records in
+            PublicMetaDBReadContent(service: service, operation: mappings, id: content) { records in
                 if records.isEmpty { Text("No external IDs") }
                 ForEach(PublicMetaDB.ExternalIDType.allCases, id: \.self) { type in
                     let values = records.filter { $0.value.idType == type }
@@ -47,6 +46,9 @@ struct PublicMetaDBMappingsView: View {
                     }
                 }
             }
+        }
+        .publicMetaDBRead(mappings, service: service, id: content) {
+            try await service.mappingsForManagement(content, expectedConnectionID: $0)
         }
     }
 }
@@ -127,6 +129,7 @@ private struct PublicMetaDBMappingReviewView: View {
     @State private var draft: PublicMetaDB.MappingReview?
     @State private var confirming = false
     @State private var operation = PublicMetaDBMutationOperation()
+    @State private var review = PublicMetaDBReadOperation<PublicMetaDB.MappingReview>()
 
     var body: some View {
         PublicMetaDBPage {
@@ -137,9 +140,7 @@ private struct PublicMetaDBMappingReviewView: View {
             if operation.succeeded {
                 Text("Mapping confirmed on PublicMetaDB")
             } else {
-                PublicMetaDBReadContent(service: service, load: {
-                    try await service.reviewMapping(mapping, expectedConnectionID: $0)
-                }) { review in
+                PublicMetaDBReadContent(service: service, operation: review) { review in
                     Text("Existing mappings for this title").font(.headline)
                     if review.records.isEmpty { Text("No external IDs") }
                     ForEach(review.records) { PublicMetaDBMappingLabel(record: $0) }
@@ -159,6 +160,9 @@ private struct PublicMetaDBMappingReviewView: View {
                 }
             }
             PublicMetaDBMutationStatus(operation: operation)
+        }
+        .publicMetaDBRead(review, service: service, enabled: !operation.succeeded) {
+            try await service.reviewMapping(mapping, expectedConnectionID: $0)
         }
         .confirmationDialog("Publish this external ID?", isPresented: $confirming, presenting: draft) { draft in
             Button("Publish mapping") { operation.perform { try await service.submitManagedMapping(draft) } }
@@ -180,6 +184,7 @@ struct PublicMetaDBMappingLookupView: View {
     @State private var type = PublicMetaDB.ExternalIDType.imdb
     @State private var value = ""
     @State private var query: Query?
+    @State private var matches = PublicMetaDBReadOperation<[PublicMetaDB.Content]>()
 
     private struct Query: Hashable {
         let type: PublicMetaDB.ExternalIDType
@@ -200,11 +205,7 @@ struct PublicMetaDBMappingLookupView: View {
             }
             .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || service.phase != .connected)
             if let query {
-                PublicMetaDBReadContent(service: service, load: {
-                    try await service.lookupMapping(
-                        idType: query.type, idValue: query.value, expectedConnectionID: $0
-                    )
-                }) { matches in
+                PublicMetaDBReadContent(service: service, operation: matches, id: self.query) { matches in
                     PublicMetaDBExternalIDLabel(type: query.type)
                     Text(verbatim: query.value)
                     if matches.isEmpty { Text("No matches") }
@@ -219,6 +220,12 @@ struct PublicMetaDBMappingLookupView: View {
                 }
                 .id(query)
             }
+        }
+        .publicMetaDBRead(matches, service: service, id: query, enabled: query != nil) { connection in
+            guard let query else { throw PublicMetaDB.Failure.invalidInput }
+            return try await service.lookupMapping(
+                idType: query.type, idValue: query.value, expectedConnectionID: connection
+            )
         }
         .onChange(of: service.connectionID) { _, _ in
             query = nil

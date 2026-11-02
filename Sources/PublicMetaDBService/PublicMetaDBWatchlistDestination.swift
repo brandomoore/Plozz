@@ -229,7 +229,7 @@ private func mapped<Value: Sendable>(_ operation: () async throws -> Value) asyn
     catch let failure as PublicMetaDB.Failure {
         switch failure {
         case .invalidKey, .disconnected, .connectionChanged: throw WatchlistDestinationError.authenticationRequired
-        case .blocked, .invalidInput, .rejected, .uncertainWrite: throw WatchlistDestinationError.permanent
+        case .blocked, .invalidInput, .invalidRatingLabel, .rejected, .uncertainWrite: throw WatchlistDestinationError.permanent
         case .incompleteResponse, .responseTooLarge: throw WatchlistDestinationError.transient
         }
     } catch {

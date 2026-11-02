@@ -8,6 +8,7 @@ public enum PublicMetaDB {
 
     public enum Failure: Error, Equatable, Sendable {
         case invalidInput
+        case invalidRatingLabel
         case invalidKey
         case disconnected
         case connectionChanged
@@ -22,7 +23,7 @@ public enum PublicMetaDB {
             case .invalidKey, .disconnected: .unauthorized
             case .connectionChanged: .cancelled
             case .blocked: .accessRestricted
-            case .invalidInput, .incompleteResponse, .responseTooLarge, .rejected: .invalidResponse
+            case .invalidInput, .invalidRatingLabel, .incompleteResponse, .responseTooLarge, .rejected: .invalidResponse
             case .uncertainWrite: .conflict
             }
         }
