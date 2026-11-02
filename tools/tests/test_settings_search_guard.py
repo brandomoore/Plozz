@@ -76,6 +76,35 @@ class CoverageTests(unittest.TestCase):
         renderer["controls"].append(control('"New renderer preference"'))
         self.assertTrue(any("boundary changed" in error for error in GUARD.check(self.inventory, self.policy)))
 
+    def test_moving_or_relabeling_an_excluded_control_requires_review(self):
+        action = control('"Add Server"')
+        action["kind"] = "Button"
+        self.root["controls"].append(action)
+        key = GUARD.control_key(self.root, action)
+        self.policy["exclusions"][key] = {"reason": "Explicit connection setup.", "count": 1}
+        self.assertEqual(GUARD.check(self.inventory, self.policy), [])
+        for field, value in (
+            ("context", "connectionContent"),
+            ("label", 'Label { Text(SettingsCopy.addSource) } icon: { Image(systemName: "plus") }'),
+        ):
+            with self.subTest(field=field):
+                original = action[field]
+                action[field] = value
+                errors = GUARD.check(self.inventory, self.policy)
+                self.assertTrue(any("unregistered" in error for error in errors))
+                self.assertTrue(any("Stale or widened" in error for error in errors))
+                action[field] = original
+
+    def test_extracted_onboarding_file_remains_checked_through_its_call_site(self):
+        child = component("ServerProviderChoices", "Sources/AppShelliOS/ServerOnboardingViews.swift")
+        child["controls"] = [control('"Provider"')]
+        self.root["calls"] = [child["name"]]
+        self.inventory.append(child)
+        self.policy["traversable_directories"] = ["Sources/FeatureSettings/"]
+        self.policy["files"] = [child["file"]]
+        errors = GUARD.check(self.inventory, self.policy)
+        self.assertTrue(any("unregistered ServerProviderChoices" in error for error in errors))
+
     def test_removed_anchor_fails(self):
         self.root["anchors"] = []
         self.assertTrue(any("no source anchor" in error for error in GUARD.check(self.inventory, self.policy)))

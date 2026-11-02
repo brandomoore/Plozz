@@ -62,7 +62,8 @@ final class PlayerControlsRevealRenderingHostedTests: XCTestCase {
         XCTAssertEqual(reads.withLock { $0.completed }, 1, "The controls must finish fading before preferences return.")
         XCTAssertGreaterThan(early, hidden)
         XCTAssertGreaterThan(middle, early)
-        XCTAssertGreaterThan(visible, middle, "The reveal must render intermediate opacity, not snap to its final state.")
+        XCTAssertGreaterThan(visible, early, "The reveal must render intermediate opacity, not snap to its final state.")
+        XCTAssertGreaterThanOrEqual(visible, middle, "Capturing the middle frame may finish after the fade.")
         gate.signal()
         await audio.refresh().value
     }

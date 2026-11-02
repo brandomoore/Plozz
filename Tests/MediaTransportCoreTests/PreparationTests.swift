@@ -1330,8 +1330,9 @@ final class PreparationTests: XCTestCase {
         let timerReady = await waitUntil { f.clock.waiting(for: .seconds(30)) }
         XCTAssertTrue(timerReady)
         f.clock.advance(by: .seconds(30))
-        let closed = await waitUntil { fileSystem.preparedSources[0].shutdownCount == 1 }
-        XCTAssertTrue(closed)
+        let source = try XCTUnwrap(fileSystem.preparedSources.first)
+        await fulfillment(of: [source.didShutdown], timeout: 2)
+        XCTAssertEqual(source.shutdownCount, 1)
         let resolved = try await f.resolver.resolve(f.locator)
         XCTAssertFalse(resolved.wasPrepared)
         XCTAssertFalse(handle.wasConsumed)

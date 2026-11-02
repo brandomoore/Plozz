@@ -577,7 +577,9 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
                 fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true)
             }
             attachPreview(in: fixture.window, name: "detail-text-\(step)")
-            let frames = try textInkFrames(in: image, terms: ["SIGNAL", "Documentary", "Across the stars", "Play"])
+            let frames = try HeroTextInk.frames(
+                in: image, terms: ["SIGNAL", "Documentary", "Across the stars", "Play"], darkTerms: ["Play"]
+            )
             for text in ["SIGNAL", "Documentary", "Across the stars", "Play"] {
                 let height = try XCTUnwrap(frames[text]).height
                 if step == 0 { baseline[text] = height }
@@ -979,6 +981,7 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
         let fixture = try await makeFixture()
         defer { fixture.close() }
         let model = SizingModel()
+        model.layout = .followsFocus
         let host = LayoutFocusHost(rootView: LayoutSizingFixture(model: model))
         fixture.window.rootViewController = host
         try await waitUntil { adjustmentInput(in: host) != nil }
@@ -1002,9 +1005,10 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
             let cardWidth = (frame.width - 16) / 2
             let classicFrame = CGRect(x: frame.minX + cardWidth + 16, y: frame.minY, width: cardWidth, height: frame.height).integral
             let otherBaseline = try rgbaPixels(in: fixture.window, rect: classicFrame)
-            for _ in HeroLogoSize.default.position..<(HeroLogoSize.allSizes.count - 1) {
+            for size in HeroLogoSize.allSizes.dropFirst(HeroLogoSize.default.position + 1) {
                 input.beginPress(.right)
                 input.stopRepeating()
+                try await waitUntil { model.showcaseSize == size }
             }
             try await Task.sleep(for: .milliseconds(200))
             let large = try layoutWordmarkBounds(style: style, pickerFrame: frame, in: fixture.window)
@@ -1012,9 +1016,10 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
             XCTAssertEqual(large.maxY, baseline.maxY, accuracy: 2)
             XCTAssertEqual(try rgbaPixels(in: fixture.window, rect: classicFrame), otherBaseline)
             attachPreview(in: fixture.window, name: "logo-layout-live-\(style)-large")
-            for _ in 1..<HeroLogoSize.allSizes.count {
+            for size in HeroLogoSize.allSizes.dropLast().reversed() {
                 input.beginPress(.left)
                 input.stopRepeating()
+                try await waitUntil { model.showcaseSize == size }
             }
             try await Task.sleep(for: .milliseconds(200))
             let small = try layoutWordmarkBounds(style: style, pickerFrame: frame, in: fixture.window)

@@ -123,6 +123,8 @@ have exact control keys/counts; reusable renderer and presentation boundaries
 also retain their control structure. A new control, arbitrary uncatalogued
 anchor, missing destination anchor, stale exclusion or changed boundary fails.
 Review a failure rather than accepting the current inventory as a new baseline.
+When extracting connection-setup subviews, keep their files traversable and
+update only the reviewed control keys and counts, not broad component exemptions.
 Runtime navigation, provider access, lazy reveal and native focus still require
 behavioral tests; static coverage is not proof that a screen works.
 
