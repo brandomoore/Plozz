@@ -1396,10 +1396,14 @@ logic tests retain their ordinary Debug configuration. For hosted tests, cold
 compilation must not consume the test execution budget: run `38059892922` spent about 19 minutes
 building before the former combined 40-minute limit killed still-progressing
 tests. Run `39857697957` also exhausted a full 40-minute execution window while
-still progressing through the expanded hosted suite. CI now allows 40 minutes
-for compilation and 90 minutes for hosted execution, within a 140-minute job
-limit including setup and evidence retention. The local execution default
-remains 40 minutes unless `PLOZZ_FOCUS_TEST_TIMEOUT` is set;
+still progressing through the expanded hosted suite. Both attempts of run
+`41421118241` reached the 40-minute compilation deadline before tests could
+start; the retry was still compiling the hosted test target. CI now allows
+60 minutes for compilation and 90 minutes for hosted execution, within a
+170-minute job limit including setup and evidence retention. This changes only
+the cold-build budget, not test assertions, performance thresholds, or the
+execution deadline. Local build and execution defaults remain 40 minutes unless
+`PLOZZ_FOCUS_BUILD_TIMEOUT` or `PLOZZ_FOCUS_TEST_TIMEOUT` is set;
 test failures, timeouts, and unreadable `xcresult` summaries still fail closed.
 Each lane uploads
 uniquely named diagnostics on success or failure, retained for seven days.
