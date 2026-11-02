@@ -594,7 +594,15 @@ cancellation preserved remote state; relaunch readback confirmed restoration of
 all 40 original contributions and aggregates. Server metadata, watched/resume
 histories and lists stayed unchanged, and optional rating lookup remained off.
 This establishes that bounded round trip, not native 50-item, partial-failure,
-stale-batch, ownership or TV/iPad acceptance.
+ownership or TV/iPad acceptance.
+
+A separate real batch-deletion race replaced one selected test contribution
+with a new ID from an independent client while native confirmation remained
+open. Approving the old selection removed only the remaining original selected
+ID; the replacement survived unchanged. Native selection then removed that
+exact replacement, restoring all original season records and unrelated controls.
+This proves replacement-ID safety, not a same-ID edit or negative ownership
+check; no other person's contribution was targeted.
 
 ## Reviewed multiple-play deletion
 

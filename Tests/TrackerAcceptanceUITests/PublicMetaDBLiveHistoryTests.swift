@@ -814,11 +814,19 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testPrepareRealEpisodeRatingDeletion() throws {
+        try prepareRealEpisodeRatingDeletion(expectedCount: 2)
+    }
+
+    func testPrepareRealSingleEpisodeRatingDeletion() throws {
+        try prepareRealEpisodeRatingDeletion(expectedCount: 1)
+    }
+
+    private func prepareRealEpisodeRatingDeletion(expectedCount: Int) throws {
         let evidence = try openSelectedSeasonRatings()
         let encoded = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_SELECTED_IDS"])
         let identifiers = try JSONDecoder().decode([String].self, from: Data(encoded.utf8))
-        XCTAssertEqual(identifiers.count, 2)
-        XCTAssertEqual(Set(identifiers).count, 2)
+        XCTAssertEqual(identifiers.count, expectedCount)
+        XCTAssertEqual(Set(identifiers).count, expectedCount)
         for identifier in identifiers {
             let episodes = evidence.episodes.filter { $0.ratings.contains { $0.id == identifier } }
             XCTAssertEqual(episodes.count, 1)
@@ -841,7 +849,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
                     "Expected exact batch deletion confirmation")
         XCTAssertTrue(app.popovers.staticTexts.matching(NSPredicate(
             format: "label == %@",
-            "Requests removal of 2 exact contributions, not all ratings for the season. PublicMetaDB verifies ownership. Server ratings and history are unchanged."
+            "Requests removal of \(expectedCount) exact contributions, not all ratings for the season. PublicMetaDB verifies ownership. Server ratings and history are unchanged."
         )).firstMatch.exists)
         recordState()
     }
