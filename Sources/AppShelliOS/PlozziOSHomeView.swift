@@ -143,6 +143,7 @@ struct PlozziOSHomeView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSHeroContainerHeight) private var heroContainerHeight
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.plozziOSHomeIsFrontmost) private var homeIsFrontmost
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var locale
@@ -553,7 +554,8 @@ struct PlozziOSHomeView: View {
             style: heroStyle,
             surfaceRole: .home,
             dynamicTypeSize: dynamicTypeSize,
-            containerHeight: heroContainerHeight
+            containerHeight: heroContainerHeight,
+            isRunningOnMac: isRunningOnMac
         ) / 2
         let scroll = PlozziOSHomeScrollView(heroActive: heroSlotState != .hidden) {
             // Retire a carousel the viewer's own settings just invalidated
@@ -1365,6 +1367,7 @@ struct PlozziOSHomeHeroCarousel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSHeroContainerHeight) private var heroContainerHeight
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.scenePhase) private var scenePhase
     @Environment(HeroTrailerController.self) private var trailerController
     @State private var selectedItemID: String?
@@ -1422,7 +1425,8 @@ struct PlozziOSHomeHeroCarousel: View {
             style: style,
             surfaceRole: .home,
             dynamicTypeSize: dynamicTypeSize,
-            containerHeight: heroContainerHeight
+            containerHeight: heroContainerHeight,
+            isRunningOnMac: isRunningOnMac
         )
         let extendsArtwork = PlozziOSHeroMetrics.extendsArtwork(
             style: style,

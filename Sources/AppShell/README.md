@@ -42,6 +42,13 @@ registry.
 
 ## Invariants
 
+- **Mobile Settings does not require an inherited language model.** The mobile
+  app model owns the existing app-wide language preference and passes that same
+  instance to the root `AppLanguageScope` and every Settings language picker,
+  including search destinations. A detached Settings presentation cannot trap
+  on a missing observable environment object or create a second preference model.
+  The existing mobile persistence key and tvOS profile-scoped behavior are unchanged.
+
 - **Returning from Settings restores pinned-page focus.** Settings is hosted
   outside the navigation rail. Its Back action uses the same destination
   presentation fence and native content-focus request as selecting a rail
@@ -71,6 +78,14 @@ registry.
   artwork lookup remains bounded to the existing nearby-card window. Changed
   items, artwork/provider preferences, spoilers and presentation restart that
   window; disabled prefetch performs no source preparation.
+
+- **Home adapts to Mac windows without changing iPad layouts.** When running
+  the iOS app on macOS, the regular-width Home hero follows the window height,
+  leaving space for the next row. Its still artwork is top-aligned so wide
+  crops preserve the top of the picture, including during carousel slides and
+  sidebar reflections. Skeletons and trailer-pause thresholds use the same
+  height. Compact layouts, detail pages, and video framing retain their existing
+  behavior.
 
 - **Preference sync is not a profile switch.** Mobile cloud apply rebuilds active
   settings and track/version preferences without restarting downloads, provider

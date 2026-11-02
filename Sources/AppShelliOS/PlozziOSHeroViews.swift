@@ -63,11 +63,20 @@ enum PlozziOSHeroMetrics {
         style: HeroArtworkStyle,
         surfaceRole: HeroTrailerSurfaceRole,
         dynamicTypeSize: DynamicTypeSize,
-        containerHeight: CGFloat? = nil
+        containerHeight: CGFloat? = nil,
+        isRunningOnMac: Bool = false
     ) -> CGFloat {
         let accessibilityExtra: CGFloat = dynamicTypeSize.isAccessibilitySize
             ? (style == .compactPortrait ? 160 : 140)
             : 0
+        if isRunningOnMac, style == .landscape, surfaceRole == .home,
+           let containerHeight, containerHeight.isFinite, containerHeight > 0 {
+            let preferred = min(max(containerHeight * 0.82, 480), 1_020)
+            return min(
+                preferred + accessibilityExtra,
+                max(containerHeight - HeroStageMetrics.minimumPeek, 1)
+            )
+        }
         // The portrait Home hero is sized to the phone, not to a constant: it
         // has to reach far enough down that the metadata sits in the lower part
         // of the screen, while still leaving the next row peeking. See
@@ -102,7 +111,16 @@ private struct PlozziOSHeroContainerHeightKey: EnvironmentKey {
     static let defaultValue: CGFloat? = nil
 }
 
+private struct PlozziOSIsRunningOnMacKey: EnvironmentKey {
+    static let defaultValue = ProcessInfo.processInfo.isiOSAppOnMac
+}
+
 extension EnvironmentValues {
+    var plozziOSIsRunningOnMac: Bool {
+        get { self[PlozziOSIsRunningOnMacKey.self] }
+        set { self[PlozziOSIsRunningOnMacKey.self] = newValue }
+    }
+
     var plozziOSHeroContainerHeight: CGFloat? {
         get { self[PlozziOSHeroContainerHeightKey.self] }
         set { self[PlozziOSHeroContainerHeightKey.self] = newValue }
@@ -517,6 +535,7 @@ struct PlozziOSDetailHeroSection: View {
 struct PlozziOSHeroStage<Foreground: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.plozziOSHeroContainerHeight) private var containerHeight
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.themePalette) private var palette
     @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
@@ -559,7 +578,8 @@ struct PlozziOSHeroStage<Foreground: View>: View {
             style: style,
             surfaceRole: surfaceRole,
             dynamicTypeSize: dynamicTypeSize,
-            containerHeight: containerHeight
+            containerHeight: containerHeight,
+            isRunningOnMac: isRunningOnMac
         )
     }
 
@@ -619,7 +639,8 @@ struct PlozziOSHeroStage<Foreground: View>: View {
                         width: reflectionWidth,
                         contentWidth: contentWidth,
                         height: height,
-                        trailerController: trailerController
+                        trailerController: trailerController,
+                        surfaceRole: surfaceRole
                     )
                 }
                 .scaleEffect(pullScale, anchor: .center)
@@ -943,6 +964,27 @@ struct PlozziOSHeroPictureLayout {
     let height: CGFloat
 }
 
+struct PlozziOSHeroArtworkImage: View {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    let image: Image
+    let style: HeroArtworkStyle
+    var surfaceRole: HeroTrailerSurfaceRole = .home
+
+    var body: some View {
+        if isRunningOnMac, style == .landscape, surfaceRole == .home {
+            GeometryReader { proxy in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+                    .clipped()
+            }
+        } else {
+            ArtworkFillImage(image)
+        }
+    }
+}
+
 private struct PlozziOSHeroBackdrop: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.themePalette) private var palette
@@ -1052,7 +1094,9 @@ private struct PlozziOSHeroBackdrop: View {
             sharedResolutionIdentity: sharedResolutionIdentity.map {
                 PlozziOSHeroArtworkFallback.cacheIdentity($0, style: style)
             }
-        ) {
+        ) { image in
+            PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
+        } placeholder: {
             palette.backgroundBase
         }
         .reportingHeroArtwork(id: presentation.itemID)
@@ -1529,7 +1573,9 @@ private struct PlozziOSSlidingHeroArtwork: View {
             sharedResolutionIdentity: sharedResolutionIdentity.map {
                 PlozziOSHeroArtworkFallback.cacheIdentity($0, style: style)
             }
-        ) {
+        ) { image in
+            PlozziOSHeroArtworkImage(image: image, style: style)
+        } placeholder: {
             palette.backgroundBase
         }
         .reportingHeroArtwork(id: presentation.itemID)
@@ -1549,7 +1595,9 @@ private struct PlozziOSSlidingHeroArtwork: View {
             sharedResolutionIdentity: sharedResolutionIdentity.map {
                 PlozziOSHeroArtworkFallback.cacheIdentity($0, style: style)
             }
-        ) {
+        ) { image in
+            PlozziOSHeroArtworkImage(image: image, style: style)
+        } placeholder: {
             palette.backgroundBase
         }
         .frame(width: width, height: height)
@@ -1573,6 +1621,7 @@ private struct PlozziOSHeroReflection: View {
     let contentWidth: CGFloat
     let height: CGFloat
     let trailerController: HeroTrailerController
+    var surfaceRole: HeroTrailerSurfaceRole = .home
 
     var body: some View {
         ZStack {
@@ -1587,7 +1636,9 @@ private struct PlozziOSHeroReflection: View {
                 sharedResolutionIdentity: sharedResolutionIdentity.map {
                     PlozziOSHeroArtworkFallback.cacheIdentity($0, style: style)
                 }
-            ) {
+            ) { image in
+                PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
+            } placeholder: {
                 Color.clear
             }
             .frame(width: contentWidth, height: height)

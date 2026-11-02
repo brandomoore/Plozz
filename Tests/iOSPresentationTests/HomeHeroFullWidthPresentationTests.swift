@@ -10,6 +10,66 @@ import XCTest
 
 @MainActor
 final class HomeHeroFullWidthPresentationTests: XCTestCase {
+    func testMacWideWindowsKeepTheArtworkTopAndActionsVisible() async throws {
+        let item = try await artworkItem(marksTop: true)
+        let sizes = [
+            CGSize(width: 1_280, height: 720),
+            CGSize(width: 1_440, height: 900),
+            CGSize(width: 1_920, height: 1_080),
+            CGSize(width: 2_560, height: 1_080)
+        ]
+        try await withWindow(
+            item: item, size: sizes[0], sizeClass: .regular, insets: .zero,
+            pull: PlozziOSHomeHeroPullModel(), isRunningOnMac: true, tracksWindowHeight: true
+        ) { window, _ in
+            for size in sizes + sizes.reversed() {
+                window.frame = CGRect(origin: .zero, size: size)
+                try await waitForHostedLayout(window)
+                let image = snapshot(window, name: "mac-hero-\(Int(size.width))x\(Int(size.height))")
+                let frames = try HeroTextInk.frames(
+                    in: image, terms: ["Play", "Following row"], darkTerms: ["Play"]
+                )
+                let play = try XCTUnwrap(frames["Play"])
+                XCTAssertGreaterThan(play.minY, 0)
+                XCTAssertLessThan(play.maxY, size.height - HeroStageMetrics.minimumPeek)
+                let followingRow = try XCTUnwrap(frames["Following row"])
+                XCTAssertLessThan(followingRow.maxY, size.height)
+                try assertTopMarker(image)
+            }
+        }
+    }
+
+    func testMacCarouselPreservesTheArtworkTopWhileSliding() async throws {
+        let item = try await artworkItem(marksTop: true)
+        let size = CGSize(width: 1_920, height: 1_080)
+        try await withWindow(
+            item: item, size: size, sizeClass: .regular, insets: .zero,
+            pull: PlozziOSHomeHeroPullModel(), isRunningOnMac: true
+        ) { window, host in
+            let sidebar = PlozziOSSidebarGeometryModel()
+            let trailer = HeroTrailerController()
+            for (sliding, offset) in [(false, CGFloat(0)), (true, 0), (true, -100), (true, 100)] {
+                host.rootView = AnyView(
+                    ZStack(alignment: .top) {
+                        Color.black
+                        PlozziOSHomeStaticBackdrop(
+                            item: item, style: .landscape, height: 600,
+                            contentOffsetX: offset, showsTrailer: false, usesSlidingArtwork: sliding
+                        )
+                    }
+                    .ignoresSafeArea()
+                    .environment(sidebar)
+                    .environment(trailer)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.plozziOSIsRunningOnMac, true)
+                )
+                try await waitForHostedLayout(window)
+                try assertTopMarker(snapshot(window, name: "mac-carousel-\(sliding)-\(offset)"))
+            }
+        }
+    }
+
     func testHeroCompositeSpansHorizontalSafeAreasWithoutMovingForeground() async throws {
         let item = try await artworkItem()
         for (size, sizeClass) in [
@@ -56,14 +116,19 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
-    private func artworkItem() async throws -> MediaItem {
+    private func artworkItem(marksTop: Bool = false) async throws -> MediaItem {
         let url = try XCTUnwrap(URL(string: "https://hero-width.invalid/\(UUID().uuidString).png"))
-        let image = UIGraphicsImageRenderer(size: CGSize(width: 900, height: 1200)).image { context in
+        let size = marksTop ? CGSize(width: 1_600, height: 900) : CGSize(width: 900, height: 1_200)
+        let image = UIGraphicsImageRenderer(size: size).image { context in
             UIColor(red: 0.15, green: 0.75, blue: 0.95, alpha: 1).setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 900, height: 1200))
+            context.fill(CGRect(origin: .zero, size: size))
             UIColor(red: 0.25, green: 0.85, blue: 0.95, alpha: 1).setFill()
             for x in stride(from: 0, to: 900, by: 100) {
                 context.fill(CGRect(x: x, y: 0, width: 20, height: 1200))
+            }
+            if marksTop {
+                UIColor.magenta.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: size.width, height: 140))
             }
         }
         let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
@@ -87,6 +152,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
     private func withWindow(
         item: MediaItem, size: CGSize, sizeClass: UserInterfaceSizeClass?,
         insets: UIEdgeInsets, pull: PlozziOSHomeHeroPullModel, nativeTabs: Bool = false,
+        isRunningOnMac: Bool = false,
+        tracksWindowHeight: Bool = false,
         exercise: (UIWindow, UIHostingController<AnyView>) async throws -> Void
     ) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -98,7 +165,10 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         )
         app.settings.heroBackground.settings.homeTrailerEnabled = false
         let sidebar = PlozziOSSidebarGeometryModel()
-        let root = HomeHeroWidthFixture(item: item, pull: pull, nativeTabs: nativeTabs, sidebar: sidebar)
+        let root = HomeHeroWidthFixture(
+            item: item, pull: pull, nativeTabs: nativeTabs, sidebar: sidebar,
+            tracksWindowHeight: tracksWindowHeight
+        )
             .environment(app)
             .environment(sidebar)
             .environment(HeroTrailerController())
@@ -106,6 +176,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             .environment(\.colorScheme, .dark)
             .environment(\.plozzMetrics, .touch(density: .standard))
             .environment(\.plozziOSHeroContainerHeight, size.height)
+            .environment(\.plozziOSIsRunningOnMac, isRunningOnMac)
             .environment(\.locale, Locale(identifier: "en_US"))
             .environment(\.dynamicTypeSize, .large)
         let window = UIWindow(windowScene: scene)
@@ -164,6 +235,26 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             )
         }
     }
+
+    private func assertTopMarker(_ image: UIImage) throws {
+        let cgImage = try XCTUnwrap(image.cgImage)
+        let x = Int(image.size.width * 0.8 * image.scale)
+        let y = Int(80 * image.scale)
+        let marker = try XCTUnwrap(cgImage.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)))
+        var pixel = [UInt8](repeating: 0, count: 4)
+        try pixel.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: 1, height: 1,
+                bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(marker, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        XCTAssertGreaterThan(pixel[0], 180, "The top-of-art marker must survive a wide crop.")
+        XCTAssertLessThan(pixel[1], 70)
+        XCTAssertGreaterThan(pixel[2], 180)
+    }
 }
 
 private struct HomeHeroWidthFixture: View {
@@ -171,6 +262,7 @@ private struct HomeHeroWidthFixture: View {
     let pull: PlozziOSHomeHeroPullModel
     let nativeTabs: Bool
     let sidebar: PlozziOSSidebarGeometryModel
+    var tracksWindowHeight = false
 
     var body: some View {
         if nativeTabs {
@@ -188,7 +280,16 @@ private struct HomeHeroWidthFixture: View {
         }
     }
 
+    @ViewBuilder
     private var home: some View {
+        if tracksWindowHeight {
+            homeContent.plozziOSTracksHeroContainerHeight()
+        } else {
+            homeContent
+        }
+    }
+
+    private var homeContent: some View {
         NavigationStack {
             PlozziOSHomeScrollView(heroActive: true) {
                 PlozziOSHomeHeroCarousel(

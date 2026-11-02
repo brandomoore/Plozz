@@ -142,6 +142,7 @@ struct PlozziOSHomeHeroSkeleton: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.plozziOSHeroContainerHeight) private var heroContainerHeight
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
 
     let style: HeroArtworkStyle
     var logoSize: HeroLogoSize = .default
@@ -161,7 +162,8 @@ struct PlozziOSHomeHeroSkeleton: View {
                     style: style,
                     surfaceRole: .home,
                     dynamicTypeSize: dynamicTypeSize,
-                    containerHeight: heroContainerHeight
+                    containerHeight: heroContainerHeight,
+                    isRunningOnMac: isRunningOnMac
                 )
             )
             .overlay {

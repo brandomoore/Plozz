@@ -69,6 +69,12 @@ public struct PlozziOSRootView: View {
     public init() {}
 
     public var body: some View {
+        AppLanguageScope(model: appModel.appLanguage) {
+            rootContent
+        }
+    }
+
+    private var rootContent: some View {
         Group {
             if needsDiagnosticConsent {
                 CrashReportingConsentView { enabled in
