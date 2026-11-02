@@ -117,6 +117,51 @@ final class PlexHomeLayoutTests: XCTestCase {
         }
     }
 
+    func testMissingRotatingShelfDoesNotDuplicateItsSurvivingSibling() async throws {
+        for reversed in [false, true] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/hubs/promoted", json: """
+            {"MediaContainer":{"Hub":[
+              {"hubIdentifier":"movie.similar.20","type":"movie","key":"/hubs/metadata/20",
+               "Metadata":[{"ratingKey":"survivor","type":"movie","librarySectionID":1}]}
+            ]}}
+            """)
+            stub.stub(pathSuffix: "/hubs/metadata/10", json: """
+            {"MediaContainer":{"Metadata":[{"ratingKey":"recovered","type":"movie","librarySectionID":1}]}}
+            """)
+            let sections = [10, 20].enumerated().map { slot, subject in
+                ServerHomeSection(
+                    id: "plex:1:recommendation:similar:\(slot)", kind: .recommendations, libraryID: "1",
+                    contentKey: "/hubs/metadata/\(subject)"
+                )
+            }
+            let results = await PlexProvider(session: session(), http: stub).serverHomeItems(
+                sections: reversed ? Array(sections.reversed()) : sections, limit: 8, excludingLibraryIDs: []
+            )
+            XCTAssertEqual(try XCTUnwrap(results[sections[0].id]).get().map(\.id), ["recovered"])
+            XCTAssertEqual(try XCTUnwrap(results[sections[1].id]).get().map(\.id), ["survivor"])
+            XCTAssertEqual(stub.sentPaths, ["/hubs/promoted", "/hubs/metadata/10"])
+        }
+    }
+
+    func testNewRotatingSubjectStillReplacesUnmatchedSlot() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/promoted", json: """
+        {"MediaContainer":{"Hub":[
+          {"hubIdentifier":"movie.similar.30","type":"movie","key":"/hubs/metadata/30",
+           "Metadata":[{"ratingKey":"rotated","type":"movie"}]}
+        ]}}
+        """)
+        let items = try await PlexProvider(session: session(), http: stub).serverHomeItems(
+            section: .init(
+                id: "plex:1:recommendation:similar:0", kind: .recommendations, libraryID: "1",
+                contentKey: "/hubs/metadata/10"
+            ), limit: 8, excludingLibraryIDs: []
+        )
+        XCTAssertEqual(items.map(\.id), ["rotated"])
+        XCTAssertEqual(stub.sentPaths, ["/hubs/promoted"])
+    }
+
     func testExplicitEmptyShelfDoesNotResurrectItemsFromSavedKey() async throws {
         for payload in [#""size":0"#, #""Metadata":[]"#, #""size":0,"more":false,"Metadata":[]"#] {
             let stub = StubHTTPClient()

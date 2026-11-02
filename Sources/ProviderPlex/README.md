@@ -119,6 +119,9 @@ from its stable row identity. If the content response omits that row or truncate
 its inline items, Home loads that exact shelf rather than substituting the full
 recommendation menu. Older rows without a shelf key get one shared retry per
 library; unrecoverable rows report an error without discarding successful siblings.
+Surviving shelves match their saved keys before positional recommendation slots,
+so an omitted sibling cannot shift another shelf into two rows. Unmatched slots
+can still adopt genuinely new recommendation subjects.
 Explicitly empty shelves remain empty. Key-only promotions have a stable identity
 derived from the credential-free key, never the translated display title.
 Persisted keys are revalidated before use, and recovery keeps the active viewer's

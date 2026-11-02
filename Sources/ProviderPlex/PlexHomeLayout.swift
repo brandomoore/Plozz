@@ -158,11 +158,8 @@ extension PlexProvider {
                 try Task.checkCancellation()
                 let hubs = try await client.serverHomeHubs(sectionID: libraryID, count: boundedLimit)
                 try Task.checkCancellation()
-                var indexed = Self.serverHomeSections(hubs, libraryID: libraryID)
-                    .reduce(into: [String: PlexHub]()) { indexed, entry in
-                        if indexed[entry.0.id] == nil { indexed[entry.0.id] = entry.1 }
-                    }
                 let requested = librarySections[libraryID] ?? []
+                var indexed = Self.matchedHomeHubs(hubs, libraryID: libraryID, requested: requested)
                 let retry = requested.filter {
                     !Self.hasCompleteHomePayload(indexed[$0.id])
                         && Self.homeContentKey(section: $0, hub: indexed[$0.id]) == nil
@@ -174,9 +171,10 @@ extension PlexProvider {
                         let refreshed = try await client.serverHomeHubs(sectionID: libraryID, count: boundedLimit)
                         try Task.checkCancellation()
                         let retryIDs = Set(retry.map(\.id))
-                        for (section, hub) in Self.serverHomeSections(refreshed, libraryID: libraryID)
-                            where retryIDs.contains(section.id) {
-                            indexed[section.id] = hub
+                        for (id, hub) in Self.matchedHomeHubs(
+                            refreshed, libraryID: libraryID, requested: requested
+                        ) where retryIDs.contains(id) {
+                            indexed[id] = hub
                         }
                     } catch {
                         for section in retry {
@@ -246,6 +244,33 @@ extension PlexProvider {
 
     private static func homeContentKey(section: ServerHomeSection, hub: PlexHub?) -> String? {
         PlexClient.homeShelfKey(hub?.key) ?? PlexClient.homeShelfKey(section.contentKey)
+    }
+
+    private static func matchedHomeHubs(
+        _ hubs: [PlexHub], libraryID: String, requested: [ServerHomeSection]
+    ) -> [String: PlexHub] {
+        let entries = serverHomeSections(hubs, libraryID: libraryID)
+        var matches: [String: PlexHub] = [:]
+        var reserved = Set<Int>()
+        // A missing rotating shelf shifts positional IDs. Reserve surviving
+        // exact shelves before allowing unmatched slots to adopt new subjects.
+        for section in requested {
+            guard let key = PlexClient.homeShelfKey(section.contentKey),
+                  let index = entries.indices.first(where: {
+                      !reserved.contains($0) && entries[$0].0.kind == section.kind
+                          && entries[$0].0.contentKey == key
+                  }) else { continue }
+            matches[section.id] = entries[index].1
+            reserved.insert(index)
+        }
+        for section in requested where matches[section.id] == nil {
+            guard let index = entries.indices.first(where: {
+                !reserved.contains($0) && entries[$0].0.id == section.id
+            }) else { continue }
+            matches[section.id] = entries[index].1
+            reserved.insert(index)
+        }
+        return matches
     }
 
     private static func serverHomeSections(
