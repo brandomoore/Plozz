@@ -53,7 +53,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
                     "Expected the previously backgrounded installation")
         app.activate()
         try require(app.wait(for: .runningForeground, timeout: 15), "Expected a real foreground transition")
-        try require(app.tabBars.buttons["Search"].waitForExistence(timeout: 30), "Expected normal application UI")
+        try require(app.buttons["Search"].firstMatch.waitForExistence(timeout: 30), "Expected normal application UI")
         recordState()
     }
 
@@ -1941,7 +1941,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func searchForSelectedTitle() throws -> String {
         let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
-        let search = app.tabBars.buttons["Search"]
+        let search = app.buttons["Search"].firstMatch
         let query = app.textFields["Search your libraries"]
         if preservesProcess {
             try openTabRoot(search, anchor: query)
@@ -2260,7 +2260,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             app.terminate()
             app.launch()
         } else {
-            try tapVisible(app.tabBars.buttons["Home"])
+            try tapVisible(app.buttons["Home"].firstMatch)
         }
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
         settings.tap()
@@ -2272,29 +2272,42 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             cancel.tap()
             return
         }
-        let region = app.otherElements["PopoverDismissRegion"]
+        let region = try XCTUnwrap(app.otherElements.matching(identifier: "PopoverDismissRegion")
+            .allElementsBoundByIndex.last)
         let popover = app.popovers.firstMatch
         try require(region.exists && popover.exists, "Expected the native popup dismissal surface")
-        let bounds = region.frame
+        let bounds = region.frame.intersection(app.frame)
         let popup = popover.frame.insetBy(dx: -8, dy: -8)
-        // The full-window dismissal element's center can overlap the destructive action.
+        // Nested iPad forms have their own backdrops; use the frontmost one outside the action.
         let offsets = [CGVector(dx: 0.1, dy: 0.5), CGVector(dx: 0.9, dy: 0.5),
                        CGVector(dx: 0.5, dy: 0.9), CGVector(dx: 0.5, dy: 0.1)]
-        let offset = try XCTUnwrap(offsets.first {
-            let point = CGPoint(x: bounds.minX + bounds.width * $0.dx, y: bounds.minY + bounds.height * $0.dy)
-            return bounds.contains(point) && !popup.contains(point)
-        })
-        region.coordinate(withNormalizedOffset: offset).tap()
+        let point = try XCTUnwrap(offsets.map {
+            CGPoint(x: bounds.minX + bounds.width * $0.dx, y: bounds.minY + bounds.height * $0.dy)
+        }.first { bounds.contains($0) && !popup.contains($0) })
+        region.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
+            dx: point.x - region.frame.minX, dy: point.y - region.frame.minY
+        )).tap()
     }
 
     private func tapVisible(_ target: XCUIElement, tapping: Bool = true) throws {
         _ = target.waitForExistence(timeout: 5)
         for _ in 0..<8 {
             if target.exists && target.isHittable { break }
-            if target.exists && !target.frame.isEmpty && target.frame.midY < app.frame.midY {
-                app.swipeDown()
+            var scroll = app.collectionViews.allElementsBoundByIndex.last
+                ?? app.scrollViews.allElementsBoundByIndex.last ?? app
+            if target.exists && !target.identifier.isEmpty {
+                let collection = app.collectionViews.containing(.any, identifier: target.identifier).firstMatch
+                let container = app.scrollViews.containing(.any, identifier: target.identifier).firstMatch
+                if collection.exists {
+                    scroll = collection
+                } else if container.exists {
+                    scroll = container
+                }
+            }
+            if target.exists && !target.frame.isEmpty && target.frame.midY < scroll.frame.midY {
+                scroll.swipeDown(velocity: .slow)
             } else {
-                app.swipeUp()
+                scroll.swipeUp(velocity: .slow)
             }
         }
         guard target.exists && target.isHittable else { throw Failure.expectedVisibleElement }

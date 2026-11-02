@@ -594,7 +594,7 @@ cancellation preserved remote state; relaunch readback confirmed restoration of
 all 40 original contributions and aggregates. Server metadata, watched/resume
 histories and lists stayed unchanged, and optional rating lookup remained off.
 This establishes that bounded round trip, not 50-item publication, partial-failure,
-ownership or TV/iPad acceptance.
+ownership or native TV acceptance.
 
 A separate real batch-deletion race replaced one selected test contribution
 with a new ID from an independent client while native confirmation remained
@@ -604,14 +604,25 @@ exact replacement, restoring all original season records and unrelated controls.
 This proves replacement-ID safety, not a same-ID edit or negative ownership
 check; no other person's contribution was targeted.
 
-Connected native-form checks also reject blank, zero, negative and duplicate
-episode numbers and whitespace-bearing labels without approving any write.
+Connected iPhone and iPad native-form checks also reject blank, zero, negative
+and duplicate episode numbers and whitespace-bearing labels without approving any write.
 Invalid values display input feedback, not a server-response error. The form
 accepts 49 additions to its initial row, disables Add at 50, re-enables it after
 one removal, and disables it again after replacement. Independent remote reads
 confirmed all original records, aggregates and unrelated controls unchanged.
 This proves the native entry limit, not a real 50-record publication or acceptance
 of fabricated episode coordinates.
+
+The same production mobile binary also completed the two-record round trip on
+a separately onboarded iPad simulator, using normal server login and encrypted
+browser-code connection. Both publication and deletion cancellation preserved
+the exact remote state; exact deletion and relaunch readback restored all 40
+original records and aggregates. Unrelated histories, lists and metadata stayed
+unchanged, and optional rating lookup stayed off on both installations.
+The native driver handles iPad's adaptive tabs, compact scroll containers and
+frontmost confirmation backdrop; iPhone navigation, input and cancellation
+regressions passed. This is platform UI coverage, not an independent-destination
+history-sync round trip or proof of the remaining ownership/lifecycle boundaries.
 
 ## Reviewed multiple-play deletion
 
