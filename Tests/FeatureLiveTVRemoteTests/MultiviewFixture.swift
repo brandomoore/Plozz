@@ -335,7 +335,6 @@ struct LiveTVRootFixture: View {
                     reportingID: playback.reportingID, onPlaybackUpdate: playback.playbackUpdate,
                     onPlaybackFailed: playback.playbackFailed,
                     onVideoAspectRatioChange: playback.videoAspectRatioChanged,
-                    preparingChannelName: playback.preparingChannelName,
                     onMultiview: playback.canOpenMultiview ? playback.openMultiview : nil,
                     outputGroup: state.output, outputID: playback.paneID, isAudible: playback.isAudible,
                     countsAsWatching: playback.countsAsWatching, isMultiview: playback.isMultiview,

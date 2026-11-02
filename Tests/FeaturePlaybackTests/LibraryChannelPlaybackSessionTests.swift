@@ -9,6 +9,95 @@ import UIKit
 
 @MainActor
 final class LibraryChannelPlaybackSessionTests: XCTestCase {
+    func testOwnedChannelSessionReportsOnlyTransportAndReleasesExactlyOnce() async throws {
+        let fixture = try fixture(offset: 20)
+        fixture.state.usesSession = true
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        fixture.player.pause()
+        fixture.player.tick()
+        await settle {
+            fixture.player.tick()
+            return fixture.state.transportReports.last?.isPaused == true
+        }
+        XCTAssertEqual(fixture.state.transportReports.last?.positionSeconds, 20)
+        fixture.player.resume()
+        await settle {
+            fixture.player.tick()
+            return fixture.state.transportReports.last?.isPaused == false
+        }
+        await fixture.player.stopAndDrain()
+        await fixture.player.stopAndDrain()
+        XCTAssertEqual(fixture.state.released, ["first"])
+        XCTAssertEqual(fixture.state.ordinaryReports, 0)
+        XCTAssertTrue(fixture.state.completed.isEmpty)
+        XCTAssertTrue(fixture.state.tracked.isEmpty)
+    }
+
+    func testBoundaryReleasesOwnedSessionBeforeOpeningNextProgramme() async throws {
+        let fixture = try fixture(offset: 98)
+        fixture.state.usesSession = true
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        fixture.state.advance(3)
+        fixture.player.tick()
+        await settle { fixture.player.state == .playing && fixture.state.resolved.count == 2 }
+        XCTAssertEqual(fixture.state.lifecycle, ["open:first", "release:first", "open:second"])
+        await fixture.player.stopAndDrain()
+        XCTAssertEqual(fixture.state.released, ["first", "second"])
+    }
+
+    func testCancelledInFlightNegotiationStillReleasesItsReturnedSession() async throws {
+        let fixture = try fixture()
+        fixture.state.usesSession = true
+        let gate = LibraryPlaybackGate()
+        fixture.state.resolveHook = { _ in await gate.wait() }
+        fixture.player.tune()
+        await settle { gate.isWaiting }
+        fixture.player.stop()
+        gate.open()
+        await fixture.player.stopAndDrain()
+        XCTAssertEqual(fixture.state.released, ["first"])
+        XCTAssertTrue(fixture.engine.loads.isEmpty)
+    }
+
+    func testRevokedProfileReleasesSessionBeforeItCanReachTheEngine() async throws {
+        let fixture = try fixture(durableValidation: true)
+        fixture.state.usesSession = true
+        fixture.state.resolveHook = { [weak fixture] _ in fixture?.state.durableAuthorization = nil }
+        fixture.player.tune()
+        await settle { fixture.player.state == .unavailable(.authorizationChanged) }
+        XCTAssertEqual(fixture.state.released, ["first"])
+        XCTAssertTrue(fixture.engine.loads.isEmpty)
+        await fixture.player.stopAndDrain()
+    }
+
+    func testCrossedBoundaryDuringResolutionReleasesUnplayedSession() async throws {
+        let fixture = try fixture(offset: 98)
+        fixture.state.usesSession = true
+        fixture.state.resolveHook = { [weak fixture] _ in
+            if fixture?.state.resolved.count == 1 { fixture?.state.advance(5) }
+        }
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        XCTAssertEqual(fixture.state.released, ["first"])
+        XCTAssertEqual(fixture.engine.loads.map(\.item.id), ["second"])
+        await fixture.player.stopAndDrain()
+    }
+
+    func testChannelDecoderFailureRetiresOwnedSessionWithoutWatchHistory() async throws {
+        let fixture = try fixture(offset: 20)
+        fixture.state.usesSession = true
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        fixture.engine.currentTime = 90
+        fixture.engine.onEnded?()
+        await settle { fixture.state.released == ["first"] }
+        XCTAssertEqual(fixture.player.state, .unavailable(.mediaChanged))
+        XCTAssertEqual(fixture.state.ordinaryReports, 0)
+        await fixture.player.stopAndDrain()
+    }
+
     func testReadyDecoderWithUnsettledClockWaitsInsteadOfFailingTheJoin() async throws {
         let fixture = try fixture(offset: 20)
         defer { fixture.player.stop() }
@@ -894,6 +983,10 @@ private final class LibraryPlaybackStateFixture {
     var tracked: [Double] = []
     var checkpoints = 0
     var ordinaryReports = 0
+    var usesSession = false
+    var released: [String] = []
+    var lifecycle: [String] = []
+    var transportReports: [PlaybackProgress] = []
     var externalAttempts = 0
     var externalCompletions: [String] = []
     var externalAccounts: [String] = []
@@ -912,10 +1005,13 @@ private final class LibraryPlaybackStateFixture {
 
     func resolve(_ item: LibraryChannelItem) async throws -> PlaybackRequest {
         resolved.append(item.itemID)
+        if usesSession { lifecycle.append("open:\(item.itemID)") }
         try await resolveHook?(item)
         var media = MediaItem(id: item.itemID, title: item.title, kind: item.kind, runtime: Double(item.durationSeconds))
         media.resumePosition = 97
-        return PlaybackRequest(item: media, streamURL: URL(string: "https://server.invalid/file.mp4")!, startPosition: 97)
+        return PlaybackRequest(
+            item: media, streamURL: URL(string: "https://server.invalid/file.mp4")!,
+            playSessionID: usesSession ? item.itemID : nil, startPosition: 97)
     }
 
     func complete(_ id: String) async {
@@ -933,6 +1029,11 @@ private final class LibraryPlaybackStateFixture {
 
     func track(_ progress: Double) { tracked.append(progress) }
     func reportOrdinary() { ordinaryReports += 1 }
+    func reportTransport(_ progress: PlaybackProgress) { transportReports.append(progress) }
+    func release(_ request: PlaybackRequest) {
+        released.append(request.item.id)
+        lifecycle.append("release:\(request.item.id)")
+    }
 }
 
 private actor LibraryPlaybackProviderFixture: LibraryChannelPlaybackProviding {
@@ -944,6 +1045,8 @@ private actor LibraryPlaybackProviderFixture: LibraryChannelPlaybackProviding {
     let state: LibraryPlaybackStateFixture
     init(state: LibraryPlaybackStateFixture) { self.state = state }
     func libraryChannelPlayback(for item: LibraryChannelItem) async throws -> PlaybackRequest { try await state.resolve(item) }
+    func reportLibraryChannelPlayback(_ progress: PlaybackProgress) async throws { await state.reportTransport(progress) }
+    func releaseLibraryChannelPlayback(_ request: PlaybackRequest) async throws { await state.release(request) }
     func recordLibraryChannelCompletion(itemID: String) async throws { await state.complete(itemID) }
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }

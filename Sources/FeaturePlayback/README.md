@@ -323,6 +323,33 @@ language-only tracks. Single tracks are exposed as metadata without offering a
 redundant switch. Synthetic native-selection IDs remain separate from provider
 IDs and still route through AVPlayer's own selection group or muxed tracks.
 
+Live TV channel selection does not display an "Opening [channel]" toast in the
+guide or player. Existing in-player loading indicators, playback errors, retry
+actions, and cancellation on navigation remain unchanged.
+
+The retained channel engine keeps output muted until the current source has
+finished loading and its first-frame signal permits presentation. Scheduled
+programme boundaries and live-clock reconciliation close the same gate; decoder
+playback continues underneath it. Readiness changes are pushed immediately, not
+delayed until the watch-reporting timer. Readiness never overrides the requested mute,
+pause intent, or multiview audio owner. Confirmed audio-only output uses its own
+readiness signal; external playback retains the engine's receiver-readiness
+contract rather than waiting for a local video layer.
+
+On tvOS, opening a fullscreen HDR channel uses the same probe-aware fade as
+movies and episodes. The local veil reaches black before enabling display
+matching; playback and display-settle signals govern its reveal, with the
+existing bounded fallback. Returning to the guide fades the player first, then
+engages the root display veil before restoring fixed-output preview playback.
+The retained preview clears its local exit veil after collapse. Profile
+dynamic-range and frame-rate fade preferences apply; guide channel browsing,
+secondary multiview panes, and mobile playback do not acquire an HDMI veil.
+Ready SDR preview/fullscreen transitions still use the in-place engine path.
+Live loads publish generation-fenced source range after probing and when native
+HLS discovers its video description later. The native mount's provisional SDR
+default is not evidence; confirmed source facts release the probe-aware veil
+without waiting for its safety timeout.
+
 Mobile transport buttons, timelines, and tabs use native **clear** Liquid Glass,
 without tint or a colored backing. Like AVKit video chrome, their symbols and
 progress remain white in both appearances. Mobile Live TV's top presentation

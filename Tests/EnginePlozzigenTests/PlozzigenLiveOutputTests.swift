@@ -1,9 +1,93 @@
 import AetherEngine
 import CoreModels
+import FeaturePlayback
 import XCTest
 @testable import EnginePlozzigen
 
 final class PlozzigenLiveOutputTests: XCTestCase {
+    @MainActor
+    func testFirstFrameReleasesChannelAudioWithoutWaitingForProgressReporting() async throws {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "no-chapters", withExtension: "mp4", subdirectory: "Fixtures"
+        ))
+        let decoder = try PlozzigenVideoEngine()
+        let channel = LibraryLiveChannelEngine(engine: decoder)
+        defer { channel.stop() }
+        var readinessChanges = 0
+        channel.onLiveOutputReadinessChanged = { readinessChanges += 1 }
+        await channel.load(
+            request: PlaybackRequest(item: .init(id: "channel", title: "Fixture", kind: .movie), streamURL: url),
+            startPosition: 0
+        )
+        let deadline = ContinuousClock.now + .seconds(20)
+        while !channel.hasPresentedVideoFrame, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(channel.hasPresentedVideoFrame)
+        let audioDeadline = ContinuousClock.now + .seconds(1)
+        while readinessChanges == 0, ContinuousClock.now < audioDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(readinessChanges, 1, "The initially muted output must become audible at first-frame readiness.")
+        channel.stop()
+        await channel.drainTransport()
+    }
+
+    #if os(tvOS)
+    @MainActor
+    func testSDRPreviewFullscreenRoundTripsKeepThePlayingItemAndPauseState() async throws {
+        try await verifySDRPresentationRoundTrips(isLive: false)
+    }
+
+    @MainActor
+    func testLiveSDRPreviewFullscreenRoundTripsKeepThePlayingItemAndPauseState() async throws {
+        try await verifySDRPresentationRoundTrips(isLive: true)
+    }
+
+    @MainActor
+    private func verifySDRPresentationRoundTrips(isLive: Bool) async throws {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "no-chapters", withExtension: "mp4", subdirectory: "Fixtures"
+        ))
+        let engine = try PlozzigenVideoEngine()
+        defer { engine.stop() }
+        var policy = LiveChannelOutputPolicy(
+            isAudible: true, sharesAudioSession: true, suppressesDisplayMatching: true
+        )
+        engine.configureLiveOutput(policy)
+        if isLive {
+            await engine.loadLive(url: url, httpHeaders: [:])
+        } else {
+            await engine.load(
+                request: PlaybackRequest(item: .init(id: "channel", title: "Fixture", kind: .movie), streamURL: url),
+                startPosition: 0
+            )
+        }
+        let deadline = ContinuousClock.now + .seconds(20)
+        while !engine.isPlaybackPositionReady, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(engine.isPlaybackPositionReady)
+        engine.pause()
+        let player = try XCTUnwrap(engine.nowPlayingPlayer)
+        let item = try XCTUnwrap(player.currentItem)
+        let position = engine.currentTime
+        let selectedAudio = engine.currentAudioTrackID
+        for suppressed in [false, true, false, true] {
+            policy.suppressesDisplayMatching = suppressed
+            engine.configureLiveOutput(policy)
+            // Observe beyond the async policy task's admission, not just the synchronous setter.
+            try await Task.sleep(for: .milliseconds(500))
+            XCTAssertTrue(engine.nowPlayingPlayer === player)
+            XCTAssertTrue(player.currentItem === item, "Presentation must not replace the stream's AVPlayerItem.")
+            XCTAssertEqual(engine.status, .ready)
+            XCTAssertTrue(engine.isPaused)
+            XCTAssertEqual(engine.currentTime, position, accuracy: 0.1)
+            XCTAssertEqual(engine.currentAudioTrackID, selectedAudio)
+        }
+    }
+    #endif
+
     func testEveryCushionPreservesRoutingStorageAndAudioPolicy() throws {
         for path in ["live.ts", "live.m3u8"] {
             let url = try XCTUnwrap(URL(string: "https://example.invalid/\(path)"))
@@ -75,6 +159,13 @@ final class PlozzigenLiveOutputTests: XCTestCase {
                     to: &options)
                 XCTAssertFalse(options.panelIsInHDRMode)
                 XCTAssertTrue(options.attemptsHDRMasterOnUnprovenPanel)
+                #if os(tvOS)
+                XCTAssertEqual(options.displayCriteriaOwner, suppressesDisplayMatching ? .host : .engine)
+                #else
+                XCTAssertEqual(options.displayCriteriaOwner, .engine)
+                #endif
+                XCTAssertEqual(options.suppressDisplayCriteria, suppressesDisplayMatching)
+                XCTAssertEqual(options.matchContentEnabled, !suppressesDisplayMatching)
             }
         }
     }
