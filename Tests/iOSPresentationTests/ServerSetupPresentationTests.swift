@@ -89,12 +89,12 @@ final class ServerSetupPresentationTests: XCTestCase {
             let image = try await render(
                 VStack(spacing: 28) {
                     Button {} label: { Text("Continue").plozzPageActionLabel() }
-                        .plozzActionButton()
+                        .plozzPageActionButton()
                     Button {} label: { Text("Sign In").plozzPageActionLabel() }
-                        .plozzActionButton()
+                        .plozzPageActionButton()
                         .disabled(true)
                     Button {} label: { Text("Cancel").plozzPageActionLabel() }
-                        .plozzActionButton(role: .secondary)
+                        .plozzPageActionButton(role: .secondary)
                 }
                 .controlSize(.large)
                 .settingsPageSurface(horizontalInset: 20)

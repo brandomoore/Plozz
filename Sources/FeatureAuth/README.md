@@ -50,11 +50,17 @@ session persistence.
   linking and manual codes, preselects owned servers, and adds only the checked
   servers after Continue. Empty selection cannot continue. Leaving the server
   selection asks for confirmation, and leaving authentication cancels its work.
-  Mobile primary and secondary actions use `plozzActionButton`, with matching
+  Mobile primary and secondary page actions use `plozzPageActionButton`, with matching
   20-point page insets and a 640-point content cap across the server flows.
   Welcome, Add Server, Silo, and IPTV page actions share `plozzPageActionLabel`
-  inside native large buttons, including alternative sign-in methods and
-  in-content Cancel actions. Native toolbar Cancel remains compact.
+  inside native large buttons, including alternative sign-in methods.
+  The mobile navigation owner supplies top-leading Cancel at the modal root
+  and Back on subsequent steps. Silo and IPTV suppress their standalone
+  in-content cancellation when hosted in that flow; leaving a step cancels its
+  authentication/import work. Plex preserves its selection-loss confirmation
+  for both root Cancel and pushed Back.
+  Silo uses a matching secondary button to reveal another-device instructions
+  and a short code-verification reminder below its browser action.
   Mobile link codes use the shared mobile code size without an enclosing
   settings card, and the code tile uses the shared theme-aware group surface
   instead of a dark overlay. The shared `LinkCodeExpiryCountdown` sits beside the code when

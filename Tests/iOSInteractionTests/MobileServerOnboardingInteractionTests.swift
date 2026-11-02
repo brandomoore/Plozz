@@ -16,8 +16,8 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
             "emby": ["Sign In"],
             "plex": ["Open Plex to link"],
             "plex-servers": ["Continue"],
-            "silo": ["Open Silo to approve", "Cancel"],
-            "iptv": ["Connect", "Cancel"]
+            "silo": ["Open Silo to approve", "Use another device"],
+            "iptv": ["Connect"]
         ]
         for (page, expected) in [
             ("welcome", "Free forever and open source."),
@@ -55,7 +55,7 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
                     XCTAssertGreaterThanOrEqual(button.frame.height, 44)
                 }
             }
-            if ["chooser", "discovery", "plex", "share"].contains(page) {
+            if page != "welcome" {
                 let cancel = app.navigationBars.buttons["Cancel"]
                 XCTAssertTrue(cancel.exists, "\(page) must retain native toolbar cancellation")
                 XCTAssertTrue(cancel.isHittable)
@@ -86,12 +86,90 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
         XCTAssertFalse(app.buttons["add-server-provider-emby"].exists)
     }
 
-    func testPlexCancelReturnsToProviderChooser() throws {
+    func testEveryProviderCanGoBackThroughTheRealFlow() throws {
+        for provider in ["jellyfin", "emby", "silo", "plex", "iptv", "mediaShare"] {
+            let app = launch("chooser")
+            defer { app.terminate() }
+            let choice = app.buttons["add-server-provider-\(provider)"]
+            XCTAssertTrue(choice.waitForExistence(timeout: 5))
+            choice.tap()
+            let back = app.navigationBars.buttons.firstMatch
+            XCTAssertTrue(back.waitForExistence(timeout: 5))
+            XCTAssertEqual(app.navigationBars.buttons.count, 1, provider)
+            XCTAssertFalse(app.buttons["Cancel"].exists, "Pushed pages use Back, not another Cancel")
+            if ["jellyfin", "emby", "silo"].contains(provider) {
+                let server = app.buttons["discovered-server-living-room"]
+                XCTAssertTrue(server.waitForExistence(timeout: 8))
+                server.tap()
+                let expected = provider == "silo" ? app.buttons["Open Silo to approve"]
+                    : provider == "emby" ? app.buttons["server-sign-in-submit"] : app.buttons["Use Password"]
+                XCTAssertTrue(expected.waitForExistence(timeout: 8))
+                try assertVisible(back, in: app)
+                XCTAssertEqual(app.navigationBars.buttons.count, 1)
+                XCTAssertFalse(app.buttons["Cancel"].exists)
+                attach(app, name: "Flow-\(provider)-sign-in")
+                if provider == "jellyfin" {
+                    app.buttons["Use Password"].tap()
+                    XCTAssertTrue(app.buttons["Use Quick Connect"].waitForExistence(timeout: 5))
+                    try assertVisible(back, in: app)
+                    attach(app, name: "Flow-jellyfin-password")
+                } else if provider == "silo" {
+                    let phrase = app.staticTexts.matching(
+                        NSPredicate(format: "label CONTAINS %@", "Check Silo shows")
+                    ).firstMatch
+                    XCTAssertTrue(phrase.exists)
+                    XCTAssertLessThanOrEqual(phrase.frame.height, 24, "Default-size verification fits one line")
+                    app.buttons["Use another device"].tap()
+                    XCTAssertTrue(app.staticTexts["Or enter a code at"].waitForExistence(timeout: 5))
+                    attach(app, name: "Flow-silo-other-device")
+                    app.buttons["Use another device"].tap()
+                    XCTAssertFalse(app.staticTexts["Or enter a code at"].exists)
+                }
+                back.tap()
+                XCTAssertTrue(app.textFields["add-server-address"].waitForExistence(timeout: 5))
+                XCTAssertFalse(app.staticTexts["onboarding-completed"].exists)
+            } else {
+                let expected = provider == "plex" ? app.buttons["Open Plex to link"]
+                    : provider == "iptv" ? app.buttons["Connect"] : app.buttons["Enter an address manually"]
+                XCTAssertTrue(expected.waitForExistence(timeout: 8))
+                attach(app, name: "Flow-\(provider)")
+            }
+            back.tap()
+            XCTAssertTrue(choice.waitForExistence(timeout: 5))
+            app.navigationBars.buttons["Cancel"].tap()
+            XCTAssertTrue(app.staticTexts["Servers"].waitForExistence(timeout: 5))
+        }
+    }
+
+    func testRootCancelAndSignInBackReturnToTheirOwnLevels() throws {
+        for page in ["flow", "silo-flow", "iptv", "share", "plex"] {
+            let app = launch(page)
+            defer { app.terminate() }
+            XCTAssertTrue(app.navigationBars.buttons["Cancel"].waitForExistence(timeout: 5))
+            XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == 'Cancel'")).count, 1)
+            if page == "flow" || page == "silo-flow" {
+                let server = app.buttons["discovered-server-living-room"]
+                XCTAssertTrue(server.waitForExistence(timeout: 8))
+                server.tap()
+                let action = app.buttons[page == "flow" ? "Use Password" : "Open Silo to approve"]
+                XCTAssertTrue(action.waitForExistence(timeout: 8))
+                XCTAssertFalse(app.buttons["Cancel"].exists)
+                let back = app.navigationBars.buttons.firstMatch
+                try assertVisible(back, in: app)
+                back.tap()
+                XCTAssertTrue(app.textFields["add-server-address"].waitForExistence(timeout: 5))
+            }
+            app.navigationBars.buttons["Cancel"].tap()
+            XCTAssertTrue(app.staticTexts["Servers"].waitForExistence(timeout: 5))
+        }
+    }
+
+    func testPlexBackReturnsToProviderChooser() throws {
         let app = launch("chooser")
         defer { app.terminate() }
         app.buttons["add-server-provider-plex"].tap()
         XCTAssertTrue(app.staticTexts["ABCD"].waitForExistence(timeout: 8))
-        app.buttons["Cancel"].tap()
+        app.navigationBars.buttons["Back"].tap()
         XCTAssertTrue(app.buttons["add-server-provider-jellyfin"].waitForExistence(timeout: 5))
     }
 
@@ -130,6 +208,11 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
         XCTAssertEqual(primary.frame.minX, quick.frame.minX, accuracy: 1)
         XCTAssertEqual(primary.frame.width, quick.frame.width, accuracy: 1)
         XCTAssertEqual(primary.frame.height, alternateFrame.height, accuracy: 1)
+        let screenshot = try XCTUnwrap(app.screenshot().image.cgImage)
+        let primaryOutline = try renderedOutline(of: primary, in: app, screenshot: screenshot)
+        let secondaryOutline = try renderedOutline(of: quick, in: app, screenshot: screenshot)
+        XCTAssertEqual(primaryOutline.width, secondaryOutline.width, accuracy: 1)
+        XCTAssertEqual(primaryOutline.height, secondaryOutline.height, accuracy: 1)
         attach(app, name: "Refined-password")
         app.terminate()
 
@@ -241,6 +324,64 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
         }
         XCTAssertTrue(app.buttons["plex-server-home"].isSelected)
         XCTAssertTrue(app.buttons["plex-server-studio"].isSelected)
+    }
+
+    private func renderedOutline(of button: XCUIElement, in app: XCUIApplication,
+                                 screenshot: CGImage) throws -> CGSize {
+        let scale = CGFloat(screenshot.width) / app.frame.width
+        let frame = button.frame.offsetBy(dx: -app.frame.minX, dy: -app.frame.minY)
+        let crop = CGRect(x: frame.minX * scale, y: frame.minY * scale,
+                          width: frame.width * scale, height: frame.height * scale)
+            .insetBy(dx: -4 * scale, dy: -4 * scale).integral
+        let image = try XCTUnwrap(screenshot.cropping(to: crop))
+        let pixels = try rgba(image)
+        func span(_ offsets: [Int]) throws -> CGFloat {
+            let differences = zip(offsets, offsets.dropFirst()).map { previous, current in
+                (0..<3).reduce(0) { $0 + abs(Int(pixels[current + $1]) - Int(pixels[previous + $1])) }
+            }
+            let edgeRange = Int(7 * scale)
+            // Measure the outer rim, not whichever interior glass highlight is strongest.
+            let leading = try XCTUnwrap(differences.indices.prefix(edgeRange).first {
+                differences[$0] > 12
+            }, "The visible leading edge must be measurable")
+            let trailing = try XCTUnwrap(differences.indices.suffix(edgeRange).last {
+                differences[$0] > 12
+            }, "The visible trailing edge must be measurable")
+            return CGFloat(trailing - leading)
+        }
+        return try CGSize(
+            width: span((0..<image.width).map { (image.height / 2 * image.width + $0) * 4 }),
+            height: span((0..<image.height).map { ($0 * image.width + image.width * 3 / 4) * 4 })
+        )
+    }
+
+    private func assertVisible(_ button: XCUIElement, in app: XCUIApplication) throws {
+        XCTAssertTrue(button.isHittable)
+        let screenshot = try XCTUnwrap(app.screenshot().image.cgImage)
+        let scale = CGFloat(screenshot.width) / app.frame.width
+        let frame = button.frame.offsetBy(dx: -app.frame.minX, dy: -app.frame.minY)
+        let image = try XCTUnwrap(screenshot.cropping(to: CGRect(
+            x: frame.minX * scale, y: frame.minY * scale,
+            width: frame.width * scale, height: frame.height * scale
+        ).integral))
+        let pixels = try rgba(image)
+        let red = stride(from: 0, to: pixels.count, by: 4).map { Int(pixels[$0]) }
+        XCTAssertGreaterThan(try XCTUnwrap(red.max()) - XCTUnwrap(red.min()), 48,
+                             "Back must be visibly drawn, not merely present in the accessibility tree")
+    }
+
+    private func rgba(_ image: CGImage) throws -> [UInt8] {
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        return pixels
     }
 
     private func launch(_ page: String) -> XCUIApplication {

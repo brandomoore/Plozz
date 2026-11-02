@@ -76,7 +76,7 @@ struct PlozziOSOnboardingView: View {
             Label("Set Up from Another Device", systemImage: "qrcode")
                 .plozzPageActionLabel()
         }
-        .plozzActionButton(role: .secondary)
+        .plozzPageActionButton(role: .secondary)
         .controlSize(.large)
         .tint(palette.accent)
     }

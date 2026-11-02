@@ -78,6 +78,8 @@ struct MobileServerOnboardingFixture: View {
             AddServerView(appModel: appModel)
         case "discovery", "flow":
             addServer(provider: .jellyfin)
+        case "silo-flow":
+            addServer(provider: .silo)
         case "seeded":
             addServer(provider: .emby, address: "https://emby.example.test/media")
         case "iptv":
@@ -86,38 +88,50 @@ struct MobileServerOnboardingFixture: View {
             AddServerView(appModel: appModel, initialProvider: .mediaShare)
         default:
             NavigationStack {
-                if page == "plex" || page == "plex-servers" {
-                    PlexServerSignInView(viewModel: PlexAuthViewModel(
-                        service: PlexAuthService(
-                            deviceID: "fixture", http: http, probeHTTP: http,
-                            config: .init(pollInterval: 0.1, timeout: 300)
-                        ),
-                        onAuthenticated: { completedIDs = [$0.server.id] },
-                        onAuthenticatedMany: { completedIDs = $0.map(\.server.id) }
-                    ))
-                } else if page == "silo" {
-                    SiloSignInView(
-                        viewModel: SiloAuthViewModel(
-                            server: Self.server(.silo), deviceID: "fixture",
-                            service: SiloAuthentication(baseURL: Self.server(.silo).baseURL,
-                                                        http: OnboardingPreviewHTTP()),
-                            onAuthenticated: { _ in }
-                        ),
-                        server: Self.server(.silo), onCancel: {}
-                    )
-                } else if page == "password" || page == "password-error" {
-                    PasswordServerSignInView(
-                        server: Self.server(.jellyfin), appModel: appModel, http: http,
-                        onAuthenticated: { completedIDs = [$0.server.id] }, onUseQuickConnect: {}
-                    )
-                } else {
-                    ManagedServerSignInView(
-                        server: Self.server(page == "emby" ? .emby : .jellyfin),
-                        appModel: appModel, onComplete: {},
-                        onAuthenticated: { completedIDs = [$0.server.id] }, http: http
-                    )
-                }
+                isolatedSignIn
+                    .toolbar {
+                        if page != "plex" && page != "plex-servers" {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Cancel") { showingSetup = false }
+                            }
+                        }
+                    }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var isolatedSignIn: some View {
+        if page == "plex" || page == "plex-servers" {
+            PlexServerSignInView(viewModel: PlexAuthViewModel(
+                service: PlexAuthService(
+                    deviceID: "fixture", http: http, probeHTTP: http,
+                    config: .init(pollInterval: 0.1, timeout: 300)
+                ),
+                onAuthenticated: { completedIDs = [$0.server.id] },
+                onAuthenticatedMany: { completedIDs = $0.map(\.server.id) }
+            ))
+        } else if page == "silo" {
+            SiloSignInView(
+                viewModel: SiloAuthViewModel(
+                    server: Self.server(.silo), deviceID: "fixture",
+                    service: SiloAuthentication(baseURL: Self.server(.silo).baseURL,
+                                                http: OnboardingPreviewHTTP()),
+                    onAuthenticated: { _ in }
+                ),
+                server: Self.server(.silo), showsCancelButton: false, onCancel: {}
+            )
+        } else if page == "password" || page == "password-error" {
+            PasswordServerSignInView(
+                server: Self.server(.jellyfin), appModel: appModel, http: http,
+                onAuthenticated: { completedIDs = [$0.server.id] }, onUseQuickConnect: {}
+            )
+        } else {
+            ManagedServerSignInView(
+                server: Self.server(page == "emby" ? .emby : .jellyfin),
+                appModel: appModel, onComplete: {}, onCancel: {},
+                onAuthenticated: { completedIDs = [$0.server.id] }, http: http
+            )
         }
     }
 
@@ -160,6 +174,7 @@ actor MobileOnboardingHTTP: HTTPClient {
     let plexLinked: Bool
     private var rejectsFirstPassword: Bool
     private var rejectsFirstQuickConnect: Bool
+    private let silo = OnboardingPreviewHTTP()
 
     init(plexLinked: Bool = false, rejectsFirstPassword: Bool = false,
          rejectsFirstQuickConnect: Bool = false) {
@@ -170,6 +185,9 @@ actor MobileOnboardingHTTP: HTTPClient {
 
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
         try Task.checkCancellation()
+        if baseURL.host == "silo.example.test" {
+            return try await silo.send(endpoint, baseURL: baseURL)
+        }
         let body: String
         switch endpoint.path {
         case "/QuickConnect/Enabled":

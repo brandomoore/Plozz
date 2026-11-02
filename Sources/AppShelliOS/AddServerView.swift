@@ -6,6 +6,7 @@ import FeatureAuthCore
 import FeatureAuth
 import FeatureDiscoveryCore
 import ProviderPlex
+import ProviderSilo
 import SwiftUI
 
 struct AddServerView: View {
@@ -95,6 +96,7 @@ struct AddServerView: View {
                         $0.session(token: appModel.accountStore.token(for: $0.id) ?? "")
                     },
                     initialMode: initialIPTVMode,
+                    showsCancelButton: false,
                     onAuthenticated: {
                         guard appModel.profiles.activeProfileID == initialProfileID,
                               initialIPTVAccount.map({ previous in
@@ -111,11 +113,14 @@ struct AddServerView: View {
                 )
             } else if provider == .mediaShare {
                 PlozziOSUnifiedAddShareView(
-                    appModel: appModel, embedsNavigationStack: false,
+                    appModel: appModel, embedsNavigationStack: false, isNavigationRoot: startsAtProvider,
                     onComplete: { dismiss() }
                 )
             } else if provider == .plex {
-                PlexServerSignInView(appModel: appModel, http: http, onComplete: { dismiss() })
+                PlexServerSignInView(
+                    appModel: appModel, http: http, isNavigationRoot: startsAtProvider,
+                    onComplete: { dismiss() }
+                )
             } else {
                 ServerOnboardingPage(
                     provider: provider, title: Text(verbatim: provider.displayName)
@@ -158,7 +163,7 @@ struct AddServerView: View {
                         }
                         .plozzPageActionLabel()
                     }
-                    .plozzActionButton()
+                    .plozzPageActionButton()
                     .controlSize(.large)
                     .disabled(isValidating || address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityIdentifier("add-server-connect")
@@ -189,7 +194,7 @@ struct AddServerView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if startsAtProvider && provider != .iptv && provider != .mediaShare && provider != .plex {
+            if startsAtProvider && provider != .mediaShare && provider != .plex {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
@@ -316,14 +321,34 @@ struct ManagedServerSignInView: View {
     }
 
     var body: some View {
+        signInContent
+            .navigationBarBackButtonHidden(onCancel == nil)
+            .toolbar {
+                if onCancel == nil {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Back", systemImage: "chevron.backward") { dismiss() }
+                            .labelStyle(.iconOnly)
+                            .accessibilityIdentifier("server-sign-in-back")
+                    }
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var signInContent: some View {
         if server.provider == .silo {
             SiloSignInView(
-                server: server, deviceID: appModel.deviceID, verificationOnly: verificationOnly,
-                onAuthenticated: { session in
-                    try onAuthenticated(session)
-                    var store = UserDefaultsLastServerStore()
-                    store.remember(session.server)
-                },
+                viewModel: SiloAuthViewModel(
+                    server: server, deviceID: appModel.deviceID,
+                    service: SiloAuthentication(baseURL: server.baseURL, http: http),
+                    verificationOnly: verificationOnly,
+                    onAuthenticated: { session in
+                        try onAuthenticated(session)
+                        var store = UserDefaultsLastServerStore()
+                        store.remember(session.server)
+                    }
+                ),
+                server: server, showsCancelButton: false,
                 onCancel: {
                     if let onCancel { onCancel() } else { dismiss() }
                 })
@@ -388,7 +413,7 @@ struct QuickConnectServerSignInView: View {
                 Text("Use Password")
                     .plozzPageActionLabel()
             }
-            .plozzActionButton(role: .secondary)
+            .plozzPageActionButton(role: .secondary)
             .controlSize(.large)
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -418,7 +443,7 @@ struct QuickConnectServerSignInView: View {
                 } label: {
                     Text("Try Again").plozzPageActionLabel()
                 }
-                .plozzActionButton()
+                .plozzPageActionButton()
                 .controlSize(.large)
             }
         }
@@ -496,7 +521,7 @@ struct PasswordServerSignInView: View {
                 }
                 .plozzPageActionLabel()
             }
-            .plozzActionButton()
+            .plozzPageActionButton()
             .controlSize(.large)
             .disabled(!viewModel.canSubmit)
             .accessibilityIdentifier("server-sign-in-submit")
@@ -508,7 +533,7 @@ struct PasswordServerSignInView: View {
                     Text("Use Quick Connect")
                         .plozzPageActionLabel()
                 }
-                .plozzActionButton(role: .secondary)
+                .plozzPageActionButton(role: .secondary)
                 .controlSize(.large)
             }
         }
@@ -525,9 +550,12 @@ struct PlexServerSignInView: View {
     @State private var didSeedSelection = false
     @State private var showCancelConfirm = false
     @State private var browserOpenFailed = false
+    private let isNavigationRoot: Bool
 
     init(appModel: PlozziOSAppModel, http: any HTTPClient = URLSessionHTTPClient(),
+         isNavigationRoot: Bool = true,
          onComplete: @escaping () -> Void) {
+        self.isNavigationRoot = isNavigationRoot
         let profileID = appModel.profiles.activeProfileID
         _viewModel = State(
             initialValue: PlexAuthViewModel(
@@ -548,6 +576,7 @@ struct PlexServerSignInView: View {
 
     init(viewModel: PlexAuthViewModel) {
         _viewModel = State(initialValue: viewModel)
+        isNavigationRoot = true
     }
 
     var body: some View {
@@ -568,7 +597,7 @@ struct PlexServerSignInView: View {
                     Label("Open Plex to link", systemImage: "safari")
                         .plozzPageActionLabel()
                 }
-                .plozzActionButton()
+                .plozzPageActionButton()
                 .controlSize(.large)
                 if browserOpenFailed {
                     Label("Could not open the browser. Enter the code at plex.tv/link on another device.",
@@ -595,7 +624,7 @@ struct PlexServerSignInView: View {
                 } label: {
                     Text("Continue").plozzPageActionLabel()
                 }
-                .plozzActionButton()
+                .plozzPageActionButton()
                 .controlSize(.large)
                 .disabled(selectedServerIDs.isEmpty)
                 .accessibilityIdentifier("plex-servers-continue")
@@ -611,7 +640,7 @@ struct PlexServerSignInView: View {
                     } label: {
                         Text("Try Again").plozzPageActionLabel()
                     }
-                    .plozzActionButton()
+                    .plozzPageActionButton()
                     .controlSize(.large)
                 }
             }
@@ -620,9 +649,12 @@ struct PlexServerSignInView: View {
         .navigationBarBackButtonHidden()
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") {
+                Button {
                     if isChoosingServers { showCancelConfirm = true }
                     else { dismiss() }
+                } label: {
+                    if isNavigationRoot { Text("Cancel") }
+                    else { Label("Back", systemImage: "chevron.backward").labelStyle(.iconOnly) }
                 }
                 .confirmationDialog("Start over?", isPresented: $showCancelConfirm, titleVisibility: .visible) {
                     Button("Start Over", role: .destructive) { dismiss() }

@@ -22,6 +22,7 @@ struct PlozziOSUnifiedAddShareView: View {
     @Environment(\.themePalette) private var palette
     let appModel: PlozziOSAppModel
     let embedsNavigationStack: Bool
+    private let isNavigationRoot: Bool
     private let onComplete: (() -> Void)?
     @State private var viewModel = UnifiedAddShareModel()
     @State private var wired = false
@@ -30,10 +31,12 @@ struct PlozziOSUnifiedAddShareView: View {
     init(
         appModel: PlozziOSAppModel,
         embedsNavigationStack: Bool = true,
+        isNavigationRoot: Bool = true,
         onComplete: (() -> Void)? = nil
     ) {
         self.appModel = appModel
         self.embedsNavigationStack = embedsNavigationStack
+        self.isNavigationRoot = isNavigationRoot
         self.onComplete = onComplete
     }
 
@@ -145,10 +148,11 @@ struct PlozziOSUnifiedAddShareView: View {
         }
         .navigationTitle(stepTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden()
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button(
-                    viewModel.step == .chooseDevice ? "Cancel" : "Back",
+                    viewModel.step == .chooseDevice && isNavigationRoot ? "Cancel" : "Back",
                     action: back
                 )
             }

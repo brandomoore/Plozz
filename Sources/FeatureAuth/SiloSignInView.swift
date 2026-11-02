@@ -16,18 +16,22 @@ public struct SiloSignInView: View {
     @Environment(\.themePalette) private var palette
     private let server: MediaServer
     private let onCancel: () -> Void
+    private let showsCancelButton: Bool
 
     public init(server: MediaServer, deviceID: String, verificationOnly: Bool = false,
+                showsCancelButton: Bool = true,
                 onAuthenticated: @escaping (UserSession) throws -> Void, onCancel: @escaping () -> Void) {
         self.init(viewModel: SiloAuthViewModel(server: server, deviceID: deviceID,
                                              verificationOnly: verificationOnly, onAuthenticated: onAuthenticated),
-                  server: server, onCancel: onCancel)
+                  server: server, showsCancelButton: showsCancelButton, onCancel: onCancel)
     }
 
-    public init(viewModel: SiloAuthViewModel, server: MediaServer, onCancel: @escaping () -> Void) {
+    public init(viewModel: SiloAuthViewModel, server: MediaServer,
+                showsCancelButton: Bool = true, onCancel: @escaping () -> Void) {
         _model = State(initialValue: viewModel)
         self.server = server
         self.onCancel = onCancel
+        self.showsCancelButton = showsCancelButton
     }
 
     public var body: some View {
@@ -66,7 +70,7 @@ public struct SiloSignInView: View {
             VStack(spacing: 28) {
                 header
                 content
-                cancelButton
+                if showsCancelButton { cancelButton }
             }
             .frame(maxWidth: 640)
             .frame(maxWidth: .infinity)
@@ -118,7 +122,7 @@ public struct SiloSignInView: View {
         #if os(tvOS)
         .buttonStyle(.bordered)
         #else
-        .plozzActionButton(role: .secondary)
+        .plozzPageActionButton(role: .secondary)
         .controlSize(.large)
         #endif
         .focused($focused, equals: .cancel)
@@ -194,7 +198,7 @@ public struct SiloSignInView: View {
                     .buttonStyle(.borderedProminent)
                     .foregroundStyle(palette.onAccent)
                     #else
-                    .plozzActionButton()
+                    .plozzPageActionButton()
                     .controlSize(.large)
                     #endif
                     .focused($focused, equals: .confirm)
@@ -208,7 +212,7 @@ public struct SiloSignInView: View {
                     #if os(tvOS)
                     .buttonStyle(.bordered)
                     #else
-                    .plozzActionButton(role: .secondary)
+                    .plozzPageActionButton(role: .secondary)
                     .controlSize(.large)
                     #endif
                     .focused($focused, equals: .profiles)
@@ -229,7 +233,7 @@ public struct SiloSignInView: View {
                     .buttonStyle(.borderedProminent)
                     .foregroundStyle(palette.onAccent)
                     #else
-                    .plozzActionButton()
+                    .plozzPageActionButton()
                     .controlSize(.large)
                     #endif
                     .focused($focused, equals: .retry)
@@ -247,7 +251,7 @@ public struct SiloSignInView: View {
                     .buttonStyle(.borderedProminent)
                     .foregroundStyle(palette.onAccent)
                     #else
-                    .plozzActionButton()
+                    .plozzPageActionButton()
                     .controlSize(.large)
                     #endif
                     .focused($focused, equals: .retry)
@@ -266,6 +270,7 @@ private struct SiloPairingCard: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.themePalette) private var palette
     @State private var browserFailed = false
+    @State private var showsAnotherDevice = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -293,19 +298,17 @@ private struct SiloPairingCard: View {
             .fixedSize(horizontal: false, vertical: true)
             #else
             VStack(spacing: 16) {
-                Text("Approve Plozz in your browser, then return here. We'll continue automatically.")
-                    .multilineTextAlignment(.center)
                 Button {
                     browserFailed = false
-                    openURL(approvalURL) { accepted in browserFailed = !accepted }
+                    openURL(approvalURL) { accepted in
+                        browserFailed = !accepted
+                        if !accepted { showsAnotherDevice = true }
+                    }
                 } label: {
                     Label("Open Silo to approve", systemImage: "arrow.up.forward.app")
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity)
                         .plozzPageActionLabel()
                 }
-                .plozzActionButton()
+                .plozzPageActionButton()
                 .controlSize(.large)
                 if browserFailed {
                     Text("The browser couldn't open. Use the address below or scan the code with another device.")
@@ -313,7 +316,16 @@ private struct SiloPairingCard: View {
                         .multilineTextAlignment(.center)
                 }
                 SiloMatchPhrase(match: code)
-                DisclosureGroup("Use another device") {
+                Button {
+                    showsAnotherDevice.toggle()
+                } label: {
+                    Label("Use another device", systemImage: "qrcode")
+                        .plozzPageActionLabel()
+                }
+                .plozzPageActionButton(role: .secondary)
+                .controlSize(.large)
+                .accessibilityValue(showsAnotherDevice ? Text("Expanded") : Text("Collapsed"))
+                if showsAnotherDevice {
                     VStack(spacing: 24) {
                         SiloPairingQRCode(url: approvalURL, size: 220)
                         SiloPairingInstructions(
@@ -398,7 +410,11 @@ private struct SiloMatchPhrase: View {
     let match: String
     var body: some View {
         Label {
+            #if os(iOS)
+            Text("Check Silo shows \(Text(verbatim: match).bold())")
+            #else
             Text("Before approving, check that Silo shows \(Text(verbatim: match).bold()).")
+            #endif
         } icon: {
             Image(systemName: "checkmark.shield")
         }
