@@ -11,6 +11,190 @@ import XCTest
 
 @MainActor
 final class ServerSetupPresentationTests: XCTestCase {
+    func testHomeEmptyStatesRenderBlueMascotInBothAppearances() async throws {
+        XCTAssertNotNil(UIImage(named: "PlozzLogo"))
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 768, height: 1024)] {
+            for hasAccounts in [false, true] {
+                for light in [false, true] {
+                    let image = try await render(
+                        PlozziOSHomeEmptyState(
+                            hasAccounts: hasAccounts, onAddSource: {},
+                            onReceiveSetup: hasAccounts ? nil : {}
+                        )
+                        .background(light ? ThemePalette.light.backgroundBase : ThemePalette.dark.backgroundBase)
+                        .environment(\.themePalette, light ? ThemePalette.light : .dark),
+                        size: size, light: light
+                    )
+                    let pixels = try rgba(image)
+                    let bluePixels = stride(from: 0, to: pixels.count, by: 4).filter {
+                        Int(pixels[$0 + 2]) > Int(pixels[$0]) + 30
+                            && Int(pixels[$0 + 1]) > Int(pixels[$0]) + 20
+                    }.count
+                    XCTAssertGreaterThan(bluePixels, 100, "The blue mascot must render, not a missing or monochrome image")
+                    attach(image, name: "Home-mascot-\(hasAccounts)-\(size.width)-\(light ? "light" : "dark")")
+                }
+            }
+        }
+    }
+
+    func testHomeEmptyStatesKeepActionsReadableAtLargeTextAndNarrowWidths() async throws {
+        for (size, typeSize, light) in [
+            (CGSize(width: 320, height: 568), DynamicTypeSize.accessibility5, false),
+            (.init(width: 844, height: 390), .accessibility3, true),
+            (.init(width: 375, height: 1024), .accessibility3, false),
+            (.init(width: 768, height: 1024), .large, true)
+        ] {
+            for hasAccounts in [false, true] {
+                let image = try await render(
+                    PlozziOSHomeEmptyState(
+                        hasAccounts: hasAccounts, onAddSource: {},
+                        onReceiveSetup: hasAccounts ? nil : {}
+                    )
+                    .background(light ? ThemePalette.light.backgroundBase : ThemePalette.dark.backgroundBase)
+                    .environment(\.themePalette, light ? ThemePalette.light : .dark)
+                    .environment(\.dynamicTypeSize, typeSize),
+                    size: size, light: light
+                ) { window in
+                    let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+                    XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+                    try await self.scrollToBottom(scroll, in: window)
+                }
+                let text = try recognize(image).joined(separator: " ")
+                XCTAssertTrue(text.contains(hasAccounts ? "Add Source" : "Another Device"), text)
+                attach(image, name: "Home-empty-\(hasAccounts)-\(size)-\(typeSize)")
+            }
+        }
+    }
+
+    func testCodeSurfaceMatchesSettingsAcrossThemesAndTransparencyModes() async throws {
+        for (name, palette) in [("dark", ThemePalette.dark), ("black", .pureBlack), ("light", .light)] {
+            for (gradient, reduced) in [(true, false), (false, false), (true, true)] {
+                var images: [CGImage] = []
+                for variant in 0..<3 {
+                    let image = try await render(
+                        Group {
+                            if variant == 1 {
+                                ConnectionCodeView("      ")
+                                    .hidden()
+                                    .settingsGroupSurface(cornerRadius: PlozzTheme.Metrics.Radius.panel)
+                            } else if variant == 2 {
+                                ConnectionCodeView("      ").hidden()
+                            } else {
+                                ConnectionCodeView("      ")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(red: 0.18, green: 0.20, blue: 0.22))
+                        .ignoresSafeArea()
+                        .environment(\.themePalette, palette)
+                        .environment(\.gradientBackgroundsEnabled, gradient)
+                        .environment(\.plozzReduceTransparency, reduced),
+                        size: .init(width: 320, height: 240), light: palette.isLight
+                    )
+                    images.append(image)
+                }
+                let actual = try rgba(images[0])
+                let expected = try rgba(images[1])
+                let backdrop = try rgba(images[2])
+                let center = ((images[0].height / 2) * images[0].width + images[0].width / 2) * 4
+                XCTAssertTrue((0..<3).contains {
+                    abs(Int(actual[center + $0]) - Int(backdrop[center + $0])) > 2
+                }, "The sampled pixel must be inside the code surface, not the page backdrop")
+                for channel in 0..<3 {
+                    XCTAssertLessThanOrEqual(
+                        abs(Int(actual[center + channel]) - Int(expected[center + channel])), 2,
+                        "\(name), gradient=\(gradient), reduced=\(reduced): code must match the shared surface"
+                    )
+                }
+            }
+        }
+    }
+
+    func testMobileLinkCodesRemainReadableAcrossWidthsAndTextSizes() async throws {
+        for (size, typeSize, light) in [
+            (CGSize(width: 320, height: 568), DynamicTypeSize.large, false),
+            (.init(width: 320, height: 568), .accessibility5, true),
+            (.init(width: 844, height: 390), .accessibility3, false),
+            (.init(width: 768, height: 1024), .large, true)
+        ] {
+            for code in ["654321", "ABCD"] {
+                let image = try await render(
+                    ScrollView {
+                        ServerConnectionCode(
+                            code: code, expiresAt: .now.addingTimeInterval(120), lifetime: 120
+                        )
+                        .padding(.horizontal, 20)
+                    }
+                    .environment(\.themePalette, light ? ThemePalette.light : .dark)
+                    .environment(\.dynamicTypeSize, typeSize),
+                    size: size, light: light
+                ) { window in
+                    let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+                    XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+                }
+                let text = try recognize(image).joined().replacingOccurrences(of: " ", with: "")
+                XCTAssertTrue(text.contains(code), "Every code character must remain readable: \(text)")
+                attach(image, name: "Refined-code-\(code)-\(size)-\(typeSize)")
+            }
+        }
+    }
+
+    func testOnboardingActionsRemainReadableWhenDisabledInEveryTheme() async throws {
+        for (name, palette) in [("dark", ThemePalette.dark), ("black", .pureBlack), ("light", .light)] {
+            let image = try await render(
+                VStack(spacing: 28) {
+                    Button {} label: { Text("Continue").plozzPageActionLabel() }
+                        .plozzPageActionButton()
+                    Button {} label: { Text("Sign In").plozzPageActionLabel() }
+                        .plozzPageActionButton()
+                        .disabled(true)
+                    Button {} label: { Text("Cancel").plozzPageActionLabel() }
+                        .plozzPageActionButton(role: .secondary)
+                }
+                .controlSize(.large)
+                .settingsPageSurface(horizontalInset: 20)
+                .environment(\.themePalette, palette),
+                size: .init(width: 390, height: 330), light: palette.isLight
+            )
+            let text = try recognize(image).joined(separator: " ")
+            for label in ["Continue", "Sign In", "Cancel"] {
+                XCTAssertTrue(text.contains(label), "\(name) must keep \(label) readable: \(text)")
+            }
+            attach(image, name: "Onboarding action states - \(name)")
+        }
+    }
+
+    func testMobileOnboardingLargeTextAndLandscapeRemainScrollable() async throws {
+        for (size, typeSize, light) in [
+            (CGSize(width: 320, height: 568), DynamicTypeSize.accessibility5, false),
+            (.init(width: 844, height: 390), .accessibility3, true),
+            (.init(width: 375, height: 1024), .accessibility3, false),
+            (.init(width: 1024, height: 768), .large, true)
+        ] {
+            for page in ["chooser", "password", "quick", "plex", "plex-servers", "silo", "iptv"] {
+                let image = try await render(
+                    MobileServerOnboardingFixture(page: page)
+                        .environment(\.themePalette, light ? ThemePalette.light : .dark)
+                        .environment(\.dynamicTypeSize, typeSize),
+                    size: size, light: light
+                ) { window in
+                    try await Task.sleep(for: .milliseconds(500))
+                    let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+                    XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1,
+                                             "\(page) must not scroll horizontally at \(size)")
+                    self.attach(try self.capture(window), name: "Onboarding-\(page)-top-\(size)-\(typeSize)")
+                    try await self.scrollToBottom(scroll, in: window)
+                }
+                let text = try recognize(image).joined(separator: " ")
+                let expected = ["chooser": "IPTV", "password": "Quick Connect",
+                                "quick": "Password", "plex": "approval", "plex-servers": "Continue",
+                                "silo": "Cancel", "iptv": "Cancel"][page]!
+                XCTAssertTrue(text.contains(expected), "\(page) at \(size): \(text)")
+                attach(image, name: "Onboarding-\(page)-bottom-\(size)-\(typeSize)")
+            }
+        }
+    }
+
     func testAccountRecoveryKeepsCancelReachableWithLargeTextOnSmallScreens() async throws {
         for size in [CGSize(width: 320, height: 568), CGSize(width: 568, height: 320)] {
             let image = try await render(

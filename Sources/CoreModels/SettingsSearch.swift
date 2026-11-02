@@ -102,7 +102,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .metadata: ["Metadata Providers"]
         case .diagnostics: ["Help & Diagnostics"]
         case .trackers: ["Trackers"]
-        case .liveTVSources: ["Live TV", "Sources"]
+        case .liveTVSources: ["Live TV", "TV Sources"]
         case .playbackAdvanced: ["Playback", "Advanced"]
         case .streamingAdvanced: ["Playback", "Streaming quality", "Advanced"]
         case .metadataDiagnostics: ["Metadata Providers", "Diagnostics"]

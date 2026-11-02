@@ -3,6 +3,34 @@ import Vision
 
 @MainActor
 final class SettingsWorkspaceRemoteTests: XCTestCase {
+    func testGeneralSourceEntryPointsOpenTheSharedChooser() throws {
+        let app = try launchSettings(style: "tabBar", syncEnabled: false)
+        defer { app.terminate() }
+        for (route, identifier) in [
+            ("servers", "sources-add-source"),
+            ("myLibraries", "libraries-add-source")
+        ] {
+            try focus(section(route, in: app), in: app)
+            capture("source-entry-settings-\(route)", in: app)
+            XCUIRemote.shared.press(.select)
+            let add = app.buttons[identifier]
+            XCTAssertTrue(add.waitForExistence(timeout: 10), app.debugDescription)
+            if route == "myLibraries" {
+                XCTAssertTrue(app.staticTexts["Add a source under Everyone › Sources."].exists)
+            }
+            try focus(add, in: app)
+            capture("source-entry-\(route)", in: app)
+            XCUIRemote.shared.press(.select)
+            XCTAssertTrue(app.staticTexts["Jellyfin"].waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(app.staticTexts["Add Source"].exists)
+            capture("source-destination-\(route)", in: app)
+            XCUIRemote.shared.press(.menu)
+            XCTAssertTrue(add.waitForExistence(timeout: 10), app.debugDescription)
+            XCUIRemote.shared.press(.menu)
+            XCTAssertTrue(section(route, in: app).waitForExistence(timeout: 10), app.debugDescription)
+        }
+    }
+
     func testInlineSearchKeepsQueryAndReturnsToCardInPinnedNavigation() throws {
         for style in ["rail", "sidebar"] {
             let app = try launchSettings(style: style, syncEnabled: false)
@@ -2590,6 +2618,12 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [rootHidden], timeout: 5), .completed,
                        "The retained root must not accept input behind Add source.\n\(app.debugDescription)")
         capture("live-tv-add-source-page", in: app)
+        try focus(app.buttons["live-tv-add-server"], in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.staticTexts["Media server"].waitForExistence(timeout: 5), app.debugDescription)
+        capture("live-tv-media-server-setup", in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["live-tv-add-server"].waitForExistence(timeout: 5), app.debugDescription)
         XCUIRemote.shared.press(.menu)
         let automatic = app.switches["live-tv-automatic-enabled"]
         try focus(automatic, in: app)

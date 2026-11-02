@@ -46,7 +46,8 @@ final class SiloSignInMobileHostedTests: XCTestCase {
             try await wait { if case .pairing = model.phase { return true }; return false }
             let pairing = try await capture(window, name: "silo-mobile-pairing-\(light)")
             XCTAssertTrue(pairing.contains("Open Silo to approve"), pairing)
-            XCTAssertTrue(pairing.contains("Before approving"), pairing)
+            XCTAssertTrue(pairing.contains("Check Silo shows"), pairing)
+            XCTAssertFalse(pairing.contains("Approve Plozz in your browser"), pairing)
             XCTAssertTrue(pairing.contains("ABCD-EFGH"), pairing)
             XCTAssertFalse(pairing.contains("calm river"), pairing)
             XCTAssertFalse(pairing.contains("Or enter a code at"), "Manual alternatives stay in their disclosure.")

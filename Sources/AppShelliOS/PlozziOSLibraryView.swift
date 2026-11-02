@@ -76,7 +76,13 @@ struct PlozziOSLibrariesView: View {
         .toolbarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("Add Server", systemImage: "plus", action: onAddServer)
+                Button(action: onAddServer) {
+                    Label {
+                        Text(SettingsCopy.addSource)
+                    } icon: {
+                        Image(systemName: "plus")
+                    }
+                }
             }
         }
         .task(id: appModel.accounts.map(\.connectionScopeKey)) {
