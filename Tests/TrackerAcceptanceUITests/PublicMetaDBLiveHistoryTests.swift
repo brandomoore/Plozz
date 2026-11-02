@@ -526,6 +526,65 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         return ids
     }
 
+    func testPrepareResumeClearing() throws {
+        let id = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_RECORD_ID"])
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        let progress = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_RESUME_PERCENT"])
+        try require(!id.isEmpty && !progress.isEmpty, "Expected the independently read resume record")
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["Resume points"])
+        let record = app.buttons["publicmetadb.resume.record.\(id)"]
+        try tapVisible(record, tapping: false)
+        XCTAssertTrue(record.label.contains(title))
+        XCTAssertTrue(record.label.contains(progress))
+        record.tap()
+        try tapVisible(app.buttons["publicmetadb.history.action"], tapping: false)
+        XCTAssertEqual(app.buttons["publicmetadb.history.action"].label, "Clear this resume point")
+        XCTAssertTrue(app.staticTexts[progress].exists)
+        try tapVisible(app.buttons["publicmetadb.history.action"])
+        try require(app.popovers.buttons["Clear this resume point"].waitForExistence(timeout: 5),
+                    "Expected a reviewed exact resume clearing")
+        let message = app.popovers.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "Other apps connected to PublicMetaDB may also react to this change."
+        )).firstMatch
+        try require(message.waitForExistence(timeout: 5), "Expected complete resume-clearing disclosure")
+        XCTAssertTrue(message.label.contains("Plozz does not clear the media server's position."))
+    }
+
+    func testCancelResumeClearing() throws {
+        try require(app.popovers.buttons["Clear this resume point"].exists, "Expected the reviewed resume clearing")
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["publicmetadb.history.action"].isEnabled)
+    }
+
+    func testRejectStaleResumeClearing() throws {
+        try tapVisible(app.popovers.buttons["Clear this resume point"])
+        try require(app.staticTexts["The server already has a newer version of this."].waitForExistence(timeout: 30),
+                    "Expected the independently changed or replaced resume to be protected")
+        XCTAssertFalse(app.staticTexts["Change confirmed on PublicMetaDB"].exists)
+        XCTAssertTrue(app.buttons["publicmetadb.history.action"].exists)
+    }
+
+    func testConfirmResumeClearing() throws {
+        try tapVisible(app.popovers.buttons["Clear this resume point"])
+        try require(app.staticTexts["Change confirmed on PublicMetaDB"].waitForExistence(timeout: 30),
+                    "Expected the real resume to be confirmed cleared")
+        XCTAssertFalse(app.buttons["publicmetadb.history.action"].exists)
+    }
+
+    func testClearedResumeRemainsAbsentAfterRelaunch() throws {
+        let id = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_RECORD_ID"])
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["Resume points"])
+        try require(app.staticTexts["Page 1 of 1"].waitForExistence(timeout: 30), "Expected the complete remaining resume page")
+        XCTAssertFalse(app.buttons["publicmetadb.resume.record.\(id)"].exists)
+        XCTAssertFalse(app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "publicmetadb.resume.record.", title
+        )).firstMatch.exists)
+    }
+
     func testCancelHistoryDateChange() throws {
         try cancelHistoryDateConfirmation(addingPlay: false)
     }

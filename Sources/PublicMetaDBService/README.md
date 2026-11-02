@@ -331,8 +331,17 @@ again. Independent readback confirmed each exact record, the subsequent cleanup,
 and preservation of the original play, other tracker collections, and dedicated
 media-server histories. Retained native-driver failures concerned offscreen
 selection/result controls; read-only follow-up scenarios verified the existing
-outcomes rather than repeating destructive requests. Resume clearing, interrupted
-transport, and other-platform acceptance remain separate.
+outcomes rather than repeating destructive requests. Interrupted transport and
+other-platform acceptance remain separate.
+
+Separate real iPhone acceptance verified a movie resume's identity/progress,
+complete clearing disclosure, cancellation, and clearing after fresh review.
+Independent real API edits exercised both an updated position and a replacement
+record with the same content: the pending native confirmation rejected each and
+preserved the newer state. After a fresh confirmation, the selected resume stayed
+absent across relaunch. Other tracker resumes, watched plays, lists and drops,
+and dedicated media-server positions/history remained unchanged. Those controlled
+API edits are concurrency setup, not evidence of additional playback.
 
 ## Optional community ratings
 
