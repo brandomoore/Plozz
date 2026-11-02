@@ -327,6 +327,16 @@ Live TV channel selection does not display an "Opening [channel]" toast in the
 guide or player. Existing in-player loading indicators, playback errors, retry
 actions, and cancellation on navigation remain unchanged.
 
+On tvOS, opening a fullscreen HDR channel uses the same probe-aware fade as
+movies and episodes. The local veil reaches black before enabling display
+matching; playback and display-settle signals govern its reveal, with the
+existing bounded fallback. Returning to the guide fades the player first, then
+engages the root display veil before restoring fixed-output preview playback.
+The retained preview clears its local exit veil after collapse. Profile
+dynamic-range and frame-rate fade preferences apply; guide channel browsing,
+secondary multiview panes, and mobile playback do not acquire an HDMI veil.
+Ready SDR preview/fullscreen transitions still use the in-place engine path.
+
 Mobile transport buttons, timelines, and tabs use native **clear** Liquid Glass,
 without tint or a colored backing. Like AVKit video chrome, their symbols and
 progress remain white in both appearances. Mobile Live TV's top presentation

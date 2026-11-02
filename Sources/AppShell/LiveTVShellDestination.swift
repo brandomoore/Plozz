@@ -180,6 +180,9 @@ struct LiveTVShellDestination: View {
                 countsAsWatching: playback.countsAsWatching,
                 isMultiview: playback.isMultiview,
                 trackPreferences: library.trackPreferences,
+                displayTransitionSettings: {
+                    PlaybackSettingsStore(namespace: preferencesNamespace).load()
+                },
                 isAuthorized: playback.isAuthorized,
                 onOpenLibraryItem: playback.openLibraryItem,
                 program: playback.program,

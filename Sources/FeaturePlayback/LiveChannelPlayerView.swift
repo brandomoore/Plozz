@@ -98,6 +98,7 @@ public struct LiveChannelPlayerView: View {
     private let countsAsWatching: Bool
     private let isMultiview: Bool
     private let trackPreferences: LiveChannelTrackPreferences?
+    private let displayTransitionSettings: @MainActor () -> PlaybackSettings
     private let touchSkipIntervals: @MainActor () -> (backward: SkipInterval, forward: SkipInterval)
     private let touchLevelsEnabled: @MainActor () -> Bool
     private let networkBlock: LiveTVNetworkBlock?
@@ -145,6 +146,11 @@ public struct LiveChannelPlayerView: View {
     /// surface, as a demanding VOD title does (`PlayerView`).
     @State private var suspendedGlass = false
     @State private var suspendedGlassWasHDR = false
+    @State private var displayTransition = LiveChannelDisplayTransition()
+    @State private var displayTask: Task<Void, Never>?
+    @State private var sourceLoadNeeded = false
+    @State private var exitTask: Task<Void, Never>?
+    @Environment(DisplayVeilModel.self) private var displayVeil: DisplayVeilModel?
     @FocusState private var focusedControl: LiveChannelControl?
 
     private var plozzChannelID: String? {
@@ -218,6 +224,7 @@ public struct LiveChannelPlayerView: View {
         countsAsWatching: Bool = false,
         isMultiview: Bool = false,
         trackPreferences: LiveChannelTrackPreferences? = nil,
+        displayTransitionSettings: @escaping @MainActor () -> PlaybackSettings = { .default },
         touchSkipIntervals: @escaping @MainActor () -> (backward: SkipInterval, forward: SkipInterval) = {
             (PlaybackSettings.default.skipBackwardInterval, PlaybackSettings.default.skipForwardInterval)
         },
@@ -269,6 +276,7 @@ public struct LiveChannelPlayerView: View {
         self.countsAsWatching = countsAsWatching
         self.isMultiview = isMultiview
         self.trackPreferences = trackPreferences
+        self.displayTransitionSettings = displayTransitionSettings
         self.touchSkipIntervals = touchSkipIntervals
         self.touchLevelsEnabled = touchLevelsEnabled
         self.networkBlock = networkBlock
@@ -314,6 +322,7 @@ public struct LiveChannelPlayerView: View {
         countsAsWatching: Bool = false,
         isMultiview: Bool = false,
         trackPreferences: LiveChannelTrackPreferences? = nil,
+        displayTransitionSettings: @escaping @MainActor () -> PlaybackSettings = { .default },
         touchSkipIntervals: @escaping @MainActor () -> (backward: SkipInterval, forward: SkipInterval) = {
             (PlaybackSettings.default.skipBackwardInterval, PlaybackSettings.default.skipForwardInterval)
         },
@@ -343,6 +352,7 @@ public struct LiveChannelPlayerView: View {
             onMultiview: onMultiview,
             outputGroup: outputGroup, outputID: outputID, isAudible: isAudible,
             countsAsWatching: countsAsWatching, isMultiview: isMultiview, trackPreferences: trackPreferences,
+            displayTransitionSettings: displayTransitionSettings,
             touchSkipIntervals: touchSkipIntervals,
             touchLevelsEnabled: touchLevelsEnabled,
             networkBlock: networkBlock, isAuthorized: isAuthorized, presentationControls: presentationControls,
@@ -486,6 +496,7 @@ public struct LiveChannelPlayerView: View {
                                 ? dismissPlayer : nil,
                             previewStatus: sourceMatches ? model.interruption?.title : nil
                         )
+                        .opacity(displayTransition.hidesControls ? 0 : 1)
                         .onAppear(perform: focusPlaybackControlIfNeeded)
                         .transition(.opacity)
                     }
@@ -590,6 +601,16 @@ public struct LiveChannelPlayerView: View {
                 }
             }
         }
+        .overlay {
+            Color.black
+                .opacity(displayTransition.veil.veilOpacity)
+                .ignoresSafeArea()
+                .allowsHitTesting(displayTransition.veil.isVeiled)
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: displayTransition.veil.configuration.veilFade),
+                    value: displayTransition.veil.veilOpacity
+                )
+        }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: controlsVisible)
         #if os(iOS)
         .preference(
@@ -655,19 +676,14 @@ public struct LiveChannelPlayerView: View {
                 guard !isExpanded else { return }
                 model?.togglePlayPause()
             }
-            .onChange(of: source, initial: true) { _, _ in updateSource() }
+            .onChange(of: playbackRequest, initial: true) { _, _ in updateSource() }
             .onChange(of: source) { _, _ in touchGestures.cancel() }
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active { touchGestures.cancel() }
             }
             .onChange(of: isExpanded) { _, _ in touchGestures.cancel() }
             .onDisappear { touchGestures.cancel() }
-            .onChange(of: reportingID) { _, _ in
-                updateSource()
-                onVideoAspectRatioChange(model?.videoAspectRatio)
-            }
             .onChange(of: isAudible) { _, audible in model?.setAudible(audible) }
-            .onChange(of: allowsDisplayMatching) { _, allowed in model?.setDisplayMatchingAllowed(allowed) }
             .onChange(of: countsAsWatching) { _, watching in
                 model?.setWatching(watching)
                 reportPlaybackStartedIfNeeded()
@@ -692,6 +708,7 @@ public struct LiveChannelPlayerView: View {
                 #endif
         }
         .onChange(of: wantsNativeFullscreen, initial: true) { _, presented in
+            if presented { updateSource() }
             returnsToGuideAfterFullscreen = presented
             updateFullscreenPresentation(presented)
         }
@@ -717,7 +734,18 @@ public struct LiveChannelPlayerView: View {
         }
         .onChange(of: model?.phase) { _, phase in
             playbackPhaseChanged(phase)
+            updateDisplayTransition()
         }
+        .onChange(of: model?.sourceDynamicRange) { _, _ in
+            updateDisplayTransition()
+        }
+        .onChange(of: model?.hasPresentedFrame) { _, _ in
+            updateDisplayTransition()
+        }
+        .modifier(DisplaySettleObserver {
+            updateDisplayTransition()
+            displayTransition.displayDidSettle()
+        })
         .onChange(of: model?.videoAspectRatio, initial: true) { _, ratio in
             onVideoAspectRatioChange(ratio)
         }
@@ -727,7 +755,10 @@ public struct LiveChannelPlayerView: View {
             expanded: isExpanded, presentedFrame: model?.hasPresentedFrame ?? false, reportingID: reportingID
         )) { _, _ in updateGlassSuspension() }
         .onDisappear(perform: releaseGlassSuspension)
-        .onChange(of: reportingID) { _, _ in updateDiagnosticsSampling(diagnosticsEnabled) }
+        .onChange(of: reportingID) { _, _ in
+            updateDiagnosticsSampling(diagnosticsEnabled)
+            onVideoAspectRatioChange(model?.videoAspectRatio)
+        }
         #if os(iOS)
         .plozzSheet(isPresented: $diagnosticsEnabled) {
             NavigationStack {
@@ -766,6 +797,10 @@ public struct LiveChannelPlayerView: View {
                 focusPlaybackControlIfNeeded()
             }
         } else {
+            if displayTransition.isExiting {
+                displayTransition.reset()
+                updateSource()
+            }
             playbackStartPolicy.resetViewing()
             guidePresented = false
             pendingGuideOpen = false
@@ -841,17 +876,39 @@ public struct LiveChannelPlayerView: View {
         model?.setPermitsExternalPresentation(permitsExternalPresentation)
         if sourceMatchesCurrentModel, model?.sessionReportingID == reportingID {
             model?.setSessionReporting(sessionReporting)
-            return
+            if displayTransition.isExiting
+                || (!sourceLoadNeeded && model?.allowsDisplayMatching == allowsDisplayMatching) { return }
         }
-        playbackStartPolicy.resetViewing()
-        sourceTask?.cancel()
+        let changesSource = !sourceMatchesCurrentModel || model?.sessionReportingID != reportingID
+        if changesSource {
+            playbackStartPolicy.resetViewing()
+            sourceTask?.cancel()
+            sourceLoadNeeded = true
+        }
+        displayTask?.cancel()
+        let token = displayTransition.beginPlayback(
+            isFullscreen: isExpanded && !isMultiview && liveDisplayFadesEnabled,
+            changesSource: changesSource || sourceLoadNeeded, range: model?.sourceDynamicRange,
+            settings: displayTransitionSettings()
+        )
         if let model {
-            sourceTask = Task {
-                guard !Task.isCancelled else { return }
-                await model.changeSource(
-                    channelID: channelID, input: input,
-                    reporting: sessionReporting
-                )
+            displayTask = Task {
+                guard await displayTransition.preparePlayback(token) else { return }
+                model.setDisplayMatchingAllowed(allowsDisplayMatching)
+                if sourceLoadNeeded {
+                    sourceLoadNeeded = false
+                    sourceTask = Task {
+                        guard !Task.isCancelled else { return }
+                        if sourceMatchesCurrentModel, model.sessionReportingID == reportingID {
+                            await model.start()
+                        } else {
+                            await model.changeSource(
+                                channelID: channelID, input: input, reporting: sessionReporting
+                            )
+                        }
+                        if !Task.isCancelled { updateDisplayTransition() }
+                    }
+                }
             }
             return
         }
@@ -861,6 +918,7 @@ public struct LiveChannelPlayerView: View {
         do {
             engine = try makeEngine()
         } catch {
+            displayTransition.reset()
             LiveChannelDiagnostics().event(.initializationFailure, attempt: 0)
             engineInitializationFailed = true
             focusAfterPresentation(.close)
@@ -883,13 +941,24 @@ public struct LiveChannelPlayerView: View {
         playerModel.setWatching(countsAsWatching)
         playerModel.setSessionReporting(sessionReporting)
         playerModel.handleScenePhase(scenePhase)
-        sourceTask = Task {
-            guard !Task.isCancelled else { return }
-            await playerModel.start()
+        displayTask = Task {
+            guard await displayTransition.preparePlayback(token) else { return }
+            sourceLoadNeeded = false
+            sourceTask = Task {
+                guard !Task.isCancelled else { return }
+                await playerModel.start()
+                if !Task.isCancelled { updateDisplayTransition() }
+            }
         }
     }
 
     private func stopPlayback() {
+        exitTask?.cancel()
+        exitTask = nil
+        displayTask?.cancel()
+        displayTask = nil
+        sourceLoadNeeded = false
+        displayTransition.reset()
         sourceTask?.cancel()
         sourceTask = nil
         diagnosticsEnabled = false
@@ -903,6 +972,28 @@ public struct LiveChannelPlayerView: View {
         LiveChannelSource(
             channelID: channelID,
             input: input
+        )
+    }
+
+    private var playbackRequest: LiveChannelPresentationRequest {
+        .init(source: source, reportingID: reportingID, allowsDisplayMatching: allowsDisplayMatching)
+    }
+
+    private var liveDisplayFadesEnabled: Bool {
+        #if os(tvOS)
+        true
+        #else
+        false
+        #endif
+    }
+
+    private func updateDisplayTransition() {
+        guard let model, sourceMatchesCurrentModel else { return }
+        displayTransition.update(
+            range: model.sourceDynamicRange,
+            hasPresentedFrame: model.hasPresentedFrame && model.engine.hasPresentedVideoFrame
+                && model.engine.status == .ready,
+            failed: model.interruption != nil || model.networkBlock != nil
         )
     }
 
@@ -1201,6 +1292,26 @@ public struct LiveChannelPlayerView: View {
     }
 
     private func dismissPlayer() {
+        guard liveDisplayFadesEnabled, !isMultiview, let model else {
+            dismissImmediately()
+            return
+        }
+        let kind = model.allowsDisplayMatching
+            ? LiveChannelDisplayTransition.exitKind(
+                range: model.sourceDynamicRange, settings: displayTransitionSettings())
+            : nil
+        guard let token = displayTransition.beginExit(kind: kind) else { return }
+        displayTask?.cancel()
+        exitTask = Task {
+            await displayTransition.finishExit(
+                token, kind: kind, windowVeil: displayVeil,
+                restoreOutput: { model.setDisplayMatchingAllowed(false) },
+                dismiss: dismissImmediately
+            )
+        }
+    }
+
+    private func dismissImmediately() {
         if fullscreenOwnsSurface {
             updateFullscreenPresentation(false)
         } else {
@@ -1222,6 +1333,12 @@ public struct LiveChannelPlayerView: View {
 private struct LiveChannelSource: Equatable {
     let channelID: String
     let input: LiveChannelInput
+}
+
+private struct LiveChannelPresentationRequest: Equatable {
+    let source: LiveChannelSource
+    let reportingID: UUID?
+    let allowsDisplayMatching: Bool
 }
 
 struct LiveChannelPlaybackStartPolicy<Source: Equatable> {
@@ -1609,6 +1726,7 @@ enum LiveChannelSeekRequest: Equatable {
 @Observable
 final class LiveChannelPlayerModel {
     let engine: any LiveChannelEngine
+    private(set) var sourceDynamicRange: SourceDynamicRange?
     private(set) var failureReport: LiveChannelFailureReport?
     let videoZoom = PlayerVideoZoomModel()
     private let outputGroup: LiveChannelOutputGroup?
@@ -1833,6 +1951,8 @@ final class LiveChannelPlayerModel {
             engine.configureLiveOutput(outputPolicy)
         }
     }
+
+    var allowsDisplayMatching: Bool { !outputPolicy.suppressesDisplayMatching }
 
     func setWatching(_ watching: Bool) {
         engine.setWatching(watching && !stopped)
@@ -2128,6 +2248,7 @@ final class LiveChannelPlayerModel {
 
         if nextSource != source { videoZoom.settings = PlayerVideoZoom() }
         source = nextSource
+        sourceDynamicRange = nil
         resetProgrammeTracks()
         isRecoveringProgramme = false
         attemptGeneration += 1
@@ -2408,6 +2529,7 @@ final class LiveChannelPlayerModel {
     }
 
     func refreshFromEngine() {
+        if let range = engine.probedSourceFacts?.range { sourceDynamicRange = range }
         var healthyPosition: TimeInterval?
         defer {
             if let healthyPosition {
