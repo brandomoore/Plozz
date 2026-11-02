@@ -390,7 +390,7 @@ def require_public_notices(channels):
             raise BridgeError(f"Forum {identifier} is missing the public-mirroring notice; no reports were processed.")
 
 
-def require_channel_permissions(discord, channel, required):
+def channel_permissions(discord, channel):
     member = discord.call("GET", f"/guilds/{GUILD}/members/{BOT}")
     role_ids = {GUILD, *member["roles"]}
     permissions = 0
@@ -398,7 +398,7 @@ def require_channel_permissions(discord, channel, required):
         if role["id"] in role_ids:
             permissions |= int(role["permissions"])
     if permissions & (1 << 3):
-        return
+        return permissions
     overwrites = channel.get("permission_overwrites", [])
     for selected in (
         [item for item in overwrites if item["type"] == 0 and item["id"] == GUILD],
@@ -410,6 +410,13 @@ def require_channel_permissions(discord, channel, required):
             allow |= int(item["allow"])
             deny |= int(item["deny"])
         permissions = (permissions & ~deny) | allow
+    return permissions
+
+
+def require_channel_permissions(discord, channel, required):
+    permissions = channel_permissions(discord, channel)
+    if permissions & (1 << 3):
+        return
     missing = [name for name, bit in required.items() if not permissions & (1 << bit)]
     if missing:
         raise BridgeError(f"Plozz bot lacks permissions in channel {channel['id']}: " + ", ".join(missing))
@@ -509,7 +516,32 @@ def publish_guides(discord, channels):
     print("Pin each guide in its forum using a moderator account. Bot-created guides are excluded from issue mirroring.")
 
 
-def publish_testflight_guide(discord):
+def make_testflight_read_only(discord, channel):
+    require_channel_permissions(discord, channel, {"Manage Permissions": 28})
+    overwrites = channel.get("permission_overwrites", [])
+    writing = sum(1 << bit for bit in (11, 35, 36, 38))
+    permissions = channel_permissions(discord, channel)
+    if not permissions & (1 << 3):
+        bot = next((o for o in overwrites if o["id"] == BOT and o["type"] == 1), {})
+        allow, deny = int(bot.get("allow", 0)), int(bot.get("deny", 0))
+        if not allow & (1 << 11) or deny & (1 << 11):
+            discord.call("PUT", f"/channels/{channel['id']}/permissions/{BOT}", {
+                "type": 1, "allow": str(allow | (1 << 11)), "deny": str(deny & ~(1 << 11)),
+            })
+    everyone = next((o for o in overwrites if o["id"] == GUILD and o["type"] == 0), {})
+    allow, deny = int(everyone.get("allow", 0)), int(everyone.get("deny", 0))
+    if deny & writing != writing or allow & writing:
+        discord.call("PUT", f"/channels/{channel['id']}/permissions/{GUILD}", {
+            "type": 0, "allow": str(allow & ~writing), "deny": str(deny | writing),
+        })
+    current = discord.call("GET", f"/channels/{channel['id']}")
+    everyone = next((o for o in current.get("permission_overwrites", []) if o["id"] == GUILD and o["type"] == 0), {})
+    if int(everyone.get("deny", 0)) & writing != writing or int(everyone.get("allow", 0)) & writing:
+        raise BridgeError("Discord did not confirm the requested read-only permissions.")
+    return current
+
+
+def publish_testflight_guide(discord, *, make_read_only=False):
     user = discord.call("GET", "/users/@me")
     if user.get("id") != BOT or user.get("bot") is not True:
         raise BridgeError("The Discord credential does not identify the configured bot.")
@@ -526,14 +558,11 @@ def publish_testflight_guide(discord):
     require_channel_permissions(discord, channel, {
         "View Channel": 10, "Send Messages": 11, "Embed Links": 14, "Read Message History": 16,
     })
-    read_only = any(
-        overwrite.get("id") == GUILD and overwrite.get("type") == 0
-        and int(overwrite.get("deny", 0)) & (1 << 11)
-        and not int(overwrite.get("allow", 0)) & (1 << 11)
-        for overwrite in channel.get("permission_overwrites", [])
-    )
-    if not read_only:
-        raise BridgeError("Set #testflight to deny Send Messages for @everyone before publishing its read-only guide. No permissions were changed.")
+    if make_read_only:
+        channel = make_testflight_read_only(discord, channel)
+        require_channel_permissions(discord, channel, {
+            "View Channel": 10, "Send Messages": 11, "Embed Links": 14, "Read Message History": 16,
+        })
     messages = thread_messages(discord, channel["id"])
     key = "guide:testflight"
     discord_upsert(discord, channel, messages, key, TESTFLIGHT_GUIDE)
@@ -940,13 +969,17 @@ def sync(discord, github, matcher, channels, since, dry_run=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("preflight", "dry-run", "sync", "publish-guides", "publish-testflight-guide"), default="preflight")
+    parser.add_argument("--make-testflight-read-only", action="store_true",
+                        help="Explicitly configure only #testflight's member posting permissions before publishing.")
     args = parser.parse_args()
+    if args.make_testflight_read_only and args.mode != "publish-testflight-guide":
+        raise BridgeError("Read-only channel setup is only allowed with explicit TestFlight guide publication.")
     if args.mode in ("publish-guides", "publish-testflight-guide"):
         if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch" or os.environ.get("GITHUB_REPOSITORY") != REPO:
             raise BridgeError("Posting guides require an explicit workflow dispatch in this repository.")
         discord = API("Discord", os.environ.get("DISCORD_BOT_TOKEN"), write=True)
         if args.mode == "publish-testflight-guide":
-            publish_testflight_guide(discord)
+            publish_testflight_guide(discord, make_read_only=args.make_testflight_read_only)
         else:
             publish_guides(discord, inspect_discord(discord))
         return
