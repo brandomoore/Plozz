@@ -1,6 +1,8 @@
 import XCTest
 
 #if os(iOS)
+import UIKit
+
 @MainActor
 final class PublicMetaDBLiveHistoryTests: XCTestCase {
     private let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz")
@@ -184,6 +186,166 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 120))
         XCTAssertEqual(enter.label, "Replace API key")
         XCTAssertTrue(app.staticTexts["Connected"].exists)
+        XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
+    }
+
+    func testPrepareConnectionReplacement() throws {
+        try prepareConnectionReplacement()
+        recordState()
+    }
+
+    func testCancelConnectionReplacement() throws {
+        XCTAssertTrue(app.popovers.buttons["Replace API key"].exists)
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        try assertSavedConnection()
+        recordState()
+    }
+
+    func testCancelReplacementEntry() async throws {
+        let code = try beginReplacementEntry()
+        try tapVisible(app.buttons["publicmetadb.pair.cancel"])
+        try await PublicMetaDBLiveConnectionTests.verifyRelayRevoked(code)
+        try assertSavedConnection()
+        recordState()
+    }
+
+    func testRejectInvalidReplacement() async throws {
+        let code = try beginReplacementEntry()
+        let field = app.secureTextFields["publicmetadb.key"]
+        try tapVisible(field)
+        field.typeText("pm-" + String(repeating: "a", count: 60) + "\n")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        try tapVisible(app.buttons["publicmetadb.connect"])
+        XCTAssertTrue(app.staticTexts["Your session has expired. Please sign in again."]
+            .waitForExistence(timeout: 50))
+        XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
+        XCTAssertTrue(field.exists)
+        try await PublicMetaDBLiveConnectionTests.verifyRelayRevoked(code)
+        try tapVisible(app.buttons["publicmetadb.pair.cancel"])
+        try assertSavedConnection()
+        recordState()
+    }
+
+    func testDisconnectAndVerifyRelaunch() throws {
+        try openSettings()
+        try tapVisible(app.buttons["settings-category-trackers"])
+        try assertSavedConnection()
+        try tapVisible(app.buttons["Disconnect"])
+        let confirmation = app.popovers.buttons["Disconnect"].firstMatch
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        try dismissConfirmation()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        try assertSavedConnection()
+        try tapVisible(app.buttons["Disconnect"])
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        confirmation.tap()
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        try assertDisconnectedConnection()
+        try openSettings()
+        try tapVisible(app.buttons["settings-category-trackers"])
+        try assertDisconnectedConnection()
+        recordState()
+    }
+
+    func testSavedConnectionAndListAfterRelaunch() throws {
+        try openSettings()
+        try tapVisible(app.buttons["settings-category-trackers"])
+        try assertSavedConnection()
+        try tapVisible(app.buttons["publicmetadb.browse"])
+        let preference = app.switches["publicmetadb.ratings"]
+        try tapVisible(preference, tapping: false)
+        XCTAssertEqual(preference.value as? String, "0")
+        try tapVisible(app.buttons["Lists"])
+        let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"])
+        XCTAssertFalse(name.isEmpty)
+        XCTAssertTrue(app.staticTexts[name].waitForExistence(timeout: 45))
+        XCTAssertTrue(app.staticTexts["Page 1 of 1"].exists)
+        XCTAssertFalse(app.staticTexts["No records"].exists)
+        recordState()
+    }
+
+    func testInspectManualKeyPasteMenu() throws {
+        _ = try beginReplacementEntry()
+        let previous = UIPasteboard.general.items
+        defer { UIPasteboard.general.items = previous }
+        UIPasteboard.general.string = "Plozz paste inspection"
+        let field = app.secureTextFields["publicmetadb.key"]
+        try tapVisible(field)
+        field.doubleTap()
+        XCTAssertTrue(app.buttons["Paste"].waitForExistence(timeout: 5)
+            || app.menuItems["Paste"].waitForExistence(timeout: 5))
+        recordState()
+    }
+
+    func testManualKeyPasteConnection() async throws {
+        let code = try beginReplacementEntry()
+        let field = app.secureTextFields["publicmetadb.key"]
+        try tapVisible(field)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        let connect = app.buttons["publicmetadb.connect"]
+        XCTAssertFalse(connect.isEnabled)
+        let input = try await PublicMetaDBLiveConnectionTests.readManualInput()
+        let previous = UIPasteboard.general.items
+        defer { UIPasteboard.general.items = previous }
+        UIPasteboard.general.setItems(
+            [["public.utf8-plain-text": input]],
+            options: [.localOnly: true, .expirationDate: Date(timeIntervalSinceNow: 30)]
+        )
+        field.doubleTap()
+        let paste = app.menuItems["Paste"]
+        XCTAssertTrue(paste.waitForExistence(timeout: 5))
+        paste.tap()
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: connect)
+        await fulfillment(of: [enabled], timeout: 5)
+        UIPasteboard.general.items = previous
+        XCTAssertTrue((UIPasteboard.general.items as NSArray).isEqual(to: previous))
+        app.keyboards.buttons["Return"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        try tapVisible(connect)
+        try assertSavedConnection()
+        try await PublicMetaDBLiveConnectionTests.verifyRelayRevoked(code)
+        recordState()
+    }
+
+    private func assertSavedConnection() throws {
+        XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 45))
+        XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Replace API key")
+        XCTAssertTrue(app.staticTexts["Connected"].exists)
+        XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
+    }
+
+    private func assertDisconnectedConnection() throws {
+        let enter = app.buttons["publicmetadb.pair"]
+        try tapVisible(enter, tapping: false)
+        XCTAssertEqual(enter.label, "Enter API key")
+        XCTAssertTrue(app.staticTexts["Not connected"].exists)
+        XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
+        XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
+    }
+
+    private func beginReplacementEntry() throws -> String {
+        try prepareConnectionReplacement()
+        let confirm = app.popovers.buttons["Replace API key"].firstMatch
+        XCTAssertTrue(confirm.exists)
+        confirm.tap()
+        XCTAssertTrue(app.secureTextFields["publicmetadb.key"].waitForExistence(timeout: 5))
+        let codeLabel = app.staticTexts["publicmetadb.pair.code"]
+        XCTAssertTrue(codeLabel.waitForExistence(timeout: 50))
+        let code = codeLabel.label.replacingOccurrences(of: " ", with: "")
+        XCTAssertNotNil(code.range(of: "^[A-HJ-NP-Z2-9]{8}$", options: .regularExpression))
+        return code
+    }
+
+    private func prepareConnectionReplacement() throws {
+        try openSettings()
+        try tapVisible(app.buttons["settings-category-trackers"])
+        let enter = app.buttons["publicmetadb.pair"]
+        try tapVisible(enter, tapping: false)
+        XCTAssertEqual(enter.label, "Replace API key")
+        XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 45))
+        enter.tap()
+        XCTAssertTrue(app.popovers.buttons["Replace API key"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
     }
 

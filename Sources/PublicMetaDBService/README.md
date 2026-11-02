@@ -80,15 +80,18 @@ they must not pass through `AppError.unknown`, which intentionally displays a
 generic fallback. The new Worker
 binding and production activation require separate deployment approval.
 
-Real production TV-simulator checks verified replacement-confirmation
+Real production TV, iPhone and iPad simulator checks verified replacement-confirmation
 cancellation, entry cancellation with relay revocation, invalid-key rejection
 and restoration of the saved connection, and disconnect cancellation. Confirmed
-disconnect survived a normal relaunch. Actual QR/browser reconnection and
-native manual re-entry of the same dedicated key both restored authenticated
+disconnect survived a normal relaunch. Actual QR/code browser reconnection and
+native manual re-entry of the same dedicated key restored authenticated
 private-list access; a final relaunch retained the connection with optional
 ratings off. Independent complete list/history/resume fingerprints were unchanged.
+Mobile manual entry used the native Paste action, with a local-only, expiring
+simulator clipboard whose previous contents were restored and checked. Real keys
+never pass through XCTest typing arguments or logs.
 This does not establish second-member key replacement, iCloud propagation,
-mobile lifecycle parity or in-flight mutation/consent boundaries.
+or in-flight mutation/consent boundaries.
 
 Non-idempotent writes are not automatically retried. A lost reply, malformed
 successful reply, or ambiguous server failure is an uncertain write, not proof

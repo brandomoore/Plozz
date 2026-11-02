@@ -114,6 +114,10 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
             try PublicMetaDBLiveNavigation.focus(back, moving: .up)
             try PublicMetaDBLiveNavigation.select(app.buttons["Retry saved connection"], moving: .down)
         }
+        if app.switches["publicmetadb.ratings"].exists {
+            try PublicMetaDBLiveNavigation.select(app.buttons["Done"], moving: .down)
+            XCTAssertTrue(app.buttons["Done"].waitForNonExistence(timeout: 5))
+        }
         XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 60))
         try PublicMetaDBLiveNavigation.focus(back, moving: .up)
         try PublicMetaDBLiveNavigation.select(enter, moving: .down)
@@ -126,22 +130,8 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         XCUIRemote.shared.press(.select)
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
-        let location = try XCTUnwrap(environment["PLOZZ_TRACKER_MANUAL_INPUT_URL"])
-        let url = try XCTUnwrap(URL(string: location))
-        XCTAssertEqual(url.scheme, "http")
-        XCTAssertEqual(url.host, "127.0.0.1")
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 10
-        let session = URLSession(configuration: configuration, delegate: NoRedirect(), delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
-        let (data, response) = try await session.data(from: url)
-        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
-        struct Input: Decodable { let key: String }
-        let input = try JSONDecoder().decode(Input.self, from: data)
-        guard input.key.range(of: "^pm-[A-Za-z0-9]{60}$", options: .regularExpression) != nil else {
-            throw Failure.precondition("The dedicated manual input source returned an invalid key shape.")
-        }
-        try PublicMetaDBLiveKeyboard.enter(input.key, in: keyboard)
+        let input = try await Self.readManualInput()
+        try PublicMetaDBLiveKeyboard.enter(input, in: keyboard)
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5))
         try focusKeyEntry()
@@ -386,7 +376,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         guard code.range(of: "^[A-HJ-NP-Z2-9]{8}$", options: .regularExpression) != nil else {
             throw Failure.unexpectedRelayResponse
         }
-        let (data, status) = try await relay(code)
+        let (data, status) = try await Self.relay(code)
         struct Challenge: Decodable {
             let publicKey: String
             let expiresAt: Double
@@ -439,6 +429,29 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
     }
 
     private func verifyRevoked(_ code: String) async throws {
+        try await Self.verifyRelayRevoked(code)
+    }
+
+    static func readManualInput() async throws -> String {
+        let location = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_MANUAL_INPUT_URL"])
+        let url = try XCTUnwrap(URL(string: location))
+        XCTAssertEqual(url.scheme, "http")
+        XCTAssertEqual(url.host, "127.0.0.1")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 10
+        let session = URLSession(configuration: configuration, delegate: NoRedirect(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let (data, response) = try await session.data(from: url)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        struct Input: Decodable { let key: String }
+        let input = try JSONDecoder().decode(Input.self, from: data)
+        guard input.key.range(of: "^pm-[A-Za-z0-9]{60}$", options: .regularExpression) != nil else {
+            throw Failure.precondition("The dedicated manual input source returned an invalid key shape.")
+        }
+        return input.key
+    }
+
+    static func verifyRelayRevoked(_ code: String) async throws {
         for attempt in 0..<5 {
             let (_, status) = try await relay(code)
             if status == 410 { return }
@@ -448,7 +461,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         throw Failure.cancellationNotConfirmed
     }
 
-    private func relay(_ code: String) async throws -> (Data, Int) {
+    private static func relay(_ code: String) async throws -> (Data, Int) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
         configuration.timeoutIntervalForResource = 15
