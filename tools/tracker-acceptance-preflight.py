@@ -206,7 +206,7 @@ def tracker_state(http, token, canonical):
             item = {"id": record["id"], "content": observed}
             if path == "/watched":
                 require("watched_at" in record, "Watched date is absent, not explicitly unknown.")
-                item["watchedAt"] = timestamp(record["watched_at"])
+                item["watchedAt"] = None if record["watched_at"] == "" else timestamp(record["watched_at"])
             else:
                 position = number(record.get("position_ms"))
                 runtime = number(record.get("runtime_ms"))

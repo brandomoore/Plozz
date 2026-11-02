@@ -62,6 +62,12 @@ public final class TrackerServerHistorySource {
                 in: library.id, kind: kind, page: .init(startIndex: items.count, limit: 200)
             )
             try requireCurrent()
+            // Emby reports zero total on an empty end probe, even after a
+            // complete nonempty inventory. Never accept this before that end.
+            if page.items.isEmpty, let total, items.count == total,
+               page.startIndex == items.count, page.totalCount == 0 {
+                return items
+            }
             guard page.startIndex == items.count, (0...50_000).contains(page.totalCount),
                   total == nil || total == page.totalCount,
                   page.items.count <= 200, page.endIndex <= page.totalCount,

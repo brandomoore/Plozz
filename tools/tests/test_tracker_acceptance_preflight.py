@@ -202,12 +202,13 @@ class TrackerAcceptancePreflightTests(unittest.TestCase):
             reader.complete_pages(FakeHTTP({"/api/external/lists": pages}), KEY, "/lists")
 
     def test_watched_dates_distinguish_unknown_missing_and_invalid(self):
-        for date in (None, DATE):
+        for date in (None, "", DATE):
             http = transport()
             http.values["/api/external/watched"] = [page([dict(MOVIE, id="watch", watched_at=date)])]
             result = reader.baseline(config(), http, lambda _: KEY)
-            self.assertEqual(result["cases"][0]["tracker"]["watched"][0]["watchedAt"], date)
+            self.assertEqual(result["cases"][0]["tracker"]["watched"][0]["watchedAt"], date or None)
         for record in (dict(MOVIE, id="watch"), dict(MOVIE, id="watch", watched_at="2026-10-24"),
+                       dict(MOVIE, id="watch", watched_at=" "),
                        dict(MOVIE, id="watch", watched_at=1000), dict(MOVIE, id="watch", watched_at="invalid")):
             http = transport()
             http.values["/api/external/watched"] = [page([record])]

@@ -178,10 +178,10 @@ public final class TrackerHistoryExportSession<Target: Codable & Hashable & Send
                 for identity in observation.identities { observationsByIdentity[identity, default: []].insert(index) }
             }
             var compared: [Row] = []
-            for entry in inventory where entry.isPlayed {
+            for entry in inventory where entry.isPlayed || entry.hasBeenPlayed {
                 let item = try await source.item(accountID: accountID, itemID: entry.id)
                 try requireCurrent(current)
-                guard item.isPlayed else { throw TrackerHistoryError.stalePreview }
+                guard item.isPlayed || item.hasBeenPlayed else { throw TrackerHistoryError.stalePreview }
                 let baseline = TrackerServerHistoryBaseline(item: item)
                 let lookupIDs = baseline.identities + MediaItemIdentity.seriesIdentities(for: item)
                 let candidates = lookupIDs.reduce(into: Set<Int>()) {

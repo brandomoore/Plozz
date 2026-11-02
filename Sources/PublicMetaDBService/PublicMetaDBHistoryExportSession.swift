@@ -155,10 +155,10 @@ public final class PublicMetaDBHistoryExportSession {
             for entry in inventory {
                 try requireCurrent(current)
                 // Refresh only relevant rows; never manufacture watches from series totals.
-                guard mode == .watched ? entry.isPlayed : (entry.resumePosition ?? 0) > 0 else { continue }
+                guard mode == .watched ? (entry.isPlayed || entry.hasBeenPlayed) : (entry.resumePosition ?? 0) > 0 else { continue }
                 let item = try await source.item(accountID: accountID, itemID: entry.id)
                 try requireCurrent(current)
-                guard mode == .watched ? item.isPlayed : (item.resumePosition ?? 0) > 0 else {
+                guard mode == .watched ? (item.isPlayed || item.hasBeenPlayed) : (item.resumePosition ?? 0) > 0 else {
                     throw TrackerHistoryError.stalePreview
                 }
                 var content = PublicMetaDB.Content.matching(item)
@@ -365,7 +365,7 @@ public final class PublicMetaDBHistoryExportSession {
         guard let content, content.isPlayable else { return nil }
         switch mode {
         case .watched:
-            guard baseline.played, baseline.lastPlayedAt.map({
+            guard baseline.played || baseline.hasBeenPlayed, baseline.lastPlayedAt.map({
                 $0.timeIntervalSince1970.isFinite && $0 <= Date()
             }) ?? true else { return nil }
             // During a rewatch, lastPlayedAt can describe the unfinished play,

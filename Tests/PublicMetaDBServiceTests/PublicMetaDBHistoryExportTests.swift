@@ -89,9 +89,11 @@ final class PublicMetaDBHistoryExportTests: XCTestCase {
     func testKnownWatchDateIsPreservedButUnfinishedRewatchDateIsNotInvented() async throws {
         for hasResume in [false, true] {
             var item = movie(position: hasResume ? 300 : nil)
+            item.isPlayed = !hasResume
             item.lastPlayedAt = Date(timeIntervalSince1970: 1_700_000_000)
             let (session, _, http) = try fixture(items: [item])
             await preview(session)
+            XCTAssertEqual(session.rows.map(\.status), [.ready])
             XCTAssertEqual(session.rows.first?.exportedWatchDate, hasResume ? nil : item.lastPlayedAt)
             await apply(session)
             XCTAssertNil(session.error)
@@ -100,6 +102,30 @@ final class PublicMetaDBHistoryExportTests: XCTestCase {
             if hasResume { XCTAssertTrue(payload?["watched_at"] is NSNull) }
             else { XCTAssertEqual(payload?["watched_at"] as? String, "2023-11-14T22:13:20.000Z") }
         }
+    }
+
+    func testUnfinishedFirstViewingNeverBecomesAWatchedExport() async throws {
+        var item = movie(played: false, position: 300)
+        item.lastPlayedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let (session, _, http) = try fixture(items: [item])
+        await preview(session)
+        XCTAssertNil(session.error)
+        XCTAssertTrue(session.rows.isEmpty)
+        await apply(session)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testRemovingHistoricalWatchAfterPreviewBlocksRewatchExport() async throws {
+        var item = movie(position: 300)
+        item.isPlayed = false
+        let (session, provider, http) = try fixture(items: [item])
+        await preview(session)
+        XCTAssertEqual(session.rows.map(\.status), [.ready])
+        item.hasBeenPlayed = false
+        await provider.replace([item])
+        await apply(session)
+        XCTAssertEqual(session.error as? TrackerHistoryError, .stalePreview)
+        await assertEqual(await http.mutationCount(), 0)
     }
 
     func testExistingRemoteHistoryDoesNotBecomeAnotherPlay() async throws {
@@ -235,8 +261,37 @@ final class PublicMetaDBHistoryExportTests: XCTestCase {
     }
 
     func testTruncatedInventoryFailsClosedInsteadOfPublishingPartialRows() async throws {
+        for emptyTotal in [0, 2] {
+            let (session, provider, http) = try fixture(items: [movie()])
+            await provider.setAdvertisedTotal(2)
+            await provider.setEmptyPageTotal(emptyTotal)
+            await preview(session)
+            XCTAssertEqual(session.error as? TrackerHistoryError, .incompleteSnapshot)
+            XCTAssertFalse(session.hasCompared)
+            XCTAssertTrue(session.rows.isEmpty)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testEmptyZeroTotalProbeCompletesOnlyTheAdvertisedInventory() async throws {
+        for count in [0, 1, 200, 201] {
+            let items = (0..<count).map { movie(id: "movie-\($0)", played: $0 == 0) }
+            let (session, provider, http) = try fixture(items: items)
+            await provider.setEmptyPageTotal(0)
+            await preview(session)
+            XCTAssertNil(session.error)
+            XCTAssertTrue(session.hasCompared)
+            XCTAssertEqual(session.loadedCount, count)
+            XCTAssertEqual(session.rows.count, min(count, 1))
+            let offsets = Array(stride(from: 0, to: count, by: 200)) + [count]
+            await assertEqual(await provider.pageOffsets(), offsets)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testNonemptyPageBeyondAdvertisedEndStillFailsClosed() async throws {
         let (session, provider, http) = try fixture(items: [movie()])
-        await provider.setAdvertisedTotal(2)
+        await provider.setAdvertisedTotal(0)
         await preview(session)
         XCTAssertEqual(session.error as? TrackerHistoryError, .incompleteSnapshot)
         XCTAssertFalse(session.hasCompared)
@@ -574,6 +629,7 @@ private actor ExportProvider: MediaProvider {
     private var reads = 0
     private var writes = 0
     private var advertisedTotal: Int?
+    private var emptyPageTotal: Int?
     private var series: MediaItem?
     private var readHook: (Int, @Sendable () async -> Void)?
 
@@ -588,6 +644,7 @@ private actor ExportProvider: MediaProvider {
     func replace(_ items: [MediaItem]) { values = items }
     func setSeries(_ item: MediaItem) { series = item }
     func setAdvertisedTotal(_ total: Int) { advertisedTotal = total }
+    func setEmptyPageTotal(_ total: Int) { emptyPageTotal = total }
     func onRead(number: Int, action: @escaping @Sendable () async -> Void) { readHook = (number, action) }
     func pageOffsets() -> [Int] { offsets }
     func writeCount() -> Int { writes }
@@ -606,9 +663,11 @@ private actor ExportProvider: MediaProvider {
     func children(of itemID: String) async throws -> [MediaItem] { throw AppError.notFound }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         offsets.append(page.startIndex)
+        let items = Array(values.dropFirst(page.startIndex).prefix(page.limit))
         return .init(
-            items: Array(values.dropFirst(page.startIndex).prefix(page.limit)),
-            startIndex: page.startIndex, totalCount: advertisedTotal ?? values.count
+            items: items,
+            startIndex: page.startIndex,
+            totalCount: (items.isEmpty ? emptyPageTotal : nil) ?? advertisedTotal ?? values.count
         )
     }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
@@ -664,6 +723,7 @@ private actor ExportHTTP: HTTPClient {
         } else {
             var value = try XCTUnwrap(endpoint.body?.jsonObject)
             let isWatch = endpoint.path.hasSuffix("/watched")
+            if isWatch, value["watched_at"] is NSNull { value["watched_at"] = "" }
             let fails = failedWriteNumber == mutationCount()
             value["id"] = "\(isWatch ? "watch" : "resume")-\(mutationCount())"
             if appliesWrite && !fails && !rejectsWrites {

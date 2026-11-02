@@ -217,7 +217,12 @@ public enum PublicMetaDB {
             let values = try decoder.container(keyedBy: CodingKeys.self)
             // An absent date is not evidence of a watch that happened now.
             guard values.contains(.watchedAt) else { throw Failure.incompleteResponse }
-            watchedAt = try values.decodeIfPresent(Date.self, forKey: .watchedAt)
+            // PublicMetaDB stores an explicitly unknown watch date as "".
+            if try values.decodeIfPresent(String.self, forKey: .watchedAt) == "" {
+                watchedAt = nil
+            } else {
+                watchedAt = try values.decodeIfPresent(Date.self, forKey: .watchedAt)
+            }
         }
 
         public func encode(to encoder: Encoder) throws {

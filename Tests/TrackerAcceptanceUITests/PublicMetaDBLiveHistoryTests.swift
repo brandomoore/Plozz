@@ -405,6 +405,21 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertFalse(app.buttons["publicmetadb.export.apply"].isEnabled)
     }
 
+    func testPrepareSelectedHistoryExport() throws {
+        try testPreviewServerHistoryExport()
+        try selectHistoryExport()
+    }
+
+    func testRejectStaleHistoryExport() throws {
+        let confirm = app.buttons["Export selected titles"]
+        try require(confirm.exists, "Expected the previously prepared export confirmation")
+        try tapVisible(confirm)
+        try require(app.staticTexts[
+            "Tracker or server history changed after the comparison. Compare again before applying changes."
+        ].waitForExistence(timeout: 60), "Expected stale-source or stale-tracker rejection")
+        XCTAssertFalse(try exportRow().staticTexts["Confirmed on PublicMetaDB"].exists)
+    }
+
     private func exportRow() throws -> XCUIElement {
         let item = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ITEM"])
         return app.otherElements["publicmetadb.export.row.\(item)"]
@@ -639,6 +654,14 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try await seekAndPlay(
             fraction: fraction, minimumElapsedSeconds: Int(duration * fraction),
             maximumElapsedSeconds: Int(duration * 0.8)
+        )
+    }
+
+    func testPlayMovieAboveResumeRange() async throws {
+        let duration = try verifiedRuntime()
+        try await seekAndPlay(
+            fraction: 0.82, minimumElapsedSeconds: Int(duration * 0.8) + 1,
+            maximumElapsedSeconds: Int(duration * 0.9) - 1
         )
     }
 

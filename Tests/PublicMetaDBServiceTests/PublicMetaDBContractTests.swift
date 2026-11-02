@@ -100,6 +100,9 @@ final class PublicMetaDBContractTests: XCTestCase {
     func testWatchReadRequiresExplicitDateAndPlayableContent() async throws {
         for row in [
             #"{"id":"play","tmdb_id":550,"media_type":"movie"}"#,
+            #"{"id":"play","tmdb_id":550,"media_type":"movie","watched_at":" "}"#,
+            #"{"id":"play","tmdb_id":550,"media_type":"movie","watched_at":"invalid"}"#,
+            #"{"id":"play","tmdb_id":550,"media_type":"movie","watched_at":123}"#,
             #"{"id":"play","tmdb_id":550,"media_type":"tv","watched_at":null}"#,
             #"{"id":"","tmdb_id":550,"media_type":"movie","watched_at":null}"#
         ] {
@@ -112,11 +115,24 @@ final class PublicMetaDBContractTests: XCTestCase {
 
     func testUnknownDateAndFractionalDateDecode() throws {
         let decoder = PublicMetaDBClient.decoder()
-        let unknown = try decoder.decode(PublicMetaDB.Record<PublicMetaDB.Watch>.self, from: Data(watch.utf8))
-        XCTAssertNil(unknown.value.watchedAt)
+        for value in ["null", "\"\""] {
+            let wire = watch.replacingOccurrences(of: "null", with: value)
+            let unknown = try decoder.decode(PublicMetaDB.Record<PublicMetaDB.Watch>.self, from: Data(wire.utf8))
+            XCTAssertNil(unknown.value.watchedAt)
+        }
         let dated = watch.replacingOccurrences(of: "null", with: #""2023-11-14T22:13:20.125Z""#)
         let row = try decoder.decode(PublicMetaDB.Record<PublicMetaDB.Watch>.self, from: Data(dated.utf8))
         XCTAssertEqual(try XCTUnwrap(row.value.watchedAt).timeIntervalSince1970, 1_700_000_000.125, accuracy: 0.001)
+    }
+
+    func testUnknownBackfillAcknowledgesEmptyStorageDateWithoutInventingNow() async throws {
+        let http = RecordingHTTPClient()
+        let wire = watch.replacingOccurrences(of: "null", with: "\"\"")
+        http.stub(pathSuffix: "/watched", json: #"{"success":true,"item":\#(wire)}"#)
+        let row = try await client(http).backfillWatch(.init(tmdbID: 550, mediaType: .movie), at: .unknown)
+        XCTAssertNil(row.value.watchedAt)
+        XCTAssertEqual(http.sent.count, 1)
+        XCTAssertTrue(http.sent[0].json?["watched_at"] is NSNull)
     }
 
     func testMissingNonIdempotentResponseIsUncertainAndNeverRetried() async throws {

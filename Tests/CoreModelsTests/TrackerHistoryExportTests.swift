@@ -43,9 +43,11 @@ final class TrackerHistoryExportTests: XCTestCase {
             var item = movie()
             item.lastPlayedAt = sourceDate
             item.resumePosition = resume
+            item.isPlayed = resume == nil
             let fixture = try ExportFixture(items: [item])
             let session = fixture.session()
             await preview(session)
+            XCTAssertEqual(session.rows.map(\.status), [.ready])
             let expected = resume == nil ? sourceDate : nil
             XCTAssertEqual(session.rows.first?.watchDate, expected)
             await apply(session)
@@ -53,6 +55,21 @@ final class TrackerHistoryExportTests: XCTestCase {
             XCTAssertEqual(fixture.dates, [expected])
             if case .confirmed? = session.outcomes.values.first {} else { XCTFail("Watch was not confirmed") }
         }
+    }
+
+    func testUnfinishedFirstViewingNeverBecomesAWatchedExport() async throws {
+        var item = movie()
+        item.isPlayed = false
+        item.hasBeenPlayed = false
+        item.resumePosition = 250
+        item.lastPlayedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let fixture = try ExportFixture(items: [item])
+        let session = fixture.session()
+        await preview(session)
+        XCTAssertNil(session.error)
+        XCTAssertTrue(session.rows.isEmpty)
+        await apply(session)
+        XCTAssertEqual(fixture.writes, 0)
     }
 
     func testStatusOnlyAdapterDoesNotPromiseOrSendOriginalDates() async throws {

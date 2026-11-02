@@ -102,7 +102,9 @@ accept both ISO `T` separators and the service's space-separated storage dates.
 PublicMetaDB ignores progress below 2% and clears
 resume at 80%; that does not mean Plozz or a media server considers the title
 watched. Plozz's completion threshold remains 90%. Watched dates distinguish
-omitted/current, explicit null/unknown, and a known timestamp. A new watched
+omitted/current, explicit null/unknown, and a known timestamp. Reads also accept
+the service's empty-string storage representation of an unknown watch date;
+missing fields, whitespace and malformed nonempty dates remain invalid. A new watched
 record is another play; do not use blanket deduplication to suppress rewatches.
 
 ## Server history comparison
@@ -568,8 +570,35 @@ last-play date and cleared tracker resume. Both servers, other tracker titles,
 the combined-file controls and test lists stayed unchanged. Relaunch showed the
 play already present without adding another. The same live preview recognized
 previously reported ordinary/special episodes and left the combined file
-unavailable. Movie exports, unknown-date cases, live export races and broader
-provider/platform parity still need separate live acceptance.
+unavailable.
+
+Real Emby movie export testing found and repaired three gaps: an empty end-page
+response reported zero total after a complete 1,514-item inventory; a historical
+watch disappeared from export during an unfinished rewatch; and the service
+returned an unknown watch date as an empty string rather than null. The shared
+inventory now accepts that exact terminal response without accepting truncation.
+Both export implementations retain historical completion without changing
+current playback state. Watch decoding accepts only the exact empty-string
+unknown representation, not missing or malformed dates.
+
+Actual movie playback verified below-2% and above-80% export rejection, an exact
+1,044,003-millisecond approved resume, cancellation and no replay after relaunch.
+The high-progress preview left the existing tracker resume intact. Completed
+viewings followed by unfinished rewatches produced unknown-date backfills, not
+invented completion dates or reconstructed server play counts. One real failed
+acknowledgment was reconciled from its saved record without another write; a
+fresh second movie then verified immediate native acknowledgment and independent
+readback of exactly one unknown-date play. Unknown-date movie backfill preserved
+existing tracker resume rather than implicitly clearing a rewatch.
+
+Controlled independent edits on the real test server and tracker, made while
+native export confirmation was open, verified stale-source and stale-tracker
+rejection. Fresh comparison and explicit approval then exported the selected
+936,284-millisecond resume while retaining the prior watch. Every cancellation,
+rejection and relaunch preserved unrelated titles, files, server users and lists.
+These are real API race injections paired with normal native UI, not two-device
+or interrupted-network acceptance. Remaining scope/lifecycle boundaries and
+provider/platform parity still need their own live evidence.
 
 The unbound `PublicMetaDBLiveHistoryTests` driver uses normally configured
 production-app UI, not seeded profiles or substituted media. Its individual

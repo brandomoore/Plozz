@@ -32,6 +32,16 @@ historical/status writes and target-specific readback. Full reads are capped at
 the existing server inventory retains its 50,000-item bound. No title search,
 server writes, playback reports, play-count reconstruction or ongoing enrollment
 occurs. Existing tracker watches and conflicting progress are not selectable.
+Historical completion (`hasBeenPlayed`) remains exportable during an unfinished
+rewatch even though current `isPlayed` is false. Its watch date remains unknown;
+the partial viewing's recency is not the previous completion date. A first
+unfinished viewing cannot create a watched export.
+
+Server inventory traversal probes the advertised end. Emby's empty end response
+may report a zero total; this is accepted only after the previously advertised
+item count has been collected exactly. Premature empty pages, changing nonempty
+totals, duplicate identities and additional items beyond that end still fail
+closed rather than publishing a partial export.
 
 `TrackerHistoryListState` retains planning, watching, waiting, paused, dropped
 and completed list membership without fabricating a watch, episode count or
