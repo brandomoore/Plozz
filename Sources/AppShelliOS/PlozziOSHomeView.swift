@@ -2349,7 +2349,7 @@ private struct PlozziOSHeroPagingButton: UIViewRepresentable {
         button.isAccessibilityElement = true
         button.accessibilityTraits = button.isEnabled ? .button : [.button, .notEnabled]
         button.onActivate = action
-        button.accessibilityLabel = String(
+        button.accessibilityLabel = String( // l10n:content - UIKit requires resolved text, refreshed with the environment locale.
             localized: forward ? "Next" : "Previous",
             locale: context.environment.locale
         )
