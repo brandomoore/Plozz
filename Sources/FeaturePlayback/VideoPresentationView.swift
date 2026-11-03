@@ -84,12 +84,26 @@ final class VideoPresentationView: UIView {
         #endif
     }
 
-    isolated deinit {
-        stopPictureSampling()
+    deinit {
+        pictureTask?.cancel()
         for observer in pictureObservers { NotificationCenter.default.removeObserver(observer) }
         #if os(iOS)
         for observer in activationObservers { NotificationCenter.default.removeObserver(observer) }
         #endif
+        // Avoid isolated-deinit back deployment without releasing another view's analysis.
+        let cleanup: @MainActor @Sendable () -> Void = {
+            [engine, pictureToken, activePicture, weak subtitleViewport] in
+            if let engine, Self.pictureOwners[ObjectIdentifier(engine)]?.token == pictureToken {
+                Self.pictureOwners.removeValue(forKey: ObjectIdentifier(engine))
+                engine.stopActivePictureAnalysis()
+            }
+            if activePicture != nil { subtitleViewport?.scheduleUpdate() }
+        }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { cleanup() }
+        } else {
+            Task { @MainActor in cleanup() }
+        }
     }
 
     @available(*, unavailable)

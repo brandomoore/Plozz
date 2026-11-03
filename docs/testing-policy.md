@@ -253,6 +253,15 @@ sleep improves a run.
 
 ### TestFlight: risk-based checks and a frozen candidate
 
+Lifecycle coverage must include an older supported runtime, not only the newest
+simulator. With Xcode 27.2, `isolated deinit` back deployment aborts in Swift's
+task-local cleanup on tvOS 26.2 while the same tests pass on tvOS 27.0.
+Use the existing captured-resource main-actor cleanup pattern instead: clean up
+synchronously on the main thread, otherwise enqueue the captured resources on
+the main actor without retaining the object being destroyed. Preserve cancellation,
+observer removal and ownership checks. Theme music, video surfaces, source
+admission and the Home sampler have lifecycle regression coverage.
+
 TestFlight preparation is not an automatic full-matrix main gate. Select checks
 from the net change since the last distributed build and the evidence already
 collected during development. Record the selection, evidence, omitted suites,

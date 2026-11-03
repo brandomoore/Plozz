@@ -94,9 +94,17 @@ public final class LiveTVSourcesRuntime {
         catalog.imports.beforeSourceRefresh = { [weak binding] in binding?.invalidate($0) }
     }
 
-    isolated deinit {
-        scanBinding.deactivate()
-        catalog.invalidate()
+    deinit {
+        // Keep teardown on the main actor without isolated-deinit back deployment.
+        let cleanup: @MainActor @Sendable () -> Void = { [scanBinding, catalog] in
+            scanBinding.deactivate()
+            catalog.invalidate()
+        }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { cleanup() }
+        } else {
+            Task { @MainActor in cleanup() }
+        }
     }
 
     /// Stop the old generation before admitting the new profile/account context.

@@ -9,6 +9,15 @@ import XCTest
 final class PlayerVideoZoomTests: XCTestCase {
     private let television = CGRect(x: 0, y: 0, width: 1920, height: 1080)
 
+    func testVideoViewLastReferenceCanBeReleasedOffMainActor() async {
+        await Task.detached {
+            var view: VideoPresentationView? = await VideoPresentationView(frame: .zero)
+            weak var releasedView = view
+            view = nil
+            XCTAssertNil(releasedView)
+        }.value
+    }
+
     func testZoomModeCopyUsesFamiliarNamesAndIdentifiesTheDefaultWithoutDescriptions() {
         XCTAssertEqual(PlayerVideoZoom().mode, .fit)
         XCTAssertEqual(PlayerVideoZoom.Mode.allCases.map { String(localized: $0.title) },

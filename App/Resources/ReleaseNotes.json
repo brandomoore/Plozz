@@ -36,6 +36,7 @@
         {
           "category": "Fixed",
           "items": [
+            "Playback and navigation crash fixes on older systems.",
             "Corrected landscape collection covers in See all pages.",
             "Corrected version-title formatting.",
             {

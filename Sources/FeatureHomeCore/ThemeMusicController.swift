@@ -26,9 +26,9 @@ public final class ThemeMusicController: ThemeMusicPreviewControlling {
     public var isPreviewing: Bool { previewOwner != nil }
 
     let player = AVPlayer()
-    private var endObserver: NSObjectProtocol?
+    @ObservationIgnored private var endObserver: NSObjectProtocol?
     private var statusObservation: NSKeyValueObservation?
-    private var fadeTimeObserver: Any?
+    @ObservationIgnored private var fadeTimeObserver: Any?
     private var fadeTarget: Float = 0
     private var hasFadedIn = false
     private var hasStartedPlayback = false
@@ -36,8 +36,8 @@ public final class ThemeMusicController: ThemeMusicPreviewControlling {
     @ObservationIgnored private var fadeOutTask: Task<Void, Never>?
     private var fadeOutResetsItem = false
     private let fadeOutDuration: Duration = .milliseconds(750)
-    private var lifecycleObservers: [NSObjectProtocol] = []
-    private var sampleURL: URL?
+    @ObservationIgnored private var lifecycleObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var sampleURL: URL?
     private var authorizationID: String?
     private var detailPlaybackID: String?
 
@@ -446,15 +446,24 @@ public final class ThemeMusicController: ThemeMusicPreviewControlling {
         return true
     }
 
-    isolated deinit {
+    deinit {
         fadeOutTask?.cancel()
-        for observer in lifecycleObservers { NotificationCenter.default.removeObserver(observer) }
-        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
-        if let fadeTimeObserver { player.removeTimeObserver(fadeTimeObserver) }
-        player.pause()
-        if let sampleURL {
-            do { try FileManager.default.removeItem(at: sampleURL) }
-            catch { PlozzLog.app.error("Theme music: sample cleanup failed during teardown") }
+        // Capture resources, not self, to avoid isolated-deinit back deployment.
+        let cleanup: @MainActor @Sendable () -> Void = {
+            [player, lifecycleObservers, endObserver, fadeTimeObserver, sampleURL] in
+            for observer in lifecycleObservers { NotificationCenter.default.removeObserver(observer) }
+            if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+            if let fadeTimeObserver { player.removeTimeObserver(fadeTimeObserver) }
+            player.pause()
+            if let sampleURL {
+                do { try FileManager.default.removeItem(at: sampleURL) }
+                catch { PlozzLog.app.error("Theme music: sample cleanup failed during teardown") }
+            }
+        }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { cleanup() }
+        } else {
+            Task { @MainActor in cleanup() }
         }
     }
 }
