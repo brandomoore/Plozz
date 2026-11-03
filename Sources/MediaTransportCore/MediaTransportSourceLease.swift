@@ -2,6 +2,9 @@ import Foundation
 
 public protocol MediaTransportByteSource: AnyObject, Sendable {
     var byteSize: Int64 { get }
+    /// False for streaming compatibility without a content-change validator.
+    /// Such bytes may be buffered within this lease, not persisted for reuse.
+    var supportsPersistentByteReuse: Bool { get }
     /// Efficient bounded request size. Larger values opt readers into adaptive
     /// sequential read-ahead; the source still enforces its own protocol limits.
     var preferredReadSize: Int { get }
@@ -14,6 +17,7 @@ public protocol MediaTransportByteSource: AnyObject, Sendable {
 
 public extension MediaTransportByteSource {
     var preferredReadSize: Int { 1024 * 1024 }
+    var supportsPersistentByteReuse: Bool { true }
 }
 
 /// Optional lock-only transition from preparation to playback. Called after all
@@ -80,6 +84,7 @@ public final class MediaTransportSourceLease: @unchecked Sendable {
 
     public var byteSize: Int64 { source.byteSize }
     public var preferredReadSize: Int { source.preferredReadSize }
+    public var supportsPersistentByteReuse: Bool { source.supportsPersistentByteReuse }
 
     func finishPreparation() {
         (source as? any MediaTransportPreparationFinalizingByteSource)?.finishPreparation()
@@ -225,6 +230,7 @@ public final class MediaTransportSourceLease: @unchecked Sendable {
 final class MediaTransportPreparationBorrow: MediaTransportByteSource, @unchecked Sendable {
     let byteSize: Int64
     let preferredReadSize: Int
+    let supportsPersistentByteReuse: Bool
     private let lock = NSLock()
     private var cursor: MediaTransportSourceCursor?
     private var reads = 0
@@ -235,6 +241,7 @@ final class MediaTransportPreparationBorrow: MediaTransportByteSource, @unchecke
         self.cursor = cursor
         self.byteSize = cursor.byteSize
         self.preferredReadSize = preferredReadSize
+        self.supportsPersistentByteReuse = cursor.supportsPersistentByteReuse
     }
 
     deinit { close() }
@@ -312,6 +319,7 @@ public final class MediaTransportSourceCursor: @unchecked Sendable {
     }
 
     public var byteSize: Int64 { lease.byteSize }
+    public var supportsPersistentByteReuse: Bool { lease.supportsPersistentByteReuse }
 
     public func clone() -> MediaTransportSourceCursor? {
         guard !lock.withLock({ state.isClosed }) else { return nil }

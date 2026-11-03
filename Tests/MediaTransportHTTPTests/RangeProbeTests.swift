@@ -40,6 +40,75 @@ final class RangeProbeTests: XCTestCase {
 
     // MARK: - probeRequest
 
+    func testUnvalidatedPlaybackRequiresExplicitOptInAndStillChecksEveryRange() throws {
+        let headers = ["Content-Range": "bytes 0-1/1000"]
+        XCTAssertThrowsError(try RangeProbe.validateProbe(
+            status: 206, headers: headers, bodyLength: 2, resourceURL: url
+        ).get())
+        let probe = try RangeProbe.validateProbe(
+            status: 206, headers: headers, bodyLength: 2, resourceURL: url,
+            allowUnvalidatedPlayback: true
+        ).get()
+        XCTAssertEqual(probe.validator, .unvalidatedPlayback)
+        XCTAssertNil(probe.etag)
+        XCTAssertNil(probe.lastModified)
+        let request = try RangeProbe.readRequest(
+            url: url, start: 500, end: 509, validator: probe.validator
+        ).get()
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Range"), "bytes=500-509")
+        XCTAssertNil(request.value(forHTTPHeaderField: "If-Match"))
+        XCTAssertNil(request.value(forHTTPHeaderField: "If-Unmodified-Since"))
+        try RangeProbe.validateRead(
+            status: 206, headers: ["Content-Range": "bytes 500-509/1000"], bodyLength: 10,
+            expectedStart: 500, expectedEnd: 509, expectedTotal: 1000,
+            expectedValidator: probe.validator
+        ).get()
+        for (status, range, bodyLength, encoding) in [
+            (200, "bytes 500-509/1000", 10, "identity"),
+            (412, "bytes 500-509/1000", 10, "identity"),
+            (206, "bytes 501-510/1000", 10, "identity"),
+            (206, "bytes 500-509/1001", 10, "identity"),
+            (206, "bytes 500-509/1000", 9, "identity"),
+            (206, "bytes 500-509/1000", 10, "gzip"),
+            (206, "malformed", 10, "identity")
+        ] {
+            XCTAssertThrowsError(try RangeProbe.validateRead(
+                status: status, headers: ["Content-Range": range, "Content-Encoding": encoding],
+                bodyLength: bodyLength, expectedStart: 500, expectedEnd: 509,
+                expectedTotal: 1000, expectedValidator: probe.validator
+            ).get())
+        }
+        for (status, range, bodyLength) in [
+            (200, "bytes 0-1/1000", 2),
+            (206, "bytes 1-2/1000", 2),
+            (206, "bytes 0-1/1000", 1),
+            (206, "malformed", 2)
+        ] {
+            XCTAssertThrowsError(try RangeProbe.validateProbe(
+                status: status, headers: ["Content-Range": range], bodyLength: bodyLength,
+                resourceURL: url, allowUnvalidatedPlayback: true
+            ).get())
+        }
+        for validatorHeaders in [
+            ["ETag": "\"strong\""], ["Last-Modified": "Wed, 14 Oct 2026 12:00:00 GMT"]
+        ] {
+            let validated = try RangeProbe.validateProbe(
+                status: 206, headers: headers.merging(validatorHeaders) { _, value in value },
+                bodyLength: 2, resourceURL: url, allowUnvalidatedPlayback: true
+            ).get()
+            XCTAssertNotEqual(validated.validator, .unvalidatedPlayback)
+        }
+        for invalidHeaders in [
+            ["ETag": "W/\"weak\""], ["ETag": "malformed"],
+            ["Last-Modified": "malformed"], ["Last-Modified": ""]
+        ] {
+            XCTAssertThrowsError(try RangeProbe.validateProbe(
+                status: 206, headers: headers.merging(invalidHeaders) { _, value in value },
+                bodyLength: 2, resourceURL: url, allowUnvalidatedPlayback: true
+            ).get())
+        }
+    }
+
     func testProbeRequestAvoidsZeroEndOffsetAndSendsIdentityEncoding() {
         let request = RangeProbe.probeRequest(url: url)
         XCTAssertEqual(request.value(forHTTPHeaderField: "Range"), "bytes=0-1")

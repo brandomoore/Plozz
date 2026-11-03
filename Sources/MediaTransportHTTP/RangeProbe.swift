@@ -63,6 +63,9 @@ struct ContentRange: Equatable {
 public enum RangeValidator: Equatable, Sendable {
     case strongETag(ETag)
     case lastModified(Date)
+    /// One anonymous delivery lease only. Range/size checks still apply, but
+    /// same-size byte changes cannot be detected or safely reused on disk.
+    case unvalidatedPlayback
 }
 
 /// Result of successfully probing a resource for range/seek support.
@@ -164,13 +167,15 @@ public enum RangeProbe {
     /// server that ignores `Range` and returns the whole body is not
     /// seekable by this module's definition), a strong `ETag` or valid
     /// `Last-Modified`, a matching `Content-Range`, and the entire requested prefix,
-    /// clamped only at EOF.
+    /// clamped only at EOF. Explicit streaming compatibility permits both
+    /// validator headers to be absent, never malformed or weak-only validators.
     public static func validateProbe(
         status: Int,
         headers: [String: String],
         bodyLength: Int,
         resourceURL: URL,
-        prefetch: Bool = false
+        prefetch: Bool = false,
+        allowUnvalidatedPlayback: Bool = false
     ) -> Result<RangeProbeResult, TransportError> {
         if status == 412 {
             return .failure(.sourceChanged(reason: "412 Precondition Failed during range probe"))
@@ -193,6 +198,9 @@ public enum RangeProbe {
             validator = .strongETag(etag)
         } else if let date = lastModified {
             validator = .lastModified(date)
+        } else if allowUnvalidatedPlayback,
+                  normalized["etag"] == nil, normalized["last-modified"] == nil {
+            validator = .unvalidatedPlayback
         } else {
             return .failure(.seekableRequiresValidator)
         }
@@ -275,6 +283,8 @@ public enum RangeProbe {
                 return .failure(.seekableRequiresValidator)
             }
             request.setValue(HTTPDate.string(from: date), forHTTPHeaderField: "If-Unmodified-Since")
+        case .unvalidatedPlayback:
+            break
         }
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         return .success(request)
@@ -342,6 +352,8 @@ public enum RangeProbe {
             guard let raw = normalized["last-modified"], HTTPDate.parse(raw) == expectedDate else {
                 return .failure(.sourceChanged(reason: "Last-Modified missing or changed since the resource was probed"))
             }
+        case .unvalidatedPlayback:
+            break
         }
         guard let contentRangeHeader = normalized["content-range"], let contentRange = ContentRange.parse(contentRangeHeader) else {
             return .failure(.rangeValidationFailed(reason: "missing/malformed Content-Range on bounded read"))

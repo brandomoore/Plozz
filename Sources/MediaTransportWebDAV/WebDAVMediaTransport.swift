@@ -388,11 +388,15 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
             probe = try await probeFile(
                 url, prefetch: sessionKey.role == .playback
                     && locator.representation.size >= RangeProbe.initialReadByteCount,
-                reportDeliveryConnectionFailure: reportDeliveryConnectionFailure
+                reportDeliveryConnectionFailure: reportDeliveryConnectionFailure,
+                allowUnvalidatedPlayback: sessionKey.role == .playback
             )
         }
         guard probe.totalLength == locator.representation.size else {
             throw MediaTransportError.sourceChanged(reason: "WebDAV representation changed since scan")
+        }
+        if probe.validator == .unvalidatedPlayback {
+            HandoffDiagnostics.emit("webdav PLAYBACK_COMPATIBILITY mode=unvalidated-delivery persistentReuse=false")
         }
         // A delivery host can use a different validator namespace. Only
         // compare DAV/GET validators when they describe the same origin.
@@ -429,12 +433,14 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
     }
 
     private func probeFile(
-        _ url: URL, prefetch: Bool = false, reportDeliveryConnectionFailure: Bool = false
+        _ url: URL, prefetch: Bool = false, reportDeliveryConnectionFailure: Bool = false,
+        allowUnvalidatedPlayback: Bool = false
     ) async throws -> RangeProbeResult {
         try await client.probeRange(
             root: root, url: url, sessionKey: sessionKey, credential: credential,
             trustPolicy: trustPolicy, prefetch: prefetch,
-            reportDeliveryConnectionFailure: reportDeliveryConnectionFailure
+            reportDeliveryConnectionFailure: reportDeliveryConnectionFailure,
+            allowUnvalidatedPlayback: allowUnvalidatedPlayback
         )
     }
 

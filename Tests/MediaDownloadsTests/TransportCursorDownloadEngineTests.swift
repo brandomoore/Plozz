@@ -1,4 +1,5 @@
 import CoreModels
+import MediaTransportCore
 import XCTest
 @testable import MediaDownloads
 
@@ -51,8 +52,85 @@ private struct CancellationInsensitiveOpener: DownloadByteSourceOpening {
 
 final class TransportCursorDownloadEngineTests: XCTestCase {
 
+    func testProductionOpenerRejectsStreamingOnlyBytesBeforeWritingOrResuming() async throws {
+        for persistentReuse in [false, true] {
+            let record = try DownloadTestFactory.record()
+            let source = try XCTUnwrap(record.directShareSource)
+            let key = MediaTransportSessionKey(
+                accountID: source.accountID, credentialRevision: source.credentialRevision,
+                endpoint: try MediaTransportEndpointIdentity(transportIdentifier: "https", host: "dav.example.com"),
+                trustRevision: UUID(), role: .playback
+            )
+            let session = PersistenceTestSession(key: key, supportsPersistentByteReuse: persistentReuse)
+            let registry = MediaTransportResolverRegistry()
+            try await registry.register(session: session)
+            let resolver = MediaTransportNetworkFileResolver(registry: registry) { _ in key }
+            let engine = TransportCursorDownloadEngine(resolver: resolver, chunkSize: 64)
+            let dir = DownloadTestFactory.tempDirectory()
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let destination = dir.appendingPathComponent("media.mkv")
+            let existing = Data(repeating: 9, count: 10)
+            try existing.write(to: destination)
+            do {
+                let count = try await engine.download(record: record, to: destination) { _, _ in }
+                XCTAssertTrue(persistentReuse)
+                XCTAssertEqual(count, 100)
+                XCTAssertEqual(try Data(contentsOf: destination).count, 100)
+                XCTAssertGreaterThan(session.readCount, 0)
+            } catch let error as MediaDownloadError {
+                XCTAssertFalse(persistentReuse)
+                XCTAssertEqual(error, .unsupportedSource)
+                XCTAssertEqual(try Data(contentsOf: destination), existing)
+                XCTAssertEqual(session.readCount, 0)
+            }
+            XCTAssertTrue(session.didShutdown)
+        }
+    }
+
     private func makeData(_ count: Int) -> Data {
         Data((0..<count).map { UInt8($0 % 251) })
+    }
+
+    private final class PersistenceTestSession:
+        MediaTransportSession, MediaTransportFileSystem, MediaTransportByteSource, @unchecked Sendable
+    {
+        let key: MediaTransportSessionKey
+        let supportsPersistentByteReuse: Bool
+        let byteSize: Int64 = 100
+        var fileSystem: any MediaTransportFileSystem { self }
+        private let lock = NSLock()
+        private var reads = 0
+        private var closed = false
+        var readCount: Int { lock.withLock { reads } }
+        var didShutdown: Bool { lock.withLock { closed } }
+
+        init(key: MediaTransportSessionKey, supportsPersistentByteReuse: Bool) {
+            self.key = key
+            self.supportsPersistentByteReuse = supportsPersistentByteReuse
+        }
+
+        func validate() async throws {}
+        func isHealthy() async -> Bool { true }
+        func shutdown() async { lock.withLock { closed = true } }
+        func openSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease {
+            MediaTransportSourceLease(source: self)
+        }
+        func read(at offset: Int64, length: Int) async throws -> Data {
+            lock.withLock { reads += 1 }
+            return Data(repeating: 0, count: min(length, Int(byteSize - offset)))
+        }
+        func probe() async throws -> MediaTransportProbe {
+            throw MediaTransportError.unsupportedCapability("unused fixture operation")
+        }
+        func list(relativePath: String) async throws -> [RemoteFileEntry] {
+            throw MediaTransportError.unsupportedCapability("unused fixture operation")
+        }
+        func stat(relativePath: String) async throws -> RemoteFileEntry {
+            throw MediaTransportError.unsupportedCapability("unused fixture operation")
+        }
+        func readSmallFile(relativePath: String, maximumBytes: Int) async throws -> Data {
+            throw MediaTransportError.unsupportedCapability("unused fixture operation")
+        }
     }
 
     func testDownloadsWholeFile() async throws {

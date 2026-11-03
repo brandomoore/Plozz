@@ -72,6 +72,7 @@ final class WebDAVByteSource: MediaTransportPreparationFinalizingByteSource, @un
 
     let byteSize: Int64
     let preferredReadSize = 32 * 1024 * 1024
+    var supportsPersistentByteReuse: Bool { representation.validator != .unvalidatedPlayback }
 
     private let client: WebDAVClient
     private let resourceURL: URL
