@@ -2490,11 +2490,16 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func pausePlayback() throws {
+        if app.buttons["Play"].exists && app.buttons["Play"].isHittable { return }
         if !app.buttons["Pause"].exists || !app.buttons["Pause"].isHittable {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-            try require(app.buttons["Pause"].waitForExistence(timeout: 5),
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
+            let controls = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                self.app.buttons["Pause"].isHittable || self.app.buttons["Play"].isHittable
+            }, object: app)
+            try require(XCTWaiter.wait(for: [controls], timeout: 10) == .completed,
                         "Expected playback controls after revealing them")
         }
+        if app.buttons["Play"].exists && app.buttons["Play"].isHittable { return }
         try require(app.buttons["Pause"].exists && app.buttons["Pause"].isHittable,
                     "Expected the visible real pause control")
         app.buttons["Pause"].tap()

@@ -783,6 +783,24 @@ positive route instead. No conflict protection was relaxed. This is movie
 watched/resume evidence using explicit destination Sync now, not TV playback,
 reverse-device delivery, every provider/tracker, or physical-device testing.
 
+Additional native movie playback now covers the owned iPad and TV simulators
+against the dedicated Emby source and PublicMetaDB account. The iPad reported
+exactly 181.372 seconds; the final TV driver reported exactly 29.934 seconds.
+Each matched independent source whole milliseconds. Actual playback past the
+completion threshold added one dated tracker play and cleared resume; cold
+relaunch and reporting opt-out did not replay history. Complete tracker-history
+reads and separate server controls confirmed only the intended title/user changed.
+
+The final TV driver measures the real starting clock rather than assuming cached
+detail state resumes playback. It uses native transport and verifies return to
+detail after stopping. Failed driver attempts remain recorded separately,
+including their actual remote effects, rather than counted as acceptance.
+The shared TV Search helper also passed a read-only real season-ratings regression.
+Playback was muted after the request for silent tests, with zero simulator output
+volume verified before each later native run. This extends movie playback platform
+coverage, not episode platform parity, other providers/trackers, interruption
+recovery, or physical-device testing.
+
 Separate read-only transport preflights fetched the same two-mebibyte movie
 prefix through dedicated SMB, NFS, WebDAV, FTP and host-key-pinned SFTP access.
 All five matched an independently authenticated media-server file range.

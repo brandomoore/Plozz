@@ -6,6 +6,7 @@ import XCTest
 final class PublicMetaDBLiveTVTests: XCTestCase {
     private let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz")
     private var authorizedLiveRun = false
+    private var startedPlayback = false
 
     override func setUp() async throws {
         try await MainActor.run {
@@ -23,15 +24,18 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
 
     override func tearDown() async throws {
         await MainActor.run {
-            guard authorizedLiveRun, app.state == .runningForeground else { return }
-            let state = XCTAttachment(string: app.debugDescription)
-            state.name = "live-tv-native-state"
-            state.lifetime = .keepAlways
-            add(state)
-            let screenshot = XCTAttachment(screenshot: app.screenshot())
-            screenshot.name = "live-tv-native-screen"
-            screenshot.lifetime = .keepAlways
-            add(screenshot)
+            guard authorizedLiveRun else { return }
+            if app.state == .runningForeground {
+                let state = XCTAttachment(string: app.debugDescription)
+                state.name = "live-tv-native-state"
+                state.lifetime = .keepAlways
+                add(state)
+                let screenshot = XCTAttachment(screenshot: app.screenshot())
+                screenshot.name = "live-tv-native-screen"
+                screenshot.lifetime = .keepAlways
+                add(screenshot)
+            }
+            if startedPlayback { app.terminate() }
         }
     }
 
@@ -182,6 +186,105 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
         let preference = app.switches["publicmetadb.ratings"]
         XCTAssertTrue(preference.waitForExistence(timeout: 10))
         XCTAssertEqual(preference.value as? String, "0")
+    }
+
+    func testEnablePlaybackReporting() throws {
+        try openPlaybackReporting()
+        XCTAssertTrue(app.buttons["publicmetadb.playback.enable"].exists)
+        XCTAssertFalse(app.buttons["publicmetadb.playback.disable"].exists)
+        try PublicMetaDBLiveNavigation.select(app.buttons["publicmetadb.playback.enable"], moving: .down)
+        let confirm = app.sheets.buttons.matching(identifier: "Enable reporting").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        try PublicMetaDBLiveNavigation.select(confirm, moving: .right)
+        XCTAssertTrue(app.staticTexts["Playback reporting enabled"].waitForExistence(timeout: 10))
+    }
+
+    func testDisablePlaybackReporting() throws {
+        try openPlaybackReporting()
+        XCTAssertTrue(app.staticTexts["Playback reporting enabled"].exists)
+        try PublicMetaDBLiveNavigation.select(app.buttons["publicmetadb.playback.disable"], moving: .down)
+        XCTAssertTrue(app.buttons["publicmetadb.playback.enable"].waitForExistence(timeout: 10))
+    }
+
+    func testOpenSelectedMovie() throws {
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        XCTAssertFalse(title.isEmpty)
+        let card = try selectedTitleCard(title: title)
+        try PublicMetaDBLiveNavigation.select(card, moving: .down)
+        XCTAssertTrue(app.buttons.containing(.image, identifier: "play.fill").firstMatch.waitForExistence(timeout: 15))
+    }
+
+    func testPlaySelectedMovieToResume() async throws {
+        let duration = try playbackRuntime()
+        try await playSelectedMovie(
+            targetElapsed: 30, minimumElapsed: Int(ceil(duration * 0.02)), maximumElapsed: Int(duration * 0.8)
+        )
+    }
+
+    func testPlaySelectedMovieToCompletion() async throws {
+        let duration = try playbackRuntime()
+        try await playSelectedMovie(
+            targetElapsed: Int(duration * 0.95),
+            minimumElapsed: Int(ceil(duration * 0.9)), maximumElapsed: Int(ceil(duration))
+        )
+    }
+
+    private func playbackRuntime() throws -> Double {
+        let duration = try XCTUnwrap(Double(
+            ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_RUNTIME_SECONDS"] ?? ""
+        ))
+        try requirePlayback(duration.isFinite && (100...86_400).contains(duration), "Expected a verified runtime")
+        return duration
+    }
+
+    private func playSelectedMovie(targetElapsed: Int, minimumElapsed: Int, maximumElapsed: Int) async throws {
+        try requirePlayback((1...240).contains(targetElapsed), "Expected bounded playback")
+        let play = app.buttons["detail-hero-play"]
+        try requirePlayback(play.exists, "Expected the selected movie's real play control")
+        startedPlayback = true
+        try PublicMetaDBLiveNavigation.select(play, moving: .down)
+        try await Task.sleep(for: .seconds(2))
+        XCUIRemote.shared.press(.playPause)
+        let clock = app.staticTexts["player-timeline-current-time"]
+        try requirePlayback(clock.waitForExistence(timeout: 10), "Expected the real player timeline")
+        let initialElapsed = try playbackSeconds(clock)
+        try requirePlayback(initialElapsed < targetElapsed, "Expected playback below the target before continuing")
+        XCUIRemote.shared.press(.playPause)
+        try await Task.sleep(for: .seconds(targetElapsed - initialElapsed))
+        XCUIRemote.shared.press(.playPause)
+        let elapsed = try playbackSeconds(clock)
+        try requirePlayback(
+            (minimumElapsed...maximumElapsed).contains(elapsed),
+            "Expected playback in \(minimumElapsed)...\(maximumElapsed), observed \(elapsed)"
+        )
+        let state = XCTAttachment(string: app.debugDescription)
+        state.name = "verified-real-tv-playback-position"
+        state.lifetime = .keepAlways
+        add(state)
+        XCUIRemote.shared.press(.menu)
+        try await Task.sleep(for: .milliseconds(500))
+        XCUIRemote.shared.press(.menu)
+        let returned = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            play.hasFocus && !clock.exists
+        }, object: app)
+        try requirePlayback(XCTWaiter.wait(for: [returned], timeout: 10) == .completed, "Expected return to movie detail")
+        startedPlayback = false
+    }
+
+    private func playbackSeconds(_ clock: XCUIElement) throws -> Int {
+        try requirePlayback(clock.label == "Elapsed time", "Expected elapsed time, not wall-clock time")
+        let value = try XCTUnwrap(clock.value as? String)
+        let parts = try value.split(separator: ":").map { try XCTUnwrap(Int($0)) }
+        try requirePlayback((2...3).contains(parts.count), "Expected a formatted playback position")
+        return parts.reduce(0) { $0 * 60 + $1 }
+    }
+
+    private func requirePlayback(_ condition: Bool, _ message: String) throws {
+        guard condition else { throw PlaybackFailure.precondition(message) }
+    }
+
+    private enum PlaybackFailure: Error {
+        case precondition(String)
     }
 
     func testReadRealSeasonRatings() throws {
@@ -337,6 +440,16 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
     }
 
     private func openSelectedTitleControls() throws {
+        let card = try selectedTitleCard(title: "The Crown")
+        try PublicMetaDBLiveNavigation.focus(card, moving: .down)
+        XCUIRemote.shared.press(.select, forDuration: 1)
+        let action = app.cells.containing(.any, identifier: "PublicMetaDB").firstMatch
+        XCTAssertTrue(action.waitForExistence(timeout: 10))
+        try PublicMetaDBLiveNavigation.select(action, moving: .down)
+        XCTAssertTrue(app.buttons["publicmetadb.open-title"].waitForExistence(timeout: 20))
+    }
+
+    private func selectedTitleCard(title: String) throws -> XCUIElement {
         app.terminate()
         app.launch()
         let search = app.buttons["Search"]
@@ -348,18 +461,25 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
         try PublicMetaDBLiveNavigation.select(search, moving: .up)
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.typeText("The Crown")
+        field.typeText(title)
         let cards = app.buttons.matching(NSPredicate(
-            format: "label == %@ AND NOT (value MATCHES %@)", "The Crown", "S[0-9]+ · E[0-9]+ · .*"
+            format: "label == %@ AND NOT (value MATCHES %@)", title, "S[0-9]+ · E[0-9]+ · .*"
         ))
         XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 45))
         XCTAssertEqual(cards.count, 1)
-        try PublicMetaDBLiveNavigation.focus(cards.element, moving: .down)
-        XCUIRemote.shared.press(.select, forDuration: 1)
-        let action = app.cells.containing(.any, identifier: "PublicMetaDB").firstMatch
-        XCTAssertTrue(action.waitForExistence(timeout: 10))
-        try PublicMetaDBLiveNavigation.select(action, moving: .down)
-        XCTAssertTrue(app.buttons["publicmetadb.open-title"].waitForExistence(timeout: 20))
+        return cards.element
+    }
+
+    private func openPlaybackReporting() throws {
+        app.terminate()
+        app.launch()
+        try PublicMetaDBLiveNavigation.openSettings(in: app)
+        try assertConnected()
+        try PublicMetaDBLiveNavigation.focus(app.buttons["settings-workspace-back"], moving: .up)
+        try PublicMetaDBLiveNavigation.select(app.buttons["publicmetadb.browse"], moving: .down)
+        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 10))
+        try PublicMetaDBLiveNavigation.select(app.buttons["publicmetadb.playback"], moving: .down)
+        XCTAssertTrue(app.staticTexts["Playback reporting"].waitForExistence(timeout: 10))
     }
 
     private func enterNonsecretText(
