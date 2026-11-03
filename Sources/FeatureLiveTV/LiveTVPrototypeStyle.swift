@@ -416,7 +416,7 @@ struct PrototypeControlSurface: View {
 }
 
 enum PrototypeSheet: Identifiable {
-    case filters, sources, guideTime, addPlaylist, serverSetup, multiviewFavorites, organization
+    case filters, sources, guideTime, addSource, addPlaylist, serverSetup, multiviewFavorites, organization
     case program(LiveTVPrototypeProgram)
     case diagnostics(PlaybackDiagnosticReport)
 
@@ -425,6 +425,7 @@ enum PrototypeSheet: Identifiable {
         case .filters: "filters"
         case .organization: "organization"
         case .sources: "sources"
+        case .addSource: "add-source"
         case .addPlaylist: "add-playlist"
         case .serverSetup: "server-setup"
         case .guideTime: "guide-time"

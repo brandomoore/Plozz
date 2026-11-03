@@ -171,29 +171,34 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
 
     #if os(iOS)
     func testMobileSearchPlaceholderUpdatesWithTheAppLocale() async throws {
-        let header = PrototypeSearchHeader(
-            query: .constant("Arena"), channelCount: 5, category: nil, focusRequest: 0,
-            browse: {}, close: {}, focusChanged: { _ in }
-        )
+        let header = NavigationStack {
+            Color.clear.modifier(PrototypeToolbarSearch(
+                query: .constant("Arena"), isPresented: .constant(true),
+                focusRequest: 0, submit: {}, focusChanged: { _ in }
+            ))
+        }
         let host = UIHostingController(rootView: header.environment(\.locale, Locale(identifier: "en")))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
         window.rootViewController = host
-        window.isHidden = false
+        window.makeKeyAndVisible()
         defer {
             window.isHidden = true
             window.rootViewController = nil
+            previous?.makeKeyAndVisible()
         }
-        func searchField(in view: UIView) -> UISearchTextField? {
-            if let field = view as? UISearchTextField { return field }
-            return view.subviews.lazy.compactMap { searchField(in: $0) }.first
+        func searchField(in controller: UIViewController) -> UISearchTextField? {
+            controller.navigationItem.searchController?.searchBar.searchTextField
+                ?? controller.children.lazy.compactMap { searchField(in: $0) }.first
         }
         func waitForPlaceholder(_ expected: String) async throws -> UISearchTextField {
             for _ in 0..<100 {
                 window.layoutIfNeeded()
-                if let field = searchField(in: host.view), field.placeholder == expected { return field }
+                if let field = searchField(in: host), field.placeholder == expected { return field }
                 try await Task.sleep(for: .milliseconds(20))
             }
-            let field = try XCTUnwrap(searchField(in: host.view))
+            let field = try XCTUnwrap(searchField(in: host))
             XCTAssertEqual(field.placeholder, expected)
             return field
         }
@@ -772,6 +777,8 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             XCTAssertEqual(searching.heroHeight, 0)
             XCTAssertEqual(searching.heroArtworkSize, .zero)
             XCTAssertEqual(searching.sectionGap, PrototypeLayout.smallGap)
+            XCTAssertEqual(searching.sidebarWidth, 0)
+            XCTAssertEqual(searching.guideWidth, searching.contentFrame.width)
             #endif
         }
     }

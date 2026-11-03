@@ -46,6 +46,9 @@ public struct LiveTVProgramSearchView: View {
                         else { fallbackDetails = program }
                     } label: {
                         LiveTVProgramSearchRow(program: program, channelName: channel.name, now: model.now)
+                            #if os(iOS)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            #endif
                     }
                     .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                 }

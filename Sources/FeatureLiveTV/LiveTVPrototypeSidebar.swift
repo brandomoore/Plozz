@@ -33,28 +33,22 @@ struct PrototypeBrowseSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: PrototypeLayout.gap) {
+            #if os(tvOS)
             Button(action: search) {
                 Label(isSearching ? "Back to guide" : "Search", systemImage: isSearching ? "chevron.backward" : "magnifyingglass")
-                    #if os(tvOS)
                     .frame(maxWidth: .infinity, minHeight: PrototypeLayout.controlHeight, alignment: .leading)
                     .padding(.horizontal, PrototypeLayout.gap)
-                    #else
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    #endif
             }
-            #if os(tvOS)
             .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
             .padding(PrototypeLayout.controlInset)
             .background { PrototypeControlSurface() }
-            #else
-            .buttonStyle(.bordered)
-            #endif
             .focused($focused, equals: .search)
             .disabled(isEnteringCategory)
             .accessibilityValue(model.query)
             .accessibilityIdentifier("live-tv-search")
             #if DEBUG
             .modifier(PrototypeBrowseLayoutObservation(element: "sidebar-search"))
+            #endif
             #endif
             if let multiviews {
                 Button(action: multiviews) {
