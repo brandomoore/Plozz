@@ -7,6 +7,170 @@ import UIKit
 @MainActor
 final class LiveTVCategorySearchInteractionTests: XCTestCase {
     #if os(iOS)
+    func testSearchDefaultsToBothAndFiltersWithoutChangingTheQuery() {
+        let app = launchSearch(guideFirst: true)
+        defer { app.terminate() }
+        let field = searchField(in: app)
+        field.typeText("News\n")
+        let news = channel("Daily News", in: app)
+        let program = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "News Today")).firstMatch
+        let filter = app.buttons["live-tv-search-filter"]
+        XCTAssertTrue(news.waitForExistence(timeout: 10))
+        XCTAssertTrue(program.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(filter.value as? String, "All")
+        XCTAssertFalse(app.segmentedControls["live-tv-search-scope"].exists)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(
+            format: "label MATCHES %@", "^[0-9]+ channels?$"
+        )).firstMatch.exists)
+        capture("live-tv-search-all-results", in: app)
+
+        filter.tap()
+        capture("live-tv-search-filter-menu", in: app)
+        app.buttons["Programs"].tap()
+        XCTAssertEqual(filter.value as? String, "Programs")
+        XCTAssertTrue(news.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(program.waitForExistence(timeout: 5))
+        XCTAssertTrue((field.value as? String)?.contains("News") == true)
+        capture("live-tv-search-programs-token", in: app)
+
+        filter.tap()
+        app.buttons["Channels"].tap()
+        XCTAssertEqual(filter.value as? String, "Channels")
+        XCTAssertTrue(news.waitForExistence(timeout: 5))
+        XCTAssertTrue(program.waitForNonExistence(timeout: 5))
+        XCTAssertTrue((field.value as? String)?.contains("News") == true)
+
+        filter.tap()
+        app.buttons["All"].tap()
+        XCTAssertTrue(program.waitForExistence(timeout: 5))
+        news.tap()
+        let preview = app.otherElements["category-search-playback"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 10))
+        XCTAssertEqual(preview.label, "Daily News")
+        XCTAssertEqual(preview.value as? String, "Preview")
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+    }
+
+    func testUnifiedSearchFindsProgramsWithoutChannelNameMatches() {
+        let app = launchSearch(guideFirst: true)
+        defer { app.terminate() }
+        let field = searchField(in: app)
+        field.typeText("Championship\n")
+        let program = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Championship Highlights"
+        )).firstMatch
+        XCTAssertTrue(program.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["No matching channels"].exists)
+        program.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)).tap()
+        XCTAssertTrue(app.staticTexts["Program details"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Stadium Live"].exists)
+        XCTAssertFalse(app.otherElements["category-search-playback"].exists)
+        capture("live-tv-search-program-details", in: app)
+    }
+
+    func testUnifiedSearchKeepsTheSelectedSourceBoundary() {
+        let app = launch(multipleSources: true)
+        defer { app.terminate() }
+        let source = app.navigationBars.buttons["live-tv-source"]
+        XCTAssertTrue(source.waitForExistence(timeout: 15))
+        source.tap()
+        app.buttons["Local TV"].tap()
+        if app.buttons["live-tv-search"].exists { app.buttons["live-tv-search"].tap() }
+        let field = searchField(in: app)
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("News\n")
+        XCTAssertTrue(app.staticTexts["No matching channels"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["No matching programs in the retained guide."].waitForExistence(timeout: 10))
+        XCTAssertFalse(channel("Daily News", in: app).exists)
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "News Today")).firstMatch.exists)
+    }
+
+    func testDirectoryProgramSearchPlaybackRestoresUnfilteredGuide() {
+        let app = launchSearch()
+        defer { app.terminate() }
+        searchField(in: app).typeText("Championship\n")
+        let program = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Championship Highlights"
+        )).firstMatch
+        XCTAssertTrue(program.waitForExistence(timeout: 10))
+        program.tap()
+        let watch = app.buttons["Watch channel"]
+        XCTAssertTrue(watch.waitForExistence(timeout: 5))
+        watch.tap()
+        let preview = app.otherElements["category-search-playback"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(preview.label, "Stadium Live")
+        XCTAssertEqual(preview.value as? String, "Fullscreen")
+        let next = app.buttons["live-channel-next"]
+        if !next.isHittable {
+            preview.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.25)).tap()
+        }
+        next.tap()
+        XCTAssertTrue(preview.wait(for: \.label, toEqual: "World Arena", timeout: 10))
+        let close = app.buttons["live-channel-exit-fullscreen"]
+        if !close.isHittable {
+            preview.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.25)).tap()
+        }
+        close.tap()
+        XCTAssertTrue(channel("Arena One", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(channel("Daily News", in: app).exists)
+        XCTAssertFalse(searchField(in: app).exists)
+    }
+
+    func testCategoryContentScrollsBehindTheNativeHeader() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native scroll-edge underlap requires iOS 26.") }
+        let app = launch(scrollContent: true)
+        defer { app.terminate() }
+        let source = app.navigationBars.buttons["live-tv-source"]
+        XCTAssertTrue(source.waitForExistence(timeout: 15))
+        let grid = app.scrollViews["live-tv-category-grid"]
+        guard grid.exists else { throw XCTSkip("The category directory requires a narrow layout.") }
+        let scroll = grid
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        capture("live-tv-categories-before-scroll", in: app)
+        XCTAssertLessThan(scroll.frame.minY, source.frame.minY,
+                          "The scroll viewport must extend behind the toolbar, not stop below it.")
+        let sourceFrame = source.frame
+        let before = app.screenshot()
+        scroll.swipeUp()
+        capture("live-tv-categories-behind-header", in: app)
+        try assertHeaderBackdropChanges(in: app, scroll: scroll, header: source, before: before)
+        XCTAssertEqual(source.frame, sourceFrame)
+        XCTAssertTrue(source.isHittable)
+        let rows = scroll.buttons.allElementsBoundByIndex
+        XCTAssertTrue(rows.contains { $0.frame.intersects(source.frame) },
+                      "Scrolled category content must reach the header, not just report a larger viewport.")
+        source.tap()
+        XCTAssertTrue(app.buttons["live-tv-add-source"].waitForExistence(timeout: 5))
+    }
+
+    func testSearchResultsScrollBehindTheNativeHeader() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native scroll-edge underlap requires iOS 26.") }
+        let app = launch(guideFirst: true, scrollContent: true)
+        defer { app.terminate() }
+        XCTAssertTrue(channel("Channel 01", in: app).waitForExistence(timeout: 15))
+        if app.buttons["live-tv-search"].exists { app.buttons["live-tv-search"].tap() }
+        else { openBrowseAction("live-tv-search", in: app) }
+        let field = searchField(in: app)
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("Channel\n")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        let scroll = app.scrollViews["live-tv-search-results"]
+        let more = app.navigationBars.buttons["live-tv-more"]
+        XCTAssertLessThan(scroll.frame.minY, more.frame.minY)
+        let before = app.screenshot()
+        scroll.swipeUp()
+        capture("live-tv-search-behind-header", in: app)
+        try assertHeaderBackdropChanges(in: app, scroll: scroll, header: more, before: before)
+        XCTAssertTrue(more.isHittable)
+        XCTAssertTrue(field.isHittable)
+        app.buttons["live-tv-search"].tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["live-tv-category"].isHittable)
+    }
+
     func testChannelAndProgrammeTapsStartTheTopPreviewWithoutOpeningFullscreen() {
         XCUIDevice.shared.orientation = .portrait
         let app = launch(guideFirst: true)
@@ -735,7 +899,8 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
     private func launch(
         guideFirst: Bool = false, failsLoading: Bool = false, orientation: String = "auto",
         lightAppearance: Bool = false, dimVideo: Bool = false, multipleSources: Bool = false,
-        longSourceName: Bool = false, playbackUnavailable: Bool = false, managedSourceSetup: Bool = false
+        longSourceName: Bool = false, playbackUnavailable: Bool = false, managedSourceSetup: Bool = false,
+        scrollContent: Bool = false
     ) -> XCUIApplication {
         continueAfterFailure = false
         #if os(tvOS)
@@ -753,6 +918,7 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         if longSourceName { app.launchArguments.append("--category-long-source-name") }
         if playbackUnavailable { app.launchArguments.append("--category-playback-unavailable") }
         if managedSourceSetup { app.launchArguments.append("--category-managed-source-setup") }
+        if scrollContent { app.launchArguments.append("--category-scroll-content") }
         app.launch()
         return app
     }
@@ -784,6 +950,42 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
     }
 
     #if os(iOS)
+    private func assertHeaderBackdropChanges(
+        in app: XCUIApplication, scroll: XCUIElement, header: XCUIElement, before: XCUIScreenshot,
+        file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let region = CGRect(x: scroll.frame.minX, y: header.frame.minY,
+                            width: scroll.frame.width, height: header.frame.height).intersection(app.frame)
+        func pixels(_ screenshot: XCUIScreenshot) throws -> [UInt8] {
+            let image = try XCTUnwrap(screenshot.image.cgImage)
+            let scale = CGFloat(image.width) / app.frame.width
+            let crop = CGRect(
+                x: (region.minX - app.frame.minX) * scale, y: (region.minY - app.frame.minY) * scale,
+                width: region.width * scale, height: region.height * scale
+            )
+            let cropped = try XCTUnwrap(image.cropping(to: crop))
+            var bytes = [UInt8](repeating: 0, count: 64 * 16 * 4)
+            try bytes.withUnsafeMutableBytes { buffer in
+                let context = try XCTUnwrap(CGContext(
+                    data: buffer.baseAddress, width: 64, height: 16, bitsPerComponent: 8, bytesPerRow: 64 * 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+                ))
+                context.draw(cropped, in: CGRect(x: 0, y: 0, width: 64, height: 16))
+            }
+            return bytes
+        }
+        let initial = try pixels(before)
+        let scrolled = try pixels(app.screenshot())
+        let difference = sqrt(initial.indices.filter { $0 % 4 != 3 }.reduce(0.0) {
+            let delta = Double(initial[$1]) - Double(scrolled[$1])
+            return $0 + delta * delta
+        } / Double(64 * 16 * 3))
+        XCTAssertGreaterThan(difference, 2,
+                             "The rendered header backdrop must change, not only the accessibility frames.",
+                             file: file, line: line)
+    }
+
     private func selectBrowseSource(_ name: String, in app: XCUIApplication) {
         let category = app.navigationBars.buttons["live-tv-category"]
         let previousCategory = category.value as? String

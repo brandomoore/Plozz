@@ -281,6 +281,7 @@ struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
             sidebarSlot
             VStack(spacing: PrototypeLayout.smallGap) {
                 header()
+                    .zIndex(1)
                 guideSlot
             }
             .frame(width: layout.guideWidth)
@@ -318,6 +319,53 @@ struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
     private var leadingExtension: CGFloat { extendsGuideToEdges ? layout.guideLeadingExtension : 0 }
     private var trailingExtension: CGFloat { extendsGuideToEdges ? layout.guideTrailingExtension : 0 }
 }
+
+#if os(iOS)
+private struct PrototypeScrollTopBoundaryKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    var prototypeScrollTopBoundary: CGFloat? {
+        get { self[PrototypeScrollTopBoundaryKey.self] }
+        set { self[PrototypeScrollTopBoundaryKey.self] = newValue }
+    }
+}
+
+struct PrototypeScrollUnderlap: ViewModifier {
+    @Environment(\.prototypeScrollTopBoundary) private var topBoundary
+    @State private var topInset: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        Group {
+            if #available(iOS 26.0, *) {
+                content
+                    // Keep the search row in the preview layout while preserving
+                    // its resting clearance inside the expanded scroll viewport.
+                    .safeAreaBar(edge: .top, spacing: 0) {
+                        Color.clear.frame(height: topInset)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                    .scrollEdgeEffectStyle(.soft, for: .top)
+            } else {
+                content
+            }
+        }
+        .padding(.top, -topInset)
+        .onGeometryChange(for: CGFloat.self) { geometry in
+            if #available(iOS 26.0, *) {
+                topBoundary.map { max(0, geometry.frame(in: .global).minY - $0) } ?? 0
+            } else {
+                0
+            }
+        } action: {
+            topInset = $0
+        }
+    }
+}
+
+#endif
 
 struct PrototypeGuidePlacement<Content: View>: View {
     let frame: CGRect

@@ -172,7 +172,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
     #if os(iOS)
     func testMobileSearchPlaceholderUpdatesWithTheAppLocale() async throws {
         let header = PrototypeSearchHeader(
-            query: .constant("Arena"), channelCount: 5, category: nil, focusRequest: 0,
+            query: .constant("Arena"), scope: .constant(.all), focusRequest: 0,
             browse: {}, close: {}, focusChanged: { _ in }
         )
         let host = UIHostingController(rootView: header.environment(\.locale, Locale(identifier: "en")))

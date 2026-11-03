@@ -13,6 +13,53 @@ import XCTest
 
 @MainActor
 final class LiveTVPreviewPresentationTests: XCTestCase {
+    func testNativeSearchTokenRemovalPreservesQueryAndRestoresAllResults() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let state = SearchFieldState()
+        let host = UIHostingController(rootView: SearchFieldFixture(state: state))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await settle(window)
+        func searchField(in view: UIView) -> UISearchTextField? {
+            if let field = view as? UISearchTextField { return field }
+            return view.subviews.lazy.compactMap { searchField(in: $0) }.first
+        }
+        let field = try XCTUnwrap(searchField(in: host.view))
+        XCTAssertEqual(field.text, "News")
+        XCTAssertTrue(field.tokens.isEmpty)
+        state.scope = .programs
+        try await settle(window)
+        XCTAssertEqual(field.tokens.count, 1)
+        XCTAssertEqual(field.tokens.first?.representedObject as? String, "programs")
+        XCTAssertEqual(field.text, "News")
+        field.becomeFirstResponder()
+        field.selectedTextRange = field.textRange(
+            from: field.positionOfToken(at: 0), to: field.textualRange.start
+        )
+        field.deleteBackward()
+        try await settle(window)
+        XCTAssertTrue(field.tokens.isEmpty)
+        XCTAssertEqual(state.scope, .all)
+        XCTAssertEqual(state.query, "News")
+
+        state.scope = .channels
+        try await settle(window)
+        XCTAssertEqual(field.tokens.first?.representedObject as? String, "channels")
+        XCTAssertEqual(field.delegate?.textFieldShouldClear?(field), true)
+        try await settle(window)
+        XCTAssertEqual(state.scope, .all)
+        XCTAssertTrue(state.query.isEmpty)
+        XCTAssertTrue(field.tokens.isEmpty)
+        XCTAssertTrue(searchField(in: host.view) === field, "Filtering must retain the native text field.")
+    }
+
     func testCategoryTilesAreCompactAndGrowWithDynamicType() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -670,6 +717,24 @@ final class LiveTVPreviewPresentationTests: XCTestCase {
 
     private func scrollViews(_ view: UIView) -> [UIScrollView] {
         (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+    }
+}
+
+@MainActor @Observable
+private final class SearchFieldState {
+    var query = "News"
+    var scope = PrototypeSearchScope.all
+}
+
+private struct SearchFieldFixture: View {
+    @Bindable var state: SearchFieldState
+
+    var body: some View {
+        PrototypeSearchHeader(
+            query: $state.query, scope: $state.scope, focusRequest: 0,
+            browse: {}, close: {}, focusChanged: { _ in }
+        )
+        .padding()
     }
 }
 

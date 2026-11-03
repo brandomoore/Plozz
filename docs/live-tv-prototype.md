@@ -168,6 +168,26 @@ profile shortcut remains on the category screen and iPad. Category tiles use
 shorter minimum heights while retaining channel counts and Dynamic Type growth.
 Apple TV navigation is unchanged.
 
+On iOS/iPadOS 26 and later, the category directory and search results extend
+behind the transparent native navigation controls, retaining their resting
+clearance below the search row. The system owns the toolbar appearance and
+scroll-edge effects. Earlier OS versions retain bounded viewports.
+The regular guide's time row and sidebar actions remain pinned; the guide stays
+below a playing video preview.
+
+Mobile search includes both **Channels** and **Programs** by default. A native
+filter menu beside the search field offers **All**, **Channels** and **Programs**.
+Narrowing the scope inserts a native search token without changing the query;
+deleting the token restores All, and clearing or closing search resets the scope.
+There is no segmented scope bar or channel-count summary. Results share one
+scroll view, with channel matches and matching categories above program matches,
+instead of embedding a second timeline guide. Source/category, hidden-channel
+and authorization boundaries still apply to both kinds of result; a program
+title match does not require a matching channel name. Selecting a channel starts
+the existing inline preview; selecting a program opens its existing details.
+Watching from those details clears the search query while retaining the selected
+source and category, so channel transport and the returning guide stay usable.
+
 On iPhone and iPad, selecting a channel opens a video preview above the guide,
 8 points below the existing navigation toolbar controls. There is no channel-artwork card or
 Watch channel button over the video. Tapping the preview shows or hides the
@@ -915,13 +935,14 @@ is no prior in-memory history to migrate on the first updated launch.
   channel/programme rows; mobile uses a standard native search field without
   reserving the hero's height. The narrow category directory includes this field
   directly above the tiles.
-  Both use the same query and filtered catalog, not an extra eight-result list.
+  Both use the same query and filtered catalog, without truncating channel matches.
   Channel search also shows matching categories above its channel results.
   Category matches use the same active browse filters and hidden-channel rules;
   a channel-name match alone does not make its unrelated category a result.
   Selecting a category closes Search and opens that category at the first guide
   row without tuning a channel. Back without selecting a category still restores
-  the previous guide position. Program search remains a separate scope.
+  the previous guide position. Mobile searches both channels and programs by
+  default, with optional native token filters; TV retains its separate scopes.
   On TV, the guide and Search use `PrototypeNativeGuideList`, a native collection
   view that recycles visible rows while retaining the shared SwiftUI row controls.
   The focus engine no longer traverses a full-catalog set of synthetic lazy-stack

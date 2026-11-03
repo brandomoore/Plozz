@@ -34,6 +34,9 @@ struct PrototypeCategoryDirectory: View {
                 }
                 .padding(.vertical, PrototypeLayout.smallGap)
             }
+            #if os(iOS)
+            .modifier(PrototypeScrollUnderlap())
+            #endif
             .accessibilityIdentifier("live-tv-category-grid")
             .onAppear {
                 if let returnCategory { proxy.scrollTo(returnCategory, anchor: .center) }

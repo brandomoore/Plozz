@@ -69,10 +69,6 @@ private struct PrototypeSearchBookmark {
     let timelineOffset: CGFloat
 }
 
-private enum PrototypeSearchScope: Hashable {
-    case channels, programs
-}
-
 public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var model: LiveTVPrototypeModel
     @State private var preview: LiveTVPreviewController
@@ -92,7 +88,11 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var selectedChannelID: String?
     @State private var selectedRowID: LiveTVGuideRowID?
     @State private var isSearching = false
+    #if os(iOS)
+    @State private var searchScope: PrototypeSearchScope = .all
+    #else
     @State private var searchScope: PrototypeSearchScope = .channels
+    #endif
     @State private var searchFocusRequest = 0
     @State private var searchOrigin: PrototypeSearchBookmark?
     @State private var pendingSearchCategory: String?
@@ -477,6 +477,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 guideContent(layout, canvasWidth: geometry.size.width)
                 #if os(tvOS)
                 .focusSection()
+                #else
+                .environment(\.prototypeScrollTopBoundary, geometry.frame(in: .global).minY + layout.bounds.minY)
                 #endif
                 .frame(width: geometry.size.width, height: geometry.size.height)
                 #if os(iOS)
@@ -745,6 +747,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 connectServer?()
             } else if let id = pendingTuneID {
                 pendingTuneID = nil
+                #if os(iOS)
+                closeSearch()
+                #endif
                 tune(id)
             }
         }) { destination in
@@ -1573,10 +1578,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         )
                     }
                 } else if isSearching || usesCategoryDirectory(layout) {
+                    #if os(tvOS)
                     searchScopePicker
-                        #if os(iOS)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        #endif
+                    #endif
                     searchResults(closeSearch: closeSearch)
                 } else {
                     guideBrowser(
@@ -1621,15 +1625,18 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         #if os(iOS)
         if isSearching || usesCategoryDirectory(layout) {
             PrototypeSearchHeader(
-                query: $model.query, channelCount: model.visibleChannels.count,
-                category: model.category, focusRequest: searchFocusRequest,
+                query: $model.query, scope: $searchScope, focusRequest: searchFocusRequest,
                 browse: enterGuide, close: {
                     if isSearching { closeSearch() } else { model.query = "" }
                 },
                 focusChanged: { if $0 { controlsActive = true } },
-                showsSummary: !model.query.isEmpty
+                showsFilter: isSearching || !model.query.isEmpty
             )
             .disabled(blocksBrowseControls)
+            .onChange(of: searchScope) { _, _ in
+                focusedProgram = nil
+                playback.focus(nil)
+            }
         } else {
             Color.clear
                 .frame(height: layout.heroHeight)
@@ -1766,17 +1773,32 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     @ViewBuilder
     private func searchResults(closeSearch: @escaping () -> Void) -> some View {
+        #if os(iOS)
+        if isInitialCatalogLoading || model.channels.isEmpty {
+            guideBrowser(closeSearch: closeSearch)
+        } else {
+            PrototypeMobileSearchResults(
+                model: model, imports: imports, scope: searchScope,
+                selectCategory: { category in
+                    guard model.matchingCategories.contains(category) else { return }
+                    showCategory(category)
+                },
+                watch: { channel in
+                    guard model.programmeSearchChannelIDs.contains(channel.id) else { return }
+                    closeSearch()
+                    tune(channel.id, expandsPlayer: false)
+                },
+                details: { sheet = .program($0) }
+            )
+        }
+        #else
         if searchScope == .channels {
             VStack(alignment: .leading, spacing: PrototypeLayout.smallGap) {
                 if !model.matchingCategories.isEmpty {
                     PrototypeCategorySearchResults(categories: model.matchingCategoryResults) { category in
                         guard model.matchingCategories.contains(category) else { return }
-                        #if os(iOS)
-                        showCategory(category)
-                        #else
                         pendingSearchCategory = category
                         closeSearch()
-                        #endif
                     }
                 }
                 guideBrowser(closeSearch: closeSearch)
@@ -1798,6 +1820,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             }
             .accessibilityIdentifier("live-tv-program-search-results")
         }
+        #endif
     }
 
     private var hidesAppNavigation: Bool {
@@ -2038,6 +2061,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         // Exclude both native and custom shell navigation before UIKit presents
         // its keyboard and claims focus.
         onExpandedChange(true)
+        #else
+        searchScope = .all
         #endif
         searchOrigin = PrototypeSearchBookmark(
             row: selectedRowID, guideOffset: guideOffset, timeAnchor: timeAnchor, timelineOffset: timelineOffset
@@ -2057,7 +2082,13 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     private func closeSearch() {
         playback.cancelWatch()
-        guard isSearching else { return }
+        guard isSearching else {
+            #if os(iOS)
+            model.query = ""
+            searchScope = .all
+            #endif
+            return
+        }
         let selectedCategory = pendingSearchCategory.flatMap {
             model.matchingCategories.contains($0) ? $0 : nil
         }
@@ -2067,6 +2098,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             return
         }
         model.query = ""
+        #if os(iOS)
+        searchScope = .all
+        #endif
         if let bookmark = searchOrigin {
             guideOffset = bookmark.guideOffset
             timeAnchor = bookmark.timeAnchor
@@ -2084,6 +2118,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     private func showCategory(_ category: String?, enteringGuide: Bool = true) {
         playback.cancelWatch()
         model.query = ""
+        #if os(iOS)
+        searchScope = .all
+        #endif
         model.category = category
         categoryDirectoryReturnID = category
         showsCategoryDirectory = false
@@ -2123,6 +2160,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     private func showCategories() {
         playback.cancelWatch()
         model.query = ""
+        #if os(iOS)
+        searchScope = .all
+        #endif
         model.category = nil
         isSearching = false
         showsCategoryDirectory = true
@@ -2225,7 +2265,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         }
         if !preview.isExpanded {
             let channels: [LiveTVPrototypeChannel]
-            if isSearching && searchScope == .programs {
+            if isSearching && searchScope != .channels {
                 let allowed = model.programmeSearchChannelIDs
                 channels = model.unhiddenCatalogChannels.filter { allowed.contains($0.id) }
             } else {

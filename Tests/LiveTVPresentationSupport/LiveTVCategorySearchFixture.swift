@@ -288,6 +288,15 @@ private struct CategorySearchLoader: LiveTVSourceLoading {
             https://fixture.invalid/local-music.m3u8
             """)
         }
+        if ProcessInfo.processInfo.arguments.contains("--category-scroll-content") {
+            let entries = (1...80).map { index in
+                """
+                #EXTINF:-1 tvg-id="scroll-\(index)" group-title="Category \(String(format: "%02d", index))",Channel \(String(format: "%02d", index))
+                https://fixture.invalid/scroll-\(index).m3u8
+                """
+            }
+            return try LiveTVPlaylistParser(baseURL: url).parse("#EXTM3U\n" + entries.joined(separator: "\n"))
+        }
         return try LiveTVPlaylistParser(baseURL: url).parse("""
         #EXTM3U
         #EXTINF:-1 tvg-id="arena" group-title="Sports",Arena One
