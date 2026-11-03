@@ -1242,6 +1242,150 @@ final class TrackerHistoryImportTests: XCTestCase {
     }
 
     @MainActor
+    func testReviewedResumeContinuesPastEnrolledWatchHistory() async throws {
+        let categorySets: [Set<TrackerHistorySyncCategory>] = [[.resume], [.resume, .watched]]
+        for categories in categorySets {
+            let oldWatch = try observation(id: "old-watch")
+            let evidence = ImportEvidence(try snapshot([oldWatch]))
+            let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+            let provider = ImportProvider(item: item(position: 100))
+            let sync = syncController(provider: provider, evidence: evidence, store: store)
+            await enable(sync, evidence: evidence, categories: categories)
+            await sync.synchronize()
+            var writes = await provider.writes
+            XCTAssertEqual(writes, 0, "Enrollment must not backfill the old watch")
+
+            evidence.snapshot = try snapshot([
+                oldWatch, observation(id: "resume", fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil))
+            ])
+            await sync.synchronize()
+            XCTAssertEqual(sync.grant?.reviewCount, 1)
+            let (manual, _) = try session(provider: provider, readSnapshot: { evidence.snapshot })
+            manual.ongoingSync = sync
+            await manual.compare()
+            let row = try XCTUnwrap(manual.plan?.rows.first { $0.change == .resume(200) })
+            XCTAssertEqual(row.comparison, .trackerConflict, "Manual review retains the full tracker history")
+            await manual.apply(rowIDs: [row.id], overridingConflicts: [row.id], confirmsDestructiveChanges: false)
+            XCTAssertNil(manual.error)
+            XCTAssertEqual(manual.outcomes[row.id], .confirmed)
+            XCTAssertEqual(sync.grant?.reviewCount, 0)
+            manual.cancel()
+
+            evidence.snapshot = try snapshot([
+                oldWatch, observation(id: "resume", fact: .resume(seconds: 400, runtime: 1_000, updatedAt: nil))
+            ])
+            let restored = syncController(provider: provider, evidence: evidence, store: store)
+            await restored.synchronize()
+            XCTAssertNil(restored.error)
+            XCTAssertEqual(restored.confirmedCount, 1)
+            XCTAssertEqual(restored.grant?.reviewCount, 0)
+            let actual = try await provider.item(id: "server-item")
+            XCTAssertEqual(actual.resumePosition, 400)
+            XCTAssertFalse(actual.isPlayed)
+            await restored.synchronize()
+            writes = await provider.writes
+            XCTAssertEqual(writes, 2, "The reviewed import and later resume each write only once")
+            evidence.snapshot = try snapshot([oldWatch, observation(id: "completion")])
+            await restored.synchronize()
+            let completed = try await provider.item(id: "server-item")
+            XCTAssertEqual(completed.isPlayed, categories.contains(.watched))
+            XCTAssertEqual(restored.confirmedCount, categories.contains(.watched) ? 1 : 0)
+            await restored.synchronize()
+            writes = await provider.writes
+            XCTAssertEqual(writes, categories.contains(.watched) ? 3 : 2)
+        }
+    }
+
+    @MainActor
+    func testOngoingSyncKeepsCompetingNewRecordsBeyondItsBatch() async throws {
+        let evidence = ImportEvidence(try snapshot([]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let provider = ImportProvider(item: item())
+        let sync = syncController(provider: provider, evidence: evidence, store: store)
+        await enable(sync, evidence: evidence, categories: [.resume, .watched])
+        var observations = try (1...24).map {
+            try TrackerHistoryObservation(
+                recordID: String(format: "record-%02d", $0), kind: .movie,
+                identities: [.external(source: "tmdb", value: String($0 + 1_000))], fact: .watched(at: nil)
+            )
+        }
+        observations.append(try observation(
+            id: "record-00", fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil)
+        ))
+        observations.append(try observation(id: "record-99"))
+        evidence.snapshot = try snapshot(observations)
+        await sync.synchronize()
+        XCTAssertNil(sync.error)
+        XCTAssertTrue(sync.hasMoreChanges)
+        XCTAssertEqual(sync.confirmedCount, 0)
+        XCTAssertEqual(sync.grant?.reviewCount, 25)
+        await sync.synchronize()
+        XCTAssertFalse(sync.hasMoreChanges)
+        XCTAssertEqual(sync.grant?.reviewCount, 26)
+        let writes = await provider.writes
+        XCTAssertEqual(writes, 0, "The batch boundary cannot hide competing new tracker evidence")
+    }
+
+    @MainActor
+    func testProvenContinuationStillDefersChangedAndUnconsentedHistory() async throws {
+        let oldWatch = try observation(id: "old-watch")
+        let competingHistory = try [
+            [observation(id: "old-watch", fact: .watched(at: Date(timeIntervalSince1970: 123)))],
+            [oldWatch, observation(id: "new-watch")]
+        ]
+        for history in competingHistory {
+            let evidence = ImportEvidence(try snapshot([oldWatch]))
+            let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+            let provider = ImportProvider(item: item(position: 200))
+            let sync = syncController(provider: provider, evidence: evidence, store: store)
+            await enable(sync, evidence: evidence, categories: [.resume])
+            evidence.snapshot = try snapshot([
+                oldWatch, observation(id: "resume", fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil))
+            ])
+            await sync.synchronize()
+            XCTAssertNil(sync.error)
+            XCTAssertEqual(sync.grant?.reviewCount, 0)
+            evidence.snapshot = try snapshot(history + [
+                observation(id: "resume", fact: .resume(seconds: 400, runtime: 1_000, updatedAt: nil))
+            ])
+            await sync.synchronize()
+            XCTAssertNil(sync.error)
+            XCTAssertEqual(sync.confirmedCount, 0)
+            XCTAssertEqual(sync.grant?.reviewCount, 1)
+            let actual = try await provider.item(id: "server-item")
+            XCTAssertEqual(actual.resumePosition, 200)
+            let writes = await provider.writes
+            XCTAssertEqual(writes, 0)
+        }
+    }
+
+    @MainActor
+    func testOngoingContinuationRevalidatesKnownHistoryBeforeDispatch() async throws {
+        let oldWatch = try observation(id: "old-watch")
+        let evidence = ImportEvidence(try snapshot([oldWatch]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let provider = ImportProvider(item: item(position: 200))
+        let sync = syncController(provider: provider, evidence: evidence, store: store)
+        await enable(sync, evidence: evidence, categories: [.resume])
+        evidence.snapshot = try snapshot([
+            oldWatch, observation(id: "resume", fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil))
+        ])
+        await sync.synchronize()
+        XCTAssertNil(sync.error)
+        XCTAssertEqual(sync.grant?.reviewCount, 0)
+        let resume = try observation(id: "resume", fact: .resume(seconds: 400, runtime: 1_000, updatedAt: nil))
+        evidence.snapshot = try snapshot([oldWatch, resume])
+        let changed = try snapshot([
+            observation(id: "old-watch", fact: .watched(at: Date(timeIntervalSince1970: 123))), resume
+        ])
+        evidence.nextRead = { evidence.nextRead = { evidence.snapshot = changed } }
+        await sync.synchronize()
+        XCTAssertEqual(sync.error as? TrackerHistoryError, .stalePreview)
+        let writes = await provider.writes
+        XCTAssertEqual(writes, 0, "Continuation must not discard full dispatch-time evidence")
+    }
+
+    @MainActor
     func testManualImportCannotTransferProofToReplacementConsent() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())

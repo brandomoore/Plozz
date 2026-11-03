@@ -291,7 +291,7 @@ public final class TrackerHistorySyncController {
                     let receipt: Receipt
                     let targetKey = row.target.map { Self.digest(Data($0.id.utf8)) }
                     let blocked = targetKey.map { buckets[Self.bucket($0)].blockedTargets.contains($0) } ?? false
-                    let continues = try canContinue(row, buckets: buckets)
+                    let continues = try canContinue(row, plan: plan, hashes: hashes, buckets: buckets)
                     if (row.comparison == .ready || continues), let change = row.change,
                        !change.isDestructive, !blocked {
                         receipt = .pending
@@ -377,13 +377,32 @@ public final class TrackerHistorySyncController {
         }
     }
 
-    private func canContinue(_ row: TrackerHistoryImportPlan.Row, buckets: [Bucket]) throws -> Bool {
-        guard row.comparison == .serverConflict, let target = row.target,
+    private func canContinue(
+        _ row: TrackerHistoryImportPlan.Row, plan: TrackerHistoryImportPlan,
+        hashes: [String: String], buckets: [Bucket]
+    ) throws -> Bool {
+        guard row.comparison == .serverConflict || row.comparison == .trackerConflict, let target = row.target,
               let baseline = row.baseline, !baseline.played,
               let position = baseline.resumePosition, position > 0 else { return false }
         let key = Self.digest(Data(target.id.utf8))
         guard buckets[Self.bucket(key)].confirmedTargets?[key] == (try Self.baselineFingerprint(baseline)) else {
             return false
+        }
+        if row.comparison == .trackerConflict {
+            // Only proven continuation may disregard settled history. Keep new
+            // and unresolved conflicts, even outside the current write batch.
+            let competing = plan.rows.filter {
+                $0.target == target && $0.change != nil && $0.change != row.change
+            }
+            guard competing.allSatisfy({ other in
+                other.recordIDs.allSatisfy { recordID in
+                    guard let hash = hashes[recordID] else { return false }
+                    let receiptKey = Self.receiptKey(target.accountID, hash)
+                    let receipt = buckets[Self.bucket(receiptKey)].receipts[receiptKey]
+                    return buckets[Self.bucket(hash)].baseline.contains(hash)
+                        || receipt == .confirmed || receipt == .matched
+                }
+            }) else { return false }
         }
         switch row.change {
         case .resume(let next): return next > position

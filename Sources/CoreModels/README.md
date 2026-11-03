@@ -21,6 +21,12 @@ Uncertain targets stay held until readback proof and all receipts are durable.
 An explicit reviewed import can restore continuation for its original enabled
 grant; revoked or replacement grants cannot inherit that approval. Legacy
 ledgers without proof remain readable but never authorize an inferred override.
+Only that proven continuation may disregard competing observations already in
+the enrollment baseline or confirmed/matched receipts. Without proof, existing
+history still requires review. New and unresolved competing records remain
+protected, including those outside the current write batch or consented
+categories. Manual comparisons and dispatch revalidation retain the full
+snapshot; historical records are not deleted or rewritten to permit continuation.
 
 History comparisons reuse a freshly read parent series only within that one
 comparison and account/provider. Every episode's state is still read separately.
