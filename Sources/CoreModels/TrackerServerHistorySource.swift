@@ -46,6 +46,7 @@ public final class TrackerServerHistorySource {
 
     public func items(
         accountID: String, library: MediaLibrary,
+        includingResumeHistory: Bool = false,
         progress: @MainActor (Int) -> Void = { _ in }
     ) async throws -> [MediaItem] {
         guard try await libraries(accountID: accountID).contains(where: {
@@ -66,7 +67,7 @@ public final class TrackerServerHistorySource {
             // complete nonempty inventory. Never accept this before that end.
             if page.items.isEmpty, let total, items.count == total,
                page.startIndex == items.count, page.totalCount == 0 {
-                return items
+                break
             }
             guard page.startIndex == items.count, (0...50_000).contains(page.totalCount),
                   total == nil || total == page.totalCount,
@@ -78,13 +79,32 @@ public final class TrackerServerHistorySource {
             total = page.totalCount
             if page.items.isEmpty {
                 guard items.count == total else { throw TrackerHistoryError.incompleteSnapshot }
-                return items
+                break
             }
             items += page.items
             progress(items.count)
             // Probe the advertised end too: a provider's fallback page count is
             // not evidence that an unexpectedly truncated inventory is complete.
         }
+        if includingResumeHistory, provider.catalogResumeRequiresEnrichment {
+            let feed = try await provider.continueWatching(limit: Int.max, inLibraries: [library.id])
+            try requireCurrent()
+            guard feed.count <= 50_000 else { throw TrackerHistoryError.incompleteSnapshot }
+            let indices = Dictionary(uniqueKeysWithValues: items.indices.map { (items[$0].id, $0) })
+            var feedIDs = Set<String>()
+            for candidate in feed {
+                guard let index = indices[candidate.id], candidate.kind == kind,
+                      feedIDs.insert(candidate.id).inserted,
+                      candidate.sourceAccountID == nil || candidate.sourceAccountID == accountID,
+                      candidate.libraryID == nil || candidate.libraryID == library.id
+                else { throw TrackerHistoryError.incompleteSnapshot }
+                guard let position = candidate.resumePosition else { continue }
+                guard position.isFinite, position >= 0 else { throw TrackerHistoryError.incompleteSnapshot }
+                // Discovery only: the exporter still rereads selected item details.
+                items[index].resumePosition = position
+            }
+        }
+        return items
     }
 
     public func item(accountID: String, itemID: String) async throws -> MediaItem {

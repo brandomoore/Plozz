@@ -164,6 +164,121 @@ final class PublicMetaDBHistoryExportTests: XCTestCase {
         }
     }
 
+    func testSparseCatalogResumeUsesScopedFeedThenFreshDetailWithoutHydratingUnplayedMovies() async throws {
+        var resumed = movie(played: false, position: 703.083)
+        resumed.runtime = 6_736
+        let untouched = (0..<205).map { movie(id: "unplayed-\($0)", played: false) }
+        let (session, provider, http) = try fixture(items: untouched + [resumed], providerKind: .silo)
+        await preview(session, mode: .resume)
+        XCTAssertNil(session.error)
+        XCTAssertEqual(session.rows.map(\.status), [.ready])
+        await assertEqual(await provider.pageOffsets(), [0, 200, 206])
+        await assertEqual(await provider.resumeFeedRequests(), [["library"]])
+        await assertEqual(await provider.itemReads(), ["movie"])
+        await assertEqual(await http.mutationCount(), 0)
+        guard session.rows.count == 1 else { return }
+        await apply(session, confirmed: false)
+        await assertEqual(await http.mutationCount(), 0)
+        await apply(session)
+        XCTAssertNil(session.error)
+        let posts = await http.posts()
+        let payload = try XCTUnwrap(posts.first?.body).jsonObject
+        XCTAssertEqual(payload?["position_ms"] as? Double, 703_083)
+        XCTAssertEqual(payload?["runtime_ms"] as? Double, 6_736_000)
+        await assertEqual(await provider.writeCount(), 0)
+    }
+
+    func testCompleteCatalogAndWatchedExportsDoNotRequestSupplementalResumeHistory() async throws {
+        for kind in [ProviderKind.jellyfin, .plex, .emby, .mediaShare, .silo] {
+            for mode in [PublicMetaDBHistoryExportSession.Mode.watched, .resume] {
+                if kind == .silo, mode == .resume { continue }
+                let (session, provider, _) = try fixture(items: [movie(position: 300)], providerKind: kind)
+                await preview(session, mode: mode)
+                XCTAssertNil(session.error)
+                XCTAssertEqual(session.rows.map(\.status), [.ready])
+                await assertEqual(await provider.resumeFeedRequests(), [])
+            }
+        }
+    }
+
+    func testSparseResumeFeedCannotImportNextUpWithoutAResume() async throws {
+        let nextUp = movie(id: "next-up", played: false)
+        let (session, provider, http) = try fixture(
+            items: [movie(played: false, position: 300), nextUp], providerKind: .silo
+        )
+        await provider.setResumeFeed([nextUp, movie(played: false, position: 300)])
+        await preview(session, mode: .resume)
+        XCTAssertNil(session.error)
+        XCTAssertEqual(session.rows.map(\.status), [.ready])
+        await assertEqual(await provider.itemReads(), ["movie"])
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testSparseResumeFeedRejectsForeignMissingDuplicateAndInvalidEntries() async throws {
+        let resumed = movie(played: false, position: 300)
+        var foreignAccount = resumed
+        foreignAccount.sourceAccountID = "another-account"
+        var foreignLibrary = resumed
+        foreignLibrary.libraryID = "another-library"
+        var wrongKind = resumed
+        wrongKind.kind = .episode
+        var negative = resumed
+        negative.resumePosition = -1
+        var nonfinite = resumed
+        nonfinite.resumePosition = .infinity
+        let feeds = [
+            [foreignAccount], [foreignLibrary], [wrongKind], [negative], [nonfinite],
+            [resumed, resumed], [movie(id: "not-in-selected-library", played: false, position: 300)]
+        ]
+        for feed in feeds {
+            let (session, provider, http) = try fixture(items: [resumed], providerKind: .silo)
+            await provider.setResumeFeed(feed)
+            await preview(session, mode: .resume)
+            XCTAssertEqual(session.error as? TrackerHistoryError, .incompleteSnapshot)
+            XCTAssertFalse(session.hasCompared)
+            XCTAssertTrue(session.rows.isEmpty)
+            await assertEqual(await provider.itemReads(), [])
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testSparseResumeFeedFailuresAreNotAnEmptySuccessfulPreview() async throws {
+        for failure in [AppError.unauthorized, .rateLimited(retryAfter: 60), .invalidResponse] {
+            let (session, provider, http) = try fixture(
+                items: [movie(played: false, position: 300)], providerKind: .silo
+            )
+            await provider.failResumeFeed(failure)
+            await preview(session, mode: .resume)
+            XCTAssertEqual(session.error as? AppError, failure)
+            XCTAssertFalse(session.hasCompared)
+            XCTAssertTrue(session.rows.isEmpty)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testSparseResumeFeedRechecksAuthorizationAfterAwaiting() async throws {
+        let authorization = ExportAuthorization()
+        let (session, provider, http) = try fixture(
+            items: [movie(played: false, position: 300)], providerKind: .silo, authorization: authorization
+        )
+        await provider.onResumeFeed { await MainActor.run { authorization.current = false } }
+        await preview(session, mode: .resume)
+        XCTAssertEqual(session.error as? TrackerHistoryError, .scopeChanged)
+        XCTAssertFalse(session.hasCompared)
+        await assertEqual(await provider.itemReads(), [])
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testSparseResumeFeedCannotReplaceFreshItemEvidence() async throws {
+        let (session, provider, http) = try fixture(items: [movie(played: false)], providerKind: .silo)
+        await provider.setResumeFeed([movie(played: false, position: 300)])
+        await preview(session, mode: .resume)
+        XCTAssertEqual(session.error as? TrackerHistoryError, .stalePreview)
+        XCTAssertFalse(session.hasCompared)
+        await assertEqual(await provider.itemReads(), ["movie"])
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
     func testResumeConflictRequiresExplicitOverrideAndUsesMilliseconds() async throws {
         let (session, _, http) = try fixture(items: [movie(played: false, position: 300)])
         await http.setResume(position: 200_000)
@@ -624,8 +739,14 @@ private final class ExportAuthorization {
 private actor ExportProvider: MediaProvider {
     nonisolated let kind: ProviderKind
     nonisolated let session: UserSession
+    nonisolated var catalogResumeRequiresEnrichment: Bool { kind == .silo }
     private var values: [MediaItem]
     private var offsets: [Int] = []
+    private var feedRequests: [[String]] = []
+    private var readIDs: [String] = []
+    private var resumeFeed: [MediaItem]?
+    private var resumeFeedFailure: AppError?
+    private var resumeFeedHook: (@Sendable () async -> Void)?
     private var reads = 0
     private var writes = 0
     private var advertisedTotal: Int?
@@ -647,13 +768,26 @@ private actor ExportProvider: MediaProvider {
     func setEmptyPageTotal(_ total: Int) { emptyPageTotal = total }
     func onRead(number: Int, action: @escaping @Sendable () async -> Void) { readHook = (number, action) }
     func pageOffsets() -> [Int] { offsets }
+    func resumeFeedRequests() -> [[String]] { feedRequests }
+    func itemReads() -> [String] { readIDs }
+    func setResumeFeed(_ items: [MediaItem]) { resumeFeed = items }
+    func failResumeFeed(_ error: AppError) { resumeFeedFailure = error }
+    func onResumeFeed(_ action: @escaping @Sendable () async -> Void) { resumeFeedHook = action }
     func writeCount() -> Int { writes }
     func libraries() async throws -> [MediaLibrary] {
         [.init(id: "library", title: "Library", kind: values.first?.kind == .episode ? .series : .movie)]
     }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func continueWatching(limit: Int, inLibraries libraryIDs: [String]?) async throws -> [MediaItem] {
+        XCTAssertEqual(limit, Int.max)
+        feedRequests.append(libraryIDs ?? [])
+        await resumeFeedHook?()
+        if let resumeFeedFailure { throw resumeFeedFailure }
+        return resumeFeed ?? values.filter { ($0.resumePosition ?? 0) > 0 }
+    }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func item(id: String) async throws -> MediaItem {
+        readIDs.append(id)
         reads += 1
         if let (number, hook) = readHook, reads == number { await hook() }
         if let series, series.id == id { return series }
@@ -663,7 +797,13 @@ private actor ExportProvider: MediaProvider {
     func children(of itemID: String) async throws -> [MediaItem] { throw AppError.notFound }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         offsets.append(page.startIndex)
-        let items = Array(values.dropFirst(page.startIndex).prefix(page.limit))
+        var items = Array(values.dropFirst(page.startIndex).prefix(page.limit))
+        if catalogResumeRequiresEnrichment {
+            for index in items.indices {
+                items[index].resumePosition = nil
+                items[index].playedPercentage = nil
+            }
+        }
         return .init(
             items: items,
             startIndex: page.startIndex,

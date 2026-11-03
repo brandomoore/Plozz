@@ -22,6 +22,10 @@ public protocol MediaProvider: Sendable {
     /// before publishing those cards as complete identity-index/search evidence.
     var catalogIdentityRequiresEnrichment: Bool { get }
 
+    /// Catalog cards omit resume positions. History discovery must supplement
+    /// them with the complete, library-scoped Continue Watching feed.
+    var catalogResumeRequiresEnrichment: Bool { get }
+
     /// Browsing metadata may omit lazily resolved files. Offer explicit source
     /// discovery when opening the version picker; never preload it while browsing.
     var playbackInventoryRequiresEnrichment: Bool { get }
@@ -487,6 +491,7 @@ public enum MediaProviderURLIdentity {
 // conformer to implement it.
 public extension MediaProvider {
     var catalogIdentityRequiresEnrichment: Bool { false }
+    var catalogResumeRequiresEnrichment: Bool { false }
     var playbackInventoryRequiresEnrichment: Bool { false }
 
     func playbackItem(id: String) async throws -> MediaItem {

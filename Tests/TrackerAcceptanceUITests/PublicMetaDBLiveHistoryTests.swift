@@ -222,31 +222,55 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try selectSourceServers(onlyPlex: false)
     }
 
+    func testSelectOnlySiloSource() throws {
+        try selectSiloSourceServers(onlySilo: true)
+    }
+
+    func testRestoreSiloSourceServers() throws {
+        try selectSiloSourceServers(onlySilo: false)
+    }
+
+    private func selectSiloSourceServers(onlySilo: Bool) throws {
+        try testOpenLibrarySettings()
+        try require(app.switches["Silo"].value as? String == "1",
+                    "Keep the already-authorized dedicated Silo profile active")
+        try require(!app.switches["Brandoland"].exists && !app.switches["Brandon's Jellyfin"].exists,
+                    "Expected the dedicated Silo and Emby source configuration")
+        try setSourceServer("CubeBoi", selected: !onlySilo)
+        try testOpenLibrarySettings()
+        XCTAssertEqual(app.switches["Silo"].value as? String, "1")
+        XCTAssertEqual(app.switches["CubeBoi"].value as? String, onlySilo ? "0" : "1")
+    }
+
     private func selectSourceServers(onlyPlex: Bool) throws {
         try testOpenLibrarySettings()
         try require(app.switches["Brandoland"].value as? String == "1",
                     "Keep the already-authorized dedicated Plex identity active")
         try require(app.buttons["Plozz Internal"].exists, "Expected the dedicated Plex user")
         for label in ["CubeBoi", "Brandon's Jellyfin"] {
-            let control = app.switches[label]
-            try tapVisible(control, tapping: false)
-            let value = try XCTUnwrap(control.value as? String)
-            try require(["0", "1"].contains(value), "Expected a native source-selection switch")
-            let expected = onlyPlex ? "0" : "1"
-            if value != expected {
-                try tapVisible(control.switches.firstMatch)
-                let changed = XCTNSPredicateExpectation(
-                    predicate: NSPredicate(format: "value == %@", expected), object: control
-                )
-                try require(XCTWaiter.wait(for: [changed], timeout: 15) == .completed,
-                            "Expected the selected source scope")
-            }
+            try setSourceServer(label, selected: !onlyPlex)
         }
         try testOpenLibrarySettings()
         for label in ["CubeBoi", "Brandon's Jellyfin", "Brandoland"] {
             XCTAssertEqual(app.switches[label].value as? String, label == "Brandoland" || !onlyPlex ? "1" : "0")
         }
         XCTAssertTrue(app.buttons["Plozz Internal"].exists)
+    }
+
+    private func setSourceServer(_ label: String, selected: Bool) throws {
+        let control = app.switches[label]
+        try tapVisible(control, tapping: false)
+        let value = try XCTUnwrap(control.value as? String)
+        try require(["0", "1"].contains(value), "Expected a native source-selection switch")
+        let expected = selected ? "1" : "0"
+        if value != expected {
+            try tapVisible(control.switches.firstMatch)
+            let changed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", expected), object: control
+            )
+            try require(XCTWaiter.wait(for: [changed], timeout: 15) == .completed,
+                        "Expected the selected source scope")
+        }
     }
 
     func testPasswordlessEmbyOnboarding() throws {
@@ -2469,6 +2493,18 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try openSelectedTitle()
     }
 
+    func testRetrySelectedMovieSearch() throws {
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        try require(app.textFields["Search your libraries"].value as? String == title,
+                    "Expected the exact failed source search")
+        try require(app.staticTexts["Search unavailable"].exists
+            && app.staticTexts["The service is asking us to slow down. Try again in a moment."].exists,
+                    "Expected the retained rate-limited search")
+        try tapVisible(app.buttons["Try Again"])
+        try titleCard(matching: title).tap()
+        try require(detailPlayButton.waitForExistence(timeout: 15), "Expected the recovered movie detail")
+    }
+
     func testOpenSelectedSeries() throws {
         try openSelectedTitle()
     }
@@ -2480,10 +2516,14 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func selectedTitleCard() throws -> XCUIElement {
         let title = try searchForSelectedTitle()
+        return try titleCard(matching: title)
+    }
+
+    private func titleCard(matching title: String) throws -> XCUIElement {
         let matches = app.buttons.containing(.staticText, identifier: title).matching(NSPredicate(
             format: "NOT (label MATCHES %@)", ".*, S[0-9]+ · E[0-9]+ · .*"
         ))
-        XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 30))
+        try require(matches.firstMatch.waitForExistence(timeout: 30), "Expected the exact source title card")
         try require(matches.count == 1, "Expected one exact title card in the selected libraries")
         return matches.element
     }
@@ -2569,6 +2609,16 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let duration = try verifiedRuntime()
         try await seekAndPlay(
             fraction: 0.9 - 20 / duration, minimumElapsedSeconds: Int(ceil(duration * 0.9))
+        )
+    }
+
+    func testPlayMovieBelowResumeThreshold() async throws {
+        let duration = try verifiedRuntime()
+        let maximum = Int(floor(duration * 0.02)) - 1
+        try require(maximum > 5, "Expected room below the resume threshold")
+        try await seekAndPlay(
+            fraction: 0, minimumElapsedSeconds: 1, maximumElapsedSeconds: maximum,
+            playSeconds: min(27, maximum - 5)
         )
     }
 
@@ -2725,7 +2775,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func seekAndPlay(
-        fraction: Double, minimumElapsedSeconds: Int, maximumElapsedSeconds: Int? = nil
+        fraction: Double, minimumElapsedSeconds: Int, maximumElapsedSeconds: Int? = nil,
+        playSeconds: Int = 27
     ) async throws {
         try require(detailPlayButton.exists && detailPlayButton.isHittable, "Expected the exact movie detail")
         startedPlayback = true
@@ -2733,7 +2784,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(app.buttons["Close player"].waitForExistence(timeout: 45), "Expected real playback")
         try await seekActivePlayback(
             fraction: fraction, minimumElapsedSeconds: minimumElapsedSeconds,
-            maximumElapsedSeconds: maximumElapsedSeconds
+            maximumElapsedSeconds: maximumElapsedSeconds, playSeconds: playSeconds
         )
     }
 

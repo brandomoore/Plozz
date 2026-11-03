@@ -987,6 +987,37 @@ independent play-event counts or watch timestamps here, so unchanged observable
 state is not an exactly-once guarantee. This covers three movie routes, not
 Silo source playback/export, episodes, all lifecycle boundaries or device parity.
 
+Separate Silo-source movie checks now have production iPhone-simulator evidence.
+With other sources disabled, actual playback below 2% left the tracker untouched,
+in-range playback reported exactly 628,501 milliseconds, and playback above 80%
+cleared that resume without creating a watch. Two separate completed viewings
+produced exactly two dated tracker plays; watched export recognized them as
+already present. With reporting disabled, another completed movie stayed absent
+from the tracker until explicitly exported as one play with an unknown date.
+Cancellation and cold repeat did not create duplicates or fabricate watch dates.
+
+A real 703,083-ms Silo resume exposed a missing export row: native catalog
+cards omitted progress even though item detail and the progress endpoint held it.
+Providers can now declare incomplete catalog resume fields. Resume export
+supplements the complete selected-library inventory with the existing fully
+paged, scoped Continue Watching feed, validates its membership, and still rereads
+each relevant item before comparison and confirmation. It does not hydrate every
+catalog title, infer progress from a rounded runtime, or treat a feed failure
+as an empty successful comparison. The repaired native preview, cancellation,
+confirmation and cold repeat preserved exactly 703,083 ms with a 6,736,000-ms
+file runtime.
+
+This source tranche retains 33 native passes, 20 paired independent snapshots,
+and seven continuously muted playback runs. Two native failures remain excluded:
+the original missing export row and a rate-limited search recovered through the
+existing Try Again action. An exploratory progress-sorted catalog request also
+returned HTTP 500 and is not acceptance evidence. The final covering package run
+passed 3,464 tests with five opt-in performance probes skipped. Complete tracker
+histories/lists, unrelated server users and Silo control titles stayed unchanged;
+reporting/import consent is off and the original source selection is restored.
+Cold-start identity-index request pressure remains separately open. This movie
+scope does not establish episode, physical-device or whole-branch readiness.
+
 Separate read-only transport preflights fetched the same two-mebibyte movie
 prefix through dedicated SMB, NFS, WebDAV, FTP and host-key-pinned SFTP access.
 All five matched an independently authenticated media-server file range.

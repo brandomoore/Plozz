@@ -39,7 +39,70 @@ private struct SiloWatchedApplier: WatchMutationApplying {
     func scrobbleTrakt(_ intent: TraktScrobbleIntent) async throws {}
 }
 
+private actor SiloResumeFeedHTTP: HTTPClient {
+    private(set) var requests: [Endpoint] = []
+
+    func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        requests.append(endpoint)
+        let body: String
+        switch endpoint.path {
+        case "/api/v2/progress":
+            let second = endpoint.queryItems.contains(.init(name: "cursor", value: "second"))
+            let id = second ? "movie-tmdb-2" : "movie-imdb-tt1136608"
+            body = """
+            {"items":[{"media_item_id":"\(id)","position_seconds":703.083,"duration_seconds":0,
+              "completed":false,"updated_at":"2026-11-03T09:08:48Z"}],
+             "page":{"has_more":\(second ? "false" : "true"),"next_cursor":\(second ? "null" : "\"second\"")}}
+            """
+        case "/api/v2/catalog/items/movie-imdb-tt1136608", "/api/v2/catalog/items/movie-tmdb-2":
+            let id = endpoint.path.hasSuffix("movie-tmdb-2") ? "movie-tmdb-2" : "movie-imdb-tt1136608"
+            body = """
+            {"content_id":"\(id)","type":"movie","title":"Movie","runtime":112,
+             "user_state":{"played":false,"is_favorite":false,"in_watchlist":false},
+             "user_data":{"played":false,"position_seconds":703.083},
+             "versions":[{"file_id":"299","duration":6736,"resolution":"1080p","codec_video":"h264",
+               "codec_audio":"aac","container":"mkv","file_size":100,"bitrate":12000}]}
+            """
+        case "/api/v2/home/sections":
+            body = #"{"sections":[]}"#
+        default: throw AppError.notFound
+        }
+        return (
+            Data(body.utf8),
+            try XCTUnwrap(HTTPURLResponse(url: baseURL, statusCode: 200, httpVersion: nil, headerFields: nil))
+        )
+    }
+}
+
 extension SiloProviderTests {
+    func testSparseCatalogResumeDiscoveryPagesScopedProgressAndKeepsSingleFileRuntime() async throws {
+        let raw = try credential().encoded()
+        let http = SiloResumeFeedHTTP()
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        let summary = try JSONDecoder().decode(SiloItem.self, from: Data(
+            #"{"content_id":"movie-imdb-tt1136608","type":"movie","title":"District 9","runtime":112,"user_state":{"played":false,"is_favorite":false,"in_watchlist":false}}"#.utf8
+        ))
+        XCTAssertTrue(provider.catalogResumeRequiresEnrichment)
+        XCTAssertNil(provider.map(summary).resumePosition)
+        let feed = try await provider.continueWatching(limit: Int.max, inLibraries: ["1"])
+        XCTAssertEqual(Set(feed.map(\.id)), ["movie-imdb-tt1136608", "movie-tmdb-2"])
+        XCTAssertTrue(feed.allSatisfy { $0.libraryID == "1" && $0.sourceAccountID == provider.accountID })
+        let item = try XCTUnwrap(feed.first { $0.id == "movie-imdb-tt1136608" })
+        XCTAssertEqual(item.resumePosition, 703.083)
+        XCTAssertEqual(item.runtime, 6_736, "A zero progress duration must not replace the exact file runtime.")
+        let requests = await http.requests
+        let progress = requests.filter { $0.path == "/api/v2/progress" }
+        XCTAssertEqual(progress.count, 2)
+        XCTAssertEqual(progress.map { $0.queryItems.first { $0.name == "cursor" }?.value }, [nil, "second"])
+        XCTAssertTrue(progress.allSatisfy {
+            $0.queryItems.contains(.init(name: "library_id", value: "1"))
+                && $0.queryItems.contains(.init(name: "limit", value: "200"))
+                && $0.queryItems.contains(.init(name: "status", value: "in_progress"))
+        })
+        XCTAssertEqual(requests.filter { $0.path.contains("/catalog/items/") }.count, 2)
+        XCTAssertTrue(requests.allSatisfy { $0.method == .get })
+    }
+
     func testResumeWritePreservesWholeMillisecondsAfterSecondsRoundTrip() async throws {
         let raw = try credential().encoded()
         let http = SiloHTTPStub([
@@ -53,6 +116,7 @@ extension SiloProviderTests {
                 Double(milliseconds) / 1000, itemID: "movie:1", capturedAt: Date()
             )
         }
+
         let requests = await http.requests
         XCTAssertEqual(requests.count, positions.count)
         for (request, expected) in zip(requests, positions) {

@@ -143,7 +143,9 @@ public final class PublicMetaDBHistoryExportSession {
         defer { if generation == current { isBusy = false } }
         do {
             try requireCurrent(current)
-            let inventory = try await source.items(accountID: accountID, library: library) { count in
+            let inventory = try await source.items(
+                accountID: accountID, library: library, includingResumeHistory: mode == .resume
+            ) { count in
                 if self.generation == current { self.loadedCount = count }
             }
             try requireCurrent(current)

@@ -33,6 +33,7 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
 
     public var capabilities: ProviderCapability { [.video, .libraryCollections, .personalCollections, .remoteSubtitles] }
     public var catalogIdentityRequiresEnrichment: Bool { true }
+    public var catalogResumeRequiresEnrichment: Bool { true }
 
     public func libraries() async throws -> [MediaLibrary] {
         let response: SiloCollection<SiloLibrary> = try await client.request("/user/libraries")

@@ -148,7 +148,13 @@ These Home and device-login contracts were checked at upstream revision
   requests are added.
   Progress is read through the paged, library-scoped progress endpoint; Home's
   native next-up selections are corroborated before inclusion in a restricted
-  library view. Versions use the original Silo file ID.
+  library view. Catalog cards advertise that their resume fields are incomplete.
+  Explicit resume-history export supplements the complete selected-library
+  inventory with that scoped feed, then refreshes only resumable item details.
+  Feed entries must belong to the same account, library inventory and media kind;
+  errors never become an empty successful comparison. No whole-library detail
+  hydration or progress inferred from rounded catalog runtime is used.
+  Versions use the original Silo file ID.
   Parent series cards already present in the Home response fill missing episode
   logos and `Series*` identities, including episodes also returned by progress.
   The exact series relationship is checked; resume state and playable episode
