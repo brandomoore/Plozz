@@ -40,6 +40,7 @@ public struct SkipMarkerSettingsControl: View {
                 Button(action: onOpenSettings) {
                     SettingsDisclosureLabel { Text("Customize") }
                 }
+                .settingsActionRow()
                 .accessibilityIdentifier("skip-marker-settings")
             }
         }
@@ -121,6 +122,7 @@ public struct SkipMarkerSettingsView: View {
                     Button { selectedKind = kind } label: {
                         SettingsDisclosureLabel { Text(kind.settingsTitle) }
                     }
+                    .settingsActionRow()
                     .accessibilityIdentifier("skip-marker-\(kind.rawValue)")
                 }
             }

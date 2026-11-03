@@ -38,6 +38,7 @@ struct PlozziOSDiagnosticsSettingsView: View {
                     Link(destination: issueURL) {
                         Label("Report a Problem", systemImage: "ladybug")
                     }
+                    .settingsActionRow()
                 }
                 if let feedbackURL = URL(
                     string: "mailto:hello@plozz.app?subject=Plozz%20Feedback"
@@ -45,12 +46,14 @@ struct PlozziOSDiagnosticsSettingsView: View {
                     Link(destination: feedbackURL) {
                         Label("Send Feedback", systemImage: "envelope")
                     }
+                    .settingsActionRow()
                 }
-                NavigationLink {
+                SettingsPageLink {
                     PlozziOSRecentActivityView()
                 } label: {
                     Label("Recent Activity", systemImage: "clock.arrow.circlepath")
                 }
+                .settingsActionRow()
             }
 
             SettingsSectionGroup {

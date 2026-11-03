@@ -41,7 +41,7 @@ struct PlozziOSParentalPINSettingsView: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .settingsActionRow()
 
                 if hasPIN {
                     Button(role: .destructive) {
@@ -53,6 +53,7 @@ struct PlozziOSParentalPINSettingsView: View {
                             Image(systemName: "lock.slash")
                         }
                     }
+                    .settingsActionRow()
                 }
             } footer: {
                 Text(KidsProfileCopy.parentalPINExplanation)

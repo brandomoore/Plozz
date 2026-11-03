@@ -74,6 +74,7 @@ struct PlozziOSStreamingSettings: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .settingsActionRow()
                 .accessibilityIdentifier("streaming-advanced")
             } else {
                 Picker("Quality", selection: .constant(StreamingQuality.original)) {
@@ -124,6 +125,7 @@ struct PlozziOSAdvancedStreamingSettings: View {
                 } label: {
                     SettingsMenuLabel("Transcoding codec", value: settings.codec.title)
                 }
+                .settingsActionRow()
                 .accessibilityLabel("Transcoding codec")
                 .accessibilityValue(Text(settings.codec.title))
                 .accessibilityIdentifier("streaming-codec").settingsSearchAnchor("quality-codec")
@@ -173,6 +175,7 @@ struct StreamingQualityPicker: View {
         } label: {
             SettingsMenuLabel(title, value: selection.title)
         }
+        .settingsActionRow()
         .accessibilityLabel(Text(title))
         .accessibilityValue(Text(selection.title))
         .plozzSheet(item: $editingQuality) { quality in

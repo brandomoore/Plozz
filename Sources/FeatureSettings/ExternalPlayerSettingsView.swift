@@ -32,6 +32,8 @@ public struct PlaybackAdvancedSettingsView: View {
                 Button { showsExternalPlayer = true } label: {
                     SettingsDisclosureLabel { Text("External player") }
                 }
+                .settingsActionRow()
+                .accessibilityIdentifier("playback-external-player")
             }
             SettingsSectionGroup {
                 DolbyVisionFELControl(isOn: $playback.settings.dolbyVisionFELEnabled)
@@ -147,11 +149,13 @@ public struct ExternalPlayerSettingsView: View {
                 Button { showsAbout = true } label: {
                     SettingsDisclosureLabel { Text("About external playback") }
                 }
+                .settingsActionRow()
             }
             SettingsSectionGroup {
                 Button { showsCustomPlayer = true } label: {
                     SettingsDisclosureLabel { Text("Custom player") }
                 }
+                .settingsActionRow()
             }
         }
         .settingsPageSurface()
@@ -217,11 +221,25 @@ private struct ExternalPlayerChoices: View {
                 }
             }
             #else
-            Picker("Default player", selection: $model.settings.player) {
+            SettingsControlMenu {
                 ForEach(choices, id: \.self) { player in
-                    title(player).tag(player).disabled(!isAvailable(player))
+                    Button {
+                        model.settings.player = player
+                    } label: {
+                        if model.settings.player == player {
+                            Label { title(player) } icon: { Image(systemName: "checkmark") }
+                        } else {
+                            title(player)
+                        }
+                    }
+                    .disabled(!isAvailable(player))
+                    .accessibilityIdentifier("external-player-\(player.rawValue)")
                 }
+            } label: {
+                SettingsMenuLabel("Default player", value: title(model.settings.player))
             }
+            .accessibilityLabel("Default player")
+            .accessibilityValue(title(model.settings.player))
             .accessibilityIdentifier("external-player-selection").settingsSearchAnchor("external-player")
             #endif
             if model.settings.player == .vlc || model.settings.player == .custom {
@@ -285,7 +303,7 @@ private struct CustomExternalPlayerControls: View {
                 .settingsHelperText()
             if let error { Text(error.message).foregroundStyle(.red) }
             if saved { Text("Custom player selected").settingsHelperText() }
-            Button("Save and use custom player") {
+            Button {
                 do {
                     try ExternalPlayerURL.validateCustomTemplate(template)
                     model.settings = .init(player: .custom, customURLTemplate: template)
@@ -296,6 +314,8 @@ private struct CustomExternalPlayerControls: View {
                 } catch {
                     self.error = .invalidTemplate
                 }
+            } label: {
+                Text("Save and use custom player").settingsControlTarget()
             }
             .accessibilityIdentifier("external-player-custom-save")
         }

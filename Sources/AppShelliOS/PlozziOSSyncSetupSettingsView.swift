@@ -179,7 +179,9 @@ struct PlozziOSSyncSetupSettingsView: View {
                             .font(.footnote)
                             .plozzForeground(.secondary)
                         Spacer()
-                        Button("Sync Now") { appModel.syncCloudNow() }
+                        Button { appModel.syncCloudNow() } label: {
+                            Text("Sync Now").settingsControlTarget()
+                        }
                             .font(.footnote.weight(.semibold))
                             .disabled(appModel.cloudSyncStatus.isRecovering)
                     }
@@ -214,15 +216,17 @@ struct PlozziOSSyncSetupSettingsView: View {
                             }
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .settingsActionRow()
                     }
                 }
                 Button { scannedSourceInvite = nil; showScanner = true } label: {
                     Label("Scan QR Code", systemImage: "qrcode.viewfinder")
                 }
+                .settingsActionRow()
                 Button { showCodeEntry = true } label: {
                     Label("Enter Code", systemImage: "keyboard")
                 }
+                .settingsActionRow()
             } footer: {
                 Text("Choose a nearby device, or scan its code.")
             }
@@ -256,12 +260,15 @@ struct PlozziOSSyncSetupSettingsView: View {
                                         .font(.footnote.weight(.semibold))
                                         .plozzForeground(.tertiary)
                                 }
+                                .settingsControlTarget()
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("pending-server-setup-\(server.id)")
-                            Button("Ignore") {
+                            Button {
                                 appModel.ignorePendingSyncedServer(server.id)
+                            } label: {
+                                Text("Ignore").settingsControlTarget()
                             }
                             .font(.footnote)
                             .buttonStyle(.borderless)
@@ -271,7 +278,7 @@ struct PlozziOSSyncSetupSettingsView: View {
             }
 
             SettingsSectionGroup {
-                NavigationLink {
+                SettingsPageLink {
                     PlozziOSSyncTroubleshootingView(appModel: appModel)
                 } label: {
                     Label(
@@ -279,6 +286,7 @@ struct PlozziOSSyncSetupSettingsView: View {
                         systemImage: "wrench.and.screwdriver"
                     )
                 }
+                .settingsActionRow()
             }
         }
     }
@@ -346,6 +354,7 @@ private struct PlozziOSSyncTroubleshootingView: View {
                 } label: {
                     Label("Reload From iCloud", systemImage: "arrow.down.circle")
                 }
+                .settingsActionRow()
                 .disabled(appModel.cloudSyncStatus.isRecovering || !appModel.syncSetup.isEnabled)
                 .accessibilityIdentifier("cloud-sync-reload")
                 Button(role: .destructive) {
@@ -353,6 +362,7 @@ private struct PlozziOSSyncTroubleshootingView: View {
                 } label: {
                     Label("Reset Sync", systemImage: "arrow.counterclockwise.icloud")
                 }
+                .settingsActionRow()
                 .disabled(appModel.cloudSyncStatus.isRecovering || !appModel.syncSetup.isEnabled)
             }
             LiveTVPortableSyncPendingSettings()
@@ -362,6 +372,7 @@ private struct PlozziOSSyncTroubleshootingView: View {
                         Label("Erase Sync Data", systemImage: "trash")
                             .foregroundStyle(.red)
                     }
+                    .settingsActionRow()
                     .disabled(appModel.cloudSyncStatus.isRecovering)
                     .accessibilityIdentifier("cloud-sync-erase")
                 }

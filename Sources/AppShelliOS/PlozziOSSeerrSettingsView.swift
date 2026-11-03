@@ -103,9 +103,11 @@ struct PlozziOSSeerrSettingsView: View {
             Button("Test Connection") {
                 Task { await appModel.seerService.refreshStatus() }
             }
+            .settingsActionRow()
             Button("Disconnect", role: .destructive) {
                 appModel.disconnectSeerr()
             }
+            .settingsActionRow()
         case let .failed(message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)
@@ -113,9 +115,11 @@ struct PlozziOSSeerrSettingsView: View {
                 Button("Try Again") {
                     Task { await appModel.seerService.refreshStatus() }
                 }
+                .settingsActionRow()
                 Button("Disconnect", role: .destructive) {
                     appModel.disconnectSeerr()
                 }
+                .settingsActionRow()
             } else {
                 connectionFields
             }
@@ -152,6 +156,7 @@ struct PlozziOSSeerrSettingsView: View {
                                     .plozzForeground(.secondary)
                             }
                         }
+                        .settingsControlTarget()
                     }
                 }
             }
@@ -167,10 +172,12 @@ struct PlozziOSSeerrSettingsView: View {
         Button("Connect") {
             connect()
         }
+        .settingsActionRow()
         .disabled(!canConnect)
         Button(isScanning ? "Scanning…" : "Scan Local Network", systemImage: "wifi") {
             scanRequestID &+= 1
         }
+        .settingsActionRow()
         .disabled(isScanning)
     }
 
@@ -190,6 +197,7 @@ struct PlozziOSSeerrSettingsView: View {
                     await loadUsers(for: appModel.seerService.connectionRevision)
                 }
             }
+            .settingsActionRow()
         } else {
             if users.isEmpty {
                 Text("No users found.")
@@ -230,6 +238,7 @@ struct PlozziOSSeerrSettingsView: View {
                 } label: {
                     profileMappingLabel(profile)
                 }
+                .settingsActionRow()
                 .settingsSearchAnchor(
                     profile.id == appModel.profiles.profiles.first?.id
                         ? "seerr-profile-user" : "seerr-profile-\(profile.id)"

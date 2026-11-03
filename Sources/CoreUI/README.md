@@ -38,6 +38,20 @@ Mobile full-width page actions use `plozzPageActionLabel()` inside a native
 not sizing. On iOS 26, disabled page actions use the same native glass treatment
 as secondary actions instead of a separate prominent-button outline.
 Toolbar actions and native form rows retain their system metrics.
+Mobile settings actions inside `SettingsSectionGroup` use `settingsActionRow()`.
+It puts the group's 16-point horizontal and 12-point vertical insets inside the
+button or menu's hit area, with a 44-point minimum height. A container value tells
+the group not to add those insets twice. Keep `SettingsDisclosureLabel` padding-free.
+Composite rows use `settingsControlTarget()` inside each control label for separate,
+non-overlapping 44-by-44 minimum targets; do not mark the entire composite as one action.
+`SettingsControlMenu` places that minimum inside the native menu label: a frame
+outside a native Picker can enlarge accessibility bounds without enlarging its
+real touch target. Verify the native trigger's bounds in a split view, not only
+its List accessibility container, whose reported frame may include the other column.
+`SettingsPageLink` uses a button-backed native destination on mobile so a link
+cannot take over its sibling switch or menu's action in a composite List cell.
+TV navigation, focus styles, and row geometry are unchanged.
+
 Mobile `ConnectionCodeView` uses `settingsGroupSurface` so code tiles follow the
 same gradient, theme, and reduced-transparency treatment as surrounding groups,
 without an extra dark overlay. TV code panels retain their existing treatment.

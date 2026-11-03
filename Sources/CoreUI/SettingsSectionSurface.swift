@@ -1,6 +1,67 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+#if os(iOS)
+private extension ContainerValues {
+    @Entry var settingsActionOwnsInsets = false
+}
+
+private struct SettingsActionRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+#endif
+
+public extension View {
+    /// A single action owns its padded hit area; the containing group adds no second inset.
+    @ViewBuilder func settingsActionRow() -> some View {
+        #if os(iOS)
+        buttonStyle(SettingsActionRowStyle())
+            .containerValue(\.settingsActionOwnsInsets, true)
+        #else
+        self
+        #endif
+    }
+
+    /// Use inside a control's label when it shares a row with other controls.
+    @ViewBuilder func settingsControlTarget() -> some View {
+        #if os(iOS)
+        frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+        #else
+        self
+        #endif
+    }
+}
+
+#if os(iOS)
+/// Keeps the minimum target inside the native menu trigger, including its empty space.
+public struct SettingsControlMenu<Content: View, Label: View>: View {
+    private let content: Content
+    private let label: Label
+
+    public init(@ViewBuilder content: () -> Content, @ViewBuilder label: () -> Label) {
+        self.content = content()
+        self.label = label()
+    }
+
+    public var body: some View {
+        Menu { content } label: {
+            label
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .settingsControlTarget()
+        }
+        .buttonStyle(.plain)
+    }
+}
+#endif
+
 public struct SettingsMenuValue: View {
     private let value: Text
 
@@ -150,8 +211,13 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                     ForEach(subviews) { subview in
                         subview
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            #if os(iOS)
+                            .padding(.horizontal, subview.containerValues.settingsActionOwnsInsets ? 0 : 16)
+                            .padding(.vertical, subview.containerValues.settingsActionOwnsInsets ? 0 : 12)
+                            #else
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
+                            #endif
                             .contentShape(Rectangle())
                             #if os(iOS)
                             .modifier(SettingsSearchRowHighlight(

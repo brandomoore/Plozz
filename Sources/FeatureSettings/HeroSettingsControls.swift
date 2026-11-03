@@ -219,7 +219,7 @@ struct HeroSettingsLink: View {
             } label: {
                 label
             }
-            .buttonStyle(.plain)
+            .settingsActionRow()
             .navigationDestination(isPresented: $isPresented) {
                 HeroSettingsScreen(page: page, libraries: libraries, accounts: accounts)
                     .environment(hero)

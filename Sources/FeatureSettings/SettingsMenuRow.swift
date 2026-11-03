@@ -27,17 +27,29 @@ struct SettingsMenuRow<Options: View>: View {
         .accessibilityLabel(Text(title))
         .accessibilityValue(value)
         #else
-        LabeledSettingRow(title, subtitle: subtitle, labelWidth: 0, trailingAlignment: .trailing) {
-            Menu {
-                options().pickerStyle(.inline)
-            } label: {
-                HStack {
-                    if let icon { Image(systemName: icon) }
-                    value
+        Menu {
+            options().pickerStyle(.inline)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                LabeledContent {
+                    HStack {
+                        if let icon { Image(systemName: icon) }
+                        SettingsMenuValue(value)
+                    }
+                } label: {
+                    Text(title)
+                }
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.footnote)
+                        .plozzForeground(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .menuStyle(.button)
         }
+        .settingsActionRow()
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(value)
         #endif
     }
 }
