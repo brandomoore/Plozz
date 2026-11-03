@@ -275,6 +275,13 @@ public struct MediaRowView: View {
     @State private var tracksLoadingFocus: Bool
     private var onBrowse: (() -> Void)?
     private var usesRowBrowsing = false
+    private var onLoadMore: (@MainActor () async -> Void)?
+
+    public func loadingMore(_ action: (@MainActor () async -> Void)?) -> Self {
+        var copy = self
+        copy.onLoadMore = action
+        return copy
+    }
 
     public func browsingRow(_ action: (() -> Void)?) -> Self {
         var copy = self
@@ -648,6 +655,7 @@ public struct MediaRowView: View {
                         .padding(.vertical, layoutMetrics.railShadowClearance)
                     }
                     .scrollClipDisabled()
+                    .loadingMoreOnScroll(onLoadMore)
                     #if os(tvOS)
                     .ignoresSafeArea(.container, edges: presentation == .poster ? .trailing : [])
                     // This width already excludes the navigation safe area.

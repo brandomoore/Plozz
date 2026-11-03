@@ -248,7 +248,7 @@ struct HomeTab: View {
                         && profilesModel?.activeProfileID == profileID
                         && homeVisibility.visibility == visibility
                 }
-            ), isActive: isActiveTab && path.isEmpty) { feed, items, loading in
+            ), isActive: isActiveTab && path.isEmpty) { feed, items, loading, loadMore in
                 MediaRowView(
                     title: Text(feed.title), items: items,
                     spoilerSettings: spoilerSettings,
@@ -256,6 +256,7 @@ struct HomeTab: View {
                     loadingPlaceholderCount: loading ? 6 : 0,
                     onSelect: { navigate($0) }
                 )
+                .loadingMore(loadMore)
             }
             .id("\(seer.connectionRevision)|\(locale.identifier)|\(visibility.disabledKeys.sorted())")
         }

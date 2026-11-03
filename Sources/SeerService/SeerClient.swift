@@ -76,13 +76,18 @@ struct SeerClient: Sendable {
     }
 
     private func discover(path: String, page: Int, language: String) async throws -> SeerDiscoverPage {
+        var queryItems = [URLQueryItem(name: "page", value: String(page))]
+        // These two routes treat `language` as an original-language filter,
+        // not a display locale. Their translated metadata uses Seerr's locale.
+        if path != "/api/v1/discover/movies", path != "/api/v1/discover/tv" {
+            queryItems.append(URLQueryItem(
+                name: "language", value: language.replacingOccurrences(of: "_", with: "-")
+            ))
+        }
         let endpoint = Endpoint(
             method: .get,
             path: path,
-            queryItems: [
-                URLQueryItem(name: "page", value: String(page)),
-                URLQueryItem(name: "language", value: language)
-            ],
+            queryItems: queryItems,
             headers: headers()
         )
         return try await http.decode(SeerDiscoverPage.self, from: endpoint, baseURL: baseURL)

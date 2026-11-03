@@ -27,10 +27,11 @@ struct PlozziOSDiscoverView: View {
                         && appModel.navigationLibrariesScopeKey == scope
                         && appModel.settings.homeVisibility.visibility == visibility
                 }
-            )) { feed, items, loading in
+            )) { feed, items, loading, loadMore in
                 PlozziOSHomeMediaRail(
                     title: Text(feed.title), items: items, style: .poster, appModel: appModel,
-                    loadingPlaceholderCount: loading ? 6 : 0
+                    loadingPlaceholderCount: loading ? 6 : 0,
+                    onLoadMore: loadMore
                 )
             }
             .id("\(scope)|\(appModel.seerService.connectionRevision)|\(locale.identifier)|\(visibility.disabledKeys.sorted())")

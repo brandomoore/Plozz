@@ -57,6 +57,11 @@ registry.
   With Seerr disconnected, manually enabled Discover browses public metadata;
   requesting still requires Seerr. A configured but unreachable Seerr reports
   retryable errors rather than silently switching services.
+  Rails fetch the next page automatically near the visible trailing edge; there
+  is no manual pagination button. Empty filtered pages continue while visible,
+  and failures retain an explicit retry action. Seerr's Popular endpoints use
+  its configured locale: their `language` query is an original-language filter,
+  so Plozz must not send its display locale through that parameter.
 
 - **Mobile Settings does not require an inherited language model.** The mobile
   app model owns the existing app-wide language preference and passes that same

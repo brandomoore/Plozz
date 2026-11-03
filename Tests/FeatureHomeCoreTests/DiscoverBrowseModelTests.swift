@@ -142,8 +142,96 @@ final class DiscoverBrowseModelTests: XCTestCase {
         XCTAssertTrue(model.rows.allSatisfy { $0.items.isEmpty })
     }
 
+    func testAutomaticPaginationStopsAfterAddingVisibleTitles() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var pages: [Int] = []
+        let model = DiscoverBrowseModel(store: .init(defaults: defaults), isCurrent: { true }) { _, page in
+            pages.append(page)
+            return DiscoverPage(items: [
+                MediaItem(id: "page-\(page)", title: "Title", kind: .movie)
+            ], nextPage: page < 3 ? page + 1 : nil)
+        }
+        await model.loadMore(.trending)
+        await model.loadMoreVisibleItems(.trending)
+        XCTAssertEqual(pages, [1, 2])
+        XCTAssertEqual(model.rows[0].items.count, 2)
+        await model.loadMoreVisibleItems(.trending)
+        await model.loadMoreVisibleItems(.trending)
+        XCTAssertEqual(pages, [1, 2, 3])
+        XCTAssertNil(model.rows[0].nextPage)
+    }
+
+    func testAutomaticPaginationBackfillsFilteredPages() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var pages: [Int] = []
+        let model = DiscoverBrowseModel(store: .init(defaults: defaults), isCurrent: { true }) { _, page in
+            pages.append(page)
+            return DiscoverPage(items: [
+                MediaItem(id: "page-\(page)", title: "Title", kind: .movie, isPlayed: page == 2)
+            ], nextPage: page < 4 ? page + 1 : nil)
+        }
+        model.filters.hideWatched = true
+        await model.loadMore(.trending)
+        await model.loadMoreVisibleItems(.trending)
+        XCTAssertEqual(pages, [1, 2, 3])
+        XCTAssertEqual(model.rows[0].items.filter(model.filters.includes).map(\.id), ["page-1", "page-3"])
+        XCTAssertEqual(model.rows[0].nextPage, 4)
+    }
+
+    func testAutomaticPaginationDoesNotRetryFailures() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var requests = 0
+        let model = DiscoverBrowseModel(store: .init(defaults: defaults), isCurrent: { true }) { _, _ in
+            requests += 1
+            throw AppError.serverUnreachable
+        }
+        await model.loadMoreVisibleItems(.trending)
+        await model.loadMoreVisibleItems(.trending)
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(model.rows[0].error, .service(.serverUnreachable))
+        await model.loadMore(.trending)
+        XCTAssertEqual(requests, 2)
+    }
+
+    func testAutomaticPaginationStopsAtEmptyLastPage() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var pages: [Int] = []
+        let model = DiscoverBrowseModel(store: .init(defaults: defaults), isCurrent: { true }) { _, page in
+            pages.append(page)
+            return DiscoverPage(items: [], nextPage: page < 3 ? page + 1 : nil)
+        }
+        await model.loadMoreVisibleItems(.trending)
+        XCTAssertEqual(pages, [1, 2, 3])
+        XCTAssertTrue(model.rows[0].items.isEmpty)
+        XCTAssertNil(model.rows[0].nextPage)
+    }
+
+    func testInvalidationStopsAutomaticBackfill() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let probe = Probe()
+        let model = DiscoverBrowseModel(store: .init(defaults: defaults), isCurrent: { true }) { _, page in
+            probe.onRequest?()
+            return DiscoverPage(items: [], nextPage: page + 1)
+        }
+        probe.onRequest = { model.invalidate() }
+        await model.loadMoreVisibleItems(.trending)
+        XCTAssertTrue(model.rows.allSatisfy { $0.items.isEmpty && $0.nextPage == 1 })
+        probe.onRequest = nil
+    }
+
     private final class Probe {
         var requests: [DiscoverFeed] = []
         var allowed = true
+        var onRequest: (() -> Void)?
     }
 }

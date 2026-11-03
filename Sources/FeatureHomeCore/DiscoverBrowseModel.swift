@@ -107,6 +107,21 @@ public final class DiscoverBrowseModel {
         rows = DiscoverFeed.defaultOrder.map { DiscoverRow(feed: $0) }
     }
 
+    public func loadMoreVisibleItems(_ feed: DiscoverFeed) async {
+        guard let index = rows.firstIndex(where: { $0.feed == feed }) else { return }
+        let token = generation
+        let visibleIDs = rows[index].items.filter(filters.includes).map(\.stablePresentationID)
+        while !Task.isCancelled, token == generation, isCurrent(), rows[index].error == nil,
+              let page = rows[index].nextPage {
+            await loadMore(feed)
+            guard token == generation, rows[index].nextPage != page else { return }
+            // A filtered or unmappable page does not move the rail's trailing edge.
+            if rows[index].items.filter(filters.includes).map(\.stablePresentationID) != visibleIDs {
+                return
+            }
+        }
+    }
+
     public func refreshLibrarySources() async {
         guard !Task.isCancelled, isCurrent() else { return }
         let token = generation

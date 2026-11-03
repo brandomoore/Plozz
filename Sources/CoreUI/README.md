@@ -12,6 +12,9 @@ would clamp it when returning from a page, then parking would shift it again.
 Full-bleed media rows retain the consumed trailing safe area as content padding,
 so the final card's native focus lift fits on screen without overscrolling.
 This changes the scrollable tail, not the viewport or portrait density.
+`loadingMoreOnScroll` is the opt-in pagination hook shared by TV and mobile
+rails. It observes actual scroll geometry and visibility, not lazy card creation;
+new pages re-arm it only after their content width has been laid out.
 
 Shared, **focusable** UI primitives, the app theme, and the artwork image
 cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind

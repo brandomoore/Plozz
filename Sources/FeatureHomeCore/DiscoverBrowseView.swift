@@ -9,12 +9,12 @@ public struct DiscoverBrowseView<RowContent: View>: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzNavigationContentInset) private var navigationInset
     private let isActive: Bool
-    private let rowContent: (DiscoverFeed, [MediaItem], Bool) -> RowContent
+    private let rowContent: (DiscoverFeed, [MediaItem], Bool, (@MainActor () async -> Void)?) -> RowContent
 
     public init(
         model: DiscoverBrowseModel,
         isActive: Bool = true,
-        @ViewBuilder rowContent: @escaping (DiscoverFeed, [MediaItem], Bool) -> RowContent
+        @ViewBuilder rowContent: @escaping (DiscoverFeed, [MediaItem], Bool, (@MainActor () async -> Void)?) -> RowContent
     ) {
         _model = State(initialValue: model)
         self.isActive = isActive
@@ -41,11 +41,15 @@ public struct DiscoverBrowseView<RowContent: View>: View {
                         if items.isEmpty && !row.isLoading {
                             MediaRowHeader(title: Text(row.feed.title), leadingInset: horizontalInset)
                         } else {
-                            rowContent(row.feed, items, row.isLoading && row.items.isEmpty)
+                            rowContent(
+                                row.feed, items, row.isLoading && row.items.isEmpty,
+                                paginationAction(for: row)
+                            )
                         }
                         DiscoverRowFooter(
                             row: row, isEmpty: items.isEmpty,
                             isFiltered: model.filters.activeCount > 0,
+                            isActive: isActive,
                             onClearFilters: { model.filters = .init() },
                             onLoadMore: { await model.loadMore(row.feed) }
                         )
@@ -89,6 +93,13 @@ public struct DiscoverBrowseView<RowContent: View>: View {
         .accessibilityIdentifier("discover-page")
     }
 
+    private func paginationAction(for row: DiscoverRow) -> (@MainActor () async -> Void)? {
+        guard !row.items.isEmpty else { return nil }
+        return {
+            if isActive { await model.loadMoreVisibleItems(row.feed) }
+        }
+    }
+
     private var horizontalInset: CGFloat {
         #if os(tvOS)
         PlozzTheme.Metrics.screenPadding
@@ -102,9 +113,11 @@ private struct DiscoverRowFooter: View {
     let row: DiscoverRow
     let isEmpty: Bool
     let isFiltered: Bool
+    let isActive: Bool
     let onClearFilters: () -> Void
     let onLoadMore: () async -> Void
     @State private var request = 0
+    @State private var isVisible = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -113,9 +126,11 @@ private struct DiscoverRowFooter: View {
                 Button("Try Again") { request &+= 1 }
                     .plozzPageActionButton(role: .secondary)
             } else if row.isLoading {
-                if !row.items.isEmpty { ProgressView() }
+                ProgressView()
             } else {
-                if isEmpty {
+                if isEmpty && row.nextPage != nil {
+                    ProgressView()
+                } else if isEmpty {
                     if isFiltered {
                         Text("No titles match these filters.").foregroundStyle(.secondary)
                         Button("Clear Filters", action: onClearFilters)
@@ -124,11 +139,11 @@ private struct DiscoverRowFooter: View {
                         Text("No titles yet.").foregroundStyle(.secondary)
                     }
                 }
-                if row.nextPage != nil {
-                    Button("Load More") { request &+= 1 }
-                        .plozzPageActionButton(role: .secondary)
-                }
             }
+        }
+        .onScrollVisibilityChange(threshold: 0.1) { isVisible = $0 }
+        .task(id: emptyPage) {
+            if emptyPage != nil { await onLoadMore() }
         }
         .task(id: request) {
             if request > 0 {
@@ -136,5 +151,9 @@ private struct DiscoverRowFooter: View {
                 request = 0
             }
         }
+    }
+
+    private var emptyPage: Int? {
+        isActive && isVisible && isEmpty && row.error == nil && row.nextPage != 1 ? row.nextPage : nil
     }
 }

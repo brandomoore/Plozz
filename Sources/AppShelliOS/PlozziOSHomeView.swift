@@ -2896,6 +2896,7 @@ struct PlozziOSHomeMediaRail: View {
     var browseItem: MediaItem? = nil
     var onBrowse: (() -> Void)? = nil
     var onNavigationInteraction: () -> Void = {}
+    var onLoadMore: (@MainActor () async -> Void)?
     @State private var prefetchedIDs: Set<String> = []
     @State private var prefetchedPreviewIDs: Set<String> = []
     @State private var lastArtworkPrefetchIndex: Int?
@@ -2981,6 +2982,7 @@ struct PlozziOSHomeMediaRail: View {
                     }
                 }
             }
+            .loadingMoreOnScroll(onLoadMore)
             .contentMargins(
                 .horizontal,
                 PlozziOSMediaRailLayout.artworkAlignedInset(
