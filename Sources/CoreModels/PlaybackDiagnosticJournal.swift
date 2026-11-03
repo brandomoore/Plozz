@@ -152,11 +152,19 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
         let stopReason: StopReason?
         let stage: PlaybackDiagnosticReport.Stage?
         let evidence: PlaybackFailureEvidence?
+        let pipeline: PlaybackPipelineSnapshot?
+    }
+    struct FailureSnapshot: Codable, Sendable {
+        let session: UUID
+        let attempt: UUID
+        var capturedAt: Date
+        var entries: [Entry]
     }
     struct Journal: Codable {
         var schema = 1
         var discarded = 0
         var entries: [Entry] = []
+        var failureSnapshots: [FailureSnapshot]?
     }
     enum StorageIssue: String, Encodable, Sendable {
         case locationUnavailable, readFailed, invalidJournal, invalidEvidence, oversized, writeFailed, encodeFailed
@@ -168,7 +176,11 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
         onFailure: { HandoffDiagnostics.preservePlaybackFailure($0) }
     )
     static let maximumEntries = 256
-    static let maximumBytes = 128 * 1_024
+    static let maximumBytes = 384 * 1_024
+    static let maximumRecentBytes = 128 * 1_024
+    static let maximumFailureSnapshots = 3
+    static let maximumSnapshotEntries = 64
+    static let maximumSnapshotBytes = 64 * 1_024
     static let retention: TimeInterval = 48 * 3_600
     private let url: URL?
     private let clock: @Sendable () -> Date
@@ -204,10 +216,10 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
         elapsed: TimeInterval? = nil, route: PlaybackFailureEvidence.Route? = nil,
         failure: Failure? = nil, phase: Phase? = nil, liveFailure: PlaybackFailureDiagnostic? = nil,
         stopReason: StopReason? = nil, stage: PlaybackDiagnosticReport.Stage? = nil,
-        evidence: PlaybackFailureEvidence? = nil
+        evidence: PlaybackFailureEvidence? = nil, pipeline: PlaybackPipelineSnapshot? = nil
     ) {
         guard facts.isValid, failure?.isValid != false, liveFailure?.isValid != false,
-              evidence?.isValid != false else {
+              evidence?.isValid != false, pipeline?.isValid != false else {
             queue.async { self.storageFailed(.invalidEvidence) }
             return
         }
@@ -218,15 +230,22 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
         let entry = Entry(
             timestamp: clock(), build: Self.build, session: session, attempt: attempt,
             event: event, facts: facts, elapsedMilliseconds: milliseconds, route: route, failure: failure,
-            phase: phase, liveFailure: liveFailure, stopReason: stopReason, stage: stage, evidence: evidence
+            phase: phase, liveFailure: liveFailure, stopReason: stopReason, stage: stage, evidence: evidence,
+            pipeline: pipeline
         )
         if event == .failed || event == .startupTimedOut || event == .engineUnavailable {
             onFailure(entry)
         }
         lock.withLock {
             if pending.count == Self.maximumEntries {
-                pending.removeFirst()
                 pendingDiscarded = min(1_000_000_000, pendingDiscarded + 1)
+                if let index = pending.firstIndex(where: { !Self.startsFailureSnapshot($0.event) && $0.event != .failureEvidence }) {
+                    pending.remove(at: index)
+                } else if Self.startsFailureSnapshot(entry.event) || entry.event == .failureEvidence {
+                    pending.removeFirst()
+                } else {
+                    return
+                }
             }
             pending.append(entry)
             guard !drainScheduled else { return }
@@ -255,17 +274,33 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
     }
 
     public struct Export: Encodable, Sendable {
-        private let schema = 2
+        private let schema = 3
         private let storageAvailable: Bool
         private let storageIssue: StorageIssue?
         private let discarded: Int
         private let entries: [ExportEntry]
+        private let failureSnapshots: [ExportFailureSnapshot]
 
         fileprivate init(journal: Journal, storage: StorageIssue?, scope: DiagnosticExportScope) {
             storageAvailable = storage == nil
             storageIssue = storage
             discarded = journal.discarded
             entries = journal.entries.map { ExportEntry($0, scope: scope) }
+            failureSnapshots = (journal.failureSnapshots ?? []).map { ExportFailureSnapshot($0, scope: scope) }
+        }
+    }
+
+    private struct ExportFailureSnapshot: Encodable, Sendable {
+        let ageMilliseconds: Int?
+        let session: String
+        let attempt: String
+        let entries: [ExportEntry]
+
+        init(_ snapshot: FailureSnapshot, scope: DiagnosticExportScope) {
+            ageMilliseconds = scope.ageMilliseconds(for: snapshot.capturedAt)
+            session = scope.alias(for: snapshot.session.uuidString)
+            attempt = scope.alias(for: snapshot.attempt.uuidString)
+            entries = snapshot.entries.map { ExportEntry($0, scope: scope) }
         }
     }
 
@@ -284,6 +319,7 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
         let stopReason: StopReason?
         let stage: PlaybackDiagnosticReport.Stage?
         let evidence: PlaybackFailureEvidence?
+        let pipeline: PlaybackPipelineSnapshot?
 
         init(_ entry: Entry, scope: DiagnosticExportScope) {
             ageMilliseconds = scope.ageMilliseconds(for: entry.timestamp)
@@ -300,6 +336,7 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
             stopReason = entry.stopReason
             stage = entry.stage
             evidence = entry.evidence
+            pipeline = entry.pipeline
         }
     }
 
@@ -382,7 +419,10 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
             drainScheduled = false
             return result
         }
-        journal.entries.append(contentsOf: batch)
+        for entry in batch {
+            journal.entries.append(entry)
+            preserveFailureContext(entry)
+        }
         journal.discarded = min(1_000_000_000, journal.discarded + discarded)
         trim()
         guard scheduleWrite, !batch.isEmpty, pendingWrite == nil else { return }
@@ -403,6 +443,67 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
             journal.entries.removeFirst(journal.entries.count - Self.maximumEntries)
         }
         journal.discarded = min(1_000_000_000, journal.discarded + before - journal.entries.count)
+        journal.failureSnapshots?.removeAll { $0.capturedAt < now.addingTimeInterval(-Self.retention) }
+        for index in (journal.failureSnapshots ?? []).indices {
+            journal.failureSnapshots?[index].entries.removeAll { $0.timestamp < now.addingTimeInterval(-Self.retention) }
+        }
+    }
+
+    private static func startsFailureSnapshot(_ event: Event) -> Bool {
+        event == .failed || event == .startupTimedOut || event == .engineUnavailable
+    }
+
+    private func preserveFailureContext(_ entry: Entry) {
+        if let index = journal.failureSnapshots?.firstIndex(where: {
+            $0.session == entry.session && $0.attempt == entry.attempt
+        }) {
+            if Self.startsFailureSnapshot(entry.event) {
+                journal.failureSnapshots?[index].capturedAt = entry.timestamp
+            }
+            journal.failureSnapshots?[index].entries.append(entry)
+            if (journal.failureSnapshots?[index].entries.count ?? 0) > Self.maximumSnapshotEntries {
+                removeOldestSnapshotContext(at: index)
+            }
+            if Self.startsFailureSnapshot(entry.event), let snapshot = journal.failureSnapshots?.remove(at: index) {
+                journal.failureSnapshots?.append(snapshot)
+            }
+        } else if Self.startsFailureSnapshot(entry.event) {
+            let context = journal.entries.filter { $0.session == entry.session && $0.attempt == entry.attempt }
+            var snapshots = journal.failureSnapshots ?? []
+            snapshots.append(FailureSnapshot(
+                session: entry.session, attempt: entry.attempt, capturedAt: entry.timestamp,
+                entries: Array(context.suffix(Self.maximumSnapshotEntries))
+            ))
+            journal.failureSnapshots = Array(snapshots.suffix(Self.maximumFailureSnapshots))
+        }
+    }
+
+    private func removeOldestSnapshotContext(at index: Int) {
+        guard let entries = journal.failureSnapshots?[index].entries, entries.count > 1 else { return }
+        let failure = entries.lastIndex { Self.startsFailureSnapshot($0.event) }
+        let oldestContext = entries.indices.first {
+            $0 != failure && !Self.startsFailureSnapshot(entries[$0].event) && entries[$0].event != .failureEvidence
+        } ?? entries.indices.first { $0 != failure }
+        guard let oldestContext else { return }
+        journal.failureSnapshots?[index].entries.remove(at: oldestContext)
+    }
+
+    private func validEntry(_ entry: Entry) -> Bool {
+        Self.validBuild(entry.build) && entry.facts.isValid && entry.failure?.isValid != false
+            && entry.liveFailure?.isValid != false && entry.evidence?.isValid != false
+            && entry.pipeline?.isValid != false
+            && entry.elapsedMilliseconds.map { (0...172_800_000).contains($0) } != false
+            && entry.timestamp <= clock().addingTimeInterval(300)
+    }
+
+    private func validSnapshot(_ snapshot: FailureSnapshot) throws -> Bool {
+        guard !snapshot.entries.isEmpty, snapshot.entries.count <= Self.maximumSnapshotEntries,
+              snapshot.capturedAt <= clock().addingTimeInterval(300),
+              snapshot.entries.contains(where: { Self.startsFailureSnapshot($0.event) }),
+              snapshot.entries.allSatisfy({
+                  validEntry($0) && $0.session == snapshot.session && $0.attempt == snapshot.attempt
+              }) else { return false }
+        return try JSONEncoder().encode(snapshot).count <= Self.maximumSnapshotBytes
     }
 
     private func restore() {
@@ -415,13 +516,12 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
             let value = try JSONDecoder().decode(Journal.self, from: data)
             guard value.schema == 1, (0...1_000_000_000).contains(value.discarded),
                   value.entries.count <= Self.maximumEntries,
-                  value.entries.allSatisfy({
-                      Self.validBuild($0.build) && $0.facts.isValid && $0.failure?.isValid != false
-                          && $0.liveFailure?.isValid != false
-                          && $0.evidence?.isValid != false
-                          && $0.elapsedMilliseconds.map { (0...172_800_000).contains($0) } != false
-                          && $0.timestamp <= clock().addingTimeInterval(300)
-                  }) else { storageFailed(.invalidJournal); return }
+                  value.entries.allSatisfy(validEntry),
+                  (value.failureSnapshots?.count ?? 0) <= Self.maximumFailureSnapshots,
+                  try (value.failureSnapshots ?? []).allSatisfy(validSnapshot) else {
+                storageFailed(.invalidJournal)
+                return
+            }
             journal = value
             trim()
         } catch CocoaError.fileReadNoSuchFile {
@@ -450,12 +550,20 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
     private func encode() throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        var data = try encoder.encode(journal)
-        while data.count > Self.maximumBytes, !journal.entries.isEmpty {
+        while try encoder.encode(journal.entries).count > Self.maximumRecentBytes, !journal.entries.isEmpty {
             let count = max(1, journal.entries.count / 4)
             journal.entries.removeFirst(count)
             journal.discarded = min(1_000_000_000, journal.discarded + count)
-            data = try encoder.encode(journal)
+        }
+        for index in (journal.failureSnapshots ?? []).indices {
+            while let snapshot = journal.failureSnapshots?[index],
+                  try encoder.encode(snapshot).count > Self.maximumSnapshotBytes, snapshot.entries.count > 1 {
+                removeOldestSnapshotContext(at: index)
+            }
+        }
+        let data = try encoder.encode(journal)
+        guard data.count <= Self.maximumBytes else {
+            throw EncodingError.invalidValue(journal, .init(codingPath: [], debugDescription: "Playback journal exceeds its byte limit."))
         }
         return data
     }

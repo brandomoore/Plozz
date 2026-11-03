@@ -2265,6 +2265,24 @@ The existing in-process text snapshot remains limited to 64 KiB. This larger
 local retention does not change diagnostic consent, enable persistent text in
 non-diagnostic builds, or attach raw traces to Sentry/manual structured reports.
 
+**Send to Developer** includes a separate, Release-capable
+`playback.failureSnapshots` array in `plozz-diagnostics.json` (playback schema 3).
+It preserves the last three failed attempts independently of the ordinary
+256-event journal, with up to 64 events / 64 KiB per snapshot and a 384 KiB
+combined on-disk bound. Startup failures and engine unavailability also create
+snapshots; a timeout and typed failure for the same attempt share one snapshot.
+Late native evidence and teardown events remain attached to that original attempt,
+not the successful retry. Snapshots survive relaunch but expire after 48 hours.
+
+Snapshots export only the existing typed playback vocabulary plus numeric
+buffer, frame, bitrate and cache telemetry captured at failure events.
+There is no new periodic sampling or release text logging. Session/attempt IDs
+are remapped consistently within each submission; times become relative ages.
+Titles, URLs, paths, credentials, engine descriptions and raw trace files are
+never added. Existing crash-sharing consent and explicit submission are still
+required, automatic reports are unchanged, and success still means SDK handoff
+rather than confirmed Sentry receipt.
+
 `CFGetRetainCount(self)` at teardown tells you HOW MANY owners remain (one
 stubborn owner vs a race) but never WHO. Only the memory graph answers who.
 

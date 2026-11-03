@@ -73,8 +73,16 @@ final class CrashDiagnosticsTests: XCTestCase {
         journal.record(
             .failed, session: UUID(), attempt: UUID(),
             facts: .init(provider: .plex, engine: .plozzigen),
-            failure: .init(.serverHTTP(503))
+            failure: .init(.serverHTTP(503)),
+            pipeline: .init(.init(bufferedSecondsAhead: 0.25, audioPipelineDescription: "PRIVATE-PIPELINE"))
         )
+        await journal.flush()
+        for _ in 0..<3 {
+            for _ in 0..<200 {
+                journal.record(.firstFrame, session: UUID(), attempt: UUID(), facts: .init(provider: .plex))
+            }
+            await journal.flush()
+        }
         let playback = await journal.export(scope: scope)
         for enabled in [false, true] {
             var captures = 0
@@ -86,8 +94,14 @@ final class CrashDiagnosticsTests: XCTestCase {
                     captures += 1
                     let playback = self.payload(attachment)["playback"] as? [String: Any]
                     let entries = playback?["entries"] as? [[String: Any]]
-                    XCTAssertEqual(entries?.first?["event"] as? String, "failed")
-                    XCTAssertEqual((entries?.first?["failure"] as? [String: Any])?["httpStatus"] as? Int, 503)
+                    XCTAssertFalse(entries?.contains { $0["event"] as? String == "failed" } == true)
+                    let snapshots = playback?["failureSnapshots"] as? [[String: Any]]
+                    let failures = snapshots?.first?["entries"] as? [[String: Any]]
+                    XCTAssertEqual(failures?.first?["event"] as? String, "failed")
+                    XCTAssertEqual((failures?.first?["failure"] as? [String: Any])?["httpStatus"] as? Int, 503)
+                    XCTAssertEqual((failures?.first?["pipeline"] as? [String: Any])?["bufferedSeconds"] as? Double, 0.25)
+                    XCTAssertFalse(String(decoding: attachment.data ?? Data(), as: UTF8.self).contains("PRIVATE-PIPELINE"))
+                    XCTAssertLessThanOrEqual(attachment.data?.count ?? Int.max, 4 * 1_024 * 1_024)
                     return SentryId()
                 },
                 captureFeedback: { _ in SentryId() }

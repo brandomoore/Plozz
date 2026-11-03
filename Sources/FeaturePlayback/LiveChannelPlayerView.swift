@@ -2725,7 +2725,8 @@ final class LiveChannelPlayerModel {
         playbackJournal.record(
             event, session: diagnosticSession, attempt: diagnosticAttempt,
             facts: .init(provider: nil, engine: .plozzigen, content: .live, source: shape),
-            elapsed: max(0, uptime() - attemptStartedAt), liveFailure: failure
+            elapsed: max(0, uptime() - attemptStartedAt), liveFailure: failure,
+            pipeline: event == .failed ? .init(engine.liveTelemetry) : nil
         )
     }
 

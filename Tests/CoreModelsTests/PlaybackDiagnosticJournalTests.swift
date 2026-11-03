@@ -141,7 +141,7 @@ final class PlaybackDiagnosticJournalTests: XCTestCase {
         let entry = PlaybackDiagnosticJournal.Entry(
             timestamp: Date(), build: "62", session: UUID(), attempt: UUID(), event: .failureEvidence,
             facts: .init(provider: .jellyfin), elapsedMilliseconds: 1, route: nil, failure: nil,
-            phase: nil, liveFailure: nil, stopReason: nil, stage: .opening, evidence: bad
+            phase: nil, liveFailure: nil, stopReason: nil, stage: .opening, evidence: bad, pipeline: nil
         )
         try JSONEncoder().encode(PlaybackDiagnosticJournal.Journal(entries: [entry])).write(to: url)
         let restored = PlaybackDiagnosticJournal(url: url)

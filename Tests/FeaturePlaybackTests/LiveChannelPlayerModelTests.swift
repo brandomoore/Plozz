@@ -60,6 +60,7 @@ final class LiveChannelPlayerModelTests: XCTestCase {
         ))
         attempt.fail(stage: .load, reason: .authentication, engineFailure: .sourceRefused, httpStatus: 403)
         engine.livePlaybackFailureDiagnostic = attempt.diagnostic
+        engine.liveTelemetry = .init(droppedFrameCount: 9, bufferedSecondsAhead: 0)
         engine.onFailure?(.unauthorized)
         engine.onFailure?(.unauthorized)
         model.stop()
@@ -70,6 +71,7 @@ final class LiveChannelPlayerModelTests: XCTestCase {
         let entries = try JSONDecoder().decode(PlaybackDiagnosticJournal.Journal.self, from: Data(json.utf8)).entries
         XCTAssertEqual(entries.filter { $0.event == .failed }.count, 1)
         XCTAssertEqual(entries.first { $0.event == .failed }?.liveFailure?.httpStatus, 403)
+        XCTAssertEqual(entries.first { $0.event == .failed }?.pipeline?.droppedFrames, 9)
         XCTAssertTrue(entries.contains { $0.event == .firstFrame })
         XCTAssertTrue(entries.allSatisfy { $0.facts.content == .live && $0.facts.provider == nil })
         XCTAssertFalse(report.contains("private"))
@@ -1900,6 +1902,7 @@ final class LiveEngineSpy: LiveChannelEngine {
     var videoAspectRatio: Double?
     var liveStartupBuffer: LivePlaybackBuffer = .automatic
     var livePlaybackFailureDiagnostic: PlaybackFailureDiagnostic?
+    var liveTelemetry: EngineLiveTelemetry?
     var isCapturingLiveFailureDiagnostic = false
     let outputView = UIView()
     var liveSnapshot = LiveChannelEngineSnapshot(

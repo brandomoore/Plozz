@@ -25,11 +25,19 @@ language every other module speaks.
   distinguish preparation/opening/playback, and never export raw error text.
   Non-video live responses use fixed HTML/JSON/XML/empty classifications and
   factual messages, not response snippets or inferred credential expiry.
-- `PlaybackDiagnosticJournal` retains up to 256 events / 128 KiB for 48 hours.
+- `PlaybackDiagnosticJournal` retains up to 256 recent events / 128 KiB for 48
+  hours, plus the last three failed attempts independently (64 events / 64 KiB
+  each; the combined persisted journal is capped at 384 KiB). Failure snapshots
+  survive retries, ordinary event churn and relaunch, and accept late native
+  evidence only for their original session/attempt. They expire after 48 hours.
   Optional typed quality, stage and native evidence fields preserve older
   journals; validation applies both on admission and disk restore. The explicit
   Send diagnostics action includes this local journal, without enabling
   automatic on-demand failure uploads or claiming confirmed backend delivery.
+  Release builds retain the same allowlisted snapshots. Their export uses
+  per-submission aliases and relative ages, including only typed errors,
+  formats, routes, timings and bounded numeric engine buffer/frame/cache facts.
+  Engine descriptions, titles, URLs, credentials and raw traces are excluded.
  - With `PLOZZ_DIAGNOSTICS` and handoff tracing enabled, `HandoffDiagnostics`
   appends local text to four rotating 1 MiB segments in `Caches/Plozz`.
   Typed playback failures, startup timeouts and unavailable engines freeze up
