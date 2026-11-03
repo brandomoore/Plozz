@@ -295,6 +295,22 @@ write before interpreting an earlier absence as confirmed. Retain source/build
 provenance for both runs; an observer pass alone does not prove playback, tracker
 delivery, or profile isolation.
 
+For native profile isolation, create and finish a dedicated secondary profile
+through the normal profile editor and setup. The live history driver accepts
+`PLOZZ_TRACKER_PROFILE_NAME` for that profile and
+`PLOZZ_TRACKER_PROFILE_TARGET` for an explicit switch. Set
+`PLOZZ_TRACKER_HISTORY_USER` to the expected current Plozz profile, not the
+share's server username. Cold launches select only that exact unlocked profile
+through the normal picker; duplicate or locked identities fail closed.
+
+The source-selection and disconnected-tracker scenarios are read-only checks.
+Pair them with separate envelope reads for both profiles before playback,
+after a distinct real resume write, and after switching and relaunching.
+Require the original envelope to remain byte-identical, the new profile to
+retain its own resume, and unselected remote histories to remain unchanged.
+Preserve failed setup attempts separately; resuming an existing profile must
+not create another one or count as proof that an earlier setup failure is fixed.
+
 ### Independent before/after comparison
 
 Capture separate baselines immediately before and after an authorized test

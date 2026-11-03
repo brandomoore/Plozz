@@ -72,6 +72,125 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testPrepareIsolatedShareProfile() throws {
+        let name = try isolatedShareProfileName()
+        try openSettings()
+        try tapVisible(app.buttons["Profiles"])
+        try require(app.buttons["Add Profile"].waitForExistence(timeout: 15),
+                    "Expected the native profile list")
+        try require(!app.buttons.containing(.staticText, identifier: name).firstMatch.exists,
+                    "Do not duplicate the isolated test profile")
+        try tapVisible(app.buttons["Add Profile"])
+        let field = app.textFields["profile-name-input"]
+        try require(field.waitForExistence(timeout: 10), "Expected the normal new-profile editor")
+        try require(field.value as? String == "Profile name" || field.value as? String == "",
+                    "Do not replace an existing profile name")
+        try tapVisible(field)
+        field.typeText(name + "\n")
+        XCTAssertEqual(field.value as? String, name)
+        XCTAssertTrue(app.buttons["Create"].isEnabled)
+    }
+
+    func testCreateIsolatedShareProfile() throws {
+        let name = try isolatedShareProfileName()
+        try require(app.navigationBars["New Profile"].exists,
+                    "Create only from the prepared native editor")
+        try require(app.textFields["profile-name-input"].value as? String == name,
+                    "Create only the dedicated local test profile")
+        try tapVisible(app.buttons["Create"])
+        try require(app.staticTexts[
+            "Pick the servers \(name) watches with, and who they are on each."
+        ].waitForExistence(timeout: 30),
+                    "Expected the new profile's normal source setup")
+    }
+
+    func testFinishIsolatedShareProfileSetup() throws {
+        let name = try isolatedShareProfileName()
+        let share = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try require(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"] == name,
+                    "Continue only as the isolated test profile")
+        try require(app.navigationBars["Libraries"].exists && app.staticTexts[
+            "Pick the servers \(name) watches with, and who they are on each."
+        ].exists, "Expected the prepared test profile")
+        try setSourceServer("NFS, \(share)", selected: true)
+        try setSourceServer("CubeBoi", selected: false)
+        try setSourceServer("Silo", selected: false)
+        XCTAssertEqual(app.switches["NFS, \(share)"].value as? String, "1")
+        XCTAssertEqual(app.switches["CubeBoi"].value as? String, "0")
+        XCTAssertEqual(app.switches["Silo"].value as? String, "0")
+        try tapVisible(app.buttons["Done"])
+        let next = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            self.app.buttons["Not Now"].exists || self.app.staticTexts["Choose Your Look"].exists
+        }, object: app)
+        try require(XCTWaiter.wait(for: [next], timeout: 20) == .completed,
+                    "Expected native profile setup to advance")
+        if app.buttons["Not Now"].exists {
+            try require(app.staticTexts["Requests as"].exists, "Skip only optional request-service setup")
+            try tapVisible(app.buttons["Not Now"])
+        }
+        try require(app.staticTexts["Choose Your Look"].waitForExistence(timeout: 10),
+                    "Expected this profile's appearance step")
+        try tapVisible(app.buttons["Continue"])
+        try require(app.buttons["No PIN"].waitForExistence(timeout: 10),
+                    "Expected the new profile's optional lock offer")
+        try tapVisible(app.buttons["No PIN"])
+        try waitForExpectedProfile()
+        try require(app.buttons["Settings for \(name)"].waitForExistence(timeout: 30),
+                    "Expected the isolated profile's actual Home")
+    }
+
+    func testSwitchToSelectedTestProfile() throws {
+        let target = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_PROFILE_TARGET"])
+        try require(target == "plozztest" || target.hasPrefix("Tracker NFS Isolation "),
+                    "Switch only between the dedicated test profiles")
+        try require(target != ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"],
+                    "Expected a different target profile")
+        try openSettings()
+        try tapVisible(app.buttons["Profiles"])
+        let rows = app.collectionViews.buttons.containing(.staticText, identifier: target)
+        try require(rows.firstMatch.waitForExistence(timeout: 10) && rows.count == 1,
+                    "Expected one exact profile row, independent of its avatar")
+        try tapVisible(rows.element)
+        try require(app.buttons["Settings for \(target)"].waitForExistence(timeout: 30),
+                    "Expected native profile activation")
+    }
+
+    func testShareProfileSourceSelectionPersists() throws {
+        let name = try isolatedShareProfileName()
+        let user = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"])
+        let share = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try require(user == name || user == "plozztest", "Inspect only the dedicated test profiles")
+        try openSettings()
+        try tapVisible(app.buttons["settings-category-libraries"])
+        try require(app.navigationBars["Libraries"].waitForExistence(timeout: 15),
+                    "Expected the selected profile's library settings")
+        for label in ["CubeBoi", "Silo", "NFS, \(share)"] {
+            let control = app.switches[label]
+            try tapVisible(control, tapping: false)
+            let expected = (label == "NFS, \(share)") == (user == name)
+            XCTAssertEqual(control.value as? String, expected ? "1" : "0", label)
+        }
+    }
+
+    func testIsolatedShareProfileHasNoTrackerConnection() throws {
+        let name = try isolatedShareProfileName()
+        try require(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"] == name,
+                    "Inspect only the isolated test profile")
+        try openSettings()
+        try tapVisible(app.buttons["settings-category-trackers"])
+        try tapVisible(app.buttons["publicmetadb.pair"], tapping: false)
+        XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Enter API key")
+        XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
+        XCTAssertFalse(app.buttons["publicmetadb.playback.disable"].exists)
+    }
+
+    private func isolatedShareProfileName() throws -> String {
+        let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_PROFILE_NAME"])
+        try require(name.hasPrefix("Tracker NFS Isolation ") && name.count <= 64,
+                    "Expected a unique dedicated share-test profile name")
+        return name
+    }
+
     func testPrepareSelectedNFSShare() throws {
         let environment = ProcessInfo.processInfo.environment
         let rawURL = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_URL"])
@@ -2625,6 +2744,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         } else {
             app.terminate()
             app.launch()
+            try waitForExpectedProfile()
             XCTAssertTrue(search.waitForExistence(timeout: 30))
             search.tap()
         }
@@ -2952,11 +3072,31 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         if relaunch {
             app.terminate()
             app.launch()
+            try waitForExpectedProfile()
         } else {
             try tapVisible(app.buttons["Home"].firstMatch)
         }
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
         settings.tap()
+    }
+
+    private func waitForExpectedProfile() throws {
+        let user = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"])
+        let settings = app.buttons["Settings for \(user)"]
+        let profiles = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label == %@", "profile-picker-", user
+        ))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            settings.isHittable || profiles.firstMatch.isHittable
+        }, object: app)
+        try require(XCTWaiter.wait(for: [ready], timeout: 30) == .completed,
+                    "Expected the selected test profile or its native launch picker")
+        if profiles.firstMatch.isHittable {
+            try require(profiles.count == 1 && profiles.element.value as? String == "",
+                        "Do not bypass a profile lock or ambiguous identity")
+            profiles.element.tap()
+        }
+        try require(settings.waitForExistence(timeout: 30), "Expected the selected test profile's Home")
     }
 
     private func dismissConfirmation() throws {
