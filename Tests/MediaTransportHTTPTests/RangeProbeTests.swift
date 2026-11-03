@@ -7,6 +7,37 @@ final class RangeProbeTests: XCTestCase {
     private let strongETag = ETag(headerValue: "\"strong-etag-1\"")!
     private let weakETag = ETag(headerValue: "W/\"weak-etag-1\"")!
 
+    func testDiagnosticSummaryDistinguishesMissingInvalidWeakAndStrongValidators() {
+        XCTAssertEqual(
+            RangeProbe.diagnosticSummary(status: 200, headers: [:], bodyLength: 2),
+            "status=200 bytes=2 etag=missing lastModified=missing contentRange=missing encoding=missing"
+        )
+        XCTAssertEqual(
+            RangeProbe.diagnosticSummary(status: 206, headers: [
+                "ETag": "W/\"private-validator\"",
+                "Last-Modified": "Wed, 14 Oct 2026 12:00:00 GMT",
+                "Content-Range": "bytes 0-1/1000",
+                "Content-Encoding": " Identity "
+            ], bodyLength: 2),
+            "status=206 bytes=2 etag=weak lastModified=valid contentRange=valid encoding=identity"
+        )
+        XCTAssertEqual(
+            RangeProbe.diagnosticSummary(status: 206, headers: [
+                "etag": "\"private-validator\""
+            ], bodyLength: 2),
+            "status=206 bytes=2 etag=strong lastModified=missing contentRange=missing encoding=missing"
+        )
+        let secret = "https://private.example/file?token=private-secret"
+        XCTAssertEqual(
+            RangeProbe.diagnosticSummary(status: 206, headers: [
+                "ETag": secret, "Last-Modified": secret, "Content-Range": secret,
+                "Content-Encoding": secret, "Authorization": secret, "Location": secret,
+                "Set-Cookie": secret
+            ], bodyLength: 2),
+            "status=206 bytes=2 etag=invalid lastModified=invalid contentRange=invalid encoding=other"
+        )
+    }
+
     // MARK: - probeRequest
 
     func testProbeRequestAvoidsZeroEndOffsetAndSendsIdentityEncoding() {

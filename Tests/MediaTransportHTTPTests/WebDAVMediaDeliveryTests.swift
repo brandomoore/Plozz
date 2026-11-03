@@ -1,3 +1,4 @@
+import CoreModels
 import XCTest
 @testable import MediaTransportHTTP
 @testable import TestSupportNetworking
@@ -41,6 +42,42 @@ final class WebDAVMediaDeliveryTests: XCTestCase {
                 }
             ), for: url
         )
+    }
+
+    func testRejectedDeliveryProbeRecordsValidatorClassificationsWithoutSecrets() async throws {
+        let wasEnabled = HandoffDiagnostics.isEnabled
+        HandoffDiagnostics.setEnabled(true)
+        defer { HandoffDiagnostics.setEnabled(wasEnabled) }
+        let before = HandoffDiagnostics.persistentPlaybackLogText()
+        StubURLProtocol.queue(redirect: StubRedirect(location: delivery), for: source)
+        StubURLProtocol.queue(
+            StubResponse(
+                statusCode: 206,
+                headers: ["ETag": "W/\"private-validator\"", "Content-Range": "bytes 0-1/1000"],
+                body: Data([0, 0])
+            ), for: delivery
+        )
+        do {
+            _ = try await client().probeRange(
+                root: root, url: source, sessionKey: key(),
+                credential: .bearerToken("account-secret"), trustPolicy: .system
+            )
+            XCTFail("A missing usable validator must still reject playback")
+        } catch let error as TransportError {
+            XCTAssertEqual(error, .seekableRequiresValidator)
+        }
+        let after = HandoffDiagnostics.persistentPlaybackLogText()
+        let diagnostic = try XCTUnwrap(after.components(separatedBy: "\n").last {
+            $0.contains("webdav PROBE_REJECTED")
+        })
+        XCTAssertFalse(before.contains(diagnostic))
+        XCTAssertTrue(diagnostic.contains(
+            "failure=seekableRequiresValidator anonymous=true prefetch=false "
+                + "status=206 bytes=2 etag=weak lastModified=missing contentRange=valid encoding=missing"
+        ))
+        for secret in ["account-secret", "private-validator", "signature", "example", "movie.mkv"] {
+            XCTAssertFalse(diagnostic.contains(secret))
+        }
     }
 
     func testCrossOriginProbeAndReadUseAnonymousSession() async throws {

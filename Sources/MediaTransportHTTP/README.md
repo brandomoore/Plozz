@@ -170,6 +170,15 @@ responses. They do not establish a particular hosted service's ETag behavior,
 redirect chain, real TLS/Basic/Digest interoperability, or a reported playback
 outcome. Those still require a real-server retest.
 
+When handoff diagnostics are enabled, rejected range probes and reads retain
+the transport failure category, HTTP status, byte count, anonymous-delivery
+flag and header classifications in the bounded local playback trace. ETags,
+dates and ranges are classified as missing, invalid or usable (ETags also
+distinguish weak/strong); no raw headers, paths, credentials or delivery URLs
+are recorded. Locator-policy rejections have separate fixed check identifiers.
+This distinguishes a missing validator from unsupported ranges without
+relaxing playback validation or changing retry behavior.
+
 ## Opt-in real-server checks
 
 `WebDAVLiveServerTests` runs the production URLSession transport against an owned

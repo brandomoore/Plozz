@@ -114,6 +114,34 @@ public struct RangeProbeResult: Equatable, Sendable {
 /// I/O, so it is exhaustively unit-testable against hand-built
 /// status/header/body-length fixtures without a real server.
 public enum RangeProbe {
+    /// Only classifications and byte counts leave the HTTP boundary; header
+    /// values may contain identifiers, credentials, or signed delivery URLs.
+    static func diagnosticSummary(status: Int, headers: [String: String], bodyLength: Int) -> String {
+        let normalized = HTTPHeaderUtilities.normalizedHeaders(from: headers)
+        let etag: String
+        if let raw = normalized["etag"] {
+            if let parsed = ETag(headerValue: raw) {
+                etag = parsed.isWeak ? "weak" : "strong"
+            } else {
+                etag = "invalid"
+            }
+        } else {
+            etag = "missing"
+        }
+        let modified = normalized["last-modified"].map {
+            HTTPDate.parse($0) == nil ? "invalid" : "valid"
+        } ?? "missing"
+        let range = normalized["content-range"].map {
+            ContentRange.parse($0) == nil ? "invalid" : "valid"
+        } ?? "missing"
+        let encoding = normalized["content-encoding"].map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "identity"
+                ? "identity" : "other"
+        } ?? "missing"
+        return "status=\(status) bytes=\(bodyLength) etag=\(etag) "
+            + "lastModified=\(modified) contentRange=\(range) encoding=\(encoding)"
+    }
+
     // MARK: - Probe (establishes seekability)
 
     // Some SabreDAV servers interpret an end offset of zero as an open-ended range.

@@ -1,3 +1,4 @@
+import CoreModels
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -164,6 +165,12 @@ public struct WebDAVClient: Sendable {
                 initialData: prefetch ? data : Data()
             )
         case .failure(let error):
+            HandoffDiagnostics.emit(
+                "webdav PROBE_REJECTED failure=\(error) anonymous=\(anonymous) prefetch=\(prefetch) "
+                    + RangeProbe.diagnosticSummary(
+                        status: response.statusCode, headers: headers, bodyLength: data.count
+                    )
+            )
             throw error
         }
     }
@@ -252,6 +259,12 @@ public struct WebDAVClient: Sendable {
         case .success:
             return data
         case .failure(let error):
+            HandoffDiagnostics.emit(
+                "webdav READ_REJECTED failure=\(error) anonymous=\(representation.usesAnonymousSession) "
+                    + RangeProbe.diagnosticSummary(
+                        status: response.statusCode, headers: headers, bodyLength: data.count
+                    )
+            )
             throw error
         }
     }

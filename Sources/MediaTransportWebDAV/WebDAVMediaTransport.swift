@@ -251,6 +251,7 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
             // Without DAV metadata, only that exact resource is comparable
             // across opens; signed delivery URLs must not become locator state.
             guard probe.resourceURL.absoluteString == url.absoluteString else {
+                HandoffDiagnostics.emit("webdav OPEN_REJECTED check=redirected-file-without-dav-validator")
                 throw MediaTransportError.unsupportedRange(
                     reason: "redirected WebDAV files require a stable DAV metadata validator"
                 )
@@ -341,6 +342,7 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
         guard locator.representation.consistency == .changeDetecting,
               locator.representation.identity.kind == .strongETag
                 || locator.representation.identity.kind == .modificationTime else {
+            HandoffDiagnostics.emit("webdav OPEN_REJECTED check=unsupported-locator-validator")
             throw MediaTransportError.unsupportedRange(
                 reason: "WebDAV playback requires an ETag or modification-time representation"
             )
