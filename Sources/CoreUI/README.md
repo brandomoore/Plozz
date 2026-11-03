@@ -9,6 +9,9 @@ or context-menu actions.
 Pinned-sidebar rail parking clamps both native targets and idle corrections to
 the scrollable content bounds. A partial final slot must not overscroll: UIKit
 would clamp it when returning from a page, then parking would shift it again.
+Full-bleed media rows retain the consumed trailing safe area as content padding,
+so the final card's native focus lift fits on screen without overscrolling.
+This changes the scrollable tail, not the viewport or portrait density.
 
 Shared, **focusable** UI primitives, the app theme, and the artwork image
 cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind

@@ -28,6 +28,8 @@ final class ProductionHomeNavigationTests: XCTestCase {
                 XCTAssertTrue(action.hasFocus, app.debugDescription)
                 captureNavigation("See all before entry \(navigation) watchlist=\(watchlist)", app: app)
                 let sourceFrame = action.frame
+                XCTAssertLessThanOrEqual(sourceFrame.maxX, app.frame.maxX - 24,
+                                         "The focused See all card needs trailing clearance: \(navigation) \(sourceFrame)")
                 XCUIRemote.shared.press(.select)
 
                 let title = app.staticTexts[watchlist ? "watchlist-title" : "home-row-browser-title"]
@@ -81,6 +83,7 @@ final class ProductionHomeNavigationTests: XCTestCase {
                 )], timeout: 5), .completed, app.debugDescription)
                 captureNavigation("See all after return \(navigation) watchlist=\(watchlist)", app: app)
                 let returnedFrame = action.frame
+                XCTAssertLessThanOrEqual(returnedFrame.maxX, app.frame.maxX - 24)
                 XCTAssertEqual(returnedFrame.minX, sourceFrame.minX, accuracy: 1,
                                "Before \(sourceFrame); after \(returnedFrame)")
                 XCTAssertEqual(returnedFrame.minY, sourceFrame.minY, accuracy: 1,

@@ -293,6 +293,14 @@ extension HomeRowArrangementHostedTests {
                     .first { $0.accessibilityLabel == "See all" && $0.canBecomeFocused })
                 try await self.focus(action, in: window)
                 try XCTUnwrap(window.rootViewController as? HomeRowsFocusHost).target = nil
+                let artwork = try XCTUnwrap(action.subviews.compactMap { $0 as? UIImageView }.first)
+                func assertFocusedArtworkFits() {
+                    let frame = artwork.convert(artwork.focusedFrameGuide.layoutFrame, to: window)
+                    XCTAssertGreaterThan(frame.width, artwork.bounds.width, "Measure the native focus lift, not resting bounds")
+                    XCTAssertLessThanOrEqual(frame.maxX, window.bounds.maxX,
+                                             "The full focused See all surface must remain on screen: \(frame)")
+                }
+                assertFocusedArtworkFits()
                 let initial = rail.contentOffset.x
                 let initialWidth = rail.bounds.width
                 let initialSize = rail.contentSize.width
@@ -319,6 +327,7 @@ extension HomeRowArrangementHostedTests {
                     self.add(attachment)
                     XCTAssertLessThanOrEqual(maximumOffsetChange, 1, "The rail must not scroll during Back: \(samples)")
                     XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === action)
+                    assertFocusedArtworkFits()
                 }
             }
         }
