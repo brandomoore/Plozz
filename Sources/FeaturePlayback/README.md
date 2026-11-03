@@ -1405,7 +1405,7 @@ above the center row. Top controls are measured separately.
 A mobile caption moves only when the complete text/dual-lane block
 or movable artwork fits above every obstruction; otherwise its original
 position is retained, without a partial lift. TV placement is unchanged.
-**Avoid Player Controls** in subtitle appearance enables this adjustment by
+**Auto-Move Away from Controls** in subtitle appearance enables this adjustment by
 default. Turning it off preserves the chosen text, dual-lane and movable bitmap
 positions while controls are shown. It does not change font/style matching to
 the device, authored fixed artwork, or the user's saved offsets. The preference

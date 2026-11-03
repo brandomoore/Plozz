@@ -273,7 +273,7 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
     public var avoidsPlayerControls: Bool
     public static var controlAvoidanceTitle: LocalizedStringResource {
         LocalizedStringResource(
-            "Avoid Player Controls",
+            "Auto-Move Away from Controls",
             comment: "Subtitle positioning switch. When enabled, subtitles move only enough to avoid visible playback controls. Turning it off keeps their chosen position."
         )
     }
