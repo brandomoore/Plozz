@@ -100,17 +100,19 @@ final class PlayerRotationInteractionTests: XCTestCase {
         closePlayer()
     }
 
-    func testVersionChoicesFinishInPortraitBeforeLandscapePlayerOpens() {
+    func testVersionChoicesAppearInsideThePlayerWithoutChangingOrientation() {
         launch("--version-choice-fixture", "--nested-player-presentation")
         app.buttons["Open rotation player"].tap()
         let ask = app.buttons["version-choice-ask"]
         XCTAssertTrue(ask.waitForExistence(timeout: 15), app.debugDescription)
-        assertOrientation(landscape: false, player: false)
+        assertOrientation(landscape: UIDevice.current.userInterfaceIdiom != .pad, player: false)
+        assertStaysLandscape(UIDevice.current.userInterfaceIdiom != .pad)
         XCTAssertFalse(app.otherElements["rotation-video-surface"].exists)
         ask.tap()
         let version = app.buttons["version-choice-rotation-1080"]
         XCTAssertTrue(version.waitForExistence(timeout: 5), app.debugDescription)
-        assertOrientation(landscape: false, player: false)
+        assertOrientation(landscape: UIDevice.current.userInterfaceIdiom != .pad, player: false)
+        assertStaysLandscape(UIDevice.current.userInterfaceIdiom != .pad)
         version.tap()
         XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 25), app.debugDescription)
         assertOrientation(landscape: UIDevice.current.userInterfaceIdiom != .pad)
@@ -118,7 +120,7 @@ final class PlayerRotationInteractionTests: XCTestCase {
         closePlayer()
     }
 
-    func testCancellingPrePlayChoiceNeverPresentsThePlayer() {
+    func testCancellingVersionChoiceClosesThePlayerAndAllowsReopening() {
         launch("--version-choice-fixture", "--nested-player-presentation")
         for _ in 0..<2 {
             app.buttons["Open rotation player"].tap()

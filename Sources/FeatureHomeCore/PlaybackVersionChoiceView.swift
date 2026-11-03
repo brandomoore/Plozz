@@ -4,14 +4,13 @@ import CoreUI
 import SwiftUI
 
 public extension View {
-    func playbackVersionChoice(_ model: PlaybackVersionChoiceModel, onDismiss: (() -> Void)? = nil) -> some View {
-        modifier(PlaybackVersionChoicePresentation(model: model, onDismiss: onDismiss))
+    func playbackVersionChoice(_ model: PlaybackVersionChoiceModel) -> some View {
+        modifier(PlaybackVersionChoicePresentation(model: model))
     }
 }
 
 private struct PlaybackVersionChoicePresentation: ViewModifier {
     let model: PlaybackVersionChoiceModel
-    let onDismiss: (() -> Void)?
 
     func body(content: Content) -> some View {
         #if os(tvOS)
@@ -46,7 +45,7 @@ private struct PlaybackVersionChoicePresentation: ViewModifier {
         content.plozzSheet(isPresented: Binding(
             get: { model.prompt != nil },
             set: { if !$0 { model.cancel() } }
-        ), onDismiss: onDismiss) {
+        )) {
             PlaybackVersionChoiceView(model: model)
                 .interactiveDismissDisabled()
         }

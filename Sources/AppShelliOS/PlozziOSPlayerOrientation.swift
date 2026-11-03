@@ -657,9 +657,7 @@ struct PlozziOSPlayerPresentation<Content: View>: UIViewControllerRepresentable 
             var presenter: UIViewController = anchor
             while let parent = presenter.parent { presenter = parent }
             guard presenter.presentedViewController == nil, !presenter.isBeingDismissed else { return }
-            let orientation = PlozziOSPlayerOrientation(
-                preference: preference, isPlaybackActive: request.preparedSession != nil
-            )
+            let orientation = PlozziOSPlayerOrientation(preference: preference, isPlaybackActive: true)
             if let window = presenter.view.window {
                 orientation.updateAvailability(PlozziOSPlayerOrientation.supportsPreference(
                     idiom: presenter.traitCollection.userInterfaceIdiom,

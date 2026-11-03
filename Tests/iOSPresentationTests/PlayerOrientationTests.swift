@@ -19,33 +19,17 @@ final class PlayerOrientationTests: XCTestCase {
         XCTAssertEqual(PlozziOSWindowOrientation.browsingMask(for: .pad), .all)
     }
 
-    func testPreparedRequestRetainsItsIdentityPositionAndChosenVersion() {
-        var request = PlayerCloseProbe.makeRequest()
-        request.startPosition = 97
-        let model = PlozziOSAppModel()
-        let session = model.makePlaybackSession()
-        var selected = request.item
-        selected.selectedVersionID = "chosen-file"
-        let prepared = request.prepared(item: selected, session: session)
-        XCTAssertEqual(prepared.id, request.id)
-        XCTAssertEqual(prepared.startPosition, request.startPosition)
-        XCTAssertEqual(prepared.item.selectedVersionID, "chosen-file")
-        XCTAssertEqual(prepared.preparedSession?.profileID, session.profileID)
-        XCTAssertNil(request.preparedSession)
-    }
-
-    func testPreparedPlayerStartsLandscapeAndCanCloseDuringPresentation() async throws {
+    func testPlayerStartsLandscapeAndCanCloseDuringPresentation() async throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = PlayerOrientationTestWindow(windowScene: scene)
         let anchor = PlozziOSPlayerPresentation<Color>.Anchor()
         let coordinator = PlozziOSPlayerPresentation<Color>.Coordinator()
-        let model = PlozziOSAppModel()
         let request = PlayerCloseProbe.makeRequest()
         coordinator.anchor = anchor
         coordinator.preference = .landscape
-        coordinator.request = request.prepared(item: request.item, session: model.makePlaybackSession())
+        coordinator.request = request
         coordinator.makeContent = { _, _ in AnyView(Color.blue.ignoresSafeArea()) }
         window.rootViewController = anchor
         window.makeKeyAndVisible()
@@ -121,7 +105,7 @@ final class PlayerOrientationTests: XCTestCase {
         }
     }
 
-    func testPrePlayCoverStaysPortraitUntilPlaybackStarts() async throws {
+    func testPlayerCoverUsesItsPreferenceBeforePlaybackStarts() async throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -142,31 +126,23 @@ final class PlayerOrientationTests: XCTestCase {
         }
         try await waitUntil { scene.activationState == .foregroundActive }
 
-        for startsPlayback in [false, true] {
+        for preference in [PlaybackOrientation.portrait, .landscape] {
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
             try await waitUntil { scene.effectiveGeometry.interfaceOrientation == .portrait }
+            coordinator.preference = preference
             coordinator.request = PlayerCloseProbe.makeRequest()
             coordinator.reconcile()
             try await waitUntil { coordinator.host?.orientation.isAvailable == true }
             let player = try XCTUnwrap(coordinator.host)
             try await waitUntil { player.transitionCoordinator == nil }
-            XCTAssertFalse(player.orientation.isPlaybackActive)
-            XCTAssertEqual(player.preferredInterfaceOrientationForPresentation, .portrait)
-            XCTAssertEqual(player.supportedInterfaceOrientations, .portrait)
-            XCTAssertEqual(scene.effectiveGeometry.interfaceOrientation, .portrait)
-
-            if startsPlayback {
-                player.orientation.beginPlayback()
-                try await waitUntil(diagnostics: { self.orientationState(anchor, window, scene) }) {
-                    player.supportedInterfaceOrientations == .landscape
-                        && scene.effectiveGeometry.interfaceOrientation.isLandscape
-                }
+            XCTAssertTrue(player.orientation.isPlaybackActive)
+            XCTAssertEqual(player.supportedInterfaceOrientations, PlozziOSPlayerOrientation.mask(for: preference))
+            try await waitUntil {
+                scene.effectiveGeometry.interfaceOrientation.isLandscape == (preference == .landscape)
             }
             player.orientation.close()
             try await waitUntil { coordinator.host == nil && anchor.presentedViewController == nil }
-            if !startsPlayback {
-                XCTAssertEqual(scene.effectiveGeometry.interfaceOrientation, .portrait, "Cancelling a pre-play choice must not rotate.")
-            }
+            try await waitUntil { scene.effectiveGeometry.interfaceOrientation == .portrait }
         }
     }
 
@@ -249,15 +225,15 @@ final class PlayerOrientationTests: XCTestCase {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = PlayerOrientationTestWindow(windowScene: scene)
-        let anchor = PlozziOSPlayerPresentation<Color>.Anchor()
-        let coordinator = PlozziOSPlayerPresentation<Color>.Coordinator()
-        coordinator.anchor = anchor
-        coordinator.preference = .landscape
-        coordinator.makeContent = { _, _ in AnyView(Color.black) }
+        let anchor = UIViewController()
+        let player = PlozziOSOrientationHostingController(
+            rootView: AnyView(Color.black),
+            orientation: PlozziOSPlayerOrientation(preference: .landscape, isPlaybackActive: false)
+        )
         window.rootViewController = anchor
         window.makeKeyAndVisible()
         defer {
-            coordinator.host?.tearDown()
+            player.tearDown()
             anchor.dismiss(animated: false)
             window.isHidden = true
             window.rootViewController = nil
@@ -266,10 +242,10 @@ final class PlayerOrientationTests: XCTestCase {
         try await waitUntil { scene.activationState == .foregroundActive }
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
         try await waitUntil { scene.effectiveGeometry.interfaceOrientation == .portrait }
-        coordinator.request = PlayerCloseProbe.makeRequest()
-        coordinator.reconcile()
-        try await waitUntil { coordinator.host?.orientation.isAvailable == true }
-        let player = try XCTUnwrap(coordinator.host)
+        await withCheckedContinuation { continuation in
+            anchor.present(player, animated: true) { continuation.resume() }
+        }
+        try await waitUntil { player.orientation.isAvailable }
         try await waitUntil { player.transitionCoordinator == nil }
         let picker = PortraitPrePlayController(rootView: Color.gray)
         picker.modalPresentationStyle = .pageSheet

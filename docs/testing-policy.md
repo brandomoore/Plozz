@@ -542,7 +542,7 @@ another update from the hidden SwiftUI presenter, including disappearance
 cleanup, closing during presentation, reopening, and stale close callbacks.
 Its dismissal-frame regression checks that browsing is already portrait and
 untransformed when revealed from portrait or either landscape direction on
-iPhone, including a full-size, one-axis slide for landscape exits. Prepared-player
+iPhone, including a full-size, one-axis slide for landscape exits. Player
 entry checks landscape bounds from the first presented frame, without a
 portrait-first player or a second orientation change after opening.
 Its in-place Live TV fixture checks real scene rotation for Landscape/Portrait,
@@ -553,8 +553,8 @@ standalone grid and checks the current-program surface pixels with normal and
 reduced transparency at phone/tablet widths and larger text.
 `PlayerRotationInteractionTests` verifies actual X taps and return to a hittable
 presenting screen across rotation preferences and nested navigation. Its
-pre-play cases finish or cancel version selection in portrait before the player
-appears, and its slow-player case compares loading and ready Close-button frames.
+pre-play cases finish or cancel version selection inside the already-presented
+player, and its slow-player case compares loading and ready Close-button frames.
 Its near-end local-video fixture also checks natural end-of-video dismissal in portrait
 and landscape, without synthesizing an engine-ended event. Its
 synthetic Emby-quality fixture serves local HTTP video so quality changes are

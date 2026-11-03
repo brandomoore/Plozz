@@ -106,9 +106,8 @@ struct PlayerRotationFixture: View {
     }
 
     private var playerSurface: some View {
-        openButton.plozziOSPreparedPlayerCover(
-            item: $request, orientation: model.settings.playback.settings.orientation,
-            provider: { _ in RotationProvider(probe: probe) }
+        openButton.plozziOSPlayerCover(
+            item: $request, orientation: model.settings.playback.settings.orientation
         ) { request, orientation in
             player(request: request, orientation: orientation)
         }

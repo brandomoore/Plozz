@@ -662,14 +662,14 @@ like iPad; opening a larger display does not itself request fullscreen playback.
 Orientation is configured only in Settings > Playback, never in the player's
 options menu. Explicitly saved Auto or Portrait choices remain unchanged when
 loading existing profiles; older settings without an orientation use Landscape.
-Initial version loading, the first-use question, and the pre-play version picker
-belong to the browsing presentation. The player is not presented until that gate
-and its native sheet dismissal complete. Its first visible frame uses the saved
-orientation, including the loading UI; cancelling or failing preparation never
-opens or rotates the player. The prepared request retains its identity and
-profile/server session, rechecked before playback. Episode/version handoffs retain
-the preference once playback starts. Loading and ready controls share the same
-top-leading Close button and insets.
+The player opens immediately in the saved orientation, before version loading or
+stream preparation. The first-use question and initial version picker use the
+shared chooser directly inside that player, not a second sheet that can rotate
+during presentation or dismissal. There is no extra browsing-screen loading overlay.
+No stream or engine opens while a version choice is pending. Cancelling the choice
+closes the player; profile/server session checks still gate playback. Episode/version
+handoffs retain the preference. Loading and ready controls share the same top-leading
+Close button and insets.
 The mobile presentation owner supplies the shared player's dismissal action.
 Failure-screen Back and end-of-playback dismissal use that same owner as the
 mobile X button, rather than a SwiftUI dismiss action outside a SwiftUI cover.
