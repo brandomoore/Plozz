@@ -262,6 +262,146 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testPrepareSelectedSMBShare() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        let rawURL = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_URL"])
+        let url = try XCTUnwrap(URLComponents(string: rawURL))
+        let name = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try require(url.scheme == "smb" && url.host != nil && url.path.split(separator: "/").count >= 3,
+                    "Expected the explicitly scoped SMB media folder")
+        try require(url.user == nil && url.password == nil && url.query == nil && url.fragment == nil,
+                    "Credentials must not be embedded in the share address")
+        try testInspectServerConnections()
+        try require(!app.buttons.containing(.staticText, identifier: name).firstMatch.exists,
+                    "Do not create a duplicate test share")
+        try tapVisible(app.buttons["Add Network Share"])
+        try tapVisible(app.buttons["Enter an address manually"])
+        let transport = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Protocol")).firstMatch
+        try tapVisible(transport)
+        try tapVisible(app.buttons["SMB"])
+        let address = app.textFields["Address — e.g. 192.168.1.100 or mynas.local"]
+        try tapVisible(address)
+        address.typeText(rawURL + "\n")
+        let input = try await readSMBInput(expectedURL: url)
+        let username = app.textFields["Username (blank for guest)"]
+        try tapVisible(username)
+        username.typeText(input.username + "\n")
+        let password = app.secureTextFields["Password (optional)"]
+        try tapVisible(password)
+        let previous = UIPasteboard.general.items
+        defer { UIPasteboard.general.items = previous }
+        UIPasteboard.general.setItems(
+            [["public.utf8-plain-text": input.password]],
+            options: [.localOnly: true, .expirationDate: Date(timeIntervalSinceNow: 30)]
+        )
+        password.doubleTap()
+        let paste = app.menuItems["Paste"]
+        try require(paste.waitForExistence(timeout: 5), "Expected native secure-field paste")
+        paste.tap()
+        UIPasteboard.general.items = previous
+        XCTAssertTrue((UIPasteboard.general.items as NSArray).isEqual(to: previous))
+        app.keyboards.buttons["Return"].tap()
+        try tapVisible(app.buttons["Connect"])
+        try require(app.navigationBars["Choose a folder"].waitForExistence(timeout: 45),
+                    "Expected the authenticated SMB folder listing")
+        try testReviewSelectedSMBFolder()
+    }
+
+    func testReviewSelectedSMBFolder() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let url = try XCTUnwrap(URLComponents(string: try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_URL"])))
+        let name = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try require(url.scheme == "smb" && url.path.split(separator: "/").count >= 3
+                    && app.navigationBars["Choose a folder"].exists,
+                    "Review only the authenticated scoped SMB folder")
+        let savePassword = app.sheets["Save Password?"]
+        if savePassword.waitForExistence(timeout: 3) {
+            try tapVisible(savePassword.buttons["Not Now"])
+            try require(savePassword.waitForNonExistence(timeout: 5),
+                        "Decline the system password-save prompt")
+        }
+        try require(app.staticTexts[String(url.path.dropFirst())].exists,
+                    "Do not enroll a broader SMB root")
+        let displayName = app.textFields["Name — e.g. Family Movies"]
+        try tapVisible(displayName)
+        displayName.typeText(name + "\n")
+        let content = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Content")).firstMatch
+        try tapVisible(content)
+        try tapVisible(app.collectionViews.buttons["Movies"])
+        XCTAssertTrue(app.buttons["Content, Movies"].exists)
+        try tapVisible(app.buttons["Use This Folder"], tapping: false)
+        XCTAssertEqual(displayName.value as? String, name)
+    }
+
+    func testConfirmSelectedSMBShare() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let url = try XCTUnwrap(URLComponents(string: try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_URL"])))
+        let name = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try require(url.scheme == "smb" && url.path.split(separator: "/").count >= 3
+                    && app.staticTexts[String(url.path.dropFirst())].exists,
+                    "Confirm only the reviewed SMB folder")
+        XCTAssertEqual(app.textFields["Name — e.g. Family Movies"].value as? String, name)
+        XCTAssertTrue(app.buttons["Content, Movies"].exists)
+        try tapVisible(app.buttons["Use This Folder"])
+        try require(app.navigationBars["Servers"].waitForExistence(timeout: 30),
+                    "Expected the native source settings")
+        XCTAssertTrue(app.buttons.containing(.staticText, identifier: name).firstMatch.waitForExistence(timeout: 30))
+    }
+
+    func testSelectOnlySMBShare() throws {
+        try configureSMBSources(selected: true)
+    }
+
+    func testRestoreSourcesAfterSMBShare() throws {
+        try configureSMBSources(selected: false)
+    }
+
+    private func configureSMBSources(selected: Bool) throws {
+        let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try testOpenLibrarySettings()
+        try setSourceServer("SMB, \(name)", selected: selected)
+        try setSourceServer("CubeBoi", selected: !selected)
+        try setSourceServer("Silo", selected: !selected)
+        try setSourceServer("NFS, Tracker NFS", selected: false)
+    }
+
+    private struct SMBInput: Decodable {
+        let accountID: String
+        let host: String
+        let username: String
+        let password: String
+    }
+
+    private final class ShareInputNoRedirect: NSObject, URLSessionTaskDelegate {
+        func urlSession(
+            _ session: URLSession, task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+            completionHandler: @escaping (URLRequest?) -> Void
+        ) {
+            completionHandler(nil)
+        }
+    }
+
+    private func readSMBInput(expectedURL: URLComponents) async throws -> SMBInput {
+        let location = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SHARE_INPUT_URL"])
+        let url = try XCTUnwrap(URL(string: location))
+        try require(url.scheme == "http" && url.host == "127.0.0.1",
+                    "Expected the one-shot local credential source")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 15
+        let session = URLSession(configuration: configuration, delegate: ShareInputNoRedirect(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let (data, response) = try await session.data(from: url)
+        try require((response as? HTTPURLResponse)?.statusCode == 200,
+                    "The local credential source did not return authorized input")
+        let input = try JSONDecoder().decode(SMBInput.self, from: data)
+        try require(input.accountID == "smb-lan-media" && input.host == expectedURL.host
+                    && input.username == "copilot2" && !input.password.isEmpty,
+                    "Expected only the dedicated internal SMB identity")
+        return input
+    }
+
     func testConnectIndependentServerWithQuickConnect() throws {
         try testInspectServerConnections()
         let environment = ProcessInfo.processInfo.environment
