@@ -15,10 +15,13 @@ actor SiloClient {
     private let store: any RotatingCredentialStoring
     private let http: any HTTPClient
     private var refresh: Task<SiloCredential, Error>?
+    private let now: @Sendable () -> Date
+    private var requestNotBefore = Date.distantPast
 
     init(
         context: ProviderResolutionContext, store: any RotatingCredentialStoring, http: any HTTPClient,
-        addressProbe: any HTTPClient = URLSessionHTTPClient(session: .plozzDiscovery)
+        addressProbe: any HTTPClient = URLSessionHTTPClient(session: .plozzDiscovery),
+        now: @escaping @Sendable () -> Date = { Date() }
     ) throws {
         let credential = try SiloCredential.decode(context.session.accessToken)
         guard context.session.server.provider == .silo,
@@ -42,6 +45,7 @@ actor SiloClient {
         profileID = credential.profileID
         loginID = credential.loginID
         self.store = store
+        self.now = now
     }
 
     private func currentCredential() throws -> (String, SiloCredential) {
@@ -182,8 +186,11 @@ actor SiloClient {
         deviceID: String? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         try Task.checkCancellation()
+        _ = try currentCredential()
+        try checkRequestCooldown()
         let credential = try await authorizedCredential()
         _ = try currentCredential()
+        try checkRequestCooldown()
         var endpoint = SiloAPI.endpoint(path, method: method, query: query, token: credential.accessToken,
                                         profileID: credential.profileID, profileToken: credential.profileToken)
         endpoint.body = body
@@ -192,6 +199,7 @@ actor SiloClient {
         var result = try await http.sendRaw(endpoint, baseURL: baseURL)
         if result.1.statusCode == 401, method == .get {
             let refreshed = try await authorizedCredential(rejectedToken: credential.accessToken)
+            try checkRequestCooldown()
             endpoint.headers["Authorization"] = "Bearer \(refreshed.accessToken)"
             result = try await http.sendRaw(endpoint, baseURL: baseURL)
         }
@@ -229,11 +237,20 @@ actor SiloClient {
         case 404: throw AppError.notFound
         case 409, 412: throw AppError.conflict
         case 429:
-            throw AppError.rateLimited(retryAfter: HTTPDate.retryAfter(result.1.value(forHTTPHeaderField: "Retry-After")))
+            let current = now()
+            let serverDate = result.1.value(forHTTPHeaderField: "Date").flatMap(HTTPDate.parse) ?? current
+            let delay = HTTPDate.retryAfter(result.1.value(forHTTPHeaderField: "Retry-After"), now: serverDate)
+            requestNotBefore = max(requestNotBefore, current.addingTimeInterval(max(1, delay ?? 60)))
+            throw AppError.rateLimited(retryAfter: delay)
         default: throw AppError.invalidResponse
         }
         try Task.checkCancellation()
         _ = try currentCredential()
         return result
+    }
+
+    private func checkRequestCooldown() throws {
+        let remaining = requestNotBefore.timeIntervalSince(now())
+        if remaining > 0 { throw AppError.rateLimited(retryAfter: remaining) }
     }
 }

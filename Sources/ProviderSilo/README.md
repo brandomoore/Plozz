@@ -129,7 +129,11 @@ These Home and device-login contracts were checked at upstream revision
   bounded concurrency to join TVDB-anchored titles to TMDB/IMDb watchlist entries.
   Episode file resolution and coarse HDR/SDR fields fill missing track-level
   metadata for hero badges; detailed track facts take precedence. An explicit
-  file-level `hdr: false` means SDR even when no video tracks are supplied;
+  progress duration remains authoritative; otherwise a single movie/episode
+  file's duration supplies seconds before falling back to rounded catalog
+  minutes. This keeps matching tracker resumes inside the existing one-second
+  runtime guard without choosing an arbitrary file from multiple versions.
+  An explicit file-level `hdr: false` means SDR even when no video tracks are supplied;
   an absent or null HDR value stays unknown. Unknown audio
   channels never imply stereo or surround. Detail heroes observe source-scoped
   episode metadata separately from the rail, so a later sparse season/resume
@@ -177,6 +181,8 @@ These Home and device-login contracts were checked at upstream revision
   requests carry an idempotent stop identifier.
 - Watched state and the native Silo watchlist write back to Silo. Batched resume
   synchronization checks each result, not only HTTP success.
+  Resume writes round to whole milliseconds rather than truncating floating-point
+  seconds, preserving tracker positions through a milliseconds/seconds round trip.
   Watched writes use `POST /api/v2/watched/{id}`; unwatched writes use `DELETE`.
   Both accept the native `204 No Content` response and retain the selected
   server-profile headers. This contract is pinned in the
@@ -184,6 +190,10 @@ These Home and device-login contracts were checked at upstream revision
   Failed outbox targets retain their watch intent and use the shared persisted
   retry cooldown rather than retrying on every index or configuration update.
   HTTP 429 honors both numeric and HTTP-date `Retry-After` values.
+  The connection also refuses subsequent API reads and writes locally until
+  that cooldown expires, so background identity hydration cannot keep flooding
+  a rate-limited server. A missing or malformed delay uses a 60-second cooldown.
+  Expiry does not replay a request; the caller must explicitly try again.
 
 ### Watch indicators
 

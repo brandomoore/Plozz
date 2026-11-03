@@ -124,6 +124,51 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testConnectIndependentSiloWithDeviceApproval() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let server = try XCTUnwrap(environment["PLOZZ_TRACKER_IMPORT_SERVER"])
+        let user = try XCTUnwrap(environment["PLOZZ_TRACKER_IMPORT_USER"])
+        let profileID = try XCTUnwrap(environment["PLOZZ_TRACKER_SERVER_PROFILE"])
+        let url = try XCTUnwrap(URLComponents(string: server))
+        try require(["http", "https"].contains(url.scheme ?? "") && url.host != nil,
+                    "Expected the independently verified Silo endpoint")
+        XCTAssertNil(url.user)
+        XCTAssertNil(url.password)
+        XCTAssertNil(url.query)
+        try testInspectServerConnections()
+        XCTAssertFalse(app.staticTexts["Signed in as \(user)"].exists)
+        try tapVisible(app.buttons["Add Server"])
+        try tapVisible(app.buttons["Provider, Jellyfin"])
+        try tapVisible(app.buttons["Silo"].firstMatch)
+        let address = app.textFields["Server address"]
+        try tapVisible(address)
+        address.typeText(server + "\n")
+        try require(app.buttons["Open Silo to approve"].waitForExistence(timeout: 45),
+                    "Expected native Silo device approval")
+        try tapVisible(app.buttons["Use another device"])
+        let code = app.staticTexts["connection-code"]
+        try tapVisible(code, tapping: false)
+        try require(code.label.hasPrefix("Sign-in code: "), "Expected the displayed Silo code")
+        let value = String(code.label.dropFirst("Sign-in code: ".count))
+            .filter { !$0.isWhitespace && $0 != "-" }
+        try require(value.range(of: "^(?:[A-Z0-9]{6}|[A-Z0-9]{8})$", options: .regularExpression) != nil,
+                    "Expected a supported public Silo user code")
+        let handoff = try XCTUnwrap(environment["PLOZZ_TRACKER_SERVER_HANDOFF"])
+        try require(handoff.hasPrefix("/") && handoff.hasSuffix("/silo-link-request.json"),
+                    "Expected a scoped Silo approval handoff")
+        let data = try JSONSerialization.data(withJSONObject: [
+            "code": value, "server": server, "profileID": profileID,
+            "displayedProductionCode": true,
+        ])
+        try data.write(to: URL(fileURLWithPath: handoff), options: .withoutOverwriting)
+        let profile = app.buttons["silo-profile-\(profileID)"]
+        try require(profile.waitForExistence(timeout: 120), "Expected profiles after normal device approval")
+        XCTAssertEqual(profile.label, user)
+        XCTAssertEqual(profile.value as? String, "")
+        try tapVisible(profile)
+        try finishIndependentServerLibraries()
+    }
+
     func testCancelIndependentPlexLink() throws {
         try require(app.buttons["Open Plex to link"].exists, "Expected the unlinked native Plex page")
         try tapVisible(app.navigationBars["Plex"].buttons["BackButton"])
@@ -1871,6 +1916,16 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testOngoingImportIsDisabled() throws {
         try openOngoingImportSettings()
+        try assertOngoingImportIsDisabled()
+    }
+
+    func testRetryComparisonAndInspectDisabledOngoingImport() throws {
+        try retryHistoryComparison()
+        try showOngoingImportSettings()
+        try assertOngoingImportIsDisabled()
+    }
+
+    private func assertOngoingImportIsDisabled() throws {
         XCTAssertTrue(app.buttons["tracker-history.enable-sync"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["tracker-history.disable-sync"].exists)
         XCTAssertEqual(app.switches["tracker-history.sync-watched"].value as? String, "0")
@@ -1962,6 +2017,10 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func openOngoingImportSettings(relaunch: Bool = true) throws {
         try openHistoryComparison(relaunch: relaunch)
+        try showOngoingImportSettings()
+    }
+
+    private func showOngoingImportSettings() throws {
         try require(app.activityIndicators["Comparing or verifying history…"].waitForNonExistence(timeout: 75),
                     "Expected the comparison to finish before opening ongoing sync")
         let link = app.buttons["tracker-history.ongoing-sync"]
@@ -1995,12 +2054,17 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(app.navigationBars["Choose Your Libraries"].waitForExistence(timeout: 30),
                     "Expected library selection after sign-in")
         try require(app.switches["Movies"].waitForExistence(timeout: 30), "Expected destination movie library")
-        let libraries = app.switches.matching(NSPredicate(format: "label != ''")).allElementsBoundByIndex
-        try require(!libraries.isEmpty && libraries.count <= 20, "Expected a bounded library selection")
-        for library in libraries where library.label != "Movies" && library.value as? String == "1" {
+        let names = app.switches.matching(NSPredicate(format: "label != ''"))
+            .allElementsBoundByIndex.map(\.label)
+        try require(!names.isEmpty && names.count <= 20 && Set(names).count == names.count,
+                    "Expected a bounded, unambiguous library selection")
+        for name in names where name != "Movies" {
+            let library = app.switches.matching(NSPredicate(format: "label == %@", name)).element
+            if library.value as? String == "0" { continue }
+            try require(library.value as? String == "1", "Expected an explicit library selection state")
             try tapVisible(library.switches.firstMatch)
             let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: library)
-            try require(XCTWaiter.wait(for: [disabled], timeout: 5) == .completed,
+            try require(XCTWaiter.wait(for: [disabled], timeout: 15) == .completed,
                         "Only the movie library should remain selected")
         }
         try require(app.switches["Movies"].value as? String == "1", "Movies must be selected")
@@ -2186,14 +2250,22 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testRetryFreshHistoryConflict() throws {
-        XCTAssertTrue(app.staticTexts[
+        try retryHistoryComparison()
+        try confirmFreshHistoryConflict()
+    }
+
+    private func retryHistoryComparison() throws {
+        let unreachable = app.staticTexts[
             "Can’t reach the server. Check that it’s online and on the same network."
-        ].exists)
+        ].exists
+        let rateLimited = app.staticTexts[
+            "The service is asking us to slow down. Try again in a moment."
+        ].exists
+        XCTAssertTrue(unreachable || rateLimited)
         try tapVisible(app.buttons["Compare again"])
         let user = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_USER"])
         try require(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", user))
             .firstMatch.waitForExistence(timeout: 60), "Expected a new complete comparison after retry")
-        try confirmFreshHistoryConflict()
     }
 
     private func confirmFreshHistoryConflict() throws {
@@ -2710,9 +2782,10 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             if target.exists && target.isHittable { break }
             var scroll = app.collectionViews.allElementsBoundByIndex.last
                 ?? app.scrollViews.allElementsBoundByIndex.last ?? app
-            if target.exists && !target.identifier.isEmpty {
-                let collection = app.collectionViews.containing(.any, identifier: target.identifier).firstMatch
-                let container = app.scrollViews.containing(.any, identifier: target.identifier).firstMatch
+            let identifier = target.exists ? (target.identifier.isEmpty ? target.label : target.identifier) : ""
+            if !identifier.isEmpty {
+                let collection = app.collectionViews.containing(.any, identifier: identifier).firstMatch
+                let container = app.scrollViews.containing(.any, identifier: identifier).firstMatch
                 if collection.exists {
                     scroll = collection
                 } else if container.exists {

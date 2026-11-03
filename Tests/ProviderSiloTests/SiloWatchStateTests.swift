@@ -40,6 +40,43 @@ private struct SiloWatchedApplier: WatchMutationApplying {
 }
 
 extension SiloProviderTests {
+    func testResumeWritePreservesWholeMillisecondsAfterSecondsRoundTrip() async throws {
+        let raw = try credential().encoded()
+        let http = SiloHTTPStub([
+            "/api/v2/sync/progress":
+                #"{"items":[{"media_item_id":"movie:1","status":"success","index":0}]}"#
+        ])
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        let positions: [Int64] = [0, 1, 1001, 42125, 1044003, 242374, 337004, 491869]
+        for milliseconds in positions {
+            try await provider.setResumePosition(
+                Double(milliseconds) / 1000, itemID: "movie:1", capturedAt: Date()
+            )
+        }
+        let requests = await http.requests
+        XCTAssertEqual(requests.count, positions.count)
+        for (request, expected) in zip(requests, positions) {
+            let body = try XCTUnwrap(request.body)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            let item = try XCTUnwrap((object["items"] as? [[String: Any]])?.first)
+            XCTAssertEqual(item["position_ms"] as? Int64, expected)
+        }
+    }
+
+    func testInvalidResumePositionsNeverReachTheServer() async throws {
+        let raw = try credential().encoded()
+        let http = SiloHTTPStub([:])
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        for seconds in [-1, Double.nan, .infinity, -.infinity, Double(Int64.max), Double(Int64.max) / 1000] {
+            do {
+                try await provider.setResumePosition(seconds, itemID: "movie:1", capturedAt: Date())
+                XCTFail("Invalid or unrepresentable milliseconds must not be sent")
+            } catch { XCTAssertEqual(error as? AppError, .invalidResponse) }
+        }
+        let requests = await http.requests
+        XCTAssertTrue(requests.isEmpty)
+    }
+
     func testWatchedUsesNativePostAndUnwatchedUsesDeleteWithProfileHeaders() async throws {
         let login = try credential(profileToken: "profile-proof")
         let raw = try login.encoded()

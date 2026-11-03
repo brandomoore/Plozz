@@ -359,7 +359,16 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
             ids.merge(anchor.providerIDs) { declared, _ in declared }
         }
         let isContainer = itemKind == .series || itemKind == .season
-        let runtime = dto.duration_seconds ?? dto.user_data?.duration_seconds ?? dto.runtime.map { $0 * 60 }
+        var fileRuntime: TimeInterval?
+        if (itemKind == .movie || itemKind == .episode), versions.count == 1, let duration = versions.first?.duration {
+            if duration.isFinite && duration > 0 {
+                fileRuntime = duration
+            } else {
+                PlozzLog.networking.error("Silo returned an invalid file duration.")
+            }
+        }
+        // A single file's seconds are more precise than catalog runtime in whole minutes.
+        let runtime = dto.duration_seconds ?? dto.user_data?.duration_seconds ?? fileRuntime ?? dto.runtime.map { $0 * 60 }
         let position = dto.position_seconds ?? dto.user_data?.position_seconds
         let played = dto.user_state?.played ?? dto.user_data?.played ?? false
         var unwatchedCount = isContainer ? dto.user_data?.unplayed_count : nil
@@ -577,7 +586,10 @@ extension SiloProvider: WatchStateProviding, ResumeStateWriting, WatchlistProvid
     }
 
     public func setResumePosition(_ seconds: TimeInterval, itemID: String, capturedAt: Date) async throws {
-        guard seconds.isFinite, seconds >= 0, seconds < Double(Int64.max / 1000) else { throw AppError.invalidResponse }
+        guard seconds.isFinite, seconds >= 0,
+              let milliseconds = Int64(exactly: (seconds * 1000).rounded()) else {
+            throw AppError.invalidResponse
+        }
         struct Item: Encodable {
             let media_item_id: String
             let position_ms: Int64
@@ -587,7 +599,7 @@ extension SiloProvider: WatchStateProviding, ResumeStateWriting, WatchlistProvid
         }
         struct Body: Encodable { let items: [Item] }
         let data = try JSONEncoder().encode(Body(items: [
-            Item(media_item_id: itemID, position_ms: Int64(seconds * 1000),
+            Item(media_item_id: itemID, position_ms: milliseconds,
                  updated_at: capturedAt.ISO8601Format(.init(includingFractionalSeconds: true)))
         ]))
         struct Receipt: Decodable, Sendable {

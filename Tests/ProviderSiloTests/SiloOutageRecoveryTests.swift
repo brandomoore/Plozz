@@ -30,7 +30,97 @@ private actor RestartingSiloHTTP: HTTPClient {
     }
 }
 
+private final class SiloCooldownClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var date = Date(timeIntervalSince1970: 1_800_000_000)
+
+    func now() -> Date { lock.withLock { date } }
+    func advance(_ seconds: TimeInterval) { lock.withLock { date.addTimeInterval(seconds) } }
+}
+
+private actor RateLimitedSiloHTTP: HTTPClient {
+    private(set) var requests: [Endpoint] = []
+    let headers: [String: String]
+
+    init(headers: [String: String]) { self.headers = headers }
+
+    func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        requests.append(endpoint)
+        return (
+            Data(#"{"items":[{"id":"movies","name":"Movies","type":"movie"}]}"#.utf8),
+            try XCTUnwrap(HTTPURLResponse(
+                url: baseURL, statusCode: requests.count == 1 ? 429 : 200,
+                httpVersion: nil, headerFields: headers
+            ))
+        )
+    }
+}
+
 extension SiloProviderTests {
+    func testRateLimitStopsPendingReadsAndWritesUntilExplicitRetryAfterCooldown() async throws {
+        let clock = SiloCooldownClock()
+        let raw = try credential().encoded()
+        let http = RateLimitedSiloHTTP(headers: ["Retry-After": "120"])
+        let client = try SiloClient(
+            context: context(raw), store: SiloCredentialStub(raw), http: http, now: { clock.now() }
+        )
+        do { _ = try await client.send("/catalog/items/movie1"); XCTFail("Expected rate limiting") }
+        catch { XCTAssertEqual(error as? AppError, .rateLimited(retryAfter: 120)) }
+        clock.advance(30)
+        for _ in 0..<50 {
+            do { _ = try await client.send("/catalog/items/movie2"); XCTFail("The connection is cooling down") }
+            catch { XCTAssertEqual(error as? AppError, .rateLimited(retryAfter: 90)) }
+        }
+        do { _ = try await client.send("/watched/movie1", method: .post); XCTFail("Do not transmit during cooldown") }
+        catch { XCTAssertEqual(error as? AppError, .rateLimited(retryAfter: 90)) }
+        let blockedRequests = await http.requests
+        XCTAssertEqual(blockedRequests.count, 1)
+
+        let independent = try SiloProvider(
+            context: context(raw), credentials: SiloCredentialStub(raw),
+            http: SiloHTTPStub(["/api/v2/user/libraries": #"{"items":[]}"#])
+        )
+        let independentLibraries = try await independent.libraries()
+        XCTAssertTrue(independentLibraries.isEmpty, "A connection's cooldown must not block other connections")
+
+        clock.advance(90)
+        let beforeRetry = await http.requests
+        XCTAssertEqual(beforeRetry.count, 1, "Expiry must not automatically replay the refused read or write")
+        let libraries: SiloCollection<SiloLibrary> = try await client.request("/user/libraries")
+        XCTAssertEqual(libraries.items.map(\.id), ["movies"])
+        let finishedRequests = await http.requests
+        XCTAssertEqual(finishedRequests.map(\.path), ["/api/v2/catalog/items/movie1", "/api/v2/user/libraries"])
+        XCTAssertTrue(finishedRequests.allSatisfy { $0.method == .get })
+    }
+
+    func testRateLimitCooldownUsesServerDateAndSafeMissingHeaderFallback() async throws {
+        let clock = SiloCooldownClock()
+        let serverDate = clock.now().addingTimeInterval(-3600)
+        for headers in [
+            ["Date": HTTPDate.string(from: serverDate),
+             "Retry-After": HTTPDate.string(from: serverDate.addingTimeInterval(60))],
+            ["Retry-After": "nan"],
+            [:]
+        ] {
+            let raw = try credential().encoded()
+            let http = RateLimitedSiloHTTP(headers: headers)
+            let client = try SiloClient(
+                context: context(raw), store: SiloCredentialStub(raw), http: http, now: { clock.now() }
+            )
+            do { _ = try await client.send("/user/libraries"); XCTFail("Expected rate limiting") }
+            catch {
+                XCTAssertEqual(error as? AppError, .rateLimited(retryAfter: headers["Date"] == nil ? nil : 60))
+            }
+            clock.advance(59)
+            do { _ = try await client.send("/user/libraries"); XCTFail("Honor the entire cooldown") }
+            catch { XCTAssertEqual(error as? AppError, .rateLimited(retryAfter: 1)) }
+            clock.advance(1)
+            _ = try await client.send("/user/libraries")
+            let requests = await http.requests
+            XCTAssertEqual(requests.count, 2)
+        }
+    }
+
     func testNASOutageBeforeRefreshTransmissionCanRecoverWithoutLosingLogin() async throws {
         var login = try credential()
         login.expiresAt = .distantPast

@@ -933,6 +933,33 @@ match the tracker exactly. This evidence covers three movie routes, not Emby
 episode/platform parity, measured foreground cooldown, network-loss recovery
 or a distributed exactly-once guarantee.
 
+Guarded Silo movie imports now have real native iPhone-simulator evidence.
+Production device approval selected the dedicated server profile and movie
+library; the independent authorizer revoked only its temporary login. Watched
+preview and cancellation made no changes, explicit approval changed only the
+selected movie, and cold relaunch offered no repeat. A separate resume preserved
+the movie's unwatched state. Controlled server edits from 75 to 90 seconds
+invalidated a prepared preview rather than overwriting newer progress.
+
+The resume checks exposed two precision defects. Silo's rounded catalog minutes
+failed the existing one-second runtime guard even though its single file's
+duration matched the tracker. The provider now uses that precise fallback without
+relaxing the guard or choosing an arbitrary version. Independent readback then
+caught a one-millisecond truncation despite native confirmation. Rounded integer
+conversion fixed it; fresh native approval delivered exactly 1,044,003 ms, and
+cold relaunch preserved both that position and its server timestamp.
+
+A rate-limited comparison also remained an explicit failure before any write.
+The connection now honors a shared API cooldown rather than continuing background
+detail requests after a 429; expiry does not replay refused operations. Focused
+Silo regressions cover runtime precedence, precision, invalid input and cooldown
+recovery. Complete tracker histories/lists, unselected Emby/Jellyfin/Plex users
+and Silo control titles stayed unchanged, with reporting and ongoing import off.
+Failed native/driver attempts and the inaccurate first delivery remain separate
+evidence. Silo's returned history cards do not expose independent play counts or
+watch timestamps, so those are not verified. These are guarded movie imports,
+not ongoing Silo sync, source playback/export, episodes or physical-device proof.
+
 Separate read-only transport preflights fetched the same two-mebibyte movie
 prefix through dedicated SMB, NFS, WebDAV, FTP and host-key-pinned SFTP access.
 All five matched an independently authenticated media-server file range.
