@@ -931,6 +931,13 @@ the selected speed without replacing the player. Automatic buffering cannot
 predict an arbitrary encoder pause or compensate for a server that cannot
 sustain playback; this fixture does not validate a real server's capacity.
 
+Converted-stream format inspection waits up to 60 seconds for the current
+AVPlayer item to become ready before starting its five-second track-probing
+window. Cold server encoders must not consume that window before media arrives.
+Failed or replaced items stop the probe; missing formats stay unknown rather
+than being inferred from request flags. This affects measured codec and dynamic
+range reporting, not playback buffering or the server's conversion policy.
+
 Plex renditions opt into a session-scoped keepalive every ten seconds after
 playback starts, including while paused or buffering. It does not depend on
 position changes, scan a library, update watch progress, or scrobble to Trakt.

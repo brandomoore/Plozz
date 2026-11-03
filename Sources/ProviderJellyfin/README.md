@@ -436,7 +436,7 @@ own session exposes the actual encoder in `TranscodingInfo`; that is stronger
 evidence than assuming hardware acceleration from a client preference. Server
 tone-mapping and encoder settings remain server-owned.
 
-The opt-in iOS `EmbyLiveTranscodingTests` exercises real provider negotiation,
+The opt-in iOS `ServerLiveTranscodingTests` exercises real provider negotiation,
 decoded output, sustained native playback, and the presenting layer. See
 [live Emby checks](../../docs/testing-policy.md#live-emby-transcoding) for scope
 and simulator limitations.
