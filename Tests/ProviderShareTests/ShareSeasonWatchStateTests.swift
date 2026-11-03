@@ -2,16 +2,7 @@ import XCTest
 import CoreModels
 @testable import ProviderShare
 
-/// Watch state on **share season containers**.
-///
-/// Share seasons are synthetic — built by grouping the assets table — so there is
-/// no watch record under a season's own id, and `ShareWatchStateService.stamp`
-/// deliberately skips containers. That left every share season permanently
-/// unplayed.
-///
-/// Not cosmetic: the season chips showed no progress, and anything resolving
-/// "which season is the viewer on" over the season containers always answered
-/// "the first unwatched one" — Season 1 — however far into the show they were.
+/// Container actions and indicators share the indexed episode-file watch state.
 final class ShareSeasonWatchStateTests: XCTestCase {
     private func makeTempDir() -> URL {
         let dir = FileManager.default.temporaryDirectory
@@ -62,7 +53,13 @@ final class ShareSeasonWatchStateTests: XCTestCase {
 
     /// Two seasons of two episodes each.
     private func makeCatalog() async -> ShareCatalogStore {
-        let catalog = ShareCatalogStore(accountKey: "season-watch", directory: makeTempDir())
+        let directory = makeTempDir()
+        let catalog = ShareCatalogStore(accountKey: "season-watch", directory: directory)
+        addTeardownBlock {
+            let closed = await catalog.prepareForSuspension(revision: .max)
+            XCTAssertTrue(closed)
+            if closed { try FileManager.default.removeItem(at: directory) }
+        }
         var assets: [CatalogAsset] = []
         for season in 1...2 {
             for episode in 1...2 {
@@ -255,5 +252,162 @@ final class ShareSeasonWatchStateTests: XCTestCase {
             XCTAssertNil(season.playedPercentage)
             XCTAssertEqual(season.unwatchedEpisodeCount, 2)
         }
+    }
+
+    func testWholeShowActionPersistsEpisodesAndEveryContainerRead() async throws {
+        let durable = try makeDurableStore()
+        let catalog = await makeCatalog()
+        let provider = ShareProvider(session: makeSession(), durableLocalStateStore: durable, catalogStore: catalog)
+        let seriesID = ShareCatalogID.series(seriesKey)
+        try await provider.setPlayed(true, itemID: seriesID)
+        try await provider.setResumePosition(0, itemID: seriesID, capturedAt: Date())
+
+        let reopened = ShareProvider(session: makeSession(), durableLocalStateStore: durable, catalogStore: catalog)
+        let detail = try await reopened.item(id: seriesID)
+        let grid = try await reopened.items(in: ShareCatalogID.library(.tv), kind: .series, page: .init())
+        let search = try await reopened.search(query: "Test Show", limit: 10)
+        let query = try await reopened.libraryQueryItem(.init(id: seriesID))
+        for item in [detail, try XCTUnwrap(grid.items.first), try XCTUnwrap(search.first { $0.id == seriesID }), query] {
+            XCTAssertTrue(item.isPlayed)
+            XCTAssertEqual(item.unwatchedEpisodeCount, 0)
+            XCTAssertEqual(item.playedPercentage, 1)
+            XCTAssertFalse(LibraryQueryRecord(item).matches(.init(filter: .unwatched)))
+            XCTAssertNil(item.resumePosition)
+        }
+        for season in try await reopened.children(of: seriesID) {
+            XCTAssertTrue(season.isPlayed)
+            let detail = try await reopened.item(id: season.id)
+            XCTAssertTrue(detail.isPlayed)
+            let episodes = try await reopened.children(of: season.id)
+            XCTAssertEqual(episodes.count, 2)
+            XCTAssertTrue(episodes.allSatisfy(\.isPlayed))
+        }
+        let records = await makeWatchStore(durable).recordsSnapshot()
+        XCTAssertEqual(Set(records.keys), Set((1...2).flatMap { season in
+            (1...2).map { fileID(season: season, episode: $0) }
+        }))
+    }
+
+    func testSeasonUnwatchDoesNotChangeOtherSeasonsAndShowUnwatchClearsAll() async throws {
+        let durable = try makeDurableStore()
+        let catalog = await makeCatalog()
+        let provider = ShareProvider(session: makeSession(), durableLocalStateStore: durable, catalogStore: catalog)
+        let seriesID = ShareCatalogID.series(seriesKey)
+        try await provider.setPlayed(true, itemID: seriesID)
+        try await provider.setPlayed(false, itemID: ShareCatalogID.season(seriesKey, 2))
+        let partial = try await provider.item(id: seriesID)
+        XCTAssertFalse(partial.isPlayed)
+        XCTAssertEqual(partial.unwatchedEpisodeCount, 2)
+        XCTAssertEqual(partial.playedPercentage, 0.5)
+        XCTAssertTrue(LibraryQueryRecord(partial).matches(.init(filter: .unwatched)))
+        let seasons = try await provider.children(of: seriesID)
+        XCTAssertEqual(seasons.first { $0.seasonNumber == 1 }?.isPlayed, true)
+        XCTAssertEqual(seasons.first { $0.seasonNumber == 2 }?.isPlayed, false)
+
+        try await provider.setPlayed(false, itemID: seriesID)
+        let reopened = ShareProvider(session: makeSession(), durableLocalStateStore: durable, catalogStore: catalog)
+        let unwatched = try await reopened.item(id: seriesID)
+        XCTAssertEqual(unwatched.unwatchedEpisodeCount, 4)
+        XCTAssertFalse(unwatched.hasBeenPlayed)
+        XCTAssertNil(unwatched.playedPercentage)
+        for season in try await reopened.children(of: seriesID) {
+            let episodes = try await reopened.children(of: season.id)
+            XCTAssertTrue(episodes.allSatisfy { !$0.isPlayed && $0.resumePosition == nil })
+        }
+    }
+
+    func testContainerActionIncludesSpecialsAndEveryAlternateFileWithoutDoubleCounting() async throws {
+        let durable = try makeDurableStore()
+        let catalog = await makeCatalog()
+        let extraPaths = ["Specials/S00E01.mkv", "Specials/S00E01 alternate.mkv"]
+        await catalog.upsert(extraPaths.map { path in
+            CatalogAsset(
+                relPath: path, basename: path, size: 1_000, modifiedAt: Date(),
+                kind: .episode, library: .tv, title: "Special", year: 2020,
+                seriesTitle: "Test Show", seriesKey: seriesKey, season: 0, episode: 1
+            )
+        }, scanID: 1)
+        let provider = ShareProvider(session: makeSession(), durableLocalStateStore: durable, catalogStore: catalog)
+        let specialID = ShareCatalogID.season(seriesKey, 0)
+        try await provider.setPlayed(true, itemID: specialID)
+        try await provider.setResumePosition(0, itemID: specialID, capturedAt: Date())
+        let special = try await provider.item(id: specialID)
+        XCTAssertTrue(special.isPlayed)
+        XCTAssertEqual(special.unwatchedEpisodeCount, 0)
+        let partial = try await provider.item(id: ShareCatalogID.series(seriesKey))
+        XCTAssertEqual(partial.unwatchedEpisodeCount, 4)
+        XCTAssertEqual(partial.playedPercentage, 0.2)
+        let records = await makeWatchStore(durable).recordsSnapshot()
+        XCTAssertEqual(Set(records.keys), Set(extraPaths.map(ShareCatalogID.file)))
+        XCTAssertTrue(records.values.allSatisfy(\.played))
+
+        try await provider.setPlayed(false, itemID: specialID)
+        let unwatched = try await provider.item(id: specialID)
+        XCTAssertFalse(unwatched.isPlayed)
+        XCTAssertEqual(unwatched.unwatchedEpisodeCount, 1)
+        let after = await makeWatchStore(durable).recordsSnapshot()
+        XCTAssertTrue(after.values.allSatisfy { !$0.played })
+    }
+
+    func testContainerActionPreservesNewerEpisodeAndKnownRuntime() async throws {
+        let durable = try makeDurableStore()
+        let catalog = await makeCatalog()
+        let provider = ShareProvider(session: makeSession(), durableLocalStateStore: durable, catalogStore: catalog)
+        let now = Date()
+        let newer = now.addingTimeInterval(60)
+        let newestEpisode = fileID(season: 1, episode: 1)
+        try await provider.reportPlayback(
+            PlaybackProgress(itemID: newestEpisode, playSessionID: "test", positionSeconds: 100,
+                             isPaused: true, durationSeconds: 1_000), event: .pause
+        )
+        try await provider.setResumePosition(200, itemID: newestEpisode, capturedAt: newer)
+        try await provider.setPlayed(true, itemID: ShareCatalogID.series(seriesKey), capturedAt: now)
+        try await provider.setResumePosition(0, itemID: ShareCatalogID.series(seriesKey), capturedAt: now)
+        let state = await makeWatchStore(durable).recordsSnapshot()
+        XCTAssertEqual(state.count, 4)
+        XCTAssertEqual(state[newestEpisode]?.position, 200)
+        XCTAssertEqual(state[newestEpisode]?.duration, 1_000)
+        XCTAssertEqual(state[newestEpisode]?.updatedAt, newer)
+        XCTAssertEqual(state.values.filter(\.played).count, 3)
+        let show = try await provider.item(id: ShareCatalogID.series(seriesKey))
+        XCTAssertEqual(show.unwatchedEpisodeCount, 1)
+        XCTAssertFalse(show.isPlayed)
+
+        try await provider.setPlayed(true, itemID: ShareCatalogID.series(seriesKey), capturedAt: newer.addingTimeInterval(1))
+        let after = await makeWatchStore(durable).recordsSnapshot()
+        XCTAssertEqual(after[newestEpisode]?.duration, 1_000)
+        XCTAssertEqual(after[newestEpisode]?.position, 0)
+        XCTAssertTrue(after.values.allSatisfy(\.played))
+    }
+
+    func testEmptyContainerActionDoesNotPersistSyntheticRecord() async throws {
+        let durable = try makeDurableStore()
+        let catalog = await makeCatalog()
+        let provider = ShareProvider(session: makeSession(), durableLocalStateStore: durable, catalogStore: catalog)
+        try await provider.setPlayed(true, itemID: ShareCatalogID.series("missing"))
+        try await provider.setPlayed(true, itemID: ShareCatalogID.season(seriesKey, 99))
+        try await provider.setResumePosition(0, itemID: ShareCatalogID.series("missing"), capturedAt: Date())
+        try await provider.setResumePosition(0, itemID: ShareCatalogID.season(seriesKey, 99), capturedAt: Date())
+        let records = await makeWatchStore(durable).recordsSnapshot()
+        XCTAssertTrue(records.isEmpty)
+    }
+
+    func testWholeShowActionStaysWithinProfileAndSeries() async throws {
+        let durable = try makeDurableStore()
+        let catalog = await makeCatalog()
+        let provider = ShareProvider(session: makeSession(), durableLocalStateStore: durable, catalogStore: catalog)
+        let otherProfile = ShareProvider(
+            session: makeSession(),
+            localMediaContext: .init(accountID: makeSession().server.id, profileID: "other", profileNamespace: "other"),
+            durableLocalStateStore: durable, catalogStore: catalog
+        )
+        try await provider.setResumePosition(75, itemID: "f:unrelated.mkv", capturedAt: Date())
+        try await provider.setPlayed(true, itemID: ShareCatalogID.series(seriesKey))
+        let otherShow = try await otherProfile.item(id: ShareCatalogID.series(seriesKey))
+        XCTAssertFalse(otherShow.isPlayed)
+        XCTAssertEqual(otherShow.unwatchedEpisodeCount, 4)
+        let records = await makeWatchStore(durable).recordsSnapshot()
+        XCTAssertEqual(records["f:unrelated.mkv"]?.position, 75)
+        XCTAssertEqual(records["f:unrelated.mkv"]?.played, false)
     }
 }

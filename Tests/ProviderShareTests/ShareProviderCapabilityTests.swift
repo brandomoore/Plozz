@@ -33,6 +33,8 @@ final class ShareProviderCapabilityTests: XCTestCase {
         var movieSortRequests: [CoreModels.SortDescriptor] = []
         var sortedSeriesItems: [SortField: [MediaItem]] = [:]
         var seriesSortRequests: [CoreModels.SortDescriptor] = []
+        var watchIdentities: [(season: Int, logicalKey: String, fileID: String)] = []
+        var watchIdentityRequests: [String] = []
 
         func libraryCounts() async -> (movies: Int, tvSeries: Int, animeSeries: Int) {
             (movieItems.count, seriesItems.count, animeSeriesCount)
@@ -76,7 +78,10 @@ final class ShareProviderCapabilityTests: XCTestCase {
         func episodes(seriesKey: String, season: Int) async -> [MediaItem] { [] }
         func episodeWatchIdentities(
             seriesKey: String
-        ) async -> [(season: Int, logicalKey: String, fileID: String)] { [] }
+        ) async -> [(season: Int, logicalKey: String, fileID: String)] {
+            watchIdentityRequests.append(seriesKey)
+            return watchIdentities
+        }
         func item(id: String) async -> MediaItem? { indexedItem[id] }
         func defaultMovieRelPath(forKey key: String) async -> String? {
             defaultMoviePaths[key]
@@ -1140,9 +1145,7 @@ final class ShareProviderCapabilityTests: XCTestCase {
         XCTAssertFalse(stamped.isPlayed)
     }
 
-    /// Containers (series/season/folder/collection) carry no watch record, so
-    /// stamping must not mutate them (and must not query the catalog).
-    func testWatchStateServiceSkipsContainers() async throws {
+    func testWatchStateServiceLeavesEmptySeriesUnwatched() async throws {
         let reader = FakeCatalogReader()
         let service = ShareWatchStateService(
             watchStore: makeWatchStore(),
@@ -1155,6 +1158,25 @@ final class ShareProviderCapabilityTests: XCTestCase {
 
         XCTAssertNil(stamped.resumePosition)
         XCTAssertFalse(stamped.isPlayed)
+    }
+
+    func testContainerPageReadsEpisodeIdentitiesOncePerSeries() async throws {
+        let reader = FakeCatalogReader()
+        reader.watchIdentities = [
+            (season: 1, logicalKey: "1", fileID: "f:first.mkv"),
+            (season: 2, logicalKey: "1", fileID: "f:second.mkv"),
+        ]
+        let watch = makeWatchStore()
+        await watch.setPlayed(true, itemID: "f:first.mkv", capturedAt: Date())
+        let service = ShareWatchStateService(watchStore: watch, accountID: "acct", catalog: { reader })
+        let page = await service.stamp([
+            MediaItem(id: "series:x", title: "Series", kind: .series),
+            MediaItem(id: "season:x:1", title: "First", kind: .season),
+            MediaItem(id: "season:x:2", title: "Second", kind: .season),
+        ])
+        XCTAssertEqual(reader.watchIdentityRequests, ["x"])
+        XCTAssertEqual(page.map(\.unwatchedEpisodeCount), [1, 0, 1])
+        XCTAssertEqual(page.map(\.isPlayed), [false, true, false])
     }
 
     /// Continue Watching folds several legacy per-file records onto one canonical

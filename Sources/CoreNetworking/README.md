@@ -57,7 +57,10 @@ and every provider/feature that talks to a remote server.
   shares and IPTV. Marking watched or unwatched clears progress but retains
   the duration measured during playback, including across relaunch, so later
   resume imports can still check runtime compatibility. Unknown durations stay
-  unknown; stale writes never replace newer state.
+  unknown; stale writes never replace newer state. Share show/season actions
+  update the indexed episode-file records in one persistence operation, with
+  timestamp ordering checked per episode. Containers derive their indicators
+  from those records rather than storing a separate played flag.
 
 ## Invariants
 

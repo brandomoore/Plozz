@@ -210,6 +210,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testPrepareSelectedNFSShare() throws {
         let environment = ProcessInfo.processInfo.environment
+        let contentType = try shareContentType()
         let rawURL = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_URL"])
         let url = try XCTUnwrap(URLComponents(string: rawURL))
         let name = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_NAME"])
@@ -237,9 +238,9 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         displayName.typeText(name + "\n")
         let content = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Content")).firstMatch
         try tapVisible(content)
-        try tapVisible(app.collectionViews.buttons["Movies"])
-        try require(app.buttons["Content, Movies"].waitForExistence(timeout: 5),
-                    "Expected the explicit Movies content type")
+        try tapVisible(app.collectionViews.buttons[contentType])
+        try require(app.buttons["Content, \(contentType)"].waitForExistence(timeout: 5),
+                    "Expected the explicit share content type")
         try tapVisible(app.buttons["Use This Folder"], tapping: false)
         XCTAssertEqual(displayName.value as? String, name)
         recordState()
@@ -253,13 +254,105 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
                     "Confirm only the already-reviewed NFS folder")
         try require(app.textFields["Name — e.g. Family Movies"].value as? String == name,
                     "Confirm only the dedicated test library")
-        try require(app.buttons["Content, Movies"].exists, "Do not save an automatic mixed-media root")
+        try require(app.buttons["Content, \(try shareContentType())"].exists,
+                    "Do not save an automatic mixed-media root")
         try tapVisible(app.buttons["Use This Folder"])
         try require(app.navigationBars["Servers"].waitForExistence(timeout: 30),
                     "Expected native share setup to return to Servers")
         try require(app.buttons.containing(.staticText, identifier: name).firstMatch.waitForExistence(timeout: 30),
                     "Expected the saved real share")
         recordState()
+    }
+
+    private func shareContentType() throws -> String {
+        let value = ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SHARE_CONTENT"] ?? "Movies"
+        try require(["Movies", "TV Shows"].contains(value), "Expected an explicit indexed content type")
+        return value
+    }
+
+    func testMarkSelectedShareShowWatched() throws {
+        try changeSelectedShareShow(played: true)
+    }
+
+    func testMarkSelectedShareShowUnwatched() throws {
+        try changeSelectedShareShow(played: false)
+    }
+
+    private func changeSelectedShareShow(played: Bool) throws {
+        try require(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SHARE_CONTENT"] == "TV Shows",
+                    "Expected the dedicated share-show acceptance scope")
+        try selectedTitleCard().press(forDuration: 1)
+        let action = app.buttons[played ? "Mark as Watched" : "Mark as Unwatched"]
+        try tapVisible(action)
+        try require(action.waitForNonExistence(timeout: 10), "Expected the watch action to dismiss its menu")
+    }
+
+    func testInspectSelectedShareShowWatchedAfterRelaunch() throws {
+        try selectedTitleCard().press(forDuration: 1)
+        XCTAssertTrue(app.buttons["Mark as Unwatched"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Mark as Watched"].exists)
+    }
+
+    func testInspectSelectedShareShowUnwatchedAfterRelaunch() throws {
+        try selectedTitleCard().press(forDuration: 1)
+        XCTAssertTrue(app.buttons["Mark as Watched"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Mark as Unwatched"].exists)
+    }
+
+    func testInspectSelectedShareLibraryFilters() throws {
+        let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SHARE_NAME"])
+        app.terminate()
+        app.launch()
+        try waitForExpectedProfile()
+        try tapVisible(app.buttons["Home"])
+        try tapVisible(app.buttons[name])
+        try tapVisible(app.buttons["library-filter-menu"])
+        recordState()
+    }
+
+    func testFilterSelectedShareLibraryToUnwatched() throws {
+        try testInspectSelectedShareLibraryFilters()
+        try tapVisible(app.buttons["Unwatched"])
+        let filter = app.buttons["library-filter-menu"]
+        try require(filter.waitForExistence(timeout: 15), "Expected the filtered native library")
+        XCTAssertEqual(filter.label, "Filter: Unwatched")
+        recordState()
+    }
+
+    func testInspectFilteredShareLibraryEmpty() throws {
+        XCTAssertEqual(app.buttons["library-filter-menu"].label, "Filter: Unwatched")
+        XCTAssertTrue(app.staticTexts["No titles match these filters."].waitForExistence(timeout: 20))
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        XCTAssertFalse(app.buttons.containing(.staticText, identifier: title).firstMatch.exists)
+    }
+
+    func testInspectFilteredShareUnwatchedCount() throws {
+        XCTAssertEqual(app.buttons["library-filter-menu"].label, "Filter: Unwatched")
+        let environment = ProcessInfo.processInfo.environment
+        let title = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        let count = try XCTUnwrap(Int(environment["PLOZZ_TRACKER_SHARE_UNWATCHED_COUNT"] ?? ""))
+        try require((1...100).contains(count), "Expected a bounded independently counted episode inventory")
+        let card = app.buttons.containing(.staticText, identifier: title)
+        try require(card.firstMatch.waitForExistence(timeout: 20) && card.count == 1,
+                    "Expected the exact show in the filtered library")
+        let counter = count == 1 ? "Unwatched episode: 1" : "Unwatched episodes: \(count)"
+        XCTAssertEqual(card.element.label, "\(counter), \(title)")
+        XCTAssertFalse(app.staticTexts["No titles match these filters."].exists)
+    }
+
+    func testMarkFilteredShareShowWatched() throws {
+        try testInspectFilteredShareUnwatchedCount()
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        app.buttons.containing(.staticText, identifier: title).element.press(forDuration: 1)
+        try tapVisible(app.buttons["Mark as Watched"])
+        try testInspectFilteredShareLibraryEmpty()
+    }
+
+    func testMarkSelectedShareEpisodeUnwatched() throws {
+        try testOpenSelectedSeries()
+        let episode = try visibleSelectedEpisode()
+        try tapVisible(app.buttons["More actions for \(episode.label)"])
+        try tapVisible(app.buttons["Mark as Unwatched"])
     }
 
     func testPrepareSelectedSMBShare() async throws {
@@ -580,6 +673,9 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             try setSourceServer(label, selected: !onlyShare)
         }
         if !onlyShare { try setSourceServer(share, selected: false) }
+        for other in ["NFS, Tracker NFS", "SMB, Tracker SMB"] where other != share {
+            if app.switches[other].exists { try setSourceServer(other, selected: false) }
+        }
         try testOpenLibrarySettings()
         for label in ["CubeBoi", "Silo"] {
             XCTAssertEqual(app.switches[label].value as? String, onlyShare ? "0" : "1")
@@ -3090,7 +3186,6 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         )).allElementsBoundByIndex.filter { $0.frame.height < app.frame.height * 0.8 }
         try require(rails.count == 1, "Expected one native episode rail")
         let rail = rails[0]
-        try tapVisible(rail, tapping: false)
         let top = app.navigationBars.firstMatch.frame.maxY
         let bottom = app.tabBars.firstMatch.frame.minY
         try require(bottom > top + rail.frame.height, "Expected room for the complete episode rail")
@@ -3106,6 +3201,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         }
         try require(rail.frame.minY >= top && rail.frame.maxY <= bottom,
                     "Expected the episode rail clear of navigation controls")
+        try tapVisible(rail, tapping: false)
         for _ in 0..<10 {
             var forward = true
             if episode.count == 1 {
