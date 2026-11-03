@@ -1836,7 +1836,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testOngoingImportIsDisabled() throws {
         try openHistoryComparison()
-        try tapVisible(app.buttons["tracker-history.ongoing-sync"])
+        try tapVisible(app.buttons["tracker-history.ongoing-sync"], maximumSwipes: 32)
         XCTAssertTrue(app.buttons["tracker-history.enable-sync"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["tracker-history.disable-sync"].exists)
         XCTAssertEqual(app.switches["tracker-history.sync-watched"].value as? String, "0")
@@ -1861,7 +1861,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func enableOngoingImport(categories: [(id: String, label: String)]) throws {
         try openHistoryComparison()
-        try tapVisible(app.buttons["tracker-history.ongoing-sync"])
+        try tapVisible(app.buttons["tracker-history.ongoing-sync"], maximumSwipes: 32)
         let accountID = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"])
         let destination = app.switches.matching(NSPredicate(
             format: "identifier == %@", "tracker-history.sync-server.\(accountID)"
@@ -1873,6 +1873,13 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(destination.switches.firstMatch)
         for category in categories {
             try tapVisible(app.switches["tracker-history.sync-\(category.id)"].switches.firstMatch)
+        }
+        let destinations = app.switches.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "tracker-history.sync-server."
+        )).allElementsBoundByIndex
+        XCTAssertFalse(destinations.isEmpty)
+        for candidate in destinations {
+            XCTAssertEqual(candidate.value as? String, candidate.identifier == destination.identifier ? "1" : "0")
         }
         try tapVisible(app.buttons["tracker-history.enable-sync"])
         let confirm = app.buttons.matching(NSPredicate(
@@ -1894,7 +1901,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testInspectOngoingImportWithoutManualSync() throws {
         try openHistoryComparison(relaunch: false)
         recordState()
-        try tapVisible(app.buttons["tracker-history.ongoing-sync"])
+        try tapVisible(app.buttons["tracker-history.ongoing-sync"], maximumSwipes: 32)
         try require(app.buttons["tracker-history.disable-sync"].exists, "Expected the retained sync permission")
         recordState()
     }
@@ -1905,7 +1912,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func synchronizeOngoingImport(expectingReview: Bool) throws {
         try openHistoryComparison()
-        try tapVisible(app.buttons["tracker-history.ongoing-sync"])
+        try tapVisible(app.buttons["tracker-history.ongoing-sync"], maximumSwipes: 32)
         try require(app.buttons["tracker-history.disable-sync"].exists, "Expected existing sync permission")
         try tapVisible(app.buttons["tracker-history.sync-now"])
         let completed = XCTNSPredicateExpectation(
@@ -1918,7 +1925,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testDisableOngoingImport() throws {
         try openHistoryComparison()
-        try tapVisible(app.buttons["tracker-history.ongoing-sync"])
+        try tapVisible(app.buttons["tracker-history.ongoing-sync"], maximumSwipes: 32)
         try tapVisible(app.buttons["tracker-history.disable-sync"])
         try require(app.buttons["tracker-history.enable-sync"].waitForExistence(timeout: 10),
                     "Expected revoked ongoing-import permission")

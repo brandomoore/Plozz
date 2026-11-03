@@ -824,6 +824,31 @@ confirmed independently and in the same process without replay. These checks
 establish guarded movie imports, not Plex ongoing sync, exports, playback,
 episodes, other providers, or physical-device acceptance.
 
+Separate real ongoing-import checks now cover the dedicated Plex destination on
+the muted iPad simulator, driven by actual Emby playback on the muted iPhone.
+Watched-only consent ignored a new resume, then imported the completed viewing
+with count 1. Resume-only consent imported exactly 254,799 milliseconds and
+safely advanced the unchanged destination to 481,052 milliseconds. Completing
+that source viewing did not import its watched flag or clear the Plex resume
+without watched consent. Unselected Jellyfin histories remained unchanged.
+
+Revocation survived relaunch and blocked a different movie's new 276,623-ms
+resume. Explicit re-enrollment with both categories did not backfill that
+position; subsequent real playback delivered 524,001 milliseconds. Completion
+then replaced that confirmed resume with watched/count-one state. A separate
+preexisting tracker resume also remained absent from Plex throughout enrollment.
+Repeated checks and cold relaunches preserved server state and tracker records.
+Complete remote-history and list comparisons found no unrelated changes or
+tracker echo; test opt-ins were revoked afterward.
+
+The scoped audit covers 38 passing native runs and 30 independent snapshots.
+One comparison failed with a server-unreachable message before enrollment;
+unchanged remote state and a later successful comparison are recorded separately.
+These are explicit **Sync now** movie checks, not Plex automatic foreground
+timing, playback/export, episodes, all lifecycle/race cases, or physical-device
+acceptance. The driver bounds long comparisons and verifies that only the
+intended server-user destination is selected.
+
 Separate read-only transport preflights fetched the same two-mebibyte movie
 prefix through dedicated SMB, NFS, WebDAV, FTP and host-key-pinned SFTP access.
 All five matched an independently authenticated media-server file range.
