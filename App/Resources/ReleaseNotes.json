@@ -11,7 +11,7 @@
         {
           "category": "New",
           "items": [
-            "Discover browsing, filters and Seerr requests for adult profiles.",
+            "Discover browsing, filters and Seerr requests. Not available in child profiles.",
             {
               "text": "Automatic and fixed landscape directions on iPhone.",
               "platforms": ["iOS"]
