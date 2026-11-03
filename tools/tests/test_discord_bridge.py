@@ -1005,8 +1005,14 @@ class PostingGuideTests(unittest.TestCase):
         self.assertEqual(set(BRIDGE.POSTING_GUIDES), set(BRIDGE.FORUMS.values()))
         for title, content in BRIDGE.POSTING_GUIDES.values():
             self.assertLessEqual(len(title), 100)
-            self.assertLessEqual(len(content), 2000)
-            self.assertIn(BRIDGE.PUBLIC_NOTICE, content)
+            self.assertLessEqual(len(content.encode("utf-16-le")) // 2, 2000)
+            self.assertTrue(content.startswith(f"**{BRIDGE.PUBLIC_NOTICE}.**\n"))
+            self.assertEqual(content.count(BRIDGE.PUBLIC_NOTICE), 1)
+            opening = content.split("\n\n", 1)[0]
+            self.assertIn(f"[Plozz's public GitHub issues](https://github.com/{BRIDGE.REPO}/issues)", opening)
+            self.assertIn("not just shared in Discord", opening)
+            self.assertIn("**Never include passwords, access tokens, private server URLs, or unredacted logs.**", opening)
+            self.assertIn("Check screenshots", opening)
             self.assertIn("```text\n", content)
             self.assertEqual(content.count("```"), 2)
             self.assertIn("access tokens", content)

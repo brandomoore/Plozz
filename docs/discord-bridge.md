@@ -120,7 +120,9 @@ GitHub labels.
 Forum guidelines should keep the public notice above and briefly ask people to
 search first, post one bug/idea at a time, use relevant tags, and keep private data
 out of text, screenshots, and diagnostics. Each forum has a pinned "Start here"
-post with a copyable template. Bug reports ask for version/build, device/OS,
+post with a copyable template. Both pinned guides start with the bold automatic
+GitHub-sync notice, a link to the public issue tracker, and privacy precautions
+before any posting instructions or template. Bug reports ask for version/build, device/OS,
 source, expected/actual behavior, and reproduction steps. Feature requests ask
 for the goal, benefit, current workaround, and example behavior.
 

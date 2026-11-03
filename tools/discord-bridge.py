@@ -32,6 +32,12 @@ EFFORT = "high"
 MATCHING_CONTEXT_LIMIT = 180000
 THUMBS_UP = "\U0001f44d"
 PUBLIC_NOTICE = "Posts and replies automatically sync to GitHub"
+POSTING_GUIDE_NOTICE = (
+    f"**{PUBLIC_NOTICE}.**\n"
+    f"Your post and replies are copied to [Plozz's public GitHub issues](https://github.com/{REPO}/issues), "
+    "not just shared in Discord. **Never include passwords, access tokens, private server URLs, or unredacted logs.** "
+    "Check screenshots for private information before posting.\n\n"
+)
 TESTFLIGHT_GUIDE = {
     "title": "Try the Plozz TestFlight beta",
     "url": "https://plozz.app/testflight/",
@@ -54,7 +60,7 @@ TESTFLIGHT_GUIDE = {
 POSTING_GUIDES = {
     "bug": (
         "Start here: How to report a bug",
-        """Found something broken? Search this forum first. If someone has reported the same problem, add your details there and use the post's vote reaction instead of opening another post.
+        POSTING_GUIDE_NOTICE + """Found something broken? Search this forum first. If someone has reported the same problem, add your details there and use the post's vote reaction instead of opening another post.
 
 **Create a New Post for each separate bug.** Use a specific title, such as "Apple TV: subtitles disappear after seeking". Add your device and media-source tags if relevant.
 
@@ -76,13 +82,11 @@ Screenshots or sanitized diagnostics (optional):
 ```
 Version/build are in Settings, under Support or About depending on your layout. If playback is involved, include the file/stream format and playback engine if known. Don't worry if you don't know every detail.
 
-**Posts and replies automatically sync to GitHub.** Treat everything here as public. Never include passwords, access tokens, private server URLs, or unredacted logs; review screenshots too.
-
 This pinned guide is not a bug report. Please create a new post rather than replying here.""",
     ),
     "enhancement": (
         "Start here: How to request a feature",
-        """Have an idea for Plozz? Search this forum first. If someone has requested the same thing, use the post's vote reaction and add your use case to their post.
+        POSTING_GUIDE_NOTICE + """Have an idea for Plozz? Search this forum first. If someone has requested the same thing, use the post's vote reaction and add your use case to their post.
 
 **Create a New Post for each separate idea.** Use a specific title, such as "Live TV: hide several channels at once". Add your device and media-source tags if relevant.
 
@@ -97,8 +101,6 @@ Affected devices/media sources (or all):
 Screenshots or mockups (optional):
 ```
 Describe the problem or goal first; you don't need to design the entire solution. Votes help show interest, but aren't a promise that a feature will be built.
-
-**Posts and replies automatically sync to GitHub.** Treat everything here as public. Never include passwords, access tokens, private server URLs, or unredacted logs; review screenshots too.
 
 This pinned guide is not a feature request. Please create a new post rather than replying here.""",
     ),
