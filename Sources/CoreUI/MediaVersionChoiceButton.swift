@@ -48,6 +48,7 @@ public struct MediaVersionChoiceButton: View {
         .plozzActionButton(role: .secondary)
         .buttonBorderShape(.roundedRectangle(radius: 16))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .modifier(MediaVersionFileDetails(presentation: presentation))
     }
 
     private var label: some View {
@@ -64,13 +65,13 @@ public struct MediaVersionChoiceButton: View {
                 } else if presentation.badges.isEmpty {
                     Text("Original")
                 }
-                if let releaseName = presentation.releaseName {
-                    Text(verbatim: MediaSourceDisplayName.wrappingFileName(releaseName))
+                if let releaseTitle = presentation.releaseTitle {
+                    Text(verbatim: MediaSourceDisplayName.wrappingFileName(releaseTitle))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityLabel(Text(verbatim: releaseName))
+                        .accessibilityLabel(Text(verbatim: releaseTitle))
                 }
                 if !presentation.badges.isEmpty {
                     versionBadges(languages: languages)
@@ -89,6 +90,46 @@ public struct MediaVersionChoiceButton: View {
             }
         }
         .multilineTextAlignment(.leading)
+    }
+
+    private struct MediaVersionFileDetails: ViewModifier {
+        let presentation: MediaVersion.PickerPresentation
+        @State private var showsFile = false
+
+        @ViewBuilder
+        func body(content: Content) -> some View {
+            if let original = presentation.releaseName, original != presentation.releaseTitle {
+                content
+                    .contextMenu {
+                        Button("File", systemImage: "doc.text") { showsFile = true }
+                            .accessibilityIdentifier("version-file-details")
+                    }
+                    .sheet(isPresented: $showsFile) {
+                        NavigationStack {
+                            ScrollView {
+                                Text(verbatim: original)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding()
+                                    .accessibilityIdentifier("version-file-original")
+                                    #if os(iOS)
+                                    .textSelection(.enabled)
+                                    #else
+                                    .focusable()
+                                    #endif
+                            }
+                            .navigationTitle("File")
+                            .toolbar {
+                                ToolbarItem(placement: .confirmationAction) {
+                                    Button("Close") { showsFile = false }
+                                }
+                            }
+                        }
+                    }
+            } else {
+                content
+            }
+        }
     }
 
     @ViewBuilder

@@ -200,7 +200,7 @@ final class PlayerVersionMenuHostedTests: XCTestCase {
         let request = textRequest()
         try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
         let visible = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-        for fact in ["Extended", "4K", "42 GB", "English", "+1", "HEVC", "TrueHD", "80 Mbps", "2h", "GROUP.mkv"] {
+        for fact in ["Extended", "4K", "42 GB", "English", "+1", "HEVC", "TrueHD", "80 Mbps", "2h", "GROUP"] {
             XCTAssertTrue(visible.localizedCaseInsensitiveContains(fact), "Missing detail version fact \(fact): \(visible)")
         }
         XCTAssertFalse(visible.contains("filename="))
@@ -276,7 +276,7 @@ final class PlayerVersionMenuHostedTests: XCTestCase {
         try VNImageRequestHandler(cgImage: focusedPixels).perform([focusedText])
         let visibleText = ((text.results ?? []) + (focusedText.results ?? []))
             .compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-        for fact in ["Extended", "4K", "42 GB", "English", "+1", "HEVC", "TrueHD", "Atmos", "80 Mbps", "2h", "GROUP.mkv"] {
+        for fact in ["Extended", "4K", "42 GB", "English", "+1", "HEVC", "TrueHD", "Atmos", "80 Mbps", "2h", "GROUP"] {
             XCTAssertTrue(visibleText.localizedCaseInsensitiveContains(fact), "Missing version fact \(fact): \(visibleText)")
         }
         XCTAssertFalse(visibleText.contains("file_name="))

@@ -309,6 +309,12 @@ it never rewrites source IDs, playback locators or stored labels.
 Resolution-only headers with decorative ratings (including partial circles and
 emoji variants) cannot replace the readable title below them. Titles that begin
 with a resolution but contain words or ordinary numbers remain intact.
+`PickerPresentation.releaseTitle` compacts recognizable release filenames into
+readable title/episode/group text, retaining episode titles and release revisions
+such as REPACK. Both dotted and space-separated releases use the same display
+path. Unknown technical suffixes and non-release names keep their original text.
+`releaseName` retains the sanitized original; neither this presentation nor its
+technical-token recognition changes metadata, badges, filenames or playback IDs.
 Original Unicode filenames are retained and the shared card wraps them without
 a line cap. Extensionless URL endpoints are not release filenames,
 so opaque stream paths cannot override a readable source name. Filename extraction

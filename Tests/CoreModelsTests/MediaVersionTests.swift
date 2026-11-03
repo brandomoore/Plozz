@@ -697,6 +697,54 @@ final class MediaVersionTests: XCTestCase {
         }
     }
 
+    func testReleaseTitlesCompactDottedAndSpacedNamesWithoutChangingOriginalFiles() throws {
+        let cases = [
+            ("MobLand.S02E04.2160p.ATV.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265.DUAL-BiOMA.mkv",
+             "MobLand · S02E04 · BiOMA"),
+            ("MobLand S02E04 2160p ATV WEB-DL DDP5 1 Atmos DV HDR H 265 DUAL-BiOMA.mkv",
+             "MobLand · S02E04 · BiOMA"),
+            ("MobLand.S02E04.MULTi.2160p.WEB-DL.DDP5.1.H265-R3MiX.mkv",
+             "MobLand · S02E04 · R3MiX"),
+            ("A.Movie.2026.2160p.WEB-DL.HEVC-GROUP.mkv", "A Movie 2026 · GROUP"),
+            ("Épisode_spécial.S02E04-E05.Première.Partie.MULTi.1080p.WEB-DL.H264-GROUPE.mkv",
+             "Épisode spécial · S02E04-E05 · Première Partie · GROUPE"),
+            ("千と千尋の神隠し.2160p.WEB-DL.HEVC-GROUP.mkv", "千と千尋の神隠し · GROUP"),
+            ("Film.REPACK.2160p.WEB-DL.HEVC-GROUP.mkv", "Film · REPACK · GROUP"),
+            ("Film.2160p.WEB-DL.PROPER.HEVC-GROUP.mkv", "Film · PROPER · GROUP"),
+            ("Film.2160p.WEB-DL.mkv", "Film"),
+            ("Film.Directors.Cut.2160p.WEB-DL.mkv", "Film Directors Cut")
+        ]
+        for (original, title) in cases {
+            let version = MediaVersion(
+                id: "original-source", fileName: original, height: 2160, videoCodec: "hevc",
+                sourceMetadata: .init(fileName: original, audioLanguages: ["eng"])
+            ).qualified(accountID: "account", itemID: "episode")
+            let cached = try JSONDecoder().decode(MediaVersion.self, from: JSONEncoder().encode(version))
+            let row = MediaVersion.PickerPresentation(cached)
+            XCTAssertEqual(row.releaseTitle, title, original)
+            XCTAssertEqual(row.releaseName, original)
+            XCTAssertEqual(cached.fileName, original)
+            XCTAssertEqual(cached.sourceMetadata?.fileName, original)
+            XCTAssertEqual(cached.playbackMediaSourceID, "original-source")
+            XCTAssertEqual(cached.id, version.id)
+        }
+        let locator = "https://media.example/stream?filename=MobLand.S02E04.2160p.WEB-DL.HEVC-BiOMA.mkv"
+        let row = MediaVersion.PickerPresentation(.init(id: "query", fileName: locator))
+        XCTAssertEqual(row.releaseTitle, "MobLand · S02E04 · BiOMA")
+        XCTAssertEqual(row.releaseName, "MobLand.S02E04.2160p.WEB-DL.HEVC-BiOMA.mkv")
+    }
+
+    func testReleaseTitleCleanupPreservesAmbiguousNamesAndUnknownSuffixes() {
+        for original in [
+            "My film.mkv", "[Director's Cut] Film.mkv", "Festival archive presentation",
+            "Show.S02E04.mkv", "Film.2160p.Alternate.Ending-GROUP.mkv",
+            "High.1080p.Society.mkv", "2160p.WEB-DL.mkv",
+            "📁 Film.2160p.mkv\nAudio: English", "https://media.example/Film.2160p.WEB-DL.mkv"
+        ] {
+            XCTAssertEqual(MediaSourceDisplayName.releaseTitle(from: original), original)
+        }
+    }
+
     func testFileSizeUsesAtMostOneFractionDigit() {
         let locale = Locale(identifier: "en_US")
         XCTAssertEqual(

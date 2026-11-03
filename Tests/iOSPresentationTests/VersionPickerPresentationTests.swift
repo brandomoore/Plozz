@@ -151,6 +151,69 @@ final class VersionPickerPresentationTests: XCTestCase {
         )
     }
 
+    func testReleaseFilenamesRenderAsReadableTitles() async throws {
+        let filenames = [
+            "MobLand.S02E04.2160p.ATV.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265.DUAL-BiOMA.mkv",
+            "MobLand S02E04 2160p ATV WEB-DL DDP5 1 Atmos DV HDR H 265 DUAL-BiOMA.mkv",
+            "MobLand.S02E04.MULTi.2160p.WEB-DL.DDP5.1.H265-R3MiX.mkv"
+        ]
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.overrideUserInterfaceStyle = .dark
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width in [350.0, 736.0] {
+            for typeSize in [DynamicTypeSize.large, .accessibility2] {
+                window.frame = CGRect(x: 0, y: 0, width: width + 32, height: 1024)
+                window.rootViewController = UIHostingController(rootView: VStack(spacing: 12) {
+                    ForEach(filenames, id: \.self) { filename in
+                        MediaVersionChoiceButton(presentation: .init(.init(
+                            id: filename, fileName: filename, height: 2160,
+                            sizeBytes: 8_700_000_000, videoCodec: "hevc",
+                            sourceMetadata: .init(video: .init(codec: "hevc", height: 2160))
+                        )), action: {})
+                    }
+                }
+                .frame(width: width)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.dynamicTypeSize, typeSize)
+                .padding(16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(.black))
+                window.makeKeyAndVisible()
+                window.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(300))
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "readable-release-names-\(Int(width))-\(typeSize)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                request.usesLanguageCorrection = false
+                request.customWords = ["MobLand", "S02E04", "BiOMA", "R3MiX", "4K", "HEVC"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                for expected in ["MobLand", "S02E04", "BiOMA", "R3MiX", "4K", "HEVC"] {
+                    XCTAssertTrue(text.contains(expected), "Missing \(expected) at \(width)/\(typeSize): \(text)")
+                }
+                for removed in [".mkv", "2160p", "DDP5", "H.265", "H 265", "DUAL"] {
+                    XCTAssertFalse(text.contains(removed), text)
+                }
+            }
+        }
+    }
+
     func testStructuredSourceDescriptionRendersAsCleanFileFacts() async throws {
         let version = MediaVersion(
             id: "structured", name: """
@@ -402,7 +465,7 @@ final class VersionPickerPresentationTests: XCTestCase {
             let results = request.results ?? []
             visible += " " + results.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
             if let filename = results.first(where: {
-                $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains("GROUP.mkv") == true
+                $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains("GROUP") == true
             }), let language = results.first(where: {
                 $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains(visibleLanguage) == true
             }) {
@@ -416,7 +479,7 @@ final class VersionPickerPresentationTests: XCTestCase {
             visible += " " + (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
             if offset >= bottom { break }
         }
-        for fact in ["Extended", "4K", "42 GB", visibleLanguage, "+9", "HEVC", "TrueHD", "80 Mbps", "2h", "GROUP.mkv"] {
+        for fact in ["Extended", "4K", "42 GB", visibleLanguage, "+9", "HEVC", "TrueHD", "80 Mbps", "2h", "GROUP"] {
             XCTAssertTrue(visible.localizedCaseInsensitiveContains(fact), "Missing \(fact) in \(name) at \(width): \(visible)")
         }
         XCTAssertTrue(observedBadgeFooter, "The version card's filename and badge footer must remain visible together.")

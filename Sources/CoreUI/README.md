@@ -264,6 +264,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   ownership. `MediaVersionPicker` supplies the sheet used by mobile playback
   and hero context-menu actions; context menus link to it rather than rendering
   a second text-only version list.
+  Recognizable release filenames show a readable title, episode and release group
+  instead of repeating their technical suffix. Long-press a shortened version
+  card and choose File to read the full original in a scrollable native sheet
+  (selectable text on mobile). Unknown filename formats remain unchanged.
   On iOS/iPadOS, version sheets use an inline centered navigation title and a
   leading native X close action, with no bottom Cancel button. The pre-play X
   cancels the pending playback choice; tvOS retains its existing dialog controls.
