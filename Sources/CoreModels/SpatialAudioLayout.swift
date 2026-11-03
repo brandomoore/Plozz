@@ -15,6 +15,7 @@ public enum SpatialAudioLayout: String, CaseIterable, Codable, Sendable {
     }
 }
 
+/// Legacy device preference; playback no longer reads it.
 public struct SpatialAudioLayoutStore {
     public static let storageKey = "com.plozz.spatialAudioLayout"
     private static let logger = Logger(subsystem: "com.plozz.app", category: "settings")

@@ -1272,7 +1272,9 @@ final class PlayerViewModelEOFTests: XCTestCase {
     func testLegacyAudioSettingsPreserveTrackPreferencesAcrossHandoff() async throws {
         for enabled in [false, true] {
             let settings = try JSONDecoder().decode(
-                PlaybackSettings.self, from: Data("{\"trueHDAtmosEnabled\":\(enabled)}".utf8)
+                PlaybackSettings.self, from: Data("""
+                {"trueHDAtmosEnabled":\(enabled),"dolbyVisionFELEnabled":\(enabled)}
+                """.utf8)
             )
             let (viewModel, engine, _) = makeViewModel(
                 playbackSettings: settings
@@ -1285,25 +1287,6 @@ final class PlayerViewModelEOFTests: XCTestCase {
             XCTAssertEqual(engine.loadCount, 2)
             XCTAssertEqual(engine.lastLoadedRequest?.preferredAudioLanguages, ["ja"])
             XCTAssertEqual(engine.lastLoadedRequest?.preferredAudioTrackID, 3)
-            await viewModel.stop()
-        }
-    }
-
-    func testSpatialAndFELPreferencesReachInitialAndHandoffLoads() async throws {
-        for enabled in [false, true] {
-            let (viewModel, engine, _) = makeViewModel(
-                playbackSettings: .init(trueHDAtmosEnabled: enabled, dolbyVisionFELEnabled: enabled)
-            )
-            await viewModel.load()
-            XCTAssertEqual(engine.lastLoadedRequest?.dolbyVisionFELEnabled, enabled)
-            XCTAssertEqual(engine.lastLoadedRequest?.trueHDAtmosEnabled, enabled)
-            var handoff = try XCTUnwrap(engine.lastLoadedRequest)
-            handoff.dolbyVisionFELEnabled = !enabled
-            handoff.trueHDAtmosEnabled = !enabled
-            await viewModel.handoffPlayResolved(handoff, engineKind: .native, startPosition: 10)
-            XCTAssertEqual(engine.loadCount, 2)
-            XCTAssertEqual(engine.lastLoadedRequest?.dolbyVisionFELEnabled, enabled)
-            XCTAssertEqual(engine.lastLoadedRequest?.trueHDAtmosEnabled, enabled)
             await viewModel.stop()
         }
     }

@@ -419,8 +419,6 @@ public enum SettingsSearchCatalog {
               keywords: "remember sound track language episodes"),
         .init("lossless-audio", page: .playback, title: "Prefer lossless audio",
               keywords: "sound surround compressed HDMI ARC receiver audio compatibility"),
-        .init("spatial-audio", page: .playback, title: "Spatial audio",
-              keywords: "surround height overhead speakers immersive sound", minimumOSVersion: 26),
         .init("read-ahead", page: .playback, title: "Video buffer",
               keywords: "buffering streaming cache ahead slow network stuttering loading memory"),
         .init("live-buffer", page: .playback, title: "Live TV buffer",
