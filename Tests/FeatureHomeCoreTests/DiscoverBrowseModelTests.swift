@@ -1,0 +1,149 @@
+import CoreModels
+import FeatureHomeCore
+import XCTest
+
+@MainActor
+final class DiscoverBrowseModelTests: XCTestCase {
+    func testAllFeedsLoadOnceAndOneFailureDoesNotHideSuccessfulRows() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let probe = Probe()
+        let model = DiscoverBrowseModel(store: .init(defaults: defaults), isCurrent: { true }) { feed, _ in
+            probe.requests.append(feed)
+            if feed == .upcomingMovies { throw AppError.serverUnreachable }
+            return DiscoverPage(
+                items: [MediaItem(id: feed.rawValue, title: feed.rawValue, kind: feed.kind ?? .movie)],
+                nextPage: nil
+            )
+        }
+        await model.load()
+        XCTAssertEqual(Set(probe.requests), Set(DiscoverFeed.allCases))
+        XCTAssertEqual(model.rows.filter { !$0.items.isEmpty }.count, 4)
+        XCTAssertEqual(model.rows.first { $0.feed == .upcomingMovies }?.error, .service(.serverUnreachable))
+        await model.load()
+        XCTAssertEqual(probe.requests.count, 5)
+        await model.loadMore(.upcomingMovies)
+        XCTAssertEqual(probe.requests.count, 6)
+    }
+
+    func testChildGatePreventsRequestsAndLatePublication() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let probe = Probe()
+        probe.allowed = false
+        let model = DiscoverBrowseModel(
+            store: .init(defaults: defaults), isCurrent: { probe.allowed }
+        ) { feed, _ in
+            probe.requests.append(feed)
+            probe.allowed = false
+            return DiscoverPage(items: [MediaItem(id: "adult", title: "Adult", kind: .movie)], nextPage: nil)
+        }
+        await model.load()
+        XCTAssertTrue(probe.requests.isEmpty)
+        probe.allowed = true
+        await model.loadMore(.trending)
+        XCTAssertEqual(probe.requests, [.trending])
+        XCTAssertTrue(model.rows.allSatisfy { $0.items.isEmpty && $0.error == nil })
+    }
+
+    func testDuplicatePagesStopAndCancellationIsRetryable() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let probe = Probe()
+        let model = DiscoverBrowseModel(store: .init(defaults: defaults), isCurrent: { true }) { feed, page in
+            probe.requests.append(feed)
+            if probe.requests.count == 1 { throw CancellationError() }
+            let item = MediaItem(id: "same", title: "Same", kind: .movie)
+            return DiscoverPage(items: [item, item], nextPage: page + 1)
+        }
+        await model.loadMore(.trending)
+        XCTAssertNil(model.rows[0].error)
+        XCTAssertEqual(model.rows[0].nextPage, 1)
+        await model.loadMore(.trending)
+        XCTAssertEqual(model.rows[0].items.count, 1)
+        XCTAssertEqual(model.rows[0].nextPage, 2)
+        await model.loadMore(.trending)
+        XCTAssertEqual(model.rows[0].items.count, 1)
+        XCTAssertNil(model.rows[0].nextPage)
+    }
+
+    func testFiltersPersistPerProfileAndPreserveConcurrentSyncedChoices() throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = DiscoverFiltersStore(namespace: "one", defaults: defaults)
+        let model = DiscoverBrowseModel(store: store, isCurrent: { true }) { _, _ in
+            DiscoverPage(items: [], nextPage: nil)
+        }
+        store.save(.init(availableNow: true))
+        model.filters.hideWatched = true
+        XCTAssertEqual(store.load(), .init(availableNow: true, hideWatched: true))
+        XCTAssertEqual(DiscoverFiltersStore(namespace: "two", defaults: defaults).load(), .init())
+        store.save(.init())
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: defaults)
+        XCTAssertEqual(model.filters, .init())
+    }
+
+    func testCancelledPageAdmissionPreservesPreviouslyLoadedRows() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let probe = Probe()
+        let model = DiscoverBrowseModel(store: .init(defaults: defaults), isCurrent: { true }) { feed, _ in
+            probe.requests.append(feed)
+            return DiscoverPage(
+                items: [MediaItem(id: "retained", title: "Retained", kind: .movie)], nextPage: 2
+            )
+        }
+        await model.loadMore(.trending)
+        let cancelled = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            await model.loadMore(.popularMovies)
+        }
+        await cancelled.value
+        XCTAssertEqual(model.rows[0].items.map(\.id), ["retained"])
+        XCTAssertEqual(model.rows[0].nextPage, 2)
+        XCTAssertEqual(probe.requests, [.trending])
+    }
+
+    func testIndexRefreshRevalidatesLoadedTitlesWithoutLosingPagination() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let probe = Probe()
+        let model = DiscoverBrowseModel(
+            store: .init(defaults: defaults), isCurrent: { probe.allowed },
+            resolveLibrarySources: { items in
+                items.map {
+                    var item = $0
+                    item.locallyValidatedPlayableSource = true
+                    return item
+                }
+            }
+        ) { feed, _ in
+            probe.requests.append(feed)
+            return DiscoverPage(items: [
+                MediaItem(id: "external", title: "External", kind: .movie,
+                          locallyValidatedPlayableSource: false)
+            ], nextPage: 2)
+        }
+        await model.loadMore(.trending)
+        XCTAssertFalse(model.rows[0].items[0].locallyValidatedPlayableSource)
+        await model.refreshLibrarySources()
+        XCTAssertTrue(model.rows[0].items[0].locallyValidatedPlayableSource)
+        XCTAssertEqual(model.rows[0].nextPage, 2)
+        XCTAssertEqual(probe.requests, [.trending])
+        probe.allowed = false
+        model.invalidate()
+        await model.refreshLibrarySources()
+        XCTAssertTrue(model.rows.allSatisfy { $0.items.isEmpty })
+    }
+
+    private final class Probe {
+        var requests: [DiscoverFeed] = []
+        var allowed = true
+    }
+}

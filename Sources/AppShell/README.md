@@ -42,6 +42,22 @@ registry.
 
 ## Invariants
 
+- **Discover is optional and adult-profile-only.** Every navigation style uses
+  the shared navigation policy: Seerr configuration enables Discover by default,
+  while explicit Show/Hide choices survive connection changes. Child profiles
+  cannot expose it through navigation customization or a restored selection;
+  a parental Settings unlock does not override this restriction.
+  TV and mobile reuse their existing media rails and detail/request flows.
+  The shared page offers Trending, Popular Movies, Upcoming Movies, Popular
+  Series, and Upcoming Series, with profile-scoped Available now and Hide watched
+  filters in the standard filter menu. Upcoming Series means first premieres,
+  not returning seasons. Available now requires verified access through the
+  active profile's enabled libraries, never Seerr's global availability alone.
+  Identity-index updates revalidate loaded cards without resetting pagination.
+  With Seerr disconnected, manually enabled Discover browses public metadata;
+  requesting still requires Seerr. A configured but unreachable Seerr reports
+  retryable errors rather than silently switching services.
+
 - **Mobile Settings does not require an inherited language model.** The mobile
   app model owns the existing app-wide language preference and passes that same
   instance to the root `AppLanguageScope` and every Settings language picker,

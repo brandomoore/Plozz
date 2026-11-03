@@ -30,10 +30,11 @@ struct SeerDiscoverResult: Decodable {
     var releaseDate: String?
     var firstAirDate: String?
     var mediaInfo: SeerMediaInfo?
+    var adult: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, mediaType, title, name, originalTitle, originalName
-        case overview, posterPath, backdropPath, releaseDate, firstAirDate, mediaInfo
+        case overview, posterPath, backdropPath, releaseDate, firstAirDate, mediaInfo, adult
     }
 
     init(from decoder: Decoder) throws {
@@ -50,6 +51,7 @@ struct SeerDiscoverResult: Decodable {
         releaseDate = try c.decodeIfPresent(String.self, forKey: .releaseDate)
         firstAirDate = try c.decodeIfPresent(String.self, forKey: .firstAirDate)
         mediaInfo = try c.decodeIfPresent(SeerMediaInfo.self, forKey: .mediaInfo)
+        adult = try c.decodeIfPresent(Bool.self, forKey: .adult)
     }
 
     /// Test/mapping convenience initializer (no decoding).

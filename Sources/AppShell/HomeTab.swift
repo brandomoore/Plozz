@@ -34,6 +34,7 @@ import TopShelfKit
 enum HomeTabRoot {
     case home
     case watchlist
+    case discover
     /// One library's grid.
     case library(MediaLibrary)
     /// The combined grid over every browsable library the profile can see.
@@ -221,10 +222,42 @@ struct HomeTab: View {
             homeRoot
         case .watchlist:
             watchlistRoot
+        case .discover:
+            discoverRoot
         case let .library(library):
             libraryBrowse(for: library, isNavigationRoot: true)
         case let .allLibraries(libraries):
             allLibrariesBrowse(libraries)
+        }
+    }
+
+    @ViewBuilder
+    private var discoverRoot: some View {
+        if heroSettings.allowsDiscovery, isProfileAuthorized() {
+            let profileID = profilesModel?.activeProfileID
+            let visibility = homeVisibility.visibility
+            DiscoverBrowseView(model: DiscoverRuntime.makeModel(
+                namespace: libraryPreferencesNamespace,
+                accounts: accounts,
+                identitySources: identitySources,
+                visibility: visibility,
+                seer: seer,
+                language: locale.identifier,
+                isCurrent: {
+                    heroSettings.allowsDiscovery && isProfileAuthorized()
+                        && profilesModel?.activeProfileID == profileID
+                        && homeVisibility.visibility == visibility
+                }
+            ), isActive: isActiveTab && path.isEmpty) { feed, items, loading in
+                MediaRowView(
+                    title: Text(feed.title), items: items,
+                    spoilerSettings: spoilerSettings,
+                    isCovered: !path.isEmpty,
+                    loadingPlaceholderCount: loading ? 6 : 0,
+                    onSelect: { navigate($0) }
+                )
+            }
+            .id("\(seer.connectionRevision)|\(locale.identifier)|\(visibility.disabledKeys.sorted())")
         }
     }
 

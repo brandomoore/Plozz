@@ -63,6 +63,18 @@ struct SeerClient: Sendable {
         try await discover(path: "/api/v1/discover/tv", page: page, language: language)
     }
 
+    func discover(_ feed: DiscoverFeed, page: Int, language: String) async throws -> SeerDiscoverPage {
+        let path: String
+        switch feed {
+        case .trending: path = "trending"
+        case .popularMovies: path = "movies"
+        case .upcomingMovies: path = "movies/upcoming"
+        case .popularSeries: path = "tv"
+        case .upcomingSeries: path = "tv/upcoming"
+        }
+        return try await discover(path: "/api/v1/discover/\(path)", page: page, language: language)
+    }
+
     private func discover(path: String, page: Int, language: String) async throws -> SeerDiscoverPage {
         let endpoint = Endpoint(
             method: .get,

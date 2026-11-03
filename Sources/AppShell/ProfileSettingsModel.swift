@@ -193,6 +193,9 @@ public final class ProfileSettingsModel {
         self.themeModel = models.themeModel
         self.contentRatingModel = models.contentRatingModel
         models.heroModels.home.setDiscoveryPolicy(allowsDiscovery)
+        models.navigationStyleModel.setDiscoveryPolicy(
+            allowed: allowsDiscovery, isSeerrConfigured: isSeerrConfigured
+        )
         models.heroModels.home.setSeerrConnection(isSeerrConfigured)
         self.heroModels = models.heroModels
         self.diagnosticsModel = models.diagnosticsModel
@@ -224,6 +227,9 @@ public final class ProfileSettingsModel {
         contentRatingModel = models.contentRatingModel
         heroModels = models.heroModels
         heroModels.home.setDiscoveryPolicy(allowsDiscovery)
+        models.navigationStyleModel.setDiscoveryPolicy(
+            allowed: allowsDiscovery, isSeerrConfigured: isSeerrConfigured
+        )
         heroModels.home.setSeerrConnection(isSeerrConfigured)
         diagnosticsModel = models.diagnosticsModel
         musicPlayerModel = models.musicPlayerModel

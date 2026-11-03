@@ -141,10 +141,11 @@ struct MainTabView: View {
             case .home:
                 switch activeLibraryNavigationDestination {
                 case .home, .library, .allLibraries: return true
-                case .watchlist, .search, .music, .settings: return false
+                case .watchlist, .discover, .search, .music, .settings: return false
                 case .liveTV: return false
                 }
             case .watchlist: return activeLibraryNavigationDestination == .watchlist
+            case .discover: return activeLibraryNavigationDestination == .discover
             case .search: return activeLibraryNavigationDestination == .search
             case .liveTV: return activeLibraryNavigationDestination == .liveTV
             case .music: return activeLibraryNavigationDestination == .music
@@ -155,7 +156,7 @@ struct MainTabView: View {
     }
 
     private enum MainTab: String {
-        case home, watchlist, search
+        case home, watchlist, discover, search
         case liveTV
         case music, settings
     }
@@ -769,6 +770,7 @@ struct MainTabView: View {
         switch destination {
         case .home, .library, .allLibraries: return .home
         case .watchlist: return .watchlist
+        case .discover: return .discover
         case .search: return .search
         case .liveTV: return .liveTV
         case .music: return .music
@@ -803,6 +805,7 @@ struct MainTabView: View {
         switch tab {
         case .home: return .home
         case .watchlist: return .watchlist
+        case .discover: return .discover
         case .search: return .search
         case .liveTV: return .liveTV
         case .music: return .music
@@ -915,8 +918,8 @@ struct MainTabView: View {
     }
 
     private var effectiveNavigationLayout: NavigationLibraryLayout {
-        return navigationStyleModel.libraryLayout.resolvingAutomaticVisibility(
-            hidden: navigationAvailability.automaticallyHiddenKeys,
+        return navigationStyleModel.resolvedLayout(
+            additionallyHiddenKeys: navigationAvailability.automaticallyHiddenKeys,
             retainingWatchlist: retainsActiveWatchlist
         )
     }
@@ -982,17 +985,17 @@ struct MainTabView: View {
     }
 
     private var sidebarDestinationKeys: [String] {
-        NavigationDestinationDefaults.sidebar(
+        navigationStyleModel.availableNavigationKeys(NavigationDestinationDefaults.sidebar(
             visibleLibraries: availableRailLibraries,
             hasMusic: musicAvailability.hasMusic
-        )
+        ))
     }
 
     private var customRailDestinationKeys: [String] {
-        NavigationDestinationDefaults.rail(
+        navigationStyleModel.availableNavigationKeys(NavigationDestinationDefaults.rail(
             visibleLibraries: availableRailLibraries,
             hasMusic: musicAvailability.hasMusic
-        )
+        ))
     }
 
     /// The selection after pruning. A hidden/removed destination falls back to the
@@ -1380,6 +1383,10 @@ struct MainTabView: View {
             return AnyView(watchlistTabContent(
                 isActive: isActive
             ))
+        case .discover:
+            return AnyView(homeTabContent(
+                root: .discover, id: "\(homeScopeKey)|discover", isActive: isActive
+            ))
         case .liveTV:
             return AnyView(LiveTVShellDestination(
                 isActive: isActive,
@@ -1422,6 +1429,11 @@ struct MainTabView: View {
             return AnyView(searchTabLabel)
         case .watchlist:
             return AnyView(watchlistTabLabel)
+        case .discover:
+            return AnyView(RootNavigationTabLabel(
+                title: Text("Discover"), systemImage: "sparkles",
+                usesCompactSidebarText: navigationStyle == .sidebar
+            ))
         case .liveTV:
             return AnyView(liveTVTabLabel)
         case .music:
@@ -1609,6 +1621,10 @@ struct MainTabView: View {
         switch activeLibraryNavigationDestination {
         case .home, .watchlist:
             return AnyView(homeBackedRailDestination)
+        case .discover:
+            return AnyView(homeTabContent(
+                root: .discover, id: "\(homeScopeKey)|discover", isActive: true
+            ))
         case .search:
             return AnyView(searchTabContent())
         case .liveTV:

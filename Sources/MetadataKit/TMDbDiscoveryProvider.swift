@@ -62,6 +62,67 @@ public struct TMDbDiscoveryProvider: HeroDiscoveryProviding {
         return Self.interleaved(recent, limit: request.limit)
     }
 
+    /// Dedicated browse feeds do not apply Home's recent-release cutoff.
+    public func browse(
+        _ feed: DiscoverFeed, page: Int = 1, language: String = "en",
+        now: Date = Date()
+    ) async throws -> DiscoverPage {
+        guard isEnabled else { throw DiscoverFeedError.metadataUnavailable }
+        guard (1...500).contains(page) else { throw AppError.invalidResponse }
+        try Task.checkCancellation()
+        let path: String
+        var query = [
+            URLQueryItem(name: "page", value: String(page)),
+            URLQueryItem(name: "language", value: language.replacingOccurrences(of: "_", with: "-")),
+            URLQueryItem(name: "include_adult", value: "false")
+        ]
+        switch feed {
+        case .trending:
+            path = "3/trending/all/day"
+        case .popularMovies, .upcomingMovies:
+            path = "3/discover/movie"
+            query += [
+                URLQueryItem(name: "sort_by", value: "popularity.desc"),
+                URLQueryItem(name: "include_video", value: "false")
+            ]
+            if feed == .upcomingMovies {
+                query.append(URLQueryItem(name: "primary_release_date.gte", value: Self.day(now)))
+            }
+        case .popularSeries, .upcomingSeries:
+            path = "3/discover/tv"
+            query.append(URLQueryItem(name: "sort_by", value: "popularity.desc"))
+            if feed == .upcomingSeries {
+                query += [
+                    URLQueryItem(name: "first_air_date.gte", value: Self.day(now)),
+                    URLQueryItem(name: "include_null_first_air_dates", value: "false")
+                ]
+            }
+        }
+        let response = try await http.decode(
+            BrowseResponse.self, from: makeRequest(path: path, query: query)
+        )
+        try Task.checkCancellation()
+        guard response.page == page, response.total_pages >= 0,
+              response.results.isEmpty || response.total_pages >= page else {
+            throw MetadataDiscoveryHTTPError.invalidResponse
+        }
+        var seen = Set<String>()
+        let items = response.results.compactMap { record -> MediaItem? in
+            let kind = feed.kind ?? (record.media_type == "movie" ? .movie : .series)
+            return record.mediaItem(kind: kind)
+        }.filter { seen.insert($0.id).inserted }
+        return DiscoverPage(
+            items: items,
+            nextPage: !response.results.isEmpty && page < min(response.total_pages, 500) ? page + 1 : nil
+        )
+    }
+
+    private struct BrowseResponse: Decodable, Sendable {
+        let page: Int
+        let total_pages: Int
+        let results: [Record]
+    }
+
     private func makeRequest(path: String, query: [URLQueryItem]) throws -> URLRequest {
         let url = access.metadataAPIBaseURL.appendingPathComponent(path)
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {

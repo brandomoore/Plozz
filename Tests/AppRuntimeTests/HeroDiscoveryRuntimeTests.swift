@@ -314,6 +314,23 @@ final class HeroDiscoveryRuntimeTests: XCTestCase {
         XCTAssertTrue(stale.isPlayed, "Binding must not mutate shared public candidates.")
     }
 
+    func testDedicatedFeedsKeepRequestStatusWithoutTrustingServerWideAvailability() async throws {
+        var candidate = external()
+        candidate.availability = .available
+        candidate.hasRequestDownloadActivity = true
+        candidate.locallyValidatedPlayableSource = true
+        candidate.isPlayed = true
+        candidate.sourceAccountID = "another-profile"
+        let runtime = HeroDiscoveryRuntime(accounts: [], identitySources: { _ in [] })
+        let items = await runtime.resolveLibrarySources(in: [candidate])
+        let item = try XCTUnwrap(items.first)
+        XCTAssertEqual(item.availability, .available)
+        XCTAssertEqual(item.hasRequestDownloadActivity, true)
+        XCTAssertFalse(item.locallyValidatedPlayableSource)
+        XCTAssertFalse(item.isPlayed)
+        XCTAssertNil(item.sourceAccountID)
+    }
+
     func testOnlyActiveKindCompatibleReferencesAreLookedUpAndIndexWatchStateIsIgnored() async throws {
         let raw = external()
         let fixture = fixture(records: [owned()])

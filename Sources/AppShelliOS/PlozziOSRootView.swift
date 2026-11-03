@@ -781,6 +781,7 @@ private struct PendingPairing: Identifiable {
 enum PlozziOSDestination: Identifiable, Hashable {
     case home
     case watchlist
+    case discover
     case liveTV
     case downloads
     case search
@@ -794,6 +795,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
         switch self {
         case .home: "home"
         case .watchlist: "watchlist"
+        case .discover: "discover"
         case .liveTV: "liveTV"
         case .downloads: "downloads"
         case .search: "search"
@@ -807,6 +809,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
         switch rawValue {
         case "home": self = .home
         case "watchlist": self = .watchlist
+        case "discover": self = .discover
         case "liveTV": self = .liveTV
         case "downloads": self = .downloads
         case "search": self = .search
@@ -828,6 +831,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
         switch self {
         case .home: "Home"
         case .watchlist: "Watchlist"
+        case .discover: "Discover"
         case .liveTV: "Live TV"
         case .downloads: "Downloads"
         case .search: "Search"
@@ -841,6 +845,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
         switch self {
         case .home: "house"
         case .watchlist: "bookmark"
+        case .discover: "sparkles"
         case .liveTV: "antenna.radiowaves.left.and.right"
         case .downloads: "arrow.down.circle"
         case .search: "magnifyingglass"
@@ -977,19 +982,22 @@ struct PlozziOSTabShell: View {
         let navigation = appModel.settings.navigation
         let libraries = appModel.visibleNavigationLibraries
         let libraryKeys = Set(libraries.map(\.key))
-        return navigation.libraryLayout.resolvingAutomaticVisibility(
-            hidden: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(
+        return navigation.resolvedLayout(
+            additionallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(
                 available: NavigationDestinationDefaults.iOS(visibleLibraries: libraries)
             )
         )
             .sections(
-                available: NavigationDestinationDefaults.iOS(visibleLibraries: libraries),
+                available: navigation.availableNavigationKeys(
+                    NavigationDestinationDefaults.iOS(visibleLibraries: libraries)
+                ),
                 requiredEnabled: navigation.requiredNavigationKeys
             ).enabled
             .compactMap { key -> PlozziOSDestination? in
                 switch key {
                 case NavigationLibraryLayout.homeKey: return .home
                 case NavigationLibraryLayout.watchlistKey: return .watchlist
+                case NavigationLibraryLayout.discoverKey: return .discover
                 case NavigationLibraryLayout.liveTVKey: return .liveTV
                 case NavigationLibraryLayout.searchKey: return .search
                 case NavigationLibraryLayout.downloadsKey: return .downloads
@@ -1139,6 +1147,11 @@ struct PlozziOSTabShell: View {
             .plozziOSItemNavigation(appModel: appModel)
             .toolbarBackground(.hidden, for: .navigationBar)
             .background { AppBackground(palette: palette) }
+        case .discover:
+            PlozziOSDiscoverView(appModel: appModel, onShowSettings: showSettings)
+                .plozziOSItemNavigation(appModel: appModel)
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .background { AppBackground(palette: palette) }
         case .liveTV:
             PlozziOSLiveTVDestination(
                 isActive: effectiveSelectedDestination == .liveTV && !isShowingMorePage,
@@ -1990,7 +2003,7 @@ private struct PlozziOSDestinationView: View {
                 viewModel: sharedHomeViewModel,
                 onShowSettings: onShowSettings
             )
-        case .liveTV, .library, .allLibraries:
+        case .discover, .liveTV, .library, .allLibraries:
             EmptyView()
         case .search:
             PlozziOSSearchView(

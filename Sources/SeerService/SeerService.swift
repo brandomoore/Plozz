@@ -316,6 +316,31 @@ public final class SeerService {
 
     // MARK: - Discovery
 
+    public func discover(
+        _ feed: DiscoverFeed, page: Int = 1, language: String = "en"
+    ) async throws -> DiscoverPage {
+        guard Self.hasUsableEndpoint(config) else { throw AppError.unauthorized }
+        guard (1...500).contains(page) else { throw AppError.invalidResponse }
+        let revision = connectionRevision
+        let activeClient = client
+        try Task.checkCancellation()
+        let result = try await activeClient.discover(feed, page: page, language: language)
+        try Task.checkCancellation()
+        guard revision == connectionRevision else { throw CancellationError() }
+        guard result.page == page, result.totalPages >= 0, result.totalResults >= 0,
+              result.results.isEmpty || result.totalPages >= page else {
+            throw AppError.invalidResponse
+        }
+        var seen = Set<String>()
+        let items = result.results.filter { $0.adult != true }.compactMap(SeerMapper.mediaItem).filter {
+            (feed.kind == nil || $0.kind == feed.kind) && seen.insert($0.id).inserted
+        }
+        return DiscoverPage(
+            items: items,
+            nextPage: !result.results.isEmpty && page < min(result.totalPages, 500) ? page + 1 : nil
+        )
+    }
+
     /// Featured hero content in upstream order, deduplicated by title identity.
     /// Fetches up to five pages to backfill unmappable/duplicate entries, returning
     /// at most `min(limit, 100)` titles. Empty/repeated content or the reported last
