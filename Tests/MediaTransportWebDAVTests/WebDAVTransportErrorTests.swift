@@ -11,6 +11,19 @@ import XCTest
 /// either retry-loops a permanent failure or gives up on a transient blip, so
 /// each case is pinned explicitly.
 final class WebDAVTransportErrorTests: XCTestCase {
+    func testMappingRetainsHTTPFailureEvidenceWithoutUntrustedDetails() throws {
+        let wasEnabled = HandoffDiagnostics.isEnabled
+        HandoffDiagnostics.setEnabled(true)
+        defer { HandoffDiagnostics.setEnabled(wasEnabled) }
+        let secret = "https://private.example/file?token=private-secret"
+        let mapped = mapWebDAVError(TransportError.protocolError(status: 404, detail: secret))
+        XCTAssertEqual(mapped, .protocolViolation(reason: "unexpected HTTP status 404"))
+        let line = try XCTUnwrap(HandoffDiagnostics.persistentPlaybackLogText()
+            .components(separatedBy: "\n").last { $0.contains("webdav TRANSPORT_FAILURE") })
+        XCTAssertTrue(line.contains("error=protocolError(status: 404)"))
+        XCTAssertFalse(line.contains("private"))
+    }
+
     /// Mirror of `ShareTransportBrowser.shouldReconnect` (private there): only
     /// `.timeout`/`.transport` reconnect; everything else is terminal.
     private func reconnects(_ error: MediaTransportError) -> Bool {

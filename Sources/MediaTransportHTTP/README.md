@@ -198,6 +198,17 @@ flag and header classifications in the bounded local playback trace. ETags,
 dates and ranges are classified as missing, invalid or usable (ETags also
 distinguish weak/strong); no raw headers, paths, credentials or delivery URLs
 are recorded. Locator-policy rejections have separate fixed check identifiers.
+
+Share playback preparation also records a per-request ID, hashed item identity,
+transport, elapsed time and the last stage reached (selection, locator, item or
+sidecars). Failures retain allowlisted transport/model/native error codes rather
+than raw descriptions; cancellation remains cancellation. Locator diagnostics
+show listing fallback, file-size presence and validator availability without
+publishing validator values. PROPFIND records depth, role, hashed resource, HTTP
+status and response size; stat self-entry rejection records parsed/matching
+counts. HTTP adapter errors are recorded before protocol-neutral mapping loses
+their specific category. These diagnostics do not relax validation or introduce
+retries, and contain no response bodies, filenames, URLs or credentials.
 This distinguishes a missing validator from unsupported ranges. Entering the
 streaming exception emits a fixed `PLAYBACK_COMPATIBILITY` diagnostic with
 `persistentReuse=false`; retry behavior is unchanged.
