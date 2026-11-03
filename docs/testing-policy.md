@@ -452,8 +452,9 @@ their actions; compositor coverage checks the bridge and both tap targets.
 `PlayerOrientationTests` checks the UIKit player owner's close path without
 another update from the hidden SwiftUI presenter, including disappearance
 cleanup, closing during presentation, reopening, and stale close callbacks.
-Its dismissal-frame regression checks stable window and player bounds in portrait
-and both landscape directions, followed by restored portrait browsing on iPhone.
+Its dismissal-frame regression checks that browsing is already portrait and
+untransformed when revealed from portrait or either landscape direction on
+iPhone, including selection of the native crossfade for landscape exits.
 Its in-place Live TV fixture checks real scene rotation for Landscape/Portrait,
 Auto and preference changes, restoration on collapse, per-window ownership,
 stale-owner teardown, and retained content lifecycle across expansion. The

@@ -17,8 +17,7 @@ public enum PlozziOSWindowOrientation {
         var controller = window.rootViewController
         var presentedPlayer: PlozziOSOrientationHostingController?
         while let current = controller {
-            if let player = current as? PlozziOSOrientationHostingController,
-               !player.isBeingDismissed || player.dismissalOrientationMask != nil {
+            if let player = current as? PlozziOSOrientationHostingController, !player.isBeingDismissed {
                 presentedPlayer = player
             }
             controller = current.presentedViewController
@@ -155,7 +154,6 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
     private var requestGeneration = 0
     private var hasAppeared = false
     private var geometryTask: Task<Void, Error>?
-    private(set) var dismissalOrientationMask: UIInterfaceOrientationMask?
 
     init(
         rootView: AnyView, orientation: PlozziOSPlayerOrientation,
@@ -181,8 +179,7 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-        dismissalOrientationMask
-            ?? (!ownsWindowOrientation && hasPendingPresentation ? .all : orientation.supportedMask)
+        !ownsWindowOrientation && hasPendingPresentation ? .all : orientation.supportedMask
     }
 
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation {
@@ -240,7 +237,6 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
 
     func tearDown() {
         hasAppeared = false
-        dismissalOrientationMask = nil
         requestGeneration += 1
         geometryTask?.cancel()
         geometryTask = nil
@@ -255,9 +251,13 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
         requestGeneration += 1
         geometryTask?.cancel()
         geometryTask = nil
-        if orientation.isAvailable, let scene = viewIfLoaded?.window?.windowScene {
-            // Keep the outgoing cover in one coordinate space until it is offscreen.
-            dismissalOrientationMask = PlozziOSPlayerOrientation.mask(for: scene.effectiveGeometry.interfaceOrientation)
+        if orientation.isAvailable, let window = viewIfLoaded?.window,
+           window.windowScene?.effectiveGeometry.interfaceOrientation.isLandscape == true,
+           PlozziOSWindowOrientation.browsingMask(
+               for: window.traitCollection.userInterfaceIdiom, windowSize: window.bounds.size
+           ) == .portrait {
+            // UIKit lays out the incoming portrait screen before revealing it in a crossfade.
+            modalTransitionStyle = .crossDissolve
         }
         invalidateOrientationPreferences()
     }

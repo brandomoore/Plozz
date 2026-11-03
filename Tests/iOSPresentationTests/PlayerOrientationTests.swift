@@ -472,7 +472,7 @@ final class PlayerOrientationTests: XCTestCase {
         XCTAssertEqual(disappearances, 2)
     }
 
-    func testDismissalKeepsPlayerOrientationUntilTheCoverHasLeft() async throws {
+    func testDismissalRevealsPortraitBrowsingWithoutAnotherRotation() async throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -480,7 +480,6 @@ final class PlayerOrientationTests: XCTestCase {
         let anchor = PlozziOSPlayerPresentation<Color>.Anchor()
         let coordinator = PlozziOSPlayerPresentation<Color>.Coordinator()
         coordinator.anchor = anchor
-        coordinator.preference = .auto
         coordinator.makeContent = { _, _ in AnyView(Color.blue.ignoresSafeArea()) }
         window.rootViewController = anchor
         window.makeKeyAndVisible()
@@ -505,17 +504,29 @@ final class PlayerOrientationTests: XCTestCase {
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
             try await waitUntil { scene.effectiveGeometry.interfaceOrientation == target && player.transitionCoordinator == nil }
 
-            let departureSize = window.bounds.size
+            let browsingSize = CGSize(
+                width: min(window.bounds.width, window.bounds.height),
+                height: max(window.bounds.width, window.bounds.height)
+            )
             player.orientation.close()
-            XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), mask,
-                           "Returning the browsing mask before dismissal ends races rotation with the exit animation.")
-            XCTAssertTrue(player.orientation.host === player, "The outgoing cover owns orientation until dismissal completes.")
+            XCTAssertEqual(player.modalTransitionStyle, target.isLandscape ? .crossDissolve : .coverVertical)
+            XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .portrait,
+                           "The incoming browsing screen must not inherit the outgoing player's landscape policy.")
+            XCTAssertTrue(player.orientation.host === player, "Keep the presentation owner alive through UIKit dismissal.")
             let dismissalDeadline = ContinuousClock.now + .seconds(2)
+            var browsingFrames = 0
             while player.view.window != nil, ContinuousClock.now < dismissalDeadline {
-                XCTAssertEqual(window.bounds.size, departureSize, "The window must not rotate underneath the visible cover.")
-                XCTAssertEqual(player.view.bounds.size, departureSize, "Dismissal must not resize the outgoing player.")
+                if anchor.view.window != nil {
+                    browsingFrames += 1
+                    XCTAssertEqual(window.bounds.size, browsingSize)
+                    XCTAssertEqual(anchor.view.bounds.size, browsingSize,
+                                   "Browsing must already be portrait when the exit first reveals it.")
+                    XCTAssertEqual(anchor.view.layer.presentation()?.affineTransform() ?? anchor.view.transform, .identity,
+                                   "Browsing must not visibly rotate during the exit.")
+                }
                 try await Task.sleep(for: .milliseconds(20))
             }
+            XCTAssertGreaterThan(browsingFrames, 0)
             try await waitUntil { coordinator.host == nil && anchor.presentedViewController == nil }
             XCTAssertNil(player.orientation.host)
             XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .portrait)
@@ -615,6 +626,12 @@ final class PlayerOrientationTests: XCTestCase {
         ))
         XCTAssertEqual(PlozziOSWindowOrientation.browsingMask(for: .phone, windowSize: screen), .all)
         XCTAssertEqual(PlozziOSWindowOrientation.browsingMask(for: .phone, windowSize: compact), .portrait)
+        XCTAssertEqual(PlozziOSWindowOrientation.browsingMask(
+            for: .phone, windowSize: CGSize(width: 599, height: 900)
+        ), .portrait)
+        XCTAssertEqual(PlozziOSWindowOrientation.browsingMask(
+            for: .phone, windowSize: CGSize(width: 900, height: 600)
+        ), .all)
     }
 
     func testWindowedModeSuspendsPreferenceButGeometryFailureDoesNotAbandonIt() {
@@ -633,6 +650,16 @@ final class PlayerOrientationTests: XCTestCase {
         orientation.clearGeometryFailure()
         XCTAssertFalse(orientation.hasGeometryRequestFailed)
         XCTAssertFalse(PlozziOSPlayerOrientation(preference: .landscape).hasGeometryRequestFailed)
+    }
+
+    func testDismissalPreservesSystemPolicyWhenPhonePreferenceIsUnavailable() {
+        let orientation = PlozziOSPlayerOrientation(preference: .landscape)
+        let host = PlozziOSOrientationHostingController(rootView: AnyView(Color.black), orientation: orientation)
+        defer { host.tearDown() }
+        host.prepareForDismissal()
+        XCTAssertEqual(host.supportedInterfaceOrientations, .all)
+        XCTAssertEqual(host.modalTransitionStyle, .coverVertical)
+        XCTAssertTrue(orientation.host === host)
     }
 
     func testHostingControllerReleasesOrientationOwnershipOnTeardown() {

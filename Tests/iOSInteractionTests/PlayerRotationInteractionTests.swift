@@ -66,10 +66,10 @@ final class PlayerRotationInteractionTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["rotation-load-count"].label, "Loads 2")
     }
 
-    func testPortraitPreferenceDoesNotLockBrowsingAfterDismissal() {
+    func testPortraitPreferenceKeepsPhoneBrowsingPortraitWhileIPadRotates() {
         launch("--portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
-        assertOrientation(landscape: true, player: false)
+        assertOrientation(landscape: UIDevice.current.userInterfaceIdiom == .pad, player: false)
         openPlayer()
         if UIDevice.current.userInterfaceIdiom == .pad {
             assertOrientation(landscape: true)
@@ -85,8 +85,10 @@ final class PlayerRotationInteractionTests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeRight
         assertStaysLandscape(false)
         closePlayer()
+        assertOrientation(landscape: false, player: false)
         XCUIDevice.shared.orientation = .portrait
-        rotate(.landscapeLeft, player: false)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        assertStaysLandscape(false)
         XCTAssertEqual(app.staticTexts["saved-orientation"].label, "portrait")
     }
 
