@@ -134,6 +134,11 @@ public enum PropfindXMLParser {
             let reason = parser.parserError?.localizedDescription ?? delegate.firstParseErrorDescription ?? "unknown XML parse failure"
             throw TransportError.malformedMultistatus(reason: reason)
         }
+        if delegate.duplicateCount > 0 {
+            HandoffDiagnostics.emit(
+                "webdav PROPFIND_DUPLICATES identical=\(delegate.duplicateCount) entries=\(delegate.entries.count)"
+            )
+        }
         return delegate.entries
     }
 }
@@ -201,6 +206,9 @@ private final class MultistatusParserDelegate: NSObject, XMLParserDelegate {
     private let includeSelfEntry: Bool
 
     private(set) var entries: [WebDAVEntry] = []
+    private var seenEntries: Set<WebDAVEntry> = []
+    private var responseCount = 0
+    private(set) var duplicateCount = 0
     private(set) var limitError: TransportError?
     private(set) var policyError: TransportError?
     private(set) var documentError: TransportError?
@@ -415,12 +423,18 @@ private final class MultistatusParserDelegate: NSObject, XMLParserDelegate {
             etag: currentETag,
             contentType: currentContentType
         )
-        entries.append(entry)
-
-        if entries.count > maxEntries {
+        // Count before deduplication so repeated responses cannot bypass the cap.
+        responseCount += 1
+        if responseCount > maxEntries {
             limitError = .tooManyEntries(limit: maxEntries)
             parser.abortParsing()
+            return
         }
+        guard seenEntries.insert(entry).inserted else {
+            duplicateCount += 1
+            return
+        }
+        entries.append(entry)
     }
 
     private static func statusLineIsSuccess(_ statusLine: String) -> Bool {

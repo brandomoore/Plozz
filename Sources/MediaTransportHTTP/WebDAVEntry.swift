@@ -2,7 +2,7 @@ import Foundation
 
 /// One resource described in a `PROPFIND` multistatus response, after href
 /// resolution/validation against the configured ``WebDAVRoot``.
-public struct WebDAVEntry: Equatable, Sendable {
+public struct WebDAVEntry: Hashable, Sendable {
     /// Normalized, decoded, root-relative path (see ``WebDAVPathPolicy``).
     public let resolvedPath: String
     public let isCollection: Bool

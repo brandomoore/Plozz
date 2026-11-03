@@ -35,6 +35,11 @@ and byte-source contracts live in `MediaTransportCore`.
   multistatus/response/propstat/prop positions can supply metadata. Nested
   extension properties cannot replace file identity or mark a file as a folder.
   CDATA and ordinary XML text are handled equivalently.
+  Repeated entries with the same normalized path and identical parsed metadata
+  are collapsed, preserving first-occurrence order for both listing and stat.
+  Conflicting entries remain distinct: stat rejects ambiguous metadata rather
+  than choosing the first file or combining validators from different entries.
+  The entry cap counts responses before deduplication.
 - **Range safety**: identity encoding, exact `206`, matching `Content-Range`
   offsets/total and body length. A bounded GET establishes the actual
   representation's strongest usable validator. Two bytes remain the default;
@@ -206,7 +211,9 @@ than raw descriptions; cancellation remains cancellation. Locator diagnostics
 show listing fallback, file-size presence and validator availability without
 publishing validator values. PROPFIND records depth, role, hashed resource, HTTP
 status and response size; stat self-entry rejection records parsed/matching
-counts. HTTP adapter errors are recorded before protocol-neutral mapping loses
+counts and which metadata fields disagree, never their values. Identical duplicate
+responses record a count; successful scanner listings omit per-request traces.
+HTTP adapter errors are recorded before protocol-neutral mapping loses
 their specific category. These diagnostics do not relax validation or introduce
 retries, and contain no response bodies, filenames, URLs or credentials.
 This distinguishes a missing validator from unsupported ranges. Entering the

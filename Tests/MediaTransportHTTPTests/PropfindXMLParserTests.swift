@@ -12,6 +12,47 @@ final class PropfindXMLParserTests: XCTestCase {
         Data(xml.utf8)
     }
 
+    func testIdenticalDuplicatesCollapseInDataAndStreamWithoutChangingOrder() throws {
+        let response = """
+        <response><href>/dav/movies/Movie%20One.mkv</href>
+          <propstat><prop><getcontentlength>4096</getcontentlength><getetag>"stable"</getetag></prop>
+          <status>HTTP/1.1 200 OK</status></propstat>
+        </response>
+        """
+        let sibling = response.replacingOccurrences(of: "Movie%20One", with: "Other")
+        let encodedAlias = response.replacingOccurrences(of: "/dav/movies/", with: "https://nas.example.com/dav/movies/")
+        let payload = data("<multistatus xmlns=\"DAV:\">\(response)\(sibling)\(encodedAlias)</multistatus>")
+        for includeSelf in [false, true] {
+            let requestPath = includeSelf ? "/dav/movies/Movie One.mkv" : "/dav/movies/"
+            let buffered = try PropfindXMLParser.parse(
+                data: payload, root: root, requestPath: requestPath, includeSelfEntry: includeSelf
+            )
+            let streamed = try PropfindXMLParser.parse(
+                stream: InputStream(data: payload), root: root, requestPath: requestPath,
+                includeSelfEntry: includeSelf
+            )
+            XCTAssertEqual(buffered.map(\.resolvedPath), ["/dav/movies/Movie One.mkv", "/dav/movies/Other.mkv"])
+            XCTAssertEqual(buffered, streamed)
+            XCTAssertEqual(buffered.first?.etag?.rawValue, "\"stable\"")
+        }
+    }
+
+    func testDuplicateResponsesStillCountAgainstEntryLimit() throws {
+        let response = """
+        <response><href>/dav/movies/Movie.mkv</href>
+          <propstat><prop/><status>HTTP/1.1 200 OK</status></propstat>
+        </response>
+        """
+        let payload = data("<multistatus xmlns=\"DAV:\">\(response)\(response)\(response)</multistatus>")
+        let limits = PropfindParseLimits(maxResponseBytes: 8192, maxEntries: 2)
+        XCTAssertThrowsError(try PropfindXMLParser.parse(
+            data: payload, root: root, requestPath: "/dav/movies/", limits: limits
+        )) { XCTAssertEqual($0 as? TransportError, .tooManyEntries(limit: 2)) }
+        XCTAssertThrowsError(try PropfindXMLParser.parse(
+            stream: InputStream(data: payload), root: root, requestPath: "/dav/movies/", limits: limits
+        )) { XCTAssertEqual($0 as? TransportError, .tooManyEntries(limit: 2)) }
+    }
+
     func testParsesPrefixedNamespaceAndDropsSelfEntry() throws {
         let xml = """
         <?xml version="1.0" encoding="utf-8"?>
