@@ -52,9 +52,9 @@ opening the shared browser. Libraries and Live TV keep their existing navigation
 TV row browsers use Home's navigation path, hiding top-level navigation as soon
 as they open. Opening a title adds another level; Back returns to the browser
 before returning to the original Home action. Browser scrolling does not move
-Home's retained top navigation. See all pushes and pops without native page
-slide/scale animations, so the grid stays still and Home restores the action at
-its retained position.
+Home's retained top navigation. See all uses native page push/pop animations;
+the retained Home rail keeps its own scroll position throughout the transition
+and restores focus to the original action.
 Browse actions appear only when the feed confirms additional eligible titles
 beyond the Home preview, not merely because the preview reaches its limit.
 Home requests one lookahead item in the existing bounded fetch; it does not

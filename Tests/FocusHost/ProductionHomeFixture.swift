@@ -991,7 +991,6 @@ private struct ProductionHomeContent: View {
                         }
                         .toolbar(.hidden, for: .tabBar)
                         .environment(\.plozzTopNavigationScroll, nil)
-                        .onExitCommand { HomeBrowseDestination.pop(from: $path, chrome: fixture.chrome) }
                     }
                     .navigationDestination(for: MediaItem.self) { item in
                         detailPage(for: item)

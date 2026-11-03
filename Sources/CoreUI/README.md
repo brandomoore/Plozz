@@ -6,6 +6,9 @@ with `browsingRow`; existing collection-detail `onSeeAll` headers elsewhere keep
 their behavior. Passing `nil` opts into Home browsing without showing an action
 or falling back to the old header action. Browse actions carry no media identity
 or context-menu actions.
+Pinned-sidebar rail parking clamps both native targets and idle corrections to
+the scrollable content bounds. A partial final slot must not overscroll: UIKit
+would clamp it when returning from a page, then parking would shift it again.
 
 Shared, **focusable** UI primitives, the app theme, and the artwork image
 cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind

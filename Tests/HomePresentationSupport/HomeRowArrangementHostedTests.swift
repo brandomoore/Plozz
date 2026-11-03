@@ -171,9 +171,7 @@ extension HomeRowArrangementHostedTests {
             XCTAssertTrue(destination.contains { $0.0.contains("Complete shelf") })
             XCTAssertEqual(chrome.stackDepth, 1)
             XCTAssertTrue(chrome.isChromeHidden)
-            HomeBrowseDestination.pop(
-                from: Binding(get: { route.path }, set: { route.path = $0 }), chrome: chrome
-            )
+            route.path.removeLast()
             _ = try await self.snapshot(window, name: "Home browse returned")
             XCTAssertEqual(chrome.stackDepth, 0)
             XCTAssertFalse(chrome.isChromeHidden)
@@ -225,89 +223,102 @@ extension HomeRowArrangementHostedTests {
         }
     }
 
-    func testHomeBrowsePushAndReturnKeepPagesStationary() async throws {
-        for animatedPush in [true, false] {
+    func testHomeBrowsePushAndReturnUseNativePageAnimations() async throws {
+        let route = HomeBrowseNavigationProbe()
+        let chrome = NavigationChromeModel()
+        var actionFrame = CGRect.zero
+        let browser = HomeRowBrowseModel(title: "Complete shelf", snapshot: [
+            MediaItem(id: "one", title: "One", kind: .movie)
+        ])
+        try await withWindow {
+            HomeBrowseNavigationFixture(route: route, browser: browser, chrome: chrome) { actionFrame = $0 }
+        } inspect: { window in
+            _ = try await self.snapshot(window, name: "Browse source before push")
+            let target = try XCTUnwrap(self.focusableItem(
+                at: CGPoint(x: actionFrame.midX, y: actionFrame.minY + 40), in: window
+            ) as? UIControl)
+            try await self.focus(target, in: window)
+            try XCTUnwrap(window.rootViewController as? HomeRowsFocusHost).target = nil
+            func navigationController(in controller: UIViewController) -> UINavigationController? {
+                if let navigation = controller as? UINavigationController { return navigation }
+                return controller.children.compactMap { navigationController(in: $0) }.first
+            }
+            let navigation = try XCTUnwrap(navigationController(in: XCTUnwrap(window.rootViewController)))
+            for pushing in [true, false] {
+                if pushing {
+                    target.sendActions(for: .primaryActionTriggered)
+                    XCTAssertTrue(chrome.isChromeHidden, "Navigation hides as soon as See all opens")
+                } else {
+                    route.path.removeLast()
+                }
+                var animated = false
+                for _ in 0..<45 {
+                    try await Task.sleep(for: .milliseconds(16))
+                    animated = animated || navigation.transitionCoordinator?.isAnimated == true
+                }
+                XCTAssertEqual(chrome.stackDepth, pushing ? 1 : 0)
+                XCTAssertTrue(animated, "See all must retain the native \(pushing ? "push" : "pop") animation")
+            }
+        }
+    }
+
+    func testHomeBrowseReturnKeepsTheScrolledRailStationary() async throws {
+        for pinned in [false, true] {
             let route = HomeBrowseNavigationProbe()
             let chrome = NavigationChromeModel()
-            var actionFrame = CGRect.zero
             let browser = HomeRowBrowseModel(title: "Complete shelf", snapshot: [
                 MediaItem(id: "one", title: "One", kind: .movie)
             ])
             try await withWindow {
                 HomeBrowseNavigationFixture(
-                    route: route, browser: browser, chrome: chrome, animatedPush: animatedPush
-                ) { actionFrame = $0 }
+                    route: route, browser: browser, chrome: chrome,
+                    usesRail: true, onFrame: { _ in }
+                )
+                .environment(\.plozzCardStyle, .borderless)
+                .environment(\.plozzCardFocusStyle, .system)
+                .environment(\.plozzPinnedSidebarActive, pinned)
+                .environment(\.plozzNavigationContentInset, pinned ? 64 : 0)
             } inspect: { window in
-                _ = try await self.snapshot(window, name: "Browse source before push")
-                let target = try XCTUnwrap(self.focusableItem(
-                    at: CGPoint(x: actionFrame.midX, y: actionFrame.minY + 40), in: window
-                ) as? UIControl)
-                try await self.focus(target, in: window)
+                func descendants(_ view: UIView) -> [UIView] {
+                    [view] + view.subviews.flatMap(descendants)
+                }
+                _ = try await self.snapshot(window, name: "Scrolled Home before browsing")
+                let rail = try XCTUnwrap(descendants(window).compactMap { $0 as? UIScrollView }
+                    .first { $0.contentSize.width > $0.bounds.width + 500 })
+                rail.setContentOffset(CGPoint(
+                    x: rail.contentSize.width - rail.bounds.width + rail.adjustedContentInset.right, y: rail.contentOffset.y
+                ), animated: false)
+                _ = try await self.snapshot(window, name: "Home at See all")
+                let action = try XCTUnwrap(descendants(window).compactMap { $0 as? UIControl }
+                    .first { $0.accessibilityLabel == "See all" && $0.canBecomeFocused })
+                try await self.focus(action, in: window)
                 try XCTUnwrap(window.rootViewController as? HomeRowsFocusHost).target = nil
-                func navigationController(in controller: UIViewController) -> UINavigationController? {
-                    if let navigation = controller as? UINavigationController { return navigation }
-                    return controller.children.compactMap { navigationController(in: $0) }.first
-                }
-                let navigation = try XCTUnwrap(navigationController(in: XCTUnwrap(window.rootViewController)))
-                let source = try XCTUnwrap(navigation.topViewController?.view)
-                func frame(of source: UIView) -> CGRect {
-                    let layer = source.layer.presentation() ?? source.layer
-                    return layer.convert(layer.bounds, to: window.layer.presentation() ?? window.layer)
-                }
-                let initial = frame(of: source)
-                target.sendActions(for: .primaryActionTriggered)
-                if !animatedPush {
-                    XCTAssertTrue(chrome.isChromeHidden, "Navigation hides in the push transaction, not a later frame")
-                }
-                var maximumChange: CGFloat = 0
-                var animatedTransition = false
-                for _ in 0..<45 {
-                    try await Task.sleep(for: .milliseconds(16))
-                    animatedTransition = animatedTransition || navigation.transitionCoordinator?.isAnimated == true
-                    guard source.window === window else { continue }
-                    let sample = frame(of: source)
-                    maximumChange = max(maximumChange,
-                        abs(sample.minX - initial.minX), abs(sample.minY - initial.minY),
-                        abs(sample.width - initial.width), abs(sample.height - initial.height))
-                }
-                XCTAssertEqual(chrome.stackDepth, 1)
-                if animatedPush {
-                    XCTAssertTrue(animatedTransition, "The baseline must exercise an animated native push")
-                } else {
-                    XCTAssertFalse(animatedTransition, "See all must suppress native snapshot animation too")
-                    XCTAssertLessThanOrEqual(maximumChange, 1, "See all must not shift Home behind the new page")
-                }
-
-                let browserSource = try XCTUnwrap(navigation.topViewController?.view)
-                let browserFrame = frame(of: browserSource)
-                let actionBeforeReturn = actionFrame
-                if animatedPush {
+                let initial = rail.contentOffset.x
+                let initialWidth = rail.bounds.width
+                let initialSize = rail.contentSize.width
+                XCTAssertLessThanOrEqual(
+                    initial, initialSize - initialWidth + rail.adjustedContentInset.right + 1,
+                    "Slot parking must not move See all past the trailing scroll limit"
+                )
+                for visit in 1...2 {
+                    action.sendActions(for: .primaryActionTriggered)
+                    _ = try await self.snapshot(window, name: "Browser covering scrolled Home")
                     route.path.removeLast()
-                } else {
-                    HomeBrowseDestination.pop(
-                        from: Binding(get: { route.path }, set: { route.path = $0 }), chrome: chrome
-                    )
-                    XCTAssertFalse(chrome.isChromeHidden, "Navigation returns in the pop transaction")
-                }
-                maximumChange = 0
-                animatedTransition = false
-                for _ in 0..<45 {
-                    try await Task.sleep(for: .milliseconds(16))
-                    animatedTransition = animatedTransition || navigation.transitionCoordinator?.isAnimated == true
-                    guard browserSource.window === window else { continue }
-                    let sample = frame(of: browserSource)
-                    maximumChange = max(maximumChange,
-                        abs(sample.minX - browserFrame.minX), abs(sample.minY - browserFrame.minY),
-                        abs(sample.width - browserFrame.width), abs(sample.height - browserFrame.height))
-                }
-                XCTAssertEqual(chrome.stackDepth, 0)
-                if animatedPush {
-                    XCTAssertTrue(animatedTransition, "The baseline must exercise an animated native pop")
-                } else {
-                    XCTAssertFalse(animatedTransition, "Back must not animate the outgoing grid")
-                    XCTAssertLessThanOrEqual(maximumChange, 1, "The grid must remain stationary during Back")
-                    XCTAssertEqual(actionFrame.minX, actionBeforeReturn.minX, accuracy: 1)
-                    XCTAssertEqual(actionFrame.minY, actionBeforeReturn.minY, accuracy: 1)
+                    var samples: [String] = []
+                    var maximumOffsetChange: CGFloat = 0
+                    for _ in 0..<90 {
+                        try await Task.sleep(for: .milliseconds(16))
+                        let visibleOffset = rail.layer.presentation()?.bounds.minX ?? rail.contentOffset.x
+                        maximumOffsetChange = max(maximumOffsetChange, abs(visibleOffset - initial))
+                        samples.append("\(rail.contentOffset.x),\(visibleOffset),\(rail.bounds.width),\(rail.contentSize.width),\(action.isFocused)")
+                    }
+                    let attachment = XCTAttachment(string:
+                        "initial=\(initial),\(initialWidth),\(initialSize)\n" + samples.joined(separator: "\n"))
+                    attachment.name = "Home rail return pinned=\(pinned) visit=\(visit)"
+                    attachment.lifetime = .keepAlways
+                    self.add(attachment)
+                    XCTAssertLessThanOrEqual(maximumOffsetChange, 1, "The rail must not scroll during Back: \(samples)")
+                    XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === action)
                 }
             }
         }
@@ -490,26 +501,39 @@ private struct HomeBrowseNavigationFixture: View {
     @Bindable var route: HomeBrowseNavigationProbe
     let browser: HomeRowBrowseModel
     let chrome: NavigationChromeModel
-    var animatedPush = false
+    var usesRail = false
     let onFrame: (CGRect) -> Void
 
     var body: some View {
         NavigationStack(path: $route.path) {
-            MediaRowBrowseCard(width: 240, action: {
-                let destination = HomeBrowseDestination.row(browser)
-                if animatedPush { route.path.append(destination) }
-                else { destination.push(onto: $route.path, chrome: chrome) }
-            })
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onFrame($0) }
-                .navigationDestination(for: HomeBrowseDestination.self) { destination in
-                    if case let .row(browser) = destination {
-                        HomeRowBrowseView(model: browser, columns: [GridItem(.flexible())]) { item in
-                            Button(item.title) {}
-                        }
+            Group {
+                if usesRail {
+                    ScrollView {
+                        MediaRowView(
+                            title: Text("Home shelf"),
+                            items: (0..<24).map { MediaItem(id: "\($0)", title: "Title \($0)", kind: .movie) },
+                            onSelect: { _ in }
+                        )
+                        .browsingRow(openBrowser)
+                    }
+                } else {
+                    MediaRowBrowseCard(width: 240, action: openBrowser)
+                }
+            }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onFrame($0) }
+            .navigationDestination(for: HomeBrowseDestination.self) { destination in
+                if case let .row(browser) = destination {
+                    HomeRowBrowseView(model: browser, columns: [GridItem(.flexible())]) { item in
+                        Button(item.title) {}
                     }
                 }
+            }
         }
         .reportsNavigationDepth(route.path.count, to: chrome)
+    }
+
+    private func openBrowser() {
+        HomeBrowseDestination.row(browser).push(onto: $route.path, chrome: chrome)
     }
 }
 #endif
