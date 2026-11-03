@@ -93,6 +93,7 @@ private struct TraktSettingsContent: View {
             Button("Cancel", role: .cancel) {
                 service.cancelConnect()
             }
+            .settingsActionRow()
         case let .connecting(userCode, verificationURL, _):
             Text("Enter this code on Trakt:")
                 .plozzForeground(.secondary)
@@ -103,15 +104,18 @@ private struct TraktSettingsContent: View {
                 Button("Open Trakt") {
                     openURL(url)
                 }
+                .settingsActionRow()
             }
             Button("Cancel", role: .cancel) {
                 service.cancelConnect()
             }
+            .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
+            .settingsActionRow()
         case let .error(message):
             errorStatus(message)
             connectButton
@@ -120,14 +124,17 @@ private struct TraktSettingsContent: View {
             Button("Retry") {
                 Task { await service.refreshStatus() }
             }
+            .settingsActionRow()
             if canReconnect {
                 Button("Reconnect Trakt") { confirmingReconnect = true }
+                    .settingsActionRow()
             }
         }
     }
 
     private var connectButton: some View {
         Button("Connect Trakt", action: connect)
+            .settingsActionRow()
     }
 
     private func connect() {
@@ -167,9 +174,11 @@ private struct WetrakrSettingsContent: View {
             unavailableStatus
         case .disconnected:
             Button("Connect WeTrakr", action: connect)
+                .settingsActionRow()
         case .authorizing:
             loadingStatus
             Button("Cancel", role: .cancel) { service.cancelConnect() }
+                .settingsActionRow()
         case let .connecting(code, verificationURL, _):
             Text("Enter this code on WeTrakr:")
                 .plozzForeground(.secondary)
@@ -178,19 +187,25 @@ private struct WetrakrSettingsContent: View {
                 .textSelection(.enabled)
             if let url = URL(string: verificationURL) {
                 Button("Open WeTrakr") { openURL(url) }
+                    .settingsActionRow()
             }
             Button("Cancel", role: .cancel) { service.cancelConnect() }
+                .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
             Button("Disconnect", role: .destructive) { Task { await service.disconnect() } }
+                .settingsActionRow()
         case let .error(message):
             errorStatus(message)
             Button("Connect WeTrakr", action: connect)
+                .settingsActionRow()
         case let .syncError(message, canReconnect):
             errorStatus(message)
             Button("Retry") { Task { await service.refreshStatus() } }
+                .settingsActionRow()
             if canReconnect {
                 Button("Reconnect WeTrakr") { confirmingReconnect = true }
+                    .settingsActionRow()
             }
         }
     }
@@ -226,15 +241,18 @@ private struct SimklSettingsContent: View {
                 Button("Open Simkl") {
                     openURL(url)
                 }
+                .settingsActionRow()
             }
             Button("Cancel", role: .cancel) {
                 service.cancelConnect()
             }
+            .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
+            .settingsActionRow()
         case let .error(message):
             errorStatus(message)
             connectButton
@@ -245,6 +263,7 @@ private struct SimklSettingsContent: View {
         Button("Connect Simkl") {
             service.connect()
         }
+        .settingsActionRow()
     }
 }
 
@@ -274,6 +293,7 @@ private struct AniListSettingsContent: View {
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
+            .settingsActionRow()
         case let .error(message):
             errorStatus(message)
             connectButton
@@ -285,6 +305,7 @@ private struct AniListSettingsContent: View {
             code = ""
             service.connect()
         }
+        .settingsActionRow()
     }
 
     @ViewBuilder
@@ -300,15 +321,18 @@ private struct AniListSettingsContent: View {
             Button(openButtonTitle) {
                 openURL(url)
             }
+            .settingsActionRow()
         }
         TextField("Authorization code", text: $code)
             .textInputAutocapitalization(.characters)
             .autocorrectionDisabled()
         Button(submitButtonTitle, action: submit)
+            .settingsActionRow()
             .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         Button("Cancel", role: .cancel) {
             service.cancelConnect()
         }
+        .settingsActionRow()
     }
 }
 
@@ -332,6 +356,7 @@ private struct MALSettingsContent: View {
                 Button("Open MyAnimeList") {
                     openURL(url)
                 }
+                .settingsActionRow()
             }
             TextField("Authorization code", text: $code)
                 .textInputAutocapitalization(.characters)
@@ -339,15 +364,18 @@ private struct MALSettingsContent: View {
             Button("Redeem Code") {
                 service.submitAuthorizationCode(code)
             }
+            .settingsActionRow()
             .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             Button("Cancel", role: .cancel) {
                 service.cancelConnect()
             }
+            .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
+            .settingsActionRow()
         case let .error(message):
             errorStatus(message)
             connectButton
@@ -359,6 +387,7 @@ private struct MALSettingsContent: View {
             code = ""
             service.connect()
         }
+        .settingsActionRow()
     }
 }
 

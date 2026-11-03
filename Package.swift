@@ -808,6 +808,7 @@ let package = Package(
                 "ProviderShare",
                 "CoreSecureStore",
                 "TraktService",
+                "SeerService",
                 "FeatureSyncCloud"
             ]
         ),

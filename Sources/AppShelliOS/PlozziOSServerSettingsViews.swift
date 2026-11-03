@@ -34,7 +34,7 @@ struct PlozziOSServersSettingsView: View {
                         } label: {
                             serverRowLabel(group)
                         }
-                        .buttonStyle(.plain)
+                        .settingsActionRow()
                     }
                 }
             } footer: {
@@ -49,6 +49,7 @@ struct PlozziOSServersSettingsView: View {
                         Image(systemName: "plus")
                     }
                 }
+                .settingsActionRow()
                 .accessibilityIdentifier("sources-add-source")
             }
         }
@@ -133,7 +134,7 @@ private struct PlozziOSServerSettingsDetailView: View {
                             }
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .settingsActionRow()
                     }
                 } footer: {
                     Text("Removing a sign-in affects every profile on this \(deviceName).")
@@ -145,6 +146,7 @@ private struct PlozziOSServerSettingsDetailView: View {
                             Button("Edit connection", systemImage: "pencil") {
                                 providerSetupRouter.connectIPTV(account: account)
                             }
+                            .settingsActionRow()
                         }
                     }
                 }
@@ -161,6 +163,7 @@ private struct PlozziOSServerSettingsDetailView: View {
                         Button("Remove Server", role: .destructive) {
                             confirmRemoveServer = true
                         }
+                        .settingsActionRow()
                     } footer: {
                         Text("Signs out every account on \(group.serverName).")
                     }
@@ -465,7 +468,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .settingsActionRow()
         .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
         .settingsSearchAnchor(
             isSearchTarget ? "profile-library-inclusion" : "profile-library-\(library.id)"
@@ -475,7 +478,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
     @ViewBuilder
     private func identityControl(for group: ServerAccountGroup) -> some View {
         if group.providerKind == .plex, let account = activeAccount(in: group) {
-            NavigationLink {
+            SettingsPageLink {
                 PlozziOSPlexHomeUserSettingsView(
                     appModel: appModel,
                     account: account
@@ -489,6 +492,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
                     Text(plexIdentityName(for: account))
                 }
             }
+            .settingsActionRow()
             .settingsSearchAnchor(
                 group.serverKey == searchGroup(for: "watcher-plex-user")?.serverKey
                     ? "watcher-plex-user" : "watcher-plex-\(group.serverKey)",

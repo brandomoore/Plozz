@@ -26,6 +26,128 @@ final class SettingsInteractionTests: XCTestCase {
         verifyNavigationRetention(directPresentation: false)
     }
 
+    func testTabletSidebarSwitchesCategoriesFromPushedSettingsPages() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad)
+        launchNavigation(directPresentation: true)
+        app.buttons["fixture-open-settings"].tap()
+        for (category, child, childTitle, next) in [
+            ("Playback", "playback-advanced", "Advanced", "Subtitles"),
+            ("Appearance", "appearance-cards", "Cards", "Playback"),
+            ("Screens & Navigation", "screens-all-screens", "All screens", "Appearance")
+        ] {
+            let source = categoryButton(category)
+            reveal(source, settingsMenu: true, towardTop: true)
+            source.tap()
+            XCTAssertTrue(app.navigationBars[category].waitForExistence(timeout: 5))
+            let link = app.buttons[child]
+            reveal(link)
+            link.tap()
+            XCTAssertTrue(app.navigationBars[childTitle].waitForExistence(timeout: 5))
+            let destination = categoryButton(next)
+            reveal(destination, settingsMenu: true, towardTop: true)
+            destination.tap()
+            XCTAssertTrue(app.navigationBars[next].waitForExistence(timeout: 5),
+                          "The sidebar must replace a pushed page without requiring Back. \(app.debugDescription)")
+            XCTAssertFalse(app.navigationBars[childTitle].exists)
+            XCTAssertFalse(app.navigationBars[next].buttons["BackButton"].exists,
+                           "A category change must discard the previous category's child stack.")
+        }
+    }
+
+    func testTabletSidebarDiscardsMultiplePushedPages() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad)
+        openSettingsPage("Playback")
+        let advanced = app.buttons["playback-advanced"]
+        reveal(advanced)
+        advanced.tap()
+        XCTAssertTrue(app.navigationBars["Advanced"].waitForExistence(timeout: 5))
+        app.buttons["playback-external-player"].tap()
+        XCTAssertTrue(app.navigationBars["External player"].waitForExistence(timeout: 5))
+        button("Custom player").tap()
+        XCTAssertTrue(app.navigationBars["Custom player"].waitForExistence(timeout: 5))
+        categoryButton("Appearance").tap()
+        XCTAssertTrue(app.navigationBars["Appearance"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.navigationBars["Custom player"].exists)
+        categoryButton("Playback").tap()
+        XCTAssertTrue(app.navigationBars["Playback"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.navigationBars["Playback"].buttons["BackButton"].exists)
+    }
+
+    func testDisclosureRowsIncludeTheirPaddedCorners() {
+        launch()
+        for bottom in [false, true] {
+            for trailing in [false, true] {
+                let cards = app.buttons["appearance-cards"]
+                XCTAssertTrue(cards.waitForExistence(timeout: 5))
+                XCTAssertGreaterThanOrEqual(cards.frame.height, 44)
+                cards.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
+                    dx: trailing ? cards.frame.width - 3 : 3,
+                    dy: bottom ? cards.frame.height - 3 : 3
+                )).tap()
+                XCTAssertTrue(app.navigationBars["Cards"].waitForExistence(timeout: 5))
+                app.navigationBars.buttons["BackButton"].tap()
+            }
+        }
+    }
+
+    func testCompositeCardTargetsAreLargeAndSeparate() {
+        for arguments in [[], ["--large-text"]] {
+            launch(arguments: arguments)
+            app.buttons["appearance-cards"].tap()
+            let labels = app.buttons["card-label-picker"]
+            let customize = app.buttons["card-label-customization"]
+            reveal(labels, fullyVisible: true)
+            XCTAssertGreaterThanOrEqual(labels.frame.height, 44)
+            XCTAssertGreaterThanOrEqual(customize.frame.height, 44)
+            XCTAssertLessThanOrEqual(labels.frame.maxY, customize.frame.minY)
+            labels.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: 3, dy: 3)).tap()
+            XCTAssertTrue(app.buttons["card-labels-off"].waitForExistence(timeout: 5))
+            app.buttons["card-labels-off"].tap()
+            XCTAssertTrue(app.navigationBars["Cards"].exists)
+            customize.tap()
+            let choice = app.buttons["card-label-view-home"]
+            XCTAssertTrue(choice.waitForExistence(timeout: 5))
+            // Native List can report the menu container across the split view.
+            // Its nested button is the actual visible trigger.
+            let trigger = choice.buttons.firstMatch
+            XCTAssertTrue(trigger.exists)
+            XCTAssertGreaterThanOrEqual(trigger.frame.height, 44)
+            trigger.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: 3, dy: 3)).tap()
+            XCTAssertTrue(app.buttons["On"].waitForExistence(timeout: 5))
+            app.buttons["On"].tap()
+            XCTAssertEqual(choice.value as? String, "On")
+            app.terminate()
+        }
+    }
+
+    func testExternalPlayerMenuIncludesItsCornersAndPreservesAvailability() {
+        openSettingsPage("Playback")
+        let advanced = app.buttons["playback-advanced"]
+        reveal(advanced)
+        advanced.tap()
+        app.buttons["playback-external-player"].tap()
+        let menu = app.buttons["external-player-selection"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        let trigger = menu.buttons.firstMatch
+        XCTAssertTrue(trigger.exists)
+        XCTAssertGreaterThanOrEqual(trigger.frame.height, 44)
+        trigger.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: 3, dy: 3)).tap()
+        let builtIn = app.buttons["external-player-builtIn"]
+        XCTAssertTrue(builtIn.waitForExistence(timeout: 5))
+        for id in ["external-player-infuse", "external-player-vlc"] {
+            let option = app.buttons[id]
+            if option.exists && option.label.contains("not installed") {
+                XCTAssertFalse(option.isEnabled)
+            }
+        }
+        builtIn.tap()
+        XCTAssertTrue(app.navigationBars["External player"].exists)
+        XCTAssertEqual(menu.value as? String, "Plozz")
+    }
+
     func testPhoneSettingsTitleScrollsIntoNavigationBar() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         launchNavigation(directPresentation: true)

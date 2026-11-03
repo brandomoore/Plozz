@@ -219,20 +219,28 @@ private struct CardCaptionPicker: View {
             )
             .frame(height: 96)
             .accessibilityHidden(true)
-            Picker("Labels", selection: Binding<CardCaptionPreference?>(
-                get: { settings.selectedPreset },
-                set: { if let preset = $0 { settings.applyPreset(preset) } }
-            )) {
-                if settings.selectedPreset == nil {
-                    Text("Custom").tag(Optional<CardCaptionPreference>.none)
+            SettingsControlMenu {
+                Picker(selection: Binding<CardCaptionPreference?>(
+                    get: { settings.selectedPreset },
+                    set: { if let preset = $0 { settings.applyPreset(preset) } }
+                )) {
+                    if settings.selectedPreset == nil {
+                        Text("Custom").tag(Optional<CardCaptionPreference>.none)
+                    }
+                    ForEach(CardCaptionPreference.allCases) { preference in
+                        Text(preference.displayName).tag(Optional(preference))
+                            .accessibilityIdentifier(preference == .recommended ? "card-labels-recommended"
+                                                     : preference == .show ? "card-labels-on" : "card-labels-off")
+                    }
+                } label: {
+                    EmptyView()
                 }
-                ForEach(CardCaptionPreference.allCases) { preference in
-                    Text(preference.displayName).tag(Optional(preference))
-                        .accessibilityIdentifier(preference == .recommended ? "card-labels-recommended"
-                                                 : preference == .show ? "card-labels-on" : "card-labels-off")
-                }
+                .pickerStyle(.inline)
+            } label: {
+                SettingsMenuLabel("Labels", value: settings.selectedPreset?.displayName ?? "Custom")
             }
-            .pickerStyle(.menu)
+            .accessibilityLabel("Labels")
+            .accessibilityValue(Text(settings.selectedPreset?.displayName ?? "Custom"))
             .accessibilityIdentifier("card-label-picker")
         }
     }
@@ -345,6 +353,7 @@ public struct CardCaptionSettingsLink: View {
         Button { isPresented = true } label: {
             SettingsDisclosureLabel { Text("Customize labels") }
         }
+        .settingsActionRow()
         .navigationDestination(isPresented: $isPresented) { destination }
         .accessibilityIdentifier(identifier)
         #endif

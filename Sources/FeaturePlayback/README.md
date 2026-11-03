@@ -651,17 +651,29 @@ reveal/fade behavior; hidden playback positions are not frozen.
 ## Mobile player orientation
 
 The iPhone full-screen on-demand and expanded Live TV players read the active profile's
-`PlaybackSettings.orientation` (Landscape by default, Auto, or Portrait).
+`PlaybackSettings.orientation`: Follow device orientation, Portrait, Landscape auto
+(the default), Landscape left, or Landscape right, in one flat native settings menu.
 The existing playback-settings store and profile snapshot transfer carry the
 preference; it has no effect on iPad, tvOS, or inline trailers.
-Landscape permits either sideways direction. Compact iPhone browsing stays
+Landscape auto permits either sideways direction and follows stable sideways
+gravity even with iOS Rotation Lock enabled. One shared Core Motion source samples
+at 5 Hz only for the active compact-phone landscape player. Two consecutive
+unambiguous sideways readings are required; upright, face-up/down, and uncertain
+readings retain the current side. Motion data stays in memory and is neither stored
+nor transmitted. Native menu presentation defers side changes; backgrounding,
+dismissal, ownership loss, and other preferences stop motion tracking.
+Fixed left/right choices refer to the top of the phone, not UIKit's oppositely
+named interface-orientation constants. They never follow physical rotation.
+Compact iPhone browsing stays
 portrait, including the guide when no eligible preview is playing. Expanded phone
 windows with at least 600 points in both dimensions follow system rotation,
 like iPad; opening a larger display does not itself request fullscreen playback.
 
 Orientation is configured only in Settings > Playback, never in the player's
-options menu. Explicitly saved Auto or Portrait choices remain unchanged when
-loading existing profiles; older settings without an orientation use Landscape.
+options menu. Existing persisted `auto`, `portrait`, and `landscape` values remain
+compatible; `landscape` now displays as Landscape auto. Older settings without an
+orientation still use that default. Both fixed directions use the same
+profile-scoped persistence and transfer path.
 The player opens immediately in the saved orientation, before version loading or
 stream preparation. The first-use question and initial version picker use the
 shared chooser directly inside that player, not a second sheet that can rotate
@@ -695,7 +707,7 @@ the coordinator's current authorization and source checks.
 Native options menus and Custom zoom controls retain the
 expanded player's window restriction, including when a presentation temporarily
 covers its embedded owner; only removing that owner ends its policy.
-Auto follows accepted system interface rotation rather than forcing rotation from
+Follow device orientation follows accepted system interface rotation rather than forcing rotation from
 sensor notifications, preserving system rotation lock. Playback ownership never
 applies a different window's or inactive profile's preference. Closing on-demand
 playback also restores the browsing policy.

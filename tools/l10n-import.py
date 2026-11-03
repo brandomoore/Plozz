@@ -39,6 +39,10 @@ INFO_CATALOGS = {
         REPO / "App/PlozziOS/InfoPlist.xcstrings",
         "NSCameraUsageDescription",
     ),
+    "iOS.NSMotionUsageDescription": (
+        REPO / "App/PlozziOS/InfoPlist.xcstrings",
+        "NSMotionUsageDescription",
+    ),
 }
 
 # Foundation format specifiers emitted by String Catalog extraction. The parser

@@ -27,6 +27,10 @@ INFO_CATALOGS = {
         REPO / "App/PlozziOS/InfoPlist.xcstrings",
         "NSCameraUsageDescription",
     ),
+    "iOS.NSMotionUsageDescription": (
+        REPO / "App/PlozziOS/InfoPlist.xcstrings",
+        "NSMotionUsageDescription",
+    ),
 }
 
 

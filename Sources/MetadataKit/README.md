@@ -102,6 +102,14 @@ reversed or out-of-runtime segments are discarded.
 
 ## Discovery sources
 
+The dedicated Discover destination uses `TMDbDiscoveryProvider.browse` when
+Seerr is not configured. Its five paginated feeds are separate from Home's
+recent-release selection: upcoming movies and first series premieres retain
+future dates. Public candidates do not prove local playback access.
+`AppRuntime.DiscoverRuntime` shares Home's live library-identity verification
+before the page applies Available now or Hide watched. These profile-specific
+results are never written to the public metadata cache.
+
 Featured defaults to a two-calendar-year release window. Full dates use a rolling
 cutoff; year-only metadata retains the boundary year rather than inventing a
 release day. Undated titles do not qualify on popularity alone. This policy does

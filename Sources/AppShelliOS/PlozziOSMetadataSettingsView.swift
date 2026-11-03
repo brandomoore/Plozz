@@ -46,14 +46,18 @@ struct PlozziOSMetadataSettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .settingsActionRow()
                     .accessibilityIdentifier("metadata-artwork-preferences")
                 } else {
-                    NavigationLink("Artwork") {
+                    SettingsPageLink {
                         PlozziOSArtworkSettingsView(
                             appModel: appModel, cardStyle: appModel.settings.cardStyle,
                             canManageProviders: true, returnsToMetadata: true
                         )
+                    } label: {
+                        SettingsDisclosureLabel { Text("Artwork") }
                     }
+                    .settingsActionRow()
                     .accessibilityIdentifier("metadata-artwork-preferences")
                 }
             }
@@ -248,6 +252,7 @@ struct PlozziOSMetadataSettingsView: View {
             } label: {
                 Label(tmdbKey.isConfigured ? "Replace Key" : "Save Key", systemImage: "square.and.arrow.down")
             }
+            .settingsActionRow()
             .disabled(!tmdbKey.canSaveDraft)
 
             Button {
@@ -255,6 +260,7 @@ struct PlozziOSMetadataSettingsView: View {
             } label: {
                 Label("Verify Key", systemImage: "checkmark.shield")
             }
+            .settingsActionRow()
             .disabled((!tmdbKey.canSaveDraft && !tmdbKey.isConfigured) || tmdbKey.verifyState == .verifying)
 
             if tmdbKey.isConfigured {
@@ -263,6 +269,7 @@ struct PlozziOSMetadataSettingsView: View {
                 } label: {
                     Label("Remove Key", systemImage: "trash")
                 }
+                .settingsActionRow()
             }
         } footer: {
             Text("Optional. Use your own TMDB read token so lookups run under your account's rate limit.")
@@ -309,7 +316,7 @@ struct PlozziOSMetadataSettingsView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .settingsActionRow()
         }
     }
 

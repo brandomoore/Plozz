@@ -236,6 +236,8 @@ struct PresentationHostApp: App {
                 PosterZoomFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--featured-card-fixture") {
                 FeaturedCardInteractionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--discover-fixture") {
+                DiscoverBrowseFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--collection-settings-fixture") {
                 CollectionSettingsInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--hero-request-controls-fixture") {

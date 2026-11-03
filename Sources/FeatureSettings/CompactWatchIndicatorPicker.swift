@@ -40,13 +40,21 @@ struct CompactWatchIndicatorPicker: View {
                 .accessibilityLabel("Watch indicator preview")
                 .accessibilityValue(Text(selection.displayName))
                 .accessibilityIdentifier("watch-indicator-preview")
-            Picker("Watch indicators", selection: $selection) {
-                ForEach(WatchStatusIndicator.allCases) { indicator in
-                    Text(indicator.displayName).tag(indicator)
-                        .accessibilityIdentifier("watch-indicator-option-\(indicator.rawValue)")
+            SettingsControlMenu {
+                Picker(selection: $selection) {
+                    ForEach(WatchStatusIndicator.allCases) { indicator in
+                        Text(indicator.displayName).tag(indicator)
+                            .accessibilityIdentifier("watch-indicator-option-\(indicator.rawValue)")
+                    }
+                } label: {
+                    EmptyView()
                 }
+                .pickerStyle(.inline)
+            } label: {
+                SettingsMenuLabel("Watch indicators", value: selection.displayName)
             }
-            .pickerStyle(.menu)
+            .accessibilityLabel("Watch indicators")
+            .accessibilityValue(Text(selection.displayName))
             .accessibilityIdentifier("watch-indicator-picker")
         }
     }

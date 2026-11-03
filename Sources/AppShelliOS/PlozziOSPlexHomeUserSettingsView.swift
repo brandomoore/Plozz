@@ -90,9 +90,12 @@ struct PlozziOSPlexHomeUserSettingsView: View {
                             Text(error).foregroundStyle(.red)
                         }
                         Button("Sign In Again") { appModel.plexHomeUsers.beginPlexReauthentication() }
+                            .settingsActionRow()
                         Button("Retry") { appModel.plexHomeUsers.retryPlexPINRequirement() }
+                            .settingsActionRow()
                     }
                     Button("Cancel") { appModel.plexHomeUsers.cancelPlexPIN() }
+                        .settingsActionRow()
                 }
             }
             if let onDecline {
@@ -103,6 +106,7 @@ struct PlozziOSPlexHomeUserSettingsView: View {
                             comment: "Button declining to pick a user, which leaves the server's own watchlist out of this profile."
                         )
                     }
+                    .settingsActionRow()
                     .disabled(pendingSelection != nil)
                 }
             }
@@ -149,7 +153,7 @@ struct PlozziOSPlexHomeUserSettingsView: View {
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .settingsActionRow()
         .disabled(pendingSelection != nil)
         .accessibilityIdentifier("plex-user-\(user.id)")
         .accessibilityValue(accessibilityValue(for: user))

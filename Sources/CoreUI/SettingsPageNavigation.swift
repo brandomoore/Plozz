@@ -364,6 +364,8 @@ public struct SettingsPageLink<Destination: View, Label: View>: View {
     let label: () -> Label
     #if os(tvOS)
     @Environment(\.settingsPageContext) private var context
+    #else
+    @State private var isPresented = false
     #endif
 
     public init(@ViewBuilder destination: @escaping () -> Destination, @ViewBuilder label: @escaping () -> Label) {
@@ -381,7 +383,9 @@ public struct SettingsPageLink<Destination: View, Label: View>: View {
             NavigationLink(destination: destination, label: label)
         }
         #else
-        NavigationLink(destination: destination, label: label)
+        // A NavigationLink can claim all sibling controls in a composite List cell.
+        Button { isPresented = true } label: { label() }
+            .navigationDestination(isPresented: $isPresented, destination: destination)
         #endif
     }
 }

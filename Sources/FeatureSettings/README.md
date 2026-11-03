@@ -7,6 +7,15 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+On iPad, selecting a different sidebar category discards the previous category's
+entire pushed detail stack. The reset targets the native detail navigation
+controller, not the split view, preserving sidebar scroll position and search.
+Profile changes and parental relocking also invalidate the detail identity.
+Mobile disclosure and action rows share `settingsActionRow()` from CoreUI;
+composite controls retain separate minimum touch targets with
+`settingsControlTarget()`. Per-view customization menus respond across their
+whole title/value row, not only the value. Native toggles remain independent.
+
 ## Settings search
 
 Settings search is local: queries are neither saved nor sent to a service or log.

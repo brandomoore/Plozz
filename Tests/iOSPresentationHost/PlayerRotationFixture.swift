@@ -82,6 +82,8 @@ struct PlayerRotationFixture: View {
         }
         if arguments.contains("--auto") { model.settings.playback.settings.orientation = .auto }
         if arguments.contains("--portrait") { model.settings.playback.settings.orientation = .portrait }
+        if arguments.contains("--landscape-left") { model.settings.playback.settings.orientation = .landscapeLeft }
+        if arguments.contains("--landscape-right") { model.settings.playback.settings.orientation = .landscapeRight }
         _model = State(initialValue: model)
     }
 

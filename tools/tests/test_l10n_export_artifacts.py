@@ -74,13 +74,9 @@ class TranslationArtifactExportTests(unittest.TestCase):
             },
         )
 
-    def test_missing_permission_translation_fails(self) -> None:
-        with self.assertRaisesRegex(ValueError, "missing permission translation"):
-            l10n_export.build_artifact(
-                self.catalog(),
-                self.permissions(),
-                "fr",
-            )
+    def test_missing_permission_translation_is_left_for_the_reviewed_delta(self) -> None:
+        artifact = l10n_export.build_artifact(self.catalog(), self.permissions(), "fr")
+        self.assertEqual(artifact["infoPlist"], {})
 
 
 if __name__ == "__main__":

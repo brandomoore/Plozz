@@ -73,7 +73,7 @@ public struct NavigationLibrariesDetailView: View {
         )
         let automaticallyHiddenDestinations: Set<String> = []
         #endif
-        let available = keys.filter { !excludedKeys.contains($0) }
+        let available = navigation.availableNavigationKeys(keys).filter { !excludedKeys.contains($0) }
         let titles = Self.rowsByKey(visible: visible)
         let sections = navigation.librarySections(
             available: available, automaticallyHiddenKeys: automaticallyHiddenDestinations
@@ -134,6 +134,7 @@ public struct NavigationLibrariesDetailView: View {
             NavigationLibraryLayout.homeKey: .init(title: Text("Home"), symbolName: "house.fill"),
             NavigationLibraryLayout.searchKey: .init(title: Text("Search"), symbolName: "magnifyingglass"),
             NavigationLibraryLayout.watchlistKey: .init(title: Text("Watchlist"), symbolName: "bookmark.fill"),
+            NavigationLibraryLayout.discoverKey: .init(title: Text("Discover"), symbolName: "sparkles"),
             NavigationLibraryLayout.musicKey: .init(title: Text("Music"), symbolName: "music.note"),
             NavigationLibraryLayout.downloadsKey: .init(title: Text("Downloads"), symbolName: "arrow.down.circle"),
             NavigationLibraryLayout.settingsKey: .init(title: Text("Settings"), symbolName: "gearshape.fill"),

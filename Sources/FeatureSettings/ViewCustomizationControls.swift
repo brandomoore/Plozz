@@ -52,8 +52,7 @@ struct ViewPreferenceChoiceRow: View {
                     .opacity(isSelected ? 1 : 0)
                     .accessibilityHidden(true)
             }
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
+            .settingsControlTarget()
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -69,6 +68,7 @@ struct ViewCustomizationLink<Destination: View>: View {
     var body: some View {
         SettingsDetailLink(destination: destination) {
             ViewCustomizationLinkLabel(isCustomized: isCustomized, title: title)
+                .settingsControlTarget()
         }
         #if os(tvOS)
         .buttonStyle(SettingsFocusButtonStyle(size: .contained))
@@ -98,9 +98,7 @@ private struct ViewCustomizationLinkLabel: View {
                         .background(.quaternary, in: Capsule())
                 }
             }
-            #if os(tvOS)
             Image(systemName: "chevron.right").accessibilityHidden(true)
-            #endif
         }
         #if os(tvOS)
         .settingsFormRowLayout()
@@ -239,8 +237,8 @@ struct ViewCustomizationMenu<Selection: Hashable, Options: View>: View {
     @ViewBuilder var options: () -> Options
 
     var body: some View {
-        ViewCustomizationMenuLabel(id: id, title: title) {
-            Menu {
+        HStack {
+            SettingsControlMenu {
                 Picker(selection: $selection) {
                     options()
                 } label: {
@@ -248,16 +246,16 @@ struct ViewCustomizationMenu<Selection: Hashable, Options: View>: View {
                 }
                 .pickerStyle(.inline)
             } label: {
-                SettingsMenuValue(Text(value))
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
+                ViewCustomizationMenuLabel(id: id, title: title) {
+                    SettingsMenuValue(Text(value))
+                }
             }
-            .buttonStyle(.borderless)
             .accessibilityLabel(Text(title))
             .accessibilityValue(Text(value))
             .accessibilityHint(Text(detail ?? "Select to change."))
             .accessibilityIdentifier(id)
         }
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -288,9 +286,6 @@ private struct ViewCustomizationMenuLabel<Control: View>: View {
         .font(.body)
         .foregroundStyle(palette.primaryText)
         .multilineTextAlignment(.leading)
-        .frame(minHeight: 44)
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .contain)
     }
 
     private var stackedLabel: some View {

@@ -59,6 +59,7 @@ final class PlozziOSSettingsModel {
             layoutStore: NavigationLibraryLayoutStore(namespace: namespace),
             librariesSnapshotStore: NavigationLibrariesSnapshotStore(namespace: namespace)
         )
+        navigation.setDiscoveryPolicy(allowed: allowsDiscovery, isSeerrConfigured: isSeerrConfigured)
         playback = PlaybackSettingsModel(
             store: PlaybackSettingsStore(namespace: namespace)
         )
