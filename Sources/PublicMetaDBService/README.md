@@ -801,12 +801,28 @@ volume verified before each later native run. This extends movie playback platfo
 coverage, not episode platform parity, other providers/trackers, interruption
 recovery, or physical-device testing.
 
-Plex destination acceptance remains unverified. The dedicated managed test user's
-cloud identity and server reads succeeded, but authorization of a real native
-Plex Link code returned HTTP 403. The unlinked flow was cancelled normally;
-existing accounts and complete watched/resume histories remained unchanged.
-This is an authorization prerequisite blocker, not evidence that Plex imports
-or playback fail. No personal-owner credential was substituted.
+Real native Plex Link sign-in now succeeds for the dedicated nonadministrator
+managed test user. The initial HTTP 403 came from the private acceptance
+authorizer omitting Plex's `X-Plex-Product: Plex SSO` link header; the same scoped
+credential authorized a new native code with HTTP 204. No owner credential or
+permission change was needed.
+
+On the owned muted iPad simulator, guarded movie imports changed only the
+selected Plex user: a watched flag produced count 1, and a separate real-playback
+resume imported exactly 242,374 milliseconds without adding a play. Cancelling
+left state unchanged. A real concurrent server edit from 75 to 90 seconds
+invalidated the prepared import; a fresh comparison and explicit approval
+restored the tracker position. Cold relaunches did not repeat either write.
+Independent reads verified unchanged unselected server histories and complete
+tracker history/list boundaries.
+
+The native driver now bounds longer three-provider comparisons and waits for
+verification before locating result rows that shrink after delivery. Failed
+driver attempts remain in the evidence. One comparison showed an unavailable
+server before any write; an explicit retry delivered the resume, which was
+confirmed independently and in the same process without replay. These checks
+establish guarded movie imports, not Plex ongoing sync, exports, playback,
+episodes, other providers, or physical-device acceptance.
 
 Separate read-only transport preflights fetched the same two-mebibyte movie
 prefix through dedicated SMB, NFS, WebDAV, FTP and host-key-pinned SFTP access.

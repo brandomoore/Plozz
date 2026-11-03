@@ -1961,11 +1961,11 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testOpenHistoryComparison() throws {
         try openHistoryComparison()
-        try tapVisible(importSelection, tapping: false)
+        try tapVisible(importSelection, tapping: false, maximumSwipes: 32)
         XCTAssertTrue(importSelection.exists)
         XCTAssertEqual(importSelection.value as? String, "0")
         recordState()
-        try tapVisible(app.buttons["tracker-history.apply"], tapping: false)
+        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
     }
 
@@ -2074,16 +2074,17 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(app.buttons["Apply selected changes"].waitForExistence(timeout: 5))
         try dismissConfirmation()
         XCTAssertTrue(app.buttons["Apply selected changes"].waitForNonExistence(timeout: 5))
-        for _ in 0..<8 {
+        for _ in 0..<32 {
             if importSelection.exists && importSelection.isHittable { break }
-            app.swipeDown()
+            let scroll = app.collectionViews.allElementsBoundByIndex.last ?? app
+            scroll.swipeDown(velocity: .slow)
         }
         try require(importSelection.exists && importSelection.isHittable, "Expected the retained selected import")
         XCTAssertEqual(importSelection.value as? String, "1")
         try openHistoryComparison()
-        try tapVisible(importSelection, tapping: false)
+        try tapVisible(importSelection, tapping: false, maximumSwipes: 32)
         XCTAssertEqual(importSelection.value as? String, "0")
-        try tapVisible(app.buttons["tracker-history.apply"], tapping: false)
+        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
     }
 
@@ -2099,6 +2100,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testPrepareStaleHistoryImport() throws {
         try openHistoryComparison()
+        try tapVisible(importSelection, tapping: false, maximumSwipes: 32)
         XCTAssertTrue(app.staticTexts["Server resume: 75 seconds"].exists)
         XCTAssertTrue(app.staticTexts["Different from server — selecting replaces its current state"].exists)
         try selectHistoryImport()
@@ -2106,18 +2108,35 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testRejectStaleHistoryImport() throws {
-        XCTAssertEqual(importSelection.value as? String, "1")
+        XCTAssertEqual(app.buttons["tracker-history.apply"].label, "Apply 1 selected changes")
         let confirm = app.buttons["Apply selected changes"]
         XCTAssertTrue(confirm.exists && confirm.isHittable)
         confirm.tap()
-        XCTAssertTrue(app.staticTexts["Not confirmed. Compare again before retrying."].waitForExistence(timeout: 60))
-        XCTAssertFalse(app.staticTexts["Confirmed on server"].exists)
+        let row = try revealHistoryImportRow()
+        XCTAssertTrue(row.staticTexts["Not confirmed. Compare again before retrying."].waitForExistence(timeout: 60))
+        XCTAssertFalse(row.staticTexts["Confirmed on server"].exists)
+        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
     }
 
     func testConfirmFreshHistoryConflict() throws {
         try openHistoryComparison()
-        try tapVisible(importSelection, tapping: false)
+        try confirmFreshHistoryConflict()
+    }
+
+    func testRetryFreshHistoryConflict() throws {
+        XCTAssertTrue(app.staticTexts[
+            "Can’t reach the server. Check that it’s online and on the same network."
+        ].exists)
+        try tapVisible(app.buttons["Compare again"])
+        let user = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_USER"])
+        try require(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", user))
+            .firstMatch.waitForExistence(timeout: 60), "Expected a new complete comparison after retry")
+        try confirmFreshHistoryConflict()
+    }
+
+    private func confirmFreshHistoryConflict() throws {
+        try tapVisible(importSelection, tapping: false, maximumSwipes: 32)
         let expected = try XCTUnwrap(Double(
             ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_EXPECTED_RESUME_SECONDS"] ?? "90"
         ))
@@ -2137,25 +2156,37 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testInspectConfirmedHistoryImport() throws {
+        let row = try revealHistoryImportRow()
+        XCTAssertTrue(row.staticTexts["Confirmed on server"].waitForExistence(timeout: 60))
+        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+    }
+
+    private func revealHistoryImportRow() throws -> XCUIElement {
+        let finished = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND enabled == true"),
+            object: app.buttons["Compare again"]
+        )
+        try require(XCTWaiter.wait(for: [finished], timeout: 75) == .completed,
+                    "Expected import verification to finish before locating its resized result row")
         let rows = try historyImportRows()
-        for _ in 0..<8 {
+        for _ in 0..<32 {
             if rows.firstMatch.exists && rows.firstMatch.isHittable { break }
-            app.swipeDown()
+            let scroll = app.collectionViews.allElementsBoundByIndex.last ?? app
+            scroll.swipeDown(velocity: .slow)
         }
         try require(rows.count == 1 && rows.firstMatch.isHittable, "Expected the exact selected import row")
-        XCTAssertTrue(rows.firstMatch.staticTexts["Confirmed on server"].waitForExistence(timeout: 60))
-        try tapVisible(app.buttons["tracker-history.apply"], tapping: false)
-        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+        return rows.firstMatch
     }
 
     func testImportedHistoryMatchesAfterRelaunch() throws {
         try openHistoryComparison()
         let rows = try historyImportRows()
-        try tapVisible(rows.firstMatch, tapping: false)
+        try tapVisible(rows.firstMatch, tapping: false, maximumSwipes: 32)
         XCTAssertEqual(rows.count, 1)
         XCTAssertTrue(rows.firstMatch.staticTexts["Already matches — no change"].exists)
         XCTAssertFalse(importSelection.exists)
-        try tapVisible(app.buttons["tracker-history.apply"], tapping: false)
+        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
     }
 
@@ -2191,12 +2222,12 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func selectHistoryImport() throws {
-        try tapVisible(importSelection, tapping: false)
+        try tapVisible(importSelection, tapping: false, maximumSwipes: 32)
         XCTAssertEqual(importSelection.value as? String, "0")
         try tapVisible(importSelection.switches.firstMatch)
         XCTAssertEqual(importSelection.value as? String, "1")
         let apply = app.buttons["tracker-history.apply"]
-        try tapVisible(apply, tapping: false)
+        try tapVisible(apply, tapping: false, maximumSwipes: 32)
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: apply)
         try require(XCTWaiter.wait(for: [selected], timeout: 5) == .completed, "Expected the selected import action")
         XCTAssertEqual(apply.label, "Apply 1 selected changes")
@@ -2589,9 +2620,9 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         )).tap()
     }
 
-    private func tapVisible(_ target: XCUIElement, tapping: Bool = true) throws {
+    private func tapVisible(_ target: XCUIElement, tapping: Bool = true, maximumSwipes: Int = 8) throws {
         _ = target.waitForExistence(timeout: 5)
-        for _ in 0..<8 {
+        for _ in 0..<maximumSwipes {
             if target.exists && target.isHittable { break }
             var scroll = app.collectionViews.allElementsBoundByIndex.last
                 ?? app.scrollViews.allElementsBoundByIndex.last ?? app
