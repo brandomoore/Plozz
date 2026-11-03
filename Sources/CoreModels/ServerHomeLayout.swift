@@ -73,6 +73,17 @@ public struct ServerHomeSection: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
+/// Items and their continuation come from the same provider response, not layout discovery.
+public struct ServerHomeRowContent: Sendable {
+    public var items: [MediaItem]
+    public var browseID: String?
+
+    public init(items: [MediaItem], browseID: String? = nil) {
+        self.items = items
+        self.browseID = browseID
+    }
+}
+
 /// A saved custom row retains its source and request, even when the server's
 /// automatic layout changes or that source is temporarily unavailable.
 public struct HomeServerRowDefinition: Codable, Hashable, Identifiable, Sendable {

@@ -2,6 +2,144 @@ import XCTest
 
 @MainActor
 final class ProductionHomeNavigationTests: XCTestCase {
+    func testShowAllPagesStayNestedAcrossNavigationStyles() throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        for navigation in ["--top-bar-home", "--pinned-home", "--native-sidebar-home"] {
+            for watchlist in [false, true] {
+                let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+                app.launchArguments = [
+                    "--production-home-fixture", "--home-browse-fixture",
+                    "--hero-disabled-home", "--real-root-pages", "--slow-home-browse", navigation
+                ] + (watchlist ? ["--home-browse-watchlist"] : [])
+                app.launch()
+                defer { app.terminate() }
+                XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
+                XCTAssertTrue(app.buttons[navigation == "--top-bar-home" ? "top-navigation-home" : "Home"].exists,
+                              app.debugDescription)
+                let action = app.buttons["See all"].firstMatch
+                if navigation == "--top-bar-home" { XCUIRemote.shared.press(.down) }
+                if navigation == "--native-sidebar-home" { XCUIRemote.shared.press(.right) }
+                for _ in 0..<30 {
+                    if action.exists && action.hasFocus { break }
+                    XCUIRemote.shared.press(.right)
+                }
+                XCTAssertTrue(action.exists, app.debugDescription)
+                XCTAssertTrue(action.hasFocus, app.debugDescription)
+                captureNavigation("See all before entry \(navigation) watchlist=\(watchlist)", app: app)
+                let sourceFrame = action.frame
+                XCTAssertLessThanOrEqual(sourceFrame.maxX, app.frame.maxX - 24,
+                                         "The focused See all card needs trailing clearance: \(navigation) \(sourceFrame)")
+                XCUIRemote.shared.press(.select)
+
+                let title = app.staticTexts[watchlist ? "watchlist-title" : "home-row-browser-title"]
+                let depth = app.staticTexts["home-detail-depth-probe"]
+                XCTAssertTrue(title.waitForExistence(timeout: 10), app.debugDescription)
+                waitForLabel("1", on: depth)
+                assertGlobalNavigationHidden(app, navigation: navigation)
+
+                let first = app.buttons[watchlist ? "Fixture movie 0" : "Fixture movie 24"]
+                XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in first.exists && first.hasFocus }, object: nil
+                )], timeout: 10), .completed, "Entry must focus the first item without a Down press: \(app.debugDescription)")
+                XCUIRemote.shared.press(.right)
+                let focusedMovie = app.buttons.matching(NSPredicate(
+                    format: "label BEGINSWITH %@ AND hasFocus == true", "Fixture movie "
+                )).firstMatch
+                XCTAssertTrue(focusedMovie.exists, app.debugDescription)
+                let movie = focusedMovie.label
+                XCTAssertNotEqual(movie, first.label, "Ordinary grid navigation must be available after entry")
+                XCUIRemote.shared.press(.select)
+                XCTAssertTrue(app.staticTexts["Detail fixture \(movie)"].waitForExistence(timeout: 15))
+                waitForLabel("2", on: depth)
+                XCUIRemote.shared.press(.menu)
+                XCTAssertTrue(title.waitForExistence(timeout: 10), app.debugDescription)
+                waitForLabel("1", on: depth)
+                assertGlobalNavigationHidden(app, navigation: navigation)
+                XCTAssertTrue(app.buttons[movie].hasFocus, "Returning from details must not reset grid focus")
+
+                XCUIRemote.shared.press(.up)
+                let filter = app.buttons[watchlist ? "watchlist-filter-menu" : "home-row-filter-menu"]
+                let sort = app.buttons[watchlist ? "watchlist-sort-menu" : "home-row-sort-menu"]
+                XCTAssertTrue(filter.isEnabled && sort.isEnabled)
+                XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in
+                        [filter, sort].contains {
+                            $0.hasFocus || $0.descendants(matching: .any)
+                                .matching(NSPredicate(format: "hasFocus == true")).firstMatch.exists
+                        }
+                    }, object: nil
+                )], timeout: 3), .completed, "Query controls remain reachable after grid entry: \(app.debugDescription)")
+                XCUIRemote.shared.press(.select)
+                XCUIRemote.shared.press(.menu)
+                waitForLabel("1", on: depth)
+                XCTAssertTrue(title.exists, "Back dismisses a native menu before popping the browser")
+                XCUIRemote.shared.press(.down)
+
+                XCUIRemote.shared.press(.menu)
+                waitForLabel("0", on: depth)
+                XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in action.exists && action.hasFocus }, object: nil
+                )], timeout: 5), .completed, app.debugDescription)
+                captureNavigation("See all after return \(navigation) watchlist=\(watchlist)", app: app)
+                let returnedFrame = action.frame
+                XCTAssertLessThanOrEqual(returnedFrame.maxX, app.frame.maxX - 24)
+                XCTAssertEqual(returnedFrame.minX, sourceFrame.minX, accuracy: 1,
+                               "Before \(sourceFrame); after \(returnedFrame)")
+                XCTAssertEqual(returnedFrame.minY, sourceFrame.minY, accuracy: 1,
+                               "Before \(sourceFrame); after \(returnedFrame)")
+                XCTAssertFalse(title.exists)
+            }
+        }
+        #else
+        throw XCTSkip("Uses an owned simulator with local fixture data.")
+        #endif
+    }
+
+    private func assertGlobalNavigationHidden(_ app: XCUIApplication, navigation: String) {
+        let controls = navigation == "--top-bar-home"
+            ? [app.buttons["top-navigation-home"], app.buttons["top-navigation-search"]]
+            : [app.buttons["Home"], app.buttons["Search"], app.buttons["Settings"]]
+        XCTAssertFalse(controls.contains(where: \.isHittable),
+                       "A nested browser must not expose global navigation: \(app.debugDescription)")
+    }
+
+    func testEmptyAndFailedBrowsersKeepControlsAndBackAvailable() throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        for outcome in ["--empty-home-browse", "--failed-home-browse"] {
+            let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+            app.launchArguments = [
+                "--production-home-fixture", "--home-browse-fixture", "--hero-disabled-home",
+                "--top-bar-home", "--slow-home-browse", outcome
+            ]
+            app.launch()
+            defer { app.terminate() }
+            XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
+            let action = app.buttons["See all"].firstMatch
+            XCUIRemote.shared.press(.down)
+            for _ in 0..<30 {
+                if action.exists && action.hasFocus { break }
+                XCUIRemote.shared.press(.right)
+            }
+            XCTAssertTrue(action.hasFocus, app.debugDescription)
+            XCUIRemote.shared.press(.select)
+            let outcomeView = outcome == "--empty-home-browse"
+                ? app.staticTexts["No titles to show"] : app.buttons["Retry"]
+            XCTAssertTrue(outcomeView.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(app.buttons["home-row-filter-menu"].isEnabled)
+            XCTAssertTrue(app.buttons["home-row-sort-menu"].isEnabled)
+            XCUIRemote.shared.press(.menu)
+            waitForLabel("0", on: app.staticTexts["home-detail-depth-probe"])
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in action.exists && action.hasFocus }, object: nil
+            )], timeout: 5), .completed, app.debugDescription)
+        }
+        #else
+        throw XCTSkip("Uses an owned simulator with local fixture data.")
+        #endif
+    }
+
     func testHorizontalHomeWatchlistAndSearchForegroundClearance() throws {
         #if targetEnvironment(simulator)
         continueAfterFailure = false

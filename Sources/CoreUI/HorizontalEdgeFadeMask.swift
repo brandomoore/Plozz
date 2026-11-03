@@ -187,7 +187,9 @@ private struct RowSlotParking: ViewModifier {
                     let offset = context.geometry.contentOffset.x
                     // Content offsets start at minus the inset; slots start at zero.
                     let inset = context.geometry.contentInsets.leading
-                    let slot = RowSlotTargets.slot(for: offset + inset, pitch: pitch)
+                    let maximum = context.geometry.contentSize.width - context.geometry.containerSize.width
+                        + inset + context.geometry.contentInsets.trailing
+                    let slot = RowSlotTargets.slot(for: offset + inset, pitch: pitch, maximum: maximum)
                     guard abs(slot - (offset + inset)) > 0.5 else { return }
                     withAnimation(.smooth(duration: 0.3)) {
                         position.scrollTo(x: slot)
@@ -204,14 +206,17 @@ private struct RowSlotTargets: ScrollTargetBehavior {
     let pitch: CGFloat
 
     func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
-        target.rect.origin.x = Self.slot(for: target.rect.minX, pitch: pitch)
+        target.rect.origin.x = Self.slot(
+            for: target.rect.minX, pitch: pitch,
+            maximum: context.contentSize.width - context.containerSize.width
+        )
     }
 
-    /// The slot boundary nearest `position`, measured from where the row opened
-    /// (zero) in whole card pitches. The engine stops within a gutter's width
-    /// of a boundary, well under half a pitch.
-    static func slot(for position: CGFloat, pitch: CGFloat) -> CGFloat {
-        max(0, (position / pitch).rounded()) * pitch
+    /// The nearest whole-card slot, capped at the trailing content boundary.
+    static func slot(for position: CGFloat, pitch: CGFloat, maximum: CGFloat) -> CGFloat {
+        // The last card need not end on a whole slot. Overshooting makes UIKit
+        // clamp on return, then parking scrolls the row out of bounds again.
+        min(max(0, maximum), max(0, (position / pitch).rounded()) * pitch)
     }
 }
 

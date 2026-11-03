@@ -42,7 +42,7 @@ extension JellyfinProvider {
             }
             return .prefix(items, startIndex: startIndex, limit: limit)
         }
-        guard case let .server(section, excluded, _) = feed else {
+        guard case let .server(section, excluded, _, _) = feed else {
             return try await homeRowPrefixPage(feed, startIndex: startIndex, limit: limit)
         }
         let items = try await loadServerHomeItems(

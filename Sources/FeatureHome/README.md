@@ -49,6 +49,12 @@ card on Apple TV. The TV action is a separate native control, not a synthetic
 media item, and follows the rail's poster, landscape, or featured geometry.
 All TV Home layouts retain the complete `HomePresentationRow` source when
 opening the shared browser. Libraries and Live TV keep their existing navigation.
+TV row browsers use Home's navigation path, hiding top-level navigation as soon
+as they open. Opening a title adds another level; Back returns to the browser
+before returning to the original Home action. Browser scrolling does not move
+Home's retained top navigation. See all uses native page push/pop animations;
+the retained Home rail keeps its own scroll position throughout the transition
+and restores focus to the original action.
 Browse actions appear only when the feed confirms additional eligible titles
 beyond the Home preview, not merely because the preview reaches its limit.
 Home requests one lookahead item in the existing bounded fetch; it does not
@@ -62,10 +68,15 @@ have no new action. Mac Related headings follow the same threshold and open all
 currently resolved related titles in the same grid, preserving their order,
 continuation cues, detail navigation, and profile/account scope.
 Watchlist previews the first 20 titles in its existing Home order. When there
-are more, its action selects the existing Watchlist destination instead of
-opening a separate row browser. The full profile-scoped Watchlist and its saved
-sorting/filtering preferences remain intact. A hidden Watchlist navigation entry
-is available temporarily for this explicit visit without changing the saved layout.
+are more, TV pushes the existing Watchlist view beneath Home rather than switching
+top-level destinations. Mobile retains its existing Watchlist destination handoff,
+temporarily admitting a hidden navigation entry without changing the saved layout.
+Both reuse the full profile-scoped Watchlist and its saved sorting/filtering
+preferences instead of creating a separate row browser.
+On TV, browser entry keeps query controls and later cards out of focus until
+the first grid item actually receives native focus. This also covers delayed
+loads and nested Watchlist; empty and failed loads release the controls. Once
+entered, ordinary directional navigation and detail-return focus stay native.
 The shared row browser's sort and filter menus sit at the trailing end of the
 TV heading and in the top-right navigation toolbar on iPhone/iPad. Watchlist
 and library grids use that same mobile toolbar placement, keeping supported
@@ -78,7 +89,10 @@ container APIs. Provider Home feeds continue the exact feed: Plex uses its
 same-origin shelf key where available, while limit-only feeds extend their
 requested prefix. Recommendation membership is separate from arranger slot
 identity; a missing or changed source is an error, not permission to browse an
-unrelated library. Fixed server shelves end when the source has no continuation.
+unrelated library. Server previews carry the continuation from their content
+response through aggregation and presentation, separately from saved layout
+discovery. This preserves Plex curated shuffle seeds across every browser page.
+Fixed server shelves end when the source has no continuation.
 Combined Recently Added also enforces its non-music library scope on returned
 items when a provider cannot scope the feed, without changing raw page offsets.
 Its hide-watched policy is reapplied after watch mutations for combined,
