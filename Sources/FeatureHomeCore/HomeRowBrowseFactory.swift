@@ -42,9 +42,6 @@ enum HomeRowBrowseFactory {
 
         switch row.source {
         case .home(let home):
-            style = home.kind == .continueWatching
-                ? (visibility.continueWatchingLayout == .portrait ? .poster : .landscape)
-                : (home.style == .landscape ? .landscape : .poster)
             snapshot = home.items
             watchlistDates = home.kind == .watchlist
             if home.kind == .recentlyAdded {
@@ -80,7 +77,11 @@ enum HomeRowBrowseFactory {
             }
         case .library(let libraryRow):
             let section = libraryRow.section
-            style = section.style
+            // Collection-cover shape reflects its artwork and cover preference,
+            // not the special presentation of a history or collection-member rail.
+            if CollectionCoverLayout.isCollectionGroup(section.items) {
+                style = section.style
+            }
             title = section.title
             localizedTitle = section.localizedTitle
             titleSuffix = section.localizedTitleSuffix
