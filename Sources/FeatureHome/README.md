@@ -601,6 +601,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   Watchlist and requests stay independent. Horizontal paging and vertical scrolling
   do not open details; in-flight page transitions disable the artwork link.
   VoiceOver exposes the artwork as More Info with the current title.
+  Mobile Home stays stationary beneath a pushed detail page. A transition-scoped,
+  non-interactive snapshot covers the outgoing page's native parallax and is
+  removed on completion or cancellation; destination animation and native Back
+  gestures remain owned by the navigation stack.
   The tvOS More Info button is unchanged.
   Mobile Home and detail hero actions share native Liquid Glass buttons on iOS 26+.
   Primary actions use the prominent style with their existing monochrome theme

@@ -35,6 +35,10 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
             }
         }
         .ignoresSafeArea(.container, edges: heroActive ? .top : [])
+        .background {
+            PlozziOSStationaryNavigationSource()
+                .frame(width: 0, height: 0)
+        }
     }
 }
 
