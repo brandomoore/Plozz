@@ -41,7 +41,7 @@ final class HomeRowBrowseTests: XCTestCase {
         }
     }
 
-    func testBrowserInheritsConfiguredCollectionMemberRowShape() throws {
+    func testCollectionMembersUsePostersRegardlessOfHomeRowLayout() throws {
         for style in CollectionSection.CardStyle.allCases {
             let definition = CollectionSection(
                 source: .init(accountID: "account", collectionID: "collection", title: "Collection"),
@@ -57,11 +57,11 @@ final class HomeRowBrowseTests: XCTestCase {
             let browser = HomeRowBrowseFactory.make(
                 row, accounts: [], visibility: visibility, isCurrent: { true }
             )
-            XCTAssertEqual(browser.style, style == .poster ? .poster : .landscape)
+            XCTAssertEqual(browser.style, .poster, "The custom row layout does not change its members' grid.")
         }
     }
 
-    func testBrowserPreservesGlobalRowDefaultsAndHistoryLayout() throws {
+    func testGlobalBrowsersUsePostersRegardlessOfHistoryLayout() throws {
         for kind in [HomeRowKind.recentlyAdded, .continueWatching] {
             let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(
                 kind == .recentlyAdded ? .recentlyAdded : .continueWatching
@@ -73,10 +73,70 @@ final class HomeRowBrowseTests: XCTestCase {
                     .init(choice: choice, source: .home(.init(kind: kind, items: items(2)))),
                     accounts: [], visibility: visibility, isCurrent: { true }
                 )
-                XCTAssertEqual(browser.style, kind == .continueWatching && layout != .portrait ? .landscape : .poster)
+                XCTAssertEqual(browser.style, .poster, "Continue Watching's special layout stays on its row.")
             }
         }
         XCTAssertEqual(HomeRowBrowseModel(title: "Related").style, .poster)
+    }
+
+    func testLandscapeMediaAndMixedRowsDoNotChooseLandscapeBrowserCards() async {
+        let kinds: [[MediaItemKind]] = [
+            [.movie], [.series], [.episode], [.collection, .movie]
+        ]
+        for group in kinds {
+            let members = group.enumerated().map {
+                MediaItem(
+                    id: "\($0.offset)", title: "Title \($0.offset)", kind: $0.element,
+                    primaryImageAspectRatio: 16.0 / 9
+                )
+            }
+            let section = LibrarySection(id: "shelf", title: "Shelf", style: .landscape, items: members)
+            let choice = HomeRowChoice(section: section, library: movieLibrary)
+            let visibility = HomeLibraryVisibility(rowCustomization: .init(
+                defaults: .custom, order: [choice.id], shown: [choice.id]
+            ))
+            let browser = HomeRowBrowseFactory.make(
+                .init(choice: choice, source: .library(.init(section: section, isLoading: false, failure: nil))),
+                accounts: [], visibility: visibility, isCurrent: { true }
+            )
+            await browser.load()
+            XCTAssertNil(browser.error)
+            XCTAssertEqual(browser.items, members)
+            XCTAssertEqual(browser.style, .poster)
+        }
+    }
+
+    func testCollectionCoverAutoAndOverridesDoNotDependOnRailOrientation() throws {
+        let samples: [([Double?], LibrarySection.Style)] = [
+            ([16.0 / 9, 16.0 / 9, nil], .landscape),
+            ([2.0 / 3, 2.0 / 3], .poster),
+            ([nil, nil], .poster),
+            ([16.0 / 9, 2.0 / 3], .poster)
+        ]
+        for (ratios, automaticStyle) in samples {
+            let covers = ratios.enumerated().map {
+                MediaItem(
+                    id: "collection-\($0.offset)", title: "Collection", kind: .collection,
+                    primaryImageAspectRatio: $0.element
+                )
+            }
+            for layout in CollectionCoverLayout.allCases {
+                let section = LibrarySection(
+                    id: "collections", title: "Collections", style: .landscape, items: covers
+                ).resolvingCollectionCovers(layout)
+                let choice = HomeRowChoice(section: section, library: movieLibrary)
+                let browser = HomeRowBrowseFactory.make(
+                    .init(choice: choice, source: .library(.init(section: section, isLoading: false, failure: nil))),
+                    accounts: [], visibility: .default, isCurrent: { true }
+                )
+                let expected: LibrarySection.Style = switch layout {
+                case .auto: automaticStyle
+                case .poster: .poster
+                case .landscape: .landscape
+                }
+                XCTAssertEqual(browser.style, expected)
+            }
+        }
     }
 
     func testServerPreviewCarriesItsContinuationThroughAggregationAndPresentation() async throws {

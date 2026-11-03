@@ -49,10 +49,12 @@ card on Apple TV. The TV action is a separate native control, not a synthetic
 media item, and follows the rail's poster, landscape, or featured geometry.
 All TV Home layouts retain the complete `HomePresentationRow` source when
 opening the shared browser. Libraries and Live TV keep their existing navigation.
-Expanded row grids retain the source row's resolved poster or landscape shape on
-TV and mobile, including automatically detected collection covers and configured
-collection rows. Landscape grids use wider columns; sorting, filtering, and
-paging do not change that shape or the saved library-browser layout.
+Expanded grids of collection covers retain the resolved Auto, Posters, or
+Landscape cover layout on TV and mobile. Movie, show, episode, and mixed-content
+grids use normal posters; they do not inherit Continue Watching's special layout
+or a custom collection-member row's Landscape/Featured presentation.
+Landscape collection-cover grids use wider columns; sorting, filtering, and
+paging do not change their shape or the saved library-browser layout.
 TV row browsers use Home's navigation path, hiding top-level navigation as soon
 as they open. Opening a title adds another level; Back returns to the browser
 before returning to the original Home action. Browser scrolling does not move
