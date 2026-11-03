@@ -322,12 +322,16 @@ struct PlozziOSHomeView: View {
         .navigationDestination(item: $rowBrowser) { browser in
             HomeRowBrowseView(
                 model: browser,
-                columns: appModel.settings.density.density.iOSPosterGridColumns(
-                    horizontalSizeClass: horizontalSizeClass, isRunningOnMac: isRunningOnMac
-                )
+                columns: browser.style == .landscape
+                    ? appModel.settings.density.density.iOSLandscapeGridColumns(
+                        horizontalSizeClass: horizontalSizeClass, isRunningOnMac: isRunningOnMac
+                    )
+                    : appModel.settings.density.density.iOSPosterGridColumns(
+                        horizontalSizeClass: horizontalSizeClass, isRunningOnMac: isRunningOnMac
+                    )
             ) { item in
                 PlozziOSHomeMediaCard(
-                    item: item, isLandscape: false,
+                    item: item, isLandscape: browser.style == .landscape,
                     provider: item.sourceAccountID.flatMap { appModel.accountsProviders.provider(forAccountID: $0) }
                 )
             }

@@ -12,6 +12,31 @@ import XCTest
 
 @MainActor
 final class HomeLoadingLayoutTests: XCTestCase {
+    func testLandscapeBrowseColumnsUseWideCardsOnPhoneTabletAndMac() {
+        for density in UIDensity.allCases {
+            for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
+                for isMac in [false, true] {
+                    let columns = density.iOSLandscapeGridColumns(
+                        horizontalSizeClass: sizeClass, isRunningOnMac: isMac
+                    )
+                    XCTAssertEqual(columns.count, 1)
+                    guard case let .adaptive(minimum, maximum) = columns[0].size else {
+                        return XCTFail("Landscape grids must adapt their column count.")
+                    }
+                    if isMac {
+                        let metrics = PlozzMetrics.desktop(density: density)
+                        XCTAssertEqual(minimum, metrics.landscapeWidth)
+                        XCTAssertEqual(maximum, minimum * 1.18, accuracy: 0.001)
+                        XCTAssertEqual(columns[0].spacing, metrics.gridSpacing)
+                    } else {
+                        XCTAssertEqual(minimum, sizeClass == .regular ? 240 : 160)
+                        XCTAssertEqual(columns[0].spacing, 12)
+                    }
+                }
+            }
+        }
+    }
+
     func testMacBrowseThresholdDoesNotShortenLoadedRowsOrChangeMobilePolicy() throws {
         let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(.continueWatching) })
         let threshold = PlozziOSMediaRailLayout.desktopBrowseThreshold

@@ -4,6 +4,81 @@ import XCTest
 
 @MainActor
 final class HomeRowBrowseTests: XCTestCase {
+    func testBrowserRetainsResolvedCollectionCoverShapeForBothProviders() async throws {
+        for providerKind in [ProviderKind.plex, .jellyfin] {
+            let definition = HomeServerRowDefinition(
+                accountID: "account", serverName: "Server", providerKind: providerKind,
+                section: .init(id: "collections", kind: .recommendations, title: "Collections")
+            )
+            let covers = (0..<3).map {
+                MediaItem(
+                    id: "collection-\($0)", title: "Collection \($0)", kind: .collection,
+                    primaryImageAspectRatio: 16.0 / 9
+                )
+            }
+            let content = HomeViewModel.Content(serverRows: [.init(definition: definition, items: covers)])
+            let visibility = HomeLibraryVisibility(rowCustomization: .init(
+                defaults: .custom, order: [definition.id], shown: [definition.id], serverRows: [definition]
+            ))
+            for layout in CollectionCoverLayout.allCases {
+                var presentation = LibraryPresentationSettings.default
+                presentation.collectionCoverLayouts[
+                    LibraryPresentationSettings.collectionCoverAddress(for: definition.id)
+                ] = layout
+                let row = try XCTUnwrap(HomePresentationRow.resolve(
+                    rows: [], content: content, visibility: visibility, presentation: presentation
+                ).first)
+                let browser = HomeRowBrowseFactory.make(
+                    row, accounts: [], visibility: visibility, isCurrent: { true }
+                )
+                let expected: LibrarySection.Style = layout == .poster ? .poster : .landscape
+                XCTAssertEqual(browser.style, expected)
+                browser.query.sort = .init(field: .name, direction: .descending)
+                browser.query.media = .movies
+                await browser.load()
+                XCTAssertEqual(browser.style, expected, "Query changes and failed loads must retain the row shape.")
+            }
+        }
+    }
+
+    func testBrowserInheritsConfiguredCollectionMemberRowShape() throws {
+        for style in CollectionSection.CardStyle.allCases {
+            let definition = CollectionSection(
+                source: .init(accountID: "account", collectionID: "collection", title: "Collection"),
+                cardStyle: style
+            )
+            let visibility = HomeLibraryVisibility(rowCustomization: .init(
+                defaults: .custom, order: [definition.rowID], shown: [definition.rowID]
+            ), collectionSections: [definition])
+            let row = try XCTUnwrap(HomePresentationRow.resolve(
+                rows: [], content: .init(collectionRows: [.init(definition: definition, items: items(2))]),
+                visibility: visibility
+            ).first)
+            let browser = HomeRowBrowseFactory.make(
+                row, accounts: [], visibility: visibility, isCurrent: { true }
+            )
+            XCTAssertEqual(browser.style, style == .poster ? .poster : .landscape)
+        }
+    }
+
+    func testBrowserPreservesGlobalRowDefaultsAndHistoryLayout() throws {
+        for kind in [HomeRowKind.recentlyAdded, .continueWatching] {
+            let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(
+                kind == .recentlyAdded ? .recentlyAdded : .continueWatching
+            ) })
+            for layout in ContinueWatchingCardLayout.allCases {
+                var visibility = HomeLibraryVisibility.default
+                visibility.continueWatchingLayout = layout
+                let browser = HomeRowBrowseFactory.make(
+                    .init(choice: choice, source: .home(.init(kind: kind, items: items(2)))),
+                    accounts: [], visibility: visibility, isCurrent: { true }
+                )
+                XCTAssertEqual(browser.style, kind == .continueWatching && layout != .portrait ? .landscape : .poster)
+            }
+        }
+        XCTAssertEqual(HomeRowBrowseModel(title: "Related").style, .poster)
+    }
+
     func testServerPreviewCarriesItsContinuationThroughAggregationAndPresentation() async throws {
         let browseID = "/hubs/items?identifier=curated&curatedHubSeed=preview"
         let provider = BrowseFactoryProvider(items(65), browseID: browseID)
@@ -186,7 +261,7 @@ final class HomeRowBrowseTests: XCTestCase {
     func testDefaultOrderLoadsBeyondHomePreviewAndStopsAtExhaustion() async {
         let all = items(145)
         let source = Pages(all)
-        let model = HomeRowBrowseModel(title: "Shelf", loaders: [{ start, limit in
+        let model = HomeRowBrowseModel(title: "Shelf", style: .landscape, loaders: [{ start, limit in
             await source.page(start, limit)
         }])
         await model.load()
@@ -196,6 +271,7 @@ final class HomeRowBrowseTests: XCTestCase {
         XCTAssertEqual(model.items.count, 120)
         await model.load()
         XCTAssertEqual(model.items, all)
+        XCTAssertEqual(model.style, .landscape)
         XCTAssertFalse(model.hasMore)
         let requests = await source.requests
         XCTAssertEqual(requests, [0, 60, 120])
