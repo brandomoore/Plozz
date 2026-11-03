@@ -849,6 +849,34 @@ timing, playback/export, episodes, all lifecycle/race cases, or physical-device
 acceptance. The driver bounds long comparisons and verifies that only the
 intended server-user destination is selected.
 
+Real Plex-source movie playback and reviewed exports were then verified on the
+muted iPad simulator, with only the dedicated Plex user selected. Reporting-off
+playback saved 296,936 milliseconds on Plex without touching PublicMetaDB.
+Resume-export preview and cancellation wrote nothing; explicit confirmation
+copied that exact position, and cold relaunch offered no repeat.
+
+This exposed duplicate Plex play counts: timeline completion and the final
+watched-state convergence both counted one viewing. Bounded independent reads
+observed count 2 to 3 to 4 during one native session. The provider now recognizes
+an already-completed movie or episode before scrobbling again. On the rebuilt
+production app, the same native flow advanced count 4 to 5 only; a subsequent
+genuine rewatch advanced 5 to 6 only. The focused Plex suite passed 414 tests.
+
+Watched export displayed the existing tracker resume as an explicit conflict.
+Cancellation preserved it; confirmation added one missing play with Plex's exact
+last-play date and cleared the conflicting resume. It deliberately did not
+reconstruct Plex's play count. Relaunch made no further changes. Enabling playback
+reporting then published an actual 431,993-ms resume and exactly one new tracker
+play on completion, preserving the earlier backfill record.
+
+The source audit retains 34 native UI passes, including two negative duplicate-
+count reproductions, 16 independent snapshots, and one failed cleanup check
+caused by the driver's wrong expected user. Corrected checks passed. Full tracker
+history/list comparisons and unselected Emby/Jellyfin users were unchanged.
+Reporting/import consent was disabled and the original source selection restored.
+This is one real movie's simulator evidence, not Plex episode/platform parity,
+all lifecycle races, or a distributed exactly-once guarantee.
+
 Separate read-only transport preflights fetched the same two-mebibyte movie
 prefix through dedicated SMB, NFS, WebDAV, FTP and host-key-pinned SFTP access.
 All five matched an independently authenticated media-server file range.

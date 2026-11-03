@@ -2776,6 +2776,9 @@ final class PlexWatchStateTests: XCTestCase {
 
     func testSetPlayedTrueScrobbles() async throws {
         let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/library/metadata/42", json: """
+        {"MediaContainer":{"Metadata":[{"ratingKey":"42","type":"movie","title":"Movie"}]}}
+        """)
         stub.stub(pathSuffix: "/:/scrobble", json: "")
         let provider = PlexProvider(session: makeSession(), http: stub)
 
@@ -2788,6 +2791,90 @@ final class PlexWatchStateTests: XCTestCase {
             query?.first(where: { $0.name == "identifier" })?.value,
             "com.plexapp.plugins.library"
         )
+        XCTAssertEqual(stub.sentPaths, ["/library/metadata/42", "/:/scrobble"])
+    }
+
+    func testSetPlayedDoesNotCountCompletedTimelineAgain() async throws {
+        for type in ["movie", "episode"] {
+            for offset in ["null", "0"] {
+                let stub = StubHTTPClient()
+                stub.stub(pathSuffix: "/library/metadata/42", json: """
+                {"MediaContainer":{"Metadata":[
+                  {"ratingKey":"42","type":"\(type)","title":"Completed","viewCount":2,"viewOffset":\(offset)}
+                ]}}
+                """)
+                let provider = PlexProvider(session: makeSession(), http: stub)
+
+                try await provider.setPlayed(true, itemID: "42")
+                try await provider.setPlayed(true, itemID: "42")
+
+                XCTAssertEqual(stub.sentPaths, ["/library/metadata/42", "/library/metadata/42"])
+            }
+        }
+    }
+
+    func testSetPlayedStillCompletesInProgressRewatch() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/library/metadata/42", json: """
+        {"MediaContainer":{"Metadata":[
+          {"ratingKey":"42","type":"episode","title":"Rewatch","viewCount":2,"viewOffset":120000}
+        ]}}
+        """)
+        stub.stub(pathSuffix: "/:/scrobble", json: "")
+        let provider = PlexProvider(session: makeSession(), http: stub)
+
+        try await provider.setPlayed(true, itemID: "42")
+
+        XCTAssertEqual(stub.sentPaths, ["/library/metadata/42", "/:/scrobble"])
+    }
+
+    func testSetPlayedPreservesContainerCascade() async throws {
+        for type in ["season", "show"] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/library/metadata/42", json: """
+            {"MediaContainer":{"Metadata":[
+              {"ratingKey":"42","type":"\(type)","title":"Container","viewCount":1,"viewOffset":0}
+            ]}}
+            """)
+            stub.stub(pathSuffix: "/:/scrobble", json: "")
+            let provider = PlexProvider(session: makeSession(), http: stub)
+
+            try await provider.setPlayed(true, itemID: "42")
+
+            XCTAssertEqual(stub.sentPaths, ["/library/metadata/42", "/:/scrobble"])
+        }
+    }
+
+    func testSetPlayedRejectsUnrelatedMetadataWithoutWriting() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/library/metadata/42", json: """
+        {"MediaContainer":{"Metadata":[{"ratingKey":"99","type":"movie","title":"Different"}]}}
+        """)
+        let provider = PlexProvider(session: makeSession(), http: stub)
+
+        do {
+            try await provider.setPlayed(true, itemID: "42")
+            XCTFail("Unrelated metadata must not authorize a watched write")
+        } catch {
+            XCTAssertEqual(error as? AppError, .invalidResponse)
+        }
+        XCTAssertEqual(stub.sentPaths, ["/library/metadata/42"])
+    }
+
+    func testSetPlayedReadFailureDoesNotBlindlyScrobble() async throws {
+        for failure in [AppError.unauthorized, .serverUnreachable, .cancelled, .invalidResponse] {
+            let stub = StubHTTPClient()
+            stub.error = failure
+            let provider = PlexProvider(session: makeSession(), http: stub)
+
+            do {
+                try await provider.setPlayed(true, itemID: "42")
+                XCTFail("A failed read must not authorize a watched write")
+            } catch {
+                XCTAssertEqual(error as? AppError, failure)
+            }
+            XCTAssertEqual(stub.sentPaths, ["/library/metadata/42"])
+        }
     }
 
     func testSetPlayedFalseUnscrobbles() async throws {

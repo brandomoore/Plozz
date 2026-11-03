@@ -169,6 +169,41 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertFalse(app.collectionViews.buttons[excluded].isSelected)
     }
 
+    func testSelectOnlyPlexSource() throws {
+        try selectSourceServers(onlyPlex: true)
+    }
+
+    func testRestoreAllSourceServers() throws {
+        try selectSourceServers(onlyPlex: false)
+    }
+
+    private func selectSourceServers(onlyPlex: Bool) throws {
+        try testOpenLibrarySettings()
+        try require(app.switches["Brandoland"].value as? String == "1",
+                    "Keep the already-authorized dedicated Plex identity active")
+        try require(app.buttons["Plozz Internal"].exists, "Expected the dedicated Plex user")
+        for label in ["CubeBoi", "Brandon's Jellyfin"] {
+            let control = app.switches[label]
+            try tapVisible(control, tapping: false)
+            let value = try XCTUnwrap(control.value as? String)
+            try require(["0", "1"].contains(value), "Expected a native source-selection switch")
+            let expected = onlyPlex ? "0" : "1"
+            if value != expected {
+                try tapVisible(control.switches.firstMatch)
+                let changed = XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "value == %@", expected), object: control
+                )
+                try require(XCTWaiter.wait(for: [changed], timeout: 15) == .completed,
+                            "Expected the selected source scope")
+            }
+        }
+        try testOpenLibrarySettings()
+        for label in ["CubeBoi", "Brandon's Jellyfin", "Brandoland"] {
+            XCTAssertEqual(app.switches[label].value as? String, label == "Brandoland" || !onlyPlex ? "1" : "0")
+        }
+        XCTAssertTrue(app.buttons["Plozz Internal"].exists)
+    }
+
     func testPasswordlessEmbyOnboarding() throws {
         let environment = ProcessInfo.processInfo.environment
         let address = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_SERVER"])

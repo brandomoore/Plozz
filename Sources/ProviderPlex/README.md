@@ -85,6 +85,17 @@ item-level chapter starts, titles, and optional images in `PlaybackRequest`.
 Millisecond offsets become seconds; missing and invalid starts are omitted.
 Ordinary browsing requests do not add this chapter query.
 
+## Playback completion
+
+Plex timeline reporting records completed plays. A subsequent watched-state
+convergence write first reads the same user's current item metadata: an already
+watched movie or episode with no resume point needs no additional scrobble.
+This prevents one playback from becoming two server plays. An unfinished
+rewatch still permits an explicit watched action, and container actions retain
+Plex's season/series cascade. Failed or unrelated metadata reads fail the write
+rather than guessing. This is state convergence, not a distributed exactly-once
+guarantee against independent clients changing the same item concurrently.
+
 ## Episode identity and order
 
 Full item metadata requests include GUIDs and preferences. The series'

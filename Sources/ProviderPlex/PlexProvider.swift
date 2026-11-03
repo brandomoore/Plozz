@@ -2752,11 +2752,31 @@ extension PlexProvider: WatchStateProviding {
     /// Toggles an item's watched state via Plex scrobble/unscrobble. Scrobbling a
     /// season or series ratingKey marks the contained episodes too.
     public func setPlayed(_ played: Bool, itemID: String) async throws {
+        var endpoint = played ? "/library/metadata" : "/:/unscrobble"
         do {
+            if played {
+                let current = try await client.metadata(ratingKey: itemID)
+                guard current.ratingKey == itemID else { throw AppError.invalidResponse }
+                try Task.checkCancellation()
+                // Timeline reporting already counts completed playback. Convergence
+                // sets a state; another scrobble would invent an additional play.
+                if (current.type == "movie" || current.type == "episode"),
+                   (current.viewCount ?? 0) > 0, (current.viewOffset ?? 0) == 0 {
+                    ContinueWatchingDiagnostics.emit(ContinueWatchingDiagnostics.writeLine(
+                        provider: "plex",
+                        endpoint: endpoint,
+                        itemID: itemID,
+                        detail: "played=true alreadyComplete=true",
+                        ok: true
+                    ))
+                    return
+                }
+            }
+            endpoint = played ? "/:/scrobble" : "/:/unscrobble"
             try await client.setWatched(played, ratingKey: itemID)
             ContinueWatchingDiagnostics.emit(ContinueWatchingDiagnostics.writeLine(
                 provider: "plex",
-                endpoint: played ? "/:/scrobble" : "/:/unscrobble",
+                endpoint: endpoint,
                 itemID: itemID,
                 detail: "played=\(played)",
                 ok: true
@@ -2764,7 +2784,7 @@ extension PlexProvider: WatchStateProviding {
         } catch {
             ContinueWatchingDiagnostics.emit(ContinueWatchingDiagnostics.writeLine(
                 provider: "plex",
-                endpoint: played ? "/:/scrobble" : "/:/unscrobble",
+                endpoint: endpoint,
                 itemID: itemID,
                 detail: "played=\(played)",
                 ok: false,
