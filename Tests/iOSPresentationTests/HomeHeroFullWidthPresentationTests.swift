@@ -10,6 +10,49 @@ import XCTest
 
 @MainActor
 final class HomeHeroFullWidthPresentationTests: XCTestCase {
+    func testPendingParentShowPaintsArtworkAndTitleInsteadOfABlackSpinner() async throws {
+        var item = try await artworkItem()
+        item.kind = .episode
+        item.title = "EPISODE"
+        item.parentTitle = "SHOW"
+        item.seriesID = "show"
+        item.overview = "EPISODE SPOILERS"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "SeriesPreview-\(UUID().uuidString)"))
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        let trailer = HeroTrailerController()
+        for (size, sizeClass) in [
+            (CGSize(width: 390, height: 844), UserInterfaceSizeClass.compact),
+            (CGSize(width: 1024, height: 768), .regular)
+        ] {
+            try await withWindow(
+                item: item, size: size, sizeClass: sizeClass, insets: .zero,
+                pull: PlozziOSHomeHeroPullModel()
+            ) { window, host in
+                host.rootView = AnyView(
+                    PlozziOSSeriesLoadingHero(item: item, appModel: app)
+                        .environment(trailer)
+                        .environment(PlozziOSSidebarGeometryModel())
+                        .environment(\.horizontalSizeClass, sizeClass)
+                        .environment(\.themePalette, .dark)
+                        .environment(\.colorScheme, .dark)
+                )
+                try await waitForHostedLayout(window)
+                let image = snapshot(window, name: "pending-series-\(Int(size.width))")
+                let color = try pixel(image, at: CGPoint(x: size.width / 2, y: 120))
+                XCTAssertGreaterThan(color[2], 120, "The incoming page must already contain the known artwork.")
+                let text = try HeroTextInk.frames(in: image, terms: ["SHOW", "SPOILERS", "Loading"])
+                XCTAssertNotNil(text["SHOW"])
+                XCTAssertNil(text["SPOILERS"], "A parent-show preview must not reveal the child's synopsis.")
+                XCTAssertNil(text["Loading"], "Loading status is accessible, not a visible replacement page.")
+                XCTAssertFalse(trailer.isPlaying)
+                XCTAssertFalse(descendants(window).contains { $0 is UIActivityIndicatorView })
+            }
+        }
+    }
+
     func testNativePushKeepsHomeSnapshotOutsideTheMovingPagesAndRemovesIt() async throws {
         let item = try await artworkItem()
         for size in [CGSize(width: 390, height: 844), CGSize(width: 1024, height: 768)] {

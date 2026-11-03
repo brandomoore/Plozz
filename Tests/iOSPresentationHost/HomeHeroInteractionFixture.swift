@@ -303,7 +303,7 @@ private struct HeroInteractionProvider: MediaProvider {
     var session: UserSession { account.session(token: "fixture") }
 
     static var slides: [MediaItem] {
-        [
+        let items = [
             MediaItem(
                 id: "movie", title: "Hero Movie", kind: .movie,
                 overview: "A movie description in the Home hero.",
@@ -313,9 +313,12 @@ private struct HeroInteractionProvider: MediaProvider {
             MediaItem(
                 id: "episode", title: "Hero Episode", kind: .episode,
                 overview: "An episode description in the Home hero.",
-                parentTitle: "Hero Series", seasonNumber: 1, episodeNumber: 2, seriesID: "series"
+                parentTitle: "Hero Series", seasonNumber: 1, episodeNumber: 2, seriesID: "series",
+                backdropURL: ProcessInfo.processInfo.arguments.contains("--hero-native-chrome") ? artworkURL : nil,
+                allowsTitleBasedMetadataMatching: false
             ).taggingSource(ProviderKind.emby.rawValue)
         ]
+        return ProcessInfo.processInfo.arguments.contains("--hero-series-loading") ? [items[1]] : items
     }
 
     func libraries() async throws -> [MediaLibrary] { [] }
@@ -326,9 +329,17 @@ private struct HeroInteractionProvider: MediaProvider {
     }
     func item(id: String) async throws -> MediaItem {
         if id == "series" {
+            if ProcessInfo.processInfo.arguments.contains("--hero-series-loading") {
+                try await Task.sleep(for: .seconds(5))
+                if ProcessInfo.processInfo.arguments.contains("--hero-series-failure") {
+                    throw AppError.notFound
+                }
+            }
             return MediaItem(
                 id: id, title: "Hero Series", kind: .series,
-                overview: "Details for series from \(account.id)"
+                overview: "Details for series from \(account.id)",
+                backdropURL: ProcessInfo.processInfo.arguments.contains("--hero-native-chrome") ? Self.artworkURL : nil,
+                allowsTitleBasedMetadataMatching: false
             ).taggingSource(account.id)
         }
         guard var item = Self.slides.first(where: { $0.id == id && $0.sourceAccountID == account.id }) else {

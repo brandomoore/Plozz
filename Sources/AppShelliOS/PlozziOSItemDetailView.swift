@@ -94,27 +94,28 @@ struct PlozziOSItemDetailView: View {
                 scanStatus: appModel.shareScanStatus
             )
         } else if shouldResolveSeries {
-            if let resolvedSeries {
-                canonicalDetail(for: resolvedSeries)
-            } else if let resolutionError {
-                ContentUnavailableView {
-                    Label(
-                        "Unable to load show",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                } description: {
-                    resolutionError
-                } actions: {
-                    Button("Try Again") {
-                        self.resolutionError = nil
-                        retryToken &+= 1
+            Group {
+                if let resolvedSeries {
+                    canonicalDetail(for: resolvedSeries)
+                } else if let resolutionError {
+                    ContentUnavailableView {
+                        Label(
+                            "Unable to load show",
+                            systemImage: "exclamationmark.triangle"
+                        )
+                    } description: {
+                        resolutionError
+                    } actions: {
+                        Button("Try Again") {
+                            self.resolutionError = nil
+                            retryToken &+= 1
+                        }
                     }
+                } else {
+                    PlozziOSSeriesLoadingHero(item: item, appModel: appModel)
                 }
-                .task(id: retryToken) { await resolveSeries() }
-            } else {
-                ProgressView("Loading show…")
-                    .task(id: retryToken) { await resolveSeries() }
             }
+            .task(id: retryToken) { await resolveSeries() }
         } else {
             canonicalDetail(for: item)
         }

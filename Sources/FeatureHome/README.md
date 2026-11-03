@@ -605,6 +605,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   non-interactive snapshot covers the outgoing page's native parallax and is
   removed on completion or cancellation; destination animation and native Back
   gestures remain owned by the navigation stack.
+  Opening an episode/season's parent show keeps the known hero artwork and title
+  visible while the provider resolves the series, on both iPhone and iPad.
+  This read-only preview does not start trailers or expose playback actions;
+  lookup failures still show the existing error and retry action.
   The tvOS More Info button is unchanged.
   Mobile Home and detail hero actions share native Liquid Glass buttons on iOS 26+.
   Primary actions use the prominent style with their existing monochrome theme

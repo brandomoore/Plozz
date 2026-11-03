@@ -540,6 +540,49 @@ struct PlozziOSDetailHeroSection: View {
     }
 }
 
+struct PlozziOSSeriesLoadingHero: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.themePalette) private var palette
+    @Environment(HeroTrailerController.self) private var trailerController
+    let item: MediaItem
+    let appModel: PlozziOSAppModel
+
+    var body: some View {
+        let style: HeroArtworkStyle = horizontalSizeClass == .compact ? .compactPortrait : .landscape
+        // Keep the known Home artwork and show synopsis, not the episode's prose.
+        let presentation = HeroPresentation(item: item, artworkStyle: style, surface: .home)
+        let settings = appModel.settings.detailPage.settings
+        ScrollView {
+            PlozziOSHeroStage(
+                item: item, presentation: presentation, style: style,
+                surfaceRole: .detail, isActive: false,
+                textSize: settings.textSize,
+                trailerController: trailerController,
+                backgroundSettings: appModel.settings.heroBackground,
+                trailerResolver: appModel.heroTrailerResolver()
+            ) {
+                PlozziOSHeroMetadata(
+                    presentation: presentation, style: style, mode: .detail,
+                    usesCompactDetailLayout: style == .compactPortrait,
+                    content: style == .compactPortrait ? .information : .all,
+                    detailPageSettings: settings, textSize: settings.textSize
+                )
+                .environment(\.metadataTextScale, settings.textSize.scale)
+            }
+        }
+        .environment(\.plozzArtworkArea, .home)
+        .environment(\.plozziOSHeroLogoSize, settings.logoSize)
+        .ignoresSafeArea(.container, edges: .top)
+        .background(palette.backgroundBase.ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading show…")
+        .accessibilityIdentifier("series-loading-hero")
+    }
+}
+
 struct PlozziOSHeroStage<Foreground: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.plozziOSHeroContainerHeight) private var containerHeight
