@@ -39,6 +39,36 @@ updates with their selection phase, extraction-output identity, and native
 rendering suppression. This distinguishes missing delivery from cues that
 arrived and were subsequently cleared without logging production captions.
 
+## Live Emby transcoding
+
+`EmbyLiveTranscodingTests` in the iOS presentation suite is an opt-in real-server
+check, not a hermetic CI fixture. Supply `PLOZZ_LIVE_EMBY_CONFIGURATION` to the
+test process as JSON containing `baseURL`, `username`, and one to three explicit
+`itemIDs`. Use an authorized passwordless, non-administrator internal test user;
+never supply a personal owner's identity or external review credentials.
+Do not commit the configuration or put a token in it.
+
+Choose representative SDR, HDR10, and Dolby Vision sources. The H.264 case uses
+`JellyfinProvider`; the HEVC case uses the production `JellyfinClient`, rendition
+bounds, and authenticated locator with an explicit HEVC-capable device profile.
+Simulators can report no hardware HEVC support, so that second case verifies
+the capable-device protocol and native decoder, not hardware detection.
+Both use the app's authenticated resolver and `NativeVideoEngine`.
+
+The checks inspect the actual decoded codec, retain secret-free range/dimension
+and startup measurements, and require more than ten seconds of progress in a
+twelve-second interval after AVPlayer enters playing. A displayed first frame
+is not proof that cold-encoder buffering has finished. The server's returned
+range is recorded rather than assumed to be SDR from a request parameter.
+Each owned encoding session and test login is released, including on failure.
+
+The native presenting layer must be ready and attached to the active player.
+Where the OS supports PiP, the test also starts and stops the real controller.
+Where it does not, the evidence explicitly records that limitation; layer
+readiness is not a successful PiP activation. These bounded smoke checks do not
+establish physical-device HDR output, long-duration performance, or correctness
+for every item on the server.
+
 ## The two speed wins
 
 ### 1. Build once, run many (`tools/run-tests.sh`)

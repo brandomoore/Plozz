@@ -428,6 +428,19 @@ defines `VideoRange`; Jellyfin's
 [`StreamInfo`](https://github.com/jellyfin/jellyfin/blob/v10.11.0/MediaBrowser.Model/Dlna/StreamInfo.cs)
 reads the codec-specific `rangetype` option.
 
+Real-media verification must inspect the encoded samples, not just these request
+parameters or the master playlist. Emby 4.10.2.0 was observed returning eight-bit
+H.264 and HEVC with PQ/BT.2020 signaling even when SDR was explicitly requested.
+An HEVC Main 10 request likewise does not prove ten-bit output. The test user's
+own session exposes the actual encoder in `TranscodingInfo`; that is stronger
+evidence than assuming hardware acceleration from a client preference. Server
+tone-mapping and encoder settings remain server-owned.
+
+The opt-in iOS `EmbyLiveTranscodingTests` exercises real provider negotiation,
+decoded output, sustained native playback, and the presenting layer. See
+[live Emby checks](../../docs/testing-policy.md#live-emby-transcoding) for scope
+and simulator limitations.
+
 ## Watch-state writes
 
 Manual marking and playback completion both use the shared watch outbox.
