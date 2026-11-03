@@ -877,6 +877,29 @@ Reporting/import consent was disabled and the original source selection restored
 This is one real movie's simulator evidence, not Plex episode/platform parity,
 all lifecycle races, or a distributed exactly-once guarantee.
 
+Guarded Emby movie imports were also verified on the muted iPhone simulator.
+Native comparison and cancellation left the dedicated user's history unchanged.
+Explicit watched import changed an untouched movie to watched/count 1, without
+copying tracker play counts. A separate resume import delivered exactly
+1,044,003 milliseconds while preserving the movie's existing watched flag and
+play count 5. Both remained unchanged after cold relaunch.
+
+Controlled edits of the dedicated user's resume from 75 to 90 seconds while
+the native preview was open verified stale-state rejection. Fresh comparison
+and explicit conflict approval then delivered the tracker position. These edits
+are real-server race controls, not playback acceptance. The initial control's
+post-write assertion rejected an expected derived-percentage change; fresh
+readback confirmed the write without replaying it.
+
+The native driver now distinguishes watched and resume actions for the same
+title/user and scopes result lookup to the expected status. The audit retains
+16 native passes, two failed driver assertions and 15 independent snapshots;
+two earlier ambiguous selections are excluded from exact resume claims.
+Complete tracker histories/lists, Plex/Jellyfin users and unrelated Emby titles
+were unchanged. Reporting and ongoing-import consent remained off. This covers
+guarded movie imports, not ongoing Emby sync, episodes, all lifecycle boundaries
+or physical-device acceptance.
+
 Separate read-only transport preflights fetched the same two-mebibyte movie
 prefix through dedicated SMB, NFS, WebDAV, FTP and host-key-pinned SFTP access.
 All five matched an independently authenticated media-server file range.

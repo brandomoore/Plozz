@@ -2143,8 +2143,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testPrepareStaleHistoryImport() throws {
         try openHistoryComparison()
         try tapVisible(importSelection, tapping: false, maximumSwipes: 32)
-        XCTAssertTrue(app.staticTexts["Server resume: 75 seconds"].exists)
-        XCTAssertTrue(app.staticTexts["Different from server — selecting replaces its current state"].exists)
+        try inspectResumeConflict(seconds: 75)
         try selectHistoryImport()
         XCTAssertTrue(app.buttons["Apply selected changes"].waitForExistence(timeout: 5))
     }
@@ -2154,7 +2153,11 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let confirm = app.buttons["Apply selected changes"]
         XCTAssertTrue(confirm.exists && confirm.isHittable)
         confirm.tap()
-        let row = try revealHistoryImportRow()
+        try testInspectRejectedHistoryImport()
+    }
+
+    func testInspectRejectedHistoryImport() throws {
+        let row = try revealHistoryImportRow(status: "Not confirmed. Compare again before retrying.")
         XCTAssertTrue(row.staticTexts["Not confirmed. Compare again before retrying."].waitForExistence(timeout: 60))
         XCTAssertFalse(row.staticTexts["Confirmed on server"].exists)
         try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
@@ -2182,11 +2185,24 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let expected = try XCTUnwrap(Double(
             ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_EXPECTED_RESUME_SECONDS"] ?? "90"
         ))
-        XCTAssertTrue(app.staticTexts[
-            "Server resume: \(expected.formatted(.number.precision(.fractionLength(0)))) seconds"
-        ].exists)
-        XCTAssertTrue(app.staticTexts["Different from server — selecting replaces its current state"].exists)
+        try inspectResumeConflict(seconds: expected)
         try confirmSelectedHistoryImport()
+    }
+
+    private func inspectResumeConflict(seconds: Double) throws {
+        let selection = importSelection
+        let rows = app.cells.containing(NSPredicate(
+            format: "identifier == %@ AND label == %@", selection.identifier, selection.label
+        ))
+        try require(rows.count == 1, "Expected the exact selected history action")
+        let row = rows.element
+        XCTAssertTrue(row.staticTexts[
+            "Server resume: \(seconds.formatted(.number.precision(.fractionLength(0)))) seconds"
+        ].exists)
+        XCTAssertTrue(
+            row.staticTexts["Different from server — selecting replaces its current state"].exists
+                || row.staticTexts["Tracker records disagree — select only one change for this title"].exists
+        )
     }
 
     private func confirmSelectedHistoryImport() throws {
@@ -2198,20 +2214,20 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testInspectConfirmedHistoryImport() throws {
-        let row = try revealHistoryImportRow()
+        let row = try revealHistoryImportRow(status: "Confirmed on server")
         XCTAssertTrue(row.staticTexts["Confirmed on server"].waitForExistence(timeout: 60))
         try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
     }
 
-    private func revealHistoryImportRow() throws -> XCUIElement {
+    private func revealHistoryImportRow(status: String) throws -> XCUIElement {
         let finished = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND enabled == true"),
             object: app.buttons["Compare again"]
         )
         try require(XCTWaiter.wait(for: [finished], timeout: 75) == .completed,
                     "Expected import verification to finish before locating its resized result row")
-        let rows = try historyImportRows()
+        let rows = try historyImportRows(status: status)
         for _ in 0..<32 {
             if rows.firstMatch.exists && rows.firstMatch.isHittable { break }
             let scroll = app.collectionViews.allElementsBoundByIndex.last ?? app
@@ -2223,7 +2239,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testImportedHistoryMatchesAfterRelaunch() throws {
         try openHistoryComparison()
-        let rows = try historyImportRows()
+        let rows = try historyImportRows(status: "Already matches — no change")
         try tapVisible(rows.firstMatch, tapping: false, maximumSwipes: 32)
         XCTAssertEqual(rows.count, 1)
         XCTAssertTrue(rows.firstMatch.staticTexts["Already matches — no change"].exists)
@@ -2232,7 +2248,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
     }
 
-    private func historyImportRows() throws -> XCUIElementQuery {
+    private func historyImportRows(status: String) throws -> XCUIElementQuery {
         let environment = ProcessInfo.processInfo.environment
         let episodeTitle = environment["PLOZZ_TRACKER_HISTORY_EPISODE_TITLE"] ?? ""
         let title = try XCTUnwrap(
@@ -2241,15 +2257,25 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let user = try XCTUnwrap(environment["PLOZZ_TRACKER_IMPORT_USER"])
         return app.cells.containing(.staticText, identifier: title)
             .containing(NSPredicate(format: "label ENDSWITH %@", " · \(user)"))
+            .containing(.staticText, identifier: status)
     }
 
     private var importSelection: XCUIElement {
         let environment = ProcessInfo.processInfo.environment
         let accountID = environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"] ?? "missing-import-account"
         let itemID = environment["PLOZZ_TRACKER_IMPORT_ITEM"] ?? "missing-import-item"
-        return app.switches.matching(NSPredicate(
+        var matches = app.switches.matching(NSPredicate(
             format: "identifier == %@", "tracker-history.select.\(accountID):\(itemID)"
-        )).firstMatch
+        ))
+        switch environment["PLOZZ_TRACKER_IMPORT_ACTION"] {
+        case "watched":
+            matches = matches.matching(NSPredicate(format: "label == %@", "Mark watched"))
+        case "resume":
+            matches = matches.matching(NSPredicate(format: "label BEGINSWITH %@", "Set resume to "))
+        default:
+            break
+        }
+        return matches.element
     }
 
     private func openHistoryComparison(relaunch: Bool = true) throws {
