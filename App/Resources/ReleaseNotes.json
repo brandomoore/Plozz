@@ -2,6 +2,56 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/070",
+      "version": "2026.11.3",
+      "marketingVersion": "2026.10.30",
+      "build": 70,
+      "releasedAt": "2026-11-03",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Browse trending, popular and upcoming movies and series in Discover, with requests through Seerr. Available to adult profiles.",
+            "Filter Discover to titles you can play now or haven't watched.",
+            {
+              "text": "On iPhone, choose a fixed landscape direction or let playback turn sideways with your phone, even with Rotation Lock on.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Switch Live TV sources and categories from the header, and add sources from the source menu.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Search Live TV channels and programs together, with simpler controls and a dedicated Close button.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Smaller titles in Home's See all pages leave more room for covers.",
+              "platforms": ["iOS"]
+            },
+            "Manual diagnostic reports retain recent playback failures, even after a successful retry.",
+            "Removed height-channel audio conversion and experimental Dolby Vision FEL playback. Standard surround sound and Dolby Vision playback remain available."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Landscape collection covers now stay landscape in Home's See all grids.",
+            "Fixed decorative quality ratings replacing titles in version pickers.",
+            {
+              "text": "Fixed Showcase backgrounds being cropped at the top.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/069.2",
       "version": "2026.11.3",
       "marketingVersion": "2026.10.30",
