@@ -151,7 +151,7 @@ final class VersionPickerPresentationTests: XCTestCase {
         )
     }
 
-    func testReleaseFilenamesRenderAsReadableTitles() async throws {
+    func testFullReleaseFilenamesRemainVisibleAboveTheBadges() async throws {
         let filenames = [
             "MobLand.S02E04.2160p.ATV.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265.DUAL-BiOMA.mkv",
             "MobLand S02E04 2160p ATV WEB-DL DDP5 1 Atmos DV HDR H 265 DUAL-BiOMA.mkv",
@@ -194,7 +194,7 @@ final class VersionPickerPresentationTests: XCTestCase {
                     XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
                 }
                 let attachment = XCTAttachment(image: image)
-                attachment.name = "readable-release-names-\(Int(width))-\(typeSize)"
+                attachment.name = "full-release-filenames-\(Int(width))-\(typeSize)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
                 let request = VNRecognizeTextRequest()
@@ -204,12 +204,10 @@ final class VersionPickerPresentationTests: XCTestCase {
                 request.customWords = ["MobLand", "S02E04", "BiOMA", "R3MiX", "4K", "HEVC"]
                 try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
                 let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-                for expected in ["MobLand", "S02E04", "BiOMA", "R3MiX", "4K", "HEVC"] {
+                for expected in ["MobLand", "S02E04", "BiOMA", "R3MiX", "2160p", "ATV", "WEB-DL", "DDP5", "Atmos", "DUAL", "mkv", "4K", "HEVC"] {
                     XCTAssertTrue(text.contains(expected), "Missing \(expected) at \(width)/\(typeSize): \(text)")
                 }
-                for removed in [".mkv", "2160p", "DDP5", "H.265", "H 265", "DUAL"] {
-                    XCTAssertFalse(text.contains(removed), text)
-                }
+                XCTAssertFalse(text.contains("…"), "Filenames must wrap rather than truncate: \(text)")
             }
         }
     }
@@ -465,7 +463,7 @@ final class VersionPickerPresentationTests: XCTestCase {
             let results = request.results ?? []
             visible += " " + results.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
             if let filename = results.first(where: {
-                $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains("GROUP") == true
+                $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains("GROUP.mkv") == true
             }), let language = results.first(where: {
                 $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains(visibleLanguage) == true
             }) {
@@ -479,7 +477,7 @@ final class VersionPickerPresentationTests: XCTestCase {
             visible += " " + (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
             if offset >= bottom { break }
         }
-        for fact in ["Extended", "4K", "42 GB", visibleLanguage, "+9", "HEVC", "TrueHD", "80 Mbps", "2h", "GROUP"] {
+        for fact in ["Extended", "4K", "42 GB", visibleLanguage, "+9", "HEVC", "TrueHD", "80 Mbps", "2h", "GROUP.mkv"] {
             XCTAssertTrue(visible.localizedCaseInsensitiveContains(fact), "Missing \(fact) in \(name) at \(width): \(visible)")
         }
         XCTAssertTrue(observedBadgeFooter, "The version card's filename and badge footer must remain visible together.")

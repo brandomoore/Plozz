@@ -883,7 +883,7 @@ struct PlayerOptionsPanel: View {
             return TrackRow(
                 id: index, header: nil,
                 title: presentation.title.map { Text(verbatim: $0) } ?? Text("Original"),
-                subtitle: presentation.releaseTitle.map { Text(verbatim: $0) },
+                subtitle: presentation.releaseName.map { Text(verbatim: $0) },
                 isSelected: option.isSelected, isToggle: false,
                 facts: presentation.supplementalFacts.isEmpty ? nil
                     : Text(verbatim: presentation.supplementalFacts.joined(separator: " · ")),

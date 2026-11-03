@@ -374,9 +374,6 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
         public let title: String? // l10n:content — provider edition/name and technical facts
         public let supplementalFacts: [String]
         public let releaseName: String? // l10n:content — provider release name or file basename
-        public var releaseTitle: String? { // l10n:content — display-only title parsed from the release filename
-            releaseName.map(MediaSourceDisplayName.releaseTitle)
-        }
         public let formatBadges: [MediaBadge]
         public let audioLanguages: [String]
         public let supplementalFactsWithoutBadges: [String]
