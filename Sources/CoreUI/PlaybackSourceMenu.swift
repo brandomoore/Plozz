@@ -521,7 +521,7 @@ struct PlaybackSourceMenuPanel: View {
                 .focusEffectDisabled()
                 .focused($focusedRowID, equals: "header.back")
             }
-            Text(pageValue == .servers ? "Servers" : "Versions")
+            Text(pageValue == .servers ? "Servers" : versions.contains(where: \.isExternalSource) ? "Sources" : "Versions")
                 .font(.headline.weight(.semibold))
             Spacer()
         }
@@ -565,7 +565,7 @@ struct PlaybackSourceMenuPanel: View {
             #endif
             drillInRow(
                 id: "root.versions",
-                title: "Version",
+                title: versions.contains(where: \.isExternalSource) ? "Source" : "Version",
                 detail: PlaybackSourceMenuVersionSummary(
                     version: selectedVersion,
                     fallback: selectedVersion.map { versionTitleText($0.displayLabel) }

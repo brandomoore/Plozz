@@ -20,7 +20,8 @@ enum ShareMediaParser {
     /// prefer the clean filename title over a junky folder, and capture the series
     /// year — collapses split/variant folders and fixes same-name matches.
     /// v16: include ISO disc images, including in unchanged existing directories.
-    static let classifierVersion = 16
+    /// v17: discover external title-link files without treating them as video.
+    static let classifierVersion = 17
 
     /// Bumped when the SIDECAR/explicit-id inventory the scanner records changes
     /// shape (new sidecar kinds recognized, new explicit-id namespaces extracted),
@@ -39,6 +40,14 @@ enum ShareMediaParser {
 
     static func isVideoFile(_ name: String) -> Bool {
         videoExtensions.contains((name as NSString).pathExtension.lowercased())
+    }
+
+    static func isExternalLinkFile(_ name: String) -> Bool {
+        (name as NSString).pathExtension.lowercased() == "strmlnk"
+    }
+
+    static func isLibraryMediaFile(_ name: String) -> Bool {
+        isVideoFile(name) || isExternalLinkFile(name)
     }
 
     /// File extensions we treat as text subtitle sidecars (the overlay can parse

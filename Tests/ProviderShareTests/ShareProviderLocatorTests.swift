@@ -10,6 +10,33 @@ import XCTest
 /// SMB-style entry (modification time, no ETag) falls back to
 /// `.modificationTime`, and an entry with neither is rejected.
 final class ShareProviderLocatorTests: XCTestCase {
+    func testExternalLinkResolutionIsBoundedAndNeverOpensAVideoSource() async throws {
+        let path = "Movie (2020).strmlnk"
+        let entry = try RemoteFileEntry(relativePath: path, kind: .file, size: 100)
+        let fileSystem = LocatorFakeFileSystem(
+            statEntry: entry, listedEntries: [entry],
+            fileContents: Data("https://tv.apple.com/us/movie/example/id".utf8)
+        )
+        let provider = makeProvider(stat: entry, fileSystem: fileSystem)
+        addTeardownBlock { await provider.teardown() }
+        let item = try await provider.item(id: "f:\(path)")
+        XCTAssertTrue(item.opensExternalSource)
+        XCTAssertEqual(item.externalSourceVersion?.externalLink?.service, .appleTV)
+        let link = try await provider.externalMediaLink(for: item.id, mediaSourceID: path)
+        XCTAssertEqual(link.service, .appleTV)
+        let limits = await fileSystem.readLimits
+        XCTAssertFalse(limits.isEmpty)
+        XCTAssertTrue(limits.allSatisfy { $0 == ExternalMediaLink.maximumFileBytes })
+        do {
+            _ = try await provider.playbackInfo(for: item.id, mediaSourceID: path, forceTranscode: false)
+            XCTFail("An external link must not enter the player")
+        } catch { XCTAssertTrue(error is AppError) }
+        let locator = try await provider.playbackPreparationLocator(for: item.id, mediaSourceID: path)
+        XCTAssertNil(locator)
+        let openingCalls = await fileSystem.openingCalls
+        XCTAssertEqual(openingCalls, 0)
+    }
+
     private func makeProvider(
         stat: RemoteFileEntry,
         streamProber: NetworkFileStreamProbing? = nil,
@@ -554,15 +581,19 @@ private actor LocatorFakeFileSystem: MediaTransportFileSystem {
     private(set) var openingCalls = 0
     private(set) var listingCalls = 0
     private(set) var fileReads = 0
+    private(set) var readLimits: [Int] = []
+    private let fileContents: Data
 
     init(
         statEntry: RemoteFileEntry, openingEntry: RemoteFileEntry? = nil,
-        listedEntries: [RemoteFileEntry] = [], listingError: MediaTransportError? = nil
+        listedEntries: [RemoteFileEntry] = [], listingError: MediaTransportError? = nil,
+        fileContents: Data = Data()
     ) {
         self.statEntry = statEntry
         self.openingEntry = openingEntry
         self.listedEntries = listedEntries
         self.listingError = listingError
+        self.fileContents = fileContents
     }
 
     func replaceStat(_ entry: RemoteFileEntry) { statEntry = entry }
@@ -598,7 +629,8 @@ private actor LocatorFakeFileSystem: MediaTransportFileSystem {
 
     func readSmallFile(relativePath: String, maximumBytes: Int) async throws -> Data {
         fileReads += 1
-        return Data()
+        readLimits.append(maximumBytes)
+        return fileContents
     }
 
     func openSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease {

@@ -207,7 +207,7 @@ public struct MediaVersionPicker: View {
                 }
                 .padding(16)
             }
-            .navigationTitle(title)
+            .navigationTitle(versions.contains(where: \.isExternalSource) ? "Sources" : title)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

@@ -1187,6 +1187,7 @@ struct MainTabView: View {
             return HomeTab(
                 root: root,
                 accounts: accounts,
+                isProfileAuthorized: isLiveTVProfileAuthorized,
                 configuredServerCount: displayAccounts.count,
                 libraryPreferencesNamespace: liveTVPreferencesNamespace,
                 detailSnapshotCache: detailSnapshotCache,
@@ -1264,6 +1265,7 @@ struct MainTabView: View {
             let runtime = homeRuntime
             return SearchTab(
                 accounts: accounts,
+                isProfileAuthorized: isLiveTVProfileAuthorized,
                 detailSnapshotCache: detailSnapshotCache,
                 authenticatedHTTPResolver: authenticatedHTTPResolver,
                 seer: seer,

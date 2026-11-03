@@ -621,6 +621,10 @@ public struct ItemDetailView: View {
         let effectiveSource = effectiveSource(for: detail.item, sources: sources, serverChoices: serverChoices)
         let effectiveVersions = effectiveVersions(for: detail.item, sources: sources, activeAccountID: effectiveSource?.accountID)
         let effectiveVersionID = effectiveVersionID(for: detail.item, in: effectiveVersions)
+        let selectedPlayItem = playItem(
+            for: detail.item, sources: sources, activeAccountID: effectiveSource?.accountID,
+            versionID: effectiveVersionID
+        )
         // A not-in-library Plex Discover title (a Watchlist movie the user doesn't
         // own on any server) resolves to a global Discover stub with nothing to
         // play — so it must NOT offer a dead Play button. The body (overview/cast/
@@ -673,7 +677,7 @@ public struct ItemDetailView: View {
                         presentsEpisodeStill: presentsEpisodeAsSubject,
                         scheduleLine: discoveryStatusLine,
                         spoilerSettings: spoilerSettings,
-                        playTitle: canPlay ? viewModel.playButtonTitle(for: detail.item) : nil,
+                        playTitle: canPlay ? selectedPlayItem.playActionTitle : nil,
                         onPlay: canPlay ? {
                             // CRITICAL: re-resolve sources/versions from the
                             // view model at FIRE time, not from the body-eval
@@ -692,7 +696,7 @@ public struct ItemDetailView: View {
                             let liveVersions = self.effectiveVersions(for: detail.item, sources: liveSources, activeAccountID: liveSource?.accountID)
                             let liveVersionID = self.effectiveVersionID(for: detail.item, in: liveVersions)
                             let item = self.playItem(for: detail.item, sources: liveSources, activeAccountID: liveSource?.accountID, versionID: liveVersionID)
-                            playbackPreparation.handoff(item)
+                            if !item.opensExternalSource { playbackPreparation.handoff(item) }
                             onPlay(item)
                         } : nil,
                         showsPlayPlaceholder: !usesExternalDetail && DetailPlaybackSelection.showsPlayPlaceholder(
@@ -706,9 +710,9 @@ public struct ItemDetailView: View {
                         isRetryingPlaybackInventory: viewModel.isRetryingPlaybackInventory(for: detail.item),
                         allowsDeferredActivation: isPageVisible && !hasChildOnTop,
                         deferredActionOwner: ObjectIdentifier(viewModel),
-                        playProgress: canPlay ? detail.item.resumeProgressFraction : nil,
-                        playRemainingText: canPlay ? detail.item.resumeRemainingText : nil,
-                        playSeasonEpisodeText: canPlay ? HeroForegroundModelBuilder.seasonEpisodeButtonText(for: detail.item) : nil,
+                        playProgress: canPlay ? selectedPlayItem.resumeProgressFraction : nil,
+                        playRemainingText: canPlay ? selectedPlayItem.resumeRemainingText : nil,
+                        playSeasonEpisodeText: canPlay && !selectedPlayItem.opensExternalSource ? HeroForegroundModelBuilder.seasonEpisodeButtonText(for: detail.item) : nil,
                         onPlayTrailer: viewModel.trailers.first.map { trailer in { onPlay(trailer) } },
                         trailerItem: viewModel.trailers.first,
                         versions: usesExternalDetail ? [] : effectiveVersions,

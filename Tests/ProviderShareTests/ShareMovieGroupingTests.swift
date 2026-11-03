@@ -8,6 +8,40 @@ import MediaTransportCore
 /// equivalent of the server-side version grouping Plex/Jellyfin do — while distinct
 /// films (and stacked multi-part movies) stay separate.
 final class ShareMovieGroupingTests: XCTestCase {
+    func testExternalLinksAreIndexedGroupedAndNeverBecomeDefaultMediaFiles() async throws {
+        let directory = tempDir()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ShareCatalogStore(accountKey: "external", directory: directory)
+        await scan([
+            "": [dir("Movies")],
+            "Movies": [
+                file("Arrival (2016).strmlnk"),
+                file("Arrival (2016).mkv"),
+                file("Dune (2021).STRMLNK")
+            ]
+        ], into: store)
+        let movies = await store.movies(offset: 0, limit: 10)
+        XCTAssertEqual(movies.count, 2)
+        let arrival = try XCTUnwrap(movies.first { $0.title == "Arrival" })
+        let dune = try XCTUnwrap(movies.first { $0.title == "Dune" })
+        XCTAssertEqual(arrival.versions.count, 2)
+        XCTAssertFalse(arrival.versions[0].isExternalSource)
+        XCTAssertTrue(arrival.versions[1].isExternalSource)
+        XCTAssertFalse(arrival.opensExternalSource)
+        XCTAssertTrue(dune.opensExternalSource)
+        let defaultArrival = await store.defaultMovieRelPath(
+            forKey: try XCTUnwrap(ShareCatalogID.movieKey(forMovieID: arrival.id))
+        )
+        let defaultDune = await store.defaultMovieRelPath(
+            forKey: try XCTUnwrap(ShareCatalogID.movieKey(forMovieID: dune.id))
+        )
+        XCTAssertEqual(defaultArrival, "Movies/Arrival (2016).mkv")
+        XCTAssertNil(defaultDune)
+        let latest = await store.latest(limit: 10)
+        let search = await store.search(query: "Dune", limit: 10)
+        XCTAssertTrue(try XCTUnwrap(latest.first { $0.id == dune.id }).opensExternalSource)
+        XCTAssertTrue(try XCTUnwrap(search.first).opensExternalSource)
+    }
     private func dir(_ name: String) -> RemoteFileEntry {
         try! RemoteFileEntry(relativePath: name, kind: .directory, modifiedAt: Date())
     }

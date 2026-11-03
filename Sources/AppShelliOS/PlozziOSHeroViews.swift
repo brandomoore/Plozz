@@ -1789,13 +1789,14 @@ struct PlozziOSHomeHeroForeground: View {
                     title: item.playActionTitle,
                     progress: item.resumeProgressFraction,
                     remainingText: item.resumeRemainingText,
-                    seasonEpisodeText: seasonEpisodeText,
+                    seasonEpisodeText: item.opensExternalSource ? nil : seasonEpisodeText,
                     onLight: colorScheme == .dark,
                     spacing: 10,
                     capsuleWidth: 60,
                     resumeTrailingStyle: resumeTrailingStyle,
                     separatesEpisodeText: item.startsWatching,
-                    wrapsText: wrapsText
+                    wrapsText: wrapsText,
+                    systemImage: item.opensExternalSource ? "arrow.up.forward.app" : "play.fill"
                 )
             }
             .buttonStyle(PlozziOSHeroActionButtonStyle(kind: .primary))
@@ -2294,14 +2295,15 @@ struct PlozziOSDetailHeroForeground: View {
                     title: playableItem?.playActionTitle ?? "Play",
                     progress: playableItem?.resumeProgressFraction,
                     remainingText: playableItem?.resumeRemainingText,
-                    seasonEpisodeText: playableItem.flatMap { seasonEpisodeText(for: $0) },
+                    seasonEpisodeText: playableItem.flatMap { $0.opensExternalSource ? nil : seasonEpisodeText(for: $0) },
                     onLight: colorScheme == .dark,
                     spacing: 10,
                     capsuleWidth: 60,
                     resumeTrailingStyle: resume,
                     isPlaceholder: playableItem == nil,
                     separatesEpisodeText: playableItem?.startsWatching ?? false,
-                    wrapsText: wrapsText
+                    wrapsText: wrapsText,
+                    systemImage: playableItem?.opensExternalSource == true ? "arrow.up.forward.app" : "play.fill"
                 )
             }
             .buttonStyle(PlozziOSHeroActionButtonStyle(

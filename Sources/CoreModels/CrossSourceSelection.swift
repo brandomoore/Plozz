@@ -23,6 +23,7 @@ public struct CrossSourceSelection: Sendable, Hashable {
 /// can prove. Every other server remains available as an explicit pick/fallback.
 ///
 /// Ranking (highest first):
+/// - **Playable media before external links**, regardless of server locality.
 /// 0. **Local beats remote** — a copy on the same LAN as the Apple TV always
 ///    wins over one reached over the internet / a Tailscale tunnel, *before*
 ///    quality is even considered: a local 1080p that streams instantly is a
@@ -115,6 +116,9 @@ public enum CrossSourceSelector {
         }
 
         let winner = candidates.max { lhs, rhs in
+            if (lhs.version?.isExternalSource == true) != (rhs.version?.isExternalSource == true) {
+                return lhs.version?.isExternalSource == true
+            }
             if lhs.localityRank != rhs.localityRank { return lhs.localityRank < rhs.localityRank }
             if lhs.richnessRank != rhs.richnessRank { return lhs.richnessRank < rhs.richnessRank }
             if lhs.nativeCompatible != rhs.nativeCompatible {

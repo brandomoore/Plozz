@@ -49,6 +49,8 @@ private struct PlaylistDetailRoute: Hashable {
 /// the tapped item/library's `sourceAccountID`.
 struct HomeTab: View {
     @State private var trailerOpening = YouTubeTrailerOpening()
+    @State private var externalOpening = ExternalMediaOpening()
+    @Environment(ProfilesModel.self) private var profilesModel: ProfilesModel?
     /// The app's effective language, injected by `AppLanguageScope`. Read here
     /// only to hand to the Top Shelf publisher: that snapshot crosses into
     /// another process, so its titles have to be resolved on this side.
@@ -65,6 +67,7 @@ struct HomeTab: View {
     /// for one of the rail's library slots.
     var root: HomeTabRoot = .home
     let accounts: [ResolvedAccount]
+    var isProfileAuthorized: @MainActor () -> Bool = { false }
     /// Every server added to the device, regardless of what this profile has
     /// switched on. Home needs it to tell "no servers yet" from "all off".
     let configuredServerCount: Int
@@ -496,6 +499,8 @@ struct HomeTab: View {
             }
             .onChange(of: pendingTitleRoute) { _, _ in consumePendingTitleRoute() }
             .youTubeTrailerOpeningFailures(trailerOpening)
+            .externalMediaOpeningFailures(externalOpening)
+            .onChange(of: accounts.map(\.account.id)) { _, _ in externalOpening.cancel() }
             .onChange(of: artworkPolicy.forArea(.topShelf).identity) { _, _ in
                 if case .home = root { sharedHomeViewModel.publishCurrentContent() }
             }
@@ -1285,6 +1290,20 @@ struct HomeTab: View {
     private func presentPlay(
         _ target: MediaItem, playlistOrigin: VideoPlaylistPlaybackOrigin? = nil
     ) {
+        if target.opensExternalSource {
+            do {
+                let provider = try resolveProvider(target.sourceAccountID, in: accounts)
+                let profileID = profilesModel?.activeProfileID
+                Task {
+                    await externalOpening.open(target, provider: provider) {
+                        profilesModel?.activeProfileID == profileID && isProfileAuthorized()
+                    }
+                }
+            } catch {
+                externalOpening.failed = true
+            }
+            return
+        }
         pendingPlaylistOrigin = playlistOrigin
         if playbackSettings.shouldAskBeforeResuming(at: target.resumePosition) {
             HandoffDiagnostics.emit(

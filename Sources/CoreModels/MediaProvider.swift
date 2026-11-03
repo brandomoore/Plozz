@@ -75,6 +75,9 @@ public protocol MediaProvider: Sendable {
     /// return a placeholder that could bypass the version picker.
     func playbackItem(id: String) async throws -> MediaItem
 
+    /// Resolve a user-imported external title without opening a playback engine.
+    func externalMediaLink(for itemID: String, mediaSourceID: String?) async throws -> ExternalMediaLink
+
     /// Trailers / preview clips for an item (movie or series).
     ///
     /// Returned items are ordinary playable `MediaItem`s whose `id` resolves to a
@@ -493,6 +496,9 @@ public enum MediaProviderURLIdentity {
 // doubles) inherit safe no-ops, so adding the capability never forces every
 // conformer to implement it.
 public extension MediaProvider {
+    func externalMediaLink(for itemID: String, mediaSourceID: String?) async throws -> ExternalMediaLink {
+        throw AppError.unknown("This source does not support external title links.")
+    }
     var catalogIdentityRequiresEnrichment: Bool { false }
     var playbackInventoryRequiresEnrichment: Bool { false }
 

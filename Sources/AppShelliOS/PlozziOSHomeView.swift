@@ -176,6 +176,7 @@ struct PlozziOSHomeView: View {
     @State private var heroRandomRolls = HeroRandomRollStore()
     @State private var playbackRequest: PlozziOSPlaybackRequest?
     @State private var pendingResumeRequest: PlozziOSPlaybackRequest?
+    @State private var externalOpening = ExternalMediaOpening()
     @State private var isRequestingHero = false
     @State private var heroRequestStatuses: [String: MediaAvailabilityStatus] = [:]
     /// High-frequency overscroll state. The Home page passes this reference without
@@ -436,6 +437,7 @@ struct PlozziOSHomeView: View {
             if !authorized { pendingResumeRequest = nil }
         }
         .onDisappear { pendingResumeRequest = nil }
+        .externalMediaOpeningFailures(externalOpening)
         .plozziOSPlayerCover(
             item: $playbackRequest, orientation: appModel.settings.playback.settings.orientation
         ) { request, orientation in
@@ -895,6 +897,20 @@ struct PlozziOSHomeView: View {
     }
 
     private func presentPlay(_ request: PlozziOSPlaybackRequest) {
+        if request.item.opensExternalSource {
+            guard let provider = appModel.provider(for: request.item) else {
+                externalOpening.failed = true
+                return
+            }
+            let profileID = appModel.profiles.activeProfileID
+            Task {
+                await externalOpening.open(request.item, provider: provider) {
+                    appModel.profiles.activeProfileID == profileID && appModel.isActiveProfileAuthorized
+                        && appModel.provider(for: request.item)?.session == provider.session
+                }
+            }
+            return
+        }
         if appModel.settings.playback.settings.shouldAskBeforeResuming(at: request.startPosition) {
             pendingResumeRequest = request
         } else {

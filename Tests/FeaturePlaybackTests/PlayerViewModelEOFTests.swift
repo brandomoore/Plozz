@@ -593,6 +593,38 @@ final class PlayerViewModelEOFTests: XCTestCase {
         await viewModel.stop()
     }
 
+    func testExternalEpisodeDoesNotPrefetchOrAutoAdvance() async {
+        let first = MediaItem(id: "first", title: "First", kind: .episode)
+        let next = MediaItem(
+            id: "external", title: "External", kind: .episode,
+            versions: [.init(id: "next.strmlnk", container: "strmlnk")]
+        )
+        let request = PlaybackRequest(
+            item: first, streamURL: URL(string: "https://example.test/first.m3u8")!
+        )
+        let provider = RecordingPlaybackProvider(request: request)
+        let engine = SpyVideoEngine()
+        let resolved = expectation(description: "Neighbors resolved")
+        let viewModel = PlayerViewModel(
+            provider: provider, itemID: first.id, episodeItem: first,
+            playbackSettings: .init(autoPlayNextEpisode: true),
+            engineFactory: EngineFactory(makeNative: { _ in engine }),
+            neighborResolver: {
+                resolved.fulfill()
+                return (next, next)
+            }
+        )
+        await viewModel.load()
+        await fulfillment(of: [resolved], timeout: 2)
+        XCTAssertNil(viewModel.previousEpisode)
+        XCTAssertNil(viewModel.nextEpisode)
+        XCTAssertFalse(viewModel.controls.infoCard.hasNextEpisode)
+        engine.onEnded?()
+        XCTAssertTrue(viewModel.shouldDismiss)
+        XCTAssertNil(viewModel.pendingNextEpisode)
+        await viewModel.stop()
+    }
+
     func testPlaylistAutoplayOffDoesNotFallThroughToEpisodeAutoplay() async {
         let first = MediaItem(id: "first", title: "First", kind: .episode, seriesID: "series", seasonID: "season")
         let next = MediaItem(id: "second", title: "Second", kind: .episode)

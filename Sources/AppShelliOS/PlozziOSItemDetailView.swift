@@ -176,6 +176,7 @@ struct PlozziOSItemDetailView: View {
 
 private struct PlozziOSCanonicalItemDetailView: View {
     @State private var trailerOpening = YouTubeTrailerOpening()
+    @State private var externalOpening = ExternalMediaOpening()
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.scenePhase) private var scenePhase
@@ -388,7 +389,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                             Image(systemName: "arrow.down.circle")
                         }
                         .accessibilityLabel("Manage Seasons")
-                    } else if let downloadItem = detailPlayableItem(for: detail.item) {
+                    } else if let downloadItem = detailPlayableItem(for: detail.item), !downloadItem.opensExternalSource {
                         let options = detailPlaybackOptions(for: detail.item)
                         PlozziOSDetailDownloadButton(
                             downloadItem: downloadItem,
@@ -468,6 +469,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
         }
         .modifier(requestPresentation(inDownloadSheet: false))
         .youTubeTrailerOpeningFailures(trailerOpening)
+        .externalMediaOpeningFailures(externalOpening)
         .alert("Couldn't load versions", isPresented: Binding(
             get: { viewModel.playbackInventoryRetryError != nil },
             set: { if !$0 { viewModel.playbackInventoryRetryError = nil } }
@@ -998,7 +1000,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private func play(_ item: MediaItem, fromBeginning: Bool = false) {
-        playbackPreparation.handoff(item)
+        if !item.opensExternalSource { playbackPreparation.handoff(item) }
         if item.isYouTubeTrailer {
             Task { await trailerOpening.open(item) }
             return
@@ -1037,6 +1039,20 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private func presentPlay(_ request: PlozziOSPlaybackRequest) {
+        if request.item.opensExternalSource {
+            guard let provider = appModel.provider(for: request.item) else {
+                externalOpening.failed = true
+                return
+            }
+            let profileID = appModel.profiles.activeProfileID
+            Task {
+                await externalOpening.open(request.item, provider: provider) {
+                    appModel.profiles.activeProfileID == profileID && appModel.isActiveProfileAuthorized
+                        && appModel.provider(for: request.item)?.session == provider.session
+                }
+            }
+            return
+        }
         if appModel.settings.playback.settings.shouldAskBeforeResuming(at: request.startPosition) {
             pendingResumeRequest = request
         } else {
@@ -2766,7 +2782,8 @@ private struct PlozziOSSeasonDownloadPicker: View {
         var seen = Set<String>()
         let selection = selectedEpisodeIDs
         return list.rows.flatMap(\.libraryEpisodes).filter {
-            selection.contains($0.stablePresentationID) && seen.insert($0.stablePresentationID).inserted
+            !$0.opensExternalSource && selection.contains($0.stablePresentationID)
+                && seen.insert($0.stablePresentationID).inserted
         }
     }
 

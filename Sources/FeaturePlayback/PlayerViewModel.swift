@@ -999,10 +999,10 @@ public final class PlayerViewModel {
         guard let neighborResolver else { return }
         let (prev, next) = await neighborResolver()
         guard !didStop else { return }
-        previousEpisode = prev
-        nextEpisode = next
-        controls.infoCard.hasPreviousEpisode = prev != nil
-        controls.infoCard.hasNextEpisode = next != nil
+        previousEpisode = prev?.opensExternalSource == true ? nil : prev
+        nextEpisode = next?.opensExternalSource == true ? nil : next
+        controls.infoCard.hasPreviousEpisode = previousEpisode != nil
+        controls.infoCard.hasNextEpisode = nextEpisode != nil
         nowPlaying?.refresh()
         if playlistContext == nil { nextEpisodeCoordinator.updateUpNextCard() }
         // Eagerly prefetch the next episode's resolved stream when the provider's
@@ -1010,7 +1010,7 @@ public final class PlayerViewModel {
         // moment it's known, for a near-instant hand-off. Jellyfin (a
         // session-minting POST) defers to the hand-off window instead; see
         // ``NextEpisodeCoordinator/maybeStartWindowedNextPrefetch(trigger:)``.
-        if next != nil, playlistContext == nil {
+        if nextEpisode != nil, playlistContext == nil {
             if provider.kind.playbackInfoIsIdempotent {
                 nextEpisodeCoordinator.startNextEpisodePrefetch(trigger: "eager")
             } else {

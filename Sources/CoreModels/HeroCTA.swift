@@ -65,7 +65,10 @@ public extension MediaItem {
     }
 
     var playActionTitle: LocalizedStringResource {
-        startsWatching
+        if let source = externalSourceVersion {
+            return source.externalLink?.actionTitle ?? LocalizedStringResource("Open Link", comment: "Open an imported external title link whose destination has not loaded yet.")
+        }
+        return startsWatching
             ? LocalizedStringResource("Start watching", comment: "Play an unstarted first episode. The season and episode numbers follow this label.")
             : "Play"
     }

@@ -2061,9 +2061,10 @@ struct HomeHeroView: View {
                     title: item.resumeProgressFraction != nil ? "Resume" : item.playActionTitle,
                     progress: item.resumeProgressFraction,
                     remainingText: item.resumeRemainingText,
-                    seasonEpisodeText: HeroForegroundModelBuilder.seasonEpisodeButtonText(for: item),
+                    seasonEpisodeText: item.opensExternalSource ? nil : HeroForegroundModelBuilder.seasonEpisodeButtonText(for: item),
                     onLight: selected || colorScheme == .light,
-                    separatesEpisodeText: item.startsWatching
+                    separatesEpisodeText: item.startsWatching,
+                    systemImage: item.opensExternalSource ? "arrow.up.forward.app" : "play.fill"
                 )
                 .font(.system(size: 28, weight: .semibold))
             }

@@ -399,7 +399,10 @@ enum ShareCatalogReadProjection {
             // for SMB shares too, enabling auto-advance, the Up Next card, and the
             // next-episode prefetch. Without it SMB episodes never hand off.
             seasonID: season.map { ShareCatalogID.season(seriesKey, $0) },
-            libraryID: ShareCatalogID.library(library)
+            libraryID: ShareCatalogID.library(library),
+            versions: ShareMediaParser.isExternalLinkFile(relPath)
+                ? [MediaVersion(id: relPath, fileName: (relPath as NSString).lastPathComponent, container: "strmlnk")]
+                : []
         )
     }
 }
