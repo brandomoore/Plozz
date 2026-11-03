@@ -17,7 +17,8 @@ public enum PlozziOSWindowOrientation {
         var controller = window.rootViewController
         var presentedPlayer: PlozziOSOrientationHostingController?
         while let current = controller {
-            if let player = current as? PlozziOSOrientationHostingController, !player.isBeingDismissed {
+            if let player = current as? PlozziOSOrientationHostingController,
+               !player.isBeingDismissed || player.dismissalOrientationMask != nil {
                 presentedPlayer = player
             }
             controller = current.presentedViewController
@@ -154,6 +155,7 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
     private var requestGeneration = 0
     private var hasAppeared = false
     private var geometryTask: Task<Void, Error>?
+    private(set) var dismissalOrientationMask: UIInterfaceOrientationMask?
 
     init(
         rootView: AnyView, orientation: PlozziOSPlayerOrientation,
@@ -179,7 +181,8 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-        !ownsWindowOrientation && hasPendingPresentation ? .all : orientation.supportedMask
+        dismissalOrientationMask
+            ?? (!ownsWindowOrientation && hasPendingPresentation ? .all : orientation.supportedMask)
     }
 
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation {
@@ -237,6 +240,7 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
 
     func tearDown() {
         hasAppeared = false
+        dismissalOrientationMask = nil
         requestGeneration += 1
         geometryTask?.cancel()
         geometryTask = nil
@@ -244,6 +248,18 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
             orientation.host = nil
         }
         releaseWindowOrientation()
+    }
+
+    func prepareForDismissal() {
+        hasAppeared = false
+        requestGeneration += 1
+        geometryTask?.cancel()
+        geometryTask = nil
+        if orientation.isAvailable, let scene = viewIfLoaded?.window?.windowScene {
+            // Keep the outgoing cover in one coordinate space until it is offscreen.
+            dismissalOrientationMask = PlozziOSPlayerOrientation.mask(for: scene.effectiveGeometry.interfaceOrientation)
+        }
+        invalidateOrientationPreferences()
     }
 
     private func releaseWindowOrientation() {
@@ -598,9 +614,17 @@ struct PlozziOSPlayerPresentation<Content: View>: UIViewControllerRepresentable 
             if let host {
                 guard request?.id == presentedID else {
                     transitioning = true
+                    if let transition = host.transitionCoordinator,
+                       transition.animate(alongsideTransition: nil, completion: { [weak self] _ in
+                           self?.transitioning = false
+                           self?.reconcile()
+                       }) {
+                        return
+                    }
                     let window = host.viewIfLoaded?.window
-                    host.tearDown()
+                    host.prepareForDismissal()
                     host.dismiss(animated: true) { [weak self] in
+                        host.tearDown()
                         guard let self else { return }
                         self.host = nil
                         self.presentedID = nil

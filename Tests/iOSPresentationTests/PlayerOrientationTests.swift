@@ -472,6 +472,57 @@ final class PlayerOrientationTests: XCTestCase {
         XCTAssertEqual(disappearances, 2)
     }
 
+    func testDismissalKeepsPlayerOrientationUntilTheCoverHasLeft() async throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = PlayerOrientationTestWindow(windowScene: scene)
+        let anchor = PlozziOSPlayerPresentation<Color>.Anchor()
+        let coordinator = PlozziOSPlayerPresentation<Color>.Coordinator()
+        coordinator.anchor = anchor
+        coordinator.preference = .auto
+        coordinator.makeContent = { _, _ in AnyView(Color.blue.ignoresSafeArea()) }
+        window.rootViewController = anchor
+        window.makeKeyAndVisible()
+        defer {
+            coordinator.host?.tearDown()
+            anchor.dismiss(animated: false)
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil { scene.activationState == .foregroundActive }
+
+        for target in [UIInterfaceOrientation.portrait, .landscapeLeft, .landscapeRight] {
+            coordinator.preference = target == .portrait ? .portrait : .landscape
+            coordinator.request = PlayerCloseProbe.makeRequest()
+            coordinator.reconcile()
+            try await waitUntil { coordinator.host?.orientation.isAvailable == true }
+            let player = try XCTUnwrap(coordinator.host)
+            try await waitUntil { player.transitionCoordinator == nil }
+            player.orientation.beginPlayback()
+            let mask = try XCTUnwrap(PlozziOSPlayerOrientation.mask(for: target))
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
+            try await waitUntil { scene.effectiveGeometry.interfaceOrientation == target && player.transitionCoordinator == nil }
+
+            let departureSize = window.bounds.size
+            player.orientation.close()
+            XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), mask,
+                           "Returning the browsing mask before dismissal ends races rotation with the exit animation.")
+            XCTAssertTrue(player.orientation.host === player, "The outgoing cover owns orientation until dismissal completes.")
+            let dismissalDeadline = ContinuousClock.now + .seconds(2)
+            while player.view.window != nil, ContinuousClock.now < dismissalDeadline {
+                XCTAssertEqual(window.bounds.size, departureSize, "The window must not rotate underneath the visible cover.")
+                XCTAssertEqual(player.view.bounds.size, departureSize, "Dismissal must not resize the outgoing player.")
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            try await waitUntil { coordinator.host == nil && anchor.presentedViewController == nil }
+            XCTAssertNil(player.orientation.host)
+            XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .portrait)
+            try await waitUntil { scene.effectiveGeometry.interfaceOrientation == .portrait }
+        }
+    }
+
     func testCloseDoesNotDependOnPresentingViewUpdatesAndAllowsReopening() async throws {
         let scene = try XCTUnwrap(
             UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first

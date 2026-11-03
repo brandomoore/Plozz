@@ -116,14 +116,20 @@ struct PlayerRotationFixture: View {
             Button("Open rotation player") {
                 request = .init(
                     item: RotationProvider.media,
-                    startPosition: ProcessInfo.processInfo.arguments.contains("--keyboard-up-next-fixture")
-                        ? 135 : (ProcessInfo.processInfo.arguments.contains("--gesture-player-fixture") ? 60 : 0),
+                    startPosition: startPosition,
                     versionPreferences: model.versionPreferences
                 )
             }
             Text(model.settings.playback.settings.orientation.rawValue)
                 .accessibilityIdentifier("saved-orientation")
         }
+    }
+
+    private var startPosition: TimeInterval {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--end-player") { return 165 }
+        if arguments.contains("--keyboard-up-next-fixture") { return 135 }
+        return arguments.contains("--gesture-player-fixture") ? 60 : 0
     }
 
     private func player(

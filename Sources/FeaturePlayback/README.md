@@ -645,6 +645,11 @@ forces rotation. Episode/version handoffs retain the preference once playback st
 The mobile presentation owner supplies the shared player's dismissal action.
 Failure-screen Back and end-of-playback dismissal use that same owner as the
 mobile X button, rather than a SwiftUI dismiss action outside a SwiftUI cover.
+On iPhone, that owner retains the current interface orientation throughout the
+native exit animation, including either landscape direction. It releases the
+restriction and restores portrait browsing only after the cover has left, so
+rotation cannot resize the outgoing player midway through dismissal. An existing
+native transition finishes before dismissal starts; iPad keeps its system policy.
 
 The actual presented UIKit hosting controller owns on-demand orientations.
 Live TV keeps one window-scoped owner while its destination is active, without

@@ -98,6 +98,28 @@ final class PlayerRotationInteractionTests: XCTestCase {
         closePlayer()
     }
 
+    func testCompletedVideoReturnsToBrowsingInPortraitAndLandscape() {
+        for landscape in [false, true] {
+            launch("--end-player", "--nested-player-presentation", landscape ? "--auto" : "--portrait")
+            openPlayer()
+            if landscape {
+                rotate(.landscapeLeft)
+            } else {
+                assertOrientation(landscape: false)
+            }
+            XCTAssertTrue(app.buttons["Open rotation player"].wait(
+                for: \.isHittable, toEqual: true, timeout: 30
+            ), "Natural end of the video must dismiss the player: \(app.debugDescription)")
+            XCTAssertTrue(app.otherElements["rotation-video-surface"].firstMatch.waitForNonExistence(timeout: 5))
+            assertOrientation(
+                landscape: landscape && UIDevice.current.userInterfaceIdiom == .pad,
+                player: false
+            )
+            app.terminate()
+            XCUIDevice.shared.orientation = .portrait
+        }
+    }
+
     func testFailedPlayerBackClosesFromNestedNavigationAndReopens() {
         launch("--failed-player-fixture", "--nested-player-presentation", "--portrait")
         for _ in 0..<2 {
