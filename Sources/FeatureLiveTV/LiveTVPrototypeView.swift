@@ -89,6 +89,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var selectedChannelID: String?
     @State private var selectedRowID: LiveTVGuideRowID?
     @State private var isSearching = false
+    #if os(iOS)
+    @State private var searchRetainsToolbar = false
+    #endif
     #if os(tvOS)
     @State private var searchScope: PrototypeSearchScope = .channels
     #endif
@@ -522,7 +525,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             })
             .toolbar {
                 PrototypeTouchBrowseToolbar(
-                    model: model, configuration: imports.configuration, isSearching: isSearching,
+                    model: model, configuration: imports.configuration,
+                    isSearching: isSearching || searchRetainsToolbar,
                     showsDirectory: usesCategoryDirectory(layout),
                     hasSidebar: layout.sidebarWidth > 0,
                     isDisabled: blocksBrowseControls || !isActive || expanded,
@@ -557,7 +561,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     }
                 ),
                 focusRequest: searchFocusRequest, submit: enterGuide,
-                focusChanged: { if $0 { controlsActive = true } }
+                focusChanged: { if $0 { controlsActive = true } },
+                dismissed: { searchRetainsToolbar = false }
             ))
             #endif
         }
@@ -2070,6 +2075,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             guideOffset: guideOffset, timeAnchor: timeAnchor, timelineOffset: timelineOffset
         )
         #if os(iOS)
+        searchRetainsToolbar = true
         model.category = nil
         #endif
         guideOffset = 0

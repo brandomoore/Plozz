@@ -185,7 +185,16 @@ after the field, while the smaller clear action inside only clears the query and
 retains editing. The search controller and pinned Close group are attached only
 while searching and restore their owner's prior navigation state on dismissal
 or removal. A standard UIKit clear button avoids regular-width integrated search
-treating its built-in Clear action as Cancel. While searching,
+treating its built-in Clear action as Cancel. Expansion starts from a laid-out
+native search button, not a newly inserted full-width field. Search temporarily
+owns the navigation item groups. Closing waits for the native animation transaction,
+then cross-fades the restored toolbar as one unit so regular-width search cannot
+snap out separately. It does not race the modal-search delegate or use a fixed delay.
+A reopen requested during dismissal waits for that handoff, and removal invalidates
+the pending completion.
+Reduce Motion suppresses the animated layout changes.
+The search glyph stays neutral while the editing caret uses the app accent.
+While searching,
 browse controls and the category sidebar give way to the results. There is no
 additional filter row, scope selector, search token or channel-count summary.
 Mobile search always includes both **Channels** and **Programs**, across all

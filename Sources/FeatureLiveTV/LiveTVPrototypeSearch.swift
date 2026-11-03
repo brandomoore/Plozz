@@ -17,12 +17,13 @@ struct PrototypeToolbarSearch: ViewModifier {
     let focusRequest: Int
     let submit: () -> Void
     let focusChanged: (Bool) -> Void
+    var dismissed: () -> Void = {}
 
     func body(content: Content) -> some View {
         content
             .background(PrototypeToolbarSearchPresentation(
                 query: $query, isPresented: $isPresented, focusRequest: focusRequest,
-                submit: submit, focusChanged: focusChanged
+                submit: submit, focusChanged: focusChanged, dismissed: dismissed
             ))
     }
 }
@@ -33,7 +34,10 @@ private struct PrototypeToolbarSearchPresentation: UIViewControllerRepresentable
     let focusRequest: Int
     let submit: () -> Void
     let focusChanged: (Bool) -> Void
+    let dismissed: () -> Void
     @Environment(\.locale) private var locale
+    @Environment(\.themePalette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var placeholder: String {
         String(localized: LocalizedStringResource("Search", locale: locale)) // l10n:content — native UIKit field follows the app locale
@@ -60,11 +64,16 @@ private struct PrototypeToolbarSearchPresentation: UIViewControllerRepresentable
         private weak var owner: UIViewController?
         private var previousSearch: UISearchController?
         private var previousPinnedGroup: UIBarButtonItemGroup?
+        private var previousLeadingGroups: [UIBarButtonItemGroup] = []
+        private var previousTrailingGroups: [UIBarButtonItemGroup] = []
         private var previousPlacement: UINavigationItem.SearchBarPlacement = .automatic
         private var previouslyAllowedToolbar = true
         private var previouslyDefinedContext = false
         private var lastFocusRequest: Int?
         private var synchronizing = false
+        private var hasPresentationRequest = false
+        private var isDismissing = false
+        private var dismissalGeneration = 0
         private lazy var closeItem = UIBarButtonItem(
             barButtonSystemItem: .close, target: self, action: #selector(closeSearch)
         )
@@ -86,6 +95,7 @@ private struct PrototypeToolbarSearchPresentation: UIViewControllerRepresentable
             search.searchBar.delegate = self
             search.searchBar.autocorrectionType = .no
             search.searchBar.autocapitalizationType = .none
+            search.searchBar.tintColor = .label
             search.obscuresBackgroundDuringPresentation = false
             search.hidesNavigationBarDuringPresentation = false
             search.automaticallyShowsCancelButton = false
@@ -119,6 +129,7 @@ private struct PrototypeToolbarSearchPresentation: UIViewControllerRepresentable
             defer { synchronizing = false }
             if search.searchBar.text != configuration.query { search.searchBar.text = configuration.query }
             search.searchBar.placeholder = configuration.placeholder
+            search.searchBar.searchTextField.tintColor = UIColor(configuration.palette.accent)
             closeItem.accessibilityLabel = String(localized: LocalizedStringResource(
                 "Close", locale: configuration.locale
             )) // l10n:content — native close action
@@ -126,7 +137,9 @@ private struct PrototypeToolbarSearchPresentation: UIViewControllerRepresentable
                 "Clear search", locale: configuration.locale
             )) // l10n:content — native clear action
             search.searchBar.searchTextField.rightViewMode = configuration.query.isEmpty ? .never : .always
+            if configuration.isPresented { hasPresentationRequest = true }
             guard isViewLoaded, view.window != nil else { return }
+            guard !isDismissing else { return }
             if configuration.isPresented {
                 guard let owner = navigationController?.topViewController,
                       view.isDescendant(of: owner.view) else { return }
@@ -136,35 +149,48 @@ private struct PrototypeToolbarSearchPresentation: UIViewControllerRepresentable
                     let item = owner.navigationItem
                     previousSearch = item.searchController
                     previousPinnedGroup = item.pinnedTrailingGroup
+                    previousLeadingGroups = item.leadingItemGroups
+                    previousTrailingGroups = item.trailingItemGroups
                     previousPlacement = item.preferredSearchBarPlacement
                     previouslyDefinedContext = owner.definesPresentationContext
                     owner.definesPresentationContext = true
                     if #available(iOS 26.0, *) {
                         previouslyAllowedToolbar = item.searchBarPlacementAllowsToolbarIntegration
                         item.searchBarPlacementAllowsToolbarIntegration = false
-                        item.preferredSearchBarPlacement = .integrated
+                        item.preferredSearchBarPlacement = .integratedButton
                     }
                     // Attach only while searching: the toolbar owns the collapsed Search button.
-                    item.searchController = search
-                    item.pinnedTrailingGroup = closeGroup
+                    UIView.performWithoutAnimation {
+                        item.leadingItemGroups = []
+                        item.trailingItemGroups = []
+                        item.searchController = search
+                        item.pinnedTrailingGroup = closeGroup
+                        owner.navigationController?.navigationBar.layoutIfNeeded()
+                    }
                 }
-                if !search.isActive { search.isActive = true }
-                if lastFocusRequest != configuration.focusRequest {
-                    lastFocusRequest = configuration.focusRequest
-                    search.searchBar.becomeFirstResponder()
-                }
-            } else if search.isActive {
-                search.isActive = false
-            } else if !search.isBeingDismissed {
-                restorePlacement()
+                if configuration.reduceMotion { UIView.performWithoutAnimation { activateSearch() } }
+                else { activateSearch() }
+            } else if owner != nil {
+                beginDismissal()
+            } else if hasPresentationRequest {
+                hasPresentationRequest = false
+                configuration.dismissed()
             }
         }
 
         func restorePlacement() {
+            dismissalGeneration += 1
+            isDismissing = false
+            restoreNavigationItem()
+        }
+
+        private func restoreNavigationItem() {
             if let owner, owner.navigationItem.searchController === search {
                 let item = owner.navigationItem
                 item.searchController = previousSearch
                 if item.pinnedTrailingGroup === closeGroup { item.pinnedTrailingGroup = previousPinnedGroup }
+                item.leadingItemGroups = previousLeadingGroups
+                item.trailingItemGroups = previousTrailingGroups
                 item.preferredSearchBarPlacement = previousPlacement
                 if #available(iOS 26.0, *) {
                     item.searchBarPlacementAllowsToolbarIntegration = previouslyAllowedToolbar
@@ -174,7 +200,17 @@ private struct PrototypeToolbarSearchPresentation: UIViewControllerRepresentable
             owner = nil
             previousSearch = nil
             previousPinnedGroup = nil
+            previousLeadingGroups = []
+            previousTrailingGroups = []
             lastFocusRequest = nil
+        }
+
+        private func activateSearch() {
+            if !search.isActive { search.isActive = true }
+            if lastFocusRequest != configuration.focusRequest {
+                lastFocusRequest = configuration.focusRequest
+                search.searchBar.becomeFirstResponder()
+            }
         }
 
         func updateSearchResults(for searchController: UISearchController) {
@@ -188,11 +224,57 @@ private struct PrototypeToolbarSearchPresentation: UIViewControllerRepresentable
         }
 
         func willDismissSearchController(_ searchController: UISearchController) {
-            if configuration.isPresented { configuration.isPresented = false }
+            if !isDismissing, configuration.isPresented { configuration.isPresented = false }
         }
 
-        func didDismissSearchController(_ searchController: UISearchController) {
-            restorePlacement()
+        private func beginDismissal() {
+            guard !isDismissing else { return }
+            isDismissing = true
+            let bar = owner?.navigationController?.navigationBar
+            bar?.layoutIfNeeded()
+            dismissalGeneration += 1
+            let generation = dismissalGeneration
+            // Wait for UIKit's actual bar animations, not just modal-search dismissal or a guessed delay.
+            CATransaction.begin()
+            CATransaction.setCompletionBlock { [weak self] in
+                guard let self, self.dismissalGeneration == generation else { return }
+                self.finishDismissal()
+            }
+            let contract = {
+                self.search.isActive = false
+                self.search.searchBar.resignFirstResponder()
+                bar?.layoutIfNeeded()
+            }
+            if configuration.reduceMotion { UIView.performWithoutAnimation(contract) }
+            else { contract() }
+            CATransaction.commit()
+        }
+
+        private func finishDismissal() {
+            if configuration.isPresented {
+                restorePlacement()
+                synchronize()
+                return
+            }
+            let bar = owner?.navigationController?.navigationBar
+            let restore = {
+                self.restoreNavigationItem()
+                self.hasPresentationRequest = false
+                self.configuration.dismissed()
+                bar?.layoutIfNeeded()
+            }
+            guard let bar, !configuration.reduceMotion else {
+                UIView.performWithoutAnimation(restore)
+                isDismissing = false
+                return
+            }
+            let generation = dismissalGeneration
+            // Regular-width UIKit can finish dismissing before it retires the expanded field.
+            UIView.transition(with: bar, duration: 0.2, options: .transitionCrossDissolve, animations: restore) { [weak self] _ in
+                guard let self, self.dismissalGeneration == generation else { return }
+                self.isDismissing = false
+                if self.configuration.isPresented { self.synchronize() }
+            }
         }
 
         func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) {
@@ -209,7 +291,7 @@ private struct PrototypeToolbarSearchPresentation: UIViewControllerRepresentable
         }
 
         @objc private func closeSearch() {
-            if configuration.isPresented { configuration.isPresented = false }
+            configuration.isPresented = false
         }
 
         @objc private func clearQuery() {

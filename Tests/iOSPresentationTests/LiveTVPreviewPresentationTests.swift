@@ -75,18 +75,27 @@ final class LiveTVPreviewPresentationTests: XCTestCase {
         let previousPlacement = item.preferredSearchBarPlacement
         let previousContext = owner.definesPresentationContext
         let previousPinnedGroup = item.pinnedTrailingGroup
+        let previousLeadingGroups = item.leadingItemGroups
+        let previousTrailingGroups = item.trailingItemGroups
         XCTAssertNil(item.searchController)
 
         state.isPresented = true
         try await settle(window)
         let search = try XCTUnwrap(item.searchController)
         XCTAssertNotNil(item.pinnedTrailingGroup)
+        if #available(iOS 26.0, *) {
+            XCTAssertEqual(item.preferredSearchBarPlacement, .integratedButton,
+                           "Native expansion must start from a collapsed search button.")
+        }
+        XCTAssertEqual(search.searchBar.tintColor, .label, "The expanding search glyph stays neutral.")
         state.isPresented = false
-        try await settle(window)
+        try await waitUntil { item.searchController == nil }
         XCTAssertNil(item.searchController)
         XCTAssertTrue(item.pinnedTrailingGroup === previousPinnedGroup)
         XCTAssertEqual(item.preferredSearchBarPlacement, previousPlacement)
         XCTAssertEqual(owner.definesPresentationContext, previousContext)
+        XCTAssertEqual(item.leadingItemGroups, previousLeadingGroups)
+        XCTAssertEqual(item.trailingItemGroups, previousTrailingGroups)
 
         state.isPresented = true
         try await settle(window)
@@ -98,6 +107,114 @@ final class LiveTVPreviewPresentationTests: XCTestCase {
         XCTAssertTrue(item.pinnedTrailingGroup === previousPinnedGroup)
         XCTAssertEqual(item.preferredSearchBarPlacement, previousPlacement)
         XCTAssertEqual(owner.definesPresentationContext, previousContext)
+    }
+
+    func testNativeToolbarSearchRestoresBrowsingWithoutAnimations() async throws {
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let state = SearchFieldState()
+        let host = UIHostingController(rootView: SearchFieldFixture(state: state))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await settle(window)
+        func navigation(in controller: UIViewController) -> UINavigationController? {
+            (controller as? UINavigationController)
+                ?? controller.children.lazy.compactMap { navigation(in: $0) }.first
+        }
+        let owner = try XCTUnwrap(navigation(in: host)?.topViewController)
+        state.isPresented = true
+        try await settle(window)
+        let search = try XCTUnwrap(owner.navigationItem.searchController)
+        XCTAssertTrue(search.searchBar.searchTextField.isFirstResponder)
+        state.isPresented = false
+        try await waitUntil { owner.navigationItem.searchController == nil }
+        XCTAssertEqual(state.dismissals, 1)
+        XCTAssertFalse(search.searchBar.searchTextField.isFirstResponder)
+        XCTAssertNil(owner.navigationItem.pinnedTrailingGroup)
+    }
+
+    func testNativeToolbarSearchRemovalInvalidatesPendingDismissal() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let state = SearchFieldState()
+        let host = UIHostingController(rootView: SearchFieldFixture(state: state))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await settle(window)
+        func navigation(in controller: UIViewController) -> UINavigationController? {
+            (controller as? UINavigationController)
+                ?? controller.children.lazy.compactMap { navigation(in: $0) }.first
+        }
+        let owner = try XCTUnwrap(navigation(in: host)?.topViewController)
+        state.isPresented = true
+        try await settle(window)
+        let search = try XCTUnwrap(owner.navigationItem.searchController)
+        state.isPresented = false
+        try await waitUntil { !search.searchBar.searchTextField.isFirstResponder }
+        XCTAssertTrue(owner.navigationItem.searchController === search)
+        state.isMounted = false
+        try await settle(window)
+        try await waitUntil { !search.isBeingDismissed }
+        XCTAssertNil(owner.navigationItem.searchController)
+        XCTAssertNil(owner.navigationItem.pinnedTrailingGroup)
+        XCTAssertEqual(state.dismissals, 0, "A removed bridge must not report a stale animation completion.")
+    }
+
+    func testNativeToolbarSearchQueuesReopeningUntilDismissalCompletes() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let state = SearchFieldState()
+        let host = UIHostingController(rootView: SearchFieldFixture(state: state))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await settle(window)
+        func navigation(in controller: UIViewController) -> UINavigationController? {
+            (controller as? UINavigationController)
+                ?? controller.children.lazy.compactMap { navigation(in: $0) }.first
+        }
+        let owner = try XCTUnwrap(navigation(in: host)?.topViewController)
+        state.isPresented = true
+        try await settle(window)
+        let search = try XCTUnwrap(owner.navigationItem.searchController)
+        let field = search.searchBar.searchTextField
+        XCTAssertTrue(field.isFirstResponder, "Native search must finish opening before the close action.")
+        XCTAssertTrue(search.isActive)
+        let close = try XCTUnwrap(owner.navigationItem.pinnedTrailingGroup?.barButtonItems.first)
+        let action = try XCTUnwrap(close.action)
+        XCTAssertTrue(UIApplication.shared.sendAction(action, to: close.target, from: close, for: nil))
+        try await waitUntil { !state.isPresented }
+        try await waitUntil { !field.isFirstResponder }
+        XCTAssertTrue(owner.navigationItem.searchController === search,
+                      "Keep native ownership while the search field contracts.")
+        XCTAssertEqual(state.dismissals, 0)
+        state.isPresented = true
+        try await waitUntil { field.isFirstResponder && owner.navigationItem.searchController === search }
+        XCTAssertEqual(state.dismissals, 0, "A queued reopen must not release the toolbar.")
+        state.isPresented = false
+        try await waitUntil { owner.navigationItem.searchController == nil }
+        XCTAssertEqual(state.dismissals, 1)
+        XCTAssertNil(owner.navigationItem.pinnedTrailingGroup)
     }
 
     func testCategoryTilesAreCompactAndGrowWithDynamicType() async throws {
@@ -755,6 +872,14 @@ final class LiveTVPreviewPresentationTests: XCTestCase {
         window.layoutIfNeeded()
     }
 
+    private func waitUntil(file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(16))
+        }
+        XCTAssertTrue(condition(), file: file, line: line)
+    }
+
     private func scrollViews(_ view: UIView) -> [UIScrollView] {
         (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
     }
@@ -765,6 +890,7 @@ private final class SearchFieldState {
     var query = "News"
     var isPresented = false
     var isMounted = true
+    var dismissals = 0
 }
 
 private struct SearchFieldFixture: View {
@@ -775,8 +901,14 @@ private struct SearchFieldFixture: View {
             if state.isMounted {
                 Color.clear.modifier(PrototypeToolbarSearch(
                     query: $state.query, isPresented: $state.isPresented,
-                    focusRequest: 0, submit: {}, focusChanged: { _ in }
+                    focusRequest: 0, submit: {}, focusChanged: { _ in },
+                    dismissed: { state.dismissals += 1 }
                 ))
+                .navigationTitle("Live TV")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) { Button("Browse") {} }
+                }
             } else {
                 Color.clear
             }
