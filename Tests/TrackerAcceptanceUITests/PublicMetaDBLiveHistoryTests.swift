@@ -142,7 +142,16 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"] == name,
                     "Inspect only the newly configured test profile")
         let settings = app.buttons["Settings for \(name)"]
-        try require(settings.waitForExistence(timeout: 30),
+        let picker = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH 'profile-picker-' AND label == %@", name
+        )).firstMatch
+        let completed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            settings.exists || picker.isHittable
+        }, object: app)
+        try require(XCTWaiter.wait(for: [completed], timeout: 30) == .completed,
+                    "Expected the completed profile's Home or restored launch picker")
+        if !settings.exists { try waitForExpectedProfile() }
+        try require(settings.exists,
                     "Expected the isolated profile's actual Home")
         try openTabRoot(app.buttons["Home"].firstMatch, anchor: settings)
     }

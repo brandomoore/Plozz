@@ -151,6 +151,11 @@ Loading placeholders share `shimmering()`. Its static gradient band is rasterize
 before the animated translation, avoiding repeated gradient work without
 rasterizing the placeholder content or changing the sweep, masking, or intensity.
 Inactive placeholders remain unmodified; Reduce Motion retains the static dim.
+Covered pages can set `shimmerAnimationsEnabled` to false to remove the animated
+overlay while retaining placeholder geometry. Mobile Home ties this to its
+existing frontmost-page signal and active scene, so opening Settings stops hidden
+loading animation, including during new-profile setup. Returning to Home restores
+the normal sweep; other callers remain enabled by default.
 The simulator lab's `skeletons-idle` and `skeletons-static` scenarios isolate this
 cost from loaded cards and network/provider work.
 

@@ -67,6 +67,16 @@ covers settled artwork. These fixtures are not the complete Home screen or a
 multi-server account. CPU measurements include the app process only; resident
 snapshots do not measure GPU/render-server memory or physical-device energy.
 
+Separate hosted `ShimmerPerformanceTests` check that disabling
+`shimmerAnimationsEnabled` stops rendered motion, re-enabling it restores the
+sweep without moving the placeholder, and inactive/Reduce Motion controls stay
+static. These correctness tests are not selected by the two performance scenarios.
+For covered-Home responsiveness, also exercise the actual native presentation:
+profile creation from Settings, source selection, appearance, and PIN setup.
+Compare passive and input-correlated app samples on the same simulator; an idle
+fixture or a startup-resumed onboarding pass alone does not establish that the
+original presentation-stack stall is fixed.
+
 The iOS `mobile-preference-sync` scenario applies 24 cloud batches through the
 real mobile app model, updating active Hero preferences and an inactive profile's
 preferred version in each batch. It verifies all 48 applied values and counts

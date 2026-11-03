@@ -27,6 +27,67 @@ final class ShimmerPerformanceTests: XCTestCase {
         XCTAssertEqual(try fixture.snapshot(), first)
     }
 
+    func testReducedMotionShimmerRemainsStatic() async throws {
+        let fixture = try await Fixture(
+            content: RoundedRectangle(cornerRadius: 18)
+                .fill(Color.gray)
+                .frame(width: 200, height: 300)
+                .shimmering()
+                .environment(\._accessibilityReduceMotion, true)
+        )
+        defer { fixture.close() }
+        try await assertMotion(fixture, expected: false)
+    }
+
+    func testCoveredShimmerStopsAndRestartsWithoutChangingLayout() async throws {
+        let visibility = Visibility()
+        let fixture = try await Fixture(content: VisibilityFixture(visibility: visibility))
+        defer { fixture.close() }
+        let visibleFrame = visibility.frame
+        XCTAssertFalse(visibleFrame.isEmpty)
+        try await assertMotion(fixture, expected: true)
+        visibility.enabled = false
+        try await Task.sleep(for: .milliseconds(150))
+        try await assertMotion(fixture, expected: false)
+        XCTAssertEqual(visibility.frame, visibleFrame)
+        visibility.enabled = true
+        try await Task.sleep(for: .milliseconds(150))
+        try await assertMotion(fixture, expected: true)
+        XCTAssertEqual(visibility.frame, visibleFrame)
+    }
+
+    private func assertMotion(_ fixture: Fixture, expected: Bool) async throws {
+        let first = try fixture.snapshot()
+        var changed = false
+        for _ in 0..<6 {
+            try await Task.sleep(for: .milliseconds(350))
+            let next = try fixture.snapshot()
+            changed = changed || next != first
+        }
+        XCTAssertEqual(changed, expected)
+    }
+
+    @MainActor
+    private final class Visibility: ObservableObject {
+        @Published var enabled = true
+        var frame = CGRect.zero
+    }
+
+    private struct VisibilityFixture: View {
+        @ObservedObject var visibility: Visibility
+
+        var body: some View {
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Color.gray)
+                .frame(width: 200, height: 300)
+                .shimmering()
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    visibility.frame = $0
+                }
+                .environment(\.shimmerAnimationsEnabled, visibility.enabled)
+        }
+    }
+
     private func measure(disableAnimations: Bool, scenario: String) async throws {
         try PerformanceProbe.requireEnabled()
         let probe = Probe()

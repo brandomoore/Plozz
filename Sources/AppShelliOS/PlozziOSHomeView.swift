@@ -261,6 +261,7 @@ struct PlozziOSHomeView: View {
                 loadedContent(content)
             }
         }
+        .environment(\.shimmerAnimationsEnabled, homeIsFrontmost && scenePhase == .active)
         // The portrait hero is sized to the phone, not to a constant — see
         // `HeroStageMetrics`. Published here so the loading skeleton reserves the
         // same height the real hero will take, rather than reflowing when it lands.
