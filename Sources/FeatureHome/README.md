@@ -1421,6 +1421,11 @@ release all 110pt immediately, ahead of the moving presentation viewport.
 Earlier rows retain native Up eligibility;
 making their entire mask transparent would break that navigation. Showcase's
 backdrop uses wider leading and bottom gradients without lengthening its crossfade.
+Showcase artwork fits its full image into the top-trailing backdrop slot, including
+non-16:9 sources. Hero + Showcase transition overscan extends the image's top edge
+above that slot instead of enlarging and lifting the resting image. Standalone
+Showcase and Reduce Motion preserve the same uncropped framing; carousel artwork
+keeps its existing fill treatment.
 Crossfade is the only Showcase backdrop transition. The retired slide preference
 is ignored when reading older settings without resetting the remaining choices.
 Showcase's optional titles under cards follow Appearance > Cards;

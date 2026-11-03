@@ -287,7 +287,8 @@ public struct HomeHeroBackdrop: View {
             forward: forward,
             transition: transition,
             width: width,
-            height: height + topOverscan
+            height: height + topOverscan,
+            browseTopOverscan: scrimStyle == .browse ? topOverscan : nil
         )
         .id(policy.identity)
         #else
@@ -485,6 +486,7 @@ private struct WipeImageView: UIViewRepresentable {
     let transition: HomeHeroBackdrop.Transition
     let width: CGFloat
     let height: CGFloat
+    let browseTopOverscan: CGFloat?
 
     /// Slightly longer than a push so the easeOut "settle" tail reads clearly.
     /// Tuned by feel: 0.85 → 0.95 → 1.20 → 1.05. Both the wipe and the (slightly
@@ -520,6 +522,7 @@ private struct WipeImageView: UIViewRepresentable {
             parallaxIn: Self.parallaxIn,
             driftFraction: Self.driftFraction
         )
+        view.browseTopOverscan = browseTopOverscan
         context.coordinator.container = view
         context.coordinator.configure(
             width: width, height: height, reduceMotion: context.environment.accessibilityReduceMotion
@@ -538,6 +541,7 @@ private struct WipeImageView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: HeroWipeContainerView, context: Context) {
+        uiView.browseTopOverscan = browseTopOverscan
         context.coordinator.container = uiView
         context.coordinator.configure(
             width: width, height: height, reduceMotion: context.environment.accessibilityReduceMotion
@@ -1052,6 +1056,13 @@ final class HeroWipeContainerView: UIView {
     private var pages: [SlidePage] = []
     private var revealingPages = Set<ObjectIdentifier>()
 
+    var browseTopOverscan: CGFloat? {
+        didSet {
+            guard browseTopOverscan != oldValue else { return }
+            for page in pages { page.browseTopOverscan = browseTopOverscan }
+        }
+    }
+
     var hasPages: Bool { !pages.isEmpty }
     var pageCount: Int { pages.count }
     var activeWipeCount: Int { revealingPages.count }
@@ -1213,6 +1224,7 @@ final class HeroWipeContainerView: UIView {
     private func makePage(image: UIImage?) -> SlidePage {
         let page = SlidePage()
         page.bleed = bleed
+        page.browseTopOverscan = browseTopOverscan
         page.image = image
         return page
     }
@@ -1226,7 +1238,11 @@ final class HeroWipeContainerView: UIView {
 fileprivate final class SlidePage: UIView {
     private let contentView = UIView()
     private let imageView = UIImageView()
+    private let overscanImage = UIImageView()
     var bleed: CGFloat = 0
+    var browseTopOverscan: CGFloat? {
+        didSet { layoutImage() }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -1236,6 +1252,8 @@ fileprivate final class SlidePage: UIView {
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.backgroundColor = .clear
+        overscanImage.clipsToBounds = true
+        contentView.addSubview(overscanImage)
         contentView.addSubview(imageView)
         addSubview(contentView)
     }
@@ -1244,7 +1262,11 @@ fileprivate final class SlidePage: UIView {
 
     var image: UIImage? {
         get { imageView.image }
-        set { imageView.image = newValue }
+        set {
+            imageView.image = newValue
+            overscanImage.image = browseTopOverscan == nil ? nil : newValue
+            layoutImage()
+        }
     }
 
     /// Set this page's clip `window` (container coords) and position the image so
@@ -1265,7 +1287,30 @@ fileprivate final class SlidePage: UIView {
             x: contentX - bleed - window.origin.x + contentSize.width / 2,
             y: contentSize.height / 2
         )
-        imageView.frame = contentView.bounds
+        layoutImage()
+    }
+
+    private func layoutImage() {
+        guard let topOverscan = browseTopOverscan, let image = imageView.image,
+              image.size.width > 0, image.size.height > 0 else {
+            imageView.frame = contentView.bounds
+            overscanImage.isHidden = true
+            return
+        }
+        let slot = CGRect(
+            x: bleed, y: topOverscan,
+            width: max(0, contentView.bounds.width - 2 * bleed),
+            height: max(0, contentView.bounds.height - topOverscan)
+        )
+        let scale = min(slot.width / image.size.width, slot.height / image.size.height)
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        imageView.frame = CGRect(x: slot.maxX - size.width, y: slot.minY, width: size.width, height: size.height)
+        // Transition coverage extends the image's top edge without enlarging
+        // or lifting the resting artwork. It is above the screen after settling.
+        overscanImage.isHidden = topOverscan <= 0
+        overscanImage.image = image
+        overscanImage.layer.contentsRect = CGRect(x: 0, y: 0, width: 1, height: 1 / (image.size.height * image.scale))
+        overscanImage.frame = CGRect(x: imageView.frame.minX, y: 0, width: size.width, height: topOverscan)
     }
 
     func setOutgoingDrift(_ x: CGFloat) {
