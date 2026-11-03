@@ -2702,10 +2702,10 @@ final class LiveChannelPlayerModel {
         }
     }
 
-    private func reportSessionFailure(_ report: LiveChannelFailureReport) {
+    private func reportSessionFailure(_ report: LiveChannelFailureReport, pipeline: PlaybackPipelineSnapshot?) {
         if !recordedAttemptFailure {
             recordedAttemptFailure = true
-            recordPlaybackDiagnostic(.failed, failure: report.diagnostic)
+            recordPlaybackDiagnostic(.failed, failure: report.diagnostic, pipeline: pipeline)
         }
         guard let sessionReporting, !reportedSessionFailure else { return }
         reportedSessionFailure = true
@@ -2713,7 +2713,8 @@ final class LiveChannelPlayerModel {
     }
 
     private func recordPlaybackDiagnostic(
-        _ event: PlaybackDiagnosticJournal.Event, failure: PlaybackFailureDiagnostic? = nil
+        _ event: PlaybackDiagnosticJournal.Event, failure: PlaybackFailureDiagnostic? = nil,
+        pipeline: PlaybackPipelineSnapshot? = nil
     ) {
         guard attemptCount > 0 else { return }
         let shape: PlaybackDiagnosticJournal.Source
@@ -2726,7 +2727,7 @@ final class LiveChannelPlayerModel {
             event, session: diagnosticSession, attempt: diagnosticAttempt,
             facts: .init(provider: nil, engine: .plozzigen, content: .live, source: shape),
             elapsed: max(0, uptime() - attemptStartedAt), liveFailure: failure,
-            pipeline: event == .failed ? .init(engine.liveTelemetry) : nil
+            pipeline: pipeline
         )
     }
 
@@ -2846,10 +2847,11 @@ final class LiveChannelPlayerModel {
         foregroundTask?.cancel()
         foregroundTask = nil
         let report = LiveChannelFailureReport(failure: failure, diagnostic: engine.livePlaybackFailureDiagnostic)
+        let pipeline = PlaybackPipelineSnapshot(engine.liveTelemetry)
         failureReport = report
         engine.stop()
         idleSleepGuard.allowSleep()
-        reportSessionFailure(report)
+        reportSessionFailure(report, pipeline: pipeline)
     }
 
     private func streamEnded(generation: Int? = nil) {
@@ -2864,10 +2866,11 @@ final class LiveChannelPlayerModel {
         foregroundTask?.cancel()
         foregroundTask = nil
         let report = LiveChannelFailureReport(failure: .ended, diagnostic: engine.livePlaybackFailureDiagnostic)
+        let pipeline = PlaybackPipelineSnapshot(engine.liveTelemetry)
         failureReport = report
         engine.stop()
         idleSleepGuard.allowSleep()
-        reportSessionFailure(report)
+        reportSessionFailure(report, pipeline: pipeline)
     }
 }
 
