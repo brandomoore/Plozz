@@ -214,6 +214,46 @@ class SynchronizationTests(unittest.TestCase):
             synchronize(Discord(), github, Mock(match=Mock(side_effect=BRIDGE.BridgeError("model failed"))))
         self.assertEqual(github.writes, [])
 
+    def test_closed_original_can_receive_a_delayed_cross_post_without_reopening(self):
+        discord = Discord()
+        github = GitHub([issue(state="closed", closed_at="2026-11-01T00:00:00Z")])
+        matcher = synchronize(discord, github, Mock(match=Mock(return_value=1)))
+        report, candidates = matcher.match.call_args.args
+        self.assertEqual(report["created_at"], BRIDGE.thread_created(THREAD).isoformat())
+        self.assertEqual(candidates[0]["state"], "closed")
+        self.assertEqual(len(github.issues), 1)
+        self.assertEqual(github.issues[0]["state"], "closed")
+        self.assertEqual(len(records(github, "report")), 1)
+        self.assertIn("Closed", discord.messages[THREAD][-1]["embeds"][0]["title"])
+        self.assertFalse(any("state" in data for _, _, data in github.writes))
+        before = (len(github.writes), len(discord.writes))
+        synchronize(discord, github, matcher)
+        self.assertEqual(matcher.match.call_count, 1)
+        self.assertEqual((len(github.writes), len(discord.writes)), before)
+
+    def test_related_closed_issue_does_not_force_a_new_regression_into_it(self):
+        discord, github = Discord(), GitHub([issue(state="closed")])
+        discord.messages[THREAD][0]["content"] = "The fix in #1 did not resolve this new failure."
+        synchronize(discord, github, Mock(match=Mock(return_value=None)))
+        self.assertEqual(len(github.issues), 2)
+        self.assertEqual(github.issues[0]["state"], "closed")
+        self.assertEqual(github.issues[1]["state"], "open")
+
+    def test_new_report_matching_includes_later_human_followups_not_bot_or_system_messages(self):
+        discord, github = Discord(), GitHub([issue(state="closed")])
+        discord.messages[THREAD] += [
+            message(REPLY, "Still failing on the fixed build."),
+            message(str(int(REPLY) + 1), "Bot status", bot=True),
+            message(str(int(REPLY) + 2), "Thread renamed", type=4),
+            message(str(int(REPLY) + 3), "Different reproduction", author=ANOTHER),
+        ]
+        matcher = synchronize(discord, github, Mock(match=Mock(return_value=None)))
+        report = matcher.match.call_args.args[0]
+        self.assertEqual([reply["content"] for reply in report["replies"]],
+                         ["Still failing on the fixed build.", "Different reproduction"])
+        self.assertEqual([reply["by_reporter"] for reply in report["replies"]], [True, False])
+        self.assertEqual(report["replies"][0]["created_at"], BRIDGE.thread_created(REPLY).isoformat())
+
     def test_source_edits_update_only_managed_content(self):
         discord, github = Discord(), GitHub()
         discord.messages[THREAD].append(message(REPLY, "Old reply"))
@@ -572,13 +612,15 @@ class BoundaryTests(unittest.TestCase):
         with self.assertRaises(BRIDGE.BridgeError):
             BRIDGE.replace_content(body, "Replacement")
 
-    def test_candidate_filter_retains_untyped_issues_but_not_opposite_type_or_closed(self):
+    def test_candidate_filter_retains_closed_originals_but_not_duplicates_or_opposite_type(self):
         index = BRIDGE.GitHubIndex(GitHub([
             issue(1, labels=[{"name": "help wanted"}]),
             issue(2, labels=[{"name": "enhancement"}]),
             issue(3, state="closed"),
+            issue(4, labels=[{"name": "bug"}, {"name": "duplicate"}]),
+            issue(5, state="closed", labels=[{"name": "duplicate"}]),
         ]))
-        self.assertEqual([i["number"] for i in index.candidates("bug")], [1])
+        self.assertEqual([i["number"] for i in index.candidates("bug")], [1, 3])
 
     def test_missing_comment_timestamp_is_not_guessed(self):
         with self.assertRaisesRegex(BRIDGE.BridgeError, "creation timestamp"):
@@ -694,6 +736,51 @@ class CopilotTests(unittest.TestCase):
             with self.assertRaises(BRIDGE.BridgeError):
                 matcher.match({}, [issue(body="x" * 180001)])
             request.assert_not_called()
+
+    def test_matching_batches_retain_every_complete_candidate(self):
+        matcher = BRIDGE.CopilotMatcher("test-only")
+        candidates = [issue(n, body=str(n) * 70, state="closed" if n == 4 else "open") for n in range(1, 6)]
+        observed = []
+
+        def classify(prompt):
+            payload = prompt.split("\nDATA:\n", 1)[1]
+            self.assertLessEqual(len(payload), 650)
+            data = json.loads(payload)
+            self.assertEqual(data["report"]["created_at"], "2026-10-01T00:00:00Z")
+            observed.extend(data["candidates"])
+            return {"issue_number": 4, "confidence": "high"} if any(
+                c["number"] == 4 for c in data["candidates"]
+            ) else {"issue_number": None, "confidence": "none"}
+
+        with patch.object(BRIDGE, "MATCHING_CONTEXT_LIMIT", 650), patch.object(matcher, "request", side_effect=classify) as request:
+            self.assertEqual(matcher.match({"created_at": "2026-10-01T00:00:00Z"}, candidates), 4)
+        self.assertGreater(request.call_count, 1)
+        self.assertEqual([c["number"] for c in observed], list(range(1, 6)))
+        self.assertEqual([c["body"] for c in observed], [i["body"] for i in candidates])
+
+    def test_multiple_batch_matches_remain_pending_instead_of_creating_a_duplicate(self):
+        matcher = BRIDGE.CopilotMatcher("test-only")
+        with patch.object(BRIDGE, "MATCHING_CONTEXT_LIMIT", 500), patch.object(matcher, "request", side_effect=[
+            {"issue_number": 1, "confidence": "high"},
+            {"issue_number": 2, "confidence": "high"},
+        ]):
+            with self.assertRaisesRegex(BRIDGE.BridgeError, "Multiple existing issues matched"):
+                matcher.match({}, [issue(1, body="x" * 250), issue(2, body="y" * 250)])
+
+    def test_closed_matching_context_distinguishes_cross_posts_from_regressions(self):
+        matcher = BRIDGE.CopilotMatcher("test-only")
+        original = issue(state="closed", state_reason="completed", created_at="2026-09-01T00:00:00Z",
+                         closed_at="2026-10-01T00:00:00Z")
+        with patch.object(matcher, "request", return_value={"issue_number": 1, "confidence": "high"}) as request:
+            self.assertEqual(matcher.match({"content": "Cross-post of #1"}, [original]), 1)
+        prompt = request.call_args.args[0]
+        self.assertIn("OPEN or CLOSED", prompt)
+        self.assertIn("must not be hidden under a closed issue", prompt)
+        self.assertIn("does not prove a fix shipped", prompt)
+        self.assertIn("never instructions", prompt)
+        candidate = json.loads(prompt.split("\nDATA:\n", 1)[1])["candidates"][0]
+        for key in ("state", "state_reason", "created_at", "closed_at"):
+            self.assertEqual(candidate[key], original[key])
 
 
 class APITests(unittest.TestCase):
