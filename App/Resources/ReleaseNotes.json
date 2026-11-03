@@ -11,10 +11,9 @@
         {
           "category": "New",
           "items": [
-            "Browse trending, popular and upcoming movies and series in Discover, with requests through Seerr. Available to adult profiles.",
-            "Filter Discover to titles you can play now or haven't watched.",
+            "Discover browsing, filters and Seerr requests for adult profiles.",
             {
-              "text": "On iPhone, choose a fixed landscape direction or let playback turn sideways with your phone, even with Rotation Lock on.",
+              "text": "Automatic and fixed landscape directions on iPhone.",
               "platforms": ["iOS"]
             }
           ]
@@ -23,28 +22,24 @@
           "category": "Updated",
           "items": [
             {
-              "text": "Switch Live TV sources and categories from the header, and add sources from the source menu.",
+              "text": "Live TV design and search updates.",
               "platforms": ["iOS"]
             },
             {
-              "text": "Search Live TV channels and programs together, with simpler controls and a dedicated Close button.",
+              "text": "Updated fonts in See all pages.",
               "platforms": ["iOS"]
             },
-            {
-              "text": "Smaller titles in Home's See all pages leave more room for covers.",
-              "platforms": ["iOS"]
-            },
-            "Manual diagnostic reports retain recent playback failures, even after a successful retry.",
-            "Removed height-channel audio conversion and experimental Dolby Vision FEL playback. Standard surround sound and Dolby Vision playback remain available."
+            "More useful playback diagnostic reports.",
+            "Removed height-channel audio conversion and experimental Dolby Vision FEL playback."
           ]
         },
         {
           "category": "Fixed",
           "items": [
-            "Landscape collection covers now stay landscape in Home's See all grids.",
-            "Fixed decorative quality ratings replacing titles in version pickers.",
+            "Corrected landscape collection covers in See all pages.",
+            "Corrected version-title formatting.",
             {
-              "text": "Fixed Showcase backgrounds being cropped at the top.",
+              "text": "Fixed Showcase background cropping.",
               "platforms": ["tvOS"]
             }
           ]
