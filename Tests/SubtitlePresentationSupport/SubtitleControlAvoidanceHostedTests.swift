@@ -9,6 +9,84 @@ import XCTest
 
 @MainActor
 final class SubtitleControlAvoidanceHostedTests: XCTestCase {
+    #if os(iOS)
+    func testMobileAvoidanceSwitchEditsTextAndBitmapStyles() async throws {
+        let scene = try await activeScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let controls = PlayerControlsModel()
+        var saved = SubtitleStyle.profileDefault
+        controls.subtitleStyle = saved
+        let context = SubtitleStyleEditingContext(
+            controls: controls, style: Binding(get: { saved }, set: { saved = $0 }),
+            secondaryPreview: .constant(false)
+        )
+        let host = UIHostingController(rootView: NavigationStack {
+            MobileSubtitleStyleEditor(viewModel: context)
+        }.environment(\.locale, Locale(identifier: "en_US")))
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1280, height: 900)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
+        func listedSwitches(_ view: UIView) -> [UISwitch] {
+            if let list = view as? UICollectionView {
+                return list.visibleCells.flatMap { descendants($0).compactMap { $0 as? UISwitch } }
+            }
+            return view.subviews.flatMap(listedSwitches)
+        }
+        func toggle() -> UISwitch? {
+            listedSwitches(host.view).max {
+                $0.convert($0.bounds, to: window).minY < $1.convert($1.bounds, to: window).minY
+            }
+        }
+        for format: String? in [nil, "PGS"] {
+            controls.secondarySubtitleImagePrimaryFormat = format
+            context.applySubtitleStyle(.profileDefault)
+            try await waitUntil {
+                window.layoutIfNeeded()
+                return listedSwitches(host.view).count == (format == nil ? 2 : 1) && toggle()?.isOn == true
+            }
+            let control = try XCTUnwrap(toggle())
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Subtitle avoidance switch \(format ?? "text")"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            control.setOn(false, animated: false)
+            control.sendActions(for: .valueChanged)
+            try await waitUntil { !saved.avoidsPlayerControls }
+            XCTAssertFalse(controls.subtitleStyle.avoidsPlayerControls)
+            XCTAssertTrue(saved.followsSystemStyle)
+        }
+    }
+    #endif
+
+    func testControlAvoidanceEditorDoesNotDisableDeviceCaptionMatching() {
+        let controls = PlayerControlsModel()
+        var saved = SubtitleStyle.profileDefault
+        controls.subtitleStyle = saved
+        let context = SubtitleStyleEditingContext(
+            controls: controls, style: Binding(get: { saved }, set: { saved = $0 }),
+            secondaryPreview: .constant(false)
+        )
+        var expected = saved
+        expected.avoidsPlayerControls = false
+        context.editSubtitleStyle { $0.avoidsPlayerControls = false }
+        XCTAssertEqual(saved, expected)
+        XCTAssertEqual(controls.subtitleStyle, expected)
+        XCTAssertTrue(context.effectiveStyle.followsSystemStyle)
+        XCTAssertFalse(context.effectiveStyle.avoidsPlayerControls)
+        context.editSubtitleStyle { $0.avoidsPlayerControls = true }
+        XCTAssertEqual(saved, .profileDefault)
+    }
+
     func testRenderedTopArtworkStaysFixedWhileOnlyBottomArtworkAvoidsControls() async throws {
         let scene = try await activeScene()
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -78,6 +156,18 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
         XCTAssertEqual(raised.bottom.height, resting.bottom.height, accuracy: window.bounds.width / 480,
                        "Allow one row of quantization in the downsampled pixel capture")
         XCTAssertLessThanOrEqual(raised.bottom.maxY, try XCTUnwrap(controls.subtitleLayout.frame).minY)
+        model.style.avoidsPlayerControls = false
+        try await waitUntil {
+            window.layoutIfNeeded()
+            let disabled = self.coloredRegions(in: captions.view)
+            return disabled.top == resting.top && disabled.bottom == resting.bottom
+        }
+        XCTAssertNotNil(controls.subtitleLayout.frame)
+        model.style.avoidsPlayerControls = true
+        try await waitUntil {
+            window.layoutIfNeeded()
+            return self.coloredRegions(in: window).bottom == raised.bottom
+        }
         fixture.visible = false
         try await waitUntil {
             window.layoutIfNeeded()
@@ -455,13 +545,13 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
         return view.subviews.flatMap { frames(in: $0, relativeTo: window) }
     }
 
-    private func coloredRegions(in window: UIWindow) -> (top: CGRect, bottom: CGRect) {
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+    private func coloredRegions(in view: UIView) -> (top: CGRect, bottom: CGRect) {
+        let image = UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
+            _ = view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
         }
         guard let image = image.cgImage else { return (.null, .null) }
         let width = 480
-        let height = max(1, Int(CGFloat(width) * window.bounds.height / window.bounds.width))
+        let height = max(1, Int(CGFloat(width) * view.bounds.height / view.bounds.width))
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
         bytes.withUnsafeMutableBytes { raw in
             guard let context = CGContext(
@@ -480,8 +570,8 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
                 if bytes[offset + 1] > 220 && bytes[offset] < 40 { green = green.union(point) }
             }
         }
-        let transform = CGAffineTransform(scaleX: window.bounds.width / CGFloat(width),
-                                          y: window.bounds.height / CGFloat(height))
+        let transform = CGAffineTransform(scaleX: view.bounds.width / CGFloat(width),
+                                          y: view.bounds.height / CGFloat(height))
         return (red.applying(transform), green.applying(transform))
     }
 

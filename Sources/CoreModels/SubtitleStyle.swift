@@ -270,6 +270,13 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
     }
 
     public var positionReference: PositionReference
+    public var avoidsPlayerControls: Bool
+    public static var controlAvoidanceTitle: LocalizedStringResource {
+        LocalizedStringResource(
+            "Avoid Player Controls",
+            comment: "Subtitle positioning switch. When enabled, subtitles move only enough to avoid visible playback controls. Turning it off keeps their chosen position."
+        )
+    }
     /// Vertical position measured upward from the selected reference's bottom. The chosen
     /// anchor stays fixed as lines change.
     /// `0` aligns the block's bottom with the screen bottom, `1` aligns its top.
@@ -449,6 +456,7 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
         verticalPosition: Double = 0.06,
         verticalAnchor: VerticalAnchor = .bottom,
         positionReference: PositionReference = .screen,
+        avoidsPlayerControls: Bool = true,
         horizontalOffset: Double = 0,
         textColor: Color = .white,
         glyphBackground: Color = .clear,
@@ -472,6 +480,7 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
         self.verticalPosition = verticalPosition
         self.verticalAnchor = verticalAnchor
         self.positionReference = positionReference
+        self.avoidsPlayerControls = avoidsPlayerControls
         self.horizontalOffset = horizontalOffset
         self.textColor = textColor
         self.glyphBackground = glyphBackground
@@ -615,7 +624,7 @@ extension SubtitleStyle {
         case fontFamily, systemFont, fontDescriptor, captionSourceOverrides, fontWeight, fontScale, verticalPosition, verticalAnchor, horizontalOffset
         case textColor, glyphBackground, opacity, hdrLuminanceScale
         case background, edge, border, secondary, followsSystemStyle, captionEdgeStyleRawValue
-        case usesSourcePosition, usesSourceColors, positionReference
+        case usesSourcePosition, usesSourceColors, positionReference, avoidsPlayerControls
     }
 
     /// Custom decoder so a style persisted by an older build (missing keys added
@@ -635,6 +644,7 @@ extension SubtitleStyle {
             verticalAnchor: try c.decodeIfPresent(VerticalAnchor.self, forKey: .verticalAnchor) ?? d.verticalAnchor,
             positionReference: (try c.decodeIfPresent(String.self, forKey: .positionReference))
                 .flatMap(PositionReference.init(rawValue:)) ?? .screen,
+            avoidsPlayerControls: try c.decodeIfPresent(Bool.self, forKey: .avoidsPlayerControls) ?? d.avoidsPlayerControls,
             horizontalOffset: try c.decodeIfPresent(Double.self, forKey: .horizontalOffset) ?? d.horizontalOffset,
             textColor: try c.decodeIfPresent(Color.self, forKey: .textColor) ?? d.textColor,
             glyphBackground: try c.decodeIfPresent(Color.self, forKey: .glyphBackground) ?? .clear,

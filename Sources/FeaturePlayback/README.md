@@ -1398,12 +1398,19 @@ while the title fades, preventing subtitles from dropping into its empty space.
 The normal transport reserves its full title-to-tabs band, including gaps between
 controls: a short title must not let centered captions stay beneath the timeline.
 Info/Cast and full appearance editing release that reserved clearance.
-On iPhone and iPad, the visible center transport also reserves the band down to
-the bottom controls, so lower captions move above the play/pause and skip row
-rather than into its buttons or the space below it. Top controls are measured
-separately. A mobile caption moves only when the complete text/dual-lane block
+On iPhone, iPad and Mac, the visible center transport reserves only its actual
+buttons, leaving the space between them and the bottom controls available.
+Captions move only enough to clear intersecting controls, not automatically
+above the center row. Top controls are measured separately.
+A mobile caption moves only when the complete text/dual-lane block
 or movable artwork fits above every obstruction; otherwise its original
 position is retained, without a partial lift. TV placement is unchanged.
+**Avoid Player Controls** in subtitle appearance enables this adjustment by
+default. Turning it off preserves the chosen text, dual-lane and movable bitmap
+positions while controls are shown. It does not change font/style matching to
+the device, authored fixed artwork, or the user's saved offsets. The preference
+uses the existing profile style, including independent Live TV overrides, and
+is available in Settings and the in-player editors on both platforms.
 Hiding the controls restores normal placement; style
 editing, previews, and saved position values are unchanged. The normal dialogue
 percentage remains screen-relative. Captions already encoded into video pixels
