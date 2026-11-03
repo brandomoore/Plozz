@@ -322,6 +322,13 @@ presentation keeps the readable title and omits repeated resolution, language,
 subtitle and source-status rows. Plain filenames and edition labels remain
 intact. This shared display normalization also covers cached version metadata;
 it never rewrites source IDs, playback locators or stored labels.
+Resolution-only headers with decorative ratings (including partial circles and
+emoji variants) cannot replace the readable title below them. Titles that begin
+with a resolution but contain words or ordinary numbers remain intact.
+Version pickers show the full sanitized filename directly, including its original
+separators, technical suffix, release group and extension. Do not abbreviate it
+into an inferred title or hide it behind another action; the exact filename helps
+distinguish releases even when their structured facts and badges match.
 Original Unicode filenames are retained and the shared card wraps them without
 a line cap. Extensionless URL endpoints are not release filenames,
 so opaque stream paths cannot override a readable source name. Filename extraction

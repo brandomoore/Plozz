@@ -46,8 +46,6 @@ public struct HomeRowBrowseView<Card: View>: View {
                 }
                 .lineLimit(1)
                 .focusSection()
-                #else
-                heading
                 #endif
                 if model.query == model.appliedQuery {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: metrics.gridSpacing) {
@@ -117,6 +115,7 @@ public struct HomeRowBrowseView<Card: View>: View {
         }
         #endif
         #if os(iOS)
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {

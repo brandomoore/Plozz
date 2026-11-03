@@ -102,6 +102,20 @@ extension UIDensity {
         ]
     }
 
+    func iOSLandscapeGridColumns(
+        horizontalSizeClass: UserInterfaceSizeClass?,
+        isRunningOnMac: Bool = false
+    ) -> [GridItem] {
+        if isRunningOnMac {
+            let metrics = PlozzMetrics.desktop(density: self)
+            return [GridItem(
+                .adaptive(minimum: metrics.landscapeWidth, maximum: metrics.landscapeWidth * 1.18),
+                spacing: metrics.gridSpacing
+            )]
+        }
+        return [GridItem(.adaptive(minimum: horizontalSizeClass == .regular ? 240 : 160), spacing: 12)]
+    }
+
     func iOSHomeLibraryWidth(
         horizontalSizeClass: UserInterfaceSizeClass?,
         isRunningOnMac: Bool = false

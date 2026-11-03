@@ -34,6 +34,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
     public let title: String // l10n:content — original Home row heading
     public let localizedTitle: LocalizedStringResource?
     public let titleSuffix: String?
+    public let style: LibrarySection.Style
     public private(set) var items: [MediaItem] = []
     public private(set) var error: AppError?
     public private(set) var isLoading = false
@@ -52,6 +53,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
 
     public init(
         title: String, localizedTitle: LocalizedStringResource? = nil, titleSuffix: String? = nil, // l10n:content — original Home row heading; app copy uses localizedTitle
+        style: LibrarySection.Style = .poster,
         snapshot: [MediaItem] = [], loaders: [PageLoader] = [],
         snapshotProvider: (@MainActor () -> [MediaItem]?)? = nil, watchlistDates: Bool = false,
         isCurrent: @escaping @MainActor () -> Bool = { true },
@@ -60,6 +62,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
         self.title = title
         self.localizedTitle = localizedTitle
         self.titleSuffix = titleSuffix
+        self.style = style
         self.loaders = loaders
         self.isCurrent = isCurrent
         self.merge = merge

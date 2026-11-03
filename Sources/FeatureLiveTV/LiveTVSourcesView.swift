@@ -4,7 +4,7 @@ import FeatureLiveTVCore
 import SwiftUI
 
 public struct LiveTVSourcesView: View {
-    public enum Presentation { case page, settingsPane }
+    public enum Presentation { case page, settingsPane, addSource }
 
     @State private var model: LiveTVSourceManagementModel
     @State private var importedRemovalID: UUID?
@@ -107,6 +107,7 @@ public struct LiveTVSourcesView: View {
         imports: LiveTVPrototypeImportModel,
         refresh: @escaping @MainActor () -> Void,
         refreshSource: (@MainActor (String) async throws -> Void)? = nil,
+        presentation: Presentation = .page,
         serverChoices: [LiveTVServerChoice] = [],
         serverProviderResolver: LiveTVServerProviderResolver? = nil,
         connectServer: (() -> Void)? = nil,
@@ -123,7 +124,7 @@ public struct LiveTVSourcesView: View {
         customChannelCount: Int = 0
     ) {
         _model = State(initialValue: model)
-        presentation = .page
+        self.presentation = presentation
         self.imports = imports
         self.refresh = refresh
         self.refreshSource = refreshSource
@@ -148,7 +149,8 @@ public struct LiveTVSourcesView: View {
     public var body: some View {
         LiveTVSourceAccessGate(model: model, unrestrictedContent: settingsPreferences) { canManage in
             let content = LiveTVSourcesContent(
-                model: model, imports: catalog?.isPresentationCurrent == false ? nil : imports, refresh: refresh,
+                model: model, isAddingSource: presentation == .addSource,
+                imports: catalog?.isPresentationCurrent == false ? nil : imports, refresh: refresh,
                 retrySource: sourceRetry, retryingSourceIDs: retryingSourceIDs,
                 serverChoices: serverChoices, serverProviderResolver: serverProviderResolver,
                 connectServer: connectServer, sourceFilterID: sourceFilterID,
@@ -166,7 +168,7 @@ public struct LiveTVSourcesView: View {
                     content
                 }
             } else {
-                LiveTVSettingsPage(title: SettingsCopy.tvSources) {
+                LiveTVSettingsPage(title: presentation == .addSource ? SettingsCopy.addTVSource : SettingsCopy.tvSources) {
                     catalogStatus
                     content
                 }
@@ -302,6 +304,7 @@ private enum LiveTVSourceRemoval {
 private struct LiveTVSourcesContent: View {
     @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
     let model: LiveTVSourceManagementModel
+    let isAddingSource: Bool
     let imports: LiveTVPrototypeImportModel?
     let refresh: (@MainActor () -> Void)?
     let retrySource: (@MainActor (String) async throws -> Void)?
@@ -337,6 +340,8 @@ private struct LiveTVSourcesContent: View {
                 }
             } else if !model.hasLoaded {
                 ProgressView("Loading sources")
+            } else if isAddingSource {
+                setupActions
             } else {
                 if settingsPreferences != nil {
                     LiveTVSettingsSourceList(sources: configuredSources) { source in
@@ -351,7 +356,7 @@ private struct LiveTVSourcesContent: View {
                     setupActions
                 }
             }
-            if let settingsPreferences {
+            if let settingsPreferences, !isAddingSource {
                 if let automaticChannels, let createChannel {
                     LiveTVAutomaticChannelsOverview(
                         state: automaticChannels, customChannelCount: customChannelCount,
@@ -360,7 +365,7 @@ private struct LiveTVSourcesContent: View {
                 }
                 settingsPreferences
             }
-            if model.hasLoaded {
+            if model.hasLoaded, !isAddingSource {
                 if browseSource != nil || (settingsPreferences == nil && createChannel != nil)
                     || (refresh != nil && !configuredSources.isEmpty)
                     || (scanChannels != nil && !model.configuration.playlists.isEmpty)
@@ -561,7 +566,7 @@ private struct LiveTVSourcesContent: View {
     }
 
     private var setupActions: some View {
-        SettingsSectionGroup(SettingsCopy.addTVSource) {
+        SettingsSectionGroup(isAddingSource ? nil : SettingsCopy.addTVSource) {
             if connectIPTV != nil || providerSetupRouter != nil {
                 Button {
                     if let connectIPTV { connectIPTV(nil, .playlist) }

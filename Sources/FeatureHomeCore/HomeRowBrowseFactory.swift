@@ -15,6 +15,7 @@ enum HomeRowBrowseFactory {
         var title = row.choice.title
         var localizedTitle = row.choice.localizedTitle
         var titleSuffix: String?
+        var style: LibrarySection.Style = .poster
         var mergesSources = false
         var isRecentlyAdded = false
         var watchlistDates = false
@@ -41,6 +42,9 @@ enum HomeRowBrowseFactory {
 
         switch row.source {
         case .home(let home):
+            style = home.kind == .continueWatching
+                ? (visibility.continueWatchingLayout == .portrait ? .poster : .landscape)
+                : (home.style == .landscape ? .landscape : .poster)
             snapshot = home.items
             watchlistDates = home.kind == .watchlist
             if home.kind == .recentlyAdded {
@@ -76,6 +80,7 @@ enum HomeRowBrowseFactory {
             }
         case .library(let libraryRow):
             let section = libraryRow.section
+            style = section.style
             title = section.title
             localizedTitle = section.localizedTitle
             titleSuffix = section.localizedTitleSuffix
@@ -150,6 +155,7 @@ enum HomeRowBrowseFactory {
             && row.choice.collectionSection?.source.libraryKey.map(visibility.isEnabled) != false
         return HomeRowBrowseModel(
             title: title, localizedTitle: localizedTitle, titleSuffix: titleSuffix,
+            style: style,
             snapshot: snapshot, loaders: loaders, snapshotProvider: snapshotProvider,
             watchlistDates: watchlistDates, isCurrent: { isAdmitted && isCurrent() }
         ) { groups in
