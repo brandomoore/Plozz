@@ -171,7 +171,9 @@ extension HomeRowArrangementHostedTests {
             XCTAssertTrue(destination.contains { $0.0.contains("Complete shelf") })
             XCTAssertEqual(chrome.stackDepth, 1)
             XCTAssertTrue(chrome.isChromeHidden)
-            route.path.removeLast()
+            HomeBrowseDestination.pop(
+                from: Binding(get: { route.path }, set: { route.path = $0 }), chrome: chrome
+            )
             _ = try await self.snapshot(window, name: "Home browse returned")
             XCTAssertEqual(chrome.stackDepth, 0)
             XCTAssertFalse(chrome.isChromeHidden)
@@ -186,7 +188,44 @@ extension HomeRowArrangementHostedTests {
         }
     }
 
-    func testHomeBrowsePushDoesNotMoveTheSourcePage() async throws {
+    func testHomeBrowseWaitsForFirstCardBeforeEnablingHeaderFocus() async throws {
+        for style in CardStyle.allCases {
+            let gate = HomeBrowsePageGate()
+            defer { gate.finish(.failure(CancellationError())) }
+            let model = HomeRowBrowseModel(title: "Delayed shelf", loaders: [{ _, _ in try await gate.page() }])
+            var firstFrame = CGRect.zero
+            try await withWindow {
+                HomeRowBrowseView(model: model, columns: PlozzMetrics.standard.posterColumns) { item in
+                    PosterCardView(item: item, enablesAsyncArtworkFallback: false) {}
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                            if item.id == "first" { firstFrame = $0 }
+                        }
+                }
+                .environment(\.plozzCardStyle, style)
+                .environment(\.plozzCardFocusStyle, .system)
+            } inspect: { window in
+                _ = try await self.snapshot(window, name: "Browser waiting for \(style) cards")
+                XCTAssertTrue(model.isLoading)
+                let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                XCTAssertNil(system.focusedItem, "Header controls must not receive the initial focus")
+                gate.finish(.success(.init(items: [
+                    MediaItem(id: "first", title: "First card", kind: .movie),
+                    MediaItem(id: "second", title: "Second card", kind: .movie)
+                ], nextOffset: nil)))
+                _ = try await self.snapshot(window, name: "Browser entered first \(style) card")
+                let first = try XCTUnwrap(self.focusableItem(
+                    at: CGPoint(x: firstFrame.midX, y: firstFrame.minY + 60), in: window
+                ))
+                let entered = XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in system.focusedItem === first }, object: nil
+                )
+                await fulfillment(of: [entered], timeout: 3)
+                XCTAssertTrue(system.focusedItem === first, "No manual focus request or Down press is needed")
+            }
+        }
+    }
+
+    func testHomeBrowsePushAndReturnKeepPagesStationary() async throws {
         for animatedPush in [true, false] {
             let route = HomeBrowseNavigationProbe()
             let chrome = NavigationChromeModel()
@@ -211,11 +250,11 @@ extension HomeRowArrangementHostedTests {
                 }
                 let navigation = try XCTUnwrap(navigationController(in: XCTUnwrap(window.rootViewController)))
                 let source = try XCTUnwrap(navigation.topViewController?.view)
-                func frame() -> CGRect {
+                func frame(of source: UIView) -> CGRect {
                     let layer = source.layer.presentation() ?? source.layer
                     return layer.convert(layer.bounds, to: window.layer.presentation() ?? window.layer)
                 }
-                let initial = frame()
+                let initial = frame(of: source)
                 target.sendActions(for: .primaryActionTriggered)
                 if !animatedPush {
                     XCTAssertTrue(chrome.isChromeHidden, "Navigation hides in the push transaction, not a later frame")
@@ -226,7 +265,7 @@ extension HomeRowArrangementHostedTests {
                     try await Task.sleep(for: .milliseconds(16))
                     animatedTransition = animatedTransition || navigation.transitionCoordinator?.isAnimated == true
                     guard source.window === window else { continue }
-                    let sample = frame()
+                    let sample = frame(of: source)
                     maximumChange = max(maximumChange,
                         abs(sample.minX - initial.minX), abs(sample.minY - initial.minY),
                         abs(sample.width - initial.width), abs(sample.height - initial.height))
@@ -237,6 +276,38 @@ extension HomeRowArrangementHostedTests {
                 } else {
                     XCTAssertFalse(animatedTransition, "See all must suppress native snapshot animation too")
                     XCTAssertLessThanOrEqual(maximumChange, 1, "See all must not shift Home behind the new page")
+                }
+
+                let browserSource = try XCTUnwrap(navigation.topViewController?.view)
+                let browserFrame = frame(of: browserSource)
+                let actionBeforeReturn = actionFrame
+                if animatedPush {
+                    route.path.removeLast()
+                } else {
+                    HomeBrowseDestination.pop(
+                        from: Binding(get: { route.path }, set: { route.path = $0 }), chrome: chrome
+                    )
+                    XCTAssertFalse(chrome.isChromeHidden, "Navigation returns in the pop transaction")
+                }
+                maximumChange = 0
+                animatedTransition = false
+                for _ in 0..<45 {
+                    try await Task.sleep(for: .milliseconds(16))
+                    animatedTransition = animatedTransition || navigation.transitionCoordinator?.isAnimated == true
+                    guard browserSource.window === window else { continue }
+                    let sample = frame(of: browserSource)
+                    maximumChange = max(maximumChange,
+                        abs(sample.minX - browserFrame.minX), abs(sample.minY - browserFrame.minY),
+                        abs(sample.width - browserFrame.width), abs(sample.height - browserFrame.height))
+                }
+                XCTAssertEqual(chrome.stackDepth, 0)
+                if animatedPush {
+                    XCTAssertTrue(animatedTransition, "The baseline must exercise an animated native pop")
+                } else {
+                    XCTAssertFalse(animatedTransition, "Back must not animate the outgoing grid")
+                    XCTAssertLessThanOrEqual(maximumChange, 1, "The grid must remain stationary during Back")
+                    XCTAssertEqual(actionFrame.minX, actionBeforeReturn.minX, accuracy: 1)
+                    XCTAssertEqual(actionFrame.minY, actionBeforeReturn.minY, accuracy: 1)
                 }
             }
         }
@@ -399,6 +470,20 @@ extension HomeRowArrangementHostedTests {
 @Observable
 private final class HomeBrowseNavigationProbe {
     var path = NavigationPath()
+}
+
+@MainActor
+private final class HomeBrowsePageGate {
+    private var continuation: CheckedContinuation<HomeRowPage, Error>?
+
+    func page() async throws -> HomeRowPage {
+        try await withCheckedThrowingContinuation { continuation = $0 }
+    }
+
+    func finish(_ result: Result<HomeRowPage, Error>) {
+        continuation?.resume(with: result)
+        continuation = nil
+    }
 }
 
 private struct HomeBrowseNavigationFixture: View {

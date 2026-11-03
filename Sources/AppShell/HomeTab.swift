@@ -503,6 +503,7 @@ struct HomeTab: View {
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .environment(\.plozzTopNavigationScroll, nil)
+                .onExitCommand { HomeBrowseDestination.pop(from: $path, chrome: navigationChrome) }
             }
             .navigationDestination(for: MediaLibrary.self) { library in
                 libraryBrowse(for: library)

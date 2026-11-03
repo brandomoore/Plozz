@@ -52,8 +52,9 @@ opening the shared browser. Libraries and Live TV keep their existing navigation
 TV row browsers use Home's navigation path, hiding top-level navigation as soon
 as they open. Opening a title adds another level; Back returns to the browser
 before returning to the original Home action. Browser scrolling does not move
-Home's retained top navigation. See all pushes without the native source-page
-slide/scale animation, so Home and its navigation do not shift behind the browser.
+Home's retained top navigation. See all pushes and pops without native page
+slide/scale animations, so the grid stays still and Home restores the action at
+its retained position.
 Browse actions appear only when the feed confirms additional eligible titles
 beyond the Home preview, not merely because the preview reaches its limit.
 Home requests one lookahead item in the existing bounded fetch; it does not
@@ -65,6 +66,10 @@ top-level destinations. Mobile retains its existing Watchlist destination handof
 temporarily admitting a hidden navigation entry without changing the saved layout.
 Both reuse the full profile-scoped Watchlist and its saved sorting/filtering
 preferences instead of creating a separate row browser.
+On TV, browser entry keeps query controls and later cards out of focus until
+the first grid item actually receives native focus. This also covers delayed
+loads and nested Watchlist; empty and failed loads release the controls. Once
+entered, ordinary directional navigation and detail-return focus stay native.
 The shared row browser's sort and filter menus sit at the trailing end of the
 TV heading and in the top-right navigation toolbar on iPhone/iPad. Watchlist
 and library grids use that same mobile toolbar placement, keeping supported

@@ -142,6 +142,17 @@ public enum HomeBrowseDestination: Hashable {
             path.transaction(transaction).wrappedValue.append(self)
         }
     }
+
+    @MainActor
+    public static func pop(from path: Binding<NavigationPath>, chrome: NavigationChromeModel? = nil) {
+        guard !path.wrappedValue.isEmpty else { return }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            chrome?.setStackDepth(path.wrappedValue.count - 1)
+            path.transaction(transaction).wrappedValue.removeLast()
+        }
+    }
 }
 
 /// The Home screen: an optional cinematic **hero** carousel followed by

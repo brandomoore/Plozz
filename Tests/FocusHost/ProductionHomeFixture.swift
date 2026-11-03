@@ -991,6 +991,7 @@ private struct ProductionHomeContent: View {
                         }
                         .toolbar(.hidden, for: .tabBar)
                         .environment(\.plozzTopNavigationScroll, nil)
+                        .onExitCommand { HomeBrowseDestination.pop(from: $path, chrome: fixture.chrome) }
                     }
                     .navigationDestination(for: MediaItem.self) { item in
                         detailPage(for: item)
@@ -1514,6 +1515,16 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
         await recentGate.wait()
         try await holdForSlowLoad()
         return Array((rowCount..<(rowCount * 2)).prefix(limit).map(movie))
+    }
+    func homeRowPage(_ feed: HomeRowFeed, startIndex: Int, limit: Int) async throws -> HomeRowPage {
+        if ProcessInfo.processInfo.arguments.contains("--slow-home-browse") {
+            try await Task.sleep(for: .seconds(1))
+        }
+        if ProcessInfo.processInfo.arguments.contains("--empty-home-browse") {
+            return .init(items: [], nextOffset: nil)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--failed-home-browse") { throw AppError.serverUnreachable }
+        return try await homeRowPrefixPage(feed, startIndex: startIndex, limit: limit)
     }
     /// Keeps Home on its loading skeleton for a while so it can be captured.
     private func holdForSlowLoad() async throws {
