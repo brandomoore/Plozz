@@ -3,6 +3,7 @@ import SwiftUI
 import UIKit
 import XCTest
 @testable import AppShelliOS
+@testable import FeaturePlayback
 @testable import PlozziOSPresentationHost
 
 final class PlayerOrientationTestWindow: UIWindow, PresentationOrientationWindow {
@@ -180,6 +181,69 @@ final class PlayerOrientationTests: XCTestCase {
         XCTAssertEqual(orientation.supportedMask, .portrait)
     }
 
+    func testLandscapePlayerKeepsOrientationWhileNativeAudioMenuIsOpen() async throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = PlayerOrientationTestWindow(windowScene: scene)
+        let anchor = UIViewController()
+        window.rootViewController = anchor
+        window.makeKeyAndVisible()
+        let orientation = PlozziOSPlayerOrientation(preference: .landscape, isPlaybackActive: false)
+        let options = TrackMenuBuilder.audioOptions(
+            tracks: [
+                .init(id: 1, kind: .audio, displayTitle: "French (France)", language: "fr-FR",
+                      codec: "eac3", channels: 6, isAtmos: true),
+                .init(id: 2, kind: .audio, displayTitle: "Français Audiodescription", language: "fr-FR",
+                      codec: "eac3", channels: 2),
+                .init(id: 3, kind: .audio, displayTitle: "English", language: "en",
+                      codec: "eac3", channels: 6, isAtmos: true)
+            ], selectedID: 1, preferred: [], locale: .init(identifier: "fr")
+        )
+        let player = PlozziOSOrientationHostingController(
+            rootView: AnyView(PlayerAudioMenuButton(
+                options: options, onSelect: { _ in }, onPresentationChange: { _ in }
+            )), orientation: orientation
+        )
+        defer {
+            player.tearDown()
+            anchor.dismiss(animated: false)
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+        try await waitUntil { scene.effectiveGeometry.interfaceOrientation == .portrait }
+        await withCheckedContinuation { continuation in
+            anchor.present(player, animated: true) { continuation.resume() }
+        }
+        orientation.beginPlayback()
+        try await waitUntil { scene.effectiveGeometry.interfaceOrientation.isLandscape }
+        func audioButton(in view: UIView) -> PlayerOptionsMenuControl? {
+            if let button = view as? PlayerOptionsMenuControl { return button }
+            return view.subviews.lazy.compactMap { audioButton(in: $0) }.first
+        }
+        let button = try XCTUnwrap(audioButton(in: player.view))
+        let interaction = try XCTUnwrap(button.contextMenuInteraction)
+        defer { interaction.dismissMenu() }
+        for _ in 0..<2 {
+            button.performPrimaryAction()
+            try await waitUntil { button.presentedMenu != nil && player.presentedViewController != nil }
+            for _ in 0..<20 {
+                XCTAssertEqual(player.supportedInterfaceOrientations, .landscape,
+                               "A native menu must not relax the player's landscape preference.")
+                XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .landscape)
+                XCTAssertTrue(scene.effectiveGeometry.interfaceOrientation.isLandscape)
+                XCTAssertNotNil(button.presentedMenu)
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            interaction.dismissMenu()
+            try await waitUntil { button.presentedMenu == nil && player.presentedViewController == nil }
+            XCTAssertEqual(player.supportedInterfaceOrientations, .landscape)
+        }
+    }
+
     func testPlaybackWaitsForNativePrePlaySheetDismissal() async throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -219,7 +283,7 @@ final class PlayerOrientationTests: XCTestCase {
         XCTAssertEqual(scene.effectiveGeometry.interfaceOrientation, .portrait)
         XCTAssertFalse(player.orientation.hasGeometryRequestFailed)
         XCTAssertEqual(player.orientation.supportedMask, .landscape)
-        XCTAssertEqual(player.supportedInterfaceOrientations, .all)
+        XCTAssertEqual(player.supportedInterfaceOrientations, [.portrait, .landscape])
         await withCheckedContinuation { continuation in
             picker.dismiss(animated: true) { continuation.resume() }
         }
@@ -355,7 +419,10 @@ final class PlayerOrientationTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await waitUntil { probe.appearances == 1 }
+        try await waitUntil {
+            probe.appearances == 1
+                && PlozziOSWindowOrientation.supportedOrientations(for: window) == .all
+        }
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
         try await waitUntil { scene.effectiveGeometry.interfaceOrientation == .portrait }
         XCTAssertEqual(PlozziOSWindowOrientation.supportedOrientations(for: window), .all)

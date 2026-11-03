@@ -114,6 +114,26 @@ excluded. The library Recommended view retains `libraryHubs` behavior.
 Home continues to use the canonical Continue Watching feed rather than
 duplicating a resume/on-deck hub inside each library.
 
+Match server retains each promoted row's sanitized native shelf key separately
+from its stable row identity. If the content response omits that row or truncates
+its inline items, Home loads that exact shelf rather than substituting the full
+recommendation menu. Older rows without a shelf key get one shared retry per
+library; unrecoverable rows report an error without discarding successful siblings.
+Surviving shelves match their saved keys before positional recommendation slots,
+so an omitted sibling cannot shift another shelf into two rows. Unmatched slots
+can still adopt genuinely new recommendation subjects.
+Explicitly empty shelves remain empty. Key-only promotions have a stable identity
+derived from the credential-free key, never the translated display title.
+Persisted keys are revalidated before use, and recovery keeps the active viewer's
+credentials and library filtering. Browse continuation verifies preview anchors
+before falling back to a saved shelf, so a rotating recommendation cannot silently
+open an unrelated subject.
+Fresh server-row content also carries its sanitized continuation beside its
+items. Curated hubs issue a new `curatedHubSeed` on each promoted-hub request;
+See all pages use the preview's seed directly rather than rediscovering the hub
+or using the older layout-discovery key. Recovered rows carry the exact recovery
+key. Legacy previews without a captured key retain the anchor-checked fallback.
+
 Home and library Continue Watching share the same endpoint selection: items hub,
 plain hub, then legacy on-deck only after an initial unsupported, invalid-response,
 or decode failure. An empty successful hub is authoritative. Authentication,
@@ -129,6 +149,16 @@ validation remain strict.
 Failed reads also record the failing endpoint category and paging invariant for
 the shared Details sheet. These opt-in diagnostics preserve error/fallback
 behavior and never export item identities or response bodies.
+
+## Hero artwork
+
+Plex's selected `Image` entry with type `backgroundSquare` is retained as
+`.squareHero`, separately from posters, logos, and landscape backgrounds.
+Compact iPhone Home and detail heroes prefer it under Recommended or Library
+artwork preferences; an explicit Metadata providers preference still wins.
+Relative paths use the existing server-authenticated artwork route, while
+Discover paths remain on Discover. Missing square art retains the existing
+fallback, and landscape heroes and poster cards are unchanged.
 
 ## Continue Watching artwork
 

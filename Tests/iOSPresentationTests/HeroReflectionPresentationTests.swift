@@ -75,6 +75,89 @@ final class HeroReflectionPresentationTests: XCTestCase {
         }
     }
 
+    func testMacHomeHeightAdaptsToTheWindowAndKeepsActionsAboveTheNextRow() {
+        var previous: CGFloat = 0
+        for windowHeight in [CGFloat(400), 600, 720, 900, 1_080, 1_440] {
+            let height = PlozziOSHeroMetrics.height(
+                style: .landscape, surfaceRole: .home, dynamicTypeSize: .large,
+                containerHeight: windowHeight, isRunningOnMac: true
+            )
+            XCTAssertGreaterThan(height, previous)
+            XCTAssertLessThanOrEqual(height, windowHeight - HeroStageMetrics.minimumPeek)
+            XCTAssertLessThanOrEqual(height, 1_020)
+            let accessibleHeight = PlozziOSHeroMetrics.height(
+                style: .landscape, surfaceRole: .home, dynamicTypeSize: .accessibility3,
+                containerHeight: windowHeight, isRunningOnMac: true
+            )
+            XCTAssertGreaterThanOrEqual(accessibleHeight, height)
+            XCTAssertLessThanOrEqual(accessibleHeight, windowHeight - HeroStageMetrics.minimumPeek)
+            previous = height
+        }
+        XCTAssertEqual(
+            PlozziOSHeroMetrics.height(
+                style: .landscape, surfaceRole: .home, dynamicTypeSize: .large,
+                containerHeight: 1_080, isRunningOnMac: true
+            ), 885.6, accuracy: 0.01
+        )
+    }
+
+    func testMacHomeSizingPreservesOtherLayoutsAndTheUnmeasuredFallback() {
+        let unmeasuredHeights: [CGFloat?] = [nil, 0, -.infinity, .infinity, .nan]
+        for height in unmeasuredHeights {
+            XCTAssertEqual(PlozziOSHeroMetrics.height(
+                style: .landscape, surfaceRole: .home, dynamicTypeSize: .large,
+                containerHeight: height, isRunningOnMac: true
+            ), 680)
+        }
+        for height in [CGFloat(600), 900, 1_440] {
+            XCTAssertEqual(PlozziOSHeroMetrics.height(
+                style: .landscape, surfaceRole: .home, dynamicTypeSize: .large,
+                containerHeight: height, isRunningOnMac: false
+            ), 680)
+            XCTAssertEqual(PlozziOSHeroMetrics.height(
+                style: .landscape, surfaceRole: .detail, dynamicTypeSize: .large,
+                containerHeight: height, isRunningOnMac: true
+            ), 784)
+            XCTAssertEqual(
+                PlozziOSHeroMetrics.height(
+                    style: .compactPortrait, surfaceRole: .home, dynamicTypeSize: .large,
+                    containerHeight: height, isRunningOnMac: true
+                ),
+                PlozziOSHeroMetrics.height(
+                    style: .compactPortrait, surfaceRole: .home, dynamicTypeSize: .large,
+                    containerHeight: height, isRunningOnMac: false
+                )
+            )
+        }
+    }
+
+    func testOnlyMacLandscapeHomeArtworkPreservesItsTopEdge() throws {
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 225)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 400, height: 225))
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 400, height: 24))
+        }
+        for isMac in [false, true] {
+            for role in [HeroTrailerSurfaceRole.home, .detail] {
+                for style in [HeroArtworkStyle.landscape, .compactPortrait] {
+                    let result = try render(
+                        PlozziOSHeroArtworkImage(
+                            image: Image(uiImage: artwork), style: style, surfaceRole: role
+                        )
+                        .frame(width: 200, height: 50)
+                        .environment(\.plozziOSIsRunningOnMac, isMac),
+                        height: 50
+                    )
+                    let preservesTop = isMac && role == .home && style == .landscape
+                    try assertColor(
+                        result, y: 4, red: preservesTop, green: false, blue: !preservesTop
+                    )
+                }
+            }
+        }
+    }
+
     private func render<Content: View>(_ content: Content, height: CGFloat) throws -> UIImage {
         let renderer = ImageRenderer(content: content
             .frame(width: 200, height: height, alignment: .topLeading)

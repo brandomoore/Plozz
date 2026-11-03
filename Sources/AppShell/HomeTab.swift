@@ -55,13 +55,13 @@ struct HomeTab: View {
     /// only to hand to the Top Shelf publisher: that snapshot crosses into
     /// another process, so its titles have to be resolved on this side.
     @Environment(\.locale) private var locale
+    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.detailPlaybackPreparationAllowed) private var playbackPreparationAllowed
     @Environment(LibraryPresentationSettingsModel.self) private var libraryPresentation
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.plozzShowsContentRatings) private var showsContentRatings
     @Environment(\.mediaItemActionHandler) private var mediaItemActionHandler
-    /// The rail's chrome model, present only under ``NavigationStyle/rail``. This
-    /// stack reports its depth so the rail steps aside on a detail page.
+    /// Custom navigation observes this stack's depth to step aside on pushed pages.
     @Environment(NavigationChromeModel.self) private var navigationChrome: NavigationChromeModel?
     /// What this stack is rooted at: `.home` for the Home destination, a library
     /// for one of the rail's library slots.
@@ -364,6 +364,7 @@ struct HomeTab: View {
                 onSelectLibrary: { library in
                     path.append(library)
                 },
+                onBrowse: { $0.push(onto: $path, chrome: navigationChrome) },
                 configuredServerCount: configuredServerCount,
                 enabledServerCount: accounts.count
             )
@@ -489,6 +490,23 @@ struct HomeTab: View {
         NavigationStack(path: $path) {
             rootContent
             .modifier(NavigationRailRootContentInset())
+            .navigationDestination(for: HomeBrowseDestination.self) { destination in
+                Group {
+                    switch destination {
+                    case let .row(browser):
+                        HomeRowBrowseView(model: browser, columns: metrics.posterColumns) { item in
+                            PosterCardView(item: item, style: .poster, spoilerSettings: spoilerSettings) {
+                                navigate(item)
+                            }
+                            .navigationEntryFocus(.content)
+                        }
+                    case .watchlist:
+                        watchlistRoot
+                    }
+                }
+                .toolbar(.hidden, for: .tabBar)
+                .environment(\.plozzTopNavigationScroll, nil)
+            }
             .navigationDestination(for: MediaLibrary.self) { library in
                 libraryBrowse(for: library)
             }
@@ -677,9 +695,8 @@ struct HomeTab: View {
             .environment(\.detailPlaybackPreparationAllowed, playbackPreparationAllowed && isActiveTab)
         }
         .cinematicDetailNavigation(path: $path)
-        // Under the rail, a pushed page is a detail page — report the depth so the
-        // chrome steps aside and the title page is full-bleed. No-op under the two
-        // native tab styles, which install no chrome model.
+        // All pushed pages, including Home row browsers, share this path so
+        // custom chrome and Back agree about whether Home is still the root.
         .reportsNavigationDepth(path.count, to: navigationChrome)
         // The deep-link watcher lives in its own leaf view. Reading the pending
         // id in *this* body subscribed the whole tab to it, and every publish

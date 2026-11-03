@@ -21,6 +21,7 @@ public struct PlozziOSRootView: View {
     /// The reader's text size. Feeds `PlozzMetrics` so the shared type/geometry
     /// table rebuilds when it changes (see where the metrics are injected below).
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.accessibilityReduceTransparency)
     private var systemReduceTransparency
     @State private var appModel = PlozziOSProcessComposition.appModel
@@ -305,9 +306,9 @@ public struct PlozziOSRootView: View {
         // when the reader's text size changes, rather than only on relaunch.
         .environment(
             \.plozzMetrics,
-            PlozzMetrics.touch(
+            PlozziOSMediaLayout.metrics(
                 density: appModel.settings.density.density,
-                dynamicTypeSize: dynamicTypeSize
+                dynamicTypeSize: dynamicTypeSize, isRunningOnMac: isRunningOnMac
             )
         )
         .mediaItemActionHandler(appModel.mediaItemActionHandler)
@@ -868,6 +869,22 @@ private struct PlozziOSScreenshotTabRouter: View {
     }
 }
 
+struct PlozziOSMacNavigationBackground: ViewModifier {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .toolbarBackground(isRunningOnMac ? .hidden : .automatic, for: .tabBar)
+                .scrollEdgeEffectHidden(isRunningOnMac, for: .top)
+        } else {
+            content
+                .toolbarBackground(isRunningOnMac ? .hidden : .automatic, for: .tabBar)
+        }
+    }
+}
+
 struct PlozziOSTabShell: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
@@ -1306,6 +1323,7 @@ struct PlozziOSTabShell: View {
         }
 
         .tabViewStyle(.sidebarAdaptable)
+        .modifier(PlozziOSMacNavigationBackground())
         .background {
             PlozziOSSettingsTabAction(
                 tabIndex: tabDestinations.firstIndex(of: .settings),
@@ -2006,6 +2024,7 @@ private struct PlozziOSDestinationView: View {
 }
 
 struct PlozziOSWatchlistLandingView: View {
+    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.mediaItemArtworkNavigator) private var navigateToItem
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
@@ -2108,7 +2127,7 @@ struct PlozziOSWatchlistLandingView: View {
         } else {
             LazyVGrid(
                 columns: appModel.settings.density.density.iOSPosterGridColumns(
-                    horizontalSizeClass: horizontalSizeClass
+                    horizontalSizeClass: horizontalSizeClass, isRunningOnMac: metrics.usesDesktopSizing
                 ),
                 spacing: 18
             ) {

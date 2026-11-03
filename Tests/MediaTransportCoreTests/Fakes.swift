@@ -240,23 +240,25 @@ func makeSessionKey(
 }
 
 func waitUntil(
-    iterations: Int = 1_000,
+    timeout: Duration = .seconds(2),
     _ predicate: @escaping @Sendable () -> Bool
 ) async -> Bool {
-    for _ in 0..<iterations {
+    let deadline = ContinuousClock.now + timeout
+    repeat {
         if predicate() { return true }
         await Task.yield()
-    }
-    return predicate()
+    } while !Task.isCancelled && ContinuousClock.now < deadline
+    return false
 }
 
 func waitUntilAsync(
-    iterations: Int = 1_000,
+    timeout: Duration = .seconds(2),
     _ predicate: () async -> Bool
 ) async -> Bool {
-    for _ in 0..<iterations {
+    let deadline = ContinuousClock.now + timeout
+    repeat {
         if await predicate() { return true }
         await Task.yield()
-    }
-    return await predicate()
+    } while !Task.isCancelled && ContinuousClock.now < deadline
+    return false
 }

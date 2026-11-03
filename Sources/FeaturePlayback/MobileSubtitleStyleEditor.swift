@@ -201,6 +201,11 @@ public struct MobileSubtitleStyleEditor: View {
                 )
             }.settingsSearchAnchor("style-extra-line")
         }
+        Toggle(isOn: subtitleStyleBinding(viewModel, \.avoidsPlayerControls)) {
+            Text(SubtitleStyle.controlAvoidanceTitle)
+        }
+        .accessibilityIdentifier("subtitle-avoid-controls")
+        .settingsSearchAnchor("subtitle-avoid-controls")
     }
 }
 

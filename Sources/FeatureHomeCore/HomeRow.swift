@@ -135,6 +135,7 @@ public struct HomeRow: Identifiable, Equatable, Sendable {
 struct HomeRowPreview: Sendable {
     var items: [MediaItem]
     let hasMore: Bool
+    var browseID: String?
 
     init(_ candidates: [MediaItem], limit: Int, retainsCandidates: Bool = false) {
         var seen = Set<String>()

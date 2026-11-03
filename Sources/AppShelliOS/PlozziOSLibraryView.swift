@@ -248,7 +248,7 @@ struct PlozziOSLibraryGridView: View {
                     }
                     Group {
                         if viewModel.contentMode == .recommended {
-                            recommendedContent
+                            recommendedContent.plozzDesktopMediaRailLayout()
                         } else {
                             browseContent(generation: generation)
                         }
@@ -375,7 +375,7 @@ struct PlozziOSLibraryGridView: View {
                     description: Text("Show rows in Settings > Screens & Navigation > Customize Libraries.")
                 )
             }
-            VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionSpacing) {
+            VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
                 ForEach(sections) { section in
                     PlozziOSLibraryRecommendationRow(
                         section: section,
@@ -498,14 +498,24 @@ struct PlozziOSLibraryGridView: View {
     private var gridColumns: [GridItem] {
         guard dynamicTypeSize.isAccessibilitySize else {
             if viewModel.gridStyle == .landscape {
+                if metrics.usesDesktopSizing {
+                    return [GridItem(
+                        .adaptive(minimum: metrics.landscapeWidth, maximum: metrics.landscapeWidth * 1.18),
+                        spacing: metrics.gridSpacing
+                    )]
+                }
                 return [GridItem(.adaptive(minimum: horizontalSizeClass == .regular ? 240 : 160), spacing: 12)]
             }
-            return settings.density.density.iOSPosterGridColumns(horizontalSizeClass: horizontalSizeClass)
+            return settings.density.density.iOSPosterGridColumns(
+                horizontalSizeClass: horizontalSizeClass, isRunningOnMac: metrics.usesDesktopSizing
+            )
         }
         if horizontalSizeClass == .compact {
             return [GridItem(.flexible(), spacing: 16)]
         }
-        return [GridItem(.adaptive(minimum: accessiblePosterWidth * settings.density.density.scale), spacing: 16)]
+        let minimum = accessiblePosterWidth * settings.density.density.scale
+        let desktopMinimum = viewModel.gridStyle == .landscape ? metrics.landscapeWidth : metrics.posterWidth
+        return [GridItem(.adaptive(minimum: metrics.usesDesktopSizing ? max(minimum, desktopMinimum) : minimum), spacing: 16)]
     }
 
     /// Live scan/enrich progress for the media share backing THIS library, above
@@ -578,7 +588,9 @@ struct PlozziOSLibraryRecommendationRow: View {
     let onSelect: (MediaItem, MediaArtworkZoomSource) -> Void
 
     var body: some View {
-        let inset = PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
+        let inset = PlozziOSPageLayout.horizontalInset(
+            for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing
+        )
         let style: PosterCardView.Style = section.id == "continueWatching"
             ? continueWatchingLayout.cardStyle
             : (section.style == .poster ? .poster : .landscape)

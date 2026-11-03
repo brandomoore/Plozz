@@ -12,6 +12,89 @@ workloads once, keeps five measured repetitions, checks work-count invariants,
 and compares source-identified baseline/candidate evidence without hardware
 deployment or automatic retries. Normal suites skip those opt-in probes.
 
+Render-dependent playback transitions belong in the app-hosted suite. Use a
+mounted video surface and a real HLS fixture for native-player continuity; a
+local MP4 may select the software decoder and cannot prove AVPlayer item reuse.
+Capture a native pause baseline from `AVPlayer.currentTime()`, not the engine's
+last periodic progress notification.
+Keep decoded-frame sampling independent of concurrent guide/network requests so
+their retry waits are not counted as video stalls. Hosted focus comparisons must
+establish the starting focus and observe presented geometry, not just a layout
+target published before an animation finishes. Top-bar chrome fixtures open
+Settings through the mounted destination handoff and request focus through the
+containing native owner, not directly from an unfocused leaf. Fade captures must
+prove an intermediate rendered state; screenshot capture time can allow a later
+sample to reach the final state sooner than its nominal sleep interval suggests.
+
+Asynchronous transport fixture waits use bounded elapsed deadlines, not a count
+of `Task.yield()` calls. Yield counts do not guarantee that cancellation,
+shutdown, or lease-release workers have received time to finish.
+
+Native subtitle coverage adopts externally selected HLS renditions both
+immediately and after fixed callback-scheduling delays. Every case must retain
+the paused position and fence the previous extraction output; the delays are
+separate required cases, not retries. Failure diagnostics retain decoded cue
+timing, visible text, and the actual native selection, plus the last 32 cue
+updates with their selection phase, extraction-output identity, and native
+rendering suppression. This distinguishes missing delivery from cues that
+arrived and were subsequently cleared without logging production captions.
+
+## Live Emby transcoding
+
+The Emby cases in `ServerLiveTranscodingTests` in the iOS presentation suite are
+opt-in real-server checks, not hermetic CI fixtures. Supply `PLOZZ_LIVE_EMBY_CONFIGURATION` to the
+test process as JSON containing `baseURL`, `username`, and one to three explicit
+`itemIDs`. Use an authorized passwordless, non-administrator internal test user;
+never supply a personal owner's identity or external review credentials.
+Do not commit the configuration or put a token in it.
+
+Choose representative SDR, HDR10, and Dolby Vision sources. The H.264 case uses
+`JellyfinProvider`; the HEVC case uses the production `JellyfinClient`, rendition
+bounds, and authenticated locator with an explicit HEVC-capable device profile.
+Simulators can report no hardware HEVC support, so that second case verifies
+the capable-device protocol and native decoder, not hardware detection.
+Both use the app's authenticated resolver and `NativeVideoEngine`.
+
+The checks inspect the actual decoded codec, retain secret-free range/dimension
+and startup measurements, and require more than ten seconds of progress in a
+twelve-second interval after AVPlayer enters playing. A displayed first frame
+is not proof that cold-encoder buffering has finished. The server's returned
+range is recorded rather than assumed to be SDR from a request parameter.
+Each owned encoding session and test login is released, including on failure.
+
+The native presenting layer must be ready and attached to the active player.
+Where the OS supports PiP, the test also starts and stops the real controller.
+Where it does not, the evidence explicitly records that limitation; layer
+readiness is not a successful PiP activation. These bounded smoke checks do not
+establish physical-device HDR output, long-duration performance, or correctness
+for every item on the server.
+
+### Live Plex and Jellyfin transcoding
+
+The same suite has forced H.264 and HEVC playback cases for Plex and Jellyfin,
+using the authenticated resolver and native player. H.264 uses the production
+providers; HEVC exercises the production clients and rendition locators with an
+explicit HEVC-capable profile because simulator hardware detection reports no
+HEVC support. This does not verify physical-device capability detection.
+The cases require
+more than 28 seconds of playback progress over a 30-second measurement after
+playback starts, verify the decoded codec and H.264 SDR output, and record the
+actual dynamic range, AVPlayer stall/dropped-frame counts and transfer bitrate. Select explicit
+SDR, HDR and Dolby Vision sources; an SDR original does not prove tone mapping.
+PiP uses the same conditional activation checks and simulator limitations as
+the Emby cases above.
+
+Set `PLOZZ_LIVE_TRANSCODE_BROKER` to a bounded, private loopback HTTP endpoint.
+Its `/plex` and `/jellyfin` responses contain `baseURL`, `username`, `userID`,
+`serverID`, `deviceID`, `token`, and one to three explicit `itemIDs`. The broker
+must validate dedicated internal test identities, resolve credentials into
+memory, disable request logging and response caching, and close when the run
+ends. It owns any temporary login and releases it after the test process exits;
+the tests maintain and release each encoding session. Never put passwords or tokens in
+environment variables, command arguments, configuration files or attachments.
+The broker endpoint must use an unguessable run-specific path and bind only to
+`127.0.0.1`; never publish it as a preview or expose it to the LAN.
+
 ## The two speed wins
 
 ### 1. Build once, run many (`tools/run-tests.sh`)
@@ -378,6 +461,11 @@ the original root without widening its browse boundary. Deep scrolling must
 realize onscreen native focus targets. The bounded folder viewport uses recycled
 native cells: fewer than 20 are visible for the large fixture, short lists retain
 their natural height, and the table/cells do not clip horizontal focus overflow.
+Before each folder open, the root's presented geometry and finite animations
+must settle. Fixture presentation is outside the unchanged 150 ms navigation
+ceiling; the timed window still includes the folder request and its resulting
+native layout. The worst sample also reports wake delay and forced-layout
+duration separately; neither component is subtracted from the asserted delay.
 This is isolated UI coverage, not a live-server network benchmark.
 
 `ShareFolderNavigationTests` launches `PlozzFocusHost --share-folder-fixture`
@@ -1010,6 +1098,10 @@ Presentation-layer samples also require at least eight intermediate positions
 and 300-600ms between 5% and 95% of the normal-motion return. The 0.6-second
 page animation must not inherit the much shorter focus-effect duration; its
 visible duration must match an unforced native downward reveal within 150ms.
+Compare native Up and Down over the same settled endpoints, separately from
+the manually positioned deep-return cases. Both directions retain 1.2 seconds
+of samples and verify the captured endpoint has settled; a partial downward
+trace must not redefine the 5%-95% distance.
 Nine-move native-focus bursts at 0, 30, 80, 150, and 300ms intervals end on each
 row, across all three focus styles. The final focused item must be fully visible,
 its page destination correct, and scrolling enabled. These exact-target bursts
@@ -1397,10 +1489,14 @@ logic tests retain their ordinary Debug configuration. For hosted tests, cold
 compilation must not consume the test execution budget: run `38059892922` spent about 19 minutes
 building before the former combined 40-minute limit killed still-progressing
 tests. Run `39857697957` also exhausted a full 40-minute execution window while
-still progressing through the expanded hosted suite. CI now allows 40 minutes
-for compilation and 90 minutes for hosted execution, within a 140-minute job
-limit including setup and evidence retention. The local execution default
-remains 40 minutes unless `PLOZZ_FOCUS_TEST_TIMEOUT` is set;
+still progressing through the expanded hosted suite. Both attempts of run
+`41421118241` reached the 40-minute compilation deadline before tests could
+start; the retry was still compiling the hosted test target. CI now allows
+60 minutes for compilation and 90 minutes for hosted execution, within a
+170-minute job limit including setup and evidence retention. This changes only
+the cold-build budget, not test assertions, performance thresholds, or the
+execution deadline. Local build and execution defaults remain 40 minutes unless
+`PLOZZ_FOCUS_BUILD_TIMEOUT` or `PLOZZ_FOCUS_TEST_TIMEOUT` is set;
 test failures, timeouts, and unreadable `xcresult` summaries still fail closed.
 Each lane uploads
 uniquely named diagnostics on success or failure, retained for seven days.

@@ -197,6 +197,10 @@ public protocol MediaProvider: Sendable {
         sections: [ServerHomeSection], limit: Int, excludingLibraryIDs: Set<String>
     ) async -> [String: Result<[MediaItem], AppError>]
 
+    func serverHomeContent(
+        sections: [ServerHomeSection], limit: Int, excludingLibraryIDs: Set<String>
+    ) async -> [String: Result<ServerHomeRowContent, AppError>]
+
     // MARK: Search
 
     /// Search the user's libraries for items matching a free-text query.
@@ -605,6 +609,13 @@ public extension MediaProvider {
             }
         }
         return results
+    }
+
+    func serverHomeContent(
+        sections: [ServerHomeSection], limit: Int, excludingLibraryIDs: Set<String>
+    ) async -> [String: Result<ServerHomeRowContent, AppError>] {
+        await serverHomeItems(sections: sections, limit: limit, excludingLibraryIDs: excludingLibraryIDs)
+            .mapValues { $0.map { ServerHomeRowContent(items: $0) } }
     }
 
     /// Default: cannot query by person, so a person page shows no library credits

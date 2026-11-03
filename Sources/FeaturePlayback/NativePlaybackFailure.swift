@@ -51,8 +51,17 @@ public enum NativePlaybackFailure {
     static func probeConvertedFormat(
         read: @MainActor () async throws -> VideoFormat?,
         isCurrent: @MainActor () -> Bool,
+        isReady: @MainActor () -> Bool = { true },
         pause: @MainActor () async throws -> Void = { try await Task.sleep(for: .milliseconds(100)) }
     ) async throws -> VideoFormat? {
+        // Cold encoders can take longer than the format-probing budget to start.
+        for _ in 0..<600 {
+            try Task.checkCancellation()
+            guard isCurrent() else { return nil }
+            if isReady() { break }
+            try await pause()
+        }
+        guard isReady() else { return nil }
         // HLS assets can initially report zero tracks while their init segment loads.
         var latest: VideoFormat?
         for _ in 0..<50 {

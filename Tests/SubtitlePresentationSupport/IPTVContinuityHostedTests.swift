@@ -172,7 +172,8 @@ final class IPTVContinuityHostedTests: XCTestCase {
         var lastFingerprint: UInt64?
         var position = engine.liveSnapshot.position
         var advancement: TimeInterval = 0
-        var checkedGuide = false
+        var guideCheck: Task<Void, Error>?
+        defer { guideCheck?.cancel() }
         var pausedAt: ContinuousClock.Instant?
         var resumed = false
         var liveDistances: [Double] = []
@@ -226,33 +227,36 @@ final class IPTVContinuityHostedTests: XCTestCase {
                     resumed = true
                 }
             }
-            if fault == .guide, !checkedGuide, let firstFrame, now > firstFrame + .seconds(6) {
-                let player = engine.nowPlayingPlayer
-                let initial = try await provider.liveTVGuide(
-                    channelIDs: [channel.id], from: Date(timeIntervalSince1970: 100),
-                    to: Date(timeIntervalSince1970: 500)
-                )
-                XCTAssertEqual(initial.map(\.title), ["Fixture programme"])
-                for status in [503, 200] {
-                    source.failGuide(status: status)
-                    do {
-                        _ = try await provider.liveTVGuide(
-                            channelIDs: [channel.id], from: Date(timeIntervalSince1970: 100),
-                            to: Date(timeIntervalSince1970: 500)
-                        )
-                        XCTFail("A failed or malformed guide must remain an error.")
-                    } catch {
-                        XCTAssertFalse(error is CancellationError)
-                        if status == 503 { XCTAssertEqual(error as? IPTVError, .httpStatus(503)) }
+            if fault == .guide, guideCheck == nil, let firstFrame, now > firstFrame + .seconds(6) {
+                // Guide retries must not suspend the decoded-frame sampler.
+                guideCheck = Task { @MainActor in
+                    let player = engine.nowPlayingPlayer
+                    let initial = try await provider.liveTVGuide(
+                        channelIDs: [channel.id], from: Date(timeIntervalSince1970: 100),
+                        to: Date(timeIntervalSince1970: 500)
+                    )
+                    XCTAssertEqual(initial.map(\.title), ["Fixture programme"])
+                    for status in [503, 200] {
+                        source.failGuide(status: status)
+                        do {
+                            _ = try await provider.liveTVGuide(
+                                channelIDs: [channel.id], from: Date(timeIntervalSince1970: 100),
+                                to: Date(timeIntervalSince1970: 500)
+                            )
+                            XCTFail("A failed or malformed guide must remain an error.")
+                        } catch {
+                            XCTAssertFalse(error is CancellationError)
+                            if status == 503 { XCTAssertEqual(error as? IPTVError, .httpStatus(503)) }
+                        }
                     }
+                    XCTAssertTrue(engine.nowPlayingPlayer === player)
                 }
-                XCTAssertTrue(engine.nowPlayingPlayer === player)
-                checkedGuide = true
             }
             if model.failureReport != nil { break }
             try await Task.sleep(for: .milliseconds(50))
         }
         longestGap = max(longestGap, lastFrame.duration(to: .now))
+        try await guideCheck?.value
         XCTAssertNotNil(firstFrame, "Readiness or a progressing clock is not a decoded picture.")
         XCTAssertNil(model.failureReport)
         XCTAssertTrue(model.hasPresentedFrame)
@@ -290,7 +294,7 @@ final class IPTVContinuityHostedTests: XCTestCase {
             XCTAssertEqual(counts.opens, 1, "Healthy playback must retain its original delivery session.")
         }
         if fault == .delayedSegment { XCTAssertTrue(counts.delayed) }
-        if fault == .guide { XCTAssertTrue(checkedGuide) }
+        if fault == .guide { XCTAssertNotNil(guideCheck) }
         print("IPTV_CONTINUITY fragmented=\(fragmented) fault=\(fault.rawValue)"
             + " first_frame=\(firstFrame.map { started.duration(to: $0) } ?? .zero)"
             + " observed_seconds=\(observationSeconds)"

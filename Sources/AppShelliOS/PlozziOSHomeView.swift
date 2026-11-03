@@ -143,6 +143,7 @@ struct PlozziOSHomeView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSHeroContainerHeight) private var heroContainerHeight
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.plozziOSHomeIsFrontmost) private var homeIsFrontmost
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var locale
@@ -210,7 +211,9 @@ struct PlozziOSHomeView: View {
     private let heroMetadataEnricher: HeroMetadataEnricher
 
     private func browseAction(for row: HomePresentationRow) -> (() -> Void)? {
-        guard row.canBrowse else { return nil }
+        guard row.supportsBrowsing(
+            loadedItemThreshold: isRunningOnMac ? PlozziOSMediaRailLayout.desktopBrowseThreshold : nil
+        ) else { return nil }
         if row.id == .global(.watchlist) { return openWatchlist }
         return { rowBrowser = viewModel.browseRow(row) }
     }
@@ -318,15 +321,18 @@ struct PlozziOSHomeView: View {
         .navigationDestination(item: $rowBrowser) { browser in
             HomeRowBrowseView(
                 model: browser,
-                columns: appModel.settings.density.density.iOSPosterGridColumns(horizontalSizeClass: horizontalSizeClass)
+                columns: appModel.settings.density.density.iOSPosterGridColumns(
+                    horizontalSizeClass: horizontalSizeClass, isRunningOnMac: isRunningOnMac
+                )
             ) { item in
                 PlozziOSHomeMediaCard(
                     item: item, isLandscape: false,
                     provider: item.sourceAccountID.flatMap { appModel.accountsProviders.provider(forAccountID: $0) }
                 )
             }
-            .environment(\.plozzMetrics, .touch(
-                density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize
+            .environment(\.plozzMetrics, PlozziOSMediaLayout.metrics(
+                density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize,
+                isRunningOnMac: isRunningOnMac
             ))
         }
         .onChange(of: ObjectIdentifier(viewModel)) { _, _ in
@@ -556,7 +562,8 @@ struct PlozziOSHomeView: View {
             style: heroStyle,
             surfaceRole: .home,
             dynamicTypeSize: dynamicTypeSize,
-            containerHeight: heroContainerHeight
+            containerHeight: heroContainerHeight,
+            isRunningOnMac: isRunningOnMac
         ) / 2
         let scroll = PlozziOSHomeScrollView(heroActive: heroSlotState != .hidden) {
             // Retire a carousel the viewer's own settings just invalidated
@@ -1382,6 +1389,7 @@ struct PlozziOSHomeHeroCarousel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSHeroContainerHeight) private var heroContainerHeight
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.scenePhase) private var scenePhase
     @Environment(HeroTrailerController.self) private var trailerController
     @State private var selectedItemID: String?
@@ -1392,6 +1400,7 @@ struct PlozziOSHomeHeroCarousel: View {
     /// restarting the countdown task (which a changed item set requires) resumes
     /// it rather than discarding the seconds already served.
     @State private var dwellTrailerSeconds = 0.0
+    @State private var pointerActivity = HeroPointerActivity()
     /// The slide `dwellStart` was set for. `selectedItemID` and the dwell reset
     /// on separate passes, so the id is the only reliable way to tell whether
     /// the clock on screen actually belongs to the slide being shown.
@@ -1439,7 +1448,8 @@ struct PlozziOSHomeHeroCarousel: View {
             style: style,
             surfaceRole: .home,
             dynamicTypeSize: dynamicTypeSize,
-            containerHeight: heroContainerHeight
+            containerHeight: heroContainerHeight,
+            isRunningOnMac: isRunningOnMac
         )
         let extendsArtwork = PlozziOSHeroMetrics.extendsArtwork(
             style: style,
@@ -1593,6 +1603,22 @@ struct PlozziOSHomeHeroCarousel: View {
             }
         }
         .frame(height: heroHeight)
+        .background {
+            if isRunningOnMac {
+                PlozziOSHeroKeyboardControls(
+                    isEnabled: isActive && pullModel.isVisible && items.count > 1,
+                    onPage: { page(forward: $0) }
+                )
+                .allowsHitTesting(false)
+            }
+        }
+        .overlay {
+            PlozziOSHeroPagingControls(
+                itemCount: items.count,
+                isEnabled: isActive && !transitionInProgress && dragOffset == 0,
+                onPage: { page(forward: $0) }
+            )
+        }
         .heroArtworkSource(
             id: currentItem?.id,
             isActive: isFrontmost
@@ -1621,24 +1647,33 @@ struct PlozziOSHomeHeroCarousel: View {
         )
         .overlay(alignment: .bottom) {
             if items.count > 1 {
-                PlozziOSHeroPagingIndicator(
-                    itemIDs: items.map(\.id),
-                    // During a committed transition the dot animates to the target
-                    // over the same window as the image slide (transitionTargetID is
-                    // set outside the disable-animations transaction, unlike
-                    // selectedItemID which snaps at the end). Falls back to the
-                    // selected id when idle.
-                    selectedItemID: transitionTargetID ?? selectedItemID,
-                    autoAdvance: autoAdvance && isActive,
-                    autoAdvanceSeconds: autoAdvanceSeconds,
-                    dwellStart: dwellStart,
-                    // The dwell counts only once it belongs to the slide on
-                    // screen; until then this slide's dwell hasn't begun.
-                    isTransitioning: dwellItemID != (transitionTargetID ?? selectedItemID),
-                    trailerController: trailerController
-                )
-                .padding(.horizontal, 20)
-                .offset(y: 10)
+                pagingIndicator
+                    .padding(.horizontal, 20)
+                    .offset(y: 10)
+            }
+        }
+        .onContinuousHover { phase in
+            guard isRunningOnMac, isActive, autoAdvance, items.count > 1 else { return }
+            let now = Date()
+            switch phase {
+            case .active:
+                pointerActivity.recordMovement(at: now, gauge: pagingIndicator.gauge(at: now))
+            case .ended:
+                resumePointerActivity(pointerActivity.resume(at: now))
+            }
+        }
+        .task(id: pointerActivity.pauseID) {
+            while let deadline = pointerActivity.resumeDeadline {
+                do {
+                    try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)))
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                if let resumption = pointerActivity.resumeIfIdle(at: .now) {
+                    resumePointerActivity(resumption)
+                    return
+                }
             }
         }
         .onChange(of: items.map(\.id), initial: true) { oldIDs, itemIDs in
@@ -1672,6 +1707,9 @@ struct PlozziOSHomeHeroCarousel: View {
                     return
                 }
                 guard !Task.isCancelled else { return }
+                // Pointer time is removed on resume. Do not also count overlapping
+                // trailer time here, or the same pause would be subtracted twice.
+                if pointerActivity.isPaused { continue }
                 if countdownItemID != selectedItemID {
                     countdownItemID = selectedItemID
                     dwellTrailerSeconds = 0
@@ -1691,6 +1729,7 @@ struct PlozziOSHomeHeroCarousel: View {
             }
         }
         .onChange(of: isActive) { _, active in
+            pointerActivity.reset()
             if active {
                 dwellStart = .now
                 dwellTrailerSeconds = 0
@@ -1699,9 +1738,13 @@ struct PlozziOSHomeHeroCarousel: View {
         }
         .onChange(of: selectedItemID, initial: true) {
             dwellStart = .now
+            pointerActivity.resetSlide(at: dwellStart)
             dwellTrailerSeconds = 0
             dwellItemID = selectedItemID
             installTrailerEndHandler()
+        }
+        .onChange(of: autoAdvance) { _, enabled in
+            if !enabled { pointerActivity.reset() }
         }
         // Both slides a committed swipe involves are on screen at once, so both
         // are off-limits to a curation folding new media in.
@@ -1723,6 +1766,9 @@ struct PlozziOSHomeHeroCarousel: View {
             playTargets = playTargets.filter { retained.contains($0.key) }
         }
         .onChange(of: exposureScopeID) { _, _ in
+            if let resumption = pointerActivity.resume(at: .now) {
+                dwellStart += resumption.pausedDuration
+            }
             let currentKeys = Dictionary(
                 items.map { ($0.id, resolutionKey(for: $0)) },
                 uniquingKeysWith: { first, _ in first }
@@ -1736,6 +1782,7 @@ struct PlozziOSHomeHeroCarousel: View {
         }
         .onAppear(perform: installTrailerEndHandler)
         .onDisappear {
+            pointerActivity.reset()
             trailerController.clearEndHandler(ownerID: endHandlerOwnerID)
             // Leaving Home — another tab, or a pushed page — means nobody can
             // see this trailer, so it should not keep streaming and decoding.
@@ -1769,6 +1816,29 @@ struct PlozziOSHomeHeroCarousel: View {
     @Environment(PlozziOSAppModel.self) private var appModel
 
     private var isActive: Bool { isFrontmost && scenePhase == .active }
+
+    private var pagingIndicator: PlozziOSHeroPagingIndicator {
+        PlozziOSHeroPagingIndicator(
+            itemIDs: items.map(\.id),
+            // Follow the incoming slide while its artwork is moving; its dwell
+            // starts only when selection commits.
+            selectedItemID: transitionTargetID ?? selectedItemID,
+            autoAdvance: autoAdvance && isActive,
+            autoAdvanceSeconds: autoAdvanceSeconds,
+            dwellStart: dwellStart,
+            isTransitioning: dwellItemID != (transitionTargetID ?? selectedItemID),
+            pausedGauge: pointerActivity.frozenGauge,
+            trailerController: trailerController
+        )
+    }
+
+    private func resumePointerActivity(_ resumption: HeroPointerActivity.Resumption?) {
+        guard let resumption else { return }
+        dwellStart += resumption.pausedDuration
+        if resumption.advanceAfterTrailer, autoAdvance, isActive {
+            page(forward: true)
+        }
+    }
 
     private var heroSeasonRefreshKey: String {
         let hasActiveRequests = currentItem.flatMap {
@@ -1983,6 +2053,7 @@ struct PlozziOSHomeHeroCarousel: View {
             return
         }
         trailerController.setEndHandler(ownerID: endHandlerOwnerID) {
+            guard !pointerActivity.deferAdvanceIfPaused() else { return }
             page(forward: true)
         }
     }
@@ -2254,6 +2325,118 @@ private struct PlozziOSPullResponsiveHomeBackdrop<Backdrop: View>: View {
     }
 }
 
+struct PlozziOSHeroPagingControls: View {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    let itemCount: Int
+    let isEnabled: Bool
+    let onPage: (Bool) -> Void
+
+    var body: some View {
+        if isRunningOnMac, itemCount > 1 {
+            HStack {
+                pagingButton(forward: false)
+                Spacer(minLength: 0)
+                pagingButton(forward: true)
+            }
+            .padding(.horizontal, 8)
+            .disabled(!isEnabled)
+        }
+    }
+
+    private func pagingButton(forward: Bool) -> some View {
+        PlozziOSHeroPagingButton(forward: forward, action: { onPage(forward) })
+            .frame(width: 44, height: 64)
+    }
+}
+
+private struct PlozziOSHeroPagingButton: UIViewRepresentable {
+    let forward: Bool
+    let action: () -> Void
+
+    func makeUIView(context: Context) -> PlozziOSHeroPagingUIButton {
+        PlozziOSHeroPagingUIButton(frame: .zero)
+    }
+
+    func updateUIView(_ button: PlozziOSHeroPagingUIButton, context: Context) {
+        button.forward = forward
+        button.increasedContrast = context.environment.colorSchemeContrast == .increased
+        button.boldText = context.environment.legibilityWeight == .bold
+        button.reduceTransparency = context.environment.accessibilityReduceTransparency
+        button.isEnabled = context.environment.isEnabled
+        button.isAccessibilityElement = true
+        button.accessibilityTraits = button.isEnabled ? .button : [.button, .notEnabled]
+        button.onActivate = action
+        button.accessibilityLabel = String( // l10n:content - UIKit requires resolved text, refreshed with the environment locale.
+            localized: forward ? "Next" : "Previous",
+            locale: context.environment.locale
+        )
+        button.accessibilityIdentifier = forward ? "home-hero-next" : "home-hero-previous"
+        button.setNeedsUpdateConfiguration()
+    }
+}
+
+final class PlozziOSHeroPagingUIButton: UIButton, UIGestureRecognizerDelegate {
+    var forward = false
+    var increasedContrast = false
+    var boldText = false
+    var reduceTransparency = false
+    var onActivate: (() -> Void)?
+    private var pointerInside = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        configuration = .plain()
+        // iPad-on-Mac does not draw the system pointer highlight. Track real
+        // hover events and let the native button configuration paint its state.
+        isPointerInteractionEnabled = false
+        let hover = UIHoverGestureRecognizer(target: self, action: #selector(hoverChanged))
+        hover.cancelsTouchesInView = false
+        hover.delegate = self
+        addGestureRecognizer(hover)
+        addAction(UIAction { [weak self] _ in
+            guard let self, self.isEnabled else { return }
+            self.onActivate?()
+        }, for: .primaryActionTriggered)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    @objc func hoverChanged(_ recognizer: UIHoverGestureRecognizer) {
+        let inside = recognizer.state == .began || recognizer.state == .changed
+        guard pointerInside != inside else { return }
+        pointerInside = inside
+        setNeedsUpdateConfiguration()
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        gestureRecognizer is UIHoverGestureRecognizer
+    }
+
+    override func updateConfiguration() {
+        let emphasized = isEnabled && (pointerInside || isHighlighted || isFocused)
+        var appearance = UIButton.Configuration.plain()
+        appearance.image = UIImage(systemName: forward ? "chevron.compact.right" : "chevron.compact.left")
+        appearance.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: 24, weight: boldText ? .semibold : .regular
+        )
+        appearance.baseForegroundColor = .white.withAlphaComponent(increasedContrast ? 1 : 0.6)
+        appearance.contentInsets = .zero
+        appearance.cornerStyle = .fixed
+        appearance.background.cornerRadius = 10
+        appearance.background.backgroundInsets = NSDirectionalEdgeInsets(
+            top: 10, leading: 12, bottom: 10, trailing: 12
+        )
+        appearance.background.backgroundColor = emphasized
+            ? UIColor(white: 0.15, alpha: increasedContrast || reduceTransparency ? 1 : 0.55)
+            : .clear
+        configuration = appearance
+    }
+}
+
 private struct PlozziOSHorizontalHeroDragGesture:
     UIGestureRecognizerRepresentable {
     let isEnabled: Bool
@@ -2417,7 +2600,7 @@ private struct PlozziOSFeaturedRow: View {
             .contentMargins(
                 .horizontal,
                 PlozziOSMediaRailLayout.artworkAlignedInset(
-                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
                     metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
@@ -2482,6 +2665,8 @@ private struct PlozziOSHomeRowFailure: View {
 }
 
 private struct PlozziOSHomeRowView: View {
+    @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzCardStyle) private var artworkStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.homeLiveTVSnapshot) private var liveTV
     let row: HomeRow
@@ -2579,7 +2764,7 @@ private struct PlozziOSHomeRowView: View {
 
     private var libraryRow: some View {
         ScrollView(.horizontal) {
-            LazyHStack(spacing: PlozziOSMediaRailLayout.visibleSpacing) {
+            LazyHStack(spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)) {
                 ForEach(row.libraries) { library in
                     // Still gated on the account having a live provider; the route
                     // resolves it again at push time so this row holds no reference.
@@ -2597,9 +2782,10 @@ private struct PlozziOSHomeRowView: View {
                             PlozziOSHomeLibraryCard(
                                 library: library,
                                 artworkSource: viewModel.libraryArtworkSource(for: library),
-                                width: appModel.settings.density.density
+                                width: metrics.usesDesktopSizing ? metrics.landscapeWidth : appModel.settings.density.density
                                     .iOSHomeLibraryWidth(
-                                        horizontalSizeClass: horizontalSizeClass
+                                        horizontalSizeClass: horizontalSizeClass,
+                                        isRunningOnMac: metrics.usesDesktopSizing
                                     )
                             )
                         }
@@ -2610,7 +2796,8 @@ private struct PlozziOSHomeRowView: View {
         }
         .contentMargins(
             .horizontal,
-            PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+            PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing)
+                - (metrics.usesDesktopSizing && artworkStyle == .framed ? metrics.cardInset : 0),
             for: .scrollContent
         )
         .plozziOSMediaRailClearance()
@@ -2782,7 +2969,7 @@ struct PlozziOSHomeMediaRail: View {
             .contentMargins(
                 .horizontal,
                 PlozziOSMediaRailLayout.artworkAlignedInset(
-                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
                     metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
@@ -2988,6 +3175,7 @@ struct PlozziOSHomeMediaCard: View {
     #endif
     @Environment(PlozziOSAppModel.self) private var appModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     let item: MediaItem
     let isLandscape: Bool
     var interaction: PlozziOSRailInteraction = .openDetail
@@ -3017,8 +3205,9 @@ struct PlozziOSHomeMediaCard: View {
                         item: item, fallbackProvider: provider,
                         presentsEpisodeAsSubject: presentsEpisodeAsSubject
                     )
-                    .environment(\.plozzMetrics, .touch(
-                        density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize))
+                    .environment(\.plozzMetrics, PlozziOSMediaLayout.metrics(
+                        density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize,
+                        isRunningOnMac: isRunningOnMac))
                     .environment(\.plozzCardCaptionView, .related)
                 } label: {
                     card

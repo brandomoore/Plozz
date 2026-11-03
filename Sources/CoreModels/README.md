@@ -300,6 +300,12 @@ filename-derived edition/quality hints.
 Multiline remote-source labels can identify their release file on a folder-marked
 line, including continuation lines through the file extension; presentation
 extracts that filename rather than displaying the entire provider description.
+Unmarked media filenames are also extracted from multiline descriptions. When
+a structured description supplies a decorated title instead of a filename,
+presentation keeps the readable title and omits repeated resolution, language,
+subtitle and source-status rows. Plain filenames and edition labels remain
+intact. This shared display normalization also covers cached version metadata;
+it never rewrites source IDs, playback locators or stored labels.
 Original Unicode filenames are retained and the shared card wraps them without
 a line cap. Extensionless URL endpoints are not release filenames,
 so opaque stream paths cannot override a readable source name. Filename extraction

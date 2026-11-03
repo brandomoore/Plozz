@@ -53,6 +53,8 @@ public struct ServerHomeSection: Codable, Hashable, Identifiable, Sendable {
     public var title: String? // l10n:content — server-authored Home section heading
     public var libraryID: String?
     public var includesNextUp: Bool
+    /// Optional provider-issued shelf locator, validated and stripped of credentials by the provider.
+    public var contentKey: String?
 
     public var isAccountWideHistory: Bool {
         libraryID == nil && (kind == .continueWatching || kind == .nextUp)
@@ -60,13 +62,25 @@ public struct ServerHomeSection: Codable, Hashable, Identifiable, Sendable {
 
     public init(
         id: String, kind: Kind, title: String? = nil, libraryID: String? = nil,
-        includesNextUp: Bool = false
+        includesNextUp: Bool = false, contentKey: String? = nil
     ) {
         self.id = id
         self.kind = kind
         self.title = title
         self.libraryID = libraryID
         self.includesNextUp = includesNextUp
+        self.contentKey = contentKey
+    }
+}
+
+/// Items and their continuation come from the same provider response, not layout discovery.
+public struct ServerHomeRowContent: Sendable {
+    public var items: [MediaItem]
+    public var browseID: String?
+
+    public init(items: [MediaItem], browseID: String? = nil) {
+        self.items = items
+        self.browseID = browseID
     }
 }
 

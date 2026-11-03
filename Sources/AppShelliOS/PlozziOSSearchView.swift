@@ -5,6 +5,7 @@ import SwiftUI
 import CoreUI
 
 struct PlozziOSSearchView: View {
+    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
@@ -115,12 +116,12 @@ struct PlozziOSSearchView: View {
 
     private func results(_ sections: [SearchSection]) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionSpacing) {
+            LazyVStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
                 ForEach(sections) { section in
                     PlozziOSMediaSection(title: Text(section.title)) {
                         LazyVGrid(
                             columns: appModel.settings.density.density.iOSPosterGridColumns(
-                                horizontalSizeClass: horizontalSizeClass
+                                horizontalSizeClass: horizontalSizeClass, isRunningOnMac: metrics.usesDesktopSizing
                             ),
                             spacing: 18
                         ) {

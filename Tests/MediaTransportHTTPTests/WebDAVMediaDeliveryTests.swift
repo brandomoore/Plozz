@@ -1,3 +1,4 @@
+import CoreModels
 import XCTest
 @testable import MediaTransportHTTP
 @testable import TestSupportNetworking
@@ -43,6 +44,42 @@ final class WebDAVMediaDeliveryTests: XCTestCase {
         )
     }
 
+    func testRejectedDeliveryProbeRecordsValidatorClassificationsWithoutSecrets() async throws {
+        let wasEnabled = HandoffDiagnostics.isEnabled
+        HandoffDiagnostics.setEnabled(true)
+        defer { HandoffDiagnostics.setEnabled(wasEnabled) }
+        let before = HandoffDiagnostics.persistentPlaybackLogText()
+        StubURLProtocol.queue(redirect: StubRedirect(location: delivery), for: source)
+        StubURLProtocol.queue(
+            StubResponse(
+                statusCode: 206,
+                headers: ["ETag": "W/\"private-validator\"", "Content-Range": "bytes 0-1/1000"],
+                body: Data([0, 0])
+            ), for: delivery
+        )
+        do {
+            _ = try await client().probeRange(
+                root: root, url: source, sessionKey: key(),
+                credential: .bearerToken("account-secret"), trustPolicy: .system
+            )
+            XCTFail("A missing usable validator must still reject playback")
+        } catch let error as TransportError {
+            XCTAssertEqual(error, .seekableRequiresValidator)
+        }
+        let after = HandoffDiagnostics.persistentPlaybackLogText()
+        let diagnostic = try XCTUnwrap(after.components(separatedBy: "\n").last {
+            $0.contains("webdav PROBE_REJECTED")
+        })
+        XCTAssertFalse(before.contains(diagnostic))
+        XCTAssertTrue(diagnostic.contains(
+            "failure=seekableRequiresValidator anonymous=true prefetch=false "
+                + "status=206 bytes=2 etag=weak lastModified=missing contentRange=valid encoding=missing"
+        ))
+        for secret in ["account-secret", "private-validator", "signature", "example", "movie.mkv"] {
+            XCTAssertFalse(diagnostic.contains(secret))
+        }
+    }
+
     func testCrossOriginProbeAndReadUseAnonymousSession() async throws {
         let client = client()
         let key = try key()
@@ -75,6 +112,68 @@ final class WebDAVMediaDeliveryTests: XCTestCase {
         )
         XCTAssertEqual(bytes.count, 10)
         XCTAssertEqual(StubURLProtocol.requests(for: source).count, 1)
+    }
+
+    func testUnvalidatedPlaybackCannotReturnToDAVOrigin() async throws {
+        StubURLProtocol.queue(redirect: StubRedirect(location: delivery), for: source)
+        StubURLProtocol.queue(redirect: StubRedirect(location: source), for: delivery)
+        StubURLProtocol.queue(
+            StubResponse(statusCode: 206, headers: ["Content-Range": "bytes 0-1/1000"],
+                         body: Data([0, 0])), for: source
+        )
+        do {
+            _ = try await client().probeRange(
+                root: root, url: source, sessionKey: key(), credential: .anonymous,
+                trustPolicy: .system, allowUnvalidatedPlayback: true
+            )
+            XCTFail("Anonymous delivery must still finish outside the DAV origin")
+        } catch let error as TransportError {
+            XCTAssertEqual(error, .seekableRequiresValidator)
+        }
+    }
+
+    func testUnvalidatedPlaybackCannotEnableSameOriginOrNonPlaybackReads() async throws {
+        for anonymous in [false, true] {
+            for role in TransportRole.allCases {
+                if anonymous && role == .playback { continue }
+                let key = try TransportSessionKey(
+                    accountID: "account", credentialRevision: UUID(), origin: root.origin,
+                    trustRevision: UUID(), role: role
+                )
+                let target = anonymous ? delivery : source
+                if anonymous {
+                    StubURLProtocol.queue(redirect: StubRedirect(location: delivery), for: source)
+                }
+                StubURLProtocol.queue(
+                    StubResponse(statusCode: 206, headers: ["Content-Range": "bytes 0-1/1000"],
+                                 body: Data([0, 0])), for: target
+                )
+                do {
+                    _ = try await client().probeRange(
+                        root: root, url: source, sessionKey: key,
+                        credential: .anonymous, trustPolicy: .system, allowUnvalidatedPlayback: true
+                    )
+                    XCTFail("Only anonymous playback delivery may omit validators")
+                } catch let error as TransportError {
+                    XCTAssertEqual(error, .seekableRequiresValidator)
+                }
+                let count = StubURLProtocol.requests(for: target).count
+                let representation = RangeProbeResult(
+                    validator: .unvalidatedPlayback, totalLength: 1000,
+                    resourceURL: target, usesAnonymousSession: anonymous
+                )
+                do {
+                    _ = try await client().readRange(
+                        url: target, start: 0, end: 1, representation: representation,
+                        sessionKey: key, credential: .anonymous, trustPolicy: .system
+                    )
+                    XCTFail("Unvalidated reads must retain the session-role boundary")
+                } catch let error as TransportError {
+                    XCTAssertEqual(error, .seekableRequiresValidator)
+                }
+                XCTAssertEqual(StubURLProtocol.requests(for: target).count, count)
+            }
+        }
     }
 
     func testPrefetchedDeliveryRetainsOnlyACompleteValidatedAnonymousPrefix() async throws {

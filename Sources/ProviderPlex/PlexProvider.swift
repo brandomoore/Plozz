@@ -2144,6 +2144,12 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         from dto: PlexMetadata,
         relativeURL: ((String) -> URL?)? = nil
     ) -> [ArtworkSelection] {
+        let squareReferences = (dto.Image ?? [])
+            .filter { $0.type?.lowercased() == "backgroundsquare" }
+            .compactMap { backgroundURL($0, relativeURL: relativeURL) }
+            .map(ArtworkReference.remote)
+        let squareSelections: [ArtworkSelection] = squareReferences.isEmpty
+            ? [] : [.init(placement: .squareHero, references: squareReferences)]
         var candidates: [HeroArtworkCandidate] = []
         if let art = artworkURL(
             dto.art,
@@ -2178,13 +2184,13 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
                 + "types=[\((dto.Image ?? []).compactMap(\.type).joined(separator: ","))] "
                 + "title=\(dto.title ?? "?") — NO SELECTION"
             }
-            return []
+            return squareSelections
         }
         HeroArtDiagnostics.emitOnce(stage: "plex-pool", key: dto.ratingKey ?? "?") {
             "plex pool=\(candidates.count) art=\(dto.art != nil) "
             + "images=\((dto.Image ?? []).count) title=\(dto.title ?? "?")"
         }
-        return HeroArtworkPlanner.selections(for: candidates)
+        return HeroArtworkPlanner.selections(for: candidates) + squareSelections
     }
 
     /// An `Image` entry's URL, handling the absolute-vs-server-path split the same
@@ -2637,6 +2643,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
     ) throws -> MediaTrack {
         let language = dto.languageTag ?? dto.language
         let isSubtitle = dto.streamType == 3
+        let title = dto.extendedDisplayTitle ?? dto.displayTitle ?? language ?? dto.codec ?? "Track"
         // External/sidecar subtitles expose a `key` we can fetch as text and
         // normalise to WebVTT for the native picker. Embedded subs (no key) and
         // image-based subs can't be delivered this way.
@@ -2661,7 +2668,9 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         return MediaTrack(
             id: dto.index ?? dto.id ?? 0,
             kind: isSubtitle ? .subtitle : .audio,
-            displayTitle: dto.extendedDisplayTitle ?? dto.displayTitle ?? language ?? dto.codec ?? "Track",
+            displayTitle: isSubtitle ? title : TrackLabeling.audioDisplayTitle(
+                title, sourceTitles: [dto.title, dto.displayTitle]
+            ),
             language: language,
             codec: dto.codec,
             profile: isSubtitle ? nil : MediaSourceMetadata.audioProfile(

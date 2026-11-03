@@ -503,6 +503,23 @@ final class PlexProviderMappingTests: XCTestCase {
         }
     }
 
+    func testAudioMappingPreservesRawVersionTitle() throws {
+        let provider = PlexProvider(session: makeSession(), http: StubHTTPClient())
+        let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(
+            #"{"index":3,"streamType":2,"codec":"dca","channels":6,"languageTag":"fr","language":"French","extendedDisplayTitle":"French DTS 5.1","title":"VFQ"}"#.utf8
+        ))
+        let track = try provider.map(stream: dto, itemID: "movie", mediaSourceID: "file")
+        XCTAssertEqual(track.id, 3)
+        XCTAssertEqual(track.language, "fr")
+        XCTAssertEqual(track.displayTitle, "French DTS 5.1 VFQ")
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: track.displayTitle, language: track.language,
+                                    codec: track.codec, channels: track.channels, trackID: track.id,
+                                    locale: Locale(identifier: "fr")),
+            TrackLabel(base: .content("Français"), qualifiers: [.audioVersion("VFQ"), .format("DTS 5.1")])
+        )
+    }
+
     private func makeSession() -> UserSession {
         UserSession(
             server: MediaServer(id: "srv", name: "Home", baseURL: URL(string: "https://plex.host:32400")!, provider: .plex),

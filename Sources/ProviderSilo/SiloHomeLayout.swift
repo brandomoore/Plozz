@@ -80,13 +80,16 @@ extension SiloProvider {
         if allowed?.isEmpty == true { return [] }
         var items: [MediaItem] = []
         var seen = Set<String>()
+        var requested = Set<String>()
         for card in cards {
             try Task.checkCancellation()
             guard ["movie", "series", "season", "episode", "video"].contains(card.type ?? "") else { continue }
             var candidate = map(card)
             if row.definition.kind == .continueWatching || row.definition.kind == .nextUp,
                let target = card.play_content_id, target != card.content_id {
-                candidate = try await item(id: target)
+                guard requested.insert(target).inserted,
+                      let existing = try await existingHomeItem(id: target) else { continue }
+                candidate = existing
                 candidate = inheritingSeriesArtwork(candidate, from: map(card))
                 Self.applyResume(position: card.position_seconds, duration: card.duration_seconds, to: &candidate)
                 candidate.lastPlayedAt = card.progress_updated_at.flatMap(Self.date) ?? candidate.lastPlayedAt

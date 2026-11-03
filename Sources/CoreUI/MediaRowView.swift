@@ -208,7 +208,9 @@ public struct MediaRowView: View {
     /// Keeps branch-specific masking completely out of native navigation styles.
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     #if os(tvOS)
+    @Environment(\.mediaRowHeaderTrailingInset) private var pageTrailingSafeInset
     @State private var portraitViewportWidth: CGFloat = 0
+    @State private var trailingSafeInset: CGFloat = 0
     #endif
 
     /// Extra scroll margin beyond the fade, so a FOCUSED card — which grows
@@ -637,7 +639,7 @@ public struct MediaRowView: View {
                         // navigation rail existed, with the first card's visible
                         // edge under the title.
                         .padding(.leading, cardsLeadingInset)
-                        .padding(.trailing, PlozzTheme.Metrics.screenPadding)
+                        .padding(.trailing, cardsTrailingInset)
                         // Reserve generous vertical room *inside* the clip so a
                         // focused card's lift + drop shadow are never cut. The
                         // negative outer padding below cancels this clearance in
@@ -674,6 +676,13 @@ public struct MediaRowView: View {
                             episodeEntryPlaceholder
                         }
                     }
+                    #if os(tvOS)
+                    .onGeometryChange(for: CGFloat.self) { geometry in
+                        presentation == .poster ? geometry.safeAreaInsets.trailing : 0
+                    } action: { _, inset in
+                        trailingSafeInset = inset
+                    }
+                    #endif
                     .background {
                         #if os(tvOS)
                         if episodeEntry != nil {
@@ -1013,6 +1022,16 @@ public struct MediaRowView: View {
     private var cardsLeadingInset: CGFloat {
         guard presentation != .episodeColumn else { return leadingInset }
         return layoutMetrics.cardRowLeadingPadding(leadingInset, cardStyle: cardStyle)
+    }
+
+    private var cardsTrailingInset: CGFloat {
+        #if os(tvOS)
+        // Full-bleed artwork still needs a scrollable tail for the last card's
+        // native focus lift. A parent may already have consumed the safe area.
+        PlozzTheme.Metrics.screenPadding + max(trailingSafeInset, pageTrailingSafeInset)
+        #else
+        PlozzTheme.Metrics.screenPadding
+        #endif
     }
 
     /// The layout width reserved for one card in the rail — its full glass-surface

@@ -18,6 +18,10 @@ public struct WatchlistBrowseView: View {
     @Environment(\.mediaItemActionHandler) private var mediaItemActionHandler
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
+    #if os(tvOS)
+    @Namespace private var entryFocusScope
+    @State private var hasResolvedEntryFocus = false
+    #endif
 
     public init(
         viewModel: HomeViewModel,
@@ -41,6 +45,9 @@ public struct WatchlistBrowseView: View {
                         .accessibilityIdentifier("watchlist-title")
                     Spacer(minLength: PlozzTheme.Spacing.large)
                     WatchlistBrowseControls(preferences: $browse.preferences)
+                        #if os(tvOS)
+                        .disabled(awaitsGridEntry)
+                        #endif
                 }
                 .padding(.leading, contentLeadingPadding)
                 .padding(.trailing, HomeLayout.horizontalPadding)
@@ -67,6 +74,14 @@ public struct WatchlistBrowseView: View {
         }
         .scrollClipDisabled()
         .scrollsTopNavigation()
+        #if os(tvOS)
+        .focusScope(entryFocusScope)
+        .background {
+            NativeFocusRegionObserver(isEnabled: !hasResolvedEntryFocus && !awaitsGridEntry) {
+                hasResolvedEntryFocus = true
+            }
+        }
+        #endif
         .environment(\.plozzCardCaptionView, .watchlist)
         .task(id: visibility) {
             await viewModel.loadIfNeeded(for: visibility)
@@ -138,6 +153,13 @@ public struct WatchlistBrowseView: View {
                             onSelect(item)
                         }
                         .navigationEntryFocus(.content)
+                        #if os(tvOS)
+                        .disabled(!hasResolvedEntryFocus && item.stablePresentationID != filteredItems.first?.stablePresentationID)
+                        .prefersDefaultFocus(
+                            !hasResolvedEntryFocus && item.stablePresentationID == filteredItems.first?.stablePresentationID,
+                            in: entryFocusScope
+                        )
+                        #endif
                     case .loadingPlaceholder:
                         SkeletonCardView(style: .poster)
                     }
@@ -148,8 +170,28 @@ public struct WatchlistBrowseView: View {
             .padding(.bottom, PlozzTheme.Metrics.screenVerticalPadding)
             .focusSection()
             .accessibilityIdentifier("watchlist-grid")
+            #if os(tvOS)
+            .background {
+                NativeFocusRegionObserver(isEnabled: !hasResolvedEntryFocus) { hasResolvedEntryFocus = true }
+            }
+            #endif
         }
     }
+
+    #if os(tvOS)
+    private var awaitsGridEntry: Bool {
+        guard !hasResolvedEntryFocus else { return false }
+        switch viewModel.state {
+        case .idle, .loading:
+            return true
+        case let .loaded(content):
+            return viewModel.watchlistLoadingPlaceholderCount > 0
+                || !viewModel.watchlistBrowse.preferences.items(from: content.watchlist).isEmpty
+        case .empty, .failed:
+            return false
+        }
+    }
+    #endif
 
     private var contentLeadingPadding: CGFloat {
         HomeLayout.horizontalPadding

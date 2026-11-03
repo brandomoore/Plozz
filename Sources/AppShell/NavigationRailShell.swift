@@ -264,7 +264,7 @@ private struct NavigationRailShellContent<Content: View>: View {
                     destinationFocus.cancel()
                 }
                 chrome.resetForDestinationChange()
-                // Content actions (including Watchlist See all) bypass the rail.
+                // Programmatic destination changes bypass the rail.
                 // Preserve an existing handoff, especially Back's navigation target.
                 if destinationFocus.request == nil {
                     destinationFocus.begin(destination)

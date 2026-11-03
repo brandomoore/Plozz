@@ -2763,10 +2763,11 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
 
     func map(stream dto: MediaStreamDto) -> MediaTrack {
         let isSubtitle = dto.`Type` == "Subtitle"
+        let title = dto.DisplayTitle ?? dto.Language ?? dto.Codec ?? "Track \(dto.Index)"
         return MediaTrack(
             id: dto.Index,
             kind: isSubtitle ? .subtitle : .audio,
-            displayTitle: dto.DisplayTitle ?? dto.Language ?? dto.Codec ?? "Track \(dto.Index)",
+            displayTitle: isSubtitle ? title : TrackLabeling.audioDisplayTitle(title, sourceTitles: [dto.Title]),
             language: dto.Language,
             codec: dto.Codec,
             profile: isSubtitle ? nil : MediaSourceMetadata.audioProfile(

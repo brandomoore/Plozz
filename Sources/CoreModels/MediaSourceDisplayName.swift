@@ -26,6 +26,21 @@ public enum MediaSourceDisplayName {
             // Only join continuation text when it completes a file, not another description field.
             return name(from: hasMediaExtension(wrapped) ? wrapped : release)
         }
+        if lines.count > 1, !value.contains("://"), !value.contains("?") {
+            let trimmed = lines.map { $0.trimmingCharacters(in: .whitespaces) }
+            let files = Set(trimmed.filter(hasMediaExtension))
+            if files.count == 1, let file = files.first {
+                return name(from: file)
+            }
+            if let fieldsStart = trimmed.firstIndex(where: isDescriptionField) {
+                // Structured descriptions can have a decorated title but no filename.
+                // Keep that title, not repeated language, quality or source-status rows.
+                return trimmed[..<fieldsStart].lazy
+                    .filter { !$0.isEmpty && !isResolutionHeader($0) }
+                    .compactMap { name(from: undecoratedTitle($0)) }
+                    .first
+            }
+        }
         // A bare key/value query is not a display label, even without a URL prefix.
         let isQueryOnly = value.range(
             of: #"^[^/?&#\\:\s=]+\s*="#, options: .regularExpression
@@ -47,6 +62,35 @@ public enum MediaSourceDisplayName {
             return fileName
         }
         return queryFileName(from: components)
+    }
+
+    private static func isDescriptionField(_ line: String) -> Bool {
+        line.range(
+            of: #"^(?:Audio(?: languages?)?|Languages?|Langues?|Subtitles?|Sous[ -]?titres?)\s*[:•|]\s*"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    private static func isResolutionHeader(_ line: String) -> Bool {
+        line.range(
+            of: #"^(?:[248]K|[0-9]{3,4}[pi]|UHD|FHD|HD|SD)(?:\s|[●○★☆•·|✓✅⚡])*$"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    private static func undecoratedTitle(_ line: String) -> String {
+        func isDecoration(_ character: Character) -> Bool {
+            character.isWhitespace || "•·|".contains(character)
+                || character.unicodeScalars.first?.properties.isEmojiPresentation == true
+        }
+        var title = line[...]
+        if title.first == "[", let end = title.firstIndex(of: "]") {
+            let remainder = title[title.index(after: end)...].drop(while: \.isWhitespace)
+            if remainder.first?.unicodeScalars.first?.properties.isEmojiPresentation == true {
+                title = remainder
+            }
+        }
+        return String(title.drop(while: isDecoration))
     }
 
     private static func queryFileName(from components: URLComponents) -> String? {

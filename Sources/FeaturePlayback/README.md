@@ -311,6 +311,30 @@ Native and tvOS track menus share `TrackLabeling` and `TrackMenuBuilder`.
 Bare language titles no longer suppress known codec/channel facts, for example
 `English (Opus 5.1)`. Custom names and commentary are retained, existing format
 facts are not duplicated, and unknown formats are not invented.
+Explicit French audio-version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
+`VOQ`) survive generated server titles, matching-track provider enrichment, and
+app-locale changes. These are source-authored community conventions, rendered
+verbatim, not codec names or proof of a particular dub inferred from `fr`.
+For example, `fr` plus `VFQ` and DTS six-channel metadata becomes
+`French (VFQ, DTS 5.1)`. A container's existing version tag takes precedence over
+conflicting provider hints. Release-wide counts such as `VF2`, subtitle labels
+such as `VOSTFR`, and encoder-name substrings do not identify an audio version.
+
+Audio display preserves explicit BCP 47 details, including Brazilian/European
+Portuguese (`pt-BR`/`pt-PT`), Latin American/Spain Spanish (`es-419`/`es-ES`),
+Canadian/France French (`fr-CA`/`fr-FR`), and Cantonese (`yue`/`zh-yue`).
+If the OS collapses an explicit tag such as Mandarin `cmn` to a macrolanguage
+name, the supplied tag remains visible. Script subtags describe writing, not
+proof of an audio dialect; generic `zh`, `fr`, `es`, or `pt` never acquires an
+inferred regional version. Language matching, preferred ordering, selection IDs,
+and subtitle formatting are unchanged. Locale extensions such as calendar
+preferences are not audio-language details. This preserves metadata actually
+supplied by the provider/engine, not distinctions missing from that metadata.
+
+Conventions: [French version tags](https://github.com/TRaSH-Guides/Guides/blob/master/includes/cf-descriptions/french-vfq.md),
+[BCP 47 language tags](https://www.w3.org/International/articles/language-tags/),
+and [Matroska language handling](https://mkvtoolnix.download/doc/mkvmerge.html#mkvmerge.language_handling).
+
 Audio labels retain per-track codec profiles and confirmed spatial-format flags:
 for example `Dolby TrueHD Atmos`, `Dolby Digital+ Atmos`, or
 `DTS-HD MA + DTS:X IMAX`. These identify the encoded source independently of
@@ -679,8 +703,11 @@ iPad follows system rotation and offers no app orientation control, preserving
 multitasking. iPadOS refuses forced Portrait/Landscape changes in multitasking
 mode, even when a window fills the display.
 Rotation waits for native presentation transitions, including dismissal of the
-pre-play sheet, rather than racing the selection continuation. Transient geometry
-rejections are logged and retried at most three times within a bounded reconciliation
+pre-play sheet, rather than racing the selection continuation. A pending
+presentation permits only the requested playback orientations plus the current
+interface orientation needed to finish an existing sheet. Opening a native audio
+or options menu must not unlock portrait during landscape playback. Transient
+geometry rejections are logged and retried at most three times within a bounded reconciliation
 window; they never replace the saved preference with Auto or show a window-management
 toast. Dismissal, ownership changes, and newer requests cancel stale reconciliation.
 Returning to the foreground rechecks the active player's orientation.
@@ -913,6 +940,13 @@ decoded H.264/AAC stream with a delayed second segment and checks recovery at
 the selected speed without replacing the player. Automatic buffering cannot
 predict an arbitrary encoder pause or compensate for a server that cannot
 sustain playback; this fixture does not validate a real server's capacity.
+
+Converted-stream format inspection waits up to 60 seconds for the current
+AVPlayer item to become ready before starting its five-second track-probing
+window. Cold server encoders must not consume that window before media arrives.
+Failed or replaced items stop the probe; missing formats stay unknown rather
+than being inferred from request flags. This affects measured codec and dynamic
+range reporting, not playback buffering or the server's conversion policy.
 
 Plex renditions opt into a session-scoped keepalive every ten seconds after
 playback starts, including while paused or buffering. It does not depend on
@@ -1381,12 +1415,19 @@ while the title fades, preventing subtitles from dropping into its empty space.
 The normal transport reserves its full title-to-tabs band, including gaps between
 controls: a short title must not let centered captions stay beneath the timeline.
 Info/Cast and full appearance editing release that reserved clearance.
-On iPhone and iPad, the visible center transport also reserves the band down to
-the bottom controls, so lower captions move above the play/pause and skip row
-rather than into its buttons or the space below it. Top controls are measured
-separately. A mobile caption moves only when the complete text/dual-lane block
+On iPhone, iPad and Mac, the visible center transport reserves only its actual
+buttons, leaving the space between them and the bottom controls available.
+Captions move only enough to clear intersecting controls, not automatically
+above the center row. Top controls are measured separately.
+A mobile caption moves only when the complete text/dual-lane block
 or movable artwork fits above every obstruction; otherwise its original
 position is retained, without a partial lift. TV placement is unchanged.
+**Auto-Move Away from Controls** in subtitle appearance enables this adjustment by
+default. Turning it off preserves the chosen text, dual-lane and movable bitmap
+positions while controls are shown. It does not change font/style matching to
+the device, authored fixed artwork, or the user's saved offsets. The preference
+uses the existing profile style, including independent Live TV overrides, and
+is available in Settings and the in-player editors on both platforms.
 Hiding the controls restores normal placement; style
 editing, previews, and saved position values are unchanged. The normal dialogue
 percentage remains screen-relative. Captions already encoded into video pixels

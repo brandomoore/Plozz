@@ -133,6 +133,35 @@ post. A conflicting human-owned title or multiple matching guides stops the
 operation. Ambiguous creation failures are not retried immediately; a later run
 rediscovers a successfully created guide.
 
+### TestFlight information channel
+
+The existing `#testflight` text channel can receive a separate bot-owned
+beta guide. Run **Discord issue bridge -> publish-testflight-guide** explicitly.
+This manual-only mode uses the existing Discord bot secret, no model or GitHub
+write token, and does not change the issue bridge or release-announcement schedule.
+
+The guide includes the public beta invitation, `https://plozz.app/testflight/`,
+an App Store fallback, beta reliability/expiry, Apple TV joining steps and the
+public bug-report notice. `TESTFLIGHT_GUIDE` in `tools/discord-bridge.py` owns
+its content. The bot finds one existing `testflight` channel in the configured
+Plozz server, verifies its identity and effective send/embed/history permissions,
+before posting. It never creates a channel. Ordinary publication works with the
+channel's existing permissions and does not change them. Give the bot a
+channel-specific Send Messages allow if needed; Administrator is not required.
+
+With explicit owner approval, the manual `make_testflight_read_only` input can
+configure that one existing channel. The bot must already have Manage Permissions
+there. The operation denies member messages, thread creation and thread replies,
+preserves unrelated permissions/visibility and existing staff overrides, and
+keeps the bot able to post. It verifies the changed permissions before posting.
+No server roles or other channels are changed. This option defaults off; it is
+never used by scheduled synchronization.
+
+Publication uses a stable bot-owned footer and deterministic nonce. Re-running
+updates the same guide, never modifies human messages, suppresses mentions and
+verifies the published content. Missing/ambiguous channels, duplicate bot
+markers, insufficient permissions and unconfirmed writes fail visibly.
+
 ## Operational limits and recovery
 
 Mappings live in the bot-authored GitHub report bodies/comments and Discord

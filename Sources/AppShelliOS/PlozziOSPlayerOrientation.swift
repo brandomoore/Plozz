@@ -181,7 +181,15 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         if isBeingPresented, orientation.isPlaybackActive { return orientation.supportedMask }
-        return !ownsWindowOrientation && hasPendingPresentation ? .all : orientation.supportedMask
+        let requested = orientation.supportedMask
+        guard !ownsWindowOrientation, hasPendingPresentation,
+              let scene = (viewIfLoaded?.window ?? presentingViewController?.viewIfLoaded?.window)?.windowScene,
+              let current = PlozziOSPlayerOrientation.mask(for: currentInterfaceOrientation(scene)) else {
+            return requested
+        }
+        // Let an existing pre-play sheet finish in its current orientation,
+        // without unlocking unrelated orientations when a playback menu opens.
+        return requested.union(current)
     }
 
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation {

@@ -127,6 +127,32 @@ final class AudioMenuAvailabilityTests: XCTestCase {
 /// exclusion, engine-dual vs sidecar sourcing) that used to be buried in
 /// `PlayerViewModel.loadTrackOptions`.
 final class TrackMenuBuilderTests: XCTestCase {
+    func testFrenchVersionsHaveMatchingNativeAndTVLabelsAndStableSelection() {
+        let versions = ["VFQ", "VFF", "VFI"]
+        let tracks = versions.enumerated().map { index, version in
+            MediaTrack(id: index + 10, kind: .audio, displayTitle: version,
+                       language: "fr", codec: "dts", channels: 6)
+        }
+        for localeID in ["en", "fr", "es"] {
+            let locale = Locale(identifier: localeID)
+            let language = TrackLabeling.languageName(forCode: "fr", in: locale)!
+            let options = TrackMenuBuilder.audioOptions(
+                tracks: tracks, selectedID: 11, preferred: ["fr-CA"], locale: locale
+            )
+            XCTAssertEqual(options.map(\.id), [10, 11, 12])
+            XCTAssertEqual(options.filter(\.isSelected).map(\.id), [11])
+            XCTAssertEqual(options.map(\.nativeTitle), versions.map { "\(language) (\($0), DTS 5.1)" })
+            for (option, version) in zip(options, versions) {
+                XCTAssertEqual(
+                    option.title,
+                    Text(verbatim: language) + Text(verbatim: " (")
+                        + (Text(verbatim: version) + Text(verbatim: ", ") + Text(verbatim: "DTS 5.1"))
+                        + Text(verbatim: ")")
+                )
+            }
+        }
+    }
+
     func testNativeAndTVAudioLabelsRetainDetailedSourceProfiles() {
         let tracks = [
             MediaTrack(id: 1, kind: .audio, displayTitle: "English", language: "en", codec: "truehd",

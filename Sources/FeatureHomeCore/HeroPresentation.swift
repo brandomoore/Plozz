@@ -18,6 +18,7 @@ public struct HeroPresentation: Sendable, Equatable {
     public let kind: MediaItemKind
     public let title: String   // l10n:content — media title from the server
     public let artworkReferences: [ArtworkReference]
+    public let artworkPlacement: ArtworkPlacement
     private let libraryArtworkReferences: [ArtworkReference]
     private let recommendedArtworkReferences: [ArtworkReference]
     private let providerHomeArtworkReference: ArtworkReference?
@@ -47,6 +48,9 @@ public struct HeroPresentation: Sendable, Equatable {
         itemID = item.id
         kind = item.kind
         title = Self.normalizedTitle(for: item)
+        artworkPlacement = artworkStyle == .compactPortrait
+            && !item.artworkReferences(for: .squareHero).isEmpty
+            ? .squareHero : (surface == .home ? .homeHero : .detailBackdrop)
         let logos = item.artworkReferences(for: .logo)
         artworkReferences = Self.artworkReferences(
             for: item,
@@ -138,9 +142,8 @@ public struct HeroPresentation: Sendable, Equatable {
         return artworkReferences.filter { $0 != home } + artworkReferences.filter { $0 == home }
     }
 
-    /// Library artwork has no reliable text-presence metadata. Prefer a backdrop
-    /// even before a logo arrives; portrait heroes resolve clean online portraits
-    /// separately, without changing ordinary poster selection.
+    /// Dedicated square backgrounds suit compact heroes without substituting a
+    /// titled poster. Other library artwork retains its backdrop-first fallback.
     public static func artworkReferences(
         for item: MediaItem,
         style: HeroArtworkStyle,
@@ -151,7 +154,8 @@ public struct HeroPresentation: Sendable, Equatable {
         let landscapePlacement: ArtworkPlacement = surface == .home
             ? .homeHero
             : .detailBackdrop
-        let placements: [ArtworkPlacement] = [landscapePlacement, .poster]
+        let placements: [ArtworkPlacement] = (style == .compactPortrait ? [.squareHero] : [])
+            + [landscapePlacement, .poster]
         var seen = Set<ArtworkReference>()
         return placements
             .flatMap {

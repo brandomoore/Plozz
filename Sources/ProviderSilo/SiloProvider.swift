@@ -138,21 +138,38 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         guard !scopes.isEmpty else { return [] }
         var result: [MediaItem] = []
         var seen = Set<String>()
+        var requested = Set<String>()
         for scope in scopes {
             var cursor: String?
             var cursors = Set<String>()
+            var scopeIDs = Set<String>()
+            var scopeCount = 0
+            let pageSize = min(limit, 200)
             repeat {
                 var query = [URLQueryItem(name: "status", value: "in_progress"),
-                             URLQueryItem(name: "limit", value: "200")]
+                             URLQueryItem(name: "limit", value: String(pageSize))]
                 if let scope { query.append(URLQueryItem(name: "library_id", value: scope)) }
                 if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
                 let page: SiloCollection<SiloProgressEntry> = try await client.request("/progress", query: query)
-                for start in stride(from: 0, to: page.items.count, by: 4) {
-                    let batch = Array(page.items[start..<min(start + 4, page.items.count)])
-                    let items = try await withThrowingTaskGroup(of: MediaItem.self) { group in
+                // Progress is newest-first. Fill each library's window without
+                // hydrating the rest of a page or refetching overlapping entries.
+                var start = 0
+                while start < page.items.count, scopeCount < limit {
+                    try Task.checkCancellation()
+                    let end = min(start + min(4, limit - scopeCount), page.items.count)
+                    let batch = page.items[start..<end].filter { progress in
+                        guard scopeIDs.insert(progress.media_item_id).inserted else { return false }
+                        if seen.contains(progress.media_item_id) {
+                            scopeCount += 1
+                            return false
+                        }
+                        return requested.insert(progress.media_item_id).inserted
+                    }
+                    start = end
+                    let items = try await withThrowingTaskGroup(of: MediaItem?.self) { group in
                         for progress in batch {
                             group.addTask { [self] in
-                                var item = try await item(id: progress.media_item_id)
+                                guard var item = try await existingHomeItem(id: progress.media_item_id) else { return nil }
                                 Self.applyResume(position: progress.position_seconds, duration: progress.duration_seconds, to: &item)
                                 item.lastPlayedAt = Self.date(progress.updated_at)
                                 item.libraryID = scope
@@ -160,14 +177,17 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
                             }
                         }
                         var items: [MediaItem] = []
-                        for try await item in group { items.append(item) }
+                        for try await item in group {
+                            if let item { items.append(item) }
+                        }
                         return items
                     }
+                    scopeCount += items.count
                     for item in items where seen.insert(item.id).inserted { result.append(item) }
                 }
                 cursor = try page.nextCursor()
                 if let cursor, (page.items.isEmpty || !cursors.insert(cursor).inserted) { throw AppError.invalidResponse }
-            } while cursor != nil && result.count < limit
+            } while cursor != nil && scopeCount < limit
         }
         let sections: SiloSections = try await client.request("/home/sections")
         var parentSeries: [String: MediaItem] = [:]
@@ -180,10 +200,13 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
                     parent.providerIDs.merge(summary.providerIDs) { first, _ in first }
                     parentSeries[summary.id] = parent
                 }
-                guard !seen.contains(dto.play_content_id ?? dto.content_id) else { continue }
+                let playableID = dto.play_content_id ?? dto.content_id
+                guard !seen.contains(playableID), !requested.contains(playableID) else { continue }
                 var candidate = summary
                 if let target = dto.play_content_id, target != dto.content_id {
-                    candidate = try await item(id: target)
+                    guard requested.insert(target).inserted,
+                          let existing = try await existingHomeItem(id: target) else { continue }
+                    candidate = existing
                     Self.applyResume(position: dto.position_seconds, duration: dto.duration_seconds, to: &candidate)
                     candidate.lastPlayedAt = dto.progress_updated_at.flatMap(Self.date) ?? candidate.lastPlayedAt
                 }
@@ -201,6 +224,16 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         }
         result.sort { ($0.lastPlayedAt ?? .distantPast) > ($1.lastPlayedAt ?? .distantPast) }
         return Array(result.prefix(limit))
+    }
+
+    func existingHomeItem(id: String) async throws -> MediaItem? {
+        do {
+            return try await item(id: id)
+        } catch AppError.notFound {
+            try Task.checkCancellation()
+            PlozzLog.networking.info("Skipping a Silo Home entry whose catalog item no longer exists.")
+            return nil
+        }
     }
 
     public func search(query: String, limit: Int) async throws -> [MediaItem] {

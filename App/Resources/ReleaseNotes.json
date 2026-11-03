@@ -2,6 +2,115 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/068.1",
+      "version": "2026.11.2",
+      "marketingVersion": "2026.10.30",
+      "build": "68.1",
+      "releasedAt": "2026-11-02",
+      "sections": [
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Fixed a crash when opening Settings.",
+              "platforms": ["iOS"]
+            },
+            "Fixed incorrect device and version information in Plex."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/068",
+      "version": "2026.11.2",
+      "marketingVersion": "2026.10.30",
+      "build": 68,
+      "releasedAt": "2026-11-02",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Search Settings and jump directly to a control.",
+            "Browse full Home rows with sorting and filtering.",
+            "Position subtitles relative to the bottom of the video.",
+            "Optional Auto-crop black bars for supported playback.",
+            "Create Plozz channels from native Silo libraries.",
+            "Browse collections alongside movies, following your server's settings when browsing all movies by name.",
+            "Refresh TV guides separately, with download and processing progress.",
+            {
+              "text": "Combine the Home Hero with Showcase rows.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Hold Left or Right to start scanning; click again to increase speed.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Continue Watching opens episode details by default. Saved Play preferences are preserved.",
+            "Quicker WebDAV playback after viewing a title's details.",
+            "More detailed source-format labels in audio track menus.",
+            "More stable title logos while details load.",
+            "Removed the repeated opening-channel message.",
+            {
+              "text": "Smoother Home, profile, and PIN transitions.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "More responsive playback controls and scrub previews.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Top Shelf artwork preparation no longer blocks Home's interface.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Streamlined Add Source and sign-in screens, including Plex server selection.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Artwork zoom transitions when opening and returning from details.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Browse sorting and filtering stay in the navigation toolbar.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Dismiss the Search keyboard by tapping outside or scrolling.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Fixed channel previews playing audio before video was ready.",
+            "Improved recovery from interrupted IPTV guide downloads and partial guide failures.",
+            "Fixed playback rejection on seekable FTP servers with incomplete feature information.",
+            "Improved FTP and implicit FTPS seeking and recovery after interrupted transfers.",
+            "Fixed empty Emby Home rows for libraries and watch history.",
+            "Fixed encoded stream identifiers appearing as version filenames.",
+            "Fixed stale audio information in Playback Diagnostics after switching tracks.",
+            "Fixed movies inheriting the audio-mixing settings used by previews.",
+            "Fixed account removal re-enabling sources excluded from a profile.",
+            "Fixed dark overlaps in translucent subtitle edges.",
+            {
+              "text": "Fixed unnecessary stream restarts when opening ready SDR channel previews, with smoother fades for HDR transitions.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Fixed Home shifting as rows finish loading.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/067.4",
       "version": "2026.10.30",
       "marketingVersion": "2026.10.30",
