@@ -1914,8 +1914,25 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try enableOngoingImport(categories: [("watched", "Watched")])
     }
 
+    func testEnableOngoingWatchedImportFromCurrentSettings() throws {
+        try enableOngoingImport(categories: [("watched", "Watched")], fromCurrentSettings: true)
+    }
+
     func testOngoingImportIsDisabled() throws {
         try openOngoingImportSettings()
+        try assertOngoingImportIsDisabled()
+    }
+
+    func testRefreshDisabledOngoingImportInCurrentProcess() throws {
+        try require(app.buttons["tracker-history.enable-sync"].exists
+            && !app.buttons["tracker-history.disable-sync"].exists,
+                    "Expected the disabled ongoing-sync page")
+        let back = app.buttons.matching(NSPredicate(format: "label == %@", "Back"))
+            .allElementsBoundByIndex.filter(\.isHittable)
+        try require(back.count == 1, "Expected the frontmost native Back action")
+        back[0].tap()
+        try refreshHistoryComparison()
+        try showOngoingImportSettings()
         try assertOngoingImportIsDisabled()
     }
 
@@ -1944,12 +1961,28 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try enableOngoingImport(categories: [("resume", "Resume points")])
     }
 
+    func testEnableOngoingResumeImportFromCurrentSettings() throws {
+        try enableOngoingImport(categories: [("resume", "Resume points")], fromCurrentSettings: true)
+    }
+
     func testEnableOngoingWatchedAndResumeImport() throws {
         try enableOngoingImport(categories: [("watched", "Watched"), ("resume", "Resume points")])
     }
 
-    private func enableOngoingImport(categories: [(id: String, label: String)]) throws {
-        try openOngoingImportSettings()
+    func testEnableOngoingWatchedAndResumeImportFromCurrentSettings() throws {
+        try enableOngoingImport(
+            categories: [("watched", "Watched"), ("resume", "Resume points")],
+            fromCurrentSettings: true
+        )
+    }
+
+    private func enableOngoingImport(
+        categories: [(id: String, label: String)], fromCurrentSettings: Bool = false
+    ) throws {
+        if !fromCurrentSettings { try openOngoingImportSettings() }
+        try require(app.buttons["tracker-history.enable-sync"].exists
+            && !app.buttons["tracker-history.disable-sync"].exists,
+                    "Expected the disabled ongoing-sync settings before new consent")
         let accountID = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"])
         let destination = app.switches.matching(NSPredicate(
             format: "identifier == %@", "tracker-history.sync-server.\(accountID)"
@@ -1986,6 +2019,10 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try synchronizeOngoingImport(expectingReview: false)
     }
 
+    func testSynchronizeOngoingImportFromCurrentSettings() throws {
+        try synchronizeOngoingImport(expectingReview: false, fromCurrentSettings: true)
+    }
+
     func testInspectOngoingImportWithoutManualSync() throws {
         try openOngoingImportSettings(relaunch: false)
         try require(app.buttons["tracker-history.disable-sync"].exists, "Expected the retained sync permission")
@@ -1996,8 +2033,10 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try synchronizeOngoingImport(expectingReview: true)
     }
 
-    private func synchronizeOngoingImport(expectingReview: Bool) throws {
-        try openOngoingImportSettings()
+    private func synchronizeOngoingImport(
+        expectingReview: Bool, fromCurrentSettings: Bool = false
+    ) throws {
+        if !fromCurrentSettings { try openOngoingImportSettings() }
         try require(app.buttons["tracker-history.disable-sync"].exists, "Expected existing sync permission")
         try tapVisible(app.buttons["tracker-history.sync-now"])
         let completed = XCTNSPredicateExpectation(
@@ -2010,6 +2049,30 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testDisableOngoingImport() throws {
         try openOngoingImportSettings()
+        try disableOngoingImport()
+    }
+
+    func testDisableOngoingImportFromCurrentSettings() throws {
+        try disableOngoingImport()
+        let selections = app.switches.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "tracker-history.sync-"
+        )).allElementsBoundByIndex.map(\.identifier)
+        try require(!selections.isEmpty && Set(selections).count == selections.count,
+                    "Expected unambiguous disabled-sync selections")
+        for identifier in selections {
+            let selection = app.switches[identifier]
+            try require(["0", "1"].contains(selection.value as? String ?? ""),
+                        "Expected an explicit sync selection state")
+            if selection.value as? String == "1" {
+                try tapVisible(selection.switches.firstMatch)
+            }
+        }
+        try assertOngoingImportIsDisabled()
+    }
+
+    private func disableOngoingImport() throws {
+        try require(app.buttons["tracker-history.disable-sync"].exists,
+                    "Expected existing sync permission before revocation")
         try tapVisible(app.buttons["tracker-history.disable-sync"])
         try require(app.buttons["tracker-history.enable-sync"].waitForExistence(timeout: 10),
                     "Expected revoked ongoing-import permission")
@@ -2262,6 +2325,10 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             "The service is asking us to slow down. Try again in a moment."
         ].exists
         XCTAssertTrue(unreachable || rateLimited)
+        try refreshHistoryComparison()
+    }
+
+    private func refreshHistoryComparison() throws {
         try tapVisible(app.buttons["Compare again"])
         let user = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_USER"])
         try require(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", user))

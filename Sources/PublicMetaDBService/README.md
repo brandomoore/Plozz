@@ -960,6 +960,33 @@ evidence. Silo's returned history cards do not expose independent play counts or
 watch timestamps, so those are not verified. These are guarded movie imports,
 not ongoing Silo sync, source playback/export, episodes or physical-device proof.
 
+Separate ongoing Silo movie checks used actual Plex playback on a muted iPad
+and native destination consent on a muted iPhone. Watched-only consent excluded
+new progress, then delivered a completed viewing. Resume-only enrollment did
+not backfill existing progress; subsequent playback delivered exactly 680,441
+and 1,001,377 milliseconds. Completion left that destination unwatched and
+preserved its resume, including after relaunch.
+
+Revocation survived relaunch and blocked another movie's new progress.
+Re-enrollment with both categories did not backfill that progress or the earlier
+excluded completion. New playback delivered exactly 613,466 milliseconds;
+completion converted that confirmed resume to watched state and cleared it.
+Repeated sync and cold relaunch preserved observable Silo state and progress
+timestamps. Complete tracker histories/lists, unselected media-server users and
+Silo control titles stayed unchanged. Test consent and reporting were disabled,
+and the original source selections were restored.
+
+The scoped audit retains 43 native passes and 29 paired independent
+Silo/tracker-control snapshots. Three failed native checks, two incomplete runs
+and three preflight-only attempts are excluded from acceptance. One incomplete
+completion was stopped when simulator audio unexpectedly became unmuted: its
+source watch remained visible, while only the later successful viewing reached
+the tracker. All nine accepted playback runs had uninterrupted mute monitoring.
+The external audio reset's cause remains unknown. Silo does not expose
+independent play-event counts or watch timestamps here, so unchanged observable
+state is not an exactly-once guarantee. This covers three movie routes, not
+Silo source playback/export, episodes, all lifecycle boundaries or device parity.
+
 Separate read-only transport preflights fetched the same two-mebibyte movie
 prefix through dedicated SMB, NFS, WebDAV, FTP and host-key-pinned SFTP access.
 All five matched an independently authenticated media-server file range.
