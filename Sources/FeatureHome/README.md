@@ -389,9 +389,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   for movie/episode cards on Home, including merged Next Up entries and every TV
   Home layout. Existing saved choices are preserved; profiles without a saved
   action open details. The choice persists and transfers with the profile.
-  Opening an episode from Continue Watching shows that episode's own details,
-  rather than the parent show's page. Other browsing keeps its show-context
-  navigation.
+  Opening an episode from Continue Watching uses the normal series detail page,
+  with that specific episode's information and playback target in the hero and
+  its season selected. Only the explicit **Go to Episode** action opens the
+  standalone episode page.
   Artwork, progress overlays, context menus and Live TV tuning are unchanged.
   Library Recommended rows retain their existing detail navigation.
   On Apple TV, the remote's center button follows this choice, while Play/Pause
@@ -601,6 +602,14 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   Watchlist and requests stay independent. Horizontal paging and vertical scrolling
   do not open details; in-flight page transitions disable the artwork link.
   VoiceOver exposes the artwork as More Info with the current title.
+  Mobile Home stays stationary beneath a pushed detail page. A transition-scoped,
+  non-interactive snapshot covers the outgoing page's native parallax and is
+  removed on completion or cancellation; destination animation and native Back
+  gestures remain owned by the navigation stack.
+  Opening an episode/season's parent show keeps the known hero artwork and title
+  visible while the provider resolves the series, on both iPhone and iPad.
+  This read-only preview does not start trailers or expose playback actions;
+  lookup failures still show the existing error and retry action.
   The tvOS More Info button is unchanged.
   Mobile Home and detail hero actions share native Liquid Glass buttons on iOS 26+.
   Primary actions use the prominent style with their existing monochrome theme
@@ -617,6 +626,21 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   Closing the sheet starts a fresh carousel dwell interval. Status polling
   continues for the selected series while the sheet is open; a lookup superseded
   by a sheet/manual refresh is not treated as a server failure.
+- **Discovery ownership refresh** — Home carousel and Showcase reverify Featured
+  titles when the active library identity index publishes, independently of Hide
+  Watched. This cannot use the watch-history-only fast path: an external title
+  needs a freshly verified, enabled-library copy before it can offer Play.
+  Existing slides remain visible and keep their identity while verified routing
+  arrives. Mobile uses the same discovery-verification policy. Shared Home/detail
+  movie actions never offer Request for Seerr's Available or Partially Available
+  status without local playback proof; the title remains navigable instead.
+  Series retain their season picker for requesting genuinely missing seasons.
+  Public discovery refreshes preserve the current slide's Seerr status when local
+  verification remains inconclusive; only live status updates may reset that
+  state to Unknown or Deleted. Failed or disabled local copies never gain Play.
+  Status survives library-visibility resets only within the same request context.
+  Changing the profile/Seerr connection clears old status and optimistic request
+  overrides; a different server cannot inherit Available or download progress.
 - **Collections hero source** — an opt-in source mixes individual movies and
   shows from multiple account-qualified collections across libraries, not collection cards. TV and
   mobile use the same `MediaProvider.collectionMembers` loader and existing

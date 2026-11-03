@@ -49,6 +49,8 @@ private struct PlaylistDetailRoute: Hashable {
 /// the tapped item/library's `sourceAccountID`.
 struct HomeTab: View {
     @State private var trailerOpening = YouTubeTrailerOpening()
+    @State private var externalOpening = ExternalMediaOpening()
+    @Environment(ProfilesModel.self) private var profilesModel: ProfilesModel?
     /// The app's effective language, injected by `AppLanguageScope`. Read here
     /// only to hand to the Top Shelf publisher: that snapshot crosses into
     /// another process, so its titles have to be resolved on this side.
@@ -65,6 +67,7 @@ struct HomeTab: View {
     /// for one of the rail's library slots.
     var root: HomeTabRoot = .home
     let accounts: [ResolvedAccount]
+    var isProfileAuthorized: @MainActor () -> Bool = { false }
     /// Every server added to the device, regardless of what this profile has
     /// switched on. Home needs it to tell "no servers yet" from "all off".
     let configuredServerCount: Int
@@ -299,6 +302,7 @@ struct HomeTab: View {
                     heroSettings: heroSettings,
                     identitySources: identitySources
                 ),
+                heroIdentityRevision: identityRevision,
                 heroRequestIdentity: { seer.hasRequestIdentity(for: $0) },
                 heroFeaturedStatusProvider: makeHeroFeaturedStatusProvider(
                     seer: seer
@@ -514,6 +518,8 @@ struct HomeTab: View {
             }
             .onChange(of: pendingTitleRoute) { _, _ in consumePendingTitleRoute() }
             .youTubeTrailerOpeningFailures(trailerOpening)
+            .externalMediaOpeningFailures(externalOpening)
+            .onChange(of: accounts.map(\.account.id)) { _, _ in externalOpening.cancel() }
             .onChange(of: artworkPolicy.forArea(.topShelf).identity) { _, _ in
                 if case .home = root { sharedHomeViewModel.publishCurrentContent() }
             }
@@ -1095,9 +1101,8 @@ struct HomeTab: View {
     /// Routes a navigation to `item`.
     ///
     /// `asOwnSubject` distinguishes the two ways an episode can be navigated to.
-    /// Continue Watching and a menu's "Episode Info" want the episode's *own*
-    /// page — its synopsis, air date, and the file that would play. Other browsing
-    /// and deep links show the series page with that episode fronted.
+    /// A menu's "Go to Episode" opens the episode's own page. Ordinary browsing,
+    /// including Continue Watching, shows the series page with that episode fronted.
     private func navigate(
         _ item: MediaItem,
         libraryOrigin: String? = nil,
@@ -1302,6 +1307,20 @@ struct HomeTab: View {
     private func presentPlay(
         _ target: MediaItem, playlistOrigin: VideoPlaylistPlaybackOrigin? = nil
     ) {
+        if target.opensExternalSource {
+            do {
+                let provider = try resolveProvider(target.sourceAccountID, in: accounts)
+                let profileID = profilesModel?.activeProfileID
+                Task {
+                    await externalOpening.open(target, provider: provider) {
+                        profilesModel?.activeProfileID == profileID && isProfileAuthorized()
+                    }
+                }
+            } catch {
+                externalOpening.failed = true
+            }
+            return
+        }
         pendingPlaylistOrigin = playlistOrigin
         if playbackSettings.shouldAskBeforeResuming(at: target.resumePosition) {
             HandoffDiagnostics.emit(

@@ -177,8 +177,10 @@ struct PlozziOSHomeView: View {
     @State private var heroRandomRolls = HeroRandomRollStore()
     @State private var playbackRequest: PlozziOSPlaybackRequest?
     @State private var pendingResumeRequest: PlozziOSPlaybackRequest?
+    @State private var externalOpening = ExternalMediaOpening()
     @State private var isRequestingHero = false
     @State private var heroRequestStatuses: [String: MediaAvailabilityStatus] = [:]
+    @State private var heroStatusContext: String?
     /// High-frequency overscroll state. The Home page passes this reference without
     /// reading it; only the hero backdrop leaf observes `distance`, so pulling no
     /// longer invalidates every Home row on every scroll tick.
@@ -252,7 +254,7 @@ struct PlozziOSHomeView: View {
         let settings = appModel.settings.hero.effectiveSettings
         if settings.isActive,
            let seed = viewModel.cachedHeroItems(for: settings) {
-            _heroItems = State(initialValue: seed)
+            _heroItems = State(initialValue: HeroDiscoveryStatus.clearingRequestStatus(in: seed))
             _heroCuratedConfiguration = State(
                 initialValue: HeroConfigurationKey(settings: settings)
             )
@@ -343,11 +345,21 @@ struct PlozziOSHomeView: View {
             heroPinnedItemIDs = []
             heroRetainedMisses = [:]
             let settings = appModel.settings.hero.effectiveSettings
-            heroItems = viewModel.cachedHeroItems(for: settings) ?? []
+            heroItems = HeroDiscoveryStatus.retainingRequestStatus(
+                in: viewModel.cachedHeroItems(for: settings) ?? [], from: heroItems,
+                sameRequestContext: heroStatusContext == appModel.plozziOSSeasonRequestContextID
+            )
             heroCuratedConfiguration = HeroConfigurationKey(settings: settings)
             heroCuratedDisabledLibraryKeys = disabled
             heroCandidatePool = .empty
             refreshHeroSourceEligibility()
+        }
+        .onChange(of: appModel.plozziOSSeasonRequestContextID) { _, context in
+            heroItems = HeroDiscoveryStatus.clearingRequestStatus(in: heroItems)
+            featuredItems = HeroDiscoveryStatus.clearingRequestStatus(in: featuredItems)
+            heroRequestStatuses = [:]
+            heroRequestStatusSetAt = [:]
+            heroStatusContext = context
         }
         .task(id: homeIsFrontmost && homeHasAppeared && scenePhase == .active
             && playbackRequest == nil && appModel.settings.hero.effectiveSettings.isActive) {
@@ -442,6 +454,7 @@ struct PlozziOSHomeView: View {
             if !authorized { pendingResumeRequest = nil }
         }
         .onDisappear { pendingResumeRequest = nil }
+        .externalMediaOpeningFailures(externalOpening)
         .plozziOSPlayerCover(
             item: $playbackRequest, orientation: appModel.settings.playback.settings.orientation
         ) { request, orientation in
@@ -801,6 +814,7 @@ struct PlozziOSHomeView: View {
         )
         foldFeaturedStatus(statusByID, into: &heroItems)
         foldFeaturedStatus(statusByID, into: &featuredItems)
+        heroStatusContext = appModel.plozziOSSeasonRequestContextID
     }
 
     private func foldFeaturedStatus(
@@ -902,6 +916,20 @@ struct PlozziOSHomeView: View {
     }
 
     private func presentPlay(_ request: PlozziOSPlaybackRequest) {
+        if request.item.opensExternalSource {
+            guard let provider = appModel.provider(for: request.item) else {
+                externalOpening.failed = true
+                return
+            }
+            let profileID = appModel.profiles.activeProfileID
+            Task {
+                await externalOpening.open(request.item, provider: provider) {
+                    appModel.profiles.activeProfileID == profileID && appModel.isActiveProfileAuthorized
+                        && appModel.provider(for: request.item)?.session == provider.session
+                }
+            }
+            return
+        }
         if appModel.settings.playback.settings.shouldAskBeforeResuming(at: request.startPosition) {
             pendingResumeRequest = request
         } else {
@@ -1117,6 +1145,9 @@ struct PlozziOSHomeView: View {
     }
 
     private func resetHeroScope() {
+        heroStatusContext = nil
+        heroRequestStatuses = [:]
+        heroRequestStatusSetAt = [:]
         heroEligibility = .unrestricted
         heroSupportingIndex.reset()
         heroCandidatePool = .empty
@@ -1127,7 +1158,9 @@ struct PlozziOSHomeView: View {
         featuredConfiguration = nil
         featuredDisabledLibraryKeys = []
         let settings = appModel.settings.hero.effectiveSettings
-        heroItems = viewModel.cachedHeroItems(for: settings) ?? []
+        heroItems = HeroDiscoveryStatus.clearingRequestStatus(
+            in: viewModel.cachedHeroItems(for: settings) ?? []
+        )
         heroCuratedConfiguration = HeroConfigurationKey(settings: settings)
         heroCuratedDisabledLibraryKeys = appModel.settings.homeVisibility.visibility.disabledKeys
         discoveryIdentityRevision = appModel.identityIndex.identityRevisionProvider()
@@ -1343,6 +1376,7 @@ struct PlozziOSHomeView: View {
             misses: foldsIntoLoadedSet ? heroRetainedMisses : [:],
             freshIsAuthoritative: freshIsAuthoritative,
             preservesPinnedItems: true,
+            preservesRequestStatus: heroStatusContext == appModel.plozziOSSeasonRequestContextID,
             sourceEligibility: sourceEligibility
         )
         heroEligibility = sourceEligibility
@@ -1351,6 +1385,7 @@ struct PlozziOSHomeView: View {
         heroCuratedDisabledLibraryKeys = disabledLibraryKeys
         heroRetainedMisses = merge.misses
         if merge.items != heroItems { heroItems = merge.items }
+        heroStatusContext = appModel.plozziOSSeasonRequestContextID
         // What the next launch may repaint instead of a skeleton, re-checked
         // against the final payload (see `HeroDurableSnapshot`).
         // Gated on authority, not on the carousel being empty. `merge.items` is
@@ -2711,7 +2746,6 @@ private struct PlozziOSHomeRowView: View {
                     interaction: row.playsOnSelect(
                         continueWatchingAction: appModel.settings.homeVisibility.continueWatchingAction
                     ) ? .play : .openDetail,
-                    presentsEpisodeAsSubject: row.kind == .continueWatching,
                     showsResumeChip: row.kind == .continueWatching,
                     prefetchesArtwork: row.kind == .continueWatching,
                     pendingRemovalIDs: pendingWatchlistRemovalIDs,
@@ -2848,7 +2882,6 @@ struct PlozziOSHomeMediaRail: View {
     /// from the card's shape — a landscape rail is a presentation choice, not a
     /// promise that the row is Continue Watching.
     var interaction: PlozziOSRailInteraction = .openDetail
-    var presentsEpisodeAsSubject = false
     var showsResumeChip: Bool = false
     /// Continue Watching opts in because its backdrop + logo composition costs
     /// more than an ordinary card. Keeping this scoped avoids warming every Home
@@ -2902,7 +2935,6 @@ struct PlozziOSHomeMediaRail: View {
                                 item: item,
                                 isLandscape: style == .landscape,
                                 interaction: interaction,
-                                presentsEpisodeAsSubject: presentsEpisodeAsSubject,
                                 showsResumeChip: showsResumeChip,
                                 showsSeriesArtwork: showsSeriesArtwork,
                                 isPendingRemoval: pendingRemovalIDs.contains(
@@ -3162,7 +3194,6 @@ struct PlozziOSHomeMediaCard: View {
     let item: MediaItem
     let isLandscape: Bool
     var interaction: PlozziOSRailInteraction = .openDetail
-    var presentsEpisodeAsSubject = false
     var showsResumeChip: Bool = false
     var showsSeriesArtwork: Bool = false
     var isPendingRemoval: Bool = false
@@ -3185,8 +3216,7 @@ struct PlozziOSHomeMediaCard: View {
             } else if provider != nil || !appModel.accountsProviders.resolvedActiveAccounts.isEmpty {
                 MediaArtworkZoomLink(id: item.stablePresentationID) {
                     PlozziOSHomeCardDetail(
-                        item: item, fallbackProvider: provider,
-                        presentsEpisodeAsSubject: presentsEpisodeAsSubject
+                        item: item, fallbackProvider: provider
                     )
                     .environment(\.plozzMetrics, PlozziOSMediaLayout.metrics(
                         density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize,
@@ -3264,7 +3294,6 @@ private struct PlozziOSHomeCardDetail: View {
     @Environment(PlozziOSAppModel.self) private var appModel
     let item: MediaItem
     let fallbackProvider: (any MediaProvider)?
-    var presentsEpisodeAsSubject = false
 
     var body: some View {
         // NavigationLink constructs its destination value while browsing. Keep
@@ -3272,8 +3301,7 @@ private struct PlozziOSHomeCardDetail: View {
         let target = PlozziOSHomeMediaCard.resolvedItem(item, appModel: appModel, playsDirectly: false)
         if let provider = appModel.provider(for: target) ?? fallbackProvider {
             PlozziOSItemDetailView(
-                appModel: appModel, provider: provider, item: target, seerService: appModel.seerService,
-                presentsEpisodeAsSubject: presentsEpisodeAsSubject
+                appModel: appModel, provider: provider, item: target, seerService: appModel.seerService
             )
         } else {
             ContentUnavailableView(

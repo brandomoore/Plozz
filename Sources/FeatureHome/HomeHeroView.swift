@@ -1858,8 +1858,11 @@ struct HomeHeroView: View {
         guard let onRequest else { return }
         noteInteraction()
         requestOverrides[item.id] = .pending
+        let context = seasonRequestContext
         Task {
-            if let status = await onRequest(item) {
+            let status = await onRequest(item)
+            guard seasonRequestContext == context else { return }
+            if let status {
                 requestOverrides[item.id] = status
             } else {
                 requestOverrides[item.id] = nil
@@ -1915,6 +1918,7 @@ struct HomeHeroView: View {
         let context = "\(seasonRequestContextID)|\(seerConnected)"
         if seasonRequestContext != context {
             seasonRequestContext = context
+            requestOverrides = [:]
             seasonRequestStates = [:]
             seasonRequestingItems = []
             seasonLookupFailures = []
@@ -2061,9 +2065,10 @@ struct HomeHeroView: View {
                     title: item.resumeProgressFraction != nil ? "Resume" : item.playActionTitle,
                     progress: item.resumeProgressFraction,
                     remainingText: item.resumeRemainingText,
-                    seasonEpisodeText: HeroForegroundModelBuilder.seasonEpisodeButtonText(for: item),
+                    seasonEpisodeText: item.opensExternalSource ? nil : HeroForegroundModelBuilder.seasonEpisodeButtonText(for: item),
                     onLight: selected || colorScheme == .light,
-                    separatesEpisodeText: item.startsWatching
+                    separatesEpisodeText: item.startsWatching,
+                    systemImage: item.opensExternalSource ? "arrow.up.forward.app" : "play.fill"
                 )
                 .font(.system(size: 28, weight: .semibold))
             }

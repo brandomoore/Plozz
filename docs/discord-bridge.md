@@ -182,8 +182,16 @@ An unlocked archived thread is temporarily unarchived only when a message needs
 to change, then archived again, including after an edit fails. This avoids
 Discord rejecting edits to archived messages and preserves the post's prior
 state. Thread-management permission is required for these transitions.
-Previously linked threads that disappear cause a visible failure rather than
-silently reducing their vote counts.
+Previously linked threads missing from discovery are looked up directly by ID.
+They must still be public threads in the configured forums, created after the
+public notice. If Discord returns Unknown Channel (HTTP 404, code 10003), the
+bridge logs the thread and linked issue, preserves their imported content and
+the issue's last complete vote total, and continues processing other reports.
+It does not assume that the missing thread had zero votes or delete its mapping.
+Permission, transport, and eligibility failures remain visible failures, but are
+reported after the other available threads have been processed; vote totals are
+not updated on a failed run. A returning thread resumes its existing mapping
+without duplicate creation or reclassification.
 
 If Discord explicitly confirms that a starter message was deleted, the bridge
 logs a warning and retains the last imported report and vote total. Existing

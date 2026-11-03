@@ -78,6 +78,11 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
     public var audioProfile: String?
     /// Original container, e.g. `mkv`, `mp4`.
     public var container: String?
+    public var externalLink: ExternalMediaLink?
+
+    public var isExternalSource: Bool {
+        container?.lowercased() == "strmlnk"
+    }
 
     /// When this version is backed by a **different** provider item than the one
     /// containing it (the same-account-duplicate case: two separate Jellyfin
@@ -124,7 +129,8 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
         sourceItemID: String? = nil,
         sourceAccountID: String? = nil,
         providerMediaSourceID: String? = nil,
-        sourceMetadata: MediaSourceMetadata? = nil
+        sourceMetadata: MediaSourceMetadata? = nil,
+        externalLink: ExternalMediaLink? = nil
     ) {
         self.id = id
         self.name = name
@@ -146,6 +152,7 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
         self.sourceAccountID = sourceAccountID
         self.providerMediaSourceID = providerMediaSourceID
         self.sourceMetadata = sourceMetadata
+        self.externalLink = externalLink
     }
 
     public var playbackMediaSourceID: String? {
@@ -325,6 +332,7 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
     /// never baked in here where it would render as permanent English via
     /// `Text(String)`.
     public var displayLabel: String? {  // l10n:content — joined technical facts, or the provider's source name; nil means "no facts known", so the caller supplies the (copy) "Version" fallback itself
+        if isExternalSource { return externalLink?.service.name ?? fileName }
         var parts: [String] = []
         if let editionLabel { parts.append(editionLabel) }
         if let resolutionLabel { parts.append(resolutionLabel) }
@@ -340,6 +348,7 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
     /// as ``displayLabel``'s: no fact/name is known, so the caller shows its
     /// own "Version" fallback resource instead.
     public var menuTitle: String? {  // l10n:content — edition/resolution fact, or the provider's source name; nil means "no facts known", so the caller supplies the (copy) "Version" fallback itself
+        if isExternalSource { return displayLabel }
         if let editionLabel { return editionLabel }
         if let resolutionLabel { return resolutionLabel }
         return MediaSourceDisplayName.name(from: name)
@@ -398,6 +407,15 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
         }
 
         public init(_ version: MediaVersion, locale: Locale = .current) {
+            if version.isExternalSource {
+                title = version.displayLabel
+                supplementalFacts = []
+                releaseName = version.externalLink == nil ? nil : version.fileName
+                formatBadges = []
+                audioLanguages = []
+                supplementalFactsWithoutBadges = []
+                return
+            }
             let fileName = MediaSourceDisplayName.fileName(from: version.fileName)
                 ?? MediaSourceDisplayName.fileName(from: version.sourceMetadata?.fileName)
             title = version.displayLabel
@@ -567,6 +585,10 @@ public extension Array where Element == MediaVersion {
     /// the user override to any other version.
     func recommendedSelection(for capabilities: MediaCapabilities) -> MediaVersion? {
         guard !isEmpty else { return nil }
+        let playable = filter { !$0.isExternalSource }
+        if playable.count != count {
+            return playable.isEmpty ? first : playable.recommendedSelection(for: capabilities)
+        }
         let nativeCompatible = filter { $0.compatibility(with: capabilities) == .directPlay }
         if let best = nativeCompatible.max(by: { $0.qualityScore < $1.qualityScore }) {
             return best
@@ -582,6 +604,7 @@ public extension Array where Element == MediaVersion {
     /// tiebreaks keep the order independent of insertion/arrival order.
     func sortedForPicker() -> [MediaVersion] {
         sorted { lhs, rhs in
+            if lhs.isExternalSource != rhs.isExternalSource { return !lhs.isExternalSource }
             let lhsSize = lhs.sizeBytes.flatMap { $0 > 0 ? $0 : nil }
             let rhsSize = rhs.sizeBytes.flatMap { $0 > 0 ? $0 : nil }
             if lhsSize != rhsSize {

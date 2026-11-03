@@ -1109,7 +1109,7 @@ actor ShareScanner {
 
         for entry in entries {
             let childPath = dir.isEmpty ? entry.name : "\(dir)/\(entry.name)"
-            if entry.kind != .directory, ShareMediaParser.isVideoFile(entry.name) {
+            if entry.kind != .directory, ShareMediaParser.isLibraryMediaFile(entry.name) {
                 playablePaths.append(childPath)
             }
             if entry.kind != .directory,
@@ -1121,7 +1121,7 @@ actor ShareScanner {
                ShareMediaParser.isVideoFile(entry.name),
                let suffix = ShareExtraDiscoveryPolicy.terminalSuffix(inFileName: entry.name) {
                 suffixVideos.append((entry, childPath, suffix))
-            } else if entry.kind != .directory, ShareMediaParser.isVideoFile(entry.name) {
+            } else if entry.kind != .directory, ShareMediaParser.isLibraryMediaFile(entry.name) {
                 guard let parsed = asset(
                     relPath: childPath,
                     entry: entry,

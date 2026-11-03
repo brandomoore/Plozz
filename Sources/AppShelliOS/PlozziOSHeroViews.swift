@@ -540,6 +540,49 @@ struct PlozziOSDetailHeroSection: View {
     }
 }
 
+struct PlozziOSSeriesLoadingHero: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.themePalette) private var palette
+    @Environment(HeroTrailerController.self) private var trailerController
+    let item: MediaItem
+    let appModel: PlozziOSAppModel
+
+    var body: some View {
+        let style: HeroArtworkStyle = horizontalSizeClass == .compact ? .compactPortrait : .landscape
+        // Keep the known Home artwork and show synopsis, not the episode's prose.
+        let presentation = HeroPresentation(item: item, artworkStyle: style, surface: .home)
+        let settings = appModel.settings.detailPage.settings
+        ScrollView {
+            PlozziOSHeroStage(
+                item: item, presentation: presentation, style: style,
+                surfaceRole: .detail, isActive: false,
+                textSize: settings.textSize,
+                trailerController: trailerController,
+                backgroundSettings: appModel.settings.heroBackground,
+                trailerResolver: appModel.heroTrailerResolver()
+            ) {
+                PlozziOSHeroMetadata(
+                    presentation: presentation, style: style, mode: .detail,
+                    usesCompactDetailLayout: style == .compactPortrait,
+                    content: style == .compactPortrait ? .information : .all,
+                    detailPageSettings: settings, textSize: settings.textSize
+                )
+                .environment(\.metadataTextScale, settings.textSize.scale)
+            }
+        }
+        .environment(\.plozzArtworkArea, .home)
+        .environment(\.plozziOSHeroLogoSize, settings.logoSize)
+        .ignoresSafeArea(.container, edges: .top)
+        .background(palette.backgroundBase.ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading show…")
+        .accessibilityIdentifier("series-loading-hero")
+    }
+}
+
 struct PlozziOSHeroStage<Foreground: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.plozziOSHeroContainerHeight) private var containerHeight
@@ -1849,13 +1892,14 @@ struct PlozziOSHomeHeroForeground: View {
                     title: item.playActionTitle,
                     progress: item.resumeProgressFraction,
                     remainingText: item.resumeRemainingText,
-                    seasonEpisodeText: seasonEpisodeText,
+                    seasonEpisodeText: item.opensExternalSource ? nil : seasonEpisodeText,
                     onLight: colorScheme == .dark,
                     spacing: 10,
                     capsuleWidth: 60,
                     resumeTrailingStyle: resumeTrailingStyle,
                     separatesEpisodeText: item.startsWatching,
-                    wrapsText: wrapsText
+                    wrapsText: wrapsText,
+                    systemImage: item.opensExternalSource ? "arrow.up.forward.app" : "play.fill"
                 )
             }
             .buttonStyle(PlozziOSHeroActionButtonStyle(kind: .primary))
@@ -1958,8 +2002,8 @@ struct PlozziOSDetailHeroForeground: View {
     var onPlayTrailer: ((MediaItem) -> Void)?
     var heroRequest: PlozziOSHeroRequest?
     /// Whether this hero fronts an item with a parent page worth returning to —
-    /// an episode on its own page, reachable from Continue Watching or Search
-    /// where Back leaves the show entirely. See `DetailHeroView`.
+    /// an episode opened with "Go to Episode", where Back may leave the show
+    /// entirely. See `DetailHeroView`.
     var offersParentNavigation: Bool = false
     /// Renders the episode-page hero: the episode's own 16:9 still, inset above
     /// its details, with the show named in a breadcrumb rather than a wordmark.
@@ -2354,14 +2398,15 @@ struct PlozziOSDetailHeroForeground: View {
                     title: playableItem?.playActionTitle ?? "Play",
                     progress: playableItem?.resumeProgressFraction,
                     remainingText: playableItem?.resumeRemainingText,
-                    seasonEpisodeText: playableItem.flatMap { seasonEpisodeText(for: $0) },
+                    seasonEpisodeText: playableItem.flatMap { $0.opensExternalSource ? nil : seasonEpisodeText(for: $0) },
                     onLight: colorScheme == .dark,
                     spacing: 10,
                     capsuleWidth: 60,
                     resumeTrailingStyle: resume,
                     isPlaceholder: playableItem == nil,
                     separatesEpisodeText: playableItem?.startsWatching ?? false,
-                    wrapsText: wrapsText
+                    wrapsText: wrapsText,
+                    systemImage: playableItem?.opensExternalSource == true ? "arrow.up.forward.app" : "play.fill"
                 )
             }
             .buttonStyle(PlozziOSHeroActionButtonStyle(

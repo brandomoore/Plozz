@@ -48,6 +48,35 @@ final class HomeHeroInteractionTests: XCTestCase {
         assertDetail("Details for series from emby")
     }
 
+    func testOpeningEpisodeKeepsHeroVisibleWhileItsShowLoads() {
+        app.terminate()
+        app.launchArguments += ["--hero-native-chrome", "--hero-series-loading"]
+        app.launch()
+        let artwork = app.buttons["home-hero-artwork-detail"]
+        XCTAssertTrue(artwork.waitForExistence(timeout: 15))
+        artwork.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["series-loading-hero"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.activityIndicators.firstMatch.exists)
+        capture("series-artwork-during-resolution")
+        assertDetail("Details for series from emby")
+        XCTAssertFalse(app.descendants(matching: .any)["series-loading-hero"].exists)
+    }
+
+    func testFailedShowLookupStillOffersRetryAfterTheArtworkPreview() {
+        app.terminate()
+        app.launchArguments += ["--hero-native-chrome", "--hero-series-loading", "--hero-series-failure"]
+        app.launch()
+        let artwork = app.buttons["home-hero-artwork-detail"]
+        XCTAssertTrue(artwork.waitForExistence(timeout: 15))
+        artwork.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["series-loading-hero"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Unable to load show"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Try Again"].isHittable)
+        app.buttons["Try Again"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["series-loading-hero"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Unable to load show"].waitForExistence(timeout: 8))
+    }
+
     func testForegroundActionsAndVerticalScrollingRemainIndependent() {
         let artwork = app.buttons["home-hero-artwork-detail"]
         XCTAssertTrue(artwork.waitForExistence(timeout: 15), app.debugDescription)

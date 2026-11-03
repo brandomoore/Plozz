@@ -173,6 +173,7 @@ public struct PlayResumeButtonLabel: View {
     public var isLoading: Bool
     public var separatesEpisodeText: Bool
     public var wrapsText: Bool
+    public var systemImage: String
 
     /// Supplies the default bar height, which tracks the reader's text size.
     @Environment(\.plozzMetrics) private var metrics
@@ -190,7 +191,8 @@ public struct PlayResumeButtonLabel: View {
         isPlaceholder: Bool = false,
         isLoading: Bool = false,
         separatesEpisodeText: Bool = false,
-        wrapsText: Bool = false
+        wrapsText: Bool = false,
+        systemImage: String = "play.fill"
     ) {
         self.title = title
         self.progress = progress
@@ -205,6 +207,7 @@ public struct PlayResumeButtonLabel: View {
         self.isLoading = isLoading
         self.separatesEpisodeText = separatesEpisodeText
         self.wrapsText = wrapsText
+        self.systemImage = systemImage
     }
 
     /// The in-progress fraction that switches the label to the resume form: a
@@ -308,6 +311,6 @@ public struct PlayResumeButtonLabel: View {
     }
 
     private var playIcon: some View {
-        ActionProgressIcon(systemName: "play.fill", isLoading: isLoading, onLight: onLight)
+        ActionProgressIcon(systemName: systemImage, isLoading: isLoading, onLight: onLight)
     }
 }

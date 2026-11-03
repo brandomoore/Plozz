@@ -1,4 +1,5 @@
 import Foundation
+import CoreModels
 import MediaTransportCore
 import MediaTransportHTTP
 
@@ -29,6 +30,7 @@ func mapWebDAVError(_ error: Error) -> MediaTransportError {
         return .transport(code: (error as NSError).code)
     }
 
+    HandoffDiagnostics.emit("webdav TRANSPORT_FAILURE error=\(transportError.description)")
     switch transportError {
     case .cancelled:
         return .cancelled

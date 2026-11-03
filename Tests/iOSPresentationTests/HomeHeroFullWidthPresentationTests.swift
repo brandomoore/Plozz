@@ -10,6 +10,114 @@ import XCTest
 
 @MainActor
 final class HomeHeroFullWidthPresentationTests: XCTestCase {
+    func testPendingParentShowPaintsArtworkAndTitleInsteadOfABlackSpinner() async throws {
+        var item = try await artworkItem()
+        item.kind = .episode
+        item.title = "EPISODE"
+        item.parentTitle = "SHOW"
+        item.seriesID = "show"
+        item.overview = "EPISODE SPOILERS"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "SeriesPreview-\(UUID().uuidString)"))
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        let trailer = HeroTrailerController()
+        for (size, sizeClass) in [
+            (CGSize(width: 390, height: 844), UserInterfaceSizeClass.compact),
+            (CGSize(width: 1024, height: 768), .regular)
+        ] {
+            try await withWindow(
+                item: item, size: size, sizeClass: sizeClass, insets: .zero,
+                pull: PlozziOSHomeHeroPullModel()
+            ) { window, host in
+                host.rootView = AnyView(
+                    PlozziOSSeriesLoadingHero(item: item, appModel: app)
+                        .environment(trailer)
+                        .environment(PlozziOSSidebarGeometryModel())
+                        .environment(\.horizontalSizeClass, sizeClass)
+                        .environment(\.themePalette, .dark)
+                        .environment(\.colorScheme, .dark)
+                )
+                try await waitForHostedLayout(window)
+                let image = snapshot(window, name: "pending-series-\(Int(size.width))")
+                let color = try pixel(image, at: CGPoint(x: size.width / 2, y: 120))
+                XCTAssertGreaterThan(color[2], 120, "The incoming page must already contain the known artwork.")
+                let text = try HeroTextInk.frames(in: image, terms: ["SHOW", "SPOILERS", "Loading"])
+                XCTAssertNotNil(text["SHOW"])
+                XCTAssertNil(text["SPOILERS"], "A parent-show preview must not reveal the child's synopsis.")
+                XCTAssertNil(text["Loading"], "Loading status is accessible, not a visible replacement page.")
+                XCTAssertFalse(trailer.isPlaying)
+                XCTAssertFalse(descendants(window).contains { $0 is UIActivityIndicatorView })
+            }
+        }
+    }
+
+    func testNativePushKeepsHomeSnapshotOutsideTheMovingPagesAndRemovesIt() async throws {
+        let item = try await artworkItem()
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 1024, height: 768)] {
+            try await withWindow(
+                item: item, size: size, sizeClass: size.width < 600 ? .compact : .regular,
+                insets: .zero, pull: PlozziOSHomeHeroPullModel()
+            ) { window, host in
+                let navigation = try XCTUnwrap(findController(UINavigationController.self, in: host))
+                let originalDelegate = navigation.delegate
+                let originalGestureDelegate = navigation.interactivePopGestureRecognizer?.delegate
+                let source = try XCTUnwrap(navigation.topViewController)
+                let sourceFrame = source.view.convert(source.view.bounds, to: window)
+                let destination = UIViewController()
+                destination.view.backgroundColor = .systemGreen
+                navigation.pushViewController(destination, animated: true)
+                let coordinator = try XCTUnwrap(navigation.transitionCoordinator)
+                let finished = expectation(description: "Native detail push finishes")
+                var heldSnapshot: UIView?
+                coordinator.animate { context in
+                    let snapshots = self.descendants(context.containerView).filter {
+                        $0.accessibilityIdentifier == "home-navigation-source-snapshot"
+                    }
+                    XCTAssertEqual(snapshots.count, 1)
+                    guard let snapshot = snapshots.first else { return }
+                    heldSnapshot = snapshot
+                    XCTAssertTrue(snapshot.superview === context.containerView)
+                    XCTAssertEqual(snapshot.convert(snapshot.bounds, to: window), sourceFrame)
+                    XCTAssertFalse(snapshot.isUserInteractionEnabled)
+                    XCTAssertTrue(snapshot.accessibilityElementsHidden)
+                    XCTAssertFalse(snapshot.isDescendant(of: source.view))
+                    XCTAssertFalse(snapshot.isDescendant(of: destination.view))
+                } completion: { _ in
+                    finished.fulfill()
+                }
+                await fulfillment(of: [finished], timeout: 5)
+                XCTAssertNotNil(heldSnapshot)
+                XCTAssertNil(heldSnapshot?.superview)
+                XCTAssertTrue(navigation.delegate === originalDelegate)
+                XCTAssertTrue(navigation.interactivePopGestureRecognizer?.delegate === originalGestureDelegate)
+                XCTAssertTrue(navigation.topViewController === destination)
+                navigation.popViewController(animated: false)
+                try await waitForHostedLayout(window)
+                XCTAssertTrue(navigation.topViewController === source)
+                XCTAssertFalse(descendants(window).contains {
+                    $0.accessibilityIdentifier == "home-navigation-source-snapshot"
+                })
+            }
+        }
+    }
+
+    func testUnanimatedNavigationDoesNotCaptureHome() async throws {
+        let item = try await artworkItem()
+        try await withWindow(
+            item: item, size: CGSize(width: 390, height: 844), sizeClass: .compact,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            let navigation = try XCTUnwrap(findController(UINavigationController.self, in: host))
+            navigation.pushViewController(UIViewController(), animated: false)
+            try await waitForHostedLayout(window)
+            XCTAssertFalse(descendants(window).contains {
+                $0.accessibilityIdentifier == "home-navigation-source-snapshot"
+            })
+        }
+    }
+
     func testMacHeroKeyboardPagesBothWaysAndReleasesKeysWhenScrolledAway() async throws {
         let item = try await artworkItem()
         let second = MediaItem(

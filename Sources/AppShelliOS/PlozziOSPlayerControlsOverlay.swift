@@ -629,6 +629,19 @@ private struct PlozziOSAirPlayRouteButton: UIViewRepresentable {
     }
 }
 
+struct PlozziOSPlayerCloseButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.headline)
+        }
+        .buttonStyle(PlayerGlassCircleButtonStyle(diameter: 44))
+        .accessibilityLabel("Close player")
+    }
+}
+
 /// Close, AirPlay and Picture in Picture — all leading.
 ///
 /// The title moved out of here to sit above the scrub bar, matching tvOS, where
@@ -643,13 +656,8 @@ private struct PlozziOSPlayerTopBar: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.headline)
-            }
-            .buttonStyle(PlayerGlassCircleButtonStyle(diameter: 44))
-            .accessibilityLabel("Close player")
-            .reportSubtitleControlsFrame(in: subtitleLayout, region: .topControls)
+            PlozziOSPlayerCloseButton(action: onClose)
+                .reportSubtitleControlsFrame(in: subtitleLayout, region: .topControls)
 
             PlayerGlassControlGroup {
                 PlozziOSAirPlayRouteButton()

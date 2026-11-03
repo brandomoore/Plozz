@@ -282,7 +282,7 @@ final class ProductionHomeNavigationTests: XCTestCase {
         XCTAssertEqual(result, .completed, file: file, line: line)
     }
 
-    func testDefaultContinueWatchingOpensEpisodeSubjectAcrossHomeLayouts() throws {
+    func testDefaultContinueWatchingOpensSeriesWithSelectedEpisodeAcrossHomeLayouts() throws {
         #if targetEnvironment(simulator)
         continueAfterFailure = false
         for layout in [["--hero-disabled-home"], [], ["--immersive-home"], ["--hero-showcase-home"]] {
@@ -304,9 +304,11 @@ final class ProductionHomeNavigationTests: XCTestCase {
                 }
             }
             XCTAssertTrue(episode.waitForExistence(timeout: 10), app.debugDescription)
+            XCUIRemote.shared.press(.right)
             XCUIRemote.shared.press(.select)
-            waitForLabel("subject", on: app.staticTexts["home-detail-route-probe"])
-            XCTAssertTrue(app.staticTexts["Episode-specific synopsis for fixture 0."].waitForExistence(timeout: 15))
+            waitForLabel("browse", on: app.staticTexts["home-detail-route-probe"])
+            XCTAssertTrue(app.staticTexts["Episode-specific synopsis for fixture 1."].waitForExistence(timeout: 15))
+            XCTAssertTrue(app.buttons["Season 1"].waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertEqual(app.staticTexts["home-playback-probe"].label, "0:")
         }
         #else

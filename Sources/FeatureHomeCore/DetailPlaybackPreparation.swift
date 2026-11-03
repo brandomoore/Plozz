@@ -19,6 +19,7 @@ public struct DetailPlaybackPreparationCandidate: Hashable, Sendable {
         guard [.movie, .episode].contains(item.kind),
               item.locallyValidatedPlayableSource,
               !item.isYouTubeTrailer,
+              !item.opensExternalSource,
               let accountID = item.sourceAccountID else { return nil }
         let startPosition = item.resumePosition ?? 0
         guard startPosition.isFinite, startPosition >= 0 else { return nil }
@@ -55,7 +56,8 @@ public struct DetailPlaybackPreparationCandidate: Hashable, Sendable {
             guard matches.count == 1, let match = matches.first else { return nil }
             selected = match
         }
-        guard selected.sourceAccountID == nil || selected.sourceAccountID == accountID,
+        guard !selected.isExternalSource,
+              selected.sourceAccountID == nil || selected.sourceAccountID == accountID,
               selected.sourceItemID == nil || selected.sourceItemID == item.id,
               let mediaSourceID = selected.playbackMediaSourceID else { return nil }
         self.accountID = accountID

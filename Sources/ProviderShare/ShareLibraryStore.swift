@@ -64,8 +64,8 @@ actor ShareLibraryStore {
 
     /// Read a file's bytes off the share (share-relative path). Used to pull small
     /// sidecar subtitles into a local temp for the overlay.
-    func readFile(_ relPath: String) async throws -> Data {
-        try await browser.readFile(relPath)
+    func readFile(_ relPath: String, maximumBytes: Int = 16 * 1_024 * 1_024) async throws -> Data {
+        try await browser.readFile(relPath, maximumBytes: maximumBytes)
     }
 
     /// A share presents exactly one browsable "library": its root folder. Kept as
@@ -135,7 +135,7 @@ actor ShareLibraryStore {
                     entry.createdAt ?? entry.modifiedAt
                 )
                 folders.append(row)
-            } else if ShareMediaParser.isVideoFile(entry.name) {
+            } else if ShareMediaParser.isLibraryMediaFile(entry.name) {
                 row = (
                     videoItem(relPath: childPath, name: entry.name),
                     entry.createdAt ?? entry.modifiedAt
@@ -244,6 +244,14 @@ actor ShareLibraryStore {
     }
 
     private func videoItem(relPath: String, name: String) -> MediaItem {
+        var item = classifiedVideoItem(relPath: relPath, name: name)
+        if ShareMediaParser.isExternalLinkFile(name) {
+            item.versions = [MediaVersion(id: relPath, fileName: name, isDefault: true, container: "strmlnk")]
+        }
+        return item
+    }
+
+    private func classifiedVideoItem(relPath: String, name: String) -> MediaItem {
         // Enrich the bare file into a movie/episode so the generic MetadataKit
         // artwork pipeline (ArtworkRouter → TMDb/TVmaze/AniList) can resolve a
         // poster/backdrop and the detail page can look up an overview. Nothing

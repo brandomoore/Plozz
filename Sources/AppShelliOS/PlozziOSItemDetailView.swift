@@ -22,9 +22,8 @@ struct PlozziOSItemDetailView: View {
     /// Show this episode as the page's own subject instead of redirecting to its
     /// series.
     ///
-    /// Continue Watching and "Episode Info" show the episode's own synopsis,
-    /// air date and the file that would play. Other browsing and deep links show
-    /// the series page with that episode fronted.
+    /// "Go to Episode" opens the standalone episode page. Ordinary browsing,
+    /// including Continue Watching, shows the series page with that episode fronted.
     let presentsEpisodeAsSubject: Bool
 
     @State private var resolvedSeries: MediaItem?
@@ -94,27 +93,28 @@ struct PlozziOSItemDetailView: View {
                 scanStatus: appModel.shareScanStatus
             )
         } else if shouldResolveSeries {
-            if let resolvedSeries {
-                canonicalDetail(for: resolvedSeries)
-            } else if let resolutionError {
-                ContentUnavailableView {
-                    Label(
-                        "Unable to load show",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                } description: {
-                    resolutionError
-                } actions: {
-                    Button("Try Again") {
-                        self.resolutionError = nil
-                        retryToken &+= 1
+            Group {
+                if let resolvedSeries {
+                    canonicalDetail(for: resolvedSeries)
+                } else if let resolutionError {
+                    ContentUnavailableView {
+                        Label(
+                            "Unable to load show",
+                            systemImage: "exclamationmark.triangle"
+                        )
+                    } description: {
+                        resolutionError
+                    } actions: {
+                        Button("Try Again") {
+                            self.resolutionError = nil
+                            retryToken &+= 1
+                        }
                     }
+                } else {
+                    PlozziOSSeriesLoadingHero(item: item, appModel: appModel)
                 }
-                .task(id: retryToken) { await resolveSeries() }
-            } else {
-                ProgressView("Loading show…")
-                    .task(id: retryToken) { await resolveSeries() }
             }
+            .task(id: retryToken) { await resolveSeries() }
         } else {
             canonicalDetail(for: item)
         }
@@ -177,6 +177,7 @@ struct PlozziOSItemDetailView: View {
 private struct PlozziOSCanonicalItemDetailView: View {
     @Environment(\.plozzMetrics) private var metrics
     @State private var trailerOpening = YouTubeTrailerOpening()
+    @State private var externalOpening = ExternalMediaOpening()
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.scenePhase) private var scenePhase
@@ -389,7 +390,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                             Image(systemName: "arrow.down.circle")
                         }
                         .accessibilityLabel("Manage Seasons")
-                    } else if let downloadItem = detailPlayableItem(for: detail.item) {
+                    } else if let downloadItem = detailPlayableItem(for: detail.item), !downloadItem.opensExternalSource {
                         let options = detailPlaybackOptions(for: detail.item)
                         PlozziOSDetailDownloadButton(
                             downloadItem: downloadItem,
@@ -469,6 +470,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
         }
         .modifier(requestPresentation(inDownloadSheet: false))
         .youTubeTrailerOpeningFailures(trailerOpening)
+        .externalMediaOpeningFailures(externalOpening)
         .alert("Couldn't load versions", isPresented: Binding(
             get: { viewModel.playbackInventoryRetryError != nil },
             set: { if !$0 { viewModel.playbackInventoryRetryError = nil } }
@@ -590,9 +592,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
                         for: detail,
                         hasPlayAction: playableHeroTarget != nil || showsPlayPlaceholder
                     ),
-                    // An episode's own page can be reached from Continue Watching
-                    // or Search, where Back leaves the show entirely — so offer a
-                    // way over to it.
+                    // "Go to Episode" opens the episode's own page, so offer
+                    // a way over to its show.
                     offersParentNavigation: showsEpisodeSubjectHero(detail.item),
                     presentsEpisodeStill: showsEpisodeSubjectHero(detail.item),
                     pullDistance: heroPullDistance
@@ -1000,7 +1001,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private func play(_ item: MediaItem, fromBeginning: Bool = false) {
-        playbackPreparation.handoff(item)
+        if !item.opensExternalSource { playbackPreparation.handoff(item) }
         if item.isYouTubeTrailer {
             Task { await trailerOpening.open(item) }
             return
@@ -1039,6 +1040,20 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private func presentPlay(_ request: PlozziOSPlaybackRequest) {
+        if request.item.opensExternalSource {
+            guard let provider = appModel.provider(for: request.item) else {
+                externalOpening.failed = true
+                return
+            }
+            let profileID = appModel.profiles.activeProfileID
+            Task {
+                await externalOpening.open(request.item, provider: provider) {
+                    appModel.profiles.activeProfileID == profileID && appModel.isActiveProfileAuthorized
+                        && appModel.provider(for: request.item)?.session == provider.session
+                }
+            }
+            return
+        }
         if appModel.settings.playback.settings.shouldAskBeforeResuming(at: request.startPosition) {
             pendingResumeRequest = request
         } else {
@@ -2768,7 +2783,8 @@ private struct PlozziOSSeasonDownloadPicker: View {
         var seen = Set<String>()
         let selection = selectedEpisodeIDs
         return list.rows.flatMap(\.libraryEpisodes).filter {
-            selection.contains($0.stablePresentationID) && seen.insert($0.stablePresentationID).inserted
+            !$0.opensExternalSource && selection.contains($0.stablePresentationID)
+                && seen.insert($0.stablePresentationID).inserted
         }
     }
 

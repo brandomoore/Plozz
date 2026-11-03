@@ -75,9 +75,9 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         }
 
         private static func isVisible(_ item: any UIFocusItem, relativeTo marker: UIView) -> Bool {
-            guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: marker),
-                  !frame.isEmpty, !frame.isNull, !frame.isInfinite else { return false }
-            return marker.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+            // Directional guards are transient input targets, not return destinations.
+            // Restoring the hero's Left guard would immediately reopen navigation.
+            NavigationContentFocusRequester.eligibleFrame(of: item, relativeTo: marker) != nil
         }
     }
 

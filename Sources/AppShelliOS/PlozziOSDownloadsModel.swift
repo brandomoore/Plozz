@@ -767,6 +767,9 @@ final class PlozziOSDownloadsModel {
         batchExpectedCount: Int? = nil,
         requestedQuality: DownloadQuality? = nil
     ) async throws -> DownloadRequest {
+        guard !item.opensExternalSource else {
+            throw PlozziOSDownloadError.unavailable("External links cannot be downloaded.")
+        }
         guard let identity = DownloadMediaIdentity.primary(for: item) else {
             throw PlozziOSDownloadError.unavailable(
                 "This item does not have a stable offline identity."

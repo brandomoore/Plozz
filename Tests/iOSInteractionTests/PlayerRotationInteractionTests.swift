@@ -66,10 +66,10 @@ final class PlayerRotationInteractionTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["rotation-load-count"].label, "Loads 2")
     }
 
-    func testPortraitPreferenceDoesNotLockBrowsingAfterDismissal() {
+    func testPortraitPreferenceKeepsPhoneBrowsingPortraitWhileIPadRotates() {
         launch("--portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
-        assertOrientation(landscape: true, player: false)
+        assertOrientation(landscape: UIDevice.current.userInterfaceIdiom == .pad, player: false)
         openPlayer()
         if UIDevice.current.userInterfaceIdiom == .pad {
             assertOrientation(landscape: true)
@@ -85,8 +85,10 @@ final class PlayerRotationInteractionTests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeRight
         assertStaysLandscape(false)
         closePlayer()
+        assertOrientation(landscape: false, player: false)
         XCUIDevice.shared.orientation = .portrait
-        rotate(.landscapeLeft, player: false)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        assertStaysLandscape(false)
         XCTAssertEqual(app.staticTexts["saved-orientation"].label, "portrait")
     }
 
@@ -96,6 +98,79 @@ final class PlayerRotationInteractionTests: XCTestCase {
         closePlayer()
         openPlayer()
         closePlayer()
+    }
+
+    func testVersionChoicesAppearInsideThePlayerWithoutChangingOrientation() {
+        launch("--version-choice-fixture", "--nested-player-presentation")
+        app.buttons["Open rotation player"].tap()
+        let ask = app.buttons["version-choice-ask"]
+        XCTAssertTrue(ask.waitForExistence(timeout: 15), app.debugDescription)
+        assertOrientation(landscape: UIDevice.current.userInterfaceIdiom != .pad, player: false)
+        assertStaysLandscape(UIDevice.current.userInterfaceIdiom != .pad)
+        XCTAssertFalse(app.otherElements["rotation-video-surface"].exists)
+        ask.tap()
+        let version = app.buttons["version-choice-rotation-1080"]
+        XCTAssertTrue(version.waitForExistence(timeout: 5), app.debugDescription)
+        assertOrientation(landscape: UIDevice.current.userInterfaceIdiom != .pad, player: false)
+        assertStaysLandscape(UIDevice.current.userInterfaceIdiom != .pad)
+        version.tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 25), app.debugDescription)
+        assertOrientation(landscape: UIDevice.current.userInterfaceIdiom != .pad)
+        XCTAssertEqual(app.staticTexts["rotation-selected-version"].label, "rotation-1080")
+        closePlayer()
+    }
+
+    func testCancellingVersionChoiceClosesThePlayerAndAllowsReopening() {
+        launch("--version-choice-fixture", "--nested-player-presentation")
+        for _ in 0..<2 {
+            app.buttons["Open rotation player"].tap()
+            let cancel = app.buttons["version-choice-cancel"]
+            XCTAssertTrue(cancel.waitForExistence(timeout: 15), app.debugDescription)
+            cancel.tap()
+            XCTAssertTrue(cancel.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(app.buttons["Open rotation player"].isHittable)
+            XCTAssertFalse(app.otherElements["rotation-video-surface"].exists)
+            XCTAssertFalse(app.buttons["Close player"].exists)
+            assertOrientation(landscape: false, player: false)
+        }
+    }
+
+    func testLoadingAndReadyCloseButtonsUseTheSameLeadingPosition() {
+        launch("--slow-player-fixture")
+        app.buttons["Open rotation player"].tap()
+        let close = app.buttons["Close player"]
+        XCTAssertTrue(close.waitForExistence(timeout: 10), app.debugDescription)
+        assertOrientation(landscape: UIDevice.current.userInterfaceIdiom != .pad, player: false)
+        assertStaysLandscape(UIDevice.current.userInterfaceIdiom != .pad)
+        let loading = close.frame
+        XCTAssertLessThan(loading.midX, app.windows.firstMatch.frame.midX)
+        XCTAssertEqual(loading.width, 44, accuracy: 1)
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 25), app.debugDescription)
+        XCTAssertEqual(close.frame.minX, loading.minX, accuracy: 1)
+        XCTAssertEqual(close.frame.minY, loading.minY, accuracy: 1)
+        closePlayer()
+    }
+
+    func testCompletedVideoReturnsToBrowsingInPortraitAndLandscape() {
+        for landscape in [false, true] {
+            launch("--end-player", "--nested-player-presentation", landscape ? "--auto" : "--portrait")
+            openPlayer()
+            if landscape {
+                rotate(.landscapeLeft)
+            } else {
+                assertOrientation(landscape: false)
+            }
+            XCTAssertTrue(app.buttons["Open rotation player"].wait(
+                for: \.isHittable, toEqual: true, timeout: 30
+            ), "Natural end of the video must dismiss the player: \(app.debugDescription)")
+            XCTAssertTrue(app.otherElements["rotation-video-surface"].firstMatch.waitForNonExistence(timeout: 5))
+            assertOrientation(
+                landscape: landscape && UIDevice.current.userInterfaceIdiom == .pad,
+                player: false
+            )
+            app.terminate()
+            XCUIDevice.shared.orientation = .portrait
+        }
     }
 
     func testFailedPlayerBackClosesFromNestedNavigationAndReopens() {
