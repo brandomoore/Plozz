@@ -801,6 +801,13 @@ volume verified before each later native run. This extends movie playback platfo
 coverage, not episode platform parity, other providers/trackers, interruption
 recovery, or physical-device testing.
 
+Plex destination acceptance remains unverified. The dedicated managed test user's
+cloud identity and server reads succeeded, but authorization of a real native
+Plex Link code returned HTTP 403. The unlinked flow was cancelled normally;
+existing accounts and complete watched/resume histories remained unchanged.
+This is an authorization prerequisite blocker, not evidence that Plex imports
+or playback fail. No personal-owner credential was substituted.
+
 Separate read-only transport preflights fetched the same two-mebibyte movie
 prefix through dedicated SMB, NFS, WebDAV, FTP and host-key-pinned SFTP access.
 All five matched an independently authenticated media-server file range.

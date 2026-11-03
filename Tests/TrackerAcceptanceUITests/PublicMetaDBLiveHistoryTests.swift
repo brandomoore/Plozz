@@ -105,6 +105,37 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testPrepareIndependentPlexLink() throws {
+        try testInspectServerConnections()
+        try require(!app.staticTexts["Signed in as Plozz Internal"].exists, "Expected no existing dedicated Plex account")
+        try tapVisible(app.buttons["Add Server"])
+        try tapVisible(app.buttons["Provider, Jellyfin"])
+        try tapVisible(app.buttons["Plex"].firstMatch)
+        try tapVisible(app.buttons["Link Plex account"])
+        try require(app.buttons["Open Plex to link"].waitForExistence(timeout: 45), "Expected normal Plex authorization")
+        let codeLabels = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[A-Z0-9]{4}$"))
+        try require(codeLabels.count == 1, "Expected one real manual Plex link code")
+        let handoff = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SERVER_HANDOFF"])
+        try require(handoff.hasPrefix("/") && handoff.hasSuffix("/plex-link-request.json"), "Expected scoped handoff")
+        let data = try JSONSerialization.data(withJSONObject: [
+            "code": codeLabels.element.label, "displayedProductionCode": true,
+        ])
+        try data.write(to: URL(fileURLWithPath: handoff), options: .withoutOverwriting)
+        recordState()
+    }
+
+    func testCancelIndependentPlexLink() throws {
+        try require(app.buttons["Open Plex to link"].exists, "Expected the unlinked native Plex page")
+        try tapVisible(app.navigationBars["Plex"].buttons["BackButton"])
+        try tapVisible(app.navigationBars["Add Server"].buttons["Cancel"])
+        try require(app.buttons["Open Plex to link"].waitForNonExistence(timeout: 10), "Expected cancelled linking")
+        try testInspectServerConnections()
+        try require(!app.staticTexts["Signed in as Plozz Internal"].exists, "Refused linking must not add an account")
+        XCTAssertTrue(app.staticTexts["Signed in as plozztest"].exists)
+        XCTAssertTrue(app.staticTexts["Signed in as plozz-internal"].exists)
+        recordState()
+    }
+
     func testEnableEpisodeLibraries() throws {
         try testOpenLibrarySettings()
         let shows = app.collectionViews.buttons["TV Shows"]
