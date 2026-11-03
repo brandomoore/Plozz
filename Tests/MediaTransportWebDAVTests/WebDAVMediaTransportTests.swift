@@ -339,6 +339,40 @@ final class WebDAVMediaTransportTests: XCTestCase {
         XCTAssertEqual(observedIfMatch.get(), "\"strong-1\"", "every read must revalidate the probed strong ETag")
     }
 
+    func testDuplicateStrongIdentityWithConflictingDatesPreparesOpensAndReads() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let responses = ["00:00:00", "00:00:01"].map { time in
+            """
+            <response><href>/dav/movies/Movie.mkv</href><propstat><prop>
+            <getcontentlength>1000</getcontentlength><getetag>"strong-1"</getetag>
+            <getlastmodified>Mon, 01 Jan 2024 \(time) GMT</getlastmodified>
+            </prop><status>HTTP/1.1 200 OK</status></propstat></response>
+            """
+        }.joined()
+        let payload = Data("<multistatus xmlns=\"DAV:\">\(responses)</multistatus>".utf8)
+        let session = try await makeAdapter().connect(for: try makeKey(revision: revision, role: .playback))
+        addTeardownBlock { await session.shutdown() }
+        StubURLProtocol.queue(StubResponse(statusCode: 207, body: payload), for: url)
+        let file = try await session.fileSystem.statForOpening(relativePath: "Movie.mkv")
+        XCTAssertEqual(file.strongETag, "\"strong-1\"")
+        XCTAssertNil(file.modifiedAt)
+        StubURLProtocol.queue(StubResponse(statusCode: 207, body: payload), for: url)
+        StubURLProtocol.queue(StubResponse(
+            statusCode: 206, headers: ["ETag": "\"strong-1\"", "Content-Range": "bytes 0-1/1000"],
+            body: Data([0, 0])
+        ), for: url)
+        let lease = try await session.fileSystem.openSource(for: strongETagLocator(revision: revision))
+        StubURLProtocol.queue(StubResponse(
+            statusCode: 206, headers: ["ETag": "\"strong-1\"", "Content-Range": "bytes 0-3/1000"],
+            body: Data([1, 2, 3, 4]),
+            onRequest: { XCTAssertEqual($0.value(forHTTPHeaderField: "If-Match"), "\"strong-1\"") }
+        ), for: url)
+        let cursor = try XCTUnwrap(lease.makeCursor())
+        let bytes = try await cursor.read(at: 0, length: 4)
+        XCTAssertEqual(bytes, Data([1, 2, 3, 4]))
+    }
+
     func testOpenSourceDetectsETagDrift() async throws {
         let revision = CredentialRevision()
         let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!

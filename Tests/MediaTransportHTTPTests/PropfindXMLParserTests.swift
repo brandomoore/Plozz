@@ -53,6 +53,41 @@ final class PropfindXMLParserTests: XCTestCase {
         )) { XCTAssertEqual($0 as? TransportError, .tooManyEntries(limit: 2)) }
     }
 
+    func testConflictingDatesCollapseOnlyForSizedFilesWithStrongIdentity() throws {
+        let timestamp = "<getlastmodified>Mon, 01 Jan 2024 00:00:00 GMT</getlastmodified>"
+        let cases: [(String, Int)] = [
+            ("<getetag>\"stable\"</getetag><getcontentlength>4096</getcontentlength>", 1),
+            ("<getetag>W/\"stable\"</getetag><getcontentlength>4096</getcontentlength>", 2),
+            ("<getcontentlength>4096</getcontentlength>", 2),
+            ("<getetag>\"stable\"</getetag>", 2),
+            ("<getetag>\"stable\"</getetag><getcontentlength>4096</getcontentlength><resourcetype><collection/></resourcetype>", 2)
+        ]
+        for (properties, expectedCount) in cases {
+            for otherTimestamp in [timestamp.replacingOccurrences(of: "00:00:00", with: "00:00:01"), ""] {
+                for dates in [[timestamp, otherTimestamp, timestamp], [otherTimestamp, timestamp, otherTimestamp]] {
+                    let responses = dates.map {
+                        "<response><href>/dav/movies/Movie.mkv</href><propstat><prop>\(properties)\($0)</prop>"
+                            + "<status>HTTP/1.1 200 OK</status></propstat></response>"
+                    }.joined()
+                    let payload = data("<multistatus xmlns=\"DAV:\">\(responses)</multistatus>")
+                    let buffered = try PropfindXMLParser.parse(
+                        data: payload, root: root, requestPath: "/dav/movies/Movie.mkv", includeSelfEntry: true
+                    )
+                    let streamed = try PropfindXMLParser.parse(
+                        stream: InputStream(data: payload), root: root,
+                        requestPath: "/dav/movies/Movie.mkv", includeSelfEntry: true
+                    )
+                    XCTAssertEqual(buffered, streamed)
+                    XCTAssertEqual(buffered.count, expectedCount)
+                    if expectedCount == 1 {
+                        XCTAssertNil(buffered.first?.lastModified, "Do not retain either conflicting date")
+                        XCTAssertEqual(buffered.first?.etag?.rawValue, "\"stable\"")
+                    }
+                }
+            }
+        }
+    }
+
     func testParsesPrefixedNamespaceAndDropsSelfEntry() throws {
         let xml = """
         <?xml version="1.0" encoding="utf-8"?>

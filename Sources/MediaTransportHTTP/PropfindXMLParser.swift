@@ -136,7 +136,8 @@ public enum PropfindXMLParser {
         }
         if delegate.duplicateCount > 0 {
             HandoffDiagnostics.emit(
-                "webdav PROPFIND_DUPLICATES identical=\(delegate.duplicateCount) entries=\(delegate.entries.count)"
+                "webdav PROPFIND_DUPLICATES collapsed=\(delegate.duplicateCount)"
+                    + " modifiedDiscarded=\(delegate.discardedModificationCount) entries=\(delegate.entries.count)"
             )
         }
         return delegate.entries
@@ -206,9 +207,10 @@ private final class MultistatusParserDelegate: NSObject, XMLParserDelegate {
     private let includeSelfEntry: Bool
 
     private(set) var entries: [WebDAVEntry] = []
-    private var seenEntries: Set<WebDAVEntry> = []
+    private var entryIndexes: [WebDAVEntry: Int] = [:]
     private var responseCount = 0
     private(set) var duplicateCount = 0
+    private(set) var discardedModificationCount = 0
     private(set) var limitError: TransportError?
     private(set) var policyError: TransportError?
     private(set) var documentError: TransportError?
@@ -430,10 +432,23 @@ private final class MultistatusParserDelegate: NSObject, XMLParserDelegate {
             parser.abortParsing()
             return
         }
-        guard seenEntries.insert(entry).inserted else {
+        // A strong ETag already identifies bytes at this exact path. Conflicting
+        // dates are unusable metadata, not a second representation; discard them.
+        let key = !entry.isCollection && entry.contentLength != nil && entry.etag?.isValidStrongValidator == true
+            ? WebDAVEntry(
+                resolvedPath: entry.resolvedPath, isCollection: entry.isCollection,
+                contentLength: entry.contentLength, lastModified: nil,
+                etag: entry.etag, contentType: entry.contentType
+            ) : entry
+        if let index = entryIndexes[key] {
+            if entries[index].lastModified != entry.lastModified {
+                entries[index] = key
+                discardedModificationCount += 1
+            }
             duplicateCount += 1
             return
         }
+        entryIndexes[key] = entries.count
         entries.append(entry)
     }
 

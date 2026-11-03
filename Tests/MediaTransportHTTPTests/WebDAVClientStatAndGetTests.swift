@@ -90,7 +90,6 @@ final class WebDAVClientStatAndGetTests: XCTestCase {
         let variants = [
             ("4096", "8192", "sizeEqual=false"),
             ("private-validator", "different-private-validator", "etagEqual=false"),
-            ("00:00:00", "00:00:01", "modifiedEqual=false"),
             ("video/x-matroska", "video/mp4", "typeEqual=false"),
             ("<D:resourcetype/>", "<D:resourcetype><D:collection/></D:resourcetype>", "kindEqual=false"),
             ("<D:getetag>\"private-validator\"</D:getetag>", "", "etagEqual=false")
@@ -115,6 +114,28 @@ final class WebDAVClientStatAndGetTests: XCTestCase {
             XCTAssertFalse(line.contains("private"))
             XCTAssertFalse(line.contains("Movie"))
             XCTAssertFalse(line.contains("example"))
+        }
+    }
+
+    func testConflictingDatesWithoutStrongIdentityStillRejectStat() async throws {
+        let origin = TransportOrigin(url: URL(string: "https://nas.example.com/")!)!
+        for replacement in ["<D:getetag>W/\"private-validator\"</D:getetag>", ""] {
+            let properties = duplicateProperties.replacingOccurrences(
+                of: "<D:getetag>\"private-validator\"</D:getetag>", with: replacement
+            )
+            let first = duplicateResponse(properties: properties)
+            let second = duplicateResponse(properties: properties.replacingOccurrences(of: "00:00:00", with: "00:00:01"))
+            let payload = Data("<D:multistatus xmlns:D=\"DAV:\">\(first)\(second)</D:multistatus>".utf8)
+            StubURLProtocol.queue(StubResponse(statusCode: 207, body: payload), for: origin.url(path: "/dav/Movie.mkv")!)
+            do {
+                _ = try await makeClient().properties(
+                    root: makeRoot(origin: origin), path: "/dav/Movie.mkv",
+                    sessionKey: makeKey(origin: origin), credential: .anonymous, trustPolicy: .system
+                )
+                XCTFail("Date-based identity remains ambiguous")
+            } catch let error as TransportError {
+                guard case .malformedMultistatus = error else { return XCTFail("Unexpected \(error)") }
+            }
         }
     }
 

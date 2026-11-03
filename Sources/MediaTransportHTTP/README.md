@@ -37,6 +37,10 @@ and byte-source contracts live in `MediaTransportCore`.
   CDATA and ordinary XML text are handled equivalently.
   Repeated entries with the same normalized path and identical parsed metadata
   are collapsed, preserving first-occurrence order for both listing and stat.
+  For files with a size and the same valid strong ETag, a modification-date
+  difference alone also collapses: the ambiguous date is discarded, while the
+  strong ETag remains authoritative. Missing/weak ETags, folders and missing
+  sizes do not qualify for this exception.
   Conflicting entries remain distinct: stat rejects ambiguous metadata rather
   than choosing the first file or combining validators from different entries.
   The entry cap counts responses before deduplication.

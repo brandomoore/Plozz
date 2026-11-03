@@ -351,6 +351,7 @@ public struct WebDAVClient: Sendable {
                         + " kindEqual=\(others.allSatisfy { $0.isCollection == first.isCollection })"
                         + " sizeEqual=\(others.allSatisfy { $0.contentLength == first.contentLength })"
                         + " etagEqual=\(others.allSatisfy { $0.etag == first.etag })"
+                        + " strongETag=\(selfEntries.allSatisfy { $0.etag?.isValidStrongValidator == true })"
                         + " modifiedEqual=\(others.allSatisfy { $0.lastModified == first.lastModified })"
                         + " typeEqual=\(others.allSatisfy { $0.contentType == first.contentType })"
                 )
