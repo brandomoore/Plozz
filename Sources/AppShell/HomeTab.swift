@@ -361,7 +361,7 @@ struct HomeTab: View {
                 onSelectLibrary: { library in
                     path.append(library)
                 },
-                onBrowse: { path.append($0) },
+                onBrowse: { $0.push(onto: $path, chrome: navigationChrome) },
                 configuredServerCount: configuredServerCount,
                 enabledServerCount: accounts.count
             )

@@ -967,7 +967,7 @@ private struct ProductionHomeContent: View {
                             lastPlayedID = item.id
                         },
                         onSelectLibrary: { _ in },
-                        onBrowse: { path.append($0) }
+                        onBrowse: { $0.push(onto: $path, chrome: fixture.chrome) }
                     )
                     .modifier(NavigationRailRootContentInset())
                     .navigationDestination(for: HomeBrowseDestination.self) { destination in

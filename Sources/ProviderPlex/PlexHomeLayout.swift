@@ -30,13 +30,18 @@ extension PlexProvider {
                 return .prefix(items, startIndex: startIndex, limit: limit)
             }
             key = browseID
-        case let .server(section, excluded, anchors):
+        case let .server(section, excluded, anchors, browseID):
             guard section.libraryID.map({ !excluded.contains($0) }) ?? true else {
                 return .init(items: [], nextOffset: nil)
             }
             libraryID = section.libraryID
             guard let libraryID, section.id != "plex:continueWatching" else {
                 return try await homeRowPrefixPage(feed, startIndex: startIndex, limit: limit)
+            }
+            if let browseID {
+                guard let capturedKey = PlexClient.homeShelfKey(browseID) else { throw AppError.invalidResponse }
+                key = capturedKey
+                break
             }
             let hubs = try await client.serverHomeHubs(sectionID: libraryID, count: 100)
             let hub = Self.serverHomeSections(hubs, libraryID: libraryID).first(where: {
@@ -129,7 +134,14 @@ extension PlexProvider {
     public func serverHomeItems(
         sections: [ServerHomeSection], limit: Int, excludingLibraryIDs: Set<String>
     ) async -> [String: Result<[MediaItem], AppError>] {
-        var results: [String: Result<[MediaItem], AppError>] = [:]
+        await serverHomeContent(sections: sections, limit: limit, excludingLibraryIDs: excludingLibraryIDs)
+            .mapValues { $0.map(\.items) }
+    }
+
+    public func serverHomeContent(
+        sections: [ServerHomeSection], limit: Int, excludingLibraryIDs: Set<String>
+    ) async -> [String: Result<ServerHomeRowContent, AppError>] {
+        var results: [String: Result<ServerHomeRowContent, AppError>] = [:]
         var libraryOrder: [String] = []
         var librarySections: [String: [ServerHomeSection]] = [:]
         var seen = Set<String>()
@@ -142,9 +154,9 @@ extension PlexProvider {
             } else {
                 do {
                     try Task.checkCancellation()
-                    results[section.id] = .success(try await serverHomeItems(
+                    results[section.id] = .success(ServerHomeRowContent(items: try await serverHomeItems(
                         section: section, limit: limit, excludingLibraryIDs: excludingLibraryIDs
-                    ))
+                    )))
                 } catch {
                     results[section.id] = .failure(Self.homeRequestError(error))
                 }
@@ -187,8 +199,9 @@ extension PlexProvider {
                         try Task.checkCancellation()
                         let hub = indexed[section.id]
                         if Self.hasCompleteHomePayload(hub) {
-                            results[section.id] = .success(mappedServerHomeItems(
-                                hub, libraryID: libraryID, limit: boundedLimit
+                            results[section.id] = .success(ServerHomeRowContent(
+                                items: mappedServerHomeItems(hub, libraryID: libraryID, limit: boundedLimit),
+                                browseID: PlexClient.homeShelfKey(hub?.key)
                             ))
                         } else {
                             guard let key = Self.homeContentKey(section: section, hub: hub) else {
@@ -197,10 +210,10 @@ extension PlexProvider {
                             PlozzLog.networking.info("Recovering incomplete Plex Home row from its native shelf")
                             let page = try await client.homeShelfPage(key: key, startIndex: 0, limit: boundedLimit)
                             try Task.checkCancellation()
-                            results[section.id] = .success(page.items.filter {
+                            results[section.id] = .success(ServerHomeRowContent(items: page.items.filter {
                                 Self.isServerHomeVideo($0)
                                     && ($0.librarySectionID.map { String($0) == libraryID } ?? true)
-                            }.map { map(metadata: $0).taggingLibrary(libraryID) })
+                            }.map { map(metadata: $0).taggingLibrary(libraryID) }, browseID: key))
                         }
                     } catch {
                         results[section.id] = .failure(Self.homeRequestError(error))

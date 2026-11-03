@@ -128,6 +128,11 @@ Persisted keys are revalidated before use, and recovery keeps the active viewer'
 credentials and library filtering. Browse continuation verifies preview anchors
 before falling back to a saved shelf, so a rotating recommendation cannot silently
 open an unrelated subject.
+Fresh server-row content also carries its sanitized continuation beside its
+items. Curated hubs issue a new `curatedHubSeed` on each promoted-hub request;
+See all pages use the preview's seed directly rather than rediscovering the hub
+or using the older layout-discovery key. Recovered rows carry the exact recovery
+key. Legacy previews without a captured key retain the anchor-checked fallback.
 
 Home and library Continue Watching share the same endpoint selection: items hub,
 plain hub, then legacy on-deck only after an initial unsupported, invalid-response,

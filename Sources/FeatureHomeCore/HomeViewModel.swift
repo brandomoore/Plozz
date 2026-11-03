@@ -1478,6 +1478,7 @@ public final class HomeViewModel {
             var row = row
             row.items = cached.items
             row.hasMore = cached.hasMore
+            row.browseID = cached.browseID
             return row
         }
     }

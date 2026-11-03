@@ -104,7 +104,7 @@ enum HomeRowBrowseFactory {
                     try await provider.homeRowPage(
                         .server(
                             server.section, excludedLibraryIDs: server.section.isAccountWideHistory ? [] : excluded,
-                            anchorIDs: section.items.map(\.id)
+                            anchorIDs: section.items.map(\.id), browseID: section.browseID
                         ),
                         startIndex: start, limit: limit
                     )

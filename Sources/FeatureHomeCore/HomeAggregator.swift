@@ -598,6 +598,7 @@ public struct HomeAggregator: Sendable {
                             case let .success(preview):
                                 serverRows[id]?.items = preview.items
                                 serverRows[id]?.hasMore = preview.hasMore
+                                serverRows[id]?.browseID = preview.browseID
                             case let .failure(error): serverRows[id]?.failure = error
                             }
                         }
@@ -909,7 +910,7 @@ public struct HomeAggregator: Sendable {
                 }
                 return cancelled ? .cancelled : .succeeded
             }) {
-                await resolved.provider.serverHomeItems(
+                await resolved.provider.serverHomeContent(
                     sections: definitions.map(\.section),
                     limit: HomeRecentlyAddedPolicy.requestLimit(
                         previewRequestLimit,
@@ -928,23 +929,26 @@ public struct HomeAggregator: Sendable {
                 if case let .failure(error) = result, error != .cancelled {
                     PlozzLog.app.error("Home server section failed: provider=\(resolved.provider.kind)")
                 }
-                let scoped = result.map { items in
-                    return items.map { item in
+                let scoped = result.map { content in
+                    var content = content
+                    content.items = content.items.map { item in
                         let tagged = item.taggingSource(resolved.account.id)
                         return tagged.taggingLibrary(item.libraryID ?? definition.section.libraryID)
                     }.filter {
                         definition.section.isAccountWideHistory
                             || $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled)
                     }
+                    return content
                 }
                 switch scoped {
-                case let .success(items):
+                case let .success(content):
                     do {
                         var preview = HomeRowPreview(
-                            items, limit: perLibraryLimit,
+                            content.items, limit: perLibraryLimit,
                             retainsCandidates: visibility.hideWatchedRecentlyAdded
                                 && definition.section.kind == .recentlyAdded
                         )
+                        preview.browseID = content.browseID
                         preview.items = try await CollectionCoverArtwork.preparing(preview.items)
                         results[definition.id] = .success(preview)
                     } catch is CancellationError {

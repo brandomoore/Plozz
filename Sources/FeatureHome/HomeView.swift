@@ -132,6 +132,16 @@ final class HomeNavigationActivity {
 public enum HomeBrowseDestination: Hashable {
     case row(HomeRowBrowseModel)
     case watchlist
+
+    @MainActor
+    public func push(onto path: Binding<NavigationPath>, chrome: NavigationChromeModel? = nil) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            chrome?.setStackDepth(path.wrappedValue.count + 1)
+            path.transaction(transaction).wrappedValue.append(self)
+        }
+    }
 }
 
 /// The Home screen: an optional cinematic **hero** carousel followed by

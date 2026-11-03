@@ -4,6 +4,36 @@ import XCTest
 
 @MainActor
 final class HomeRowBrowseTests: XCTestCase {
+    func testServerPreviewCarriesItsContinuationThroughAggregationAndPresentation() async throws {
+        let browseID = "/hubs/items?identifier=curated&curatedHubSeed=preview"
+        let provider = BrowseFactoryProvider(items(65), browseID: browseID)
+        let account = ResolvedAccount(account: Account(id: "account", from: provider.session), provider: provider)
+        let definition = HomeServerRowDefinition(
+            accountID: "account", serverName: "Server", providerKind: .plex,
+            section: .init(id: "curated", kind: .recommendations, libraryID: "movies", contentKey: "/old-seed")
+        )
+        let visibility = HomeLibraryVisibility(rowCustomization: .init(
+            defaults: .custom, order: [definition.id], shown: [definition.id], serverRows: [definition]
+        ))
+        let content = await HomeAggregator().unmergedContent(from: [account], visibility: visibility)
+        let shelf = try XCTUnwrap(content.serverRows.first)
+        XCTAssertEqual(shelf.items.count, 20)
+        XCTAssertTrue(shelf.hasMore)
+        XCTAssertEqual(shelf.browseID, browseID)
+        XCTAssertEqual(shelf.definition.section.contentKey, "/old-seed", "Discovery preferences must not change")
+        let row = try XCTUnwrap(HomePresentationRow.resolve(
+            rows: [], content: .init(serverRows: content.serverRows), visibility: visibility
+        ).first)
+        let browser = HomeRowBrowseFactory.make(row, accounts: [account], visibility: visibility, isCurrent: { true })
+        await browser.load()
+        await browser.load()
+        XCTAssertNil(browser.error)
+        XCTAssertEqual(browser.items.count, 65)
+        XCTAssertFalse(browser.hasMore)
+        let requests = await provider.serverBrowseIDs
+        XCTAssertEqual(requests, [browseID, browseID])
+    }
+
     func testCombinedRecentlyAddedExcludesMusicWithoutChangingRawPageOffsets() async throws {
         let all = (0..<125).map {
             MediaItem(id: "\($0)", title: "Title \($0)", kind: .movie)
@@ -346,14 +376,25 @@ private actor BrowseFactoryProvider: MediaProvider {
     )
     let media: [MediaItem]
     let hasLibraries: Bool
+    let browseID: String?
     private(set) var offsets: [Int] = []
-    init(_ media: [MediaItem], hasLibraries: Bool = true) {
+    private(set) var serverBrowseIDs: [String?] = []
+    init(_ media: [MediaItem], hasLibraries: Bool = true, browseID: String? = nil) {
         self.media = media
         self.hasLibraries = hasLibraries
+        self.browseID = browseID
     }
     func homeRowPage(_ feed: HomeRowFeed, startIndex: Int, limit: Int) async throws -> HomeRowPage {
         offsets.append(startIndex)
+        if case let .server(_, _, _, browseID) = feed { serverBrowseIDs.append(browseID) }
         return .prefix(media, startIndex: startIndex, limit: limit)
+    }
+    func serverHomeContent(
+        sections: [ServerHomeSection], limit: Int, excludingLibraryIDs: Set<String>
+    ) async -> [String: Result<ServerHomeRowContent, AppError>] {
+        Dictionary(uniqueKeysWithValues: sections.map {
+            ($0.id, .success(.init(items: Array(media.prefix(limit)), browseID: browseID)))
+        })
     }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         .init(items: Array(media.dropFirst(page.startIndex).prefix(page.limit)),

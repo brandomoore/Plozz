@@ -186,6 +186,62 @@ extension HomeRowArrangementHostedTests {
         }
     }
 
+    func testHomeBrowsePushDoesNotMoveTheSourcePage() async throws {
+        for animatedPush in [true, false] {
+            let route = HomeBrowseNavigationProbe()
+            let chrome = NavigationChromeModel()
+            var actionFrame = CGRect.zero
+            let browser = HomeRowBrowseModel(title: "Complete shelf", snapshot: [
+                MediaItem(id: "one", title: "One", kind: .movie)
+            ])
+            try await withWindow {
+                HomeBrowseNavigationFixture(
+                    route: route, browser: browser, chrome: chrome, animatedPush: animatedPush
+                ) { actionFrame = $0 }
+            } inspect: { window in
+                _ = try await self.snapshot(window, name: "Browse source before push")
+                let target = try XCTUnwrap(self.focusableItem(
+                    at: CGPoint(x: actionFrame.midX, y: actionFrame.minY + 40), in: window
+                ) as? UIControl)
+                try await self.focus(target, in: window)
+                try XCTUnwrap(window.rootViewController as? HomeRowsFocusHost).target = nil
+                func navigationController(in controller: UIViewController) -> UINavigationController? {
+                    if let navigation = controller as? UINavigationController { return navigation }
+                    return controller.children.compactMap { navigationController(in: $0) }.first
+                }
+                let navigation = try XCTUnwrap(navigationController(in: XCTUnwrap(window.rootViewController)))
+                let source = try XCTUnwrap(navigation.topViewController?.view)
+                func frame() -> CGRect {
+                    let layer = source.layer.presentation() ?? source.layer
+                    return layer.convert(layer.bounds, to: window.layer.presentation() ?? window.layer)
+                }
+                let initial = frame()
+                target.sendActions(for: .primaryActionTriggered)
+                if !animatedPush {
+                    XCTAssertTrue(chrome.isChromeHidden, "Navigation hides in the push transaction, not a later frame")
+                }
+                var maximumChange: CGFloat = 0
+                var animatedTransition = false
+                for _ in 0..<45 {
+                    try await Task.sleep(for: .milliseconds(16))
+                    animatedTransition = animatedTransition || navigation.transitionCoordinator?.isAnimated == true
+                    guard source.window === window else { continue }
+                    let sample = frame()
+                    maximumChange = max(maximumChange,
+                        abs(sample.minX - initial.minX), abs(sample.minY - initial.minY),
+                        abs(sample.width - initial.width), abs(sample.height - initial.height))
+                }
+                XCTAssertEqual(chrome.stackDepth, 1)
+                if animatedPush {
+                    XCTAssertTrue(animatedTransition, "The baseline must exercise an animated native push")
+                } else {
+                    XCTAssertFalse(animatedTransition, "See all must suppress native snapshot animation too")
+                    XCTAssertLessThanOrEqual(maximumChange, 1, "See all must not shift Home behind the new page")
+                }
+            }
+        }
+    }
+
     func testFeaturedTVLayoutKeepsWholePointFourByFiveGeometry() {
         for width: CGFloat in [390, 1024, 1696, 1760.25, 1776, 1920] {
             let size = FeaturedCardLayout.size(viewportWidth: width, television: true)
@@ -349,15 +405,22 @@ private struct HomeBrowseNavigationFixture: View {
     @Bindable var route: HomeBrowseNavigationProbe
     let browser: HomeRowBrowseModel
     let chrome: NavigationChromeModel
+    var animatedPush = false
     let onFrame: (CGRect) -> Void
 
     var body: some View {
         NavigationStack(path: $route.path) {
-            MediaRowBrowseCard(width: 240, action: { route.path.append(browser) })
+            MediaRowBrowseCard(width: 240, action: {
+                let destination = HomeBrowseDestination.row(browser)
+                if animatedPush { route.path.append(destination) }
+                else { destination.push(onto: $route.path, chrome: chrome) }
+            })
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onFrame($0) }
-                .navigationDestination(for: HomeRowBrowseModel.self) { browser in
-                    HomeRowBrowseView(model: browser, columns: [GridItem(.flexible())]) { item in
-                        Button(item.title) {}
+                .navigationDestination(for: HomeBrowseDestination.self) { destination in
+                    if case let .row(browser) = destination {
+                        HomeRowBrowseView(model: browser, columns: [GridItem(.flexible())]) { item in
+                            Button(item.title) {}
+                        }
                     }
                 }
         }

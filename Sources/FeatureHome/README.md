@@ -52,7 +52,8 @@ opening the shared browser. Libraries and Live TV keep their existing navigation
 TV row browsers use Home's navigation path, hiding top-level navigation as soon
 as they open. Opening a title adds another level; Back returns to the browser
 before returning to the original Home action. Browser scrolling does not move
-Home's retained top navigation.
+Home's retained top navigation. See all pushes without the native source-page
+slide/scale animation, so Home and its navigation do not shift behind the browser.
 Browse actions appear only when the feed confirms additional eligible titles
 beyond the Home preview, not merely because the preview reaches its limit.
 Home requests one lookahead item in the existing bounded fetch; it does not
@@ -76,7 +77,10 @@ container APIs. Provider Home feeds continue the exact feed: Plex uses its
 same-origin shelf key where available, while limit-only feeds extend their
 requested prefix. Recommendation membership is separate from arranger slot
 identity; a missing or changed source is an error, not permission to browse an
-unrelated library. Fixed server shelves end when the source has no continuation.
+unrelated library. Server previews carry the continuation from their content
+response through aggregation and presentation, separately from saved layout
+discovery. This preserves Plex curated shuffle seeds across every browser page.
+Fixed server shelves end when the source has no continuation.
 Combined Recently Added also enforces its non-music library scope on returned
 items when a provider cannot scope the feed, without changing raw page offsets.
 Its hide-watched policy is reapplied after watch mutations for combined,

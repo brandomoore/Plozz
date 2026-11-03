@@ -196,7 +196,8 @@ use the same rendered-presentation focus handoff as navigation selections.
 Home's See all pages, including Watchlist, instead push onto Home's existing
 navigation path. All three navigation styles hide their top-level controls
 until Back returns to Home; title details opened from a browser return to that
-browser first.
+browser first. These browse pushes suppress native page motion in the same
+transaction as the path change, keeping the outgoing Home page stationary.
 An already pending handoff is preserved, including Back's navigation-focus target.
 Root Back restores navigation focus, while child Back restores its Settings row.
 The top-bar root reserves foreground clearance without moving subpage headers.
