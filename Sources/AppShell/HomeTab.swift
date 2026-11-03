@@ -495,8 +495,16 @@ struct HomeTab: View {
                 Group {
                     switch destination {
                     case let .row(browser):
-                        HomeRowBrowseView(model: browser, columns: metrics.posterColumns) { item in
-                            PosterCardView(item: item, style: .poster, spoilerSettings: spoilerSettings) {
+                        HomeRowBrowseView(
+                            model: browser,
+                            columns: browser.style == .landscape
+                                ? Array(metrics.posterColumns.prefix(max(1, metrics.posterColumns.count / 2)))
+                                : metrics.posterColumns
+                        ) { item in
+                            PosterCardView(
+                                item: item, style: browser.style == .landscape ? .landscape : .poster,
+                                spoilerSettings: spoilerSettings
+                            ) {
                                 navigate(item)
                             }
                             .navigationEntryFocus(.content)

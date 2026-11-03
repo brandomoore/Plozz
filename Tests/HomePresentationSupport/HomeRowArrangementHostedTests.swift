@@ -590,7 +590,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     #if os(iOS)
     func testHomeBrowseControlsUseTrailingToolbar() async throws {
         let model = HomeRowBrowseModel(
-            title: "Library picks", snapshot: (0..<40).map {
+            title: "Recently Added in Movie Collections", snapshot: (0..<40).map {
                 MediaItem(id: "\($0)", title: "Shelf title \($0)", kind: .movie)
             }
         )
@@ -606,6 +606,9 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 _ = try await self.snapshot(window, name: "Home browse trailing toolbar \(width)")
                 func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
                 let bar = try XCTUnwrap(views(window).compactMap { $0 as? UINavigationBar }.first)
+                XCTAssertEqual(bar.topItem?.title, model.title, "Keep the full title in the native navigation item.")
+                XCTAssertFalse(views(window).contains { $0.accessibilityIdentifier == "home-row-browser-title" },
+                               "Mobile must not repeat the title as a large content heading.")
                 let controls = views(bar).compactMap { $0 as? UIButton }
                 XCTAssertEqual(controls.count, 2, "Both menus must be navigation-bar actions")
                 for control in controls {

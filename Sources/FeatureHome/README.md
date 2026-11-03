@@ -49,6 +49,10 @@ card on Apple TV. The TV action is a separate native control, not a synthetic
 media item, and follows the rail's poster, landscape, or featured geometry.
 All TV Home layouts retain the complete `HomePresentationRow` source when
 opening the shared browser. Libraries and Live TV keep their existing navigation.
+Expanded row grids retain the source row's resolved poster or landscape shape on
+TV and mobile, including automatically detected collection covers and configured
+collection rows. Landscape grids use wider columns; sorting, filtering, and
+paging do not change that shape or the saved library-browser layout.
 TV row browsers use Home's navigation path, hiding top-level navigation as soon
 as they open. Opening a title adds another level; Back returns to the browser
 before returning to the original Home action. Browser scrolling does not move
@@ -78,7 +82,9 @@ the first grid item actually receives native focus. This also covers delayed
 loads and nested Watchlist; empty and failed loads release the controls. Once
 entered, ordinary directional navigation and detail-return focus stay native.
 The shared row browser's sort and filter menus sit at the trailing end of the
-TV heading and in the top-right navigation toolbar on iPhone/iPad. Watchlist
+TV heading and in the top-right navigation toolbar on iPhone/iPad. Mobile uses
+a native inline navigation title rather than a second large content heading;
+long titles truncate to fit alongside Back and the menus. Watchlist
 and library grids use that same mobile toolbar placement, keeping supported
 query actions available while the content scrolls without adding a pinned
 content header.
