@@ -25,9 +25,9 @@ public enum HeroCTA: Equatable, Sendable {
     case requested
     /// An approved request for a future release, without library or queue evidence.
     case awaitingRelease
-    /// No Play/Request button: a featured title that isn't owned and can't be
-    /// requested because Seerr isn't connected. The slide still shows in the
-    /// carousel; it just offers no primary action.
+    /// No Play/Request button: no verified playable copy, and requesting is
+    /// unavailable or the server already reports availability. The title remains
+    /// navigable without offering an unverified Play or a redundant Request.
     case unavailable
 
     public var requestStatusTitle: LocalizedStringResource {
@@ -142,10 +142,9 @@ public extension MediaItem {
     /// Pure decision used by ``heroCTA(seerConnected:)`` and directly by the hero
     /// (which may apply a just-tapped optimistic `availability` override).
     ///
-    /// - Ordinary library items (`availability == nil`) always ``HeroCTA/play``.
-    /// - Owned featured titles (`available`/`partiallyAvailable`) also ``play``.
-    /// - Everything else needs Seerr connected to offer any action; otherwise
-    ///   ``unavailable`` (the slide shows with no Play/Request button).
+    /// Verified library copies offer Play. Server availability alone cannot
+    /// establish access for this profile, but must not offer a duplicate request.
+    /// Other request states require a connected Seerr service.
     static func heroCTA(
         availability: MediaAvailabilityStatus?,
         downloadProgress: Double?,
@@ -172,7 +171,9 @@ public extension MediaItem {
                 return .awaitingRelease
             }
             return .requested
-        case .none, .unknown, .deleted, .available, .partiallyAvailable:
+        case .available, .partiallyAvailable:
+            return .unavailable
+        case .none, .unknown, .deleted:
             return .request
         }
     }

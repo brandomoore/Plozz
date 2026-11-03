@@ -11,6 +11,79 @@ private actor DiscoveryPolicyProbe {
 }
 
 final class HeroDiscoveryRuntimeTests: XCTestCase {
+    func testUnavailableLocalCopyCannotEraseConfirmedSeerrAvailabilityDuringRecuration() async throws {
+        for disabled in [false, true] {
+            for status in [MediaAvailabilityStatus.available, .partiallyAvailable] {
+                var record = owned()
+                record.libraryID = "movies"
+                let fixture = fixture(kind: .plex, records: disabled ? [record] : [])
+                let raw = external()
+                var showing = raw
+                showing.availability = status
+                let runtime = HeroDiscoveryRuntime(
+                    accounts: [fixture.account],
+                    identitySources: { _ in [
+                        .init(accountID: "active", itemID: "library-42", libraryID: "movies", kind: .movie)
+                    ] },
+                    discovery: { _, _ in [raw] }
+                )
+                var visibility = HomeLibraryVisibility.default
+                if disabled { visibility.disabledKeys = ["active:movies"] }
+                let verified = await runtime.candidates(
+                    .init(), sources: [.tmdb], hideWatched: false, visibility: visibility
+                )
+                for pinned in [false, true] {
+                    let merged = HeroLiveMerge.merge(
+                        showing: [showing], fresh: verified, limit: 1,
+                        pinnedItemIDs: pinned ? [showing.id] : [],
+                        preservesRequestStatus: true
+                    )
+                    let item = try XCTUnwrap(merged.items.first)
+                    XCTAssertEqual(item.availability, status)
+                    XCTAssertEqual(item.heroCTA(seerConnected: true), .unavailable)
+                    XCTAssertFalse(item.hasPlayableLibraryTarget())
+                }
+            }
+        }
+    }
+
+    func testAvailableMovieUpgradesFromExternalToPlayableWithoutChangingPinnedSlide() async throws {
+        for kind in [ProviderKind.plex, .jellyfin, .emby] {
+            let raw = external()
+            let record = owned()
+            let fixture = fixture(kind: kind, records: [record])
+            let snapshot = IdentityIndexSnapshotStore()
+            let runtime = HeroDiscoveryRuntime(
+                accounts: [fixture.account], identitySources: snapshot.sourcesProvider(),
+                discovery: { _, _ in [raw] }
+            )
+            let cold = await runtime.candidates(.init(), sources: [.tmdb], hideWatched: false)
+            let showing = try XCTUnwrap(cold.first)
+            var available = showing
+            available.availability = .available
+            let refreshed = HeroDiscoveryStatus.merging([available], into: cold)
+            XCTAssertEqual(refreshed.first?.heroCTA(seerConnected: true), .unavailable,
+                           "Seerr availability prevents a duplicate request but cannot grant local access.")
+
+            let index = IdentityIndex()
+            await index.ingest([record], accountID: fixture.account.account.id)
+            snapshot.update(await index.snapshot())
+            let verified = await runtime.candidates(.init(), sources: [.tmdb], hideWatched: false)
+            let merged = HeroLiveMerge.merge(
+                showing: refreshed, fresh: verified, limit: 1,
+                pinnedItemIDs: [showing.id], preservesPinnedItems: true
+            )
+            let playable = try XCTUnwrap(merged.items.first)
+            XCTAssertEqual(playable.id, showing.id)
+            XCTAssertEqual(playable.heroCTA(seerConnected: true), .play)
+            let target = PlaybackSourceSelection.bestPlayItem(
+                playable, accounts: [fixture.account], identitySources: snapshot.sourcesProvider()
+            )
+            XCTAssertEqual(target.id, record.id)
+            XCTAssertEqual(target.sourceAccountID, fixture.account.account.id)
+        }
+    }
+
     func testKidsPolicyPreventsPublicCatalogFetch() async {
         let runtime = HeroDiscoveryRuntime(
             accounts: [], identitySources: { _ in [] }, discovery: { _, _ in

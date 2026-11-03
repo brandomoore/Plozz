@@ -5,6 +5,17 @@ import CoreModels
 /// no-button for featured (Seerr) titles, and Play/Resume for ordinary library
 /// items. Kept exhaustive so the UI's button choice can never drift.
 final class HeroCTATests: XCTestCase {
+    func testServerAvailabilityWithoutVerifiedAccessNeverOffersDuplicateRequestOrPlay() {
+        for availability in [MediaAvailabilityStatus.available, .partiallyAvailable] {
+            var movie = item(availability)
+            movie.locallyValidatedPlayableSource = false
+            XCTAssertEqual(movie.heroCTA(seerConnected: true), .unavailable)
+            XCTAssertEqual(movie.heroCTA(seerConnected: false), .unavailable)
+            movie.locallyValidatedPlayableSource = true
+            XCTAssertEqual(movie.heroCTA(seerConnected: true), .play)
+        }
+    }
+
     func testApprovedFutureMovieMatchesUnreleasedSeasonWording() throws {
         let release = try XCTUnwrap(MediaItem.calendarDayReleaseDate(from: "2099-10-20"))
         var movie = item(.processing)
