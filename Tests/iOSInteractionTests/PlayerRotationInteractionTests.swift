@@ -80,6 +80,7 @@ final class PlayerRotationInteractionTests: XCTestCase {
             XCTAssertEqual(app.staticTexts["saved-orientation"].label, "portrait")
             return
         }
+
         assertOrientation(landscape: false)
         assertNoPlayerOrientationControls()
         XCUIDevice.shared.orientation = .landscapeRight
@@ -90,6 +91,30 @@ final class PlayerRotationInteractionTests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         assertStaysLandscape(false)
         XCTAssertEqual(app.staticTexts["saved-orientation"].label, "portrait")
+    }
+
+    func testFixedLandscapeDirectionsSurviveMotionAndReopening() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
+        for (argument, preference, expected) in [
+            ("--landscape-left", "landscapeLeft", UIInterfaceOrientation.landscapeRight),
+            ("--landscape-right", "landscapeRight", UIInterfaceOrientation.landscapeLeft)
+        ] {
+            launch(argument)
+            for _ in 0..<2 {
+                openPlayer()
+                let value = String(expected.rawValue)
+                XCTAssertTrue(app.staticTexts["rotation-interface-orientation"].wait(for: \.label, toEqual: value, timeout: 10))
+                for device in [UIDeviceOrientation.landscapeLeft, .landscapeRight, .portrait] {
+                    XCUIDevice.shared.orientation = device
+                    assertStaysLandscape(true)
+                    XCTAssertEqual(app.staticTexts["rotation-interface-orientation"].label, value)
+                }
+                closePlayer()
+                XCTAssertEqual(app.staticTexts["saved-orientation"].label, preference)
+                assertOrientation(landscape: false, player: false)
+            }
+            app.terminate()
+        }
     }
 
     func testPlayerXClosesFromNestedNavigationAndReopens() {

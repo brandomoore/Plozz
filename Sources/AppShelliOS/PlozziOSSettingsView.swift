@@ -2559,6 +2559,7 @@ struct PlozziOSPlaybackSettingsView: View {
                             Text($0.title).tag($0)
                         }
                     }
+                    .pickerStyle(.menu)
                     .accessibilityIdentifier("playback-orientation")
                     .settingsSearchAnchor("player-orientation")
                 }

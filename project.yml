@@ -410,6 +410,7 @@ targets:
           - "OpenDyslexic-Bold.otf"
           - "OpenDyslexic-BoldItalic.otf"
         NSLocalNetworkUsageDescription: "Plozz uses your local network to discover media servers and network shares."
+        NSMotionUsageDescription: "Plozz uses device motion to follow your phone's landscape direction during playback."
         NSBonjourServices:
           - _jellyfin._tcp
           - _smb._tcp
@@ -529,6 +530,7 @@ targets:
     info:
       path: Tests/iOSPresentationHost/Info.plist
       properties:
+        NSMotionUsageDescription: "Plozz uses device motion to follow your phone's landscape direction during playback."
         BGTaskSchedulerPermittedIdentifiers:
           - "$(PRODUCT_BUNDLE_IDENTIFIER).downloads.*"
         UIBackgroundModes:
@@ -569,6 +571,7 @@ targets:
       - path: Tests/FeatureLiveTVCoreTests/LiveTVPlaybackCoordinatorTests.swift
       - path: Tests/FeatureLiveTVTests/LiveTVGuideRowLayoutTests.swift
       - path: Tests/CoreModelsTests/SettingsHydrationTests.swift
+      - path: Tests/CoreModelsTests/PlaybackOrientationSettingsTests.swift
       - path: Tests/CoreModelsTests/ResumeRewindSettingsTests.swift
       - path: Tests/CoreModelsTests/SubtitleStylePreferencesTests.swift
       - path: Tests/CoreModelsTests/SettingsSearchTests.swift
