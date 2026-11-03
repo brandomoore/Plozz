@@ -51,14 +51,21 @@ registry.
   The shared page offers Trending, Popular Movies, Upcoming Movies, Popular
   Series, and Upcoming Series, with profile-scoped Available now and Hide watched
   filters in the standard filter menu. Upcoming Series means first premieres,
-  not returning seasons. Available now requires verified access through the
+  not returning seasons. On iPhone and iPad, the profile action occupies the
+  trailing primary toolbar position, with filters to its left.
+  Available now requires verified access through the
   active profile's enabled libraries, never Seerr's global availability alone.
+  Available now hides both upcoming feeds and suspends their page requests;
+  turning it off restores their retained pages or loads their first page.
+  Changing filters resets each horizontal rail to its leading edge without
+  discarding fetched pages or resetting the page's vertical scroll.
   Identity-index updates revalidate loaded cards without resetting pagination.
   With Seerr disconnected, manually enabled Discover browses public metadata;
   requesting still requires Seerr. A configured but unreachable Seerr reports
   retryable errors rather than silently switching services.
   Rails fetch the next page automatically near the visible trailing edge; there
-  is no manual pagination button. Empty filtered pages continue while visible,
+  is no manual pagination button. Loading appends skeleton cards inside the
+  rail, never a spinner below it. Empty filtered pages continue while visible,
   and failures retain an explicit retry action. Seerr's Popular endpoints use
   its configured locale: their `language` query is an original-language filter,
   so Plozz must not send its display locale through that parameter.

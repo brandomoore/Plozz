@@ -20,9 +20,11 @@ struct DiscoverBrowseFixture: View {
         let failure = ProcessInfo.processInfo.arguments.contains("--failed-discover")
         let failedPage = ProcessInfo.processInfo.arguments.contains("--failed-page-discover")
         let shortPage = ProcessInfo.processInfo.arguments.contains("--short-discover")
+        let slowPage = ProcessInfo.processInfo.arguments.contains("--slow-page-discover")
         _model = State(initialValue: DiscoverBrowseModel(
             store: .init(defaults: defaults), isCurrent: { true }
         ) { feed, page in
+            if slowPage && page > 1 { try await Task.sleep(for: .seconds(3)) }
             if failure || (failedPage && page == 2) { throw AppError.serverUnreachable }
             if empty { return DiscoverPage(items: [], nextPage: nil) }
             let count = shortPage ? 3 : 20
@@ -64,6 +66,11 @@ struct DiscoverBrowseFixture: View {
                 .loadingMore(loadMore)
                 #endif
             }
+            #if os(iOS)
+            .toolbar {
+                PlozziOSSettingsToolbarItem(horizontalPlacement: .primaryAction, action: {})
+            }
+            #endif
             .background { AppBackground(palette: .dark) }
             .navigationDestination(item: $selection) { item in
                 Text(verbatim: item.title)

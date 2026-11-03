@@ -36,7 +36,9 @@ struct PlozziOSDiscoverView: View {
             }
             .id("\(scope)|\(appModel.seerService.connectionRevision)|\(locale.identifier)|\(visibility.disabledKeys.sorted())")
             .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
-            .toolbar { PlozziOSSettingsToolbarItem(action: onShowSettings) }
+            .toolbar {
+                PlozziOSSettingsToolbarItem(horizontalPlacement: .primaryAction, action: onShowSettings)
+            }
         }
     }
 }

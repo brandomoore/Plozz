@@ -14,7 +14,9 @@ so the final card's native focus lift fits on screen without overscrolling.
 This changes the scrollable tail, not the viewport or portrait density.
 `loadingMoreOnScroll` is the opt-in pagination hook shared by TV and mobile
 rails. It observes actual scroll geometry and visibility, not lazy card creation;
-new pages re-arm it only after their content width has been laid out.
+new pages re-arm it only after their content width has been laid out. Rails
+exclude trailing skeleton slots from that boundary so loading placeholders
+cannot cancel or retrigger the active page request.
 
 Shared, **focusable** UI primitives, the app theme, and the artwork image
 cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind

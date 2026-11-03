@@ -35,16 +35,19 @@ public struct DiscoverBrowseView<RowContent: View>: View {
                 .padding(.trailing, PlozzTheme.Metrics.screenPadding)
                 .focusSection()
                 #endif
-                ForEach(model.rows) { row in
+                ForEach(model.visibleRows) { row in
                     let items = row.items.filter(model.filters.includes)
+                    let showsPlaceholders = row.isLoading
+                        || (items.isEmpty && row.nextPage != nil && row.error == nil)
                     VStack(alignment: .leading, spacing: 12) {
-                        if items.isEmpty && !row.isLoading {
+                        if items.isEmpty && !showsPlaceholders {
                             MediaRowHeader(title: Text(row.feed.title), leadingInset: horizontalInset)
                         } else {
                             rowContent(
-                                row.feed, items, row.isLoading && row.items.isEmpty,
+                                row.feed, items, showsPlaceholders,
                                 paginationAction(for: row)
                             )
+                            .id(model.filters)
                         }
                         DiscoverRowFooter(
                             row: row, isEmpty: items.isEmpty,
@@ -86,6 +89,7 @@ public struct DiscoverBrowseView<RowContent: View>: View {
         }
         .onChange(of: model.filters.availableNow) {
             if model.filters.availableNow { libraryRevision &+= 1 }
+            else if isActive { Task { await model.load() } }
         }
         .onReceive(NotificationCenter.default.publisher(for: .mediaItemDidMutate)) { note in
             if let mutation = MediaItemMutation.from(note) { model.applyWatchedState(mutation) }
@@ -94,7 +98,7 @@ public struct DiscoverBrowseView<RowContent: View>: View {
     }
 
     private func paginationAction(for row: DiscoverRow) -> (@MainActor () async -> Void)? {
-        guard !row.items.isEmpty else { return nil }
+        guard row.items.contains(where: model.filters.includes) else { return nil }
         return {
             if isActive { await model.loadMoreVisibleItems(row.feed) }
         }
@@ -125,12 +129,8 @@ private struct DiscoverRowFooter: View {
                 Text(error.userMessage).foregroundStyle(.secondary)
                 Button("Try Again") { request &+= 1 }
                     .plozzPageActionButton(role: .secondary)
-            } else if row.isLoading {
-                ProgressView()
-            } else {
-                if isEmpty && row.nextPage != nil {
-                    ProgressView()
-                } else if isEmpty {
+            } else if !row.isLoading, row.nextPage == nil {
+                if isEmpty {
                     if isFiltered {
                         Text("No titles match these filters.").foregroundStyle(.secondary)
                         Button("Clear Filters", action: onClearFilters)
@@ -139,6 +139,8 @@ private struct DiscoverRowFooter: View {
                         Text("No titles yet.").foregroundStyle(.secondary)
                     }
                 }
+            } else if isEmpty, row.nextPage != nil {
+                Color.clear.frame(height: 1)
             }
         }
         .onScrollVisibilityChange(threshold: 0.1) { isVisible = $0 }

@@ -50,7 +50,7 @@ public enum DiscoverFeedError: Error, Equatable, Sendable {
     }
 }
 
-public struct DiscoverFilters: Codable, Equatable, Sendable {
+public struct DiscoverFilters: Codable, Hashable, Sendable {
     public var availableNow: Bool
     public var hideWatched: Bool
 
@@ -60,6 +60,10 @@ public struct DiscoverFilters: Codable, Equatable, Sendable {
     }
 
     public var activeCount: Int { (availableNow ? 1 : 0) + (hideWatched ? 1 : 0) }
+
+    public func shows(_ feed: DiscoverFeed) -> Bool {
+        !availableNow || (feed != .upcomingMovies && feed != .upcomingSeries)
+    }
 
     public func includes(_ item: MediaItem) -> Bool {
         (!availableNow || item.locallyValidatedPlayableSource)

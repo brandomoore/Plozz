@@ -18,6 +18,7 @@ public final class DiscoverBrowseModel {
     public typealias Loader = @MainActor @Sendable (DiscoverFeed, Int) async throws -> DiscoverPage
     public typealias LibraryResolver = @MainActor @Sendable ([MediaItem]) async -> [MediaItem]
     public private(set) var rows = DiscoverFeed.defaultOrder.map { DiscoverRow(feed: $0) }
+    public var visibleRows: [DiscoverRow] { rows.filter { filters.shows($0.feed) } }
     public var filters: DiscoverFilters {
         get { storedFilters }
         set {
@@ -58,7 +59,7 @@ public final class DiscoverBrowseModel {
     public func load() async {
         guard !Task.isCancelled else { return }
         guard isCurrent() else { invalidate(); return }
-        let pending = rows.filter { $0.nextPage == 1 && !$0.isLoading && $0.error == nil }.map(\.feed)
+        let pending = visibleRows.filter { $0.nextPage == 1 && !$0.isLoading && $0.error == nil }.map(\.feed)
         await withTaskGroup(of: Void.self) { group in
             var iterator = pending.makeIterator()
             for _ in 0..<2 {
@@ -74,7 +75,7 @@ public final class DiscoverBrowseModel {
     public func loadMore(_ feed: DiscoverFeed) async {
         guard !Task.isCancelled else { return }
         guard isCurrent() else { invalidate(); return }
-        guard let index = rows.firstIndex(where: { $0.feed == feed }),
+        guard filters.shows(feed), let index = rows.firstIndex(where: { $0.feed == feed }),
               !rows[index].isLoading, let page = rows[index].nextPage else { return }
         let token = generation
         rows[index].isLoading = true

@@ -655,7 +655,11 @@ public struct MediaRowView: View {
                         .padding(.vertical, layoutMetrics.railShadowClearance)
                     }
                     .scrollClipDisabled()
-                    .loadingMoreOnScroll(onLoadMore)
+                    .loadingMoreOnScroll(
+                        onLoadMore,
+                        trailingPlaceholderWidth: CGFloat(loadingPlaceholderCount)
+                            * (cardSlotWidth + layoutMetrics.cardSpacing)
+                    )
                     #if os(tvOS)
                     .ignoresSafeArea(.container, edges: presentation == .poster ? .trailing : [])
                     // This width already excludes the navigation safe area.

@@ -2982,7 +2982,14 @@ struct PlozziOSHomeMediaRail: View {
                     }
                 }
             }
-            .loadingMoreOnScroll(onLoadMore)
+            .loadingMoreOnScroll(
+                onLoadMore,
+                trailingPlaceholderWidth: CGFloat(loadingPlaceholderCount) * (
+                    metrics.cardSlotWidth(
+                        for: style, cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork
+                    ) + PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
+                )
+            )
             .contentMargins(
                 .horizontal,
                 PlozziOSMediaRailLayout.artworkAlignedInset(

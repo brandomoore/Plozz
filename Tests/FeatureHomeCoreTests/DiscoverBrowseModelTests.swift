@@ -4,6 +4,63 @@ import XCTest
 
 @MainActor
 final class DiscoverBrowseModelTests: XCTestCase {
+    func testAvailableNowHidesAndDefersBothUpcomingFeeds() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = DiscoverFiltersStore(defaults: defaults)
+        store.save(.init(availableNow: true))
+        let probe = Probe()
+        let model = DiscoverBrowseModel(store: store, isCurrent: { true }) { feed, _ in
+            probe.requests.append(feed)
+            return DiscoverPage(items: [], nextPage: nil)
+        }
+
+        await model.load()
+        await model.loadMore(.upcomingMovies)
+        await model.loadMoreVisibleItems(.upcomingSeries)
+        let playableFeeds: [DiscoverFeed] = [.trending, .popularMovies, .popularSeries]
+        XCTAssertEqual(model.visibleRows.map(\.feed), playableFeeds)
+        XCTAssertEqual(Set(probe.requests), Set(playableFeeds))
+        XCTAssertEqual(probe.requests.count, 3)
+        XCTAssertEqual(model.rows.first { $0.feed == .upcomingMovies }?.nextPage, 1)
+        XCTAssertEqual(model.rows.first { $0.feed == .upcomingSeries }?.nextPage, 1)
+
+        model.filters.availableNow = false
+        model.filters.hideWatched = true
+        await model.load()
+        XCTAssertEqual(model.visibleRows.map(\.feed), DiscoverFeed.defaultOrder)
+        XCTAssertEqual(Set(probe.requests), Set(DiscoverFeed.allCases))
+        XCTAssertEqual(probe.requests.count, 5)
+    }
+
+    func testAvailableNowPreservesHiddenUpcomingPagesAndResumesWithoutReloading() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var pages: [Int] = []
+        let model = DiscoverBrowseModel(store: .init(defaults: defaults), isCurrent: { true }) { _, page in
+            pages.append(page)
+            return DiscoverPage(items: [
+                MediaItem(id: "page-\(page)", title: "Title", kind: .movie)
+            ], nextPage: page < 3 ? page + 1 : nil)
+        }
+        await model.loadMore(.upcomingMovies)
+        model.filters.availableNow = true
+        await model.loadMoreVisibleItems(.upcomingMovies)
+        XCTAssertFalse(model.visibleRows.contains { $0.feed == .upcomingMovies })
+        let hidden = try XCTUnwrap(model.rows.first { $0.feed == .upcomingMovies })
+        XCTAssertEqual(hidden.items.map(\.id), ["page-1"])
+        XCTAssertEqual(hidden.nextPage, 2)
+        XCTAssertEqual(pages, [1])
+
+        model.filters.availableNow = false
+        let restored = try XCTUnwrap(model.visibleRows.first { $0.feed == .upcomingMovies })
+        XCTAssertEqual(restored.items.map(\.id), ["page-1"])
+        await model.loadMoreVisibleItems(.upcomingMovies)
+        XCTAssertEqual(pages, [1, 2])
+    }
+
     func testAllFeedsLoadOnceAndOneFailureDoesNotHideSuccessfulRows() async throws {
         let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
