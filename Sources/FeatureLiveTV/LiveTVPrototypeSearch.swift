@@ -130,12 +130,12 @@ private struct PrototypeToolbarSearchPresentation: UIViewControllerRepresentable
             if search.searchBar.text != configuration.query { search.searchBar.text = configuration.query }
             search.searchBar.placeholder = configuration.placeholder
             search.searchBar.searchTextField.tintColor = UIColor(configuration.palette.accent)
-            closeItem.accessibilityLabel = String(localized: LocalizedStringResource(
+            closeItem.accessibilityLabel = String(localized: LocalizedStringResource( // l10n:content - UIKit label refreshed with the app locale
                 "Close", locale: configuration.locale
-            )) // l10n:content — native close action
-            clearButton.accessibilityLabel = String(localized: LocalizedStringResource(
+            ))
+            clearButton.accessibilityLabel = String(localized: LocalizedStringResource( // l10n:content - UIKit label refreshed with the app locale
                 "Clear search", locale: configuration.locale
-            )) // l10n:content — native clear action
+            ))
             search.searchBar.searchTextField.rightViewMode = configuration.query.isEmpty ? .never : .always
             if configuration.isPresented { hasPresentationRequest = true }
             guard isViewLoaded, view.window != nil else { return }
