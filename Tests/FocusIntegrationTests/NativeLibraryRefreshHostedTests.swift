@@ -1425,7 +1425,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
     func testJumpUsesSharedToastBeforeMenuDismissalWithoutAddingFocusTargets() async throws {
         for light in [false, true] {
             let provider = RefreshLibraryProvider()
-            await provider.enableAlphabet(letters: ["A", "U"])
+            await provider.enableAlphabet(letters: ["A", "U"], laterTitle: "Uniform")
             let model = LibraryBrowseViewModel(
                 provider: provider, containerID: "library", containerKind: .movie,
                 defaults: UserDefaults(suiteName: UUID().uuidString)!)
@@ -2246,6 +2246,7 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
     private var pageCap: Int?
     private var alphabetEnabled = false
     private var alphabetLetters = ["A", "M"]
+    private var laterAlphabetTitle = "Movie"
     private var heldStart: Int?
     private var heldPage: CheckedContinuation<Void, Never>?
     private var holdsRecommendations = false
@@ -2264,9 +2265,10 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
         .init()
     }
 
-    func enableAlphabet(letters: [String] = ["A", "M"]) {
+    func enableAlphabet(letters: [String] = ["A", "M"], laterTitle: String = "Movie") {
         alphabetEnabled = true
         alphabetLetters = letters
+        laterAlphabetTitle = laterTitle
     }
     func letterIndex(in containerID: String, kind: MediaItemKind,
                      sort: CoreModels.SortDescriptor) async throws -> [LibraryLetterIndexEntry] {
@@ -2302,7 +2304,7 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
         let response = MediaPage(
             items: (min(page.startIndex, end)..<end).map {
                 MediaItem(id: "\(prefix)-\($0)",
-                          title: "\(alphabetEnabled ? ($0 < 140 ? "Alpha" : "Movie") : prefix) \($0)", kind: .movie,
+                          title: "\(alphabetEnabled ? ($0 < 140 ? "Alpha" : laterAlphabetTitle) : prefix) \($0)", kind: .movie,
                           posterURL: posterURL)
             }, startIndex: page.startIndex, totalCount: total)
         if heldStart == page.startIndex {

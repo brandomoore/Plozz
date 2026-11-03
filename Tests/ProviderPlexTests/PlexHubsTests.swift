@@ -8,6 +8,68 @@ import CoreNetworking
 /// base rows already cover (Recently Added, On Deck) and hubs with no playable
 /// items. The fixture mirrors the shape a real Plex Media Server returns.
 final class PlexHubsTests: XCTestCase {
+    func testNativeShelfBrowseRecoversMissingPromotionAndKeepsAnchorIdentity() async throws {
+        for matches in [true, false] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/hubs/promoted", json: #"{"MediaContainer":{"Hub":[]}}"#)
+            let anchor = matches ? "original" : "different"
+            stub.stubSequence(pathSuffix: "/library/sections/1/all", jsons: [
+                """
+                {"MediaContainer":{"offset":0,"totalSize":21,"Metadata":[
+                  {"ratingKey":"\(anchor)","type":"movie","librarySectionID":1}
+                ]}}
+                """,
+                """
+                {"MediaContainer":{"offset":20,"totalSize":21,"Metadata":[
+                  {"ratingKey":"last","type":"movie","librarySectionID":1}
+                ]}}
+                """
+            ])
+            let provider = PlexProvider(session: makeSession(), http: stub)
+            let section = ServerHomeSection(
+                id: "plex:1:movie.recentlyadded.1", kind: .recentlyAdded, libraryID: "1",
+                contentKey: "/library/sections/1/all?sort=addedAt:desc"
+            )
+            do {
+                let page = try await provider.homeRowPage(
+                    .server(section, excludedLibraryIDs: [], anchorIDs: ["original"]),
+                    startIndex: 20, limit: 20
+                )
+                XCTAssertTrue(matches)
+                XCTAssertEqual(page.items.map(\.id), ["last"])
+                XCTAssertNil(page.nextOffset)
+            } catch {
+                XCTAssertFalse(matches)
+                XCTAssertEqual(error as? AppError, .notFound)
+            }
+            XCTAssertEqual(stub.sentPaths.count, matches ? 3 : 2)
+        }
+    }
+
+    func testNativeShelfBrowseUsesCurrentMatchingSubjectNotOldSavedKey() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/promoted", json: """
+        {"MediaContainer":{"Hub":[{
+          "hubIdentifier":"movie.similar.new","key":"/library/metadata/new/similar",
+          "Metadata":[{"ratingKey":"anchor","type":"movie","librarySectionID":1}]
+        }]}}
+        """)
+        stub.stub(pathSuffix: "/library/metadata/new/similar", json: """
+        {"MediaContainer":{"offset":0,"totalSize":1,"Metadata":[
+          {"ratingKey":"anchor","type":"movie","librarySectionID":1}
+        ]}}
+        """)
+        let section = ServerHomeSection(
+            id: "plex:1:recommendation:similar:0", kind: .recommendations, libraryID: "1",
+            contentKey: "/library/metadata/old/similar"
+        )
+        let page = try await PlexProvider(session: makeSession(), http: stub).homeRowPage(
+            .server(section, excludedLibraryIDs: [], anchorIDs: ["anchor"]), startIndex: 0, limit: 20
+        )
+        XCTAssertEqual(page.items.map(\.id), ["anchor"])
+        XCTAssertEqual(stub.sentPaths, ["/hubs/promoted", "/library/metadata/new/similar"])
+    }
+
     func testExactShelfContinuationLoadsPastPreviewAndHundredItemCap() async throws {
         let stub = StubHTTPClient()
         func payload(_ start: Int, _ end: Int) -> String {

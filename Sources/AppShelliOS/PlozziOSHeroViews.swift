@@ -1094,7 +1094,7 @@ private struct PlozziOSHeroBackdrop: View {
             // the whole carousel, so a swipe lands on an image immediately
             // and sharpens, instead of waiting out a full-size download.
             previewVariant: .heroPreview,
-            artworkPolicy: artworkPolicy.forPlacement(.detailBackdrop),
+            artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
             asyncFallbackURL: asyncFallbackURL,
             pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
                 "\(surfaceRole == .home ? "home" : "detail"):\(presentation.itemID)", style: style
@@ -1412,7 +1412,8 @@ struct PlozziOSHomeWipeBackdrop: View {
             scrimOpacity: 0,
             sharedResolutionIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
                 sharedResolutionIdentity, style: style
-            )
+            ),
+            artworkPlacement: presentation.artworkPlacement
         )
         .id(style == .compactPortrait)
     }
@@ -1575,7 +1576,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
-            artworkPolicy: artworkPolicy.forPlacement(.detailBackdrop),
+            artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
             asyncFallbackURL: asyncFallbackURL,
             pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity("home:\(presentation.itemID)", style: style),
             sharedResolutionIdentity: sharedResolutionIdentity.map {
@@ -1597,7 +1598,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
-            artworkPolicy: artworkPolicy.forPlacement(.detailBackdrop),
+            artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
             asyncFallbackURL: asyncFallbackURL,
             pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity("home:\(presentation.itemID)", style: style),
             sharedResolutionIdentity: sharedResolutionIdentity.map {
@@ -1638,7 +1639,7 @@ private struct PlozziOSHeroReflection: View {
                 maxAspectRatio: 3,
                 variant: .heroBackdrop,
                 previewVariant: .heroPreview,
-                artworkPolicy: artworkPolicy.forPlacement(.detailBackdrop),
+                artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
                 asyncFallbackURL: asyncFallbackURL,
                 pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(artworkPinIdentity, style: style),
                 sharedResolutionIdentity: sharedResolutionIdentity.map {

@@ -1113,10 +1113,13 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         // Player selection uses container indexes; Plex's transcoder takes its
         // database stream IDs. Keep the player's identities out of this mapping.
         var transcodeOptions = streaming
-        if let audio = streaming?.audioTrack {
-            transcodeOptions?.audioTrack?.id = (part.Stream ?? []).first {
+        let audioStream = streaming?.audioTrack.flatMap { audio in
+            (part.Stream ?? []).first {
                 $0.streamType == 2 && ($0.index ?? $0.id) == audio.id
-            }?.id ?? audio.id
+            }
+        }
+        if let streamID = audioStream?.id {
+            transcodeOptions?.audioTrack?.id = streamID
         }
         if let subtitle = streaming?.subtitleTrack {
             transcodeOptions?.subtitleTrack?.id = (part.Stream ?? []).first {
@@ -1138,6 +1141,16 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         var negotiatedCodec: DirectPlayVideoCodec?
         var deliveryMode: PlaybackDiagnostics.PlaybackMode = resolved.isTranscoding ? .transcode : .directPlay
         if let streaming, resolved.isTranscoding {
+            if streaming.audioTrack != nil {
+                guard let partID = part.id, partID > 0,
+                      let streamID = audioStream?.id, streamID > 0 else {
+                    PlozzLog.playback.error("Plex audio selection is missing a native part or stream identifier.")
+                    throw StreamingQualityError.sourceUnavailable
+                }
+                // Plex's transcoder reads the user's part selection, not just
+                // audioStreamID in the decision/start query.
+                try await client.selectAudioStream(streamID, partID: partID)
+            }
             do {
                 let decision = try await client.validateStreamingTranscode(url: resolved.url, options: streaming)
                 negotiatedCodec = decision.codec
@@ -2131,6 +2144,12 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         from dto: PlexMetadata,
         relativeURL: ((String) -> URL?)? = nil
     ) -> [ArtworkSelection] {
+        let squareReferences = (dto.Image ?? [])
+            .filter { $0.type?.lowercased() == "backgroundsquare" }
+            .compactMap { backgroundURL($0, relativeURL: relativeURL) }
+            .map(ArtworkReference.remote)
+        let squareSelections: [ArtworkSelection] = squareReferences.isEmpty
+            ? [] : [.init(placement: .squareHero, references: squareReferences)]
         var candidates: [HeroArtworkCandidate] = []
         if let art = artworkURL(
             dto.art,
@@ -2165,13 +2184,13 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
                 + "types=[\((dto.Image ?? []).compactMap(\.type).joined(separator: ","))] "
                 + "title=\(dto.title ?? "?") — NO SELECTION"
             }
-            return []
+            return squareSelections
         }
         HeroArtDiagnostics.emitOnce(stage: "plex-pool", key: dto.ratingKey ?? "?") {
             "plex pool=\(candidates.count) art=\(dto.art != nil) "
             + "images=\((dto.Image ?? []).count) title=\(dto.title ?? "?")"
         }
-        return HeroArtworkPlanner.selections(for: candidates)
+        return HeroArtworkPlanner.selections(for: candidates) + squareSelections
     }
 
     /// An `Image` entry's URL, handling the absolute-vs-server-path split the same
@@ -2624,6 +2643,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
     ) throws -> MediaTrack {
         let language = dto.languageTag ?? dto.language
         let isSubtitle = dto.streamType == 3
+        let title = dto.extendedDisplayTitle ?? dto.displayTitle ?? language ?? dto.codec ?? "Track"
         // External/sidecar subtitles expose a `key` we can fetch as text and
         // normalise to WebVTT for the native picker. Embedded subs (no key) and
         // image-based subs can't be delivered this way.
@@ -2648,7 +2668,9 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         return MediaTrack(
             id: dto.index ?? dto.id ?? 0,
             kind: isSubtitle ? .subtitle : .audio,
-            displayTitle: dto.extendedDisplayTitle ?? dto.displayTitle ?? language ?? dto.codec ?? "Track",
+            displayTitle: isSubtitle ? title : TrackLabeling.audioDisplayTitle(
+                title, sourceTitles: [dto.title, dto.displayTitle]
+            ),
             language: language,
             codec: dto.codec,
             profile: isSubtitle ? nil : MediaSourceMetadata.audioProfile(

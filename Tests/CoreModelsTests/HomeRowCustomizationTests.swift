@@ -2,6 +2,22 @@ import XCTest
 @testable import CoreModels
 
 final class HomeRowCustomizationTests: XCTestCase {
+    func testNativeShelfLocatorRoundTripsAndOldRowsRemainDecodable() throws {
+        let old = Data(#"{"id":"plex:1:movie.recentlyadded.1","kind":"recentlyAdded","libraryID":"1","includesNextUp":false}"#.utf8)
+        var section = try JSONDecoder().decode(ServerHomeSection.self, from: old)
+        XCTAssertNil(section.contentKey)
+        section.contentKey = "/library/sections/1/all?sort=addedAt:desc"
+        let definition = HomeServerRowDefinition(
+            accountID: "plex", serverName: "Server", providerKind: .plex, section: section
+        )
+        let settings = HomeRowCustomization(defaults: .custom, serverRows: [definition])
+        let restored = try JSONDecoder().decode(
+            HomeRowCustomization.self, from: JSONEncoder().encode(settings)
+        )
+        XCTAssertEqual(restored.serverRows, settings.serverRows)
+        XCTAssertEqual(restored.serverRows.first?.section.contentKey, section.contentKey)
+    }
+
     func testSectionCatalogPreservesEveryProviderAndDeduplicatesNativeRows() {
         let kinds: [ProviderKind] = [.jellyfin, .emby, .plex, .silo, .mediaShare]
         let libraries = kinds.flatMap { kind in

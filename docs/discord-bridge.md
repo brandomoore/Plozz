@@ -133,6 +133,35 @@ post. A conflicting human-owned title or multiple matching guides stops the
 operation. Ambiguous creation failures are not retried immediately; a later run
 rediscovers a successfully created guide.
 
+### TestFlight information channel
+
+The existing `#testflight` text channel can receive a separate bot-owned
+beta guide. Run **Discord issue bridge -> publish-testflight-guide** explicitly.
+This manual-only mode uses the existing Discord bot secret, no model or GitHub
+write token, and does not change the issue bridge or release-announcement schedule.
+
+The guide includes the public beta invitation, `https://plozz.app/testflight/`,
+an App Store fallback, beta reliability/expiry, Apple TV joining steps and the
+public bug-report notice. `TESTFLIGHT_GUIDE` in `tools/discord-bridge.py` owns
+its content. The bot finds one existing `testflight` channel in the configured
+Plozz server, verifies its identity and effective send/embed/history permissions,
+before posting. It never creates a channel. Ordinary publication works with the
+channel's existing permissions and does not change them. Give the bot a
+channel-specific Send Messages allow if needed; Administrator is not required.
+
+With explicit owner approval, the manual `make_testflight_read_only` input can
+configure that one existing channel. The bot must already have Manage Permissions
+there. The operation denies member messages, thread creation and thread replies,
+preserves unrelated permissions/visibility and existing staff overrides, and
+keeps the bot able to post. It verifies the changed permissions before posting.
+No server roles or other channels are changed. This option defaults off; it is
+never used by scheduled synchronization.
+
+Publication uses a stable bot-owned footer and deterministic nonce. Re-running
+updates the same guide, never modifies human messages, suppresses mentions and
+verifies the published content. Missing/ambiguous channels, duplicate bot
+markers, insufficient permissions and unconfirmed writes fail visibly.
+
 ## Operational limits and recovery
 
 Mappings live in the bot-authored GitHub report bodies/comments and Discord
@@ -200,8 +229,13 @@ Uploads, internal availability, and pending review are not advertised as ready.
 The public beta link must still be enabled for that group.
 
 Each Apple version/build has one bot-owned message with its available platforms,
-Plozz display version, TestFlight link, and published GitHub release-notes link
-when available. Published releases read the catalog from their exact release tag
+Plozz display version, TestFlight link, and inline **New / Updated / Fixed** release
+notes plus a full-notes link when the GitHub release is published. Shared bullets
+appear once. Platform-specific bullets are labeled when both platforms are
+available; notes for a platform still waiting for review are not displayed.
+If a platform has no applicable changes, the message says so.
+
+Published releases read the catalog from their exact release tag
 and validate its release ID, build, and Apple version against TestFlight. The
 public date does not depend on the release entry already being merged into `main`.
 An unreadable or mismatched tagged catalog fails visibly rather than substituting
@@ -209,8 +243,14 @@ Apple's retained marketing version.
 
 Before a GitHub release is published, the bot uses a matching entry from `main`
 if present; otherwise it announces only the build number, without inventing a
-public date. It directs readers to TestFlight's notes and adds the public date
-and release link on a later check. Platform availability and label corrections
+public date. It directs readers to TestFlight's notes; mutable `main` notes are
+not copied into the announcement. Once a matching release tag is published,
+the bot adds its inline notes, public date and full-notes link on a later check.
+Descriptions respect Discord's 4,096 UTF-16-unit limit. Oversized notes retain
+whole bullets in order and explicitly state that they were shortened, with
+a link to the complete published notes. No bullet is silently cut in half.
+
+Platform availability, notes and label corrections
 update the same message instead of creating another announcement. Dotted hotfix
 builds remain distinct and sort numerically.
 

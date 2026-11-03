@@ -32,12 +32,11 @@ public struct PlayerVideoZoom: Equatable, Sendable {
                                  Self.customPercentRange.upperBound)
     }
 
-    /// `fitBounds` constrains Normal and Custom's base, never Crop or Stretch.
+    /// `fitBounds` constrains Normal (including auto-crop's fallback) and Custom's base.
     /// Both rectangles use the presentation view's coordinate space.
     func scaleFactors(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect? = nil,
                       activePicture: CGRect? = nil) -> CGVector {
-        if let transform = pictureTransform(in: bounds, aspectRatio: aspectRatio,
-                                            fitBounds: fitBounds, activePicture: activePicture) {
+        if let transform = pictureTransform(in: bounds, aspectRatio: aspectRatio, activePicture: activePicture) {
             return CGVector(dx: transform.scale, dy: transform.scale)
         }
         switch mode {
@@ -83,8 +82,7 @@ public struct PlayerVideoZoom: Equatable, Sendable {
 
     func surfaceCenter(in bounds: CGRect, fitBounds: CGRect? = nil,
                        aspectRatio: Double? = nil, activePicture: CGRect? = nil) -> CGPoint {
-        if let transform = pictureTransform(in: bounds, aspectRatio: aspectRatio,
-                                            fitBounds: fitBounds, activePicture: activePicture) {
+        if let transform = pictureTransform(in: bounds, aspectRatio: aspectRatio, activePicture: activePicture) {
             return transform.center
         }
         let viewport = mode == .fit || mode == .custom || mode == .picture
@@ -92,13 +90,13 @@ public struct PlayerVideoZoom: Equatable, Sendable {
         return CGPoint(x: viewport.midX, y: viewport.midY)
     }
 
-    private func pictureTransform(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect?,
+    private func pictureTransform(in bounds: CGRect, aspectRatio: Double?,
                                   activePicture: CGRect?) -> (scale: CGFloat, center: CGPoint)? {
         guard mode == .picture, let activePicture, VideoActivePictureGeometry.isValid(activePicture),
               let fitted = SubtitleOverlayGeometry.aspectFitRect(in: bounds, aspectRatio: aspectRatio.map { CGFloat($0) })
         else { return nil }
         let active = VideoActivePictureGeometry.map(activePicture, into: fitted)
-        let viewport = fittingBounds(in: bounds, fitBounds: fitBounds)
+        let viewport = bounds
         let scale = min(viewport.width / active.width, viewport.height / active.height)
         guard scale.isFinite, scale > 0, scale <= 2 else { return nil }
         return (scale, CGPoint(x: viewport.midX - (active.midX - bounds.midX) * scale,

@@ -45,6 +45,341 @@ final class PlexHomeLayoutTests: XCTestCase {
     ]}}
     """
 
+    private let movieLibrary = """
+    {"MediaContainer":{"Directory":[{"key":"1","type":"movie","title":"Movies"}]}}
+    """
+
+    private let keyedPromotion = """
+    {"MediaContainer":{"Hub":[{
+      "hubIdentifier":"movie.recentlyadded.1","type":"movie",
+      "key":"/library/sections/1/all?type=1&sort=addedAt:desc&X-Plex-Token=UNTRUSTED",
+      "size":1,"Metadata":[{"ratingKey":"one","type":"movie","librarySectionID":1}]
+    }]}}
+    """
+
+    func testDiscoveredShelfSurvivesPersistenceAndRecoversMissingPromotedRow() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/library/sections", json: movieLibrary)
+        stub.stubSequence(pathSuffix: "/hubs/promoted", jsons: [
+            keyedPromotion, #"{"MediaContainer":{"Hub":[]}}"#
+        ])
+        stub.stub(pathSuffix: "/library/sections/1/all", json: """
+        {"MediaContainer":{"offset":0,"totalSize":3,"Metadata":[
+          {"ratingKey":"one","type":"movie","librarySectionID":1},
+          {"ratingKey":"foreign","type":"movie","librarySectionID":9},
+          {"ratingKey":"audio","type":"track","librarySectionID":1}
+        ]}}
+        """)
+        let provider = PlexProvider(session: session(), http: stub)
+        let layout = try await provider.serverHomeLayout()
+        let section = try XCTUnwrap(layout?.sections.first)
+        XCTAssertEqual(section.contentKey, "/library/sections/1/all?type=1&sort=addedAt:desc")
+        let encoded = try JSONEncoder().encode(section)
+        XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("UNTRUSTED"))
+        let restored = try JSONDecoder().decode(ServerHomeSection.self, from: encoded)
+        let items = try await provider.serverHomeItems(section: restored, limit: 8, excludingLibraryIDs: [])
+        XCTAssertEqual(items.map(\.id), ["one"])
+        XCTAssertEqual(items.first?.libraryID, "1")
+        XCTAssertEqual(stub.sentPaths, [
+            "/library/sections", "/hubs/promoted", "/hubs/promoted", "/library/sections/1/all"
+        ])
+        let query = try XCTUnwrap(stub.queryItems(forPathSuffix: "/library/sections/1/all"))
+        XCTAssertTrue(query.contains(.init(name: "sort", value: "addedAt:desc")))
+        XCTAssertTrue(query.contains(.init(name: "X-Plex-Container-Size", value: "8")))
+        XCTAssertFalse(query.contains { $0.name.lowercased() == "x-plex-token" })
+        XCTAssertTrue(stub.sentHeaders.allSatisfy { $0["X-Plex-Token"] == "TEST_TOKEN" })
+        XCTAssertTrue(stub.sentBaseURLs.allSatisfy { $0.host == "plex.test" })
+    }
+
+    func testIncompleteInlineRowsRecoverFromTheirOwnShelf() async throws {
+        for payload in [
+            #""size":2"#,
+            #""size":2,"Metadata":[{"ratingKey":"partial","type":"movie"}]"#,
+            #""size":0,"more":true,"Metadata":[]"#,
+            #""size":0,"totalSize":2,"Metadata":[]"#
+        ] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/hubs/promoted", json: """
+            {"MediaContainer":{"Hub":[{"hubIdentifier":"movie.custom","type":"movie",
+              "key":"/library/sections/1/all?genre=123",\(payload)}]}}
+            """)
+            stub.stub(pathSuffix: "/library/sections/1/all", json: """
+            {"MediaContainer":{"offset":0,"totalSize":1,"Metadata":[
+              {"ratingKey":"recovered","type":"movie","librarySectionID":1}
+            ]}}
+            """)
+            let items = try await PlexProvider(session: session(), http: stub).serverHomeItems(
+                section: .init(id: "plex:1:movie.custom", kind: .recommendations, libraryID: "1"),
+                limit: 8, excludingLibraryIDs: []
+            )
+            XCTAssertEqual(items.map(\.id), ["recovered"], payload)
+            XCTAssertEqual(stub.sentPaths, ["/hubs/promoted", "/library/sections/1/all"])
+        }
+    }
+
+    func testMissingRotatingShelfDoesNotDuplicateItsSurvivingSibling() async throws {
+        for reversed in [false, true] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/hubs/promoted", json: """
+            {"MediaContainer":{"Hub":[
+              {"hubIdentifier":"movie.similar.20","type":"movie","key":"/hubs/metadata/20",
+               "Metadata":[{"ratingKey":"survivor","type":"movie","librarySectionID":1}]}
+            ]}}
+            """)
+            stub.stub(pathSuffix: "/hubs/metadata/10", json: """
+            {"MediaContainer":{"Metadata":[{"ratingKey":"recovered","type":"movie","librarySectionID":1}]}}
+            """)
+            let sections = [10, 20].enumerated().map { slot, subject in
+                ServerHomeSection(
+                    id: "plex:1:recommendation:similar:\(slot)", kind: .recommendations, libraryID: "1",
+                    contentKey: "/hubs/metadata/\(subject)"
+                )
+            }
+            let results = await PlexProvider(session: session(), http: stub).serverHomeItems(
+                sections: reversed ? Array(sections.reversed()) : sections, limit: 8, excludingLibraryIDs: []
+            )
+            XCTAssertEqual(try XCTUnwrap(results[sections[0].id]).get().map(\.id), ["recovered"])
+            XCTAssertEqual(try XCTUnwrap(results[sections[1].id]).get().map(\.id), ["survivor"])
+            XCTAssertEqual(stub.sentPaths, ["/hubs/promoted", "/hubs/metadata/10"])
+        }
+    }
+
+    func testNewRotatingSubjectStillReplacesUnmatchedSlot() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/promoted", json: """
+        {"MediaContainer":{"Hub":[
+          {"hubIdentifier":"movie.similar.30","type":"movie","key":"/hubs/metadata/30",
+           "Metadata":[{"ratingKey":"rotated","type":"movie"}]}
+        ]}}
+        """)
+        let items = try await PlexProvider(session: session(), http: stub).serverHomeItems(
+            section: .init(
+                id: "plex:1:recommendation:similar:0", kind: .recommendations, libraryID: "1",
+                contentKey: "/hubs/metadata/10"
+            ), limit: 8, excludingLibraryIDs: []
+        )
+        XCTAssertEqual(items.map(\.id), ["rotated"])
+        XCTAssertEqual(stub.sentPaths, ["/hubs/promoted"])
+    }
+
+    func testExplicitEmptyShelfDoesNotResurrectItemsFromSavedKey() async throws {
+        for payload in [#""size":0"#, #""Metadata":[]"#, #""size":0,"more":false,"Metadata":[]"#] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/hubs/promoted", json: """
+            {"MediaContainer":{"Hub":[{"hubIdentifier":"movie.custom",\(payload)}]}}
+            """)
+            let items = try await PlexProvider(session: session(), http: stub).serverHomeItems(
+                section: .init(
+                    id: "plex:1:movie.custom", kind: .recommendations, libraryID: "1",
+                    contentKey: "/library/sections/1/all"
+                ),
+                limit: 8, excludingLibraryIDs: []
+            )
+            XCTAssertTrue(items.isEmpty)
+            XCTAssertEqual(stub.sentPaths, ["/hubs/promoted"])
+        }
+    }
+
+    func testFolderOnlyPromotionsStayExcludedWithoutAttemptingVideoRecovery() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/promoted", json: """
+        {"MediaContainer":{"Hub":[{"hubIdentifier":"movie.genres","type":"genre","size":1,
+          "key":"/library/sections/1/genre","Directory":[{"key":"123","title":"Drama"}]
+        }]}}
+        """)
+        let items = try await PlexProvider(session: session(), http: stub).serverHomeItems(
+            section: .init(id: "plex:1:movie.genres", kind: .recommendations, libraryID: "1"),
+            limit: 8, excludingLibraryIDs: []
+        )
+        XCTAssertTrue(items.isEmpty)
+        XCTAssertEqual(stub.sentPaths, ["/hubs/promoted"])
+    }
+
+    func testShelfRecoveryKeepsHundredItemFilteringWindowBounded() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/promoted", json: #"{"MediaContainer":{"Hub":[]}}"#)
+        let records = (0..<100).map {
+            #"{"ratingKey":"\#($0)","type":"movie","librarySectionID":1}"#
+        }.joined(separator: ",")
+        stub.stub(pathSuffix: "/library/sections/1/all", json: """
+        {"MediaContainer":{"offset":0,"totalSize":200,"Metadata":[\(records)]}}
+        """)
+        let items = try await PlexProvider(session: session(), http: stub).serverHomeItems(
+            section: .init(
+                id: "plex:1:movie.recentlyadded.1", kind: .recentlyAdded, libraryID: "1",
+                contentKey: "/library/sections/1/all"
+            ),
+            limit: .max, excludingLibraryIDs: []
+        )
+        XCTAssertEqual(items.count, 100)
+        XCTAssertEqual(stub.queryItems(forPathSuffix: "/library/sections/1/all")?
+            .first { $0.name == "X-Plex-Container-Size" }?.value, "100")
+        XCTAssertEqual(stub.sentPaths.count, 2)
+    }
+
+    func testMissingLegacyRowRetriesOnlyOnceAndPreservesOtherRows() async throws {
+        for recovered in [true, false] {
+            let stub = StubHTTPClient()
+            stub.stubSequence(pathSuffix: "/hubs/promoted", jsons: [
+                promoted, recovered ? """
+                {"MediaContainer":{"Hub":[{"hubIdentifier":"movie.missing","Metadata":[
+                  {"ratingKey":"recovered","type":"movie","librarySectionID":1}
+                ]}]}}
+                """ : #"{"MediaContainer":{"Hub":[]}}"#
+            ])
+            let provider = PlexProvider(session: session(), http: stub)
+            let results = await provider.serverHomeItems(sections: [
+                .init(id: "plex:1:movie.custom", kind: .recommendations, libraryID: "1"),
+                .init(id: "plex:1:movie.missing", kind: .recommendations, libraryID: "1")
+            ], limit: 8, excludingLibraryIDs: [])
+            XCTAssertEqual(try XCTUnwrap(results["plex:1:movie.custom"]).get().map(\.id), ["custom"])
+            if recovered {
+                XCTAssertEqual(try XCTUnwrap(results["plex:1:movie.missing"]).get().map(\.id), ["recovered"])
+            } else {
+                XCTAssertThrowsError(try XCTUnwrap(results["plex:1:movie.missing"]).get()) {
+                    XCTAssertEqual($0 as? AppError, .notFound)
+                }
+            }
+            XCTAssertEqual(stub.sentPaths, ["/hubs/promoted", "/hubs/promoted"])
+        }
+    }
+
+    func testShelfRecoveryFailureIsIsolatedAndNeverAnEmptySuccess() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/promoted", json: promoted)
+        stub.stub(pathSuffix: "/library/sections/1/all", json: "{}", status: 401)
+        let results = await PlexProvider(session: session(), http: stub).serverHomeItems(sections: [
+            .init(id: "plex:1:movie.custom", kind: .recommendations, libraryID: "1"),
+            .init(
+                id: "plex:1:movie.missing", kind: .recentlyAdded, libraryID: "1",
+                contentKey: "/library/sections/1/all"
+            )
+        ], limit: 8, excludingLibraryIDs: [])
+        XCTAssertEqual(try XCTUnwrap(results["plex:1:movie.custom"]).get().map(\.id), ["custom"])
+        XCTAssertThrowsError(try XCTUnwrap(results["plex:1:movie.missing"]).get()) {
+            XCTAssertEqual($0 as? AppError, .unauthorized)
+        }
+        XCTAssertEqual(stub.sentPaths, ["/hubs/promoted", "/library/sections/1/all"])
+    }
+
+    func testFailedLegacyRetryDoesNotDiscardSuccessfulSiblingRows() async throws {
+        let stub = StubHTTPClient()
+        stub.stubSequence(pathSuffix: "/hubs/promoted", responses: [
+            (json: promoted, status: 200), (json: "{}", status: 401)
+        ])
+        let results = await PlexProvider(session: session(), http: stub).serverHomeItems(sections: [
+            .init(id: "plex:1:movie.custom", kind: .recommendations, libraryID: "1"),
+            .init(id: "plex:1:movie.missing", kind: .recommendations, libraryID: "1")
+        ], limit: 8, excludingLibraryIDs: [])
+        XCTAssertEqual(try XCTUnwrap(results["plex:1:movie.custom"]).get().map(\.id), ["custom"])
+        XCTAssertThrowsError(try XCTUnwrap(results["plex:1:movie.missing"]).get()) {
+            XCTAssertEqual($0 as? AppError, .unauthorized)
+        }
+        XCTAssertEqual(stub.sentPaths, ["/hubs/promoted", "/hubs/promoted"])
+    }
+
+    func testUnrecoverableInlinePayloadIsAnErrorRatherThanEmptyOrPartialItems() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/promoted", json: """
+        {"MediaContainer":{"Hub":[{"hubIdentifier":"movie.custom","size":2,
+          "Metadata":[{"ratingKey":"partial","type":"movie","librarySectionID":1}]
+        }]}}
+        """)
+        do {
+            _ = try await PlexProvider(session: session(), http: stub).serverHomeItems(
+                section: .init(id: "plex:1:movie.custom", kind: .recommendations, libraryID: "1"),
+                limit: 8, excludingLibraryIDs: []
+            )
+            XCTFail("A truncated row must not appear complete")
+        } catch { XCTAssertEqual(error as? AppError, .invalidResponse) }
+        XCTAssertEqual(stub.sentPaths, ["/hubs/promoted", "/hubs/promoted"])
+    }
+
+    func testTruncatedRecoveryResponseDoesNotPublishPartialShelf() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/promoted", json: #"{"MediaContainer":{"Hub":[]}}"#)
+        stub.stub(pathSuffix: "/library/sections/1/all", json: """
+        {"MediaContainer":{"size":2,"Metadata":[
+          {"ratingKey":"partial","type":"movie","librarySectionID":1}
+        ]}}
+        """)
+        do {
+            _ = try await PlexProvider(session: session(), http: stub).serverHomeItems(
+                section: .init(
+                    id: "plex:1:movie.missing", kind: .recommendations, libraryID: "1",
+                    contentKey: "/library/sections/1/all"
+                ),
+                limit: 8, excludingLibraryIDs: []
+            )
+            XCTFail("Recovery must not turn a truncated response into success")
+        } catch { XCTAssertEqual(error as? AppError, .invalidResponse) }
+        XCTAssertEqual(stub.sentPaths, ["/hubs/promoted", "/library/sections/1/all"])
+    }
+
+    func testKeyOnlyRowsAreImportedWithStableIdentityWithoutUsingTitles() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/library/sections", json: movieLibrary)
+        let payload = """
+        {"MediaContainer":{"Hub":[
+          {"key":"/library/sections/1/all?genre=123&X-Plex-Token=UNTRUSTED","title":"First title","type":"movie"},
+          {"key":"/library/sections/1/all?genre=456","title":"Same title","type":"movie"},
+          {"key":"https://other.invalid/library/sections/1/all","title":"Untrusted","type":"movie"}
+        ]}}
+        """
+        stub.stubSequence(pathSuffix: "/hubs/promoted", jsons: [
+            payload, payload.replacingOccurrences(of: "First title", with: "New title")
+                .replacingOccurrences(of: "UNTRUSTED", with: "ROTATED")
+        ])
+        let provider = PlexProvider(session: session(), http: stub)
+        let first = try await provider.serverHomeLayout()
+        let second = try await provider.serverHomeLayout()
+        XCTAssertEqual(first?.sections.count, 2)
+        XCTAssertEqual(Set(first?.sections.map(\.id) ?? []).count, 2)
+        XCTAssertEqual(first?.sections.map(\.id), second?.sections.map(\.id))
+        XCTAssertEqual(first?.sections.first?.contentKey, "/library/sections/1/all?genre=123")
+        XCTAssertTrue(first?.sections.allSatisfy { $0.kind == .recommendations } == true)
+    }
+
+    func testMalformedPromotionEnvelopeCannotReplaceLayoutWithEmptySuccess() async throws {
+        for payload in [
+            #"{}"#, #"{"size":1}"#, #"{"size":1,"Hub":[]}"#, #"{"size":0,"totalSize":1}"#
+        ] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/library/sections", json: movieLibrary)
+            stub.stub(pathSuffix: "/hubs/promoted", json: #"{"MediaContainer":\#(payload)}"#)
+            do {
+                _ = try await PlexProvider(session: session(), http: stub).serverHomeLayout()
+                XCTFail("An incomplete response must not erase the saved layout")
+            } catch {
+                XCTAssertEqual(error as? AppError, .invalidResponse)
+            }
+        }
+        for payload in [#"{"size":0}"#, #"{"size":0,"Hub":[]}"#, #"{"Hub":[]}"#] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/library/sections", json: movieLibrary)
+            stub.stub(pathSuffix: "/hubs/promoted", json: #"{"MediaContainer":\#(payload)}"#)
+            let layout = try await PlexProvider(session: session(), http: stub).serverHomeLayout()
+            XCTAssertEqual(layout?.sections.count, 0)
+        }
+    }
+
+    func testUnsafeSavedShelfNeverReceivesCredentialsDuringRecovery() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/promoted", json: #"{"MediaContainer":{"Hub":[]}}"#)
+        do {
+            _ = try await PlexProvider(session: session(), http: stub).serverHomeItems(
+                section: .init(
+                    id: "plex:1:missing", kind: .recommendations, libraryID: "1",
+                    contentKey: "https://other.invalid/library/sections/1/all"
+                ),
+                limit: 8, excludingLibraryIDs: []
+            )
+            XCTFail("An invalid shelf is unavailable, not empty")
+        } catch { XCTAssertEqual(error as? AppError, .notFound) }
+        XCTAssertEqual(stub.sentPaths, ["/hubs/promoted", "/hubs/promoted"])
+        XCTAssertTrue(stub.sentBaseURLs.allSatisfy { $0.host == "plex.test" })
+    }
+
     func testPromotionsUseServerLibraryOrderWithHonestProvenanceAndNoInventedPins() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/library/sections", json: libraries)
@@ -246,8 +581,7 @@ final class PlexHomeLayoutTests: XCTestCase {
         let sections: [ServerHomeSection] = [
             .init(id: "plex:1:movie.recentlyadded.1", kind: .recentlyAdded, libraryID: "1"),
             .init(id: "plex:1:recommendation:similar:0", kind: .recommendations, libraryID: "1"),
-            .init(id: "plex:1:movie.custom", kind: .recommendations, libraryID: "1"),
-            .init(id: "plex:1:removed", kind: .recommendations, libraryID: "1")
+            .init(id: "plex:1:movie.custom", kind: .recommendations, libraryID: "1")
         ]
 
         let first = await provider.serverHomeItems(sections: sections, limit: 8, excludingLibraryIDs: [])
@@ -255,7 +589,6 @@ final class PlexHomeLayoutTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(first[sections[0].id]).get().map(\.id), ["one", "two"])
         XCTAssertEqual(try XCTUnwrap(first[sections[1].id]).get().map(\.id), ["similar"])
         XCTAssertEqual(try XCTUnwrap(first[sections[2].id]).get().map(\.id), ["custom"])
-        XCTAssertTrue(try XCTUnwrap(first[sections[3].id]).get().isEmpty)
         XCTAssertEqual(stub.sentPaths, ["/hubs/promoted"])
 
         let second = await provider.serverHomeItems(sections: sections, limit: 8, excludingLibraryIDs: [])
