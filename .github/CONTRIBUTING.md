@@ -32,15 +32,21 @@ limits](../docs/discord-bridge.md); ordinary chat channels are not mirrored.
 
 ## Development pipeline
 
-Fix defects, review findings, UI adjustments, and test failures introduced during
-active unreleased work within that task or its existing feature issue. Do not
-create a separate issue merely to fix something before users receive it. A
-development branch or local test installation is not a distributed release.
+Keep defects, review findings, UI adjustments, and test failures arising from
+active unreleased work in that task or its existing feature issue. Never create
+a new bug issue merely to fix or commit that work, including a problem introduced
+and solved in the same session. Calling it deferred or independently actionable
+does not make it a user-facing defect.
 
-Create an issue for a problem in a build delivered to users (including TestFlight),
-work being deferred beyond the current task, independently actionable work, or an
-explicit request to file one. Search for existing tracking first. Keep issue
-status accurate and distinguish a branch fix from a fix delivered to users.
+A commit, push, merge to `main`, or local test installation is not a distributed
+release. Create a new bug issue only for a problem actually affecting users of a
+delivered build (including TestFlight), or an explicit maintainer request to file
+one. Genuine feature requests can be tracked before implementation.
+
+Search open **and closed** issues and their discussions before filing. Reuse the
+canonical issue for the same report, link related-but-distinct problems, and
+preserve genuine post-fix regressions as unresolved work. Keep issue status
+accurate: a branch fix or main merge alone is not delivery.
 
 ### Commit issue references
 

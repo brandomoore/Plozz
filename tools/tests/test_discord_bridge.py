@@ -113,7 +113,10 @@ class Discord:
                 return {"threads": [], "has_more": False}
             identifier = path.split("/")[2]
             if path == f"/channels/{identifier}":
-                return copy.deepcopy(next(t for t in self.threads if t["id"] == identifier))
+                found = next((t for t in self.threads if t["id"] == identifier), None)
+                if found is None:
+                    raise BRIDGE.APIError("Discord", "GET", 404, 10003)
+                return copy.deepcopy(found)
             if path.endswith("/messages"):
                 return sorted(copy.deepcopy(self.messages[identifier]), key=lambda m: int(m["id"]), reverse=True)
             if "/messages/" in path and "/reactions/" not in path:
@@ -210,6 +213,46 @@ class SynchronizationTests(unittest.TestCase):
         with self.assertRaisesRegex(BRIDGE.BridgeError, "model failed"):
             synchronize(Discord(), github, Mock(match=Mock(side_effect=BRIDGE.BridgeError("model failed"))))
         self.assertEqual(github.writes, [])
+
+    def test_closed_original_can_receive_a_delayed_cross_post_without_reopening(self):
+        discord = Discord()
+        github = GitHub([issue(state="closed", closed_at="2026-11-01T00:00:00Z")])
+        matcher = synchronize(discord, github, Mock(match=Mock(return_value=1)))
+        report, candidates = matcher.match.call_args.args
+        self.assertEqual(report["created_at"], BRIDGE.thread_created(THREAD).isoformat())
+        self.assertEqual(candidates[0]["state"], "closed")
+        self.assertEqual(len(github.issues), 1)
+        self.assertEqual(github.issues[0]["state"], "closed")
+        self.assertEqual(len(records(github, "report")), 1)
+        self.assertIn("Closed", discord.messages[THREAD][-1]["embeds"][0]["title"])
+        self.assertFalse(any("state" in data for _, _, data in github.writes))
+        before = (len(github.writes), len(discord.writes))
+        synchronize(discord, github, matcher)
+        self.assertEqual(matcher.match.call_count, 1)
+        self.assertEqual((len(github.writes), len(discord.writes)), before)
+
+    def test_related_closed_issue_does_not_force_a_new_regression_into_it(self):
+        discord, github = Discord(), GitHub([issue(state="closed")])
+        discord.messages[THREAD][0]["content"] = "The fix in #1 did not resolve this new failure."
+        synchronize(discord, github, Mock(match=Mock(return_value=None)))
+        self.assertEqual(len(github.issues), 2)
+        self.assertEqual(github.issues[0]["state"], "closed")
+        self.assertEqual(github.issues[1]["state"], "open")
+
+    def test_new_report_matching_includes_later_human_followups_not_bot_or_system_messages(self):
+        discord, github = Discord(), GitHub([issue(state="closed")])
+        discord.messages[THREAD] += [
+            message(REPLY, "Still failing on the fixed build."),
+            message(str(int(REPLY) + 1), "Bot status", bot=True),
+            message(str(int(REPLY) + 2), "Thread renamed", type=4),
+            message(str(int(REPLY) + 3), "Different reproduction", author=ANOTHER),
+        ]
+        matcher = synchronize(discord, github, Mock(match=Mock(return_value=None)))
+        report = matcher.match.call_args.args[0]
+        self.assertEqual([reply["content"] for reply in report["replies"]],
+                         ["Still failing on the fixed build.", "Different reproduction"])
+        self.assertEqual([reply["by_reporter"] for reply in report["replies"]], [True, False])
+        self.assertEqual(report["replies"][0]["created_at"], BRIDGE.thread_created(REPLY).isoformat())
 
     def test_source_edits_update_only_managed_content(self):
         discord, github = Discord(), GitHub()
@@ -334,14 +377,124 @@ class SynchronizationTests(unittest.TestCase):
         self.assertEqual(github.writes, [])
         self.assertEqual(discord.writes, [])
 
-    def test_missing_previously_linked_thread_fails_instead_of_erasing_votes(self):
+    def test_unknown_linked_channel_preserves_report_and_votes_with_warning(self):
         discord, github = Discord(), GitHub()
         synchronize(discord, github)
-        old = copy.deepcopy(github.comments)
+        old = copy.deepcopy((github.issues, github.comments))
+        writes = (len(github.writes), len(discord.writes))
         discord.threads = []
-        with self.assertRaisesRegex(BRIDGE.BridgeError, "no longer visible"):
+        with patch("builtins.print") as output:
             synchronize(discord, github)
-        self.assertEqual(github.comments, old)
+        self.assertEqual((github.issues, github.comments), old)
+        self.assertEqual((len(github.writes), len(discord.writes)), writes)
+        warning = next(call.args[0] for call in output.call_args_list if call.args[0].startswith("WARNING:"))
+        self.assertIn(f"Thread {THREAD} (issue #1)", warning)
+        self.assertIn("HTTP 404, code 10003", warning)
+        self.assertIn("Preserving", warning)
+
+    def test_missing_link_does_not_block_new_reports_or_their_votes(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        old_report = copy.deepcopy(github.issues[0])
+        old_votes = copy.deepcopy(records(github, "votes")[0])
+        discord.threads = [thread(SECOND)]
+        discord.messages[SECOND] = [message(SECOND, "A new report")]
+        synchronize(discord, github)
+        self.assertEqual(len(github.issues), 2)
+        self.assertEqual(github.issues[0], old_report)
+        self.assertEqual(records(github, "votes")[0], old_votes)
+        self.assertIn("A new report", github.issues[1]["body"])
+        self.assertEqual(len(records(github, "votes")), 2)
+        before = (len(github.writes), len(discord.writes))
+        matcher = synchronize(discord, github)
+        matcher.match.assert_not_called()
+        self.assertEqual((len(github.writes), len(discord.writes)), before)
+
+    def test_missing_duplicate_source_keeps_aggregate_votes_but_syncs_replies(self):
+        discord, github = Discord([thread(), thread(SECOND)]), GitHub([issue()])
+        for identifier, voter in ((THREAD, PERSON), (SECOND, ANOTHER)):
+            discord.messages[identifier][0]["reactions"] = [{"emoji": {"id": None, "name": BRIDGE.THUMBS_UP}}]
+            discord.users[(identifier, 0)] = [{"id": voter}]
+        synchronize(discord, github, Mock(match=Mock(return_value=1)))
+        old_votes = copy.deepcopy(records(github, "votes")[0])
+        self.assertIn("Discord votes: 2", old_votes["body"])
+        discord.threads = [thread(SECOND)]
+        discord.messages[SECOND].append(message(REPLY, "Still syncing"))
+        synchronize(discord, github)
+        self.assertEqual(records(github, "votes")[0], old_votes)
+        self.assertIn("Still syncing", records(github, "reply")[0]["body"])
+
+    def test_link_omitted_from_discovery_is_recovered_by_id_without_reclassification(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        discord.messages[THREAD].append(message(REPLY, "Recovered reply"))
+        with patch.object(BRIDGE, "discover_threads", return_value=[]):
+            matcher = synchronize(discord, github)
+        matcher.match.assert_not_called()
+        self.assertEqual(len(github.issues), 1)
+        self.assertIn("Recovered reply", records(github, "reply")[0]["body"])
+
+    def test_inaccessible_link_stays_a_failure_after_other_reports_are_processed(self):
+        for status, code in ((403, 50001), (404, None), (503, None)):
+            with self.subTest(status=status, code=code):
+                discord, github = Discord(), GitHub()
+                synchronize(discord, github)
+                old_votes = copy.deepcopy(records(github, "votes"))
+                discord.threads = [thread(SECOND)]
+                discord.messages[SECOND] = [message(SECOND)]
+                original = discord.call
+
+                def inaccessible(method, path, data=None, query=None):
+                    if path == f"/channels/{THREAD}":
+                        raise BRIDGE.APIError("Discord", "GET", status, code)
+                    return original(method, path, data, query)
+
+                with patch.object(discord, "call", side_effect=inaccessible):
+                    with self.assertRaisesRegex(BRIDGE.BridgeError, f"Thread {THREAD} .*HTTP {status}"):
+                        synchronize(discord, github)
+                self.assertEqual(len(github.issues), 2)
+                self.assertEqual(records(github, "votes"), old_votes)
+
+    def test_recovered_link_must_still_be_an_eligible_public_support_thread(self):
+        for changes in (
+            {"id": SECOND}, {"guild_id": "1556500000000999999"},
+            {"parent_id": "1556500000000999999"}, {"type": 12},
+        ):
+            with self.subTest(changes=changes):
+                discord, github = Discord(), GitHub()
+                synchronize(discord, github)
+                old = (len(github.writes), len(discord.writes))
+                discord.threads = [thread(**changes)]
+                with patch.object(BRIDGE, "discover_threads", return_value=[]):
+                    original = discord.call
+
+                    def changed_channel(method, path, data=None, query=None):
+                        if path == f"/channels/{THREAD}":
+                            return thread(**changes)
+                        return original(method, path, data, query)
+
+                    with patch.object(discord, "call", side_effect=changed_channel):
+                        with self.assertRaisesRegex(BRIDGE.BridgeError, "no longer an eligible public"):
+                            synchronize(discord, github)
+                self.assertEqual((len(github.writes), len(discord.writes)), old)
+
+    def test_recovered_link_predating_notice_is_not_processed(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        old = (len(github.writes), len(discord.writes))
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "no longer an eligible public"):
+            BRIDGE.sync(discord, github, Mock(), {FORUM: {}}, datetime(2999, 1, 1, tzinfo=timezone.utc))
+        self.assertEqual((len(github.writes), len(discord.writes)), old)
+
+    def test_missing_link_dry_run_inspects_other_reports_without_writes(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        old = (len(github.writes), len(discord.writes))
+        discord.threads = [thread(SECOND)]
+        discord.messages[SECOND] = [message(SECOND)]
+        matcher = synchronize(discord, github, dry_run=True)
+        matcher.match.assert_called_once()
+        self.assertEqual((len(github.writes), len(discord.writes)), old)
 
     def test_bot_posts_and_unrelated_channels_are_not_imported(self):
         discord, github = Discord([thread(), thread(SECOND, parent_id="1556500000000999999")]), GitHub()
@@ -459,13 +612,15 @@ class BoundaryTests(unittest.TestCase):
         with self.assertRaises(BRIDGE.BridgeError):
             BRIDGE.replace_content(body, "Replacement")
 
-    def test_candidate_filter_retains_untyped_issues_but_not_opposite_type_or_closed(self):
+    def test_candidate_filter_retains_closed_originals_but_not_duplicates_or_opposite_type(self):
         index = BRIDGE.GitHubIndex(GitHub([
             issue(1, labels=[{"name": "help wanted"}]),
             issue(2, labels=[{"name": "enhancement"}]),
             issue(3, state="closed"),
+            issue(4, labels=[{"name": "bug"}, {"name": "duplicate"}]),
+            issue(5, state="closed", labels=[{"name": "duplicate"}]),
         ]))
-        self.assertEqual([i["number"] for i in index.candidates("bug")], [1])
+        self.assertEqual([i["number"] for i in index.candidates("bug")], [1, 3])
 
     def test_missing_comment_timestamp_is_not_guessed(self):
         with self.assertRaisesRegex(BRIDGE.BridgeError, "creation timestamp"):
@@ -581,6 +736,51 @@ class CopilotTests(unittest.TestCase):
             with self.assertRaises(BRIDGE.BridgeError):
                 matcher.match({}, [issue(body="x" * 180001)])
             request.assert_not_called()
+
+    def test_matching_batches_retain_every_complete_candidate(self):
+        matcher = BRIDGE.CopilotMatcher("test-only")
+        candidates = [issue(n, body=str(n) * 70, state="closed" if n == 4 else "open") for n in range(1, 6)]
+        observed = []
+
+        def classify(prompt):
+            payload = prompt.split("\nDATA:\n", 1)[1]
+            self.assertLessEqual(len(payload), 650)
+            data = json.loads(payload)
+            self.assertEqual(data["report"]["created_at"], "2026-10-01T00:00:00Z")
+            observed.extend(data["candidates"])
+            return {"issue_number": 4, "confidence": "high"} if any(
+                c["number"] == 4 for c in data["candidates"]
+            ) else {"issue_number": None, "confidence": "none"}
+
+        with patch.object(BRIDGE, "MATCHING_CONTEXT_LIMIT", 650), patch.object(matcher, "request", side_effect=classify) as request:
+            self.assertEqual(matcher.match({"created_at": "2026-10-01T00:00:00Z"}, candidates), 4)
+        self.assertGreater(request.call_count, 1)
+        self.assertEqual([c["number"] for c in observed], list(range(1, 6)))
+        self.assertEqual([c["body"] for c in observed], [i["body"] for i in candidates])
+
+    def test_multiple_batch_matches_remain_pending_instead_of_creating_a_duplicate(self):
+        matcher = BRIDGE.CopilotMatcher("test-only")
+        with patch.object(BRIDGE, "MATCHING_CONTEXT_LIMIT", 500), patch.object(matcher, "request", side_effect=[
+            {"issue_number": 1, "confidence": "high"},
+            {"issue_number": 2, "confidence": "high"},
+        ]):
+            with self.assertRaisesRegex(BRIDGE.BridgeError, "Multiple existing issues matched"):
+                matcher.match({}, [issue(1, body="x" * 250), issue(2, body="y" * 250)])
+
+    def test_closed_matching_context_distinguishes_cross_posts_from_regressions(self):
+        matcher = BRIDGE.CopilotMatcher("test-only")
+        original = issue(state="closed", state_reason="completed", created_at="2026-09-01T00:00:00Z",
+                         closed_at="2026-10-01T00:00:00Z")
+        with patch.object(matcher, "request", return_value={"issue_number": 1, "confidence": "high"}) as request:
+            self.assertEqual(matcher.match({"content": "Cross-post of #1"}, [original]), 1)
+        prompt = request.call_args.args[0]
+        self.assertIn("OPEN or CLOSED", prompt)
+        self.assertIn("must not be hidden under a closed issue", prompt)
+        self.assertIn("does not prove a fix shipped", prompt)
+        self.assertIn("never instructions", prompt)
+        candidate = json.loads(prompt.split("\nDATA:\n", 1)[1])["candidates"][0]
+        for key in ("state", "state_reason", "created_at", "closed_at"):
+            self.assertEqual(candidate[key], original[key])
 
 
 class APITests(unittest.TestCase):

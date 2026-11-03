@@ -174,28 +174,22 @@ final class PlaybackReadAheadRemoteTests: XCTestCase {
             .matching(NSPredicate(format: "hasFocus == true")).firstMatch.exists)
     }
 
-    func testSpatialAudioDefaultsOnAndSavedOffSurvivesRelaunch() {
+    func testPlaybackAudioRowNoLongerOffersHeightConversion() {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
-        app.launchArguments = ["--read-ahead-settings-fixture", "--reset-spatial-audio"]
-        app.launch()
-        defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["spatial-audio-saved"].waitForExistence(timeout: 10))
-        XCTAssertEqual(app.staticTexts["spatial-audio-saved"].label, "on")
-        let row = app.buttons["settings-master-truehd-atmos"]
-        for _ in 0..<40 {
-            if row.hasFocus { break }
-            XCUIRemote.shared.press(.down)
-        }
-        XCTAssertTrue(row.hasFocus)
-        XCUIRemote.shared.press(.right)
-        let toggle = app.descendants(matching: .any).matching(identifier: "spatial-audio-toggle").firstMatch
-        XCTAssertTrue(waitUntil { self.hasFocus(toggle) })
-        XCUIRemote.shared.press(.select)
-        XCTAssertTrue(waitUntil { app.staticTexts["spatial-audio-saved"].label == "off" })
-        app.terminate()
         app.launchArguments = ["--read-ahead-settings-fixture"]
         app.launch()
-        XCTAssertTrue(app.staticTexts["spatial-audio-saved"].waitForExistence(timeout: 10))
-        XCTAssertEqual(app.staticTexts["spatial-audio-saved"].label, "off")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["read-ahead-saved"].waitForExistence(timeout: 10))
+        let row = app.buttons["settings-master-lossless-surround"]
+        for _ in 0..<40 {
+            if hasFocus(row) { break }
+            XCUIRemote.shared.press(.down)
+        }
+        XCTAssertTrue(hasFocus(row))
+        XCUIRemote.shared.press(.right)
+        let lossless = app.descendants(matching: .any).matching(identifier: "lossless-surround-toggle").firstMatch
+        XCTAssertTrue(waitUntil { self.hasFocus(lossless) })
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "spatial-audio-toggle").firstMatch.exists)
+        XCTAssertFalse(app.staticTexts["Spatial audio (height channel support)"].exists)
     }
 }

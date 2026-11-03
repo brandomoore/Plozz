@@ -893,7 +893,7 @@ public struct SettingsView: View {
                 searchPageID: page == .theme ? "theme" : "cards"
             )
         case .playback: authorizedDestination(for: .playback)
-        case .playbackAdvanced: PlaybackAdvancedSettingsView(playback: playback)
+        case .playbackAdvanced: PlaybackAdvancedSettingsView()
         case .externalPlayer: ExternalPlayerSettingsView(custom: entry.id == "external-template")
         case .skipMarkers:
             SkipMarkerSettingsView(model: playback, initialKind: entry.skipKind, initialCategory: entry.contentCategory)

@@ -10,10 +10,17 @@ variable, a public-posting notice, and the workflow on `main`.
 
 ## Behavior
 
-- A new human-authored forum post is compared with open GitHub issues of the
+- A new human-authored forum post is compared with open and closed GitHub issues of the
   appropriate kind. Copilot links a clearly equivalent report to an existing
   issue, or creates a new `bug` / `enhancement` issue when no confident match exists.
-  Closed issues are not candidates for new reports; existing links remain intact.
+  Closed originals remain candidates for delayed imports and cross-posts of the
+  same historical report. Original Discord creation time, subsequent human
+  replies, issue timestamps and stated builds help distinguish those from new
+  regressions. A link alone is not
+  proof of duplication; related problems, unsuccessful fixes and new regressions
+  must not be hidden under a closed issue. Matching never reopens an issue or
+  declares a fix delivered. Issues labeled `duplicate` are not new routing targets;
+  existing mappings remain intact.
 - Report text and subsequent human replies are copied to GitHub with attribution
   and links to their Discord originals. Edits update bridge-managed content.
   Maintainer text outside the marked regions is preserved.
@@ -182,8 +189,16 @@ An unlocked archived thread is temporarily unarchived only when a message needs
 to change, then archived again, including after an edit fails. This avoids
 Discord rejecting edits to archived messages and preserves the post's prior
 state. Thread-management permission is required for these transitions.
-Previously linked threads that disappear cause a visible failure rather than
-silently reducing their vote counts.
+Previously linked threads missing from discovery are looked up directly by ID.
+They must still be public threads in the configured forums, created after the
+public notice. If Discord returns Unknown Channel (HTTP 404, code 10003), the
+bridge logs the thread and linked issue, preserves their imported content and
+the issue's last complete vote total, and continues processing other reports.
+It does not assume that the missing thread had zero votes or delete its mapping.
+Permission, transport, and eligibility failures remain visible failures, but are
+reported after the other available threads have been processed; vote totals are
+not updated on a failed run. A returning thread resumes its existing mapping
+without duplicate creation or reclassification.
 
 If Discord explicitly confirms that a starter message was deleted, the bridge
 logs a warning and retains the last imported report and vote total. Existing
@@ -203,9 +218,18 @@ Upload an important diagnostic attachment to GitHub separately if permanent
 availability there is required.
 
 Copilot matching is conservative, not infallible. An incorrect link needs a
-maintainer correction; ordinary reports do not require manual approval. Large
-backlogs can exceed API or matching-context budgets; those failures are explicit
-instead of silently truncating candidates or report text.
+maintainer correction; ordinary reports do not require manual approval. Candidate
+sets are checked in bounded batches without dropping closed issues or truncating
+report/candidate bodies. Confident matches to different issues across batches
+leave the report pending for triage rather than choosing an arbitrary target or
+creating another duplicate. A single oversized report/candidate, API budget or
+model failure is explicit.
+
+Maintainer-generated development findings follow the
+[issue-filing policy](../.github/CONTRIBUTING.md#development-pipeline): active,
+unreleased work stays in its current task, even after merging to main. The public
+support forums still accept genuine user reports and feature requests; missing
+version information is not proof that a user's report concerns unreleased work.
 
 Offline regression tests:
 

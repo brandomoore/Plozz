@@ -644,6 +644,7 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/FocusIntegrationTests
+      - path: Tests/EnginePlozzigenTests/SpatialAudioLayoutPreferenceTests.swift
       - path: Tests/HomePresentationSupport
       - path: Tests/TestSupportPerformance
       - path: Tests/PerformancePresentationSupport
@@ -661,6 +662,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.FocusTests
         GENERATE_INFOPLIST_FILE: YES
+        OTHER_LDFLAGS: "$(inherited) -framework AetherEngine"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PlozzFocusHost.app/FocusHost"
         BUNDLE_LOADER: "$(TEST_HOST)"
     dependencies:

@@ -258,7 +258,7 @@ Playback's **Prefer lossless audio** toggle uses one short helper:
 **Turn off for surround sound over regular HDMI ARC, which requires compressed audio.**
 It defaults on for new and upgrading devices and is shared by Plozz
 profiles on that device, not synced to other audio setups. Off selects the
-ordinary compatibility-surround bridge; the spatial-height setting is separate.
+ordinary compatibility-surround bridge. Height-channel conversion is disabled.
 
 Title navigation uses native page opening and closing. The former
 **Zoom when opening titles** setting is removed, and saved values are ignored.
@@ -339,24 +339,16 @@ with schematic Home Screen previews. A slightly larger solid-white tile marks
 the focused app, without an icon. Posters stays the default; full-screen explains
 tvOS's swipe-up expansion and retains the same two item limits.
 
-Playback > Advanced also contains **Dolby Vision FEL (experimental)** on TV,
-iPhone and iPad. This is a profile-scoped, default-off preference, unlike the
-device-wide external-player choice. It applies to new built-in on-demand sessions
-and travels through profile settings transfer. Its short helper warns that it
-may impact performance. On iOS/iPadOS and tvOS before 26 it also warns that
-FEL disables spatial audio; ordinary channel audio still plays. On OS 26+,
-eligible FEL tracks can retain spatial audio when the Spatial audio setting is on.
-Live playback, shared players and muted previews do not opt in.
+Playback > Advanced retains the device-wide external-player choice on TV,
+iPhone and iPad. The experimental Dolby Vision FEL control is removed, and the
+engine's dual-layer reconstruction component is disabled. Old saved or transferred
+FEL preferences are ignored; normal Dolby Vision playback remains unchanged.
 See [playback engines](../../docs/playback-engines.md#dolby-vision-fel) for eligibility
 and output limits.
 
-On tvOS and iOS/iPadOS 26+, Playback > Advanced also offers **Rendering layout** in a native
-menu: 5.1.2, 5.1.4, 7.1.2, 7.1.4 and the default 9.1.6. This device-local choice
-is shared by profiles, excluded from profile transfer and read on each new load.
-It does not enable Spatial audio or alter saved On/Off choices. The helper
-discloses that DTS:X heights require 7.1.4 or 9.1.6; smaller layouts retain
-ordinary channel playback for those tracks. This is a rendering bed, not a
-speaker-detection setting.
+The former height-channel switch and **Rendering layout** picker are also removed,
+including their Settings search results. Legacy profile flags and device layout
+values cannot enable conversion.
 
 **Remember audio language per series** stores only the selected language, not a
 specific audio track or format. Its label needs no explanatory footer.
@@ -364,8 +356,8 @@ specific audio track or format. Its label needs no explanatory footer.
 On TV, related control groups can share one section heading through
 `SettingsConnectedControlGroups`: an 8pt gap and tighter 8pt facing corners keep
 them connected, while the section's outer corners retain the standard radius.
-Audio language controls share the first group; Prefer lossless audio and Spatial
-audio share the second, retaining their independent preferences and helpers.
+Audio language controls share the first group; Prefer lossless audio occupies
+the second, retaining its device-local preference and helper.
 Autoplay switches share a group, separate from the Up Next card and its
 conditional timing control. These use the existing surfaces and native controls,
 without an enclosing card or changing the independent settings.
@@ -402,20 +394,13 @@ profile-scoped and travel through settings transfer. Community-marker attributio
 and identifier sharing appear as a short caption attached to its switch, without
 a separate section footer.
 
-The **Spatial audio (height channel support)** switch is available on tvOS and iOS/iPadOS 26 and later. Its
-profile-scoped `trueHDAtmosEnabled` preference defaults on, preserves saved Off
-choices and travels through profile transfer. It applies to new supported
-on-demand sessions, not live streams, shared players or muted previews. The
-helper identifies TrueHD Atmos and DTS:X as inputs, PCM rendering and lossy
-AirPlay output. Format names describe compatibility, not certification,
-lossless passthrough, or patent clearance.
-FEL can use the same spatial conversion on these platforms; source eligibility and
-fallback remain engine-owned. Unsupported platforms
-keep ordinary channel playback; directly compatible spatial audio is unaffected.
-Compatible AirPods use the system's spatial rendering automatically when enabled
-in the OS; Plozz does not override Spatial Audio or head-tracking preferences.
-Feature descriptions use neutral spatial-audio wording; track
-metadata, diagnostics and legal notices retain accurate format and dependency names.
+Height-channel conversion is disabled in both the adapter and the engine's
+package traits. Older `trueHDAtmosEnabled` values are ignored when decoding
+profile preferences and omitted on the next save; other preferences and profile
+transfers remain intact. Ordinary surround audio and directly compatible native
+spatial audio remain available. Plozz does not override the OS's Spatial Audio
+or head-tracking preferences. Track metadata, diagnostics and legal notices
+retain accurate format and dependency names.
 See [spatial audio](../../docs/playback-engines.md#spatial-audio) for limitations.
 
 Playback > Advanced > External player is a device-only, default-off preference

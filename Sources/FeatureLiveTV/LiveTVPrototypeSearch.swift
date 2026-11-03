@@ -2,112 +2,360 @@ import CoreUI
 import FeatureLiveTVCore
 import SwiftUI
 
+#if os(tvOS)
+enum PrototypeSearchScope {
+    case channels, programs
+}
+#endif
+
 #if os(iOS)
 import UIKit
 
-struct PrototypeSearchHeader: View {
+struct PrototypeToolbarSearch: ViewModifier {
     @Binding var query: String
-    let channelCount: Int
-    let category: String?
+    @Binding var isPresented: Bool
     let focusRequest: Int
-    let browse: () -> Void
-    let close: () -> Void
+    let submit: () -> Void
     let focusChanged: (Bool) -> Void
-    var showsSummary = true
-    @State private var isEditing = false
-    @State private var dismissRequest = 0
+    var dismissed: () -> Void = {}
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: PrototypeLayout.smallGap) {
-            HStack(spacing: PrototypeLayout.smallGap) {
-                PrototypeMobileSearchField(
-                    query: $query, focusRequest: focusRequest, dismissRequest: dismissRequest,
-                    submit: browse,
-                    focusChanged: {
-                        isEditing = $0
-                        focusChanged($0)
+    func body(content: Content) -> some View {
+        content
+            .background(PrototypeToolbarSearchPresentation(
+                query: $query, isPresented: $isPresented, focusRequest: focusRequest,
+                submit: submit, focusChanged: focusChanged, dismissed: dismissed
+            ))
+    }
+}
+
+private struct PrototypeToolbarSearchPresentation: UIViewControllerRepresentable {
+    @Binding var query: String
+    @Binding var isPresented: Bool
+    let focusRequest: Int
+    let submit: () -> Void
+    let focusChanged: (Bool) -> Void
+    let dismissed: () -> Void
+    @Environment(\.locale) private var locale
+    @Environment(\.themePalette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var placeholder: String {
+        String(localized: LocalizedStringResource("Search", locale: locale)) // l10n:content — native UIKit field follows the app locale
+    }
+
+    func makeUIViewController(context: Context) -> Controller { Controller(configuration: self) }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.configuration = self
+        controller.synchronize()
+    }
+
+    static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
+        controller.search.delegate = nil
+        controller.search.searchResultsUpdater = nil
+        controller.search.searchBar.delegate = nil
+        controller.search.isActive = false
+        controller.restorePlacement()
+    }
+
+    final class Controller: UIViewController, UISearchResultsUpdating, UISearchControllerDelegate, UISearchBarDelegate {
+        var configuration: PrototypeToolbarSearchPresentation
+        let search = UISearchController(searchResultsController: nil)
+        private weak var owner: UIViewController?
+        private var previousSearch: UISearchController?
+        private var previousPinnedGroup: UIBarButtonItemGroup?
+        private var previousLeadingGroups: [UIBarButtonItemGroup] = []
+        private var previousTrailingGroups: [UIBarButtonItemGroup] = []
+        private var previousPlacement: UINavigationItem.SearchBarPlacement = .automatic
+        private var previouslyAllowedToolbar = true
+        private var previouslyDefinedContext = false
+        private var lastFocusRequest: Int?
+        private var synchronizing = false
+        private var hasPresentationRequest = false
+        private var isDismissing = false
+        private var dismissalGeneration = 0
+        private lazy var closeItem = UIBarButtonItem(
+            barButtonSystemItem: .close, target: self, action: #selector(closeSearch)
+        )
+        private lazy var closeGroup = UIBarButtonItemGroup(barButtonItems: [closeItem], representativeItem: nil)
+        private lazy var clearButton: UIButton = {
+            let button = UIButton(type: .system)
+            button.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+            button.tintColor = .tertiaryLabel
+            button.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
+            button.addTarget(self, action: #selector(clearQuery), for: .touchUpInside)
+            return button
+        }()
+
+        init(configuration: PrototypeToolbarSearchPresentation) {
+            self.configuration = configuration
+            super.init(nibName: nil, bundle: nil)
+            search.delegate = self
+            search.searchResultsUpdater = self
+            search.searchBar.delegate = self
+            search.searchBar.autocorrectionType = .no
+            search.searchBar.autocapitalizationType = .none
+            search.searchBar.tintColor = .label
+            search.obscuresBackgroundDuringPresentation = false
+            search.hidesNavigationBarDuringPresentation = false
+            search.automaticallyShowsCancelButton = false
+            // Integrated iPad search treats its built-in Clear as Cancel. Keep clearing independent of dismissal.
+            search.searchBar.searchTextField.clearButtonMode = .never
+            search.searchBar.searchTextField.rightView = clearButton
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func loadView() {
+            view = UIView()
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            synchronize()
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            synchronize()
+        }
+
+        func synchronize() {
+            guard !synchronizing else { return }
+            synchronizing = true
+            defer { synchronizing = false }
+            if search.searchBar.text != configuration.query { search.searchBar.text = configuration.query }
+            search.searchBar.placeholder = configuration.placeholder
+            search.searchBar.searchTextField.tintColor = UIColor(configuration.palette.accent)
+            closeItem.accessibilityLabel = String(localized: LocalizedStringResource( // l10n:content - UIKit label refreshed with the app locale
+                "Close", locale: configuration.locale
+            ))
+            clearButton.accessibilityLabel = String(localized: LocalizedStringResource( // l10n:content - UIKit label refreshed with the app locale
+                "Clear search", locale: configuration.locale
+            ))
+            search.searchBar.searchTextField.rightViewMode = configuration.query.isEmpty ? .never : .always
+            if configuration.isPresented { hasPresentationRequest = true }
+            guard isViewLoaded, view.window != nil else { return }
+            guard !isDismissing else { return }
+            if configuration.isPresented {
+                guard let owner = navigationController?.topViewController,
+                      view.isDescendant(of: owner.view) else { return }
+                if self.owner !== owner {
+                    restorePlacement()
+                    self.owner = owner
+                    let item = owner.navigationItem
+                    previousSearch = item.searchController
+                    previousPinnedGroup = item.pinnedTrailingGroup
+                    previousLeadingGroups = item.leadingItemGroups
+                    previousTrailingGroups = item.trailingItemGroups
+                    previousPlacement = item.preferredSearchBarPlacement
+                    previouslyDefinedContext = owner.definesPresentationContext
+                    owner.definesPresentationContext = true
+                    if #available(iOS 26.0, *) {
+                        previouslyAllowedToolbar = item.searchBarPlacementAllowsToolbarIntegration
+                        item.searchBarPlacementAllowsToolbarIntegration = false
+                        item.preferredSearchBarPlacement = .integratedButton
                     }
-                )
-                .frame(height: 44)
-                if isEditing {
-                    Button("Cancel") {
-                        dismissRequest &+= 1
-                        query = ""
-                        close()
+                    // Attach only while searching: the toolbar owns the collapsed Search button.
+                    UIView.performWithoutAnimation {
+                        item.leadingItemGroups = []
+                        item.trailingItemGroups = []
+                        item.searchController = search
+                        item.pinnedTrailingGroup = closeGroup
+                        owner.navigationController?.navigationBar.layoutIfNeeded()
                     }
                 }
+                if configuration.reduceMotion { UIView.performWithoutAnimation { activateSearch() } }
+                else { activateSearch() }
+            } else if owner != nil {
+                beginDismissal()
+            } else if hasPresentationRequest {
+                hasPresentationRequest = false
+                configuration.dismissed()
             }
-            if showsSummary {
-                PrototypeSearchSummary(channelCount: channelCount, category: category)
+        }
+
+        func restorePlacement() {
+            dismissalGeneration += 1
+            isDismissing = false
+            restoreNavigationItem()
+        }
+
+        private func restoreNavigationItem() {
+            if let owner, owner.navigationItem.searchController === search {
+                let item = owner.navigationItem
+                item.searchController = previousSearch
+                if item.pinnedTrailingGroup === closeGroup { item.pinnedTrailingGroup = previousPinnedGroup }
+                item.leadingItemGroups = previousLeadingGroups
+                item.trailingItemGroups = previousTrailingGroups
+                item.preferredSearchBarPlacement = previousPlacement
+                if #available(iOS 26.0, *) {
+                    item.searchBarPlacementAllowsToolbarIntegration = previouslyAllowedToolbar
+                }
+                owner.definesPresentationContext = previouslyDefinedContext
             }
+            owner = nil
+            previousSearch = nil
+            previousPinnedGroup = nil
+            previousLeadingGroups = []
+            previousTrailingGroups = []
+            lastFocusRequest = nil
+        }
+
+        private func activateSearch() {
+            if !search.isActive { search.isActive = true }
+            if lastFocusRequest != configuration.focusRequest {
+                lastFocusRequest = configuration.focusRequest
+                search.searchBar.becomeFirstResponder()
+            }
+        }
+
+        func updateSearchResults(for searchController: UISearchController) {
+            guard !synchronizing, configuration.isPresented else { return }
+            let query = searchController.searchBar.text ?? ""
+            if configuration.query != query { configuration.query = query }
+        }
+
+        func didPresentSearchController(_ searchController: UISearchController) {
+            if configuration.isPresented { search.searchBar.becomeFirstResponder() }
+        }
+
+        func willDismissSearchController(_ searchController: UISearchController) {
+            if !isDismissing, configuration.isPresented { configuration.isPresented = false }
+        }
+
+        private func beginDismissal() {
+            guard !isDismissing else { return }
+            isDismissing = true
+            let bar = owner?.navigationController?.navigationBar
+            bar?.layoutIfNeeded()
+            dismissalGeneration += 1
+            let generation = dismissalGeneration
+            // Wait for UIKit's actual bar animations, not just modal-search dismissal or a guessed delay.
+            CATransaction.begin()
+            CATransaction.setCompletionBlock { [weak self] in
+                guard let self, self.dismissalGeneration == generation else { return }
+                self.finishDismissal()
+            }
+            let contract = {
+                self.search.isActive = false
+                self.search.searchBar.resignFirstResponder()
+                bar?.layoutIfNeeded()
+            }
+            if configuration.reduceMotion { UIView.performWithoutAnimation(contract) }
+            else { contract() }
+            CATransaction.commit()
+        }
+
+        private func finishDismissal() {
+            if configuration.isPresented {
+                restorePlacement()
+                synchronize()
+                return
+            }
+            let bar = owner?.navigationController?.navigationBar
+            let restore = {
+                self.restoreNavigationItem()
+                self.hasPresentationRequest = false
+                self.configuration.dismissed()
+                bar?.layoutIfNeeded()
+            }
+            guard let bar, !configuration.reduceMotion else {
+                UIView.performWithoutAnimation(restore)
+                isDismissing = false
+                return
+            }
+            let generation = dismissalGeneration
+            // Regular-width UIKit can finish dismissing before it retires the expanded field.
+            UIView.transition(with: bar, duration: 0.2, options: .transitionCrossDissolve, animations: restore) { [weak self] _ in
+                guard let self, self.dismissalGeneration == generation else { return }
+                self.isDismissing = false
+                if self.configuration.isPresented { self.synchronize() }
+            }
+        }
+
+        func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) {
+            configuration.focusChanged(true)
+        }
+
+        func searchBarTextDidEndEditing(_ searchBar: UISearchBar) {
+            configuration.focusChanged(false)
+        }
+
+        func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+            searchBar.resignFirstResponder()
+            configuration.submit()
+        }
+
+        @objc private func closeSearch() {
+            configuration.isPresented = false
+        }
+
+        @objc private func clearQuery() {
+            search.searchBar.text = ""
+            if !configuration.query.isEmpty { configuration.query = "" }
+            search.searchBar.becomeFirstResponder()
         }
     }
 }
 
-private struct PrototypeMobileSearchField: UIViewRepresentable {
-    @Binding var query: String
-    @Environment(\.locale) private var locale
-    let focusRequest: Int
-    let dismissRequest: Int
-    let submit: () -> Void
-    let focusChanged: (Bool) -> Void
+struct PrototypeMobileSearchResults: View {
+    let model: LiveTVPrototypeModel
+    let imports: LiveTVPrototypeImportModel
+    let selectCategory: (String) -> Void
+    let watch: (LiveTVPrototypeChannel) -> Void
+    let details: (LiveTVPrototypeProgram) -> Void
+    @State private var position = ScrollPosition(edge: .top)
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    func makeUIView(context: Context) -> UISearchTextField {
-        let field = UISearchTextField()
-        field.autocapitalizationType = .none
-        field.autocorrectionType = .no
-        field.returnKeyType = .search
-        field.accessibilityIdentifier = "live-tv-search-field"
-        field.delegate = context.coordinator
-        field.addTarget(context.coordinator, action: #selector(Coordinator.textChanged), for: .editingChanged)
-        return field
-    }
-
-    func updateUIView(_ field: UISearchTextField, context: Context) {
-        context.coordinator.parent = self
-        let placeholder = LocalizedStringResource("Search", locale: locale)
-        field.placeholder = String(localized: placeholder) // l10n:content - UIKit boundary, refreshed with the current environment locale.
-        if field.text != query { field.text = query }
-        if dismissRequest > context.coordinator.dismissRequest {
-            context.coordinator.dismissRequest = dismissRequest
-            DispatchQueue.main.async { [weak field] in
-                field?.resignFirstResponder()
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: PrototypeLayout.smallGap) {
+                if !model.query.isEmpty, !model.matchingCategories.isEmpty {
+                    PrototypeCategorySearchResults(
+                        categories: model.matchingCategoryResults, select: selectCategory
+                    )
+                }
+                Section {
+                    if model.visibleChannels.isEmpty {
+                        Text("No matching channels").foregroundStyle(.secondary)
+                    }
+                    ForEach(model.visibleChannels) { channel in
+                        Button { watch(channel) } label: {
+                            HStack(spacing: PrototypeLayout.gap) {
+                                PrototypeStationMark(channel: channel, size: 28)
+                                    .accessibilityHidden(true)
+                                Text(channel.name).font(.headline)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .frame(minHeight: 44)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("live-tv-channel-channels-\(channel.id)")
+                    }
+                } header: {
+                    Text("Channels")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                }
+                if !model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    LiveTVProgramSearchView(
+                        imports: imports, model: model, query: model.query,
+                        watch: watch, showDetails: details
+                    )
+                }
             }
+            .padding(.vertical, PrototypeLayout.smallGap)
         }
-        if focusRequest > context.coordinator.focusRequest {
-            context.coordinator.focusRequest = focusRequest
-            DispatchQueue.main.async { [weak field] in
-                guard let field, field.window != nil else { return }
-                field.becomeFirstResponder()
-            }
-        }
-    }
-
-    final class Coordinator: NSObject, UITextFieldDelegate {
-        var parent: PrototypeMobileSearchField
-        var focusRequest = 0
-        var dismissRequest = 0
-        init(_ parent: PrototypeMobileSearchField) { self.parent = parent }
-        @objc func textChanged(_ field: UISearchTextField) {
-            parent.query = field.text ?? ""
-        }
-        func textFieldDidBeginEditing(_ textField: UITextField) {
-            parent.focusChanged(true)
-        }
-        func textFieldDidEndEditing(_ textField: UITextField) {
-            parent.focusChanged(false)
-        }
-        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-            textField.resignFirstResponder()
-            parent.submit()
-            return true
-        }
-        func textFieldShouldClear(_ textField: UITextField) -> Bool {
-            parent.query = ""
-            return true
-        }
+        .scrollPosition($position)
+        .scrollDismissesKeyboard(.interactively)
+        .modifier(PrototypeScrollUnderlap())
+        .accessibilityIdentifier("live-tv-search-results")
+        .onChange(of: model.query) { _, _ in position.scrollTo(edge: .top) }
+        .onChange(of: model.category) { _, _ in position.scrollTo(edge: .top) }
     }
 }
 #endif

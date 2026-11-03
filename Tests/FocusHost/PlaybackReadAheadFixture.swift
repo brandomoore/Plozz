@@ -18,9 +18,6 @@ struct PlaybackReadAheadFixture: View {
             PlaybackReadAheadStore().save(.default)
             LivePlaybackBufferStore().save(.default)
         }
-        if ProcessInfo.processInfo.arguments.contains("--reset-spatial-audio") {
-            PlaybackSettingsStore(namespace: "read-ahead-fixture").save(.default)
-        }
         _models = State(initialValue: ProfileSettingsModel(namespace: "read-ahead-fixture"))
     }
 
@@ -49,8 +46,6 @@ struct PlaybackReadAheadFixture: View {
                     .accessibilityIdentifier("read-ahead-saved")
                 Text(verbatim: liveSelection.rawValue)
                     .accessibilityIdentifier("live-buffer-saved")
-                Text(verbatim: models.playbackModel.settings.trueHDAtmosEnabled ? "on" : "off")
-                    .accessibilityIdentifier("spatial-audio-saved")
             }
         }
     }

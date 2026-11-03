@@ -27,10 +27,9 @@ embedded in the app bundle as frameworks (`AetherLibavcodec.framework`,
 | zimg 3.0.6 (image scaling and color conversion) | bundled by FFmpegBuild | WTFPL |
 | libzvbi 0.2.46 (teletext decoder) | bundled by FFmpegBuild; GPL sources excluded by its build recipe | LGPL-2.0-or-later, conveyed under LGPL-2.1; `ure.c` MIT |
 | libdovi (Dolby Vision RPU parser) | `github.com/superuser404notfound/LibDovi` @ `2.1.0` | MIT |
-| LibTrueHD (decoder and object renderer) | `github.com/superuser404notfound/LibTrueHD` @ `3.1.0` | MIT / Apache-2.0 |
 
 Plozz's own `Package.swift` declares **only** AetherEngine for this stack;
-FFmpegBuild, LibDovi and LibTrueHD are its transitive dependencies (AetherEngine owns their version
+FFmpegBuild and LibDovi are its transitive dependencies (AetherEngine owns their version
 alignment). The concrete pins live in the committed root `Package.resolved`.
 `tools/generate-project.sh` copies that canonical lock into generated Xcode
 projects at
@@ -38,17 +37,21 @@ projects at
 
 ## Engine linkage and LibTrueHD
 
-The pinned fork exports AetherEngine dynamically to separate its two Rust decoder
-runtimes from Plozz's Objective-C/C++ unwind table. Both apps embed and sign
+The pinned fork exports AetherEngine dynamically to separate its decoder
+runtime from Plozz's Objective-C/C++ unwind table. Both apps embed and sign
 `AetherEngine.framework`; FFmpeg remains in separate dynamic frameworks.
 
 [LibTrueHD 3.1.0](https://github.com/superuser404notfound/LibTrueHD/tree/3.1.0)
-is linked into the engine even when its object-audio mode is off. Its C API and
+was linked in earlier builds. Plozz now disables the `TrueHDObjectAudio` and
+`DTSXObjectAudio` package traits; LibTrueHD is no longer resolved or linked.
+Ordinary channel-audio decoding remains available through FFmpeg. LibTrueHD's C API and
 Apple packaging are MIT, copyright Quick104 and Vincent Herbst; the compiled
 truehd and oamd crates are Apache-2.0, copyright Rainbaby and contributors.
 Both apps ship its unmodified `LICENSE`, `LICENSE-APACHE` and `NOTICE` as
 `LibTrueHDLicense.txt`, `LibTrueHDApacheLicense.txt` and `LibTrueHDNotices.txt`.
-The shared acknowledgements page credits the library and exact source tag.
+The shared acknowledgements page retains the library's credit and exact source
+tag, explicitly identifying it as no longer linked. These retained notices do
+not imply that height-channel conversion remains available.
 
 ## FFmpeg license facts
 
