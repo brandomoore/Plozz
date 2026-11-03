@@ -92,6 +92,12 @@ public struct WebDAVClient: Sendable {
             trustPolicy: trustPolicy,
             maxResponseBytes: limits.maxResponseBytes
         )
+        if sessionKey.role != .scanner || response.statusCode != 207 {
+            HandoffDiagnostics.emit(
+                "webdav PROPFIND depth=\(depth == .zero ? 0 : 1) role=\(sessionKey.role.rawValue)"
+                    + " resource=\(HandoffDiagnostics.correlationID(path)) status=\(response.statusCode) bytes=\(data.count)"
+            )
+        }
         try validateAuthenticationStatus(response)
         guard response.statusCode == 207 else {
             throw TransportError.protocolError(status: response.statusCode, detail: "expected 207 Multi-Status from PROPFIND")
@@ -305,6 +311,10 @@ public struct WebDAVClient: Sendable {
             trustPolicy: trustPolicy,
             maxResponseBytes: limits.maxResponseBytes
         )
+        HandoffDiagnostics.emit(
+            "webdav PROPFIND depth=0 role=\(sessionKey.role.rawValue)"
+                + " resource=\(HandoffDiagnostics.correlationID(path)) status=\(response.statusCode) bytes=\(data.count)"
+        )
         try validateAuthenticationStatus(response)
         guard response.statusCode == 207 else {
             throw TransportError.protocolError(status: response.statusCode, detail: "expected 207 Multi-Status from PROPFIND")
@@ -330,6 +340,22 @@ public struct WebDAVClient: Sendable {
             WebDAVPathPolicy.isSelfEntry(resolvedPath: $0.resolvedPath, requestPath: finalPath)
         }
         guard selfEntries.count == 1, let entry = selfEntries.first else {
+            HandoffDiagnostics.emit(
+                "webdav STAT_REJECTED check=self-entry entries=\(entries.count) matches=\(selfEntries.count)"
+            )
+            if let first = selfEntries.first, selfEntries.count > 1 {
+                let others = selfEntries.dropFirst()
+                HandoffDiagnostics.emit(
+                    "webdav STAT_CONFLICT"
+                        + " pathEqual=\(others.allSatisfy { $0.resolvedPath == first.resolvedPath })"
+                        + " kindEqual=\(others.allSatisfy { $0.isCollection == first.isCollection })"
+                        + " sizeEqual=\(others.allSatisfy { $0.contentLength == first.contentLength })"
+                        + " etagEqual=\(others.allSatisfy { $0.etag == first.etag })"
+                        + " strongETag=\(selfEntries.allSatisfy { $0.etag?.isValidStrongValidator == true })"
+                        + " modifiedEqual=\(others.allSatisfy { $0.lastModified == first.lastModified })"
+                        + " typeEqual=\(others.allSatisfy { $0.contentType == first.contentType })"
+                )
+            }
             throw TransportError.malformedMultistatus(
                 reason: "Depth:0 PROPFIND did not return exactly the queried resource (\(selfEntries.count) self-entries)"
             )

@@ -10,6 +10,102 @@ import XCTest
 /// SMB-style entry (modification time, no ETag) falls back to
 /// `.modificationTime`, and an entry with neither is rejected.
 final class ShareProviderLocatorTests: XCTestCase {
+    func testPreparationDiagnosticCodesNeverIncludeAssociatedErrorText() {
+        let secret = "https://private.example/file?token=private-secret"
+        let cases: [(Error, String)] = [
+            (MediaTransportError.protocolViolation(reason: secret), "transport.protocolViolation"),
+            (MediaTransportError.authentication(reason: secret), "transport.authentication"),
+            (MediaTransportError.transport(code: -1004), "transport.transport(code: -1004)"),
+            (MediaSourceModelError.sensitiveQueryItem(name: secret), "model.sensitiveQueryItem"),
+            (MediaSourceModelError.emptyIdentifier(field: secret), "model.emptyIdentifier"),
+            (MediaSourceModelError.invalidRepresentationIdentity, "model.invalidRepresentationIdentity"),
+            (AppError.unknown(secret), "app.unknown"),
+            (URLError(.timedOut, userInfo: [NSLocalizedDescriptionKey: secret]), "url.-1001"),
+            (NSError(domain: secret, code: 1, userInfo: [NSLocalizedDescriptionKey: secret]), "unknown"),
+            (CancellationError(), "cancelled")
+        ]
+        for (error, expected) in cases {
+            XCTAssertEqual(SharePlaybackSourceService.diagnosticErrorCode(error), expected)
+        }
+    }
+
+    func testLocatorDiagnosticsClassifyMetadataWithoutPublishingItsValues() throws {
+        let path = "private-folder/private-title.mkv"
+        let entry = try RemoteFileEntry(
+            relativePath: path, kind: .file, size: 8192,
+            modifiedAt: Date(timeIntervalSince1970: 12345), strongETag: "\"private-validator\""
+        )
+        let diagnostic = SharePlaybackSourceService.metadataDiagnostic(relativePath: path, entry: entry)
+        XCTAssertTrue(diagnostic.contains("isFile=true size=8192 strongETag=true modifiedAt=true"))
+        for secret in ["private-folder", "private-title", "private-validator", "12345"] {
+            XCTAssertFalse(diagnostic.contains(secret))
+        }
+    }
+
+    func testPreparationFailureRetainsStageAndRequestCorrelationWithoutChangingError() async throws {
+        let wasEnabled = HandoffDiagnostics.isEnabled
+        HandoffDiagnostics.setEnabled(true)
+        defer { HandoffDiagnostics.setEnabled(wasEnabled) }
+        let path = "private-no-identity-\(UUID().uuidString).mkv"
+        let entry = try RemoteFileEntry(relativePath: path, kind: .file, size: 4096)
+        let provider = makeProvider(stat: entry)
+        addTeardownBlock { await provider.teardown() }
+        do {
+            _ = try await provider.playbackInfo(for: "f:\(path)")
+            XCTFail("Missing identity must still fail")
+        } catch {
+            XCTAssertEqual(error as? MediaTransportError, .protocolViolation(
+                reason: "network file lacks a stable identity (no strong ETag or modification time)"
+            ))
+        }
+        let lines = HandoffDiagnostics.persistentPlaybackLogText().components(separatedBy: "\n")
+        let failure = try XCTUnwrap(lines.last {
+            $0.contains("sharePlayback") && $0.contains("item=\(HandoffDiagnostics.correlationID("f:\(path)"))")
+                && $0.contains("event=failed")
+        })
+        XCTAssertTrue(failure.contains("stage=locator event=failed error=transport.protocolViolation"))
+        let requestID = try XCTUnwrap(failure.split(separator: " ").first { $0.hasPrefix("request=") })
+        let requestLines = lines.filter { $0.contains(requestID) }
+        XCTAssertEqual(requestLines.count, 3)
+        XCTAssertTrue(requestLines[0].contains("stage=selection event=start"))
+        XCTAssertTrue(requestLines[1].contains("stage=locator event=start"))
+        XCTAssertFalse(requestLines.joined().contains(path))
+        XCTAssertTrue(lines.contains {
+            $0.contains("file=\(HandoffDiagnostics.correlationID(path))")
+                && $0.contains("rejected=missingIdentity")
+        })
+    }
+
+    func testConcurrentPreparationRequestsHaveDistinctSuccessfulTraces() async throws {
+        let wasEnabled = HandoffDiagnostics.isEnabled
+        HandoffDiagnostics.setEnabled(true)
+        defer { HandoffDiagnostics.setEnabled(wasEnabled) }
+        let path = "private-success-\(UUID().uuidString).mkv"
+        let entry = try RemoteFileEntry(
+            relativePath: path, kind: .file, size: 4096, strongETag: "\"private-validator\""
+        )
+        let provider = makeProvider(stat: entry)
+        addTeardownBlock { await provider.teardown() }
+        async let first = provider.playbackInfo(for: "f:\(path)")
+        async let second = provider.playbackInfo(for: "f:\(path)")
+        _ = try await (first, second)
+        let lines = HandoffDiagnostics.persistentPlaybackLogText().components(separatedBy: "\n").filter {
+            $0.contains("sharePlayback") && $0.contains("item=\(HandoffDiagnostics.correlationID("f:\(path)"))")
+        }
+        let ready = lines.filter { $0.contains("event=ready") }
+        XCTAssertEqual(ready.count, 2)
+        let requestIDs = Set(ready.compactMap { $0.split(separator: " ").first { $0.hasPrefix("request=") } })
+        XCTAssertEqual(requestIDs.count, 2)
+        for requestID in requestIDs {
+            let trace = lines.filter { $0.contains(requestID) }.joined(separator: "\n")
+            for stage in ["selection", "locator", "item", "sidecars"] {
+                XCTAssertTrue(trace.contains("stage=\(stage) event=start"))
+            }
+            XCTAssertFalse(trace.contains("event=failed"))
+            XCTAssertFalse(trace.contains("private"))
+        }
+    }
+
     func testExternalLinkResolutionIsBoundedAndNeverOpensAVideoSource() async throws {
         let path = "Movie (2020).strmlnk"
         let entry = try RemoteFileEntry(relativePath: path, kind: .file, size: 100)
@@ -216,6 +312,9 @@ final class ShareProviderLocatorTests: XCTestCase {
     }
 
     func testCancelledOpeningListingDoesNotStartStatOrSubtitleFallback() async throws {
+        let wasEnabled = HandoffDiagnostics.isEnabled
+        HandoffDiagnostics.setEnabled(true)
+        defer { HandoffDiagnostics.setEnabled(wasEnabled) }
         let entry = try RemoteFileEntry(
             relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"opening\""
         )
@@ -228,6 +327,9 @@ final class ShareProviderLocatorTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? MediaTransportError, .cancelled)
         }
+        let diagnostic = try XCTUnwrap(HandoffDiagnostics.persistentPlaybackLogText()
+            .components(separatedBy: "\n").last { $0.contains("sharePlayback") })
+        XCTAssertTrue(diagnostic.contains("stage=locator event=cancelled error=transport.cancelled"))
         let openingCalls = await fileSystem.openingCalls
         let listingCalls = await fileSystem.listingCalls
         XCTAssertEqual(openingCalls, 0)

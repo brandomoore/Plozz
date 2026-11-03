@@ -677,6 +677,38 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
     /// `movie:<key>` with no chosen version plays its best default file; a bare
     /// `f:<rel>` (raw browser / episode) plays directly.
     public func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest {
+        let started = Date()
+        let requestID = UUID().uuidString
+        let transport = MediaShareTransportKind(mediaShareScheme: session.server.baseURL.scheme)?.rawValue ?? "unknown"
+        let context = "sharePlayback request=\(requestID) transport=\(transport)"
+            + " item=\(HandoffDiagnostics.correlationID(itemID)) explicitVersion=\(mediaSourceID != nil)"
+        var stage = "selection"
+        HandoffDiagnostics.emit("\(context) stage=\(stage) event=start")
+        do {
+            let request = try await resolvePlaybackInfo(
+                for: itemID, mediaSourceID: mediaSourceID,
+                onStage: {
+                    stage = $0
+                    HandoffDiagnostics.emit("\(context) stage=\(stage) event=start")
+                }
+            )
+            HandoffDiagnostics.emit("\(context) event=ready elapsed=\(HandoffDiagnostics.ms(started))")
+            return request
+        } catch {
+            let code = SharePlaybackSourceService.diagnosticErrorCode(error)
+            let event = error is CancellationError || (error as? MediaTransportError) == .cancelled
+                || Task.isCancelled ? "cancelled" : "failed"
+            let diagnostic = "\(context) stage=\(stage) event=\(event) error=\(code)"
+                + " elapsed=\(HandoffDiagnostics.ms(started))"
+            HandoffDiagnostics.emit(diagnostic)
+            if event == "failed" { PlozzLog.playback.error("\(diagnostic)") }
+            throw error
+        }
+    }
+
+    private func resolvePlaybackInfo(
+        for itemID: String, mediaSourceID: String?, onStage: (String) -> Void
+    ) async throws -> PlaybackRequest {
         let isPersonalVideos = libraryConfiguration?.contentType == .personalVideos
         let catalog: (any ShareCatalogReading)?
         if isPersonalVideos {
@@ -726,11 +758,13 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         guard !ShareMediaParser.isExternalLinkFile(relPath) else {
             throw AppError.unknown("Open this title in its external app instead of playing it in Plozz.")
         }
+        onStage("locator")
         let opening = try await playbackSource.playbackOpening(
             for: relPath,
             reuseDirectoryMetadata: ["http", "https"].contains(session.server.baseURL.scheme?.lowercased() ?? "")
         )
         let locator = opening.locator
+        onStage("item")
         let item = try await item(id: canonicalItemID)
         // Resume from the newest canonical/legacy member-file state so a movie
         // watched before version grouping still resumes after the upgrade.
@@ -778,6 +812,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         // Surface any text sidecar subtitles sitting next to the video (and in a
         // sibling Subs/Subtitles folder) as selectable tracks. Best-effort: a
         // listing/read failure just yields no sidecars rather than blocking play.
+        onStage("sidecars")
         let subtitleTracks = try await playbackSource.discoverSidecarSubtitles(
             forVideoRelPath: relPath,
             exactStemOnly: isExtra,

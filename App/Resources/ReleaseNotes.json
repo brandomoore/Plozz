@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "releases": [
     {
-      "id": "release/069.1",
+      "id": "release/069.2",
       "version": "2026.11.3",
       "marketingVersion": "2026.10.30",
-      "build": "69.1",
+      "build": "69.2",
       "releasedAt": "2026-11-03",
       "sections": [
         {
@@ -24,6 +24,21 @@
               "text": "Fixed iPad Settings ignoring category changes while a subpage is open.",
               "platforms": ["iOS"]
             }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/069.1",
+      "version": "2026.11.3",
+      "marketingVersion": "2026.10.30",
+      "build": "69.1",
+      "releasedAt": "2026-11-03",
+      "sections": [
+        {
+          "category": "Fixed",
+          "items": [
+            "Fixed WebDAV playback failing when a server lists the same file more than once."
           ]
         }
       ]

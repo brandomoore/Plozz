@@ -35,6 +35,15 @@ and byte-source contracts live in `MediaTransportCore`.
   multistatus/response/propstat/prop positions can supply metadata. Nested
   extension properties cannot replace file identity or mark a file as a folder.
   CDATA and ordinary XML text are handled equivalently.
+  Repeated entries with the same normalized path and identical parsed metadata
+  are collapsed, preserving first-occurrence order for both listing and stat.
+  For files with a size and the same valid strong ETag, a modification-date
+  difference alone also collapses: the ambiguous date is discarded, while the
+  strong ETag remains authoritative. Missing/weak ETags, folders and missing
+  sizes do not qualify for this exception.
+  Conflicting entries remain distinct: stat rejects ambiguous metadata rather
+  than choosing the first file or combining validators from different entries.
+  The entry cap counts responses before deduplication.
 - **Range safety**: identity encoding, exact `206`, matching `Content-Range`
   offsets/total and body length. A bounded GET establishes the actual
   representation's strongest usable validator. Two bytes remain the default;
@@ -198,6 +207,19 @@ flag and header classifications in the bounded local playback trace. ETags,
 dates and ranges are classified as missing, invalid or usable (ETags also
 distinguish weak/strong); no raw headers, paths, credentials or delivery URLs
 are recorded. Locator-policy rejections have separate fixed check identifiers.
+
+Share playback preparation also records a per-request ID, hashed item identity,
+transport, elapsed time and the last stage reached (selection, locator, item or
+sidecars). Failures retain allowlisted transport/model/native error codes rather
+than raw descriptions; cancellation remains cancellation. Locator diagnostics
+show listing fallback, file-size presence and validator availability without
+publishing validator values. PROPFIND records depth, role, hashed resource, HTTP
+status and response size; stat self-entry rejection records parsed/matching
+counts and which metadata fields disagree, never their values. Identical duplicate
+responses record a count; successful scanner listings omit per-request traces.
+HTTP adapter errors are recorded before protocol-neutral mapping loses
+their specific category. These diagnostics do not relax validation or introduce
+retries, and contain no response bodies, filenames, URLs or credentials.
 This distinguishes a missing validator from unsupported ranges. Entering the
 streaming exception emits a fixed `PLAYBACK_COMPATIBILITY` diagnostic with
 `persistentReuse=false`; retry behavior is unchanged.
