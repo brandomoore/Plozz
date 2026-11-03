@@ -466,6 +466,222 @@
             "state" : "new",
             "value" : "Plozz uses device motion to follow your phone's landscape direction during playback."
           }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يستخدم Plozz حركة الجهاز لتدوير العرض الأفقي بما يتوافق مع اتجاه هاتفك أثناء التشغيل."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz използва движението на устройството, за да следва хоризонталната ориентация на телефона ви по време на възпроизвеждане."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz utilitza el moviment del dispositiu per seguir l’orientació horitzontal del telèfon durant la reproducció."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz využívá pohyb zařízení k otáčení videa podle polohy telefonu při přehrávání na šířku."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz bruger enhedens bevægelse til at følge telefonens retning i liggende format under afspilning."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz nutzt die Gerätebewegung, um das Video bei der Wiedergabe im Querformat an die Ausrichtung deines Telefons anzupassen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Το Plozz χρησιμοποιεί την κίνηση της συσκευής για να ακολουθεί τον οριζόντιο προσανατολισμό του τηλεφώνου σας κατά την αναπαραγωγή."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz usa el movimiento del dispositivo para adaptarse a la orientación horizontal de tu teléfono durante la reproducción."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz با استفاده از حرکت دستگاه، هنگام پخش جهت افقی تصویر را با گوشی شما هماهنگ می‌کند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz käyttää laitteen liiketietoja, jotta video kääntyy puhelimen vaaka-asennon mukaan toiston aikana."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz utilise les mouvements de l’appareil pour orienter la vidéo selon la position du téléphone en mode paysage pendant la lecture."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz משתמשת בתנועת המכשיר כדי להתאים את כיוון הווידאו לכיוון הטלפון במצב רוחב במהלך הניגון."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz प्लेबैक के दौरान फ़ोन की लैंडस्केप दिशा के अनुसार वीडियो घुमाने के लिए डिवाइस के मोशन डेटा का इस्तेमाल करता है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz koristi podatke o kretanju uređaja kako bi tijekom reprodukcije pratio vodoravnu orijentaciju telefona."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A Plozz az eszköz mozgásadatait használja, hogy lejátszás közben kövesse a telefon fekvő tájolásának irányát."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz menggunakan data gerakan perangkat untuk menyesuaikan arah tampilan lanskap dengan posisi ponsel saat pemutaran."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz usa il movimento del dispositivo per seguire l’orientamento orizzontale del telefono durante la riproduzione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozzはデバイスの動きの情報を使い、再生中に横向きの動画表示をスマートフォンの向きに合わせます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz는 재생 중 휴대전화의 가로 방향에 맞춰 화면을 회전하기 위해 기기 움직임을 사용합니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz menggunakan pergerakan peranti untuk mengikut arah landskap telefon anda semasa main balik."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz bruker bevegelsesdata til å følge telefonens retning i liggende modus under avspilling."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz gebruikt bewegingsgegevens om tijdens het afspelen de liggende oriëntatie van je telefoon te volgen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz korzysta z danych o ruchu urządzenia, aby podczas odtwarzania dopasowywać obraz do ułożenia telefonu w poziomie."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O Plozz usa o movimento do dispositivo para acompanhar a orientação horizontal do celular durante a reprodução."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz folosește mișcarea dispozitivului pentru a urmări orientarea orizontală a telefonului în timpul redării."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz использует данные о движении устройства, чтобы менять горизонтальную ориентацию при воспроизведении в зависимости от положения телефона."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz využíva pohyb zariadenia na sledovanie orientácie telefónu na šírku počas prehrávania."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz uporablja podatke o gibanju naprave, da med predvajanjem sledi ležeči usmerjenosti telefona."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz koristi podatke o kretanju uređaja da tokom reprodukcije prati položaj telefona u vodoravnoj orijentaciji."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz använder enhetens rörelsedata för att följa hur du vänder telefonen i liggande läge under uppspelning."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz ใช้ข้อมูลการเคลื่อนไหวของอุปกรณ์เพื่อปรับทิศทางแนวนอนตามการวางโทรศัพท์ระหว่างเล่นวิดีโอ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz, oynatma sırasında telefonunuzun yatay yönüne uyum sağlamak için cihaz hareketini kullanır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz використовує дані руху пристрою, щоб під час відтворення повертати відео відповідно до горизонтального положення телефона."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz dùng dữ liệu chuyển động của thiết bị để xoay theo hướng ngang của điện thoại khi phát video."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz 使用设备运动数据，让播放画面随手机的横屏朝向旋转。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz 使用裝置動作資料，讓播放畫面隨手機橫放的方向旋轉。"
+          }
         }
       }
     }
