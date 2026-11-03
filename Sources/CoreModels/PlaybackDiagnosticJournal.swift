@@ -164,13 +164,15 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
 
     public static let shared = PlaybackDiagnosticJournal(
         url: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("Plozz/Diagnostics/playback.json")
+            .appendingPathComponent("Plozz/Diagnostics/playback.json"),
+        onFailure: { HandoffDiagnostics.preservePlaybackFailure($0) }
     )
     static let maximumEntries = 256
     static let maximumBytes = 128 * 1_024
     static let retention: TimeInterval = 48 * 3_600
     private let url: URL?
     private let clock: @Sendable () -> Date
+    private let onFailure: @Sendable (Entry) -> Void
     private let queue = DispatchQueue(label: "com.plozz.playback.diagnosticJournal", qos: .utility)
     private let lock = NSLock()
     private var pending: [Entry] = []
@@ -187,9 +189,13 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
     private static let logger = Logger(subsystem: "com.plozz.app", category: "playbackDiagnostics")
     #endif
 
-    init(url: URL?, clock: @escaping @Sendable () -> Date = { Date() }) {
+    init(
+        url: URL?, clock: @escaping @Sendable () -> Date = { Date() },
+        onFailure: @escaping @Sendable (Entry) -> Void = { _ in }
+    ) {
         self.url = url
         self.clock = clock
+        self.onFailure = onFailure
         queue.async { self.restore() }
     }
 
@@ -214,6 +220,9 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
             event: event, facts: facts, elapsedMilliseconds: milliseconds, route: route, failure: failure,
             phase: phase, liveFailure: liveFailure, stopReason: stopReason, stage: stage, evidence: evidence
         )
+        if event == .failed || event == .startupTimedOut || event == .engineUnavailable {
+            onFailure(entry)
+        }
         lock.withLock {
             if pending.count == Self.maximumEntries {
                 pending.removeFirst()

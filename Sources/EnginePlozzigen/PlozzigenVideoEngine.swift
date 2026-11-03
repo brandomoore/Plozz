@@ -106,7 +106,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private var nativeSubtitleOutput: NativeSubtitleCueOutput?
     private weak var nativeSubtitleItem: AVPlayerItem?
     private var nativeSubtitleSelectionID: Int?
-    private var lastPipelineDiagnosticUptime: TimeInterval?
+    private var pipelineDiagnosticCadence = PipelineDiagnosticCadence()
     private var usesNativeSubtitleCues: Bool {
         engine.subtitleTracks.first { $0.id == engine.activeSubtitleTrackIndex }?.isNativelyRenderedSubtitle == true
     }
@@ -1748,15 +1748,18 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private func recordPipelineDiagnostic(_ telemetry: LiveTelemetry) {
         guard HandoffDiagnostics.isEnabled, engine.videoRoute != .none, engine.state != .ended else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        if let lastPipelineDiagnosticUptime, now - lastPipelineDiagnosticUptime < 2 { return }
-        lastPipelineDiagnosticUptime = now
+        let phase = Self.livePhase(engine.playbackPhase).diagnosticCode
+        let identity = "\(outputLoadGeneration):\(phase):\(engine.videoRoute.rawValue):"
+            + "\(engine.activeAudioTrackIndex ?? -1):\(engine.audioDelivery.rawValue):"
+            + "\(engine.activeSubtitleTrackIndex ?? -1)"
+        guard pipelineDiagnosticCadence.shouldEmit(identity: identity, paused: phase == "paused", now: now) else { return }
         let active = engine.activeAudioTrackIndex.flatMap { id in
             audioTracks.first { $0.id == id }
         }
         HandoffDiagnostics.emit(Self.pipelineDiagnosticLine(
             telemetry: telemetry,
             instance: String(outputLoadGeneration.uuidString.prefix(8)),
-            phase: Self.livePhase(engine.playbackPhase).diagnosticCode,
+            phase: phase,
             route: engine.videoRoute.rawValue,
             position: engine.currentTime,
             engineBuffer: liveTelemetry?.bufferedSecondsAhead,

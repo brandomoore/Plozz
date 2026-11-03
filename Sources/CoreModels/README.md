@@ -30,6 +30,14 @@ language every other module speaks.
   journals; validation applies both on admission and disk restore. The explicit
   Send diagnostics action includes this local journal, without enabling
   automatic on-demand failure uploads or claiming confirmed backend delivery.
+ - With `PLOZZ_DIAGNOSTICS` and handoff tracing enabled, `HandoffDiagnostics`
+  appends local text to four rotating 1 MiB segments in `Caches/Plozz`.
+  Typed playback failures, startup timeouts and unavailable engines freeze up
+  to 512 KiB of preceding text plus a session/attempt marker; the last three
+  snapshots survive successful retries. Records are capped at 16 KiB, pending
+  writes at 256 KiB / 512 records, and overflow/storage failures go to OSLog.
+  The existing text snapshot API remains capped at 64 KiB. These local cache
+  files are not added to automatic uploads or the structured manual export.
 - Shared decode/encode helpers: `JSONDecoder.plozz`, `JSONEncoder.plozz`.
 - `SearchDiagnosticJournal` retains consent-scoped per-source search outcomes and
   typed request/page evidence for manual reports, separately from general

@@ -2241,6 +2241,30 @@ xcrun devicectl device copy from --device <UDID> \
 grep "vm LIFECYCLE" /tmp/trace.log     # healthy: every init has a deinit, ends live=0
 ```
 
+In diagnostic builds with handoff tracing enabled, text is appended on a utility
+queue rather than rereading and replacing the journal for each event. The current
+`playback-trace.log` and `.1.log`, `.2.log`, `.3.log` rotations each retain up to
+1 MiB (oldest is `.3.log`). Records end at UTF-8/line boundaries and are capped at
+16 KiB. Pending writes are bounded to 256 KiB / 512 records; overflow and disk
+errors are reported in the `handoff` OSLog category rather than recursively logged.
+Unchanged paused pipeline samples are emitted every 30 seconds instead of every
+2 seconds; phase, attempt, route, audio and subtitle changes still emit promptly.
+
+Typed playback failures (including preparation), startup timeouts and unavailable
+engines also freeze the preceding trace with a session/attempt marker in
+`playback-failure.log`, retaining two older snapshots as `playback-failure.1.log`
+and `playback-failure.2.log`. Each is at most 512 KiB. A successful retry does not
+replace these snapshots. Copy these files using the same command with the source
+and destination filenames changed; missing rotations simply mean they have not
+been created yet. Read trace rotations oldest to newest. Correlate failure markers
+with `Library/Application Support/Plozz/Diagnostics/playback.json` for typed
+failure details. These are cache files, not a crash-proof archive: queued writes
+can be lost at termination and the OS can evict caches.
+
+The existing in-process text snapshot remains limited to 64 KiB. This larger
+local retention does not change diagnostic consent, enable persistent text in
+non-diagnostic builds, or attach raw traces to Sentry/manual structured reports.
+
 `CFGetRetainCount(self)` at teardown tells you HOW MANY owners remain (one
 stubborn owner vs a race) but never WHO. Only the memory graph answers who.
 
