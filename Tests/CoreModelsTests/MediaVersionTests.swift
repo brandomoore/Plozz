@@ -661,6 +661,42 @@ final class MediaVersionTests: XCTestCase {
         }
     }
 
+    func testStructuredDescriptionsSkipPartialRatingHeadersBeforeTheReleaseTitle() throws {
+        let locale = Locale(identifier: "en_US")
+        for header in ["4K ●●◐", "1080p ◐", "1080p ●◐", "4K ◑◒◓", "4K ★★★½", "4K ⭐️⭐️", "4K (●●◐)"] {
+            let description = "\(header)\r\n[SRC] ⚡ · Example S02 · E07\r\nLangues : English\r\nSous titres : French"
+            let locator = "https://media.example/stream/" + String(repeating: "Ab7_xQ4-", count: 20)
+            for fileName in [description, locator] {
+                let version = MediaVersion(
+                    id: "original-source", name: description, fileName: fileName,
+                    height: 2160, sizeBytes: 10_900_000_000, videoCodec: "hevc",
+                    videoRange: "DOVI", audioCodec: "eac3", audioChannels: 6,
+                    sourceMetadata: .init(
+                        fileName: fileName, video: .init(codec: "hevc", height: 2160, videoRange: "DOVI"),
+                        audioLanguages: ["eng"]
+                    )
+                ).qualified(accountID: "account", itemID: "episode")
+                let cached = try JSONDecoder().decode(MediaVersion.self, from: JSONEncoder().encode(version))
+                let row = MediaVersion.PickerPresentation(cached, locale: locale)
+                XCTAssertEqual(row.releaseName, "Example S02 · E07", header)
+                XCTAssertEqual(row.summaryWithoutBadges, "10.9 GB", header)
+                XCTAssertTrue(row.formatBadges.contains { $0.label == "4K" })
+                XCTAssertEqual(row.audioLanguages, ["English"])
+                XCTAssertEqual(cached.name, description)
+                XCTAssertEqual(cached.fileName, fileName)
+                XCTAssertEqual(cached.sourceMetadata?.fileName, fileName)
+                XCTAssertEqual(cached.playbackMediaSourceID, "original-source")
+                XCTAssertEqual(cached.id, version.id)
+            }
+            XCTAssertNil(MediaSourceDisplayName.name(from: "\(header)\nLanguages: English"), header)
+        }
+        for title in ["4K restoration of Film", "1080p: Director's Cut", "4K.Extended.mkv", "4K 2026"] {
+            XCTAssertEqual(
+                MediaSourceDisplayName.name(from: "\(title)\nLanguages: English"), title
+            )
+        }
+    }
+
     func testFileSizeUsesAtMostOneFractionDigit() {
         let locale = Locale(identifier: "en_US")
         XCTAssertEqual(

@@ -72,8 +72,10 @@ public enum MediaSourceDisplayName {
     }
 
     private static func isResolutionHeader(_ line: String) -> Bool {
+        // Ratings use partial circles, emoji variation selectors and fractions,
+        // not just full circles. Require the entire suffix to be decoration.
         line.range(
-            of: #"^(?:[248]K|[0-9]{3,4}[pi]|UHD|FHD|HD|SD)(?:\s|[●○★☆•·|✓✅⚡])*$"#,
+            of: #"^(?:[248]K|[0-9]{3,4}[pi]|UHD|FHD|HD|SD)[\s\p{S}\p{P}\p{M}\p{No}]*$"#,
             options: [.regularExpression, .caseInsensitive]
         ) != nil
     }
