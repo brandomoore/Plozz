@@ -53,6 +53,11 @@ and every provider/feature that talks to a remote server.
   entry point. Backed by `OSLog` on Apple platforms, no-op on non-Apple
   hosts. Must never log tokens, Quick Connect secrets, or full
   `Authorization` headers.
+- `LocalMediaWatchStore`: durable, profile-and-source-scoped watch state for
+  shares and IPTV. Marking watched or unwatched clears progress but retains
+  the duration measured during playback, including across relaunch, so later
+  resume imports can still check runtime compatibility. Unknown durations stay
+  unknown; stale writes never replace newer state.
 
 ## Invariants
 

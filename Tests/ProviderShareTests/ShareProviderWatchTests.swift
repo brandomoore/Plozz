@@ -358,6 +358,43 @@ final class ShareProviderWatchTests: XCTestCase {
         XCTAssertEqual(pct, 0.1, accuracy: 0.001, "progress bar fraction must be position / duration after relaunch")
     }
 
+    func testWatchedRuntimeSurvivesRelaunchAndResumeImport() async throws {
+        let durableStore = try makeDurableStore()
+        let catalog = try makeCatalog()
+        let session = makeSession()
+        let itemID = "f:Movies/Measured (2021).mkv"
+        let live = ShareProvider(
+            session: session, durableLocalStateStore: durableStore, catalogStore: catalog
+        )
+        try await live.reportPlayback(
+            PlaybackProgress(
+                itemID: itemID, playSessionID: "measured", positionSeconds: 70.175,
+                isPaused: true, durationSeconds: 205.152
+            ),
+            event: .pause
+        )
+        try await live.setPlayed(true, itemID: itemID)
+
+        let afterRestart = ShareProvider(
+            session: session, durableLocalStateStore: durableStore, catalogStore: catalog
+        )
+        let watched = try await afterRestart.item(id: itemID)
+        XCTAssertEqual(watched.isPlayed, true)
+        XCTAssertEqual(watched.runtime, 205.152)
+
+        try await afterRestart.setResumePosition(70.175, itemID: itemID, capturedAt: Date())
+        let afterImport = ShareProvider(
+            session: session, durableLocalStateStore: durableStore, catalogStore: catalog
+        )
+        let resumed = try await afterImport.item(id: itemID)
+        XCTAssertEqual(resumed.isPlayed, false)
+        XCTAssertEqual(resumed.resumePosition, 70.175)
+        XCTAssertEqual(resumed.runtime, 205.152)
+        let continuing = try await afterImport.continueWatching(limit: 10)
+        XCTAssertEqual(continuing.map(\.id), [itemID])
+        XCTAssertEqual(try XCTUnwrap(continuing.first?.playedPercentage), 70.175 / 205.152, accuracy: 0.000_001)
+    }
+
     func testGroupedMovieRestoresLegacyFileWatchStateOnGridAndDetail() async throws {
         let durableStore = try makeDurableStore()
         let catalog = try makeCatalog()

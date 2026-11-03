@@ -268,6 +268,33 @@ not public reports. This command performs no mutations; later live scenarios
 still require explicit account/title mutation approval and exact run-owned
 cleanup evidence.
 
+### Share-local watch-state readback
+
+File shares have no server-side watch-history API. Their authoritative state is
+the profile/account-scoped `localMediaWatch` envelope in the application's
+non-secret durable Keychain service, not a legacy JSON cache.
+`PlozziOSTrackerStateTests` provides an opt-in, read-only observer hosted by the
+normal iOS application, using its existing Keychain access. It never writes
+history, changes access groups, or queries credential records.
+
+Run only on an explicitly owned simulator and authorized test profile/source.
+The test requires `PLOZZ_LIVE_WATCH_STATE_READ=1`,
+`PLOZZ_LIVE_WATCH_STATE_SIMULATOR` matching `SIMULATOR_UDID`,
+`PLOZZ_LIVE_WATCH_STATE_PROFILE`, and `PLOZZ_LIVE_WATCH_STATE_SOURCE`.
+Pass these through the test runner, not normal playback launches. The selected
+test is `LiveShareWatchStateReadbackTests/testReadExactAuthorizedShareWatchEnvelope`.
+It validates the exact envelope address and schema before attaching the bounded
+records as `live-share-watch-state`. Denied reads fail; only an actual
+`errSecItemNotFound` is recorded as absent. Keep these private viewing-state
+attachments out of public reports.
+
+This observer is separate from native interaction acceptance: perform mutations
+through production UI with no test launch arguments or environment, then read
+back the same persisted scope. Require a positive read after a known native
+write before interpreting an earlier absence as confirmed. Retain source/build
+provenance for both runs; an observer pass alone does not prove playback, tracker
+delivery, or profile isolation.
+
 ### Independent before/after comparison
 
 Capture separate baselines immediately before and after an authorized test

@@ -72,6 +72,60 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testPrepareSelectedNFSShare() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let rawURL = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_URL"])
+        let url = try XCTUnwrap(URLComponents(string: rawURL))
+        let name = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try require(url.scheme == "nfs" && url.host != nil && url.path != "/",
+                    "Expected the explicitly scoped real NFS folder")
+        try require(url.user == nil && url.password == nil && url.query == nil && url.fragment == nil,
+                    "NFS setup must not contain credentials or alternate request parameters")
+        try testInspectServerConnections()
+        try require(!app.buttons[name].exists, "Do not create a duplicate test share")
+        try tapVisible(app.buttons["Add Network Share"])
+        try tapVisible(app.buttons["Enter an address manually"])
+        let transport = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Protocol")).firstMatch
+        try tapVisible(transport)
+        try tapVisible(app.buttons["NFS"])
+        let address = app.textFields["Address — e.g. 192.168.1.100 or mynas.local"]
+        try tapVisible(address)
+        address.typeText(rawURL + "\n")
+        try require(app.secureTextFields.count == 0, "NFS must not borrow a server's login")
+        try tapVisible(app.buttons["Connect"])
+        try require(app.navigationBars["Choose a folder"].waitForExistence(timeout: 45),
+                    "Expected the real NFS directory listing")
+        try require(app.staticTexts[url.path].exists, "Do not enroll a broader media root")
+        let displayName = app.textFields["Name — e.g. Family Movies"]
+        try tapVisible(displayName)
+        displayName.typeText(name + "\n")
+        let content = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Content")).firstMatch
+        try tapVisible(content)
+        try tapVisible(app.collectionViews.buttons["Movies"])
+        try require(app.buttons["Content, Movies"].waitForExistence(timeout: 5),
+                    "Expected the explicit Movies content type")
+        try tapVisible(app.buttons["Use This Folder"], tapping: false)
+        XCTAssertEqual(displayName.value as? String, name)
+        recordState()
+    }
+
+    func testConfirmSelectedNFSShare() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let url = try XCTUnwrap(URLComponents(string: try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_URL"])))
+        let name = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try require(url.scheme == "nfs" && app.staticTexts[url.path].exists,
+                    "Confirm only the already-reviewed NFS folder")
+        try require(app.textFields["Name — e.g. Family Movies"].value as? String == name,
+                    "Confirm only the dedicated test library")
+        try require(app.buttons["Content, Movies"].exists, "Do not save an automatic mixed-media root")
+        try tapVisible(app.buttons["Use This Folder"])
+        try require(app.navigationBars["Servers"].waitForExistence(timeout: 30),
+                    "Expected native share setup to return to Servers")
+        try require(app.buttons.containing(.staticText, identifier: name).firstMatch.waitForExistence(timeout: 30),
+                    "Expected the saved real share")
+        recordState()
+    }
+
     func testConnectIndependentServerWithQuickConnect() throws {
         try testInspectServerConnections()
         let environment = ProcessInfo.processInfo.environment
@@ -228,6 +282,33 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testRestoreSiloSourceServers() throws {
         try selectSiloSourceServers(onlySilo: false)
+    }
+
+    func testSelectOnlyNFSShare() throws {
+        try selectNFSShare(onlyShare: true)
+    }
+
+    func testRestoreSourcesAfterNFSShare() throws {
+        try selectNFSShare(onlyShare: false)
+    }
+
+    private func selectNFSShare(onlyShare: Bool) throws {
+        let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try require(!name.isEmpty, "Expected the dedicated share name")
+        let share = "NFS, \(name)"
+        try testOpenLibrarySettings()
+        try require(!app.switches["Brandoland"].exists && !app.switches["Brandon's Jellyfin"].exists,
+                    "Expected the dedicated NFS, Silo and Emby source configuration")
+        if onlyShare { try setSourceServer(share, selected: true) }
+        for label in ["CubeBoi", "Silo"] {
+            try setSourceServer(label, selected: !onlyShare)
+        }
+        if !onlyShare { try setSourceServer(share, selected: false) }
+        try testOpenLibrarySettings()
+        for label in ["CubeBoi", "Silo"] {
+            XCTAssertEqual(app.switches[label].value as? String, onlyShare ? "0" : "1")
+        }
+        XCTAssertEqual(app.switches[share].value as? String, onlyShare ? "1" : "0")
     }
 
     private func selectSiloSourceServers(onlySilo: Bool) throws {
@@ -2189,7 +2270,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try openPublicMetaDBAccount()
         try tapVisible(app.buttons["publicmetadb.export-history"])
         try tapVisible(app.buttons["publicmetadb.export.account"])
-        let account = app.buttons.matching(NSPredicate(format: "label ENDSWITH %@", " · \(user)"))
+        let account = app.collectionViews.buttons.matching(historyAccountPredicate(user: user))
         try require(account.firstMatch.waitForExistence(timeout: 10) && account.count == 1,
                     "Expected the exact dedicated export user")
         account.element.tap()
@@ -2435,8 +2516,15 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         )
         let user = try XCTUnwrap(environment["PLOZZ_TRACKER_IMPORT_USER"])
         return app.cells.containing(.staticText, identifier: title)
-            .containing(NSPredicate(format: "label ENDSWITH %@", " · \(user)"))
+            .containing(historyAccountPredicate(user: user))
             .containing(.staticText, identifier: status)
+    }
+
+    private func historyAccountPredicate(user: String) -> NSPredicate {
+        if let label = ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACCOUNT_LABEL"], !label.isEmpty {
+            return NSPredicate(format: "label == %@", label)
+        }
+        return NSPredicate(format: "label ENDSWITH %@", " · \(user)")
     }
 
     private var importSelection: XCUIElement {
@@ -2895,9 +2983,15 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func tapVisible(_ target: XCUIElement, tapping: Bool = true, maximumSwipes: Int = 8) throws {
+        func safelyHittable() -> Bool {
+            guard target.exists, target.isHittable else { return false }
+            // XCTest can call a clipped row hittable inside the home-indicator region.
+            let center = CGPoint(x: target.frame.midX, y: target.frame.midY)
+            return app.frame.insetBy(dx: 0, dy: 24).contains(center)
+        }
         _ = target.waitForExistence(timeout: 5)
         for _ in 0..<maximumSwipes {
-            if target.exists && target.isHittable { break }
+            if safelyHittable() { break }
             var scroll = app.collectionViews.allElementsBoundByIndex.last
                 ?? app.scrollViews.allElementsBoundByIndex.last ?? app
             let identifier = target.exists ? (target.identifier.isEmpty ? target.label : target.identifier) : ""
@@ -2916,7 +3010,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
                 scroll.swipeUp(velocity: .slow)
             }
         }
-        guard target.exists && target.isHittable else { throw Failure.expectedVisibleElement }
+        guard safelyHittable() else { throw Failure.expectedVisibleElement }
         if tapping { target.tap() }
     }
 
