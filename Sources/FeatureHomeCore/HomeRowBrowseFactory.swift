@@ -15,6 +15,7 @@ enum HomeRowBrowseFactory {
         var title = row.choice.title
         var localizedTitle = row.choice.localizedTitle
         var titleSuffix: String?
+        var style: LibrarySection.Style = .poster
         var mergesSources = false
         var isRecentlyAdded = false
         var watchlistDates = false
@@ -76,6 +77,11 @@ enum HomeRowBrowseFactory {
             }
         case .library(let libraryRow):
             let section = libraryRow.section
+            // Collection-cover shape reflects its artwork and cover preference,
+            // not the special presentation of a history or collection-member rail.
+            if CollectionCoverLayout.isCollectionGroup(section.items) {
+                style = section.style
+            }
             title = section.title
             localizedTitle = section.localizedTitle
             titleSuffix = section.localizedTitleSuffix
@@ -150,6 +156,7 @@ enum HomeRowBrowseFactory {
             && row.choice.collectionSection?.source.libraryKey.map(visibility.isEnabled) != false
         return HomeRowBrowseModel(
             title: title, localizedTitle: localizedTitle, titleSuffix: titleSuffix,
+            style: style,
             snapshot: snapshot, loaders: loaders, snapshotProvider: snapshotProvider,
             watchlistDates: watchlistDates, isCurrent: { isAdmitted && isCurrent() }
         ) { groups in

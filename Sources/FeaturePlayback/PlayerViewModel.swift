@@ -3112,6 +3112,7 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
         let stage: PlaybackDiagnosticReport.Stage = request == nil ? .preparation
             : engine.hasPresentedVideoFrame ? .playback : .opening
         let route = stage == .preparation ? nil : engine.diagnosticRoute
+        let pipeline = stage == .preparation ? nil : PlaybackPipelineSnapshot(engine.liveTelemetry)
         // Pin the failing item and attempt before a retry or teardown replaces either.
         let item = stage == .preparation ? nil : engine.nowPlayingPlayer?.currentItem
         let initialEvidence = PlaybackFailureEvidence(
@@ -3120,7 +3121,8 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
         )
         journal.record(
             .failed, session: diagnosticSession, attempt: diagnosticAttempt, facts: diagnosticFacts,
-            elapsed: elapsed, route: route, failure: failure, stage: stage, evidence: initialEvidence
+            elapsed: elapsed, route: route, failure: failure, stage: stage, evidence: initialEvidence,
+            pipeline: pipeline
         )
         guard let item else { return }
         Task {
@@ -3130,7 +3132,7 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
             if evidence.nativeErrors.isEmpty { evidence.nativeErrors = initialEvidence.nativeErrors }
             journal.record(
                 .failureEvidence, session: session, attempt: attempt, facts: facts, elapsed: elapsed,
-                route: route, failure: failure, stage: stage, evidence: evidence
+                route: route, failure: failure, stage: stage, evidence: evidence, pipeline: pipeline
             )
         }
     }

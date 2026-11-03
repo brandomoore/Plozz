@@ -21,8 +21,8 @@ variable, a public-posting notice, and the workflow on `main`.
   must not be hidden under a closed issue. Matching never reopens an issue or
   declares a fix delivered. Issues labeled `duplicate` are not new routing targets;
   existing mappings remain intact.
-- Report text and subsequent human replies are copied to GitHub with attribution
-  and links to their Discord originals. Edits update bridge-managed content.
+- Report text and subsequent human replies are copied to GitHub with links to
+  their Discord originals, without adding usernames to new copies. Edits update bridge-managed content.
   Maintainer text outside the marked regions is preserved.
 - The forum's default reaction counts as a vote, falling back to thumbs-up when
   no default is configured. Unique non-bot voters are counted across all Discord
@@ -38,6 +38,17 @@ variable, a public-posting notice, and the workflow on `main`.
   after external TestFlight availability.
 - Other channels, private threads, bot-created posts, and posts created before
   the published activation timestamp are excluded.
+
+New GitHub-to-Discord replies use the issue number rather than a username in the
+bot heading. Thread/message identifiers still maintain mappings, edits and votes;
+names are not required for synchronization. This is not anonymization: original
+links, user-written text and screenshots can still identify people.
+
+Existing attribution lines and bot-reply headings are preserved, including when
+the source text changes. There is no automatic bulk backfill, new announcement,
+or name-only update of old copies. New replies on existing threads use the new
+name-free format. Malformed existing source attribution fails visibly rather
+than being silently replaced.
 
 The scheduled action runs approximately every 15 minutes, not in real time.
 Synced replies appear when delivered: Discord cannot insert a delayed GitHub
@@ -120,7 +131,9 @@ GitHub labels.
 Forum guidelines should keep the public notice above and briefly ask people to
 search first, post one bug/idea at a time, use relevant tags, and keep private data
 out of text, screenshots, and diagnostics. Each forum has a pinned "Start here"
-post with a copyable template. Bug reports ask for version/build, device/OS,
+post with a copyable template. Both pinned guides start with the bold automatic
+GitHub-sync notice, a link to the public issue tracker, and privacy precautions
+before any posting instructions or template. Bug reports ask for version/build, device/OS,
 source, expected/actual behavior, and reproduction steps. Feature requests ask
 for the goal, benefit, current workaround, and example behavior.
 
@@ -137,7 +150,11 @@ Guides are bot-authored, so the existing bridge excludes the entire guide thread
 including replies, without relying on user-editable tags or titles. Publishing
 again verifies or updates the same bot-owned starter instead of making another
 post. A conflicting human-owned title or multiple matching guides stops the
-operation. Ambiguous creation failures are not retried immediately; a later run
+operation. Renamed bot-owned or pinned guides are also recognized by their public
+notice and guide-specific closing paragraph; their custom titles and pins are
+preserved. Archived guides are restored to their prior archive state after an
+edit, including a failed edit, and locked guides are never unlocked.
+Ambiguous creation failures are not retried immediately; a later run
 rediscovers a successfully created guide.
 
 ### TestFlight information channel

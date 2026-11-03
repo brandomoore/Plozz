@@ -119,11 +119,13 @@ final class StreamingPlaybackTests: XCTestCase {
             engineFactory: .init(makeNative: { _ in engine }), diagnosticJournal: journal
         )
         await model.load()
+        engine.liveTelemetry = .init(bufferedSecondsAhead: 0.25, audioPipelineDescription: "private-pipeline")
         engine.nowPlayingPlayer = AVPlayer(playerItem: DiagnosticFailureItem(url: URL(fileURLWithPath: "/fixture")))
         engine.streamingFailure = .init(kind: .unknown, domain: .coreMedia, code: -12889)
         model.handoffSetPhase(.failed(.invalidResponse))
         XCTAssertNil(engine.nowPlayingPlayer, "The engine has already torn down its failing item.")
         engine.streamingFailure = nil
+        engine.liveTelemetry = .init(bufferedSecondsAhead: 30)
         model.retryPlayback()
         await wait { model.phase == .ready && engine.positions.count == 2 }
         await model.stop()
@@ -149,6 +151,8 @@ final class StreamingPlaybackTests: XCTestCase {
         XCTAssertEqual(captured.facts.quality, .sd480)
         XCTAssertEqual(captured.facts.codecPreference, .preferHEVC)
         XCTAssertEqual(captured.attempt, failure.attempt)
+        XCTAssertEqual(failure.pipeline?.bufferedSeconds, 0.25)
+        XCTAssertEqual(captured.pipeline, failure.pipeline, "Late evidence must retain the failing engine's telemetry.")
         XCTAssertNotEqual(captured.attempt, entries.last { $0.event == .loaded }?.attempt)
         let report = await journal.report()
         XCTAssertFalse(report.contains("private"))
@@ -1802,6 +1806,7 @@ private final class QualityEngine: VideoEngine {
     var loadGate: QualityDecisionGate?
     var drainGate: QualityDecisionGate?
     var streamingFailure: StreamingPlaybackFailure?
+    var liveTelemetry: EngineLiveTelemetry?
     var streamingOutputDynamicRange: SourceDynamicRange?
     var streamingOutputVideoCodec: DirectPlayVideoCodec?
     let displayName = "Quality fixture"

@@ -2241,6 +2241,48 @@ xcrun devicectl device copy from --device <UDID> \
 grep "vm LIFECYCLE" /tmp/trace.log     # healthy: every init has a deinit, ends live=0
 ```
 
+In diagnostic builds with handoff tracing enabled, text is appended on a utility
+queue rather than rereading and replacing the journal for each event. The current
+`playback-trace.log` and `.1.log`, `.2.log`, `.3.log` rotations each retain up to
+1 MiB (oldest is `.3.log`). Records end at UTF-8/line boundaries and are capped at
+16 KiB. Pending writes are bounded to 256 KiB / 512 records; overflow and disk
+errors are reported in the `handoff` OSLog category rather than recursively logged.
+Unchanged paused pipeline samples are emitted every 30 seconds instead of every
+2 seconds; phase, attempt, route, audio and subtitle changes still emit promptly.
+
+Typed playback failures (including preparation), startup timeouts and unavailable
+engines also freeze the preceding trace with a session/attempt marker in
+`playback-failure.log`, retaining two older snapshots as `playback-failure.1.log`
+and `playback-failure.2.log`. Each is at most 512 KiB. A successful retry does not
+replace these snapshots. Copy these files using the same command with the source
+and destination filenames changed; missing rotations simply mean they have not
+been created yet. Read trace rotations oldest to newest. Correlate failure markers
+with `Library/Application Support/Plozz/Diagnostics/playback.json` for typed
+failure details. These are cache files, not a crash-proof archive: queued writes
+can be lost at termination and the OS can evict caches.
+
+The existing in-process text snapshot remains limited to 64 KiB. This larger
+local retention does not change diagnostic consent, enable persistent text in
+non-diagnostic builds, or attach raw traces to Sentry/manual structured reports.
+
+**Send to Developer** includes a separate, Release-capable
+`playback.failureSnapshots` array in `plozz-diagnostics.json` (playback schema 3).
+It preserves the last three failed attempts independently of the ordinary
+256-event journal, with up to 64 events / 64 KiB per snapshot and a 384 KiB
+combined on-disk bound. Startup failures and engine unavailability also create
+snapshots; a timeout and typed failure for the same attempt share one snapshot.
+Late native evidence and teardown events remain attached to that original attempt,
+not the successful retry. Snapshots survive relaunch but expire after 48 hours.
+
+Snapshots export only the existing typed playback vocabulary plus numeric
+buffer, frame, bitrate and cache telemetry captured at failure events.
+There is no new periodic sampling or release text logging. Session/attempt IDs
+are remapped consistently within each submission; times become relative ages.
+Titles, URLs, paths, credentials, engine descriptions and raw trace files are
+never added. Existing crash-sharing consent and explicit submission are still
+required, automatic reports are unchanged, and success still means SDK handoff
+rather than confirmed Sentry receipt.
+
 `CFGetRetainCount(self)` at teardown tells you HOW MANY owners remain (one
 stubborn owner vs a race) but never WHO. Only the memory graph answers who.
 

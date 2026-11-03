@@ -12,6 +12,57 @@ import XCTest
 
 @MainActor
 final class HomeLoadingLayoutTests: XCTestCase {
+    func testFramedLandscapeCardsFitNarrowGridAndNormalRailSlots() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let metrics = PlozzMetrics.touch(density: .standard)
+        for width: CGFloat in [169, metrics.landscapeCardSlotWidth, 360] {
+            var cardSize = CGSize.zero
+            fixture.mount(
+                ScrollView {
+                    PosterCardView(
+                        item: fixture.items[0], style: .landscape, action: {}
+                    )
+                    .environment(\.plozzCardStyle, .framed)
+                    .environment(\.plozzCardCaptionSettings, CardCaptionSettings(showsLabels: false))
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { cardSize = $0 }
+                    .frame(width: width)
+                }
+            )
+            try await fixture.settle()
+            XCTAssertEqual(cardSize.width, width, accuracy: 0.5)
+            XCTAssertEqual(
+                cardSize.height, (width - 2 * metrics.cardInset) * 9 / 16 + 2 * metrics.cardInset,
+                accuracy: 0.5
+            )
+        }
+    }
+
+    func testLandscapeBrowseColumnsUseWideCardsOnPhoneTabletAndMac() {
+        for density in UIDensity.allCases {
+            for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
+                for isMac in [false, true] {
+                    let columns = density.iOSLandscapeGridColumns(
+                        horizontalSizeClass: sizeClass, isRunningOnMac: isMac
+                    )
+                    XCTAssertEqual(columns.count, 1)
+                    guard case let .adaptive(minimum, maximum) = columns[0].size else {
+                        return XCTFail("Landscape grids must adapt their column count.")
+                    }
+                    if isMac {
+                        let metrics = PlozzMetrics.desktop(density: density)
+                        XCTAssertEqual(minimum, metrics.landscapeWidth)
+                        XCTAssertEqual(maximum, minimum * 1.18, accuracy: 0.001)
+                        XCTAssertEqual(columns[0].spacing, metrics.gridSpacing)
+                    } else {
+                        XCTAssertEqual(minimum, sizeClass == .regular ? 240 : 160)
+                        XCTAssertEqual(columns[0].spacing, 12)
+                    }
+                }
+            }
+        }
+    }
+
     func testMacBrowseThresholdDoesNotShortenLoadedRowsOrChangeMobilePolicy() throws {
         let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(.continueWatching) })
         let threshold = PlozziOSMediaRailLayout.desktopBrowseThreshold

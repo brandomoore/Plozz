@@ -36,6 +36,9 @@ the complete-card count as well as the preview when changing these limits.
 `HeroLogoSizing.Layout.desktop` retains the same logo-preference scaling and
 width containment as other hero layouts. The shell selects these policies;
 shared components do not infer their platform from a wide viewport.
+Framed landscape cards, like portrait and borderless cards, fit their proposed
+slot width while retaining the artwork aspect ratio. Rails supply their normal
+fixed slots; narrower grid cells must not inherit a rail-sized minimum width.
 
 Mobile full-width page actions use `plozzPageActionLabel()` inside a native
 `plozzPageActionButton`. The label owns body typography, multiline expansion, and a

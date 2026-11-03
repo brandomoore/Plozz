@@ -498,13 +498,9 @@ struct PlozziOSLibraryGridView: View {
     private var gridColumns: [GridItem] {
         guard dynamicTypeSize.isAccessibilitySize else {
             if viewModel.gridStyle == .landscape {
-                if metrics.usesDesktopSizing {
-                    return [GridItem(
-                        .adaptive(minimum: metrics.landscapeWidth, maximum: metrics.landscapeWidth * 1.18),
-                        spacing: metrics.gridSpacing
-                    )]
-                }
-                return [GridItem(.adaptive(minimum: horizontalSizeClass == .regular ? 240 : 160), spacing: 12)]
+                return settings.density.density.iOSLandscapeGridColumns(
+                    horizontalSizeClass: horizontalSizeClass, isRunningOnMac: metrics.usesDesktopSizing
+                )
             }
             return settings.density.density.iOSPosterGridColumns(
                 horizontalSizeClass: horizontalSizeClass, isRunningOnMac: metrics.usesDesktopSizing

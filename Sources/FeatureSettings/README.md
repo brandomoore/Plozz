@@ -992,7 +992,12 @@ watch history and planning-list behavior are documented in
   submitting any diagnostics; automatic crash reports are unchanged.
   Each submission appears in Sentry's User Feedback inbox with the required message,
   linked to the diagnostic event in Issues and its `plozz-diagnostics.json`
-  attachment. No name or email is collected. The privacy filter retains only the
+  attachment. The playback section includes the last three independently
+  preserved failed attempts, including late native evidence and numeric engine
+  telemetry, in both Debug and Release. Successful retries and routine journal
+  churn do not erase them; they expire after 48 hours. This is allowlisted
+  structured evidence, not an upload of local free-form log files.
+  No name or email is collected. The privacy filter retains only the
   feedback message, custom source,
   and valid associated event ID, not identity or arbitrary feedback fields.
   Success means SDK handoff, not server acknowledgment; inactive reporting or a
