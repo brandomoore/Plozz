@@ -154,6 +154,7 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
     private var requestGeneration = 0
     private var hasAppeared = false
     private var geometryTask: Task<Void, Error>?
+    private let slideTransition = PlozziOSPlayerSlideTransition()
 
     init(
         rootView: AnyView, orientation: PlozziOSPlayerOrientation,
@@ -179,14 +180,15 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-        !ownsWindowOrientation && hasPendingPresentation ? .all : orientation.supportedMask
+        if isBeingPresented, orientation.isPlaybackActive { return orientation.supportedMask }
+        return !ownsWindowOrientation && hasPendingPresentation ? .all : orientation.supportedMask
     }
 
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation {
         let current = presentingViewController?.view.window?.windowScene?.effectiveGeometry.interfaceOrientation
         if let current, let mask = PlozziOSPlayerOrientation.mask(for: current),
-           !mask.intersection(orientation.requestedMask).isEmpty { return current }
-        return orientation.requestedMask == .landscape ? .landscapeRight : .portrait
+           !mask.intersection(orientation.supportedMask).isEmpty { return current }
+        return orientation.supportedMask == .landscape ? .landscapeRight : .portrait
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -252,12 +254,15 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
         geometryTask?.cancel()
         geometryTask = nil
         if orientation.isAvailable, let window = viewIfLoaded?.window,
-           window.windowScene?.effectiveGeometry.interfaceOrientation.isLandscape == true,
+           view.bounds.width > view.bounds.height,
            PlozziOSWindowOrientation.browsingMask(
                for: window.traitCollection.userInterfaceIdiom, windowSize: window.bounds.size
            ) == .portrait {
-            // UIKit lays out the incoming portrait screen before revealing it in a crossfade.
-            modalTransitionStyle = .crossDissolve
+            if !UIAccessibility.isReduceMotionEnabled, slideTransition.prepare(view) {
+                transitioningDelegate = slideTransition
+            } else {
+                modalTransitionStyle = .crossDissolve
+            }
         }
         invalidateOrientationPreferences()
     }
@@ -644,7 +649,15 @@ struct PlozziOSPlayerPresentation<Content: View>: UIViewControllerRepresentable 
             var presenter: UIViewController = anchor
             while let parent = presenter.parent { presenter = parent }
             guard presenter.presentedViewController == nil, !presenter.isBeingDismissed else { return }
-            let orientation = PlozziOSPlayerOrientation(preference: preference, isPlaybackActive: false)
+            let orientation = PlozziOSPlayerOrientation(
+                preference: preference, isPlaybackActive: request.preparedSession != nil
+            )
+            if let window = presenter.view.window {
+                orientation.updateAvailability(PlozziOSPlayerOrientation.supportsPreference(
+                    idiom: presenter.traitCollection.userInterfaceIdiom,
+                    windowSize: window.bounds.size, screenSize: window.screen.bounds.size
+                ))
+            }
             orientation.close = { [weak self] in self?.close(request.id) }
             let host = PlozziOSOrientationHostingController(
                 rootView: makeContent(request, orientation), orientation: orientation

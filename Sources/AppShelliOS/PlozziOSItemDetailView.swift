@@ -489,8 +489,9 @@ private struct PlozziOSCanonicalItemDetailView: View {
             if !authorized { pendingResumeRequest = nil }
         }
         .onDisappear { pendingResumeRequest = nil }
-        .plozziOSPlayerCover(
-            item: $playbackRequest, orientation: appModel.settings.playback.settings.orientation
+        .plozziOSPreparedPlayerCover(
+            item: $playbackRequest, orientation: appModel.settings.playback.settings.orientation,
+            provider: { appModel.provider(for: $0) }
         ) { request, orientation in
             if let playbackProvider = appModel.provider(for: request.item) {
                 PlozziOSPlayerView(request: request, provider: playbackProvider, orientation: orientation)

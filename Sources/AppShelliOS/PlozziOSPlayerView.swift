@@ -9,7 +9,8 @@ import SwiftUI
 
 struct PlozziOSPlaybackRequest: Identifiable {
     let id = UUID()
-    let item: MediaItem
+    private(set) var item: MediaItem
+    private(set) var preparedSession: PlozziOSAppModel.PlaybackSession?
     var startPosition: TimeInterval
     let playlist: VideoPlaylistPlaybackContext?
 
@@ -30,6 +31,13 @@ struct PlozziOSPlaybackRequest: Identifiable {
         )
         self.startPosition = startPosition
         self.playlist = playlist
+    }
+
+    func prepared(item: MediaItem, session: PlozziOSAppModel.PlaybackSession) -> Self {
+        var result = self
+        result.item = item
+        result.preparedSession = session
+        return result
     }
 }
 
@@ -75,6 +83,8 @@ struct PlozziOSPlayerView: View {
         self.provider = provider
         self.orientation = orientation
         _activePlaylist = State(initialValue: request.playlist)
+        _activeItem = State(initialValue: request.preparedSession == nil ? nil : request.item)
+        _playbackSession = State(initialValue: request.preparedSession)
     }
 
     var body: some View {
@@ -152,7 +162,7 @@ struct PlozziOSPlayerView: View {
 
         }
         .task {
-            ExternalPlaybackRuntime.shared.beginPlaybackIntent()
+            if request.preparedSession == nil { ExternalPlaybackRuntime.shared.beginPlaybackIntent() }
             suspendHeroPlayback()
             let session = playbackSession ?? appModel.makePlaybackSession()
             playbackSession = session
@@ -173,7 +183,7 @@ struct PlozziOSPlayerView: View {
             }
             guard usesStreamingQuality else {
                 if viewModel == nil {
-                    if await openExternalPlayer(item: item) { return }
+                    if request.preparedSession == nil, await openExternalPlayer(item: item) { return }
                     guard !Task.isCancelled, isPresented, isCurrentPlaybackSession else { return }
                     orientation.beginPlayback()
                     viewModel = makeViewModel(item: item, startPosition: request.startPosition)
@@ -187,7 +197,7 @@ struct PlozziOSPlayerView: View {
                 let connection = resolvedStreamingConnection()
                 if viewModel == nil {
                     streamingConnection = connection
-                    if await openExternalPlayer(
+                    if request.preparedSession == nil, await openExternalPlayer(
                         item: item,
                         streamingOptions: appModel.settings.playback.settings.streaming.options(for: connection)
                     ) { return }
@@ -325,22 +335,13 @@ struct PlozziOSPlayerView: View {
     private var closeButton: some View {
         VStack {
             HStack {
+                PlozziOSPlayerCloseButton(action: dismiss)
                 Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.headline)
-                        .frame(width: 44, height: 44)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-
-                .accessibilityLabel("Close player")
             }
             Spacer()
         }
         .foregroundStyle(.white)
-        .padding()
+        .modifier(PlayerTouchChromePadding())
     }
 
     private func dismiss() { orientation.close() }
@@ -373,21 +374,10 @@ struct PlozziOSPlayerView: View {
     private func prepareVersion(
         _ item: MediaItem, session: PlozziOSAppModel.PlaybackSession
     ) async throws -> MediaItem {
-        let model = appModel
-        let sourceSnapshot = model.identityIndex.identitySnapshotStore.current
-        let selected = try await versionChoice.prepare(
-            item, provider: provider, settings: model.settings.playback,
-            preferences: model.versionPreferences,
-            offlineResolver: model.downloads.offlineResolver,
-            sourceResolver: crossServerSourceResolver(
-                in: model.accountsProviders.resolvedActiveAccounts,
-                identitySources: { sourceSnapshot.sourceRefs(for: $0) }
-            ),
-            isCurrent: { model.isCurrentPlaybackSession(session) }
+        try await appModel.preparePlaybackVersion(
+            item, provider: provider, choice: versionChoice, session: session,
+            isPresented: { isPresented }
         )
-        try Task.checkCancellation()
-        guard isPresented, model.isCurrentPlaybackSession(session) else { throw CancellationError() }
-        return selected
     }
 
     private func showVersionChoiceFailure(_ error: Error) {

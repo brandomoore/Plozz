@@ -638,19 +638,23 @@ like iPad; opening a larger display does not itself request fullscreen playback.
 Orientation is configured only in Settings > Playback, never in the player's
 options menu. Explicitly saved Auto or Portrait choices remain unchanged when
 loading existing profiles; older settings without an orientation use Landscape.
-The on-demand cover stays portrait while loading versions and showing
-the first-use question or pre-play version picker. The saved rotation preference
-activates only after that gate completes; cancelling or failing the gate never
-forces rotation. Episode/version handoffs retain the preference once playback starts.
+Initial version loading, the first-use question, and the pre-play version picker
+belong to the browsing presentation. The player is not presented until that gate
+and its native sheet dismissal complete. Its first visible frame uses the saved
+orientation, including the loading UI; cancelling or failing preparation never
+opens or rotates the player. The prepared request retains its identity and
+profile/server session, rechecked before playback. Episode/version handoffs retain
+the preference once playback starts. Loading and ready controls share the same
+top-leading Close button and insets.
 The mobile presentation owner supplies the shared player's dismissal action.
 Failure-screen Back and end-of-playback dismissal use that same owner as the
 mobile X button, rather than a SwiftUI dismiss action outside a SwiftUI cover.
-On compact iPhone windows, closing a landscape player uses UIKit's native
-crossfade and releases the player's orientation policy as dismissal begins.
-The incoming browsing screen is already portrait when revealed, rather than
-appearing sideways and rotating after the player leaves. Portrait exits retain
-the native slide transition. An existing native transition finishes before
-dismissal starts; iPad and expanded phone windows keep system rotation.
+On compact iPhone windows, closing a landscape player releases its orientation
+policy as dismissal begins. A UIKit transition snapshot preserves the outgoing
+screen coordinates and slides the player away while revealing already-upright
+browsing. Reduced Motion, or an unavailable snapshot, uses the native crossfade.
+Portrait exits retain the native slide transition. An existing native transition
+finishes before dismissal starts; iPad and expanded phone windows keep system rotation.
 
 The actual presented UIKit hosting controller owns on-demand orientations.
 Live TV keeps one window-scoped owner while its destination is active, without
