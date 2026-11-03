@@ -163,9 +163,11 @@ category menu changes categories in place and is a nested guide's only title.
 Wide layouts use the category sidebar instead of duplicating that menu.
 **Add Source** in the source menu
 opens the existing authorized IPTV/playlist and media-server setup choices.
-Guide, filters, Multiviews and source management are contextual actions in
-the **More** menu; the existing
-profile shortcut remains on the category screen and iPad. Category tiles use
+**Search** then **More** share one native toolbar group on the directory and
+guide. A native fixed spacer separates Back from the category menu. Guide,
+filters, Multiviews, source management and the existing **Settings** destination
+are contextual actions in **More**; Live TV has no separate profile button.
+Other pages' profile shortcuts are unchanged. Category tiles use
 shorter minimum heights while retaining channel counts and Dynamic Type growth.
 Apple TV navigation is unchanged.
 
@@ -176,8 +178,14 @@ scroll-edge effects. Earlier OS versions retain bounded viewports.
 The regular guide's time row and sidebar actions remain pinned; the guide stays
 below a playing video preview.
 
-On iOS/iPadOS 26 and later, a native header search button expands into the search
-field; earlier versions use the system's searchable presentation. While searching,
+The mobile toolbar's Search button opens a native `UISearchController`.
+On iOS/iPadOS 26 and later its field integrates into the header; earlier versions
+use the system's search presentation. Close is a separate native circular button
+after the field, while the smaller clear action inside only clears the query and
+retains editing. The search controller and pinned Close group are attached only
+while searching and restore their owner's prior navigation state on dismissal
+or removal. A standard UIKit clear button avoids regular-width integrated search
+treating its built-in Clear action as Cancel. While searching,
 browse controls and the category sidebar give way to the results. There is no
 additional filter row, scope selector, search token or channel-count summary.
 Mobile search always includes both **Channels** and **Programs**, across all
@@ -1005,16 +1013,17 @@ is no prior in-memory history to migrate on the first updated launch.
   Mobile windows with at least 700 points of content width and 500 of content
   height use the sidebar, including roomy phone layouts. Narrow iPad windows and
   short landscape windows use the same category directory as narrow phones.
-  On iOS, Guide, Filters and the profile action share the native navigation
-  toolbar and its system Liquid Glass grouping. Browse actions use standard
-  native button sizes rather than custom circular controls. Mobile search expands
-  in the header, temporarily hiding browse controls and the category sidebar.
+  On iOS, Search and More share one native navigation-toolbar group. Back and
+  the category dropdown have separate native surfaces. Browse actions use
+  standard native button sizes and system Liquid Glass rather than custom
+  backgrounds. Mobile search expands in the header, temporarily hiding browse
+  controls and the category sidebar; its separate Close button remains outside
+  the input.
   The category heading and tile grid share one content keyline; category
   columns and rows use the same gap. Only the timeline guide uses edge bleed.
   Narrow guides expose Search directly, with Filters and Multiviews in More,
-  without a Now shortcut. The iPhone's channel-guide subpage omits the
-  profile action, which remains on its Categories page; iPad and wide sidebar
-  layouts retain it.
+  without a Now shortcut. All mobile Live TV layouts open Settings from More
+  rather than showing a separate profile shortcut.
   Apple TV reserves 384 points for categories on wide layouts and 320 on narrower
   sidebar layouts, without shrinking category text. Mobile sidebars use
   200, 224, or 272 points according to available width.

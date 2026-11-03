@@ -38,7 +38,7 @@ struct LiveTVCategorySearchFixture: View {
                 sourceLoader: CategorySearchLoader(),
                 preferencesNamespace: namespace,
                 sourceApprovalContext: { [profiles] in LiveTVSourceApprovalContext(profiles: profiles) },
-                topBarAccessory: profileAction
+                onShowSettings: { showsProfile = true }
             ) { playback in
                 #if os(iOS)
                 CategoryPreviewPlayer(playback: playback)
@@ -49,7 +49,6 @@ struct LiveTVCategorySearchFixture: View {
                     .accessibilityValue(Text(verbatim: playback.isExpanded ? "Fullscreen" : "Preview"))
                 #endif
             }
-
         }
         .environment(profiles)
         .environment(\.managedProviderSetupRouter,
@@ -77,21 +76,6 @@ struct LiveTVCategorySearchFixture: View {
         .sheet(isPresented: $showsProfile) {
             Text("Profile settings").accessibilityIdentifier("category-search-profile-settings")
         }
-        #endif
-    }
-
-    private var profileAction: AnyView? {
-        #if os(iOS)
-        AnyView(
-            Button { showsProfile = true } label: {
-                ProfileAvatarView(profile: profiles.activeProfile, size: 36, rendersAsImage: true)
-            }
-            .buttonBorderShape(.circle)
-            .accessibilityLabel("Profile settings")
-            .accessibilityIdentifier("live-tv-profile")
-        )
-        #else
-        nil
         #endif
     }
 }

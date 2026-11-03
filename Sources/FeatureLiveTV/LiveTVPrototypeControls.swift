@@ -148,10 +148,11 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
     let addSource: () -> Void
     let selectCategory: (String?) -> Void
     let filters: () -> Void
+    let search: () -> Void
     let sources: () -> Void
     var multiviews: (() -> Void)?
     let cancelSelection: (() -> Void)?
-    let accessory: AnyView?
+    let settings: (() -> Void)?
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some ToolbarContent {
@@ -205,6 +206,9 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
                 .disabled(isDisabled)
             }
         }
+        if #available(iOS 26.0, *), !hasSidebar && !showsDirectory && !isSearching {
+            ToolbarSpacer(.fixed, placement: .topBarLeading)
+        }
         ToolbarItem(placement: .topBarLeading) {
             if !hasSidebar && !showsDirectory && !isSearching {
                 Menu {
@@ -232,6 +236,9 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
             if !isSearching {
+                Button("Search", systemImage: "magnifyingglass", action: search)
+                    .labelStyle(.iconOnly)
+                    .disabled(isDisabled)
                 Menu {
                     if showsDirectory {
                         Button("Guide", systemImage: "list.bullet.rectangle", action: showGuide)
@@ -246,6 +253,11 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
                     Divider()
                     Button("TV Sources", systemImage: "antenna.radiowaves.left.and.right", action: sources)
                         .accessibilityIdentifier("live-tv-sources")
+                    if let settings {
+                        Divider()
+                        Button("Settings", systemImage: "gearshape", action: settings)
+                            .accessibilityIdentifier("live-tv-settings")
+                    }
                 } label: {
                     Label("More", systemImage: "ellipsis")
                 }
@@ -253,9 +265,6 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
                 .menuOrder(.fixed)
                 .accessibilityIdentifier("live-tv-more")
                 .disabled(isDisabled)
-                if showsDirectory || hasSidebar || UIDevice.current.userInterfaceIdiom != .phone {
-                    accessory
-                }
             }
         }
     }

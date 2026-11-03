@@ -52,6 +52,54 @@ final class LiveTVPreviewPresentationTests: XCTestCase {
                       "Editing must retain the native text field.")
     }
 
+    func testNativeToolbarSearchRestoresItsOwnerAfterClosingAndRemoval() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let state = SearchFieldState()
+        let host = UIHostingController(rootView: SearchFieldFixture(state: state))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await settle(window)
+        func navigation(in controller: UIViewController) -> UINavigationController? {
+            (controller as? UINavigationController)
+                ?? controller.children.lazy.compactMap { navigation(in: $0) }.first
+        }
+        let owner = try XCTUnwrap(navigation(in: host)?.topViewController)
+        let item = owner.navigationItem
+        let previousPlacement = item.preferredSearchBarPlacement
+        let previousContext = owner.definesPresentationContext
+        let previousPinnedGroup = item.pinnedTrailingGroup
+        XCTAssertNil(item.searchController)
+
+        state.isPresented = true
+        try await settle(window)
+        let search = try XCTUnwrap(item.searchController)
+        XCTAssertNotNil(item.pinnedTrailingGroup)
+        state.isPresented = false
+        try await settle(window)
+        XCTAssertNil(item.searchController)
+        XCTAssertTrue(item.pinnedTrailingGroup === previousPinnedGroup)
+        XCTAssertEqual(item.preferredSearchBarPlacement, previousPlacement)
+        XCTAssertEqual(owner.definesPresentationContext, previousContext)
+
+        state.isPresented = true
+        try await settle(window)
+        XCTAssertTrue(item.searchController === search, "Reopening must reuse the native search controller.")
+        state.isMounted = false
+        try await settle(window)
+        XCTAssertNil(item.searchController)
+        XCTAssertFalse(search.isActive)
+        XCTAssertTrue(item.pinnedTrailingGroup === previousPinnedGroup)
+        XCTAssertEqual(item.preferredSearchBarPlacement, previousPlacement)
+        XCTAssertEqual(owner.definesPresentationContext, previousContext)
+    }
+
     func testCategoryTilesAreCompactAndGrowWithDynamicType() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -716,6 +764,7 @@ final class LiveTVPreviewPresentationTests: XCTestCase {
 private final class SearchFieldState {
     var query = "News"
     var isPresented = false
+    var isMounted = true
 }
 
 private struct SearchFieldFixture: View {
@@ -723,10 +772,14 @@ private struct SearchFieldFixture: View {
 
     var body: some View {
         NavigationStack {
-            Color.clear.modifier(PrototypeToolbarSearch(
-                query: $state.query, isPresented: $state.isPresented,
-                focusRequest: 0, submit: {}, focusChanged: { _ in }
-            ))
+            if state.isMounted {
+                Color.clear.modifier(PrototypeToolbarSearch(
+                    query: $state.query, isPresented: $state.isPresented,
+                    focusRequest: 0, submit: {}, focusChanged: { _ in }
+                ))
+            } else {
+                Color.clear
+            }
         }
     }
 }

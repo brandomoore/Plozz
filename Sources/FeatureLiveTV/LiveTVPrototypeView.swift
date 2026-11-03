@@ -170,8 +170,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     private let connectServer: (() -> Void)?
     private let onExpandedChange: (Bool) -> Void
     private let onOpenTitle: ((MediaItem) -> Void)?
-    /// The host's profile action shares the native mobile browse toolbar.
-    private let topBarAccessory: AnyView?
+    private let onShowSettings: (() -> Void)?
     private let player: (LiveTVPrototypePlayback) -> PlayerContent
 
     public init(
@@ -207,7 +206,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         homeModel: HomeLiveTVModel? = nil,
         homeAuthorizationID: String? = nil,
         onOpenTitle: ((MediaItem) -> Void)? = nil,
-        topBarAccessory: AnyView? = nil,
+        onShowSettings: (() -> Void)? = nil,
         @ViewBuilder player: @escaping (LiveTVPrototypePlayback) -> PlayerContent
     ) {
         self.isActive = isActive
@@ -265,7 +264,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         _imports = State(initialValue: imports)
         self.onExpandedChange = onExpandedChange
         self.onOpenTitle = onOpenTitle
-        self.topBarAccessory = topBarAccessory
+        self.onShowSettings = onShowSettings
         self.player = player
         #if DEBUG
         let isLargeCatalog = ProcessInfo.processInfo.arguments.contains("--live-tv-5000")
@@ -532,10 +531,11 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     addSource: { sheet = .addSource },
                     selectCategory: { showCategory($0, enteringGuide: layout.sidebarWidth == 0) },
                     filters: { sheet = .filters },
+                    search: openSearch,
                     sources: { sheet = .sources },
                     multiviews: multiviewSelection == nil ? { sheet = .multiviewFavorites } : nil,
                     cancelSelection: multiviewSelection == nil ? nil : finishMultiviewSelection,
-                    accessory: topBarAccessory
+                    settings: onShowSettings
                 )
             }
             .navigationTitle(Text(verbatim: ""))
