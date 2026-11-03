@@ -10,6 +10,110 @@ import XCTest
 
 @MainActor
 final class HomeHeroFullWidthPresentationTests: XCTestCase {
+    func testMacHeroKeyboardPagesBothWaysAndReleasesKeysWhenScrolledAway() async throws {
+        let item = try await artworkItem()
+        let second = MediaItem(
+            id: "keyboard-next", title: "NEXT HERO", kind: .movie,
+            backdropURL: item.backdropURL, allowsTitleBasedMetadataMatching: false
+        )
+        let pull = PlozziOSHomeHeroPullModel()
+        var pinned: Set<String> = []
+        var expectedID: String?
+        var selection: XCTestExpectation?
+        try await withWindow(
+            item: item, size: CGSize(width: 1280, height: 720), sizeClass: .regular,
+            insets: .zero, pull: pull, isRunningOnMac: true, heroItems: [item, second],
+            onHeroPinnedItemsChanged: { ids in
+                pinned = ids
+                if let expectedID, ids == [expectedID] { selection?.fulfill() }
+            }
+        ) { window, host in
+            let controller = try XCTUnwrap(findController(
+                PlozziOSHeroKeyboardControls.KeyboardViewController.self, in: host
+            ))
+            let left = try XCTUnwrap(controller.keyCommands?.first { $0.input == UIKeyCommand.inputLeftArrow })
+            let right = try XCTUnwrap(controller.keyCommands?.first { $0.input == UIKeyCommand.inputRightArrow })
+            let rightAction = try XCTUnwrap(right.action)
+            XCTAssertTrue(controller.isFirstResponder)
+            XCTAssertEqual(pinned, [item.id])
+            for (command, target) in [(right, second.id), (left, item.id), (left, second.id)] {
+                expectedID = target
+                let changed = expectation(description: "Hero selected \(target)")
+                selection = changed
+                let action = try XCTUnwrap(command.action)
+                XCTAssertTrue(UIApplication.shared.sendAction(action, to: nil, from: command, for: nil))
+                await fulfillment(of: [changed], timeout: 3)
+                expectedID = nil
+                selection = nil
+                XCTAssertEqual(pinned, [target])
+            }
+            pull.isVisible = false
+            try await waitForHostedLayout(window)
+            XCTAssertFalse(controller.isFirstResponder)
+            XCTAssertFalse(controller.canPerformAction(rightAction, withSender: right))
+            XCTAssertEqual(pinned, [second.id])
+            pull.isVisible = true
+            try await waitForHostedLayout(window)
+            XCTAssertTrue(controller.isFirstResponder)
+            XCTAssertTrue(controller.canPerformAction(rightAction, withSender: right))
+        }
+    }
+
+    func testMacHeroKeyboardDoesNotStealTextEditingOrHandleKeysBehindDialogs() async throws {
+        let item = try await artworkItem()
+        try await withWindow(
+            item: item, size: CGSize(width: 1280, height: 720), sizeClass: .regular,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            var pages: [Bool] = []
+            XCTAssertNil(findController(PlozziOSHeroKeyboardControls.KeyboardViewController.self, in: host))
+            host.rootView = AnyView(PlozziOSHeroKeyboardControls(isEnabled: true, onPage: { pages.append($0) }))
+            try await waitForHostedLayout(window)
+            let controller = try XCTUnwrap(findController(
+                PlozziOSHeroKeyboardControls.KeyboardViewController.self, in: host
+            ))
+            let right = try XCTUnwrap(controller.keyCommands?.first { $0.input == UIKeyCommand.inputRightArrow })
+            let action = try XCTUnwrap(right.action)
+            let modified = UIKeyCommand(input: UIKeyCommand.inputRightArrow, modifierFlags: .command, action: action)
+            XCTAssertFalse(controller.canPerformAction(action, withSender: modified))
+            let field = UITextField(frame: CGRect(x: 80, y: 80, width: 200, height: 44))
+            field.inputView = UIView()
+            window.addSubview(field)
+            defer { field.removeFromSuperview() }
+            XCTContext.runActivity(named: "Text field takes keyboard ownership") { _ in
+                XCTAssertTrue(field.becomeFirstResponder())
+            }
+            controller.updateResponder()
+            XCTAssertTrue(field.isFirstResponder)
+            XCTAssertFalse(controller.canPerformAction(action, withSender: right))
+            XCTAssertTrue(pages.isEmpty)
+            XCTAssertTrue(field.resignFirstResponder())
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+            XCTAssertTrue(controller.isFirstResponder)
+            field.removeFromSuperview()
+
+            await withCheckedContinuation { continuation in
+                host.present(UIViewController(), animated: false) { continuation.resume() }
+            }
+            controller.updateResponder()
+            XCTAssertFalse(controller.canPerformAction(action, withSender: right))
+            XCTAssertFalse(controller.isFirstResponder)
+            await withCheckedContinuation { continuation in
+                host.dismiss(animated: false) { continuation.resume() }
+            }
+            controller.updateResponder()
+            XCTAssertTrue(controller.canPerformAction(action, withSender: right))
+            XCTAssertTrue(UIApplication.shared.sendAction(action, to: nil, from: right, for: nil))
+            XCTAssertEqual(pages, [true])
+            PlozziOSHeroKeyboardControls.dismantleUIViewController(controller, coordinator: ())
+            XCTAssertFalse(controller.isFirstResponder)
+            XCTAssertFalse(controller.canPerformAction(action, withSender: right))
+            XCTAssertNil(controller.onPage)
+        }
+    }
+
     func testPointerActivityFreezesProgressAndResumesOnlyAfterTheLastMovement() throws {
         let activity = HeroPointerActivity()
         var dwellStart = Date(timeIntervalSinceReferenceDate: 100)
@@ -483,6 +587,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         isRunningOnMac: Bool = false,
         tracksWindowHeight: Bool = false,
         heroItems: [MediaItem]? = nil,
+        onHeroPinnedItemsChanged: @escaping (Set<String>) -> Void = { _ in },
         exercise: (UIWindow, UIHostingController<AnyView>) async throws -> Void
     ) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -496,7 +601,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         let sidebar = PlozziOSSidebarGeometryModel()
         let root = HomeHeroWidthFixture(
             items: heroItems ?? [item], pull: pull, nativeTabs: nativeTabs, sidebar: sidebar,
-            tracksWindowHeight: tracksWindowHeight
+            tracksWindowHeight: tracksWindowHeight, onPinnedItemsChanged: onHeroPinnedItemsChanged
         )
             .environment(app)
             .environment(sidebar)
@@ -508,6 +613,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             ))
             .environment(\.plozziOSHeroContainerHeight, size.height)
             .environment(\.plozziOSIsRunningOnMac, isRunningOnMac)
+            .environment(\.scenePhase, .active)
             .environment(\.locale, Locale(identifier: "en_US"))
             .environment(\.dynamicTypeSize, .large)
         let window = UIWindow(windowScene: scene)
@@ -689,6 +795,7 @@ private struct HomeHeroWidthFixture: View {
     let nativeTabs: Bool
     let sidebar: PlozziOSSidebarGeometryModel
     var tracksWindowHeight = false
+    var onPinnedItemsChanged: (Set<String>) -> Void = { _ in }
 
     var body: some View {
         if nativeTabs {
@@ -720,7 +827,7 @@ private struct HomeHeroWidthFixture: View {
             PlozziOSHomeScrollView(heroActive: true) {
                 PlozziOSHomeHeroCarousel(
                     items: items, autoAdvance: false, autoAdvanceSeconds: 30,
-                    onPlay: { _ in }, pullModel: pull
+                    onPlay: { _ in }, onPinnedItemsChanged: onPinnedItemsChanged, pullModel: pull
                 )
             } rows: {
                 Text("Following row")

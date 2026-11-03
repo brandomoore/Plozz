@@ -1586,6 +1586,15 @@ struct PlozziOSHomeHeroCarousel: View {
             }
         }
         .frame(height: heroHeight)
+        .background {
+            if isRunningOnMac {
+                PlozziOSHeroKeyboardControls(
+                    isEnabled: isActive && pullModel.isVisible && items.count > 1,
+                    onPage: { page(forward: $0) }
+                )
+                .allowsHitTesting(false)
+            }
+        }
         .overlay {
             PlozziOSHeroPagingControls(
                 itemCount: items.count,

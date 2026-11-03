@@ -116,6 +116,10 @@ registry.
   Mouse movement over the Mac hero freezes automatic paging and its gauge until
   1.5 seconds of pointer inactivity (or pointer exit). Trailers keep playing;
   trailer-end paging waits until the pause ends. Manual paging remains available.
+  Left/Right keys also page the Mac hero while Home is frontmost and the hero
+  remains in its visible region. Scrolling past that region releases the keys.
+  Editing text or presenting a dialog prevents the hero from taking keyboard
+  input; player keyboard commands remain independent.
 
 - **Preference sync is not a profile switch.** Mobile cloud apply rebuilds active
   settings and track/version preferences without restarting downloads, provider
