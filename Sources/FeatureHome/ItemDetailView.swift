@@ -670,9 +670,8 @@ public struct ItemDetailView: View {
                     DetailHeroView(
                         item: detail.item,
                         heroHeightFraction: detail.children.isEmpty ? 1.0 : 0.8,
-                        // An episode's own page can be reached from Continue
-                        // Watching or Search, where Back leaves the show
-                        // entirely — so offer a way over to it.
+                        // "Go to Episode" can open this page from outside
+                        // the show, so offer a way over to its parent.
                         offersParentNavigation: presentsEpisodeAsSubject,
                         presentsEpisodeStill: presentsEpisodeAsSubject,
                         scheduleLine: discoveryStatusLine,

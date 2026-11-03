@@ -22,9 +22,8 @@ struct PlozziOSItemDetailView: View {
     /// Show this episode as the page's own subject instead of redirecting to its
     /// series.
     ///
-    /// Continue Watching and "Episode Info" show the episode's own synopsis,
-    /// air date and the file that would play. Other browsing and deep links show
-    /// the series page with that episode fronted.
+    /// "Go to Episode" opens the standalone episode page. Ordinary browsing,
+    /// including Continue Watching, shows the series page with that episode fronted.
     let presentsEpisodeAsSubject: Bool
 
     @State private var resolvedSeries: MediaItem?
@@ -593,9 +592,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
                         for: detail,
                         hasPlayAction: playableHeroTarget != nil || showsPlayPlaceholder
                     ),
-                    // An episode's own page can be reached from Continue Watching
-                    // or Search, where Back leaves the show entirely — so offer a
-                    // way over to it.
+                    // "Go to Episode" opens the episode's own page, so offer
+                    // a way over to its show.
                     offersParentNavigation: showsEpisodeSubjectHero(detail.item),
                     presentsEpisodeStill: showsEpisodeSubjectHero(detail.item),
                     pullDistance: heroPullDistance

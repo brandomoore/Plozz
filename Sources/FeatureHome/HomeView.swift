@@ -170,7 +170,6 @@ public enum HomeBrowseDestination: Hashable {
 /// Continue Watching, Latest, and library shortcuts.
 public struct HomeView: View {
     @Environment(\.homeLiveTVSnapshot) private var liveTV
-    @Environment(\.mediaItemNavigator) private var itemNavigator
     @Environment(LibraryPresentationSettingsModel.self) private var libraryPresentation: LibraryPresentationSettingsModel?
     @State private var viewModel: HomeViewModel
     private var visibility: HomeLibraryVisibilityModel
@@ -1405,14 +1404,6 @@ public struct HomeView: View {
         return { onBrowse(.row(viewModel.browseRow(row))) }
     }
 
-    private func openContinueWatchingDetails(_ item: MediaItem) {
-        if item.kind == .episode, let itemNavigator {
-            itemNavigator(item)
-        } else {
-            onSelectItem(item)
-        }
-    }
-
     @ViewBuilder
     private func homeRowContent(
         _ row: HomeRow, reservesLoadingFocus: Bool, onBrowse: (() -> Void)?
@@ -1429,7 +1420,7 @@ public struct HomeView: View {
                 liveChannels: liveTV.recentChannels,
                 onPlay: onPlayItem,
                 onSelect: row.playsOnSelect(continueWatchingAction: visibility.continueWatchingAction)
-                    ? onPlayItem : openContinueWatchingDetails
+                    ? onPlayItem : onSelectItem
             )
             .browsingRow(row.items.isEmpty ? nil : onBrowse)
             .environment(\.plozzArtworkArea, .continueWatching)
@@ -1772,7 +1763,7 @@ public struct HomeView: View {
                         onLiveChannelFocused: reporter.focusedLiveChannel,
                         onPlay: onPlayItem,
                         onSelect: row.playsOnSelect(continueWatchingAction: visibility.continueWatchingAction)
-                            ? onPlayItem : openContinueWatchingDetails
+                            ? onPlayItem : onSelectItem
                     )
                     .browsingRow(row.items.isEmpty ? nil : onBrowse)
                     .environment(\.plozzArtworkArea, .continueWatching)

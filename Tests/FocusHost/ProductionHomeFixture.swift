@@ -1027,8 +1027,9 @@ private struct ProductionHomeContent: View {
     }
 
     private func detailPage(for item: MediaItem) -> some View {
-        ItemDetailView(
-            viewModel: fixture.detail(for: item),
+        let isEpisodeContext = item.kind == .episode && lastDetailRoute == "browse"
+        return ItemDetailView(
+            viewModel: fixture.detail(for: item, asSeriesContext: isEpisodeContext),
             onPlay: { _ in },
             onSelectChild: { next in
                 withCinematicDetailNavigation(for: next) {
@@ -1047,7 +1048,8 @@ private struct ProductionHomeContent: View {
                         url: $0, duration: 60
                     )
                 }
-            }
+            },
+            initialEpisode: isEpisodeContext ? item : nil
         )
         .environment(fixture.trailer)
         .environment(fixture.background)
@@ -1203,10 +1205,12 @@ private final class ProductionHomeState {
         if trailerURL != nil { background.settings.detailMode = .trailer }
     }
 
-    func detail(for item: MediaItem) -> ItemDetailViewModel {
-        if let existing = details[item.id] { return existing }
-        let model = ItemDetailViewModel(provider: provider, itemID: item.id, initialItem: item)
-        details[item.id] = model
+    func detail(for item: MediaItem, asSeriesContext: Bool = false) -> ItemDetailViewModel {
+        let key = asSeriesContext ? "series-context:\(item.id)" : item.id
+        if let existing = details[key] { return existing }
+        let subject = asSeriesContext ? provider.series : item
+        let model = ItemDetailViewModel(provider: provider, itemID: subject.id, initialItem: subject)
+        details[key] = model
         return model
     }
 
@@ -1448,6 +1452,7 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
             item.title = "Fixture episode \(index)"
             item.parentTitle = "Fixture show"
             item.seriesID = "fixture-show"
+            item.seasonID = "fixture-season"
             item.seasonNumber = 1
             item.episodeNumber = index + 1
             item.overview = "Episode-specific synopsis for fixture \(index)."
@@ -1531,6 +1536,8 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
         try await Task.sleep(for: .seconds(6))
     }
     func item(id: String) async throws -> MediaItem {
+        if id == series.id { return series }
+        if id == season.id { return season }
         let count = ProcessInfo.processInfo.arguments.contains("--progressive-library-rows")
             ? rowCount + 400 : rowCount * 2
         guard let index = Int(id.split(separator: "-").last ?? ""), (0..<count).contains(index) else {
@@ -1538,7 +1545,27 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
         }
         return movie(index)
     }
-    func children(of itemID: String) async throws -> [MediaItem] { [] }
+    var series: MediaItem {
+        var item = MediaItem(id: "fixture-show", title: "Fixture show", kind: .series,
+                             posterURL: poster, backdropURL: backdrop)
+        item.sourceAccountID = "home-fixture"
+        item.overview = "Whole-show synopsis."
+        return item
+    }
+
+    var season: MediaItem {
+        var item = MediaItem(id: "fixture-season", title: "Season 1", kind: .season)
+        item.sourceAccountID = "home-fixture"
+        item.seriesID = series.id
+        item.seasonNumber = 1
+        return item
+    }
+
+    func children(of itemID: String) async throws -> [MediaItem] {
+        if itemID == series.id { return [season] }
+        if itemID == season.id { return (0..<3).map(movie) }
+        return []
+    }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         if containerID == "detail-sequence-library" {
             let end = min(page.startIndex + page.limit, rowCount * 2)

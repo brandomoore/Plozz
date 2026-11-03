@@ -97,7 +97,7 @@ private struct ContinueWatchingDetailsProvider: MediaProvider {
             item.seasonNumber = 1
             item.episodeNumber = id == "episode" ? 2 : 3
             item.resumePosition = id == "episode" ? 300 : nil
-            item.overview = "Episode-specific synopsis."
+            item.overview = id == "episode" ? "Episode-specific synopsis." : "Recent episode synopsis."
         case "movie":
             item = .init(id: id, title: "Continuing movie", kind: .movie)
             item.resumePosition = 600
