@@ -6,7 +6,7 @@ import Foundation
 /// (`W/"..."`) is explicitly allowed to represent semantically-equivalent
 /// but byte-different content, so it cannot guarantee a `Range` read lines
 /// up with what was probed.
-public struct ETag: Equatable, Sendable {
+public struct ETag: Hashable, Sendable {
     public let opaqueTag: String
     public let isWeak: Bool
 

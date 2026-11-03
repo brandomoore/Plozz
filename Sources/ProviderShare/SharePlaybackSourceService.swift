@@ -28,6 +28,9 @@ struct SharePlaybackSourceService: Sendable {
     }
 
     func networkFileLocator(for relativePath: String) async throws -> NetworkFileLocator {
+        HandoffDiagnostics.emit(
+            "shareLocator file=\(HandoffDiagnostics.correlationID(relativePath)) stage=statForOpening"
+        )
         let entry = try await store.statForOpening(relativePath: relativePath)
         return try networkFileLocator(for: relativePath, entry: entry)
     }
@@ -50,6 +53,10 @@ struct SharePlaybackSourceService: Sendable {
             // Opening/claiming the source still revalidates its identity and size.
             locator = try networkFileLocator(for: relativePath, entry: entry)
         } else {
+            HandoffDiagnostics.emit(
+                "shareLocator file=\(HandoffDiagnostics.correlationID(relativePath)) stage=listingFallback"
+                    + " listed=\(entries != nil) matches=\(matchingEntries.count)"
+            )
             locator = try await networkFileLocator(for: relativePath)
         }
         try Task.checkCancellation()
@@ -59,7 +66,10 @@ struct SharePlaybackSourceService: Sendable {
     private func networkFileLocator(
         for relativePath: String, entry: RemoteFileEntry
     ) throws -> NetworkFileLocator {
+        let diagnostic = Self.metadataDiagnostic(relativePath: relativePath, entry: entry)
+        HandoffDiagnostics.emit(diagnostic)
         guard entry.kind == .file, let size = entry.size else {
+            HandoffDiagnostics.emit("\(diagnostic) rejected=missingFileSize")
             throw MediaTransportError.protocolViolation(
                 reason: "network file lacks a stable size"
             )
@@ -74,10 +84,12 @@ struct SharePlaybackSourceService: Sendable {
         } else if let modifiedAt = entry.modifiedAt {
             identity = try RemoteFileIdentity(kind: .modificationTime, modifiedAt: modifiedAt)
         } else {
+            HandoffDiagnostics.emit("\(diagnostic) rejected=missingIdentity")
             throw MediaTransportError.protocolViolation(
                 reason: "network file lacks a stable identity (no strong ETag or modification time)"
             )
         }
+
         let representation = try RemoteFileRepresentation(
             size: size,
             identity: identity,
@@ -94,6 +106,45 @@ struct SharePlaybackSourceService: Sendable {
                 mimeType: entry.mimeType
             )
         )
+    }
+
+    static func metadataDiagnostic(relativePath: String, entry: RemoteFileEntry) -> String {
+        "shareLocator file=\(HandoffDiagnostics.correlationID(relativePath)) stage=metadata"
+            + " isFile=\(entry.kind == .file) size=\(entry.size.map(String.init) ?? "missing")"
+            + " strongETag=\(entry.strongETag != nil) modifiedAt=\(entry.modifiedAt != nil)"
+    }
+
+    static func diagnosticErrorCode(_ error: Error) -> String {
+        if let error = error as? MediaTransportError { return "transport.\(error.description)" }
+        if let error = error as? AppError { return "app.\(HandoffDiagnostics.errorCode(error))" }
+        if error is CancellationError { return "cancelled" }
+        if let error = error as? MediaSourceModelError {
+            let code: String = switch error {
+            case .emptyIdentifier: "emptyIdentifier"
+            case .invalidHost: "invalidHost"
+            case .invalidPort: "invalidPort"
+            case .invalidRootPath: "invalidRootPath"
+            case .invalidRelativePath: "invalidRelativePath"
+            case .invalidFileSize: "invalidFileSize"
+            case .invalidRepresentationIdentity: "invalidRepresentationIdentity"
+            case .transportOptionsMismatch: "transportOptionsMismatch"
+            case .unsupportedProvider: "unsupportedProvider"
+            case .unsupportedScheme: "unsupportedScheme"
+            case .invalidOrigin: "invalidOrigin"
+            case .missingHost: "missingHost"
+            case .credentialBearingURL: "credentialBearingURL"
+            case .sensitiveQueryItem: "sensitiveQueryItem"
+            case .urlFragmentNotAllowed: "urlFragmentNotAllowed"
+            }
+            return "model.\(code)"
+        }
+        let native = error as NSError
+        switch native.domain {
+        case NSURLErrorDomain: return "url.\(native.code)"
+        case NSPOSIXErrorDomain: return "posix.\(native.code)"
+        case NSCocoaErrorDomain: return "cocoa.\(native.code)"
+        default: return "unknown"
+        }
     }
 
     /// Finds text sidecar subtitles for a video by listing its directory (and a
@@ -224,7 +275,12 @@ struct SharePlaybackSourceService: Sendable {
                 throw error
             }
             try Task.checkCancellation()
-            PlozzLog.playback.error("share.sidecars directory listing unavailable")
+            let code = Self.diagnosticErrorCode(error)
+            HandoffDiagnostics.emit(
+                "shareLocator directory=\(HandoffDiagnostics.correlationID(directory))"
+                    + " stage=listing event=failed error=\(code)"
+            )
+            PlozzLog.playback.error("share.sidecars directory listing unavailable: \(code)")
             return nil
         }
     }

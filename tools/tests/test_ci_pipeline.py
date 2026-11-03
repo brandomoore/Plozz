@@ -97,8 +97,9 @@ class AttributionTests(unittest.TestCase):
             with self.subTest(package=package["identity"]):
                 ref = package["state"].get("version") or package["state"]["revision"]
                 self.assertIn(package["location"].removesuffix(".git") + "/tree/" + ref, attributions)
-        for identity in ("ffmpegbuild", "libdovi", "libtruehd"):
+        for identity in ("ffmpegbuild", "libdovi"):
             self.assertIn(f'`{pins[identity]["version"]}`', notice)
+        self.assertNotIn("libtruehd", pins)
 
     def test_metadata_services_and_bundled_fonts_are_credited(self):
         attributions = (ROOT / "Sources/CoreModels/PlozzAttributions.swift").read_text()

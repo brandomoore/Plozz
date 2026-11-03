@@ -1333,6 +1333,7 @@
       }
     },
     "%@ (Default)" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -284675,6 +284676,7 @@
       }
     },
     "DTS:X heights require 7.1.4 or 9.1.6." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -305862,6 +305864,7 @@
       }
     },
     "Dolby Vision FEL (experimental)" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -476697,6 +476700,7 @@
       }
     },
     "May impact performance." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -476917,6 +476921,7 @@
       }
     },
     "May impact performance. Disables spatial audio." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -662759,6 +662764,7 @@
       }
     },
     "Rendering layout" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -798714,6 +798720,7 @@
       }
     },
     "Spatial audio" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -798934,6 +798941,7 @@
       }
     },
     "Spatial audio (height channel support)" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -957970,6 +957978,7 @@
       }
     },
     "Used when Spatial audio is on. Applies to this device." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -960175,6 +960184,7 @@
       }
     },
     "Uses PCM for supported TrueHD Atmos and DTS:X tracks; lossy audio over AirPlay." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1074959,6 +1074969,7 @@
       }
     },
     "playback advanced audio video" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1121531,6 +1121542,7 @@
       }
     },
     "surround height overhead speakers immersive sound" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {

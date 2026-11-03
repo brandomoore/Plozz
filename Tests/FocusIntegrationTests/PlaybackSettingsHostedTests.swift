@@ -114,13 +114,9 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         for label in ["Prefer lossless audio", "regular HDMI ARC", "compressed audio"] {
             XCTAssertTrue(text.contains(label), text)
         }
-        if #available(tvOS 26.0, *) {
-            for label in ["Spatial audio", "height channel support", "TrueHD Atmos",
-                          "DTS:X", "PCM", "AirPlay", "lossy"] {
-                XCTAssertTrue(text.contains(label), text)
-            }
-        } else {
-            XCTAssertFalse(text.contains("Spatial audio"), text)
+        for label in ["Spatial audio", "height channel support", "TrueHD Atmos",
+                      "DTS:X", "Rendering layout"] {
+            XCTAssertFalse(text.contains(label), text)
         }
     }
 
@@ -263,19 +259,16 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         XCTAssertEqual(PlaybackSettingsStore(defaults: defaults).load(), .default)
     }
 
-    func testAdvancedPlaybackShowsFELControlAndAudioTradeoff() async throws {
+    func testAdvancedPlaybackOmitsRetiredConversionControls() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
         let suite = "FELSettingsHosted-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        let playback = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults, namespace: "guest"))
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         window.rootViewController = UIHostingController(rootView:
-            PlaybackAdvancedSettingsView(
-                playback: playback, model: ExternalPlayerSettingsModel(defaults: defaults)
-            )
+            PlaybackAdvancedSettingsView(model: ExternalPlayerSettingsModel(defaults: defaults))
             .environment(\.settingsInWorkspace, true)
             .environment(\.themePalette, .dark)
             .environment(\.locale, Locale(identifier: "en_US"))
@@ -291,78 +284,16 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             defaults.removePersistentDomain(forName: suite)
         }
         try await Task.sleep(for: .milliseconds(400))
-        let text = try visibleText(in: window, attachment: "FEL advanced playback setting")
-        for label in ["FEL", "experimental", "May impact performance."] {
-            XCTAssertTrue(text.contains(label), "The setting and tradeoff must be visible: \(text)")
-        }
-        if #available(tvOS 26.0, *) {
-            XCTAssertFalse(text.contains("Disables spatial audio."), text)
-            let page = try await allPageText(in: window, attachment: "Advanced-spatial-layout")
-            for label in ["Rendering layout", "9.1.6", "DTS:X heights require 7.1.4 or 9.1.6."] {
-                XCTAssertTrue(page.contains(label), page)
-            }
-        } else {
-            XCTAssertTrue(text.contains("Disables spatial audio."), text)
-            XCTAssertFalse(text.contains("DTS:X"), text)
+        let text = try visibleText(in: window, attachment: "Advanced playback settings")
+        XCTAssertTrue(text.contains("External player"), text)
+        let page = try await allPageText(in: window, attachment: "Advanced-without-conversion")
+        for label in [
+            "FEL", "experimental", "May impact performance.", "Disables spatial audio.",
+            "Rendering layout", "9.1.6", "DTS:X", "height channel support"
+        ] {
+            XCTAssertFalse(page.contains(label), page)
         }
         XCTAssertFalse(text.contains("Dolby Atmos"), text)
-        XCTAssertFalse(playback.settings.dolbyVisionFELEnabled)
-    }
-
-    func testSpatialLayoutControlUpdatesFromDeviceStoreAndFitsLargeText() async throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive })
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let suite = "SpatialLayoutHosted-\(UUID())"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        let store = SpatialAudioLayoutStore(defaults: defaults)
-        let window = UIWindow(windowScene: scene)
-        defer {
-            window.isHidden = true
-            window.rootViewController = nil
-            previous?.makeKeyAndVisible()
-            defaults.removePersistentDomain(forName: suite)
-        }
-        for (size, typeSize): (CGSize, DynamicTypeSize) in [
-            (.init(width: 1100, height: 440), .large),
-            (.init(width: 760, height: 700), .accessibility3)
-        ] {
-            window.frame = CGRect(origin: .zero, size: size)
-            window.rootViewController = UIHostingController(rootView:
-                SpatialAudioLayoutControl(defaults: defaults)
-                    .padding(24)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .environment(\.dynamicTypeSize, typeSize)
-                    .environment(\.themePalette, .dark)
-                    .environment(\.colorScheme, .dark)
-                    .environment(\.locale, Locale(identifier: "en_US"))
-                    .background(.black)
-            )
-            window.makeKeyAndVisible()
-            for layout in SpatialAudioLayout.allCases {
-                store.save(layout)
-                try await Task.sleep(for: .milliseconds(200))
-                try await waitForHostedLayout(window)
-                let text = try visibleText(in: window, attachment: "Spatial-layout-\(layout.rawValue)-\(typeSize)")
-                let normalizedText = text.replacingOccurrences(of: ": ", with: ":")
-                for label in ["Rendering layout", "Applies to this device.",
-                              "DTS:X heights require 7.1.4 or 9.1.6."] {
-                    XCTAssertTrue(normalizedText.contains(label), text)
-                }
-                let controlFrames = self.profileFocusFrames(in: window)
-                XCTAssertEqual(controlFrames.count, 1)
-                let frame = try XCTUnwrap(controlFrames.first)
-                XCTAssertTrue(window.bounds.contains(frame))
-                let valueText = try visibleText(
-                    in: window, attachment: "Spatial-layout-value-\(layout.rawValue)-\(typeSize)",
-                    crop: CGRect(x: frame.minX + frame.width * 0.65, y: frame.minY,
-                                 width: frame.width * 0.35, height: frame.height)
-                )
-                XCTAssertTrue(valueText.contains(layout.rawValue), valueText)
-                XCTAssertFalse(text.contains("…"), text)
-                XCTAssertEqual(store.load(), layout)
-            }
-        }
     }
 
     func testLibrarySourcesShowConfiguredNamesAndUpdateWithProfileSelection() async throws {
@@ -505,8 +436,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
                 "Show Up Next card", "Time before the end",
                 "Skip intros, credits & more",
                 "Video buffer", "Live TV buffer", "Automatic", "temporary storage",
-                "adds live delay", "Spatial audio", "height channel support",
-                "TrueHD Atmos", "DTS:X", "PCM", "AirPlay", "lossy"
+                "adds live delay"
             ] {
                 XCTAssertTrue(visible.contains(label), "Missing inline control \(label): \(visible)")
             }
@@ -520,7 +450,9 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             XCTAssertFalse(visible.contains("The player closes when an episode finishes"), visible)
             XCTAssertFalse(visible.contains("Show a Skip button, or skip automatically"), visible)
             XCTAssertFalse(visible.contains("When your server has no intro or credits marker"), visible)
-            XCTAssertTrue(playback.settings.trueHDAtmosEnabled)
+            for label in ["height channel support", "TrueHD Atmos", "DTS:X", "Rendering layout"] {
+                XCTAssertFalse(visible.contains(label), visible)
+            }
             XCTAssertEqual(visible.contains("Customize"), enabled, visible)
             XCTAssertFalse(visible.contains("Skip markers"), visible)
             for label in ["Set each marker separately", "Use community markers", "Show skip button",

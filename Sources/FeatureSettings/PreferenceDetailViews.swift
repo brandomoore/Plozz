@@ -700,7 +700,7 @@ struct PlaybackDetailView: View {
 
     private var advancedRows: [SettingsSplitRow] {
         [.page(id: "playback-advanced", title: "Advanced") {
-            PlaybackAdvancedSettingsView.rows(playback: playback)
+            PlaybackAdvancedSettingsView.rows()
         }]
     }
 
@@ -887,8 +887,6 @@ struct PlaybackDetailView: View {
                 SettingsControlRows {
                     LosslessAudioControl()
                         .settingsSearchAnchor("lossless-audio")
-                    SpatialAudioControl(isOn: $playback.settings.trueHDAtmosEnabled)
-                        .settingsSearchAnchor("spatial-audio")
                 }
             }
         ]

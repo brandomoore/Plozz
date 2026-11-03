@@ -994,23 +994,19 @@ step, not the original recording's fidelity, resampling/downmixing, or the
 receiver's final output. In particular, stream-copy of a lossy source is not
 labelled lossless. The same shared rows follow live pipeline changes on both
 platforms, without changing audio selection or conversion behavior.
-On tvOS and iOS/iPadOS 26+, the profile's default-on **Spatial audio** choice requests a
-device-selected intermediate bed for supported on-demand playback. It defaults
-to 9.1.6; Playback > Advanced offers all five engine layouts. The engine chooses
-24-bit PCM at load, or lossy APAC over AirPlay. Diagnostics label the actual
-rendered PCM pipeline **Rendered to PCM**, distinct from ordinary **Decoded to PCM**.
-This is not a speaker inventory or bitstream passthrough. DTS:X heights require
-7.1.4 or 9.1.6; other layouts retain channel playback. Saved Off choices survive.
-`PlayerViewModel` captures the active preference for initial and handoff loads;
-live streams, shared players, muted previews and unsupported OS versions stay off.
-The engine owns source eligibility and fallback. On these supported platforms,
-software/FEL playback can use the same spatial-audio choice; older OS versions keep channel PCM.
+Height-channel conversion and experimental Dolby Vision FEL reconstruction are
+disabled in load options and excluded by engine package traits. Their controls,
+search results and request fields are removed; legacy saved profile values are
+ignored. Ordinary surround audio, standard Dolby Vision playback and native
+E-AC-3/JOC stream-copy remain unchanged. Software playback uses channel PCM.
+Diagnostic parsing still recognizes historical rendered-PCM and APAC labels;
+those labels do not imply that Plozz enables the corresponding conversion.
 Both native and Plozzigen engines declare multichannel content to the audio session.
 Compatible AirPods use Apple's spatial rendering and head-tracking preferences;
 Plozz does not force either setting or require an AirPods-specific toggle.
 Stream-copy and software-decoding routes retain the engine's own labels.
-The software route's compressed E-AC-3/JOC renderer is also **No re-encoding**;
-it is not mislabeled as PCM or inferred from the source badge.
+If an engine reports compressed E-AC-3/JOC, its label is **No re-encoding**,
+not inferred from the source badge or mislabeled as PCM.
 The row is unknown until the engine publishes a pipeline and follows track
 changes, fallbacks, and teardown. Do not infer it from the Atmos source badge,
 channel count or requested bridge mode, or parse the label to make

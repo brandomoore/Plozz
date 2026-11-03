@@ -1807,8 +1807,6 @@ public final class PlayerViewModel {
     ) async {
         endTemporarySpeedBoost()
         var request = request
-        request.trueHDAtmosEnabled = playbackSettings.trueHDAtmosEnabled
-        request.dolbyVisionFELEnabled = playbackSettings.dolbyVisionFELEnabled
         dynamicRangeLoadGeneration &+= 1
         let rangeLoadGeneration = dynamicRangeLoadGeneration
         controls.infoCard.chapters = MediaChapter.normalized(request.chapters, duration: request.item.runtime)

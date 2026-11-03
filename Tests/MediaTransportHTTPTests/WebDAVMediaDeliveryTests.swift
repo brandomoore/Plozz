@@ -44,6 +44,32 @@ final class WebDAVMediaDeliveryTests: XCTestCase {
         )
     }
 
+    func testStatFailureRecordsHTTPStatusWithoutResponseBodyOrCredentials() async throws {
+        let wasEnabled = HandoffDiagnostics.isEnabled
+        HandoffDiagnostics.setEnabled(true)
+        defer { HandoffDiagnostics.setEnabled(wasEnabled) }
+        StubURLProtocol.queue(
+            StubResponse(statusCode: 404, body: Data("private-server-response".utf8)), for: source
+        )
+        do {
+            _ = try await client().properties(
+                root: root, path: "/files/movie.mkv", sessionKey: key(),
+                credential: .bearerToken("private-account-secret"), trustPolicy: .system
+            )
+            XCTFail("A failed stat must not become usable metadata")
+        } catch let error as TransportError {
+            guard case .protocolError(let status, _) = error else { return XCTFail("Unexpected \(error)") }
+            XCTAssertEqual(status, 404)
+        }
+        let line = try XCTUnwrap(HandoffDiagnostics.persistentPlaybackLogText()
+            .components(separatedBy: "\n").last { $0.contains("webdav PROPFIND depth=0") })
+        XCTAssertTrue(line.contains("role=playback"))
+        XCTAssertTrue(line.contains("status=404 bytes=0"))
+        for secret in ["private-server-response", "private-account-secret", "example", "movie.mkv"] {
+            XCTAssertFalse(line.contains(secret))
+        }
+    }
+
     func testRejectedDeliveryProbeRecordsValidatorClassificationsWithoutSecrets() async throws {
         let wasEnabled = HandoffDiagnostics.isEnabled
         HandoffDiagnostics.setEnabled(true)

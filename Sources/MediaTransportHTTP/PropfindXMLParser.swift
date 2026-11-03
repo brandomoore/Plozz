@@ -134,6 +134,12 @@ public enum PropfindXMLParser {
             let reason = parser.parserError?.localizedDescription ?? delegate.firstParseErrorDescription ?? "unknown XML parse failure"
             throw TransportError.malformedMultistatus(reason: reason)
         }
+        if delegate.duplicateCount > 0 {
+            HandoffDiagnostics.emit(
+                "webdav PROPFIND_DUPLICATES collapsed=\(delegate.duplicateCount)"
+                    + " modifiedDiscarded=\(delegate.discardedModificationCount) entries=\(delegate.entries.count)"
+            )
+        }
         return delegate.entries
     }
 }
@@ -201,6 +207,10 @@ private final class MultistatusParserDelegate: NSObject, XMLParserDelegate {
     private let includeSelfEntry: Bool
 
     private(set) var entries: [WebDAVEntry] = []
+    private var entryIndexes: [WebDAVEntry: Int] = [:]
+    private var responseCount = 0
+    private(set) var duplicateCount = 0
+    private(set) var discardedModificationCount = 0
     private(set) var limitError: TransportError?
     private(set) var policyError: TransportError?
     private(set) var documentError: TransportError?
@@ -415,12 +425,31 @@ private final class MultistatusParserDelegate: NSObject, XMLParserDelegate {
             etag: currentETag,
             contentType: currentContentType
         )
-        entries.append(entry)
-
-        if entries.count > maxEntries {
+        // Count before deduplication so repeated responses cannot bypass the cap.
+        responseCount += 1
+        if responseCount > maxEntries {
             limitError = .tooManyEntries(limit: maxEntries)
             parser.abortParsing()
+            return
         }
+        // A strong ETag already identifies bytes at this exact path. Conflicting
+        // dates are unusable metadata, not a second representation; discard them.
+        let key = !entry.isCollection && entry.contentLength != nil && entry.etag?.isValidStrongValidator == true
+            ? WebDAVEntry(
+                resolvedPath: entry.resolvedPath, isCollection: entry.isCollection,
+                contentLength: entry.contentLength, lastModified: nil,
+                etag: entry.etag, contentType: entry.contentType
+            ) : entry
+        if let index = entryIndexes[key] {
+            if entries[index].lastModified != entry.lastModified {
+                entries[index] = key
+                discardedModificationCount += 1
+            }
+            duplicateCount += 1
+            return
+        }
+        entryIndexes[key] = entries.count
+        entries.append(entry)
     }
 
     private static func statusLineIsSuccess(_ statusLine: String) -> Bool {
