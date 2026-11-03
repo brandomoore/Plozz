@@ -353,6 +353,10 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         isActive && isEnabled(.featured) && discoverySources.contains(where: \.usesTitleSeeds)
     }
 
+    public var requiresDiscoveryVerification: Bool {
+        isActive && isEnabled(.featured) && !discoverySources.isEmpty
+    }
+
     public func shouldShowRatings(for item: MediaItem, spoilerSettings: SpoilerSettings) -> Bool {
         showsRatings && !spoilerSettings.shouldHideRatings(for: item)
     }

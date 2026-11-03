@@ -617,6 +617,21 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   Closing the sheet starts a fresh carousel dwell interval. Status polling
   continues for the selected series while the sheet is open; a lookup superseded
   by a sheet/manual refresh is not treated as a server failure.
+- **Discovery ownership refresh** — Home carousel and Showcase reverify Featured
+  titles when the active library identity index publishes, independently of Hide
+  Watched. This cannot use the watch-history-only fast path: an external title
+  needs a freshly verified, enabled-library copy before it can offer Play.
+  Existing slides remain visible and keep their identity while verified routing
+  arrives. Mobile uses the same discovery-verification policy. Shared Home/detail
+  movie actions never offer Request for Seerr's Available or Partially Available
+  status without local playback proof; the title remains navigable instead.
+  Series retain their season picker for requesting genuinely missing seasons.
+  Public discovery refreshes preserve the current slide's Seerr status when local
+  verification remains inconclusive; only live status updates may reset that
+  state to Unknown or Deleted. Failed or disabled local copies never gain Play.
+  Status survives library-visibility resets only within the same request context.
+  Changing the profile/Seerr connection clears old status and optimistic request
+  overrides; a different server cannot inherit Available or download progress.
 - **Collections hero source** — an opt-in source mixes individual movies and
   shows from multiple account-qualified collections across libraries, not collection cards. TV and
   mobile use the same `MediaProvider.collectionMembers` loader and existing

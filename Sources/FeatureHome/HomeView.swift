@@ -26,6 +26,8 @@ public final class HomeHeroRuntimeState {
     var cachedDisabledLibraryKeys: Set<String> = []
     var hasHydratedCache = false
     var externalRefreshRevision = 0
+    var identityIndexRevision = 0
+    var requestStatusContext: String?
     /// The Random source's retained draw, so a background recomputation reuses the
     /// titles already on screen instead of re-shuffling every library on every
     /// connected server. See ``HeroRandomRollStore``.
@@ -65,6 +67,28 @@ public final class HomeHeroRuntimeState {
 
     public init() {}
 
+    func synchronizeRequestContext(_ context: String) {
+        guard requestStatusContext != context else { return }
+        items = HeroDiscoveryStatus.clearingRequestStatus(in: items)
+        cachedItems = HeroDiscoveryStatus.clearingRequestStatus(in: cachedItems)
+        requestStatusContext = context
+    }
+
+    func resetForLibraryVisibility(
+        disabledKeys: Set<String>, cached: [MediaItem], settings: HeroSettings?, requestContext: String
+    ) {
+        let previous = items
+        let sameRequestContext = requestStatusContext == requestContext
+        resetForSourceScopeChange()
+        hasHydratedCache = true
+        cachedDisabledLibraryKeys = disabledKeys
+        cachedItems = HeroDiscoveryStatus.retainingRequestStatus(
+            in: cached, from: previous, sameRequestContext: sameRequestContext
+        )
+        cachedKey = HeroConfigurationKey(settings: settings)
+        requestStatusContext = requestContext
+    }
+
     public func resetForSourceScopeChange() {
         items = []
         completedKey = nil
@@ -80,6 +104,8 @@ public final class HomeHeroRuntimeState {
         sourceEligibility = .unrestricted
         supportingSourceIndex.reset()
         externalRefreshRevision &+= 1
+        identityIndexRevision = 0
+        requestStatusContext = nil
         scopeRevision &+= 1
     }
 
@@ -205,6 +231,7 @@ public struct HomeView: View {
     private let heroCurator: HeroCurator
     private let heroFeaturedProvider: FeaturedContentProviding
     private let heroDiscoveryProvider: HeroDiscoveryContentProviding?
+    private let heroIdentityRevision: @Sendable () -> Int
     private let heroRequestIdentity: @MainActor (MediaItem) -> Bool
     /// Lightweight Seerr-only status polling. Kept separate from the curated
     /// provider so the 30-second CTA refresh never repeats live watch-state lookups.
@@ -289,6 +316,7 @@ public struct HomeView: View {
     @Environment(\.mediaItemActionHandler) private var mediaItemActionHandler
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var locale
+    @Environment(\.seasonRequestContextID) private var seasonRequestContextID
     @Environment(NavigationStyleSettingsModel.self) private var navigation: NavigationStyleSettingsModel?
 
     public init(
@@ -304,6 +332,7 @@ public struct HomeView: View {
         heroCurator: HeroCurator = HeroCurator(),
         heroFeaturedProvider: @escaping FeaturedContentProviding = HeroFeaturedProvider.none,
         heroDiscoveryProvider: HeroDiscoveryContentProviding? = nil,
+        heroIdentityRevision: @escaping @Sendable () -> Int = { 0 },
         heroRequestIdentity: @escaping @MainActor (MediaItem) -> Bool = { _ in true },
         heroFeaturedStatusProvider: HeroFeaturedStatusProviding? = nil,
         heroRandomProvider: @escaping RandomLibraryContentProviding = HeroRandomProvider.none,
@@ -345,6 +374,7 @@ public struct HomeView: View {
         self.heroCurator = heroCurator
         self.heroFeaturedProvider = heroFeaturedProvider
         self.heroDiscoveryProvider = heroDiscoveryProvider
+        self.heroIdentityRevision = heroIdentityRevision
         self.heroRequestIdentity = heroRequestIdentity
         self.heroFeaturedStatusProvider = heroFeaturedStatusProvider ?? { items in
             await heroFeaturedProvider(items.count)
@@ -455,6 +485,8 @@ public struct HomeView: View {
                 settings: curationSettings,
                 randomLibraries: randomLibraries,
                 externalRefreshRevision: heroRuntime.externalRefreshRevision,
+                identityIndexRevision: heroRuntime.identityIndexRevision,
+                requestContextID: seasonRequestContextID,
                 freshnessRevision: heroRuntime.freshnessRefresh.revision,
                 watchlistMembershipRevision: watchlistIntentRevision,
                 disabledLibraryKeys: visibility.visibility.disabledKeys,
@@ -771,14 +803,14 @@ public struct HomeView: View {
             await heroRuntime.freshnessRefresh.runWhileVisible()
         }
         .onChange(of: visibility.visibility.disabledKeys) { _, disabled in
-            heroRuntime.resetForSourceScopeChange()
-            heroRuntime.hasHydratedCache = true
-            heroRuntime.cachedDisabledLibraryKeys = disabled
-            if let settings = curationSettings,
-               let cached = viewModel.cachedHeroItems(for: settings) {
-                heroRuntime.cachedItems = cached
-                heroRuntime.cachedKey = HeroConfigurationKey(settings: settings)
-            }
+            let cached = curationSettings.flatMap { viewModel.cachedHeroItems(for: $0) } ?? []
+            heroRuntime.resetForLibraryVisibility(
+                disabledKeys: disabled, cached: cached, settings: curationSettings,
+                requestContext: seasonRequestContextID
+            )
+        }
+        .onChange(of: seasonRequestContextID) { _, context in
+            heroRuntime.synchronizeRequestContext(context)
         }
         .task(id: visibility.visibility.intent) {
             // First appearance loads; thereafter any change to the visibility
@@ -875,6 +907,7 @@ public struct HomeView: View {
             // burst on a multi-server boot — debounce to a single fold.
             let refreshAsyncHistory = shouldRefreshAsyncWatchHistory
             viewModel.scheduleReenrich {
+                heroRuntime.identityIndexRevision = heroIdentityRevision()
                 if refreshAsyncHistory {
                     heroRuntime.externalRefreshRevision &+= 1
                 }
@@ -888,6 +921,8 @@ public struct HomeView: View {
             }
         }
         .onAppear {
+            heroRuntime.identityIndexRevision = heroIdentityRevision()
+            heroRuntime.synchronizeRequestContext(seasonRequestContextID)
             MainThreadStallProbe.context = "home"
             if homePerfOverlayEnabled || HomePerfDiagnostics.isStdoutMirrorEnabled {
                 perfSampler.start()
@@ -1045,6 +1080,8 @@ public struct HomeView: View {
         // artwork. On-device profiling showed the full re-curate cost 2–8.5s and drove
         // the main-thread hitches while browsing; reusing the loaded set avoids the
         // network re-fetch, the artwork re-decode, and the hero's visual rebuild.
+        // Discovery identity changes must take the full verification path, not
+        // watch-history enrichment of the previously unverified source list.
         if let completed = heroRuntime.completedKey,
            completed != key,
            completed.matchesIgnoringExternalRefresh(key),
@@ -1265,11 +1302,13 @@ public struct HomeView: View {
             freshIsAuthoritative: freshIsAuthoritative,
             preservesPinnedItems: true,
             preservesLineup: settings.style == .followsFocus,
+            preservesRequestStatus: heroRuntime.requestStatusContext == seasonRequestContextID,
             sourceEligibility: sourceEligibility
         )
         heroRuntime.sourceEligibility = sourceEligibility
         heroRuntime.retainedMisses = merge.misses
         if merge.items != heroRuntime.items { heroRuntime.items = merge.items }
+        heroRuntime.requestStatusContext = seasonRequestContextID
         heroRuntime.cachedItems = []
         heroRuntime.cachedKey = nil
         heroRuntime.completedKey = key
@@ -1320,7 +1359,7 @@ public struct HomeView: View {
             },
             settings: curationSettings,
             isConfigured: heroSeerConnected,
-            contextID: String(heroRuntime.scopeRevision),
+            contextID: "\(seasonRequestContextID)|\(heroRuntime.scopeRevision)",
             scopeID: ObjectIdentifier(heroRuntime)
         )
     }
@@ -1336,6 +1375,7 @@ public struct HomeView: View {
             guard !Task.isCancelled, key == heroStatusRefreshKey else { return }
             let updated = HeroDiscoveryStatus.merging(fresh, into: heroRuntime.items)
             if updated != heroRuntime.items { heroRuntime.items = updated }
+            heroRuntime.requestStatusContext = seasonRequestContextID
             try? await Task.sleep(for: Self.featuredRefreshInterval)
         }
     }
@@ -1980,6 +2020,8 @@ struct HeroRecomputeKey: Equatable {
     /// ``HeroConfigurationKey``.
     let configuration: HeroConfigurationKey
     let externalRefreshRevision: Int
+    let identityIndexRevision: Int
+    let requestContextID: String
     let freshnessRevision: Int
     let watchlistMembershipRevision: Int
     let disabledLibraryKeys: Set<String>
@@ -1991,6 +2033,8 @@ struct HeroRecomputeKey: Equatable {
         settings: HeroSettings?,
         randomLibraries: [HeroRandomLibrary],
         externalRefreshRevision: Int = 0,
+        identityIndexRevision: Int = 0,
+        requestContextID: String = "",
         freshnessRevision: Int = 0,
         watchlistMembershipRevision: Int = 0,
         disabledLibraryKeys: Set<String> = [],
@@ -2030,6 +2074,9 @@ struct HeroRecomputeKey: Equatable {
             } : []
         self.externalRefreshRevision = settings?.requiresExternalWatchHistory == true
             ? externalRefreshRevision : 0
+        self.identityIndexRevision = settings?.requiresDiscoveryVerification == true
+            ? identityIndexRevision : 0
+        self.requestContextID = settings?.requiresDiscoveryVerification == true ? requestContextID : ""
         self.freshnessRevision = activeSources.isEmpty ? 0 : freshnessRevision
         self.watchlistMembershipRevision = activeSources.contains(.watchlist) ? watchlistMembershipRevision : 0
         self.disabledLibraryKeys = activeSources.isEmpty ? [] : disabledLibraryKeys
@@ -2052,6 +2099,8 @@ struct HeroRecomputeKey: Equatable {
             && maxItems == other.maxItems
             && hideWatched == other.hideWatched
             && configuration == other.configuration
+            && identityIndexRevision == other.identityIndexRevision
+            && requestContextID == other.requestContextID
             && freshnessRevision == other.freshnessRevision
             && watchlistMembershipRevision == other.watchlistMembershipRevision
             && disabledLibraryKeys == other.disabledLibraryKeys

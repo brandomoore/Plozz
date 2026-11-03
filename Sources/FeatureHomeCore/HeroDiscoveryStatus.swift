@@ -1,6 +1,40 @@
 import CoreModels
 
 public enum HeroDiscoveryStatus {
+    public static func clearingRequestStatus(in items: [MediaItem]) -> [MediaItem] {
+        items.map { item in
+            guard !item.locallyValidatedPlayableSource, item.availability != nil else { return item }
+            var item = item
+            item.availability = .unknown
+            item.downloadProgress = nil
+            item.hasRequestDownloadActivity = nil
+            return item
+        }
+    }
+
+    public static func retainingRequestStatus(
+        in items: [MediaItem], from previous: [MediaItem], sameRequestContext: Bool
+    ) -> [MediaItem] {
+        guard sameRequestContext else { return clearingRequestStatus(in: items) }
+        return items.map { item in
+            guard let prior = previous.first(where: {
+                HeroDiscoveryIdentityVerification.matches($0, item)
+            }) else { return item }
+            return retainingRequestStatus(in: item, from: prior)
+        }
+    }
+
+    static func retainingRequestStatus(in item: MediaItem, from previous: MediaItem) -> MediaItem {
+        guard !item.discoverySources.isEmpty, !item.locallyValidatedPlayableSource,
+              !previous.locallyValidatedPlayableSource, item.availability == .unknown,
+              HeroDiscoveryIdentityVerification.matches(previous, item) else { return item }
+        var item = item
+        item.availability = previous.availability ?? .unknown
+        item.downloadProgress = previous.downloadProgress
+        item.hasRequestDownloadActivity = previous.hasRequestDownloadActivity
+        return item
+    }
+
     /// Availability also appears on Watchlist titles; only discovery attribution
     /// can classify an item from a mixed carousel as a Featured fallback.
     public static func attributedFeaturedCandidates(

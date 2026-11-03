@@ -299,6 +299,7 @@ struct HomeTab: View {
                     heroSettings: heroSettings,
                     identitySources: identitySources
                 ),
+                heroIdentityRevision: identityRevision,
                 heroRequestIdentity: { seer.hasRequestIdentity(for: $0) },
                 heroFeaturedStatusProvider: makeHeroFeaturedStatusProvider(
                     seer: seer

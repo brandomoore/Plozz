@@ -116,6 +116,9 @@ public enum HeroLiveMerge {
     ///   - preservesLineup: retain every loaded slot for the app session, including
     ///     off-screen cards. Refresh matching payloads without admitting, aging,
     ///     or retiring titles just because discovery offered a different set.
+    ///   - preservesRequestStatus: the caller has verified that both sets belong
+    ///     to the same profile/Seerr request context. Public unknown status then
+    ///     cannot erase a live request-status response.
     ///   - sourceEligibility: authoritative source removal overrides pinning;
     ///     ordinary refresh absence still follows the retention policy below.
     public static func merge(
@@ -127,8 +130,13 @@ public enum HeroLiveMerge {
         freshIsAuthoritative: Bool = false,
         preservesPinnedItems: Bool = false,
         preservesLineup: Bool = false,
+        preservesRequestStatus: Bool = false,
         sourceEligibility: HeroSourceEligibility = .unrestricted
     ) -> Outcome {
+        let fresh = preservesRequestStatus
+            ? HeroDiscoveryStatus.retainingRequestStatus(
+                in: fresh, from: showing, sameRequestContext: true
+            ) : fresh
         let eligibleShowing = sourceEligibility.filtering(showing)
         if preservesLineup, !eligibleShowing.isEmpty, limit > 0 {
             let candidates = sourceEligibility.filtering(fresh).map {

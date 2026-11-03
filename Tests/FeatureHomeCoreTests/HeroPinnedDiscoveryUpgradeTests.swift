@@ -4,6 +4,43 @@ import XCTest
 @testable import FeatureHomeCore
 
 final class HeroPinnedDiscoveryUpgradeTests: XCTestCase {
+    func testPublicRefreshCannotInheritStatusWithoutMatchingRequestScope() throws {
+        var showing = external()
+        showing.availability = .available
+        let refreshed = try XCTUnwrap(HeroLiveMerge.merge(
+            showing: [showing], fresh: [external()], limit: 1,
+            pinnedItemIDs: [showing.id], preservesRequestStatus: false
+        ).items.first)
+        XCTAssertEqual(refreshed.availability, .unknown)
+        XCTAssertEqual(refreshed.heroCTA(seerConnected: true), .request)
+    }
+
+    func testPublicRefreshPreservesRequestStatusButLiveStatusCanMakeTitleRequestableAgain() throws {
+        var showing = external()
+        showing.availability = .available
+        let refreshed = try merge(showing, external())
+        XCTAssertEqual(refreshed.availability, .available)
+        var deleted = refreshed
+        deleted.availability = .deleted
+        let updated = try XCTUnwrap(HeroDiscoveryStatus.merging([deleted], into: [refreshed]).first)
+        XCTAssertEqual(updated.heroCTA(seerConnected: true), .request)
+        XCTAssertEqual(try merge(updated, external()).availability, .deleted)
+
+        showing.availability = .processing
+        showing.downloadProgress = 0.4
+        showing.hasRequestDownloadActivity = true
+        let processing = try merge(showing, external())
+        XCTAssertEqual(processing.heroCTA(seerConnected: true), .downloading(progress: 0.4))
+        var unknown = processing
+        unknown.availability = .unknown
+        unknown.downloadProgress = nil
+        unknown.hasRequestDownloadActivity = nil
+        XCTAssertEqual(
+            HeroDiscoveryStatus.merging([unknown], into: [processing]).first?.heroCTA(seerConnected: true),
+            .request
+        )
+    }
+
     private func external() -> MediaItem {
         MediaItem(
             id: "tmdb:movie:42", title: "Visible title", kind: .movie,
@@ -27,7 +64,8 @@ final class HeroPinnedDiscoveryUpgradeTests: XCTestCase {
     private func merge(_ showing: MediaItem, _ fresh: MediaItem) throws -> MediaItem {
         try XCTUnwrap(HeroLiveMerge.merge(
             showing: [showing], fresh: [fresh], limit: 1,
-            pinnedItemIDs: [showing.id], preservesPinnedItems: true
+            pinnedItemIDs: [showing.id], preservesPinnedItems: true,
+            preservesRequestStatus: true
         ).items.first)
     }
 

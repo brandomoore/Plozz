@@ -8,6 +8,31 @@ import XCTest
 
 @MainActor
 final class HeroGlassButtonPresentationTests: XCTestCase {
+    func testAvailableMovieHasNoRequestButtonButSeriesCanStillOpenMissingSeasons() {
+        for status in [MediaAvailabilityStatus.available, .partiallyAvailable] {
+            let movie = MediaItem(
+                id: "discovery:movie:42", title: "Movie", kind: .movie,
+                availability: status, locallyValidatedPlayableSource: false
+            )
+            let request = PlozziOSHeroRequest(
+                cta: movie.heroCTA(seerConnected: true), isRequesting: false,
+                onRequest: { _ in XCTFail("An available movie must not be requested again.") }
+            )
+            XCTAssertEqual(measure(PlozziOSHeroRequestButton(item: movie, request: request), width: 400).height, 0)
+            var series = movie
+            series.kind = .series
+            var seasons = request
+            seasons.onOpenSeasonRequests = {}
+            seasons.seasonAvailability = .init(status: status, seasons: [
+                .init(number: 1, title: "Season 1", status: .available),
+                .init(number: 2, title: "Season 2", status: .unknown)
+            ])
+            XCTAssertGreaterThanOrEqual(
+                measure(PlozziOSHeroRequestButton(item: series, request: seasons), width: 400).height, 48
+            )
+        }
+    }
+
     func testSeasonPollingContinuesAfterSupersededLookupUntilRequestsSettle() async {
         var lookups = 0
         var hasInFlightSeasons = true
