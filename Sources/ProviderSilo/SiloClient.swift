@@ -17,11 +17,20 @@ actor SiloClient {
     private var refresh: Task<SiloCredential, Error>?
     private let now: @Sendable () -> Date
     private var requestNotBefore = Date.distantPast
+    private let backgroundReadInterval: Duration
+    private var lastBackgroundRead: ContinuousClock.Instant?
+    private var requestsSent = 0
+    private var backgroundRequestsSent = 0
+    private var detailRequestsSent = 0
+    private var requestSecond: TimeInterval?
+    private var requestsInSecond = 0
+    private var peakRequestsInSecond = 0
 
     init(
         context: ProviderResolutionContext, store: any RotatingCredentialStoring, http: any HTTPClient,
         addressProbe: any HTTPClient = URLSessionHTTPClient(session: .plozzDiscovery),
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        backgroundReadInterval: Duration = .milliseconds(200)
     ) throws {
         let credential = try SiloCredential.decode(context.session.accessToken)
         guard context.session.server.provider == .silo,
@@ -46,6 +55,7 @@ actor SiloClient {
         loginID = credential.loginID
         self.store = store
         self.now = now
+        self.backgroundReadInterval = backgroundReadInterval
     }
 
     private func currentCredential() throws -> (String, SiloCredential) {
@@ -196,11 +206,21 @@ actor SiloClient {
         endpoint.body = body
         if let deviceID { endpoint.headers["X-Silo-Device-Id"] = deviceID }
         if body != nil { endpoint.headers["Content-Type"] = "application/json" }
+        try await admitBackgroundRead(method: method)
+        try Task.checkCancellation()
+        _ = try currentCredential()
+        try checkRequestCooldown()
+        recordRequest(path)
         var result = try await http.sendRaw(endpoint, baseURL: baseURL)
         if result.1.statusCode == 401, method == .get {
             let refreshed = try await authorizedCredential(rejectedToken: credential.accessToken)
             try checkRequestCooldown()
             endpoint.headers["Authorization"] = "Bearer \(refreshed.accessToken)"
+            try await admitBackgroundRead(method: method)
+            try Task.checkCancellation()
+            _ = try currentCredential()
+            try checkRequestCooldown()
+            recordRequest(path)
             result = try await http.sendRaw(endpoint, baseURL: baseURL)
         }
         if !(200...299).contains(result.1.statusCode) {
@@ -230,6 +250,10 @@ actor SiloClient {
                 return value
             }.joined(separator: ",")
             HandoffDiagnostics.emit("silo api rejected operation=\(operation) status=\(result.1.statusCode) problem=\(safeCode) fields=\(fields)")
+            if result.1.statusCode == 429 {
+                let limit = result.1.value(forHTTPHeaderField: "X-RateLimit-Limit").flatMap(Int.init).map(String.init) ?? "unknown"
+                HandoffDiagnostics.emit("silo api pressure sent=\(requestsSent) background=\(backgroundRequestsSent) details=\(detailRequestsSent) peakSecond=\(peakRequestsInSecond) advertisedLimit=\(limit)")
+            }
         }
         switch result.1.statusCode {
         case 200...299: break
@@ -252,5 +276,35 @@ actor SiloClient {
     private func checkRequestCooldown() throws {
         let remaining = requestNotBefore.timeIntervalSince(now())
         if remaining > 0 { throw AppError.rateLimited(retryAfter: remaining) }
+    }
+
+    private func admitBackgroundRead(method: HTTPMethod) async throws {
+        guard method == .get, IdentityEnrichment.isBackgroundScan else { return }
+        // Recheck after each suspension: queued readers must not wake as a burst.
+        // Interactive requests never join this background-only gate.
+        while let lastBackgroundRead {
+            let deadline = lastBackgroundRead.advanced(by: backgroundReadInterval)
+            guard deadline > .now else { break }
+            try await Task.sleep(until: deadline, clock: .continuous)
+        }
+        try Task.checkCancellation()
+        lastBackgroundRead = .now
+    }
+
+    private func recordRequest(_ path: String) {
+        requestsSent = min(requestsSent + 1, 1_000_000_000)
+        if IdentityEnrichment.isBackgroundScan {
+            backgroundRequestsSent = min(backgroundRequestsSent + 1, 1_000_000_000)
+        }
+        if path.hasPrefix("/catalog/items/") {
+            detailRequestsSent = min(detailRequestsSent + 1, 1_000_000_000)
+        }
+        let second = floor(now().timeIntervalSince1970)
+        if requestSecond != second {
+            requestSecond = second
+            requestsInSecond = 0
+        }
+        requestsInSecond = min(requestsInSecond + 1, 1_000_000_000)
+        peakRequestsInSecond = max(peakRequestsInSecond, requestsInSecond)
     }
 }

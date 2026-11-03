@@ -381,13 +381,15 @@ public final class IdentityIndexModel {
                 let warmOne: @Sendable (ResolvedAccount) async -> Void = { resolvedAccount in
                     let accountID = resolvedAccount.account.id
                     if Task.isCancelled { return }
-                    await Self.indexAccount(
-                        resolvedAccount,
-                        into: index,
-                        serverInfo: serverInfo[accountID],
-                        chunkSize: chunkSize,
-                        maxPerLibrary: maxPerLibrary
-                    )
+                    await IdentityEnrichment.$isBackgroundScan.withValue(true) {
+                        await Self.indexAccount(
+                            resolvedAccount,
+                            into: index,
+                            serverInfo: serverInfo[accountID],
+                            chunkSize: chunkSize,
+                            maxPerLibrary: maxPerLibrary
+                        )
+                    }
                     if Task.isCancelled { return }
                     // Publish progressively so surfaces see each warmed account.
                     let snapshot = await index.snapshot()

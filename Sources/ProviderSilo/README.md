@@ -127,6 +127,14 @@ These Home and device-login contracts were checked at upstream revision
   Those anchors are partial identity, not a complete set of provider IDs. Library
   indexing and on-demand ownership searches hydrate native item details with
   bounded concurrency to join TVDB-anchored titles to TMDB/IMDb watchlist entries.
+  Background identity scans additionally space native GET attempts by at least
+  200 ms per connection. This trades a longer complete scan for reduced cold-start
+  request bursts; foreground search, detail, playback and writes do not queue
+  behind that background work. Cancellation, credential identity and any server
+  cooldown are rechecked after waiting. Full identity hydration and inconclusive
+  scan handling remain unchanged; pacing never overrides a server rate limit or
+  automatically replays a refused request. Local rate-limit diagnostics contain
+  bounded request counts and numeric advertised limits, not titles or credentials.
   Episode file resolution and coarse HDR/SDR fields fill missing track-level
   metadata for hero badges; detailed track facts take precedence. An explicit
   progress duration remains authoritative; otherwise a single movie/episode

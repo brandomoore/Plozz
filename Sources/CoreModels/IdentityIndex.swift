@@ -712,6 +712,9 @@ public actor IdentityIndex {
 ///    genuinely has nothing to match on, so it's skipped without forcing endless
 ///    re-scans.
 public enum IdentityEnrichment {
+    /// Marks background catalog discovery, not an interactive ownership lookup.
+    @TaskLocal public static var isBackgroundScan = false
+
     public struct Result: Sendable, Equatable {
         /// Items ready to ingest (originals that already had ids + successfully
         /// enriched ones). Items still without an identity are omitted.

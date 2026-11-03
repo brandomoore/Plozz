@@ -56,7 +56,131 @@ private actor RateLimitedSiloHTTP: HTTPClient {
     }
 }
 
+private actor PacedSiloHTTP: HTTPClient {
+    private(set) var requests: [(path: String, instant: ContinuousClock.Instant, background: Bool)] = []
+
+    func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        requests.append((endpoint.path, .now, IdentityEnrichment.isBackgroundScan))
+        return (
+            Data(),
+            try XCTUnwrap(HTTPURLResponse(
+                url: baseURL, statusCode: endpoint.path.hasSuffix("/blocked") ? 429 : 204,
+                httpVersion: nil, headerFields: ["Retry-After": "120"]
+            ))
+        )
+    }
+}
+
 extension SiloProviderTests {
+    func testBackgroundCatalogReadsArePacedAcrossConcurrentEnrichmentTasks() async throws {
+        let raw = try credential().encoded()
+        let http = PacedSiloHTTP()
+        let client = try SiloClient(context: context(raw), store: SiloCredentialStub(raw), http: http)
+        try await IdentityEnrichment.$isBackgroundScan.withValue(true) {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for id in 0..<6 {
+                    group.addTask { _ = try await client.send("/catalog/items/\(id)") }
+                }
+                try await group.waitForAll()
+            }
+        }
+        let requests = await http.requests
+        XCTAssertEqual(requests.count, 6)
+        XCTAssertEqual(Set(requests.map(\.path)).count, 6)
+        XCTAssertTrue(requests.allSatisfy(\.background))
+        let first = try XCTUnwrap(requests.first?.instant)
+        let last = try XCTUnwrap(requests.last?.instant)
+        XCTAssertGreaterThanOrEqual(first.duration(to: last), .milliseconds(950))
+        for pair in zip(requests, requests.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(pair.0.instant.duration(to: pair.1.instant), .milliseconds(180))
+        }
+        XCTAssertFalse(IdentityEnrichment.isBackgroundScan)
+    }
+
+    func testInteractiveReadsAndWritesDoNotQueueBehindBackgroundScan() async throws {
+        let raw = try credential().encoded()
+        let http = PacedSiloHTTP()
+        let client = try SiloClient(
+            context: context(raw), store: SiloCredentialStub(raw), http: http,
+            backgroundReadInterval: .seconds(30)
+        )
+        _ = try await IdentityEnrichment.$isBackgroundScan.withValue(true) {
+            try await client.send("/catalog/items/first")
+        }
+        let pending = Task {
+            try await IdentityEnrichment.$isBackgroundScan.withValue(true) {
+                try await client.send("/catalog/items/pending")
+            }
+        }
+        defer { pending.cancel() }
+        let completed = expectation(description: "Interactive work bypasses background pacing")
+        let interactive = Task {
+            defer { completed.fulfill() }
+            _ = try await client.send("/catalog")
+            _ = try await client.send("/playback/start", method: .post)
+        }
+        defer { interactive.cancel() }
+        await fulfillment(of: [completed], timeout: 2)
+        interactive.cancel()
+        try await interactive.value
+        pending.cancel()
+        do { _ = try await pending.value; XCTFail("Cancelled background work must not transmit") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let requests = await http.requests
+        XCTAssertEqual(requests.map(\.path), [
+            "/api/v2/catalog/items/first", "/api/v2/catalog", "/api/v2/playback/start"
+        ])
+        XCTAssertEqual(requests.map(\.background), [true, false, false])
+    }
+
+    func testBackgroundReadRechecksAuthorizationAfterPacing() async throws {
+        let raw = try credential().encoded()
+        let http = PacedSiloHTTP()
+        let store = SiloCredentialStub(raw)
+        let client = try SiloClient(context: context(raw), store: store, http: http)
+        _ = try await IdentityEnrichment.$isBackgroundScan.withValue(true) {
+            try await client.send("/catalog/items/first")
+        }
+        let pending = Task {
+            try await IdentityEnrichment.$isBackgroundScan.withValue(true) {
+                try await client.send("/catalog/items/pending")
+            }
+        }
+        defer { pending.cancel() }
+        try await Task.sleep(for: .milliseconds(50))
+        store.remove()
+        do { _ = try await pending.value; XCTFail("The login was removed while waiting") }
+        catch { XCTAssertEqual(error as? AppError, .unauthorized) }
+        let requests = await http.requests
+        XCTAssertEqual(requests.map(\.path), ["/api/v2/catalog/items/first"])
+    }
+
+    func testBackgroundReadRechecksServerCooldownAfterPacing() async throws {
+        let raw = try credential().encoded()
+        let http = PacedSiloHTTP()
+        let client = try SiloClient(context: context(raw), store: SiloCredentialStub(raw), http: http)
+        _ = try await IdentityEnrichment.$isBackgroundScan.withValue(true) {
+            try await client.send("/catalog/items/first")
+        }
+        let pending = Task {
+            try await IdentityEnrichment.$isBackgroundScan.withValue(true) {
+                try await client.send("/catalog/items/pending")
+            }
+        }
+        defer { pending.cancel() }
+        do { _ = try await client.send("/blocked"); XCTFail("Expected the real server refusal") }
+        catch { XCTAssertEqual(error as? AppError, .rateLimited(retryAfter: 120)) }
+        do { _ = try await pending.value; XCTFail("Queued reads must respect the new cooldown") }
+        catch {
+            guard case .rateLimited(let remaining) = error as? AppError else {
+                return XCTFail("Expected cooldown, got \(error)")
+            }
+            XCTAssertGreaterThan(try XCTUnwrap(remaining), 110)
+        }
+        let requests = await http.requests
+        XCTAssertEqual(requests.map(\.path), ["/api/v2/catalog/items/first", "/api/v2/blocked"])
+    }
+
     func testRateLimitStopsPendingReadsAndWritesUntilExplicitRetryAfterCooldown() async throws {
         let clock = SiloCooldownClock()
         let raw = try credential().encoded()
