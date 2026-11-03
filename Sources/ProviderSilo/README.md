@@ -97,6 +97,20 @@ in an enabled library; title matches alone never establish membership. Continue
 Watching and Next Up resolve the server-selected playable episode and retain
 resume state and verified parent artwork. Shared Home composition still owns
 multi-server merging and explicit Plozz profile customizations.
+
+Missing catalog items referenced by progress or playable Home/Next Up cards are
+skipped with a secret-safe diagnostic; a stale entry cannot fail the entire row.
+Only catalog-item 404s are skippable. Missing Home/progress endpoints,
+authentication, rate limits (including `Retry-After`), transport failures,
+malformed responses and cancellation retain their normal error paths.
+Progress hydration uses at most four concurrent requests, deduplicates item
+lookups within a refresh, and stops when each enabled library's requested window
+is full. Missing entries are backfilled from subsequent pages with the same
+cursor page size. Each library is considered before the final newest-first merge.
+The [native progress contract](https://github.com/Silo-Server/silo-server/blob/3bc9e58c51970f261d41848ff411713894d53243/internal/apiv2/progress.go)
+orders entries by newest update first; bounded detail loading relies on that
+order. This reduces unnecessary traffic but does not bypass server rate limits.
+
 These Home and device-login contracts were checked at upstream revision
 `6144c45cd65ae0f49f9f3397bbc20f7e4d60a20e`.
 
