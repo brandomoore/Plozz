@@ -389,9 +389,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   for movie/episode cards on Home, including merged Next Up entries and every TV
   Home layout. Existing saved choices are preserved; profiles without a saved
   action open details. The choice persists and transfers with the profile.
-  Opening an episode from Continue Watching shows that episode's own details,
-  rather than the parent show's page. Other browsing keeps its show-context
-  navigation.
+  Opening an episode from Continue Watching uses the normal series detail page,
+  with that specific episode's information and playback target in the hero and
+  its season selected. Only the explicit **Go to Episode** action opens the
+  standalone episode page.
   Artwork, progress overlays, context menus and Live TV tuning are unchanged.
   Library Recommended rows retain their existing detail navigation.
   On Apple TV, the remote's center button follows this choice, while Play/Pause

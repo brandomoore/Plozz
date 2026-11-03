@@ -1096,9 +1096,8 @@ struct HomeTab: View {
     /// Routes a navigation to `item`.
     ///
     /// `asOwnSubject` distinguishes the two ways an episode can be navigated to.
-    /// Continue Watching and a menu's "Episode Info" want the episode's *own*
-    /// page — its synopsis, air date, and the file that would play. Other browsing
-    /// and deep links show the series page with that episode fronted.
+    /// A menu's "Go to Episode" opens the episode's own page. Ordinary browsing,
+    /// including Continue Watching, shows the series page with that episode fronted.
     private func navigate(
         _ item: MediaItem,
         libraryOrigin: String? = nil,

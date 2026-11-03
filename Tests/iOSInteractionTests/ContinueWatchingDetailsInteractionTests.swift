@@ -28,12 +28,12 @@ final class ContinueWatchingDetailsInteractionTests: XCTestCase {
         super.tearDown()
     }
 
-    func testDefaultContinueWatchingOpensEpisodeDetailsForBothProvidersAndLayouts() {
+    func testDefaultContinueWatchingOpensSeriesWithSelectedEpisodeForBothProvidersAndLayouts() {
         for options in [[], ["--portrait"], ["--plex"], ["--plex", "--portrait"]] {
             launch(options)
             openCard("E2")
             XCTAssertTrue(app.staticTexts["Episode-specific synopsis."].waitForExistence(timeout: 10), app.debugDescription)
-            XCTAssertFalse(app.staticTexts["Whole-show synopsis."].exists)
+            XCTAssertTrue(app.descendants(matching: .any)["series-season-tabs"].waitForExistence(timeout: 10), app.debugDescription)
             app.terminate()
         }
     }
@@ -44,10 +44,11 @@ final class ContinueWatchingDetailsInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Movie-specific synopsis."].waitForExistence(timeout: 10), app.debugDescription)
     }
 
-    func testOrdinaryEpisodeBrowsingStillOpensTheShow() {
+    func testOrdinaryEpisodeBrowsingStillOpensTheShowWithSelectedEpisode() {
         launch()
         openCard("E3")
-        XCTAssertTrue(app.staticTexts["Whole-show synopsis."].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Recent episode synopsis."].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any)["series-season-tabs"].waitForExistence(timeout: 10), app.debugDescription)
     }
 
     private func launch(_ options: [String] = []) {

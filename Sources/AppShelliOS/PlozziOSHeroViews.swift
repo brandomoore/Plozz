@@ -1958,8 +1958,8 @@ struct PlozziOSDetailHeroForeground: View {
     var onPlayTrailer: ((MediaItem) -> Void)?
     var heroRequest: PlozziOSHeroRequest?
     /// Whether this hero fronts an item with a parent page worth returning to —
-    /// an episode on its own page, reachable from Continue Watching or Search
-    /// where Back leaves the show entirely. See `DetailHeroView`.
+    /// an episode opened with "Go to Episode", where Back may leave the show
+    /// entirely. See `DetailHeroView`.
     var offersParentNavigation: Bool = false
     /// Renders the episode-page hero: the episode's own 16:9 still, inset above
     /// its details, with the show named in a breadcrumb rather than a wordmark.
