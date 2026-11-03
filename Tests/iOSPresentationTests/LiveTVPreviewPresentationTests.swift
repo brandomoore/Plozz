@@ -13,6 +13,33 @@ import XCTest
 
 @MainActor
 final class LiveTVPreviewPresentationTests: XCTestCase {
+    func testCategoryTilesAreCompactAndGrowWithDynamicType() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        var heights: [CGFloat] = []
+        for size in [DynamicTypeSize.large, .accessibility5] {
+            let host = UIHostingController(rootView:
+                PrototypeCategoryTile(name: "Sports", count: 25, action: {})
+                    .dynamicTypeSize(size)
+            )
+            host.safeAreaRegions = []
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            try await settle(window)
+            let measured = host.sizeThatFits(in: CGSize(width: 180, height: 1000))
+            XCTAssertGreaterThanOrEqual(measured.height, 44)
+            heights.append(measured.height)
+        }
+        XCTAssertLessThanOrEqual(heights[0], 70)
+        XCTAssertGreaterThan(heights[1], heights[0], "Accessibility sizes must grow, not clip to the compact height.")
+    }
+
     func testPerformanceLightVideoPreview() async throws {
         try await measurePreview(scenario: "mobile-video-glow", filename: "live-continuity.mp4", enabled: true)
     }

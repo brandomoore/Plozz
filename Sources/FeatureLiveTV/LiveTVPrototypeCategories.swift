@@ -48,8 +48,10 @@ struct PrototypeCategoryTile: View {
     let action: () -> Void
     #if os(tvOS)
     @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 96
+    private let contentAlignment: VerticalAlignment = .top
     #else
-    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 68
+    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 40
+    private let contentAlignment: VerticalAlignment = .center
     #endif
 
     static var searchWidth: CGFloat {
@@ -62,7 +64,7 @@ struct PrototypeCategoryTile: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: contentAlignment, spacing: 8) {
                 Group {
                     if let name { Text(verbatim: name) }
                     else { Text("All channels") }
@@ -83,7 +85,11 @@ struct PrototypeCategoryTile: View {
                     .background(.quaternary, in: Capsule())
                     .accessibilityHidden(true)
             }
+            #if os(tvOS)
             .frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading)
+            #else
+            .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
+            #endif
             .padding(.vertical, 6)
         }
         .buttonStyle(.bordered)

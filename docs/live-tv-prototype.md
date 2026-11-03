@@ -152,6 +152,19 @@ Navigation uses the plain **Live TV** label in every style. The source-setup
 introduction carries a small, secondary **Experimental** note on both platforms,
 without a warning dialog or an extra confirmation step.
 
+On iPhone and iPad, the browse header instead shows **All** or the selected
+source's name. Its native menu filters the combined lineup without disabling a
+source or stopping an already playing channel; it lists only enabled, authorized
+playlist and server sources. Switching sources retains a category when it is
+available in the new lineup, otherwise returns to all channels. The guide's
+category menu changes categories in place. **Add Source** in the source menu
+opens the existing authorized IPTV/playlist and media-server setup choices.
+Guide/search, filters, Multiviews and source management are contextual actions in
+the **More** menu; the existing
+profile shortcut remains on the category screen and iPad. Category tiles use
+shorter minimum heights while retaining channel counts and Dynamic Type growth.
+Apple TV navigation is unchanged.
+
 On iPhone and iPad, selecting a channel opens a video preview above the guide,
 8 points below the existing navigation toolbar controls. There is no channel-artwork card or
 Watch channel button over the video. Tapping the preview shows or hides the

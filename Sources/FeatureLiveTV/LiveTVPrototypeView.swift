@@ -522,21 +522,23 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             })
             .toolbar {
                 PrototypeTouchBrowseToolbar(
-                    model: model, isSearching: isSearching,
+                    model: model, configuration: imports.configuration, isSearching: isSearching,
                     showsDirectory: usesCategoryDirectory(layout),
                     hasSidebar: layout.sidebarWidth > 0,
                     isDisabled: blocksBrowseControls || !isActive || expanded,
                     showGuide: { showCategory(nil) }, showCategories: showCategories,
+                    selectSource: selectBrowseSource,
+                    addSource: { sheet = .addSource },
+                    selectCategory: { showCategory($0, enteringGuide: layout.sidebarWidth == 0) },
                     search: { if isSearching { closeSearch() } else { openSearch() } },
                     filters: { sheet = .filters },
+                    sources: { sheet = .sources },
                     multiviews: multiviewSelection == nil ? { sheet = .multiviewFavorites } : nil,
                     cancelSelection: multiviewSelection == nil ? nil : finishMultiviewSelection,
                     accessory: topBarAccessory
                 )
             }
-            .navigationTitle(
-                usesCategoryDirectory(layout) || layout.sidebarWidth > 0 ? Text("Live TV") : Text(verbatim: "")
-            )
+            .navigationTitle(Text(verbatim: ""))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(expanded ? .hidden : .visible, for: .navigationBar)
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -1237,6 +1239,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     @ViewBuilder
     private func sourceSetupDestination(_ destination: PrototypeSheet) -> some View {
+        let presentation: LiveTVSourcesView.Presentation = switch destination {
+        case .addSource: .addSource
+        default: .page
+        }
         if let sources {
             switch destination {
             case .addPlaylist:
@@ -1262,14 +1268,19 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 LiveTVSourcesView(
                     model: sources, imports: imports, refresh: requestCatalogRefresh,
                     refreshSource: { try await imports.reloadSource($0, into: model) },
+                    presentation: presentation,
                     serverChoices: serverChoices, serverProviderResolver: serverProviderResolver,
                     connectServer: connectServer == nil ? nil : requestServerConnection,
                     connectIPTV: providerSetupRouter == nil ? nil : requestIPTVConnection,
                     sourceFilterID: model.configuredSourceID,
                     browseSource: { sourceID in
+                        #if os(iOS)
+                        selectBrowseSource(sourceID)
+                        #else
                         model.source = nil
                         model.configuredSourceID = sourceID
                         topRequest &+= 1
+                        #endif
                         sheet = nil
                     },
                     didConfigurePlaylist: didConfigurePlaylist,
@@ -2086,6 +2097,28 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         topRequest &+= 1
         if enteringGuide { enterGuide() }
     }
+
+    #if os(iOS)
+    private func selectBrowseSource(_ sourceID: String?) {
+        guard isActive, scenePhase == .active, isProfileAuthorized(), !sourceApplicationFailed,
+              sources == nil || applySourceConfiguration(),
+              sourceID == nil || imports.configuration.playlists.contains(where: { $0.id == sourceID && $0.isEnabled })
+                || imports.configuration.servers.contains(where: { $0.id == sourceID && $0.isEnabled }) else { return }
+        model.source = nil
+        model.configuredSourceID = sourceID
+        if let category = model.category, !model.browsingCategories.contains(where: { $0.name == category }) {
+            model.category = nil
+            categoryDirectoryReturnID = nil
+        }
+        searchOrigin = nil
+        guideOffset = 0
+        timelineOffset = 0
+        selectedRowID = model.guideChannels.first?.id
+        selectedChannelID = selectedRowID?.channelID
+        focusedProgram = nil
+        topRequest &+= 1
+    }
+    #endif
 
     private func showCategories() {
         playback.cancelWatch()
