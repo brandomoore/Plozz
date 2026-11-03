@@ -2,6 +2,87 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/069",
+      "version": "2026.11.3",
+      "marketingVersion": "2026.10.30",
+      "build": 69,
+      "releasedAt": "2026-11-03",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            {
+              "text": "Import .strmlnk files from network shares to open titles in supported apps.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Import .strmlnk files from network shares to open titles in supported apps or websites.",
+              "platforms": ["iOS"]
+            },
+            "Choose whether subtitles move away from playback controls, with less movement when enabled.",
+            {
+              "text": "On Mac, browse Home hero titles with onscreen arrows or arrow keys; automatic paging pauses while you interact.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Continue Watching opens the show with your selected episode. Saved Play preferences are preserved.",
+            "Cleaner filenames and titles in version pickers.",
+            "More reliable video-format information when a transcode starts slowly.",
+            {
+              "text": "Better hero framing and card sizing on Mac, with See all for longer Home and Related rows.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "The player opens immediately while video loads, with smoother orientation changes when opening and closing.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Fixed missing Plex Home rows when Match server receives incomplete shelf information.",
+            "Fixed Home offering Request for titles already available on the server.",
+            "Fixed Silo Continue Watching failing when a previously watched title has been removed.",
+            "Preserved regional language names and dubbing labels in audio menus.",
+            "Improved WebDAV playback compatibility with redirected streaming sources.",
+            {
+              "text": "Fixed Back navigation and focus restoration in Home's See all pages.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Fixed returning from pinned navigation when using Hero with Showcase rows.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Fixed audio track changes not taking effect during Plex transcoding.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Fixed audio menus interrupting landscape playback on iPhone.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Auto-crop black bars now uses the full player area.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Compact Home and detail heroes now use Plex's square artwork when available.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Fixed shifting Home artwork and brief black loading screens when opening show details.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/068.1",
       "version": "2026.11.2",
       "marketingVersion": "2026.10.30",
