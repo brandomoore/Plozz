@@ -89,7 +89,15 @@ struct SubtitleStylePanel: View {
                 label: { Text(Double($0) * SubtitleStyle.verticalPositionStep, format: .percent.precision(.fractionLength(0...1))) }
             ) { value in updateStyle { $0.verticalPosition = Double(value) * SubtitleStyle.verticalPositionStep } }.settingsSearchAnchor("subtitle-position"))
         }
+        rows.append(controlAvoidanceRow(rows.count))
         return rows
+    }
+
+    private func controlAvoidanceRow(_ slot: Int) -> StyleRowSpec {
+        StyleRowSpec(slot: slot, title: SubtitleStyle.controlAvoidanceTitle, kind: .toggle(
+            isOn: effectiveStyle.avoidsPlayerControls,
+            flip: { updateStyle { $0.avoidsPlayerControls.toggle() } }
+        )).settingsSearchAnchor("subtitle-avoid-controls")
     }
 
     /// The live subtitle-appearance editor, hosted over the running video so every
@@ -226,6 +234,7 @@ struct SubtitleStylePanel: View {
             current: s.verticalAnchor,
             label: { $0.displayName }
         ) { v in updateStyle { $0.verticalAnchor = v } }.settingsSearchAnchor("style-extra-line")); slot += 1
+        rows.append(controlAvoidanceRow(slot)); slot += 1
         rows.append(numberRow(slot, "Horizontal Offset", options: Self.hOffsetOptions, current: Int((s.horizontalOffset * 100).rounded()), label: { Text(PlayerControlsFormatting.hOffsetLabel($0)) }) { v in updateStyle { $0.horizontalOffset = Double(v) / 100 } }.settingsSearchAnchor("style-horizontal")); slot += 1
         rows.append(colorRow(slot, "Text Color", options: Self.textColorOptions, current: s.textColor, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.textColor = c } }.settingsSearchAnchor("subtitle-color")); slot += 1
         rows.append(numberRow(slot, "Text Opacity", options: Self.alphaOptions, current: Int((s.textColor.alpha * 100).rounded()), displayValue: Text(s.textColor.alpha, format: .percent.precision(.fractionLength(0...3))), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.textColor.alpha = Double(v) / 100 } }.settingsSearchAnchor("style-text-opacity")); slot += 1

@@ -278,7 +278,7 @@ final class SubtitleOverlayGeometryTests: XCTestCase {
     }
 
     @MainActor
-    func testMobileCenterTransportReservesTheGapBelowItOnlyWhileVisible() {
+    func testMobileCenterTransportLeavesTheGapBelowItAvailableForSubtitles() {
         let layout = SubtitleControlsLayout()
         let center = CGRect(x: 300, y: 174, width: 356, height: 92)
         layout.setFrame(center, for: .centerTransport)
@@ -286,8 +286,12 @@ final class SubtitleOverlayGeometryTests: XCTestCase {
         let subtitle = CGRect(x: 350, y: 295, width: 256, height: 40)
         let bounds = CGRect(x: 0, y: 0, width: 956, height: 440)
         let lift = SubtitleOverlayGeometry.upwardOffset(for: subtitle, avoiding: layout.frames, in: bounds)
-        XCTAssertEqual(subtitle.maxY + lift, center.minY - SubtitleOverlayGeometry.controlsClearance)
+        XCTAssertEqual(lift, 0, "A caption already in clear space below the center buttons must not move.")
         XCTAssertEqual(layout.frame(for: .centerTransport), center, "The measured button row remains its actual size.")
+        let overlapping = subtitle.offsetBy(dx: 0, dy: 35)
+        let minimumLift = SubtitleOverlayGeometry.upwardOffset(for: overlapping, avoiding: layout.frames, in: bounds)
+        XCTAssertEqual(overlapping.maxY + minimumLift, 350 - SubtitleOverlayGeometry.controlsClearance)
+        XCTAssertGreaterThan(overlapping.minY + minimumLift, center.maxY)
         layout.setFrame(nil, for: .centerTransport)
         XCTAssertEqual(SubtitleOverlayGeometry.upwardOffset(for: subtitle, avoiding: layout.frames, in: bounds), 0)
     }

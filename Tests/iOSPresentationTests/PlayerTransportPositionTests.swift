@@ -169,7 +169,7 @@ final class PlayerTransportPositionTests: XCTestCase {
         }
     }
 
-    func testVODCaptionsClearTheActualCenterControlsOrRetainTheirOriginalPosition() async throws {
+    func testVODCaptionsUseAvailableSpaceAndHonorControlAvoidancePreference() async throws {
         let model = PlayerViewModel(provider: LayoutProvider(), itemID: "fixture")
         model.controls.duration = 1200
         model.controls.intendsPause = true
@@ -184,7 +184,7 @@ final class PlayerTransportPositionTests: XCTestCase {
         )
     }
 
-    func testLiveCaptionsClearTheActualCenterControlsOrRetainTheirOriginalPosition() async throws {
+    func testLiveCaptionsUseAvailableSpaceAndHonorControlAvoidancePreference() async throws {
         let input = LiveChannelInput.stream(
             url: try XCTUnwrap(URL(string: "https://fixture.invalid/live.m3u8")), httpHeaders: [:]
         )
@@ -232,7 +232,8 @@ final class PlayerTransportPositionTests: XCTestCase {
         let sizes = [
             CGSize(width: 956, height: 440), CGSize(width: 440, height: 956),
             CGSize(width: 568, height: 320), CGSize(width: 320, height: 568),
-            CGSize(width: 1024, height: 768), CGSize(width: 768, height: 1024)
+            CGSize(width: 1024, height: 768), CGSize(width: 768, height: 1024),
+            CGSize(width: 1600, height: 1000), CGSize(width: 1920, height: 1080)
         ]
         for mode in supportsDual ? ["single", "dual", "no-room"] : ["single", "no-room"] {
             model.style.followsSystemStyle = false
@@ -249,6 +250,7 @@ final class PlayerTransportPositionTests: XCTestCase {
             let originalStyle = model.style
             for size in mode == "no-room" ? [sizes[0]] : sizes {
                 visibility.visible = false
+                visibility.isRunningOnMac = size.width >= 1600
                 window.frame = CGRect(origin: .zero, size: size)
                 host.view.frame = window.bounds
                 window.layoutIfNeeded()
@@ -272,7 +274,20 @@ final class PlayerTransportPositionTests: XCTestCase {
                     XCTAssertGreaterThan(original.height, center.minY)
                     XCTAssertEqual(moved, original, "Insufficient room must retain the original position, not a partial lift.")
                 } else {
-                    XCTAssertLessThanOrEqual(moved.maxY, center.minY - SubtitleOverlayGeometry.controlsClearance + 1)
+                    let overlapsControls = layout.frames.contains { $0.intersects(original) }
+                    if overlapsControls {
+                        let clearPositions = layout.frames.map {
+                            original.offsetBy(dx: 0, dy: $0.minY - SubtitleOverlayGeometry.controlsClearance - original.maxY)
+                        }.filter { candidate in
+                            candidate.minY <= original.minY && window.bounds.contains(candidate)
+                                && !layout.frames.contains { $0.intersects(candidate) }
+                        }
+                        let closest = try XCTUnwrap(clearPositions.max { $0.minY < $1.minY })
+                        XCTAssertEqual(moved.minY, closest.minY, accuracy: 1,
+                            "Use the nearest clear gap, including below the timeline or center buttons.")
+                    } else {
+                        XCTAssertEqual(moved, original, "Already-clear captions should not move, even below the timeline.")
+                    }
                     XCTAssertTrue(window.bounds.contains(moved))
                     XCTAssertFalse(layout.frames.contains(where: { $0.intersects(moved) }))
                     let pixel = 1 / window.screen.scale + 0.001
@@ -286,6 +301,12 @@ final class PlayerTransportPositionTests: XCTestCase {
                 attachment.name = "\(label) \(mode) subtitles \(Int(size.width))x\(Int(size.height))"
                 attachment.lifetime = .keepAlways
                 add(attachment)
+                model.style.avoidsPlayerControls = false
+                try await Task.sleep(for: .milliseconds(200))
+                window.layoutIfNeeded()
+                XCTAssertEqual(try captionBounds(), original, "Disabling avoidance keeps captions at their saved position.")
+                XCTAssertFalse(layout.frames.isEmpty, "Controls remain visible and measured when avoidance is disabled.")
+                model.style.avoidsPlayerControls = true
                 visibility.visible = false
                 try await Task.sleep(for: .milliseconds(300))
                 XCTAssertTrue(layout.frames.isEmpty)
@@ -296,6 +317,7 @@ final class PlayerTransportPositionTests: XCTestCase {
 
     @Observable final class CaptionChromeVisibility {
         var visible = false
+        var isRunningOnMac = false
     }
 
     private struct CaptionAvoidanceFixture<Captions: View, Chrome: View>: View {
@@ -311,6 +333,7 @@ final class PlayerTransportPositionTests: XCTestCase {
             }
             .environment(\.themePalette, .light)
             .environment(\.colorScheme, .light)
+            .environment(\.plozziOSIsRunningOnMac, visibility.isRunningOnMac)
             .ignoresSafeArea()
         }
     }
