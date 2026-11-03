@@ -177,6 +177,91 @@ def records(github, kind):
 
 
 class SynchronizationTests(unittest.TestCase):
+    def test_new_reports_and_replies_use_source_links_without_added_usernames(self):
+        discord, github = Discord(), GitHub()
+        discord.messages[THREAD][0]["author"].update(username="PrivateHandle", global_name="Display Name")
+        discord.messages[THREAD].append(message(REPLY, "The text mentions Example Person."))
+        synchronize(discord, github)
+        report = records(github, "report")[0]["body"]
+        reply = records(github, "reply")[0]["body"]
+        self.assertNotIn("PrivateHandle", report)
+        self.assertNotIn("Display Name", report)
+        self.assertNotIn("From **", report + reply)
+        self.assertIn(f"[Discord report]({BRIDGE.message_link(THREAD, THREAD)})", report)
+        self.assertIn(f"[Discord reply]({BRIDGE.message_link(THREAD, REPLY)})", reply)
+        self.assertIn("The text mentions Example Person.", reply)
+
+    def test_legacy_attribution_is_not_backfilled_but_new_replies_omit_names(self):
+        discord, github = Discord(), GitHub()
+        discord.messages[THREAD].append(message(REPLY, "Original reply."))
+        synchronize(discord, github)
+        for kind, identifier in (("report", THREAD), ("reply", REPLY)):
+            obj = records(github, kind)[0]
+            link = BRIDGE.message_link(THREAD, identifier)
+            obj["body"] = obj["body"].replace(
+                f"[Discord {kind}]({link}):", f"From **Original Name** on [Discord]({link}):",
+            )
+        github.issues[0]["body"] += "\nMaintainer notes."
+        discord.messages[THREAD][0]["author"]["global_name"] = "Changed Name"
+        discord.threads[0]["thread_metadata"]["archived"] = True
+        github.writes.clear()
+        discord.writes.clear()
+        synchronize(discord, github)
+        self.assertEqual(github.writes, [])
+        self.assertEqual(discord.writes, [])
+        discord.messages[THREAD][0]["content"] = "Edited report."
+        discord.messages[THREAD][1]["content"] = "Edited reply."
+        discord.messages[THREAD].append(message(str(int(REPLY) + 1), "A new reply."))
+        synchronize(discord, github)
+        self.assertIn("From **Original Name**", github.issues[0]["body"])
+        self.assertIn("Edited report.", github.issues[0]["body"])
+        self.assertTrue(github.issues[0]["body"].endswith("Maintainer notes."))
+        self.assertIn("From **Original Name**", records(github, "reply")[0]["body"])
+        self.assertIn("Edited reply.", records(github, "reply")[0]["body"])
+        self.assertNotIn("From **", records(github, "reply")[1]["body"])
+        self.assertNotIn("Changed Name", github.issues[0]["body"])
+
+    def test_invalid_legacy_attribution_is_not_silently_rewritten(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        github.issues[0]["body"] = github.issues[0]["body"].replace(
+            f"[Discord report]({BRIDGE.message_link(THREAD, THREAD)}):", "Custom attribution",
+        )
+        github.writes.clear()
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "attribution is invalid"):
+            synchronize(discord, github)
+        self.assertEqual(github.writes, [])
+
+    def test_existing_discord_reply_headings_stay_unchanged_new_ones_use_issue_number(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        github.comments.append({
+            "id": 40, "body": "First reply", "user": {"login": "maintainer"},
+            "issue_url": f"https://api.github.com/repos/{BRIDGE.REPO}/issues/1",
+            "created_at": "2026-01-01T00:00:00Z",
+        })
+        synchronize(discord, github)
+        first = next(m for m in discord.messages[THREAD]
+                     if m.get("embeds", [{}])[0].get("footer", {}).get("text") == BRIDGE.FOOTER + "comment:40:0")
+        self.assertEqual(first["embeds"][0]["title"], "GitHub #1")
+        first["embeds"][0]["title"] = "GitHub #1 - old-maintainer"
+        discord.threads[0]["thread_metadata"]["archived"] = True
+        discord.writes.clear()
+        synchronize(discord, github)
+        self.assertEqual(discord.writes, [])
+        github.comments[-1]["body"] = "Edited first reply"
+        github.comments.append({
+            "id": 41, "body": "Second reply", "user": {"login": "another-maintainer"},
+            "issue_url": f"https://api.github.com/repos/{BRIDGE.REPO}/issues/1",
+            "created_at": "2026-01-02T00:00:00Z",
+        })
+        synchronize(discord, github)
+        self.assertEqual(first["embeds"][0]["title"], "GitHub #1 - old-maintainer")
+        self.assertEqual(first["embeds"][0]["description"], "Edited first reply")
+        second = next(m for m in discord.messages[THREAD]
+                      if m.get("embeds", [{}])[0].get("footer", {}).get("text") == BRIDGE.FOOTER + "comment:41:0")
+        self.assertEqual(second["embeds"][0]["title"], "GitHub #1")
+
     def test_new_report_replay_and_replies_do_not_duplicate_or_reclassify(self):
         discord, github = Discord(), GitHub()
         discord.messages[THREAD].append(message(REPLY, "More detail."))

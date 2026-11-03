@@ -36,7 +36,8 @@ POSTING_GUIDE_NOTICE = (
     f"**{PUBLIC_NOTICE}.**\n"
     f"Your post and replies are copied to [Plozz's public GitHub issues](https://github.com/{REPO}/issues), "
     "not just shared in Discord. **Never include passwords, access tokens, private server URLs, or unredacted logs.** "
-    "Check screenshots for private information before posting.\n\n"
+    "Check screenshots for private information before posting. "
+    "The bot doesn't add usernames to new copies, but links, message text, and screenshots may still identify you.\n\n"
 )
 TESTFLIGHT_GUIDE = {
     "title": "Try the Plozz TestFlight beta",
@@ -257,9 +258,22 @@ def message_link(thread, message):
     return f"https://discord.com/channels/{GUILD}/{snowflake(thread)}/{snowflake(message)}"
 
 
-def source_content(thread, message, report=False):
-    author = message.get("author", {})
-    name = safe_text(author.get("global_name") or author.get("username") or "Discord member")
+def source_content(thread, message, report=False, previous=None):
+    link = message_link(thread["id"], message["id"])
+    attribution = f"[Discord {'report' if report else 'reply'}]({link}):"
+    if previous is not None:
+        if previous.count(START) != 1 or previous.count(END) != 1 or previous.index(START) > previous.index(END):
+            raise BridgeError("A managed GitHub region was changed; refusing to rewrite existing attribution.")
+        stored = previous.split(START, 1)[1].split(END, 1)[0].strip("\n")
+        if report:
+            heading, separator, stored = stored.partition("\n\n")
+            if not heading.startswith("### Discord report: ") or not separator:
+                raise BridgeError("An existing report heading is invalid; refusing to rewrite attribution.")
+        old = stored.partition("\n\n")[0]
+        legacy = r"From \*\*[^\n]+\*\* on \[Discord\]\(" + re.escape(link) + r"\):"
+        if old != attribution and not re.fullmatch(legacy, old):
+            raise BridgeError("Existing Discord source attribution is invalid; refusing an automatic rewrite.")
+        attribution = old
     title = "### Discord report: " + safe_text(thread["name"]) + "\n\n" if report else ""
     text = safe_text(message.get("content", ""))
     attachments = []
@@ -273,7 +287,7 @@ def source_content(thread, message, report=False):
         text += "\n\n" + "\n".join(attachments) + "\n\n*Attachment links can expire; the original remains available on Discord.*"
     if not text.strip():
         text = "*No text or attachment in this message.*"
-    result = title + f"From **{name}** on [Discord]({message_link(thread['id'], message['id'])}):\n\n" + text
+    result = title + attribution + "\n\n" + text
     if len(result) > 60000:
         raise BridgeError("A Discord report exceeds GitHub's safe message size; refusing to truncate it.")
     return result
@@ -793,6 +807,14 @@ class GitHubIndex:
         self.add(issue, issue["number"], True)
         return issue["number"]
 
+    def upsert_source(self, number, kind, thread, message):
+        record = self.records.get((number, kind, thread["id"], message["id"]))
+        content = source_content(
+            thread, message, report=kind == "report",
+            previous=record["object"]["body"] if record else None,
+        )
+        self.upsert(number, kind, content, thread["id"], message["id"])
+
 
 def discord_upsert(discord, thread, messages, key, embed):
     footer = FOOTER + key
@@ -859,16 +881,22 @@ def sync_github_replies(discord, thread, messages, index, number):
             body = comment.get("body") or "(Empty GitHub comment.)"
         chunks = discord_chunks(body)
         prefix = f"comment:{comment['id']}:"
-        previous_parts = [
-            int(m["embeds"][0]["footer"]["text"].removeprefix(FOOTER + prefix))
+        previous_messages = [
+            m
             for m in messages if m.get("author", {}).get("id") == BOT
             and len(m.get("embeds", [])) == 1
             and re.fullmatch(re.escape(FOOTER + prefix) + r"[0-9]+", m["embeds"][0].get("footer", {}).get("text", ""))
         ]
+        previous_parts = [
+            int(m["embeds"][0]["footer"]["text"].removeprefix(FOOTER + prefix))
+            for m in previous_messages
+        ]
         count = max(len(chunks), max(previous_parts, default=-1) + 1)
         for part in range(count):
+            previous = next((m for m in previous_messages
+                             if m["embeds"][0]["footer"]["text"] == FOOTER + prefix + str(part)), None)
             if not discord_upsert(discord, thread, messages, prefix + str(part), {
-                "title": f"GitHub #{number} - {comment['user']['login']}"[:256],
+                "title": previous["embeds"][0]["title"] if previous else f"GitHub #{number}",
                 "url": f"https://github.com/{REPO}/issues/{number}#issuecomment-{comment['id']}",
                 "description": chunks[part] if part < len(chunks) else "(Removed by a GitHub comment edit.)",
             }):
@@ -996,11 +1024,11 @@ def sync(discord, github, matcher, channels, since, dry_run=False):
             if number is None:
                 number = index.create(thread, starter, label)
             elif starter:
-                index.upsert(number, "report", source_content(thread, starter, True), thread["id"], starter["id"])
+                index.upsert_source(number, "report", thread, starter)
             for message in messages:
                 if message["id"] == thread["id"] or message.get("author", {}).get("bot") or message.get("type", 0) not in (0, 19):
                     continue
-                index.upsert(number, "reply", source_content(thread, message), thread["id"], message["id"])
+                index.upsert_source(number, "reply", thread, message)
             if starter:
                 supporters = voters(discord, thread["id"], starter, channels[thread["parent_id"]])
                 aggregate = totals.setdefault(number, {"users": set(), "threads": []})
