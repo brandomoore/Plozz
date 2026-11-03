@@ -113,7 +113,10 @@ class Discord:
                 return {"threads": [], "has_more": False}
             identifier = path.split("/")[2]
             if path == f"/channels/{identifier}":
-                return copy.deepcopy(next(t for t in self.threads if t["id"] == identifier))
+                found = next((t for t in self.threads if t["id"] == identifier), None)
+                if found is None:
+                    raise BRIDGE.APIError("Discord", "GET", 404, 10003)
+                return copy.deepcopy(found)
             if path.endswith("/messages"):
                 return sorted(copy.deepcopy(self.messages[identifier]), key=lambda m: int(m["id"]), reverse=True)
             if "/messages/" in path and "/reactions/" not in path:
@@ -334,14 +337,124 @@ class SynchronizationTests(unittest.TestCase):
         self.assertEqual(github.writes, [])
         self.assertEqual(discord.writes, [])
 
-    def test_missing_previously_linked_thread_fails_instead_of_erasing_votes(self):
+    def test_unknown_linked_channel_preserves_report_and_votes_with_warning(self):
         discord, github = Discord(), GitHub()
         synchronize(discord, github)
-        old = copy.deepcopy(github.comments)
+        old = copy.deepcopy((github.issues, github.comments))
+        writes = (len(github.writes), len(discord.writes))
         discord.threads = []
-        with self.assertRaisesRegex(BRIDGE.BridgeError, "no longer visible"):
+        with patch("builtins.print") as output:
             synchronize(discord, github)
-        self.assertEqual(github.comments, old)
+        self.assertEqual((github.issues, github.comments), old)
+        self.assertEqual((len(github.writes), len(discord.writes)), writes)
+        warning = next(call.args[0] for call in output.call_args_list if call.args[0].startswith("WARNING:"))
+        self.assertIn(f"Thread {THREAD} (issue #1)", warning)
+        self.assertIn("HTTP 404, code 10003", warning)
+        self.assertIn("Preserving", warning)
+
+    def test_missing_link_does_not_block_new_reports_or_their_votes(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        old_report = copy.deepcopy(github.issues[0])
+        old_votes = copy.deepcopy(records(github, "votes")[0])
+        discord.threads = [thread(SECOND)]
+        discord.messages[SECOND] = [message(SECOND, "A new report")]
+        synchronize(discord, github)
+        self.assertEqual(len(github.issues), 2)
+        self.assertEqual(github.issues[0], old_report)
+        self.assertEqual(records(github, "votes")[0], old_votes)
+        self.assertIn("A new report", github.issues[1]["body"])
+        self.assertEqual(len(records(github, "votes")), 2)
+        before = (len(github.writes), len(discord.writes))
+        matcher = synchronize(discord, github)
+        matcher.match.assert_not_called()
+        self.assertEqual((len(github.writes), len(discord.writes)), before)
+
+    def test_missing_duplicate_source_keeps_aggregate_votes_but_syncs_replies(self):
+        discord, github = Discord([thread(), thread(SECOND)]), GitHub([issue()])
+        for identifier, voter in ((THREAD, PERSON), (SECOND, ANOTHER)):
+            discord.messages[identifier][0]["reactions"] = [{"emoji": {"id": None, "name": BRIDGE.THUMBS_UP}}]
+            discord.users[(identifier, 0)] = [{"id": voter}]
+        synchronize(discord, github, Mock(match=Mock(return_value=1)))
+        old_votes = copy.deepcopy(records(github, "votes")[0])
+        self.assertIn("Discord votes: 2", old_votes["body"])
+        discord.threads = [thread(SECOND)]
+        discord.messages[SECOND].append(message(REPLY, "Still syncing"))
+        synchronize(discord, github)
+        self.assertEqual(records(github, "votes")[0], old_votes)
+        self.assertIn("Still syncing", records(github, "reply")[0]["body"])
+
+    def test_link_omitted_from_discovery_is_recovered_by_id_without_reclassification(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        discord.messages[THREAD].append(message(REPLY, "Recovered reply"))
+        with patch.object(BRIDGE, "discover_threads", return_value=[]):
+            matcher = synchronize(discord, github)
+        matcher.match.assert_not_called()
+        self.assertEqual(len(github.issues), 1)
+        self.assertIn("Recovered reply", records(github, "reply")[0]["body"])
+
+    def test_inaccessible_link_stays_a_failure_after_other_reports_are_processed(self):
+        for status, code in ((403, 50001), (404, None), (503, None)):
+            with self.subTest(status=status, code=code):
+                discord, github = Discord(), GitHub()
+                synchronize(discord, github)
+                old_votes = copy.deepcopy(records(github, "votes"))
+                discord.threads = [thread(SECOND)]
+                discord.messages[SECOND] = [message(SECOND)]
+                original = discord.call
+
+                def inaccessible(method, path, data=None, query=None):
+                    if path == f"/channels/{THREAD}":
+                        raise BRIDGE.APIError("Discord", "GET", status, code)
+                    return original(method, path, data, query)
+
+                with patch.object(discord, "call", side_effect=inaccessible):
+                    with self.assertRaisesRegex(BRIDGE.BridgeError, f"Thread {THREAD} .*HTTP {status}"):
+                        synchronize(discord, github)
+                self.assertEqual(len(github.issues), 2)
+                self.assertEqual(records(github, "votes"), old_votes)
+
+    def test_recovered_link_must_still_be_an_eligible_public_support_thread(self):
+        for changes in (
+            {"id": SECOND}, {"guild_id": "1556500000000999999"},
+            {"parent_id": "1556500000000999999"}, {"type": 12},
+        ):
+            with self.subTest(changes=changes):
+                discord, github = Discord(), GitHub()
+                synchronize(discord, github)
+                old = (len(github.writes), len(discord.writes))
+                discord.threads = [thread(**changes)]
+                with patch.object(BRIDGE, "discover_threads", return_value=[]):
+                    original = discord.call
+
+                    def changed_channel(method, path, data=None, query=None):
+                        if path == f"/channels/{THREAD}":
+                            return thread(**changes)
+                        return original(method, path, data, query)
+
+                    with patch.object(discord, "call", side_effect=changed_channel):
+                        with self.assertRaisesRegex(BRIDGE.BridgeError, "no longer an eligible public"):
+                            synchronize(discord, github)
+                self.assertEqual((len(github.writes), len(discord.writes)), old)
+
+    def test_recovered_link_predating_notice_is_not_processed(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        old = (len(github.writes), len(discord.writes))
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "no longer an eligible public"):
+            BRIDGE.sync(discord, github, Mock(), {FORUM: {}}, datetime(2999, 1, 1, tzinfo=timezone.utc))
+        self.assertEqual((len(github.writes), len(discord.writes)), old)
+
+    def test_missing_link_dry_run_inspects_other_reports_without_writes(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        old = (len(github.writes), len(discord.writes))
+        discord.threads = [thread(SECOND)]
+        discord.messages[SECOND] = [message(SECOND)]
+        matcher = synchronize(discord, github, dry_run=True)
+        matcher.match.assert_called_once()
+        self.assertEqual((len(github.writes), len(discord.writes)), old)
 
     def test_bot_posts_and_unrelated_channels_are_not_imported(self):
         discord, github = Discord([thread(), thread(SECOND, parent_id="1556500000000999999")]), GitHub()

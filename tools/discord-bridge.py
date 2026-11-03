@@ -901,12 +901,26 @@ def sync(discord, github, matcher, channels, since, dry_run=False):
     index = GitHubIndex(github)
     threads = discover_threads(discord, since)
     found = {t["id"] for t in threads}
-    missing = set(index.reports) - found
-    if missing:
-        raise BridgeError("Previously linked threads are no longer visible or predate the notice timestamp; refusing incomplete vote totals.")
     totals = {}
     unavailable_votes = set()
     failures = []
+    for identifier in sorted(set(index.reports) - found, key=int):
+        number = index.reports[identifier]["number"]
+        try:
+            linked = discord.call("GET", f"/channels/{snowflake(identifier)}")
+            if (linked.get("id") != identifier or linked.get("guild_id") != GUILD
+                    or linked.get("parent_id") not in FORUMS or linked.get("type") != 11
+                    or thread_created(identifier) < since):
+                raise BridgeError("Linked channel is no longer an eligible public support thread.")
+            threads.append(linked)
+        except BridgeError as error:
+            unavailable_votes.add(number)
+            detail = f"Thread {identifier} (issue #{number}): {error}"
+            if isinstance(error, APIError) and error.status == 404 and error.code == 10003:
+                print(f"WARNING: {detail} Preserving its imported content and the issue's last vote total.")
+            else:
+                failures.append(detail)
+    threads.sort(key=lambda t: int(t["id"]))
     for thread in threads:
         try:
             messages = thread_messages(discord, thread["id"])
@@ -962,7 +976,7 @@ def sync(discord, github, matcher, channels, since, dry_run=False):
                 "Unique non-bot voters across all linked posts, counting the default forum reaction "
                 "(normal or burst) once per person. This is separate from GitHub reactions.\n\n" + links)
     if failures:
-        raise BridgeError("\n".join(failures))
+        raise BridgeError("Available threads were processed, but some sources remain pending:\n" + "\n".join(failures))
     print(f"Completed {'dry run' if dry_run else 'synchronization'} for {len(threads)} forum threads.")
 
 
