@@ -1,8 +1,10 @@
 #if os(iOS)
 import CoreModels
+import CoreUI
 import SwiftUI
 
 struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
+    @Environment(\.plozzMetrics) private var metrics
     @State private var position = ScrollPosition(edge: .top)
     @State private var preservation = PlozziOSHomeScrollPreservation()
     @State private var viewportWidth: CGFloat = 0
@@ -13,13 +15,14 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
     var body: some View {
         ScrollView {
             // Eager vertical sizing avoids estimated heights changing during scrolling.
-            VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionSpacing) {
+            VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
                 if heroActive { hero }
                 rows
             }
             .padding(.bottom)
             .coordinateSpace(name: PlozziOSHomeScrollSpace.content)
             .environment(\.plozziOSHomeViewportWidth, viewportWidth)
+            .plozzDesktopMediaRailLayout()
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
         .scrollPosition($position)

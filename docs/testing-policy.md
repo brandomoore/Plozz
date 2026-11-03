@@ -39,6 +39,62 @@ updates with their selection phase, extraction-output identity, and native
 rendering suppression. This distinguishes missing delivery from cues that
 arrived and were subsequently cleared without logging production captions.
 
+## Live Emby transcoding
+
+The Emby cases in `ServerLiveTranscodingTests` in the iOS presentation suite are
+opt-in real-server checks, not hermetic CI fixtures. Supply `PLOZZ_LIVE_EMBY_CONFIGURATION` to the
+test process as JSON containing `baseURL`, `username`, and one to three explicit
+`itemIDs`. Use an authorized passwordless, non-administrator internal test user;
+never supply a personal owner's identity or external review credentials.
+Do not commit the configuration or put a token in it.
+
+Choose representative SDR, HDR10, and Dolby Vision sources. The H.264 case uses
+`JellyfinProvider`; the HEVC case uses the production `JellyfinClient`, rendition
+bounds, and authenticated locator with an explicit HEVC-capable device profile.
+Simulators can report no hardware HEVC support, so that second case verifies
+the capable-device protocol and native decoder, not hardware detection.
+Both use the app's authenticated resolver and `NativeVideoEngine`.
+
+The checks inspect the actual decoded codec, retain secret-free range/dimension
+and startup measurements, and require more than ten seconds of progress in a
+twelve-second interval after AVPlayer enters playing. A displayed first frame
+is not proof that cold-encoder buffering has finished. The server's returned
+range is recorded rather than assumed to be SDR from a request parameter.
+Each owned encoding session and test login is released, including on failure.
+
+The native presenting layer must be ready and attached to the active player.
+Where the OS supports PiP, the test also starts and stops the real controller.
+Where it does not, the evidence explicitly records that limitation; layer
+readiness is not a successful PiP activation. These bounded smoke checks do not
+establish physical-device HDR output, long-duration performance, or correctness
+for every item on the server.
+
+### Live Plex and Jellyfin transcoding
+
+The same suite has forced H.264 and HEVC playback cases for Plex and Jellyfin,
+using the authenticated resolver and native player. H.264 uses the production
+providers; HEVC exercises the production clients and rendition locators with an
+explicit HEVC-capable profile because simulator hardware detection reports no
+HEVC support. This does not verify physical-device capability detection.
+The cases require
+more than 28 seconds of playback progress over a 30-second measurement after
+playback starts, verify the decoded codec and H.264 SDR output, and record the
+actual dynamic range, AVPlayer stall/dropped-frame counts and transfer bitrate. Select explicit
+SDR, HDR and Dolby Vision sources; an SDR original does not prove tone mapping.
+PiP uses the same conditional activation checks and simulator limitations as
+the Emby cases above.
+
+Set `PLOZZ_LIVE_TRANSCODE_BROKER` to a bounded, private loopback HTTP endpoint.
+Its `/plex` and `/jellyfin` responses contain `baseURL`, `username`, `userID`,
+`serverID`, `deviceID`, `token`, and one to three explicit `itemIDs`. The broker
+must validate dedicated internal test identities, resolve credentials into
+memory, disable request logging and response caching, and close when the run
+ends. It owns any temporary login and releases it after the test process exits;
+the tests maintain and release each encoding session. Never put passwords or tokens in
+environment variables, command arguments, configuration files or attachments.
+The broker endpoint must use an unguessable run-specific path and bind only to
+`127.0.0.1`; never publish it as a preview or expose it to the LAN.
+
 ## The two speed wins
 
 ### 1. Build once, run many (`tools/run-tests.sh`)

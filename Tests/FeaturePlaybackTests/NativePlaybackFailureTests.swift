@@ -577,6 +577,45 @@ final class NativePlaybackFailureTests: XCTestCase {
     }
 
     @MainActor
+    func testColdTranscodeStartupDoesNotConsumeTheFormatProbeBudget() async throws {
+        let expected = try format(codec: kCMVideoCodecType_H264, transfer: kCMFormatDescriptionTransferFunction_ITU_R_709_2)
+        var waits = 0
+        var reads = 0
+        let observed = try await NativePlaybackFailure.probeConvertedFormat(
+            read: { reads += 1; return expected }, isCurrent: { true },
+            isReady: { waits >= 80 }, pause: { waits += 1 }
+        )
+        XCTAssertEqual(waits, 80)
+        XCTAssertEqual(reads, 1)
+        XCTAssertEqual(observed?.dynamicRange, .sdr)
+    }
+
+    @MainActor
+    func testUnreadyTranscodeFormatWaitIsBoundedAndDoesNotReadTracks() async throws {
+        var waits = 0
+        var reads = 0
+        let observed = try await NativePlaybackFailure.probeConvertedFormat(
+            read: { reads += 1; return nil }, isCurrent: { true },
+            isReady: { false }, pause: { waits += 1 }
+        )
+        XCTAssertNil(observed)
+        XCTAssertEqual(waits, 600)
+        XCTAssertEqual(reads, 0)
+    }
+
+    @MainActor
+    func testReplacedTranscodeStopsWaitingForReadiness() async throws {
+        var current = true
+        var reads = 0
+        let observed = try await NativePlaybackFailure.probeConvertedFormat(
+            read: { reads += 1; return nil }, isCurrent: { current },
+            isReady: { false }, pause: { current = false }
+        )
+        XCTAssertNil(observed)
+        XCTAssertEqual(reads, 0)
+    }
+
+    @MainActor
     func testAuthenticationFailureIsPreservedBeforeAnAVPlayerItemExists() async throws {
         let locator = try AuthenticatedHTTPPlaybackLocator(
             provider: .emby, accountID: "fixture", credentialRevision: CredentialRevision(),

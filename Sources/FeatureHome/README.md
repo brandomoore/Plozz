@@ -60,6 +60,13 @@ beyond the Home preview, not merely because the preview reaches its limit.
 Home requests one lookahead item in the existing bounded fetch; it does not
 probe every shelf again. Complete rows, including single-item shelves and
 uncapped Continue Watching snapshots, have no redundant browse action.
+On Mac, successfully loaded media rows with more than ten titles offer the
+title-chevron action even when the entire row is already loaded. This threshold
+changes only the heading action; it does not shorten the rail or change its fetch
+limit. Rows with ten or fewer titles, loading/failed rows, Libraries, and Live TV
+have no new action. Mac Related headings follow the same threshold and open all
+currently resolved related titles in the same grid, preserving their order,
+continuation cues, detail navigation, and profile/account scope.
 Watchlist previews the first 20 titles in its existing Home order. When there
 are more, TV pushes the existing Watchlist view beneath Home rather than switching
 top-level destinations. Mobile retains its existing Watchlist destination handoff,

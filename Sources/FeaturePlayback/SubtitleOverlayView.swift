@@ -505,7 +505,7 @@ public struct SubtitleOverlayView: View {
         GeometryReader { geo in
             let rect = videoRect ?? CGRect(origin: .zero, size: geo.size)
             let origin = geo.frame(in: .global).origin
-            let controls = (controlsFrames + (controlsFrame.map { [$0] } ?? []))
+            let controls = (style.avoidsPlayerControls ? controlsFrames + (controlsFrame.map { [$0] } ?? []) : [])
                 .map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
             ZStack {
                 bitmapLayer(in: rect, bounds: CGRect(origin: .zero, size: geo.size), controls: controls)

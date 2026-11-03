@@ -458,6 +458,8 @@ public enum SettingsSearchCatalog {
               preferredQueries: SubtitleStyle.PositionReference.allCases.map(\.displayName)),
         .init("subtitle-position", page: .subtitleStyle, title: "Vertical offset",
               keywords: "captions move up down vertical placement position on screen bottom top"),
+        .init("subtitle-avoid-controls", page: .subtitleStyle, title: SubtitleStyle.controlAvoidanceTitle,
+              keywords: "subtitles captions automatic movement move position playback controls progress bar play button overlap"),
         .init("theme", page: .theme, title: "Theme",
               keywords: "dark light mode appearance background colors colours"),
         .init("gradient-backgrounds", page: .theme, title: "Gradient Backgrounds",

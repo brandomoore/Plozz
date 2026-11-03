@@ -101,10 +101,17 @@ public struct FeaturedMediaRow: View {
         false
         #endif
     }
-    private var inset: CGFloat { television ? PlozzTheme.Metrics.screenPadding : 20 }
-    private var cardSpacing: CGFloat { television ? 32 : 16 }
+    private var inset: CGFloat {
+        metrics.usesDesktopSizing ? DesktopMediaRailLayout.pageInset : (television ? PlozzTheme.Metrics.screenPadding : 20)
+    }
+    private var cardSpacing: CGFloat {
+        metrics.usesDesktopSizing ? metrics.cardSpacing : (television ? 32 : 16)
+    }
     private var size: CGSize {
-        FeaturedCardLayout.size(
+        if metrics.usesDesktopSizing {
+            return DesktopMediaRailLayout.featuredSize(in: viewportWidth, metrics: metrics)
+        }
+        return FeaturedCardLayout.size(
             viewportWidth: viewportWidth - (television ? navigationContentInset : 0),
             television: television
         )
@@ -141,9 +148,9 @@ public struct FeaturedMediaRow: View {
             HStack {
                 if let onBrowse {
                     BrowseRowHeading(title: title) { coordinator.stop(); onBrowse() }
-                        .font(.title2.bold())
+                        .font(metrics.usesDesktopSizing ? .title3.weight(.semibold) : .title2.bold())
                 } else {
-                    title.font(.title2.bold())
+                    title.font(metrics.usesDesktopSizing ? .title3.weight(.semibold) : .title2.bold())
                 }
                 Spacer()
                 if !usesRowBrowsing, let onSeeAll {
@@ -164,7 +171,8 @@ public struct FeaturedMediaRow: View {
             if isLoading {
                 ScrollView(.horizontal) {
                     HStack(spacing: cardSpacing) {
-                        ForEach(0..<3, id: \.self) { _ in
+                        ForEach(0..<(metrics.usesDesktopSizing
+                            ? max(3, Int(ceil(viewportWidth / (size.width + cardSpacing))) + 1) : 3), id: \.self) { _ in
                             RoundedRectangle(cornerRadius: 24)
                                 .fill(palette.fill)
                                 .frame(width: size.width, height: size.height)

@@ -3,6 +3,31 @@ import XCTest
 
 @MainActor
 final class SubtitleStylePreferencesTests: XCTestCase {
+    func testControlAvoidanceDefaultsOnAndPersistsIndependentProfileAndLiveChoices() throws {
+        XCTAssertTrue(try JSONDecoder().decode(SubtitleStyle.self, from: Data("{}".utf8)).avoidsPlayerControls)
+        XCTAssertTrue(SubtitleStyle.default.avoidsPlayerControls)
+        XCTAssertTrue(SubtitleStyle.profileDefault.avoidsPlayerControls)
+        for enabled in [false, true] {
+            var style = SubtitleStyle.default
+            style.avoidsPlayerControls = enabled
+            XCTAssertEqual(try JSONDecoder().decode(SubtitleStyle.self, from: JSONEncoder().encode(style)), style)
+        }
+        let name = "SubtitleControlAvoidance.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = SubtitleStyleStore(defaults: defaults, namespace: "viewer")
+        let model = SubtitleStyleModel(store: store)
+        model.style.avoidsPlayerControls = false
+        XCTAssertFalse(model.resolvedLiveTVStyle.avoidsPlayerControls, "Live TV inherits the profile until customized.")
+        model.usesSeparateLiveTVStyle = true
+        model.resolvedLiveTVStyle.avoidsPlayerControls = true
+        let reloaded = SubtitleStyleModel(store: store)
+        XCTAssertFalse(reloaded.style.avoidsPlayerControls)
+        XCTAssertTrue(reloaded.resolvedLiveTVStyle.avoidsPlayerControls)
+        XCTAssertTrue(SubtitleStyleStore(defaults: defaults).load().base.avoidsPlayerControls)
+        XCTAssertTrue(SubtitleStyleStore(defaults: defaults, namespace: "other").load().base.avoidsPlayerControls)
+    }
+
     func testPositionLabelsDescribeTheBottomReferenceWithoutChangingStoredValues() {
         let expected: [(SubtitleStyle.PositionReference, String, String)] = [
             (.screen, "screen", "Bottom of screen"),
@@ -55,12 +80,14 @@ final class SubtitleStylePreferencesTests: XCTestCase {
             model.style.followsSystemStyle = followsSystem
             model.style.fontScale = 1.25
             model.style.positionReference = .picture
+            model.style.avoidsPlayerControls = !followsSystem
             let settings = ProfileSettingsTransfer.capture(namespace: "profile-a", defaults: source)
             ProfileSettingsTransfer.apply(settings, namespace: "profile-a", defaults: target)
             let received = SubtitleStyleStore(defaults: target, namespace: "profile-a").load()
             XCTAssertEqual(received.base.followsSystemStyle, followsSystem)
             XCTAssertEqual(received.base.fontScale, 1.25)
             XCTAssertEqual(received.base.positionReference, .picture)
+            XCTAssertEqual(received.base.avoidsPlayerControls, !followsSystem)
             XCTAssertEqual(sourceOther.load(), other)
             XCTAssertEqual(targetOther.load(), other)
             XCTAssertEqual(SubtitleStyleStore(defaults: source).load(), defaultBefore)
