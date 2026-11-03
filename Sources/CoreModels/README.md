@@ -298,7 +298,12 @@ Transferable preferences use byte-stable sync values. JSON object keys and
 Hero's set-valued `randomLibraryKeys` are canonicalized on capture and apply,
 including legacy blobs. User-ordered arrays such as Hero sources and unknown
 fields retain their meaning; native preferred-version dictionaries stay
-dictionaries rather than becoming JSON data.
+dictionaries rather than becoming JSON data. Native collections use sorted XML
+property-list transport when it round-trips losslessly; scalars, blobs and
+collections XML cannot preserve exactly retain binary transport. Both formats
+keep the legacy single-element array wrapper and remain readable by older
+clients. XML-incompatible future values retain their original semantics rather
+than being truncated to obtain stable bytes.
 
 Any profile may be deleted while at least one remains. Both cloud adapters apply
 the original/default profile's deletion and omit deleted profiles, membership and

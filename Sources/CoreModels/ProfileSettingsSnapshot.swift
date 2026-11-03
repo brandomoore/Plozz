@@ -103,13 +103,24 @@ public enum ProfileSettingsTransfer {
             // Wrap in an array so scalar values (Bool/Int/String) are valid
             // top-level property-list roots too.
             let canonical = canonicalize(value, baseKey: base)
-            if let data = try? PropertyListSerialization.data(
-                fromPropertyList: [canonical], format: .binary, options: 0
-            ) {
+            if let data = encodePropertyList(canonical) {
                 entries[base] = data
             }
         }
         return entries
+    }
+
+    private static func encodePropertyList(_ value: Any) -> Data? {
+        let wrapped = [value]
+        // Binary plists do not canonicalize native dictionary order. XML does,
+        // but must round-trip losslessly (fractional dates may not, for example).
+        if value is [String: Any] || value is [Any],
+           let xml = try? PropertyListSerialization.data(fromPropertyList: wrapped, format: .xml, options: 0),
+           let decoded = try? PropertyListSerialization.propertyList(from: xml, options: [], format: nil) as? [Any],
+           NSArray(array: wrapped).isEqual(to: decoded) {
+            return xml
+        }
+        return try? PropertyListSerialization.data(fromPropertyList: wrapped, format: .binary, options: 0)
     }
 
     /// Normalize a persisted settings value into a byte-stable form. A `Data` blob
@@ -117,8 +128,8 @@ public enum ProfileSettingsTransfer {
     /// `JSONEncoder().encode(...)` output) is re-serialized with SORTED keys so
     /// dictionary ordering can't vary run-to-run. Known set-valued fields are
     /// sorted without changing ordered arrays. Everything else is returned
-    /// unchanged: property-list scalars/strings/arrays already serialize
-    /// deterministically, and a non-JSON `Data` blob is left as its (stable) bytes.
+    /// unchanged: native collections use lossless sorted XML during capture,
+    /// while a non-JSON `Data` blob is left as its (stable) bytes.
     static func canonicalize(_ value: Any, baseKey: String? = nil) -> Any {
         guard let data = value as? Data else { return value }
         guard var object = try? JSONSerialization.jsonObject(
