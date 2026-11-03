@@ -63,6 +63,7 @@ private struct PrototypeExternalPlayback: Equatable {
 }
 
 private struct PrototypeSearchBookmark {
+    let category: String?
     let row: LiveTVGuideRowID?
     let guideOffset: TimeInterval
     let timeAnchor: Date
@@ -88,9 +89,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var selectedChannelID: String?
     @State private var selectedRowID: LiveTVGuideRowID?
     @State private var isSearching = false
-    #if os(iOS)
-    @State private var searchScope: PrototypeSearchScope = .all
-    #else
+    #if os(tvOS)
     @State private var searchScope: PrototypeSearchScope = .channels
     #endif
     @State private var searchFocusRequest = 0
@@ -532,7 +531,6 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     selectSource: selectBrowseSource,
                     addSource: { sheet = .addSource },
                     selectCategory: { showCategory($0, enteringGuide: layout.sidebarWidth == 0) },
-                    search: { if isSearching { closeSearch() } else { openSearch() } },
                     filters: { sheet = .filters },
                     sources: { sheet = .sources },
                     multiviews: multiviewSelection == nil ? { sheet = .multiviewFavorites } : nil,
@@ -544,6 +542,23 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(expanded ? .hidden : .visible, for: .navigationBar)
             .toolbarBackground(.hidden, for: .navigationBar)
+            .modifier(PrototypeToolbarSearch(
+                query: $model.query,
+                isPresented: Binding(
+                    get: { isSearching },
+                    set: { presented in
+                        guard presented != isSearching else { return }
+                        if presented {
+                            guard !blocksBrowseControls, isActive, !expanded else { return }
+                            openSearch()
+                        } else {
+                            closeSearch()
+                        }
+                    }
+                ),
+                focusRequest: searchFocusRequest, submit: enterGuide,
+                focusChanged: { if $0 { controlsActive = true } }
+            ))
             #endif
         }
         .environment(\.themePalette, palette)
@@ -748,7 +763,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             } else if let id = pendingTuneID {
                 pendingTuneID = nil
                 #if os(iOS)
-                closeSearch()
+                leaveSearchForChannel(id)
                 #endif
                 tune(id)
             }
@@ -1568,7 +1583,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     browseToolbar(layout)
                 }
                 #endif
-                if usesCategoryDirectory(layout) && model.query.isEmpty {
+                if usesCategoryDirectory(layout) && !isSearching {
                     if isInitialCatalogLoading || model.categoryChannelCount(nil) == 0 {
                         guideBrowser(closeSearch: closeSearch)
                     } else {
@@ -1577,7 +1592,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                             returnCategory: categoryDirectoryReturnID, select: { showCategory($0) }
                         )
                     }
-                } else if isSearching || usesCategoryDirectory(layout) {
+                } else if isSearching {
                     #if os(tvOS)
                     searchScopePicker
                     #endif
@@ -1623,21 +1638,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @ViewBuilder
     private func browsingHeader(_ layout: PrototypePreviewLayout) -> some View {
         #if os(iOS)
-        if isSearching || usesCategoryDirectory(layout) {
-            PrototypeSearchHeader(
-                query: $model.query, scope: $searchScope, focusRequest: searchFocusRequest,
-                browse: enterGuide, close: {
-                    if isSearching { closeSearch() } else { model.query = "" }
-                },
-                focusChanged: { if $0 { controlsActive = true } },
-                showsFilter: isSearching || !model.query.isEmpty
-            )
-            .disabled(blocksBrowseControls)
-            .onChange(of: searchScope) { _, _ in
-                focusedProgram = nil
-                playback.focus(nil)
-            }
-        } else {
+        if layout.heroHeight > 0 {
             Color.clear
                 .frame(height: layout.heroHeight)
                 .allowsHitTesting(false)
@@ -1741,7 +1742,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     private var previewChannelSelection: ((LiveTVGuideRowID) -> Void)? {
         #if os(iOS)
         { row in
-            if isSearching { closeSearch() }
+            leaveSearchForChannel(row.channelID)
             tune(row.channelID, origin: row, expandsPlayer: false)
         }
         #else
@@ -1757,6 +1758,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         categoryFocusRequest &+= 1
     }
 
+    #if os(tvOS)
     private var searchScopePicker: some View {
         Picker("Search in", selection: $searchScope) {
             Text("Channels").tag(PrototypeSearchScope.channels)
@@ -1770,6 +1772,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             playback.focus(nil)
         }
     }
+    #endif
 
     @ViewBuilder
     private func searchResults(closeSearch: @escaping () -> Void) -> some View {
@@ -1778,14 +1781,14 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             guideBrowser(closeSearch: closeSearch)
         } else {
             PrototypeMobileSearchResults(
-                model: model, imports: imports, scope: searchScope,
+                model: model, imports: imports,
                 selectCategory: { category in
                     guard model.matchingCategories.contains(category) else { return }
                     showCategory(category)
                 },
                 watch: { channel in
                     guard model.programmeSearchChannelIDs.contains(channel.id) else { return }
-                    closeSearch()
+                    leaveSearchForChannel(channel.id)
                     tune(channel.id, expandsPlayer: false)
                 },
                 details: { sheet = .program($0) }
@@ -2061,12 +2064,14 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         // Exclude both native and custom shell navigation before UIKit presents
         // its keyboard and claims focus.
         onExpandedChange(true)
-        #else
-        searchScope = .all
         #endif
         searchOrigin = PrototypeSearchBookmark(
-            row: selectedRowID, guideOffset: guideOffset, timeAnchor: timeAnchor, timelineOffset: timelineOffset
+            category: model.category, row: selectedRowID,
+            guideOffset: guideOffset, timeAnchor: timeAnchor, timelineOffset: timelineOffset
         )
+        #if os(iOS)
+        model.category = nil
+        #endif
         guideOffset = 0
         timelineOffset = 0
         timeAnchor = Date(timeIntervalSince1970: floor(model.now.timeIntervalSince1970 / 1_800) * 1_800)
@@ -2085,7 +2090,6 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         guard isSearching else {
             #if os(iOS)
             model.query = ""
-            searchScope = .all
             #endif
             return
         }
@@ -2098,10 +2102,12 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             return
         }
         model.query = ""
-        #if os(iOS)
-        searchScope = .all
-        #endif
         if let bookmark = searchOrigin {
+            #if os(iOS)
+            model.category = bookmark.category.flatMap { category in
+                model.browsingCategories.contains(where: { $0.name == category }) ? category : nil
+            }
+            #endif
             guideOffset = bookmark.guideOffset
             timeAnchor = bookmark.timeAnchor
             timelineOffset = bookmark.timelineOffset
@@ -2118,9 +2124,6 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     private func showCategory(_ category: String?, enteringGuide: Bool = true) {
         playback.cancelWatch()
         model.query = ""
-        #if os(iOS)
-        searchScope = .all
-        #endif
         model.category = category
         categoryDirectoryReturnID = category
         showsCategoryDirectory = false
@@ -2136,6 +2139,15 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     }
 
     #if os(iOS)
+    private func leaveSearchForChannel(_ id: String) {
+        guard isSearching else { return }
+        closeSearch()
+        // A result outside the previous category needs a guide sequence containing that channel.
+        if !model.visibleChannels.contains(where: { $0.id == id }) {
+            model.category = nil
+        }
+    }
+
     private func selectBrowseSource(_ sourceID: String?) {
         guard isActive, scenePhase == .active, isProfileAuthorized(), !sourceApplicationFailed,
               sources == nil || applySourceConfiguration(),
@@ -2160,11 +2172,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     private func showCategories() {
         playback.cancelWatch()
         model.query = ""
-        #if os(iOS)
-        searchScope = .all
-        #endif
         model.category = nil
         isSearching = false
+        searchOrigin = nil
         showsCategoryDirectory = true
         searchFocusRequest = 0
         controlsActive = true
@@ -2265,12 +2275,16 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         }
         if !preview.isExpanded {
             let channels: [LiveTVPrototypeChannel]
-            if isSearching && searchScope != .channels {
+            #if os(tvOS)
+            if isSearching && searchScope == .programs {
                 let allowed = model.programmeSearchChannelIDs
                 channels = model.unhiddenCatalogChannels.filter { allowed.contains($0.id) }
             } else {
                 channels = model.guideChannels.map(\.channel)
             }
+            #else
+            channels = model.guideChannels.map(\.channel)
+            #endif
             channelSequence = LiveTVChannelSequence(channels: channels)
         }
         let selectedOrigin = !preview.isExpanded && selectedRowID?.channelID == id ? selectedRowID : nil

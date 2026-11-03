@@ -134,7 +134,7 @@ struct PrototypePreviewLayout {
         #if os(tvOS)
         self.hidesSidebar = hidesSidebar
         #else
-        self.hidesSidebar = false
+        self.hidesSidebar = isSearching
         #endif
         bounds = CGRect(
             x: -safeAreaInsets.leading, y: -safeAreaInsets.top,

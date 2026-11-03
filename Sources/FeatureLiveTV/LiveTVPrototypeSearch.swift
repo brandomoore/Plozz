@@ -2,157 +2,122 @@ import CoreUI
 import FeatureLiveTVCore
 import SwiftUI
 
-enum PrototypeSearchScope: String, CaseIterable {
-    case all, channels, programs
-
-    var title: LocalizedStringResource {
-        switch self {
-        case .all: "All"
-        case .channels: "Channels"
-        case .programs: "Programs"
-        }
-    }
+#if os(tvOS)
+enum PrototypeSearchScope {
+    case channels, programs
 }
+#endif
 
 #if os(iOS)
 import UIKit
 
-struct PrototypeSearchHeader: View {
+struct PrototypeToolbarSearch: ViewModifier {
     @Binding var query: String
-    @Binding var scope: PrototypeSearchScope
+    @Binding var isPresented: Bool
     let focusRequest: Int
-    let browse: () -> Void
-    let close: () -> Void
+    let submit: () -> Void
     let focusChanged: (Bool) -> Void
-    var showsFilter = true
-    @State private var isEditing = false
-    @State private var dismissRequest = 0
+    @FocusState private var isFocused: Bool
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
-    var body: some View {
-        HStack(spacing: PrototypeLayout.smallGap) {
-            PrototypeMobileSearchField(
-                query: $query, scope: $scope,
-                focusRequest: focusRequest, dismissRequest: dismissRequest,
-                submit: browse,
-                focusChanged: {
-                    isEditing = $0
-                    focusChanged($0)
-                }
-            )
-            .frame(height: 44)
-            if showsFilter {
-                Menu {
-                    Picker("Search in", selection: $scope) {
-                        ForEach(PrototypeSearchScope.allCases, id: \.self) { scope in
-                            Text(scope.title).tag(scope)
-                                .accessibilityIdentifier("live-tv-search-filter-\(scope.rawValue)")
-                        }
-                    }
-                } label: {
-                    Label("Search in", systemImage: "line.3.horizontal.decrease")
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.circle)
-                .frame(minWidth: 44, minHeight: 44)
-                .accessibilityValue(Text(scope.title))
-                .accessibilityIdentifier("live-tv-search-filter")
-            }
-            if isEditing {
-                Button("Cancel") {
-                    dismissRequest &+= 1
-                    query = ""
-                    scope = .all
-                    close()
-                }
-            }
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            searchable(content).searchToolbarBehavior(.minimize)
+        } else {
+            searchable(content)
         }
+    }
+
+    private func searchable(_ content: Content) -> some View {
+        content
+            .searchable(text: $query, isPresented: $isPresented, prompt: Text("Search"))
+            .background(PrototypeToolbarSearchPlacement())
+            .searchPresentationToolbarBehavior(.avoidHidingContent)
+            .toolbar {
+                if sizeClass == .regular && isPresented {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close", systemImage: "xmark", role: .cancel) {
+                            isFocused = false
+                            isPresented = false
+                        }
+                        .labelStyle(.iconOnly)
+                    }
+                }
+            }
+            .searchFocused($isFocused)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            .onSubmit(of: .search) {
+                isFocused = false
+                submit()
+            }
+            .onChange(of: focusRequest) { _, _ in isFocused = true }
+            .onChange(of: isFocused) { _, focused in focusChanged(focused) }
     }
 }
 
-private struct PrototypeMobileSearchField: UIViewRepresentable {
-    @Binding var query: String
-    @Binding var scope: PrototypeSearchScope
-    @Environment(\.locale) private var locale
-    let focusRequest: Int
-    let dismissRequest: Int
-    let submit: () -> Void
-    let focusChanged: (Bool) -> Void
+private struct PrototypeToolbarSearchPlacement: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    func makeUIView(context: Context) -> UISearchTextField {
-        let field = UISearchTextField()
-        field.autocapitalizationType = .none
-        field.autocorrectionType = .no
-        field.returnKeyType = .search
-        field.allowsDeletingTokens = true
-        field.allowsCopyingTokens = false
-        field.accessibilityIdentifier = "live-tv-search-field"
-        field.delegate = context.coordinator
-        field.addTarget(context.coordinator, action: #selector(Coordinator.textChanged), for: .editingChanged)
-        return field
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.placeSearch()
     }
 
-    func updateUIView(_ field: UISearchTextField, context: Context) {
-        context.coordinator.parent = self
-        let placeholder = LocalizedStringResource("Search", locale: locale)
-        field.placeholder = String(localized: placeholder) // l10n:content - UIKit boundary, refreshed with the current environment locale.
-        if field.markedTextRange == nil, field.text != query { field.text = query }
-        var title = scope.title
-        title.locale = locale
-        let tokenTitle = String(localized: title) // l10n:content - Native search token, refreshed with the app locale.
-        if scope == .all {
-            if !field.tokens.isEmpty { field.tokens = [] }
-            context.coordinator.tokenTitle = nil
-        } else if field.tokens.count != 1
-            || (field.tokens.first?.representedObject as? String) != scope.rawValue
-            || context.coordinator.tokenTitle != tokenTitle {
-            let token = UISearchToken(icon: nil, text: tokenTitle)
-            token.representedObject = scope.rawValue
-            field.tokens = [token]
-            context.coordinator.tokenTitle = tokenTitle
-        }
-        if dismissRequest > context.coordinator.dismissRequest {
-            context.coordinator.dismissRequest = dismissRequest
-            DispatchQueue.main.async { [weak field] in
-                field?.resignFirstResponder()
-            }
-        }
-        if focusRequest > context.coordinator.focusRequest {
-            context.coordinator.focusRequest = focusRequest
-            DispatchQueue.main.async { [weak field] in
-                guard let field, field.window != nil else { return }
-                field.becomeFirstResponder()
-            }
-        }
+    static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
+        controller.restorePlacement()
     }
 
-    final class Coordinator: NSObject, UITextFieldDelegate {
-        var parent: PrototypeMobileSearchField
-        var focusRequest = 0
-        var dismissRequest = 0
-        var tokenTitle: String?
-        init(_ parent: PrototypeMobileSearchField) { self.parent = parent }
-        @objc func textChanged(_ field: UISearchTextField) {
-            parent.query = field.text ?? ""
-            if field.tokens.isEmpty { parent.scope = .all }
+    final class Controller: UIViewController {
+        private weak var item: UINavigationItem?
+        private weak var search: UISearchController?
+        private var previousPlacement: UINavigationItem.SearchBarPlacement = .automatic
+        private var previouslyAllowedToolbar = true
+
+        override func loadView() {
+            view = UIView()
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
         }
-        func textFieldDidBeginEditing(_ textField: UITextField) {
-            parent.focusChanged(true)
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            placeSearch()
         }
-        func textFieldDidEndEditing(_ textField: UITextField) {
-            parent.focusChanged(false)
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            placeSearch()
         }
-        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-            textField.resignFirstResponder()
-            parent.submit()
-            return true
+
+        func placeSearch() {
+            guard #available(iOS 26.0, *),
+                  let owner = navigationController?.topViewController,
+                  view.isDescendant(of: owner.view),
+                  let search = owner.navigationItem.searchController else { return }
+            let item = owner.navigationItem
+            if self.item !== item || self.search !== search {
+                restorePlacement()
+                self.item = item
+                self.search = search
+                previousPlacement = item.preferredSearchBarPlacement
+                previouslyAllowedToolbar = item.searchBarPlacementAllowsToolbarIntegration
+            }
+            // Keep the native expanding search in the header rather than the bottom toolbar.
+            if item.searchBarPlacementAllowsToolbarIntegration {
+                item.searchBarPlacementAllowsToolbarIntegration = false
+            }
+            if item.preferredSearchBarPlacement != .integratedButton {
+                item.preferredSearchBarPlacement = .integratedButton
+            }
         }
-        func textFieldShouldClear(_ textField: UITextField) -> Bool {
-            parent.query = ""
-            parent.scope = .all
-            return true
+
+        func restorePlacement() {
+            if #available(iOS 26.0, *), let item, let search, item.searchController === search {
+                item.preferredSearchBarPlacement = previousPlacement
+                item.searchBarPlacementAllowsToolbarIntegration = previouslyAllowedToolbar
+            }
+            item = nil
+            search = nil
         }
     }
 }
@@ -160,7 +125,6 @@ private struct PrototypeMobileSearchField: UIViewRepresentable {
 struct PrototypeMobileSearchResults: View {
     let model: LiveTVPrototypeModel
     let imports: LiveTVPrototypeImportModel
-    let scope: PrototypeSearchScope
     let selectCategory: (String) -> Void
     let watch: (LiveTVPrototypeChannel) -> Void
     let details: (LiveTVPrototypeProgram) -> Void
@@ -169,51 +133,39 @@ struct PrototypeMobileSearchResults: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: PrototypeLayout.smallGap) {
-                if scope != .programs {
-                    if !model.query.isEmpty, !model.matchingCategories.isEmpty {
-                        PrototypeCategorySearchResults(
-                            categories: model.matchingCategoryResults, select: selectCategory
-                        )
-                    }
-                    Section {
-                        if model.visibleChannels.isEmpty {
-                            Text("No matching channels").foregroundStyle(.secondary)
-                        }
-                        ForEach(model.visibleChannels) { channel in
-                            Button { watch(channel) } label: {
-                                HStack(spacing: PrototypeLayout.gap) {
-                                    PrototypeStationMark(channel: channel, size: 28)
-                                        .accessibilityHidden(true)
-                                    Text(channel.name).font(.headline)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .frame(minHeight: 44)
-                            }
-                            .buttonStyle(.bordered)
-                            .accessibilityIdentifier("live-tv-channel-channels-\(channel.id)")
-                        }
-                    } header: {
-                        Text("Channels")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                    }
+                if !model.query.isEmpty, !model.matchingCategories.isEmpty {
+                    PrototypeCategorySearchResults(
+                        categories: model.matchingCategoryResults, select: selectCategory
+                    )
                 }
-                if scope != .channels {
-                    if model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        if scope == .programs {
-                            ContentUnavailableView {
-                                Label("Search programs", systemImage: "magnifyingglass")
-                            } description: {
-                                Text("Search for a program in your available guide.")
-                            }
-                        }
-                    } else {
-                        LiveTVProgramSearchView(
-                            imports: imports, model: model, query: model.query,
-                            watch: watch, showDetails: details
-                        )
+                Section {
+                    if model.visibleChannels.isEmpty {
+                        Text("No matching channels").foregroundStyle(.secondary)
                     }
+                    ForEach(model.visibleChannels) { channel in
+                        Button { watch(channel) } label: {
+                            HStack(spacing: PrototypeLayout.gap) {
+                                PrototypeStationMark(channel: channel, size: 28)
+                                    .accessibilityHidden(true)
+                                Text(channel.name).font(.headline)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .frame(minHeight: 44)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("live-tv-channel-channels-\(channel.id)")
+                    }
+                } header: {
+                    Text("Channels")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                }
+                if !model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    LiveTVProgramSearchView(
+                        imports: imports, model: model, query: model.query,
+                        watch: watch, showDetails: details
+                    )
                 }
             }
             .padding(.vertical, PrototypeLayout.smallGap)
@@ -223,7 +175,7 @@ struct PrototypeMobileSearchResults: View {
         .modifier(PrototypeScrollUnderlap())
         .accessibilityIdentifier("live-tv-search-results")
         .onChange(of: model.query) { _, _ in position.scrollTo(edge: .top) }
-        .onChange(of: scope) { _, _ in position.scrollTo(edge: .top) }
+        .onChange(of: model.category) { _, _ in position.scrollTo(edge: .top) }
     }
 }
 #endif

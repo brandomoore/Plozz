@@ -147,7 +147,6 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
     let selectSource: (String?) -> Void
     let addSource: () -> Void
     let selectCategory: (String?) -> Void
-    let search: () -> Void
     let filters: () -> Void
     let sources: () -> Void
     var multiviews: (() -> Void)?
@@ -159,11 +158,6 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
             if let cancelSelection {
                 Button("Cancel", action: cancelSelection)
-            } else if isSearching && !hasSidebar {
-                Button("Back to guide", systemImage: "chevron.backward", action: search)
-                    .labelStyle(.iconOnly)
-                    .accessibilityIdentifier("live-tv-search")
-                    .disabled(isDisabled)
             } else if !hasSidebar && !showsDirectory && !isSearching {
                 Button("Categories", systemImage: "chevron.backward", action: showCategories)
                     .labelStyle(.iconOnly)
@@ -201,7 +195,7 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
                             .truncationMode(.tail)
                         Image(systemName: "chevron.down").font(.caption.weight(.semibold))
                     }
-                    .frame(maxWidth: 220)
+                    .frame(maxWidth: sizeClass == .compact ? 160 : 220)
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 .menuOrder(.fixed)
@@ -211,8 +205,8 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
                 .disabled(isDisabled)
             }
         }
-        ToolbarItem(placement: .principal) {
-            if !showsDirectory && !isSearching {
+        ToolbarItem(placement: .topBarLeading) {
+            if !hasSidebar && !showsDirectory && !isSearching {
                 Menu {
                     Picker("Category", selection: Binding(get: { model.category }, set: selectCategory)) {
                         Text("All channels").tag(String?.none)
@@ -227,7 +221,7 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
                         Image(systemName: "chevron.down").font(.caption)
                     }
                     .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: sizeClass == .compact ? 220 : 320)
+                    .frame(maxWidth: sizeClass == .compact ? 160 : 320)
                 }
                 .menuOrder(.fixed)
                 .accessibilityLabel("Category")
@@ -237,32 +231,31 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
             }
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
-            Menu {
-                if showsDirectory && !isSearching {
-                    Button("Guide", systemImage: "list.bullet.rectangle", action: showGuide)
-                        .accessibilityIdentifier("live-tv-open-guide")
-                } else if !hasSidebar && !isSearching {
-                    Button("Search", systemImage: "magnifyingglass", action: search)
-                        .accessibilityIdentifier("live-tv-search")
+            if !isSearching {
+                Menu {
+                    if showsDirectory {
+                        Button("Guide", systemImage: "list.bullet.rectangle", action: showGuide)
+                            .accessibilityIdentifier("live-tv-open-guide")
+                    }
+                    Button("Filters", systemImage: "line.3.horizontal.decrease", action: filters)
+                        .accessibilityIdentifier("live-tv-filters")
+                    if !hasSidebar && !showsDirectory, let multiviews {
+                        Button("Multiviews", systemImage: "rectangle.split.2x2", action: multiviews)
+                            .accessibilityIdentifier("live-tv-multiview-favorites")
+                    }
+                    Divider()
+                    Button("TV Sources", systemImage: "antenna.radiowaves.left.and.right", action: sources)
+                        .accessibilityIdentifier("live-tv-sources")
+                } label: {
+                    Label("More", systemImage: "ellipsis")
                 }
-                Button("Filters", systemImage: "line.3.horizontal.decrease", action: filters)
-                    .accessibilityIdentifier("live-tv-filters")
-                if !hasSidebar && !showsDirectory, let multiviews {
-                    Button("Multiviews", systemImage: "rectangle.split.2x2", action: multiviews)
-                        .accessibilityIdentifier("live-tv-multiview-favorites")
+                .labelStyle(.iconOnly)
+                .menuOrder(.fixed)
+                .accessibilityIdentifier("live-tv-more")
+                .disabled(isDisabled)
+                if showsDirectory || hasSidebar || UIDevice.current.userInterfaceIdiom != .phone {
+                    accessory
                 }
-                Divider()
-                Button("TV Sources", systemImage: "antenna.radiowaves.left.and.right", action: sources)
-                    .accessibilityIdentifier("live-tv-sources")
-            } label: {
-                Label("More", systemImage: "ellipsis")
-            }
-            .labelStyle(.iconOnly)
-            .menuOrder(.fixed)
-            .accessibilityIdentifier("live-tv-more")
-            .disabled(isDisabled)
-            if showsDirectory || hasSidebar || UIDevice.current.userInterfaceIdiom != .phone {
-                accessory
             }
         }
     }
