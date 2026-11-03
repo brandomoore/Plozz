@@ -167467,6 +167467,9 @@
         }
       }
     },
+    "Available now" : {
+
+    },
     "Available offline • %@" : {
       "comment" : "Status text for a completed download row in iOS Downloads. %@ is the formatted downloaded size.",
       "extractionState" : "stale",
@@ -300344,6 +300347,12 @@
         }
       }
     },
+    "Discover" : {
+
+    },
+    "Discover is unavailable. Connect Seerr or check your metadata settings." : {
+
+    },
     "Discover movies and shows from your selected feeds. Seerr is optional for requests." : {
       "comment" : "Explanation shown under the Featured hero source option in Settings.",
       "extractionState" : "stale",
@@ -397603,6 +397612,9 @@
           }
         }
       }
+    },
+    "Hide watched" : {
+
     },
     "Hide watched content" : {
       "localizations" : {
@@ -531232,6 +531244,9 @@
         }
       }
     },
+    "No titles yet." : {
+
+    },
     "No tuner is currently available on this server." : {
       "localizations" : {
         "ar" : {
@@ -602698,6 +602713,12 @@
           }
         }
       }
+    },
+    "Popular Movies" : {
+
+    },
+    "Popular Series" : {
+
     },
     "Port" : {
       "comment" : "Field label for required port entry when connecting to FTP, SFTP, or manually configured share servers.",
@@ -945101,6 +945122,12 @@
         }
       }
     },
+    "Upcoming Movies" : {
+
+    },
+    "Upcoming Series" : {
+
+    },
     "Update library watch history from Plozz channels" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1075875,7 +1075902,7 @@
     },
     "playback.orientation.auto" : {
       "comment" : "Playback orientation preference. Follow device rotation and the system rotation lock.",
-      "extractionState" : "extracted_with_value",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1076101,9 +1076128,21 @@
         }
       }
     },
+    "playback.orientation.followDevice" : {
+      "comment" : "Playback orientation preference. Follow device rotation and the system rotation lock.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Follow device orientation"
+          }
+        }
+      }
+    },
     "playback.orientation.landscape" : {
       "comment" : "Playback orientation preference. Keep the full-screen video player sideways, in either landscape direction.",
-      "extractionState" : "extracted_with_value",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1076325,6 +1076364,42 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "橫向"
+          }
+        }
+      }
+    },
+    "playback.orientation.landscapeAuto" : {
+      "comment" : "Playback orientation preference. Stay sideways and automatically follow the landscape direction, even with system rotation lock enabled.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Landscape auto"
+          }
+        }
+      }
+    },
+    "playback.orientation.landscapeLeft" : {
+      "comment" : "Playback orientation preference. Lock the player to the landscape orientation with the top of the phone on the left.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Landscape left"
+          }
+        }
+      }
+    },
+    "playback.orientation.landscapeRight" : {
+      "comment" : "Playback orientation preference. Lock the player to the landscape orientation with the top of the phone on the right.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Landscape right"
           }
         }
       }

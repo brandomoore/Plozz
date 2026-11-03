@@ -20,10 +20,10 @@ public struct DiscoverFilterMenu: View {
         .accessibilityIdentifier("discover-filter-menu")
     }
 
-    private var summary: String {
+    private var summary: String { // l10n:content - accessibility summary recomputed from the live app locale
         var labels: [String] = []
-        if filters.availableNow { labels.append(String(localized: "Available now", locale: locale)) }
-        if filters.hideWatched { labels.append(String(localized: "Hide watched", locale: locale)) }
-        return labels.formatted(.list(type: .and))
+        if filters.availableNow { labels.append(String(localized: "Available now", locale: locale)) } // l10n:content - localized accessibility String boundary
+        if filters.hideWatched { labels.append(String(localized: "Hide watched", locale: locale)) } // l10n:content - localized accessibility String boundary
+        return labels.formatted(.list(type: .and).locale(locale))
     }
 }

@@ -243,6 +243,7 @@ struct HomeTab: View {
                 visibility: visibility,
                 seer: seer,
                 language: locale.identifier,
+                pendingWatchMutations: pendingWatchMutations,
                 isCurrent: {
                     heroSettings.allowsDiscovery && isProfileAuthorized()
                         && profilesModel?.activeProfileID == profileID

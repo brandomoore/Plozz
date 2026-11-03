@@ -131,7 +131,7 @@ class LocalizationBatchTests(unittest.TestCase):
         source = packets(["de", "fr", "es", "it"], 9, permissions=True)
         manifest, files = BATCHES.plan_batches(source, max_units=6, max_languages=3)
         covered = self.covered_units(manifest, files)
-        self.assertEqual(len(covered), 48)
+        self.assertEqual(len(covered), 4 * (9 + len(BATCHES.SOURCE.INFO_CATALOGS)))
         self.assertEqual(len(covered), len(set(covered)))
         self.assertTrue(all(batch["unitCount"] <= 6 for batch in manifest["batches"]))
 
@@ -149,12 +149,30 @@ class LocalizationBatchTests(unittest.TestCase):
     def test_permission_only_delta_and_no_change_plan(self) -> None:
         source = packets(["de", "fr"], 0, permissions=True)
         manifest, files = BATCHES.plan_batches(source)
-        self.assertEqual(manifest["unitCount"], 6)
+        self.assertEqual(manifest["unitCount"], 2 * len(BATCHES.SOURCE.INFO_CATALOGS))
         self.assertEqual(len(manifest["batches"]), 1)
         self.assertFalse(files[manifest["batches"][0]["sourcePacket"]]["entries"])
         empty, _ = BATCHES.plan_batches(packets(["de", "fr"], 0))
         self.assertEqual(empty["batches"], [])
         self.assertEqual(empty["unitCount"], 0)
+
+    def test_motion_permission_is_registered_across_the_pipeline(self) -> None:
+        key = "iOS.NSMotionUsageDescription"
+        self.assertIn(key, BATCHES.SOURCE.INFO_CATALOGS)
+        self.assertEqual(BATCHES.SOURCE.INFO_CATALOGS, BATCHES.IMPORTER.INFO_CATALOGS)
+        self.assertEqual(BATCHES.SOURCE.INFO_CATALOGS, BATCHES.ARTIFACTS.INFO_CATALOG_PATHS)
+
+    def test_export_preserves_existing_permissions_while_new_prompts_await_review(self) -> None:
+        catalog = {"strings": {"Existing": {"localizations": {"de": unit("Bestehend")}}}}
+        permissions = {
+            "existing": ({"strings": {"Existing": {"localizations": {"de": unit("Vorhanden")}}}}, "Existing"),
+            "new": ({"strings": {"New": {"localizations": {"en": unit("New prompt")}}}}, "New"),
+        }
+        artifact = BATCHES.ARTIFACTS.build_artifact(catalog, permissions, "de")
+        self.assertEqual(artifact["infoPlist"], {"existing": "Vorhanden"})
+        permissions["new"][0]["strings"]["New"]["localizations"]["de"] = unit("")
+        with self.assertRaisesRegex(ValueError, "missing permission translation"):
+            BATCHES.ARTIFACTS.build_artifact(catalog, permissions, "de")
 
     def test_invalid_limits_and_mixed_source_hashes_fail(self) -> None:
         for value in [0, -1, True, 1.5]:

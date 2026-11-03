@@ -60,7 +60,10 @@ registry.
   Changing filters resets each horizontal rail to its leading edge without
   discarding fetched pages or resetting the page's vertical scroll.
   Identity-index updates revalidate loaded cards without resetting pagination.
-  With Seerr disconnected, manually enabled Discover browses public metadata;
+  Pending profile-scoped watched changes survive revalidation and pagination;
+  confirmed optimistic changes retire so later server updates remain authoritative.
+  With Seerr disconnected, manually enabled Discover browses public metadata.
+  Public requests reload the household's saved TMDb credential off the UI thread;
   requesting still requires Seerr. A configured but unreachable Seerr reports
   retryable errors rather than silently switching services.
   Rails fetch the next page automatically near the visible trailing edge; there

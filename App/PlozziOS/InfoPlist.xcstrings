@@ -1,242 +1,140 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "NSLocalNetworkUsageDescription" : {
-      "comment" : "Shown when iOS asks permission to use the local network, which is how servers and shares are discovered.",
+    "NSCameraUsageDescription" : {
+      "comment" : "Shown when iOS asks permission to use the camera, which is only used to scan the pairing code on another device.",
       "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Plozz uses your local network to discover media servers and network shares."
-          }
-        },
-        "nl" : {
+        "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Plozz gebruikt je lokale netwerk om mediaservers en gedeelde netwerkmappen te vinden."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz potrzebuje dostępu do sieci lokalnej, aby wykrywać serwery multimediów i udziały sieciowe."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "O Plozz usa sua rede local para encontrar servidores de mídia e compartilhamentos de rede."
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz bruger dit lokale netværk til at finde medieservere og netværksdelinger."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz utilise votre réseau local pour détecter les serveurs multimédias et les partages réseau."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz использует локальную сеть для поиска медиасерверов и сетевых ресурсов."
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz používá místní síť k vyhledání mediálních serverů a síťových sdílení."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz verwendet dein lokales Netzwerk, um Medienserver und Netzwerkfreigaben zu finden."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz usa la rete locale per trovare server multimediali e condivisioni di rete."
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz använder ditt lokala nätverk för att hitta medieservrar och nätverksdelningar."
-          }
-        },
-        "hr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz koristi lokalnu mrežu za pronalaženje medijskih poslužitelja i mrežnih dijeljenja."
-          }
-        },
-        "ms" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz menggunakan rangkaian setempat anda untuk mengesan pelayan media dan perkongsian rangkaian."
-          }
-        },
-        "sk" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz používa miestnu sieť na vyhľadanie mediálnych serverov a sieťových zdieľaní."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz використовує локальну мережу, щоб знаходити медіасервери й мережеві ресурси."
-          }
-        },
-        "id" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz menggunakan jaringan lokal Anda untuk menemukan server media dan folder bersama jaringan."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz, medya sunucularını ve ağ paylaşımlarını bulmak için yerel ağınızı kullanır."
-          }
-        },
-        "ca" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz utilitza la teva xarxa local per trobar servidors multimèdia i recursos compartits de xarxa."
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz folosește rețeaua ta locală pentru a găsi servere media și resurse de rețea partajate."
-          }
-        },
-        "he" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz משתמשת ברשת המקומית שלך כדי למצוא שרתי מדיה ושיתופי רשת."
-          }
-        },
-        "sl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz uporablja lokalno omrežje za iskanje predstavnostnih strežnikov in omrežnih souporab."
-          }
-        },
-        "th" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz ใช้เครือข่ายภายในของคุณเพื่อค้นหาเซิร์ฟเวอร์สื่อและโฟลเดอร์ที่แชร์บนเครือข่าย"
+            "value" : "يستخدم Plozz الكاميرا لمسح رمز الإعداد المعروض على جهازك الآخر."
           }
         },
         "bg" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Plozz използва локалната ви мрежа, за да открива медийни сървъри и мрежови ресурси."
+            "value" : "Plozz използва камерата, за да сканира кода за настройка, показан на другото ви устройство."
           }
         },
-        "fi" : {
+        "ca" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Plozz käyttää lähiverkkoasi mediapalvelinten ja verkkojakojen löytämiseen."
+            "value" : "Plozz utilitza la càmera per escanejar el codi de configuració que es mostra a l'altre dispositiu."
           }
         },
-        "nb" : {
+        "cs" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Plozz bruker det lokale nettverket ditt til å finne medieservere og nettverksdelinger."
+            "value" : "Plozz používá fotoaparát k naskenování nastavovacího kódu zobrazeného na druhém zařízení."
           }
         },
-        "zh-Hans" : {
+        "da" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Plozz 使用您的本地网络查找媒体服务器和网络共享。"
+            "value" : "Plozz bruger kameraet til at scanne den opsætningskode, der vises på din anden enhed."
           }
         },
-        "ar" : {
+        "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "يستخدم Plozz شبكتك المحلية لاكتشاف خوادم الوسائط ومشاركات الشبكة."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz usa tu red local para descubrir servidores multimedia y recursos compartidos de red."
-          }
-        },
-        "fa" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz از شبکه محلی شما برای یافتن سرورهای رسانه و اشتراک‌های شبکه استفاده می‌کند."
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "A Plozz a helyi hálózatot használja a médiaszerverek és hálózati megosztások felismeréséhez."
-          }
-        },
-        "sr-Latn" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz koristi vašu lokalnu mrežu za pronalaženje medijskih servera i mrežnih resursa."
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz dùng mạng cục bộ của bạn để tìm máy chủ phương tiện và thư mục chia sẻ mạng."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz는 로컬 네트워크를 사용하여 미디어 서버와 네트워크 공유를 검색합니다."
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz 會使用你的本機網路，探索媒體伺服器與網路共享。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozzはローカルネットワークを使用して、メディアサーバとネットワーク共有を検出します。"
+            "value" : "Plozz verwendet die Kamera, um den Einrichtungscode auf deinem anderen Gerät zu scannen."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Το Plozz χρησιμοποιεί το τοπικό σας δίκτυο για να εντοπίζει διακομιστές πολυμέσων και κοινόχρηστους φακέλους δικτύου."
+            "value" : "Το Plozz χρησιμοποιεί την κάμερα για να σαρώνει τον κωδικό ρύθμισης που εμφανίζεται στην άλλη σας συσκευή."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plozz uses the camera to scan the setup code shown on your other device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz usa la cámara para escanear el código de configuración que se muestra en tu otro dispositivo."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz از دوربین برای اسکن کد راه‌اندازی که روی دستگاه دیگر شما نمایش داده می‌شود استفاده می‌کند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz käyttää kameraa toisella laitteellasi näkyvän käyttöönottokoodin skannaamiseen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz utilise l’appareil photo pour scanner le code de configuration affiché sur votre autre appareil."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz משתמשת במצלמה כדי לסרוק את קוד ההגדרה שמוצג במכשיר האחר שלך."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Plozz मीडिया सर्वर और नेटवर्क शेयर खोजने के लिए आपके स्थानीय नेटवर्क का उपयोग करता है।"
+            "value" : "Plozz आपके दूसरे डिवाइस पर दिखाए गए सेटअप कोड को स्कैन करने के लिए कैमरे का उपयोग करता है।"
           }
-        }
-      }
-    },
-    "NSCameraUsageDescription" : {
-      "comment" : "Shown when iOS asks permission to use the camera, which is only used to scan the pairing code on another device.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
+        },
+        "hr" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Plozz uses the camera to scan the setup code shown on your other device."
+            "state" : "needs_review",
+            "value" : "Plozz koristi kameru za skeniranje koda za postavljanje prikazanog na drugom uređaju."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A Plozz a kamerát használja a másik eszközön megjelenő beállítási kód beolvasásához."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz menggunakan kamera untuk memindai kode penyiapan yang ditampilkan di perangkat Anda yang lain."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz usa la fotocamera per scansionare il codice di configurazione visualizzato sull’altro dispositivo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozzはカメラを使用して、他のデバイスに表示されたセットアップコードをスキャンします。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz는 다른 기기에 표시된 설정 코드를 스캔하기 위해 카메라를 사용합니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz menggunakan kamera untuk mengimbas kod persediaan yang dipaparkan pada peranti anda yang lain."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz bruker kameraet til å skanne oppsettkoden som vises på den andre enheten din."
           }
         },
         "nl" : {
@@ -257,16 +155,10 @@
             "value" : "O Plozz usa a câmera para escanear o código de configuração exibido no outro dispositivo."
           }
         },
-        "da" : {
+        "ro" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Plozz bruger kameraet til at scanne den opsætningskode, der vises på din anden enhed."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz utilise l’appareil photo pour scanner le code de configuration affiché sur votre autre appareil."
+            "value" : "Plozz folosește camera pentru a scana codul de configurare afișat pe celălalt dispozitiv al tău."
           }
         },
         "ru" : {
@@ -275,82 +167,10 @@
             "value" : "Plozz использует камеру для сканирования кода настройки, показанного на другом устройстве."
           }
         },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz používá fotoaparát k naskenování nastavovacího kódu zobrazeného na druhém zařízení."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz verwendet die Kamera, um den Einrichtungscode auf deinem anderen Gerät zu scannen."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz usa la fotocamera per scansionare il codice di configurazione visualizzato sull’altro dispositivo."
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz använder kameran för att skanna konfigurationskoden som visas på din andra enhet."
-          }
-        },
-        "hr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz koristi kameru za skeniranje koda za postavljanje prikazanog na drugom uređaju."
-          }
-        },
-        "ms" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz menggunakan kamera untuk mengimbas kod persediaan yang dipaparkan pada peranti anda yang lain."
-          }
-        },
         "sk" : {
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Plozz používa fotoaparát na naskenovanie nastavovacieho kódu zobrazeného na druhom zariadení."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz використовує камеру, щоб сканувати код налаштування, показаний на іншому пристрої."
-          }
-        },
-        "id" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz menggunakan kamera untuk memindai kode penyiapan yang ditampilkan di perangkat Anda yang lain."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz, diğer aygıtınızda gösterilen kurulum kodunu taramak için kameranızı kullanır."
-          }
-        },
-        "ca" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz utilitza la càmera per escanejar el codi de configuració que es mostra a l'altre dispositiu."
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz folosește camera pentru a scana codul de configurare afișat pe celălalt dispozitiv al tău."
-          }
-        },
-        "he" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz משתמשת במצלמה כדי לסרוק את קוד ההגדרה שמוצג במכשיר האחר שלך."
           }
         },
         "sl" : {
@@ -359,64 +179,34 @@
             "value" : "Plozz uporablja kamero za optično branje nastavitvene kode, prikazane na drugi napravi."
           }
         },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz koristi kameru za skeniranje koda za podešavanje prikazanog na drugom uređaju."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz använder kameran för att skanna konfigurationskoden som visas på din andra enhet."
+          }
+        },
         "th" : {
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Plozz ใช้กล้องเพื่อสแกนรหัสตั้งค่าที่แสดงบนอุปกรณ์อีกเครื่องของคุณ"
           }
         },
-        "bg" : {
+        "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Plozz използва камерата, за да сканира кода за настройка, показан на другото ви устройство."
+            "value" : "Plozz, diğer aygıtınızda gösterilen kurulum kodunu taramak için kameranızı kullanır."
           }
         },
-        "fi" : {
+        "uk" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Plozz käyttää kameraa toisella laitteellasi näkyvän käyttöönottokoodin skannaamiseen."
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz bruker kameraet til å skanne oppsettkoden som vises på den andre enheten din."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz 使用摄像头扫描您另一台设备上显示的设置码。"
-          }
-        },
-        "ar" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "يستخدم Plozz الكاميرا لمسح رمز الإعداد المعروض على جهازك الآخر."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz usa la cámara para escanear el código de configuración que se muestra en tu otro dispositivo."
-          }
-        },
-        "fa" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz از دوربین برای اسکن کد راه‌اندازی که روی دستگاه دیگر شما نمایش داده می‌شود استفاده می‌کند."
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "A Plozz a kamerát használja a másik eszközön megjelenő beállítási kód beolvasásához."
-          }
-        },
-        "sr-Latn" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Plozz koristi kameru za skeniranje koda za podešavanje prikazanog na drugom uređaju."
+            "value" : "Plozz використовує камеру, щоб сканувати код налаштування, показаний на іншому пристрої."
           }
         },
         "vi" : {
@@ -425,10 +215,10 @@
             "value" : "Plozz dùng camera để quét mã thiết lập hiển thị trên thiết bị khác của bạn."
           }
         },
-        "ko" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Plozz는 다른 기기에 표시된 설정 코드를 스캔하기 위해 카메라를 사용합니다."
+            "value" : "Plozz 使用摄像头扫描您另一台设备上显示的设置码。"
           }
         },
         "zh-Hant" : {
@@ -436,23 +226,245 @@
             "state" : "needs_review",
             "value" : "Plozz 會使用相機掃描你其他裝置上顯示的設定代碼。"
           }
-        },
-        "ja" : {
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription" : {
+      "comment" : "Shown when iOS asks permission to use the local network, which is how servers and shares are discovered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Plozzはカメラを使用して、他のデバイスに表示されたセットアップコードをスキャンします。"
+            "value" : "يستخدم Plozz شبكتك المحلية لاكتشاف خوادم الوسائط ومشاركات الشبكة."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz използва локалната ви мрежа, за да открива медийни сървъри и мрежови ресурси."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz utilitza la teva xarxa local per trobar servidors multimèdia i recursos compartits de xarxa."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz používá místní síť k vyhledání mediálních serverů a síťových sdílení."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz bruger dit lokale netværk til at finde medieservere og netværksdelinger."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz verwendet dein lokales Netzwerk, um Medienserver und Netzwerkfreigaben zu finden."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Το Plozz χρησιμοποιεί την κάμερα για να σαρώνει τον κωδικό ρύθμισης που εμφανίζεται στην άλλη σας συσκευή."
+            "value" : "Το Plozz χρησιμοποιεί το τοπικό σας δίκτυο για να εντοπίζει διακομιστές πολυμέσων και κοινόχρηστους φακέλους δικτύου."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plozz uses your local network to discover media servers and network shares."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz usa tu red local para descubrir servidores multimedia y recursos compartidos de red."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz از شبکه محلی شما برای یافتن سرورهای رسانه و اشتراک‌های شبکه استفاده می‌کند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz käyttää lähiverkkoasi mediapalvelinten ja verkkojakojen löytämiseen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz utilise votre réseau local pour détecter les serveurs multimédias et les partages réseau."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz משתמשת ברשת המקומית שלך כדי למצוא שרתי מדיה ושיתופי רשת."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Plozz आपके दूसरे डिवाइस पर दिखाए गए सेटअप कोड को स्कैन करने के लिए कैमरे का उपयोग करता है।"
+            "value" : "Plozz मीडिया सर्वर और नेटवर्क शेयर खोजने के लिए आपके स्थानीय नेटवर्क का उपयोग करता है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz koristi lokalnu mrežu za pronalaženje medijskih poslužitelja i mrežnih dijeljenja."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A Plozz a helyi hálózatot használja a médiaszerverek és hálózati megosztások felismeréséhez."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz menggunakan jaringan lokal Anda untuk menemukan server media dan folder bersama jaringan."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz usa la rete locale per trovare server multimediali e condivisioni di rete."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozzはローカルネットワークを使用して、メディアサーバとネットワーク共有を検出します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz는 로컬 네트워크를 사용하여 미디어 서버와 네트워크 공유를 검색합니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz menggunakan rangkaian setempat anda untuk mengesan pelayan media dan perkongsian rangkaian."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz bruker det lokale nettverket ditt til å finne medieservere og nettverksdelinger."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz gebruikt je lokale netwerk om mediaservers en gedeelde netwerkmappen te vinden."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz potrzebuje dostępu do sieci lokalnej, aby wykrywać serwery multimediów i udziały sieciowe."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O Plozz usa sua rede local para encontrar servidores de mídia e compartilhamentos de rede."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz folosește rețeaua ta locală pentru a găsi servere media și resurse de rețea partajate."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz использует локальную сеть для поиска медиасерверов и сетевых ресурсов."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz používa miestnu sieť na vyhľadanie mediálnych serverov a sieťových zdieľaní."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz uporablja lokalno omrežje za iskanje predstavnostnih strežnikov in omrežnih souporab."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz koristi vašu lokalnu mrežu za pronalaženje medijskih servera i mrežnih resursa."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz använder ditt lokala nätverk för att hitta medieservrar och nätverksdelningar."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz ใช้เครือข่ายภายในของคุณเพื่อค้นหาเซิร์ฟเวอร์สื่อและโฟลเดอร์ที่แชร์บนเครือข่าย"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz, medya sunucularını ve ağ paylaşımlarını bulmak için yerel ağınızı kullanır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz використовує локальну мережу, щоб знаходити медіасервери й мережеві ресурси."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz dùng mạng cục bộ của bạn để tìm máy chủ phương tiện và thư mục chia sẻ mạng."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz 使用您的本地网络查找媒体服务器和网络共享。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz 會使用你的本機網路，探索媒體伺服器與網路共享。"
+          }
+        }
+      }
+    },
+    "NSMotionUsageDescription" : {
+      "comment" : "System permission disclosure for local device motion used to rotate the landscape video player.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Plozz uses device motion to follow your phone's landscape direction during playback."
           }
         }
       }

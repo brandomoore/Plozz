@@ -286,6 +286,89 @@ final class DiscoverBrowseModelTests: XCTestCase {
         probe.onRequest = nil
     }
 
+    func testRefreshAndPaginationPreserveOptimisticWatchedChanges() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        let model = DiscoverBrowseModel(
+            store: .init(defaults: defaults), isCurrent: { true },
+            resolveLibrarySources: { _ in [item] }
+        ) { _, _ in DiscoverPage(items: [item], nextPage: nil) }
+        model.filters.hideWatched = true
+        await model.loadMore(.trending)
+        model.applyWatchedState(.init(itemIDs: ["movie"], played: true))
+        await model.refreshLibrarySources()
+        XCTAssertFalse(model.filters.includes(model.rows[0].items[0]))
+        await model.loadMore(.popularMovies)
+        XCTAssertFalse(model.filters.includes(model.rows[1].items[0]))
+
+        model.applyWatchedState(.init(itemIDs: ["movie"], played: false))
+        await model.refreshLibrarySources()
+        XCTAssertTrue(model.filters.includes(model.rows[0].items[0]))
+    }
+
+    func testPendingWatchStateSurvivesDrainingDuringPageLoad() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let probe = Probe()
+        var pending = [MediaItemMutation(itemIDs: ["movie"], played: true)]
+        let model = DiscoverBrowseModel(
+            store: .init(defaults: defaults), isCurrent: { probe.allowed },
+            pendingWatchedStates: { pending }
+        ) { _, _ in
+            pending = []
+            probe.onRequest?()
+            return DiscoverPage(items: [MediaItem(id: "movie", title: "Movie", kind: .movie)], nextPage: nil)
+        }
+        model.filters.hideWatched = true
+        await model.loadMore(.trending)
+        XCTAssertFalse(model.filters.includes(model.rows[0].items[0]))
+
+        // A newer in-flight action wins over the pending snapshot.
+        pending = [.init(itemIDs: ["movie"], played: true)]
+        probe.onRequest = { model.applyWatchedState(.init(itemIDs: ["movie"], played: false)) }
+        await model.loadMore(.popularMovies)
+        XCTAssertTrue(model.filters.includes(model.rows[1].items[0]))
+
+        probe.allowed = false
+        model.applyWatchedState(.init(itemIDs: ["movie"], played: true))
+        XCTAssertTrue(model.rows.allSatisfy { $0.items.isEmpty })
+        probe.onRequest = nil
+    }
+
+    func testConfirmedWatchStateAllowsSubsequentChangesFromAnotherClient() async throws {
+        let suite = "DiscoverBrowseModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var serverItem = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        serverItem.sources = [.init(accountID: "jellyfin", itemID: "movie", kind: .movie)]
+        let model = DiscoverBrowseModel(
+            store: .init(defaults: defaults), isCurrent: { true },
+            resolveLibrarySources: { _ in [serverItem] }
+        ) { _, _ in DiscoverPage(items: [serverItem], nextPage: nil) }
+        model.filters.hideWatched = true
+        await model.loadMore(.trending)
+        model.applyWatchedState(.init(
+            itemIDs: ["movie"], scopedItemIDs: ["jellyfin:movie"],
+            played: true, resumePosition: 0, playedPercentage: 1
+        ))
+        serverItem.isPlayed = true
+        serverItem.hasBeenPlayed = true
+        serverItem.sources[0].isPlayed = true
+        serverItem.sources[0].hasBeenPlayed = true
+        await model.refreshLibrarySources()
+        XCTAssertFalse(model.filters.includes(model.rows[0].items[0]))
+        XCTAssertNil(model.rows[0].items[0].playedPercentage)
+        serverItem.isPlayed = false
+        serverItem.hasBeenPlayed = false
+        serverItem.sources[0].isPlayed = false
+        serverItem.sources[0].hasBeenPlayed = false
+        await model.refreshLibrarySources()
+        XCTAssertTrue(model.filters.includes(model.rows[0].items[0]))
+    }
+
     private final class Probe {
         var requests: [DiscoverFeed] = []
         var allowed = true

@@ -22,6 +22,7 @@ struct PlozziOSDiscoverView: View {
                 visibility: visibility,
                 seer: appModel.seerService,
                 language: locale.identifier,
+                pendingWatchMutations: { await appModel.pendingWatchMutations() },
                 isCurrent: {
                     appModel.isActiveProfileAuthorized && !appModel.profiles.activeProfile.isKids
                         && appModel.navigationLibrariesScopeKey == scope

@@ -26,6 +26,10 @@ INFO_CATALOG_PATHS = {
         REPO / "App/PlozziOS/InfoPlist.xcstrings",
         "NSCameraUsageDescription",
     ),
+    "iOS.NSMotionUsageDescription": (
+        REPO / "App/PlozziOS/InfoPlist.xcstrings",
+        "NSMotionUsageDescription",
+    ),
 }
 
 
@@ -77,6 +81,12 @@ def build_artifact(
 
     info_plist: dict[str, str] = {}
     for artifact_key, (info_catalog, catalog_key) in permission_catalogs.items():
+        entry = info_catalog.get("strings", {}).get(catalog_key)
+        if not isinstance(entry, dict):
+            raise ValueError(f"Missing permission source {artifact_key}")
+        if language not in entry.get("localizations", {}):
+            # A newly added prompt is filled by the reviewed delta before import.
+            continue
         value = (
             info_catalog.get("strings", {})
             .get(catalog_key, {})
