@@ -1870,8 +1870,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testOngoingImportIsDisabled() throws {
-        try openHistoryComparison()
-        try tapVisible(app.buttons["tracker-history.ongoing-sync"], maximumSwipes: 32)
+        try openOngoingImportSettings()
         XCTAssertTrue(app.buttons["tracker-history.enable-sync"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["tracker-history.disable-sync"].exists)
         XCTAssertEqual(app.switches["tracker-history.sync-watched"].value as? String, "0")
@@ -1895,8 +1894,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func enableOngoingImport(categories: [(id: String, label: String)]) throws {
-        try openHistoryComparison()
-        try tapVisible(app.buttons["tracker-history.ongoing-sync"], maximumSwipes: 32)
+        try openOngoingImportSettings()
         let accountID = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"])
         let destination = app.switches.matching(NSPredicate(
             format: "identifier == %@", "tracker-history.sync-server.\(accountID)"
@@ -1934,9 +1932,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testInspectOngoingImportWithoutManualSync() throws {
-        try openHistoryComparison(relaunch: false)
-        recordState()
-        try tapVisible(app.buttons["tracker-history.ongoing-sync"], maximumSwipes: 32)
+        try openOngoingImportSettings(relaunch: false)
         try require(app.buttons["tracker-history.disable-sync"].exists, "Expected the retained sync permission")
         recordState()
     }
@@ -1946,8 +1942,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func synchronizeOngoingImport(expectingReview: Bool) throws {
-        try openHistoryComparison()
-        try tapVisible(app.buttons["tracker-history.ongoing-sync"], maximumSwipes: 32)
+        try openOngoingImportSettings()
         try require(app.buttons["tracker-history.disable-sync"].exists, "Expected existing sync permission")
         try tapVisible(app.buttons["tracker-history.sync-now"])
         let completed = XCTNSPredicateExpectation(
@@ -1959,11 +1954,32 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testDisableOngoingImport() throws {
-        try openHistoryComparison()
-        try tapVisible(app.buttons["tracker-history.ongoing-sync"], maximumSwipes: 32)
+        try openOngoingImportSettings()
         try tapVisible(app.buttons["tracker-history.disable-sync"])
         try require(app.buttons["tracker-history.enable-sync"].waitForExistence(timeout: 10),
                     "Expected revoked ongoing-import permission")
+    }
+
+    private func openOngoingImportSettings(relaunch: Bool = true) throws {
+        try openHistoryComparison(relaunch: relaunch)
+        try require(app.activityIndicators["Comparing or verifying history…"].waitForNonExistence(timeout: 75),
+                    "Expected the comparison to finish before opening ongoing sync")
+        let link = app.buttons["tracker-history.ongoing-sync"]
+        try tapVisible(link, tapping: false, maximumSwipes: 32)
+        try require(link.isEnabled, "Expected ongoing-sync navigation after a successful comparison")
+        let collection = app.collectionViews.containing(.any, identifier: link.identifier).element
+        try require(collection.exists, "Expected the ongoing-sync link in its comparison list")
+        for _ in 0..<4 {
+            if collection.frame.intersection(app.frame).insetBy(dx: 0, dy: 8).contains(link.frame) { break }
+            collection.swipeUp(velocity: .slow)
+        }
+        try require(collection.frame.intersection(app.frame).insetBy(dx: 0, dy: 8).contains(link.frame),
+                    "Expected the complete ongoing-sync link inside the visible list")
+        link.tap()
+        let consent = app.buttons.matching(NSPredicate(
+            format: "identifier IN %@", ["tracker-history.enable-sync", "tracker-history.disable-sync"]
+        )).firstMatch
+        try require(consent.waitForExistence(timeout: 15), "Expected the ongoing-sync settings page")
     }
 
     func testFinishIndependentServerLibraries() throws {

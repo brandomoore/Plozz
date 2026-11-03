@@ -900,6 +900,39 @@ were unchanged. Reporting and ongoing-import consent remained off. This covers
 guarded movie imports, not ongoing Emby sync, episodes, all lifecycle boundaries
 or physical-device acceptance.
 
+Separate ongoing Emby movie checks used genuine Plex playback on a muted iPad
+and the dedicated Emby destination on a muted iPhone. Watched-only consent
+ignored new resume data, then imported the completed viewing with count 1.
+Resume-only enrollment did not backfill an existing 344,343-ms tracker position;
+new playback delivered exactly 659,888 milliseconds and then 977,299 milliseconds.
+Completion did not mark that destination watched or clear its resume without
+watched consent.
+
+Revocation survived relaunch and blocked another movie's new 334,779-ms resume.
+Re-enrollment with both categories did not backfill it. Subsequent real playback
+delivered 640,458 milliseconds; completion converted the confirmed destination
+resume to watched/count-one state. Repeat syncs and cold relaunches changed
+neither server counts nor tracker history. All unselected Jellyfin titles, an
+unrelated Emby control, full tracker histories outside the source titles, and
+test lists remained unchanged. Test consent was revoked and source selections
+restored.
+
+The scoped audit retains 44 native passes, four failed driver checks and 30
+independent snapshots. The initial two snapshots contain selected cases only;
+the prior guarded-import cleanup and post-enrollment full readback agree.
+All later snapshots contain complete tracker watched/resume history. The first
+resume arrived on foreground before a native navigation assertion failed;
+independent reads and read-only native inspection confirmed delivery without
+repeating playback. The driver now waits for comparison activity to finish,
+keeps navigation inside the visible list and waits for the destination page.
+Final consent-off checks passed on both mobile layouts.
+
+Plex rounds fractional milliseconds while PublicMetaDB floors them; source
+readback can differ by one millisecond, but imported destination positions must
+match the tracker exactly. This evidence covers three movie routes, not Emby
+episode/platform parity, measured foreground cooldown, network-loss recovery
+or a distributed exactly-once guarantee.
+
 Separate read-only transport preflights fetched the same two-mebibyte movie
 prefix through dedicated SMB, NFS, WebDAV, FTP and host-key-pinned SFTP access.
 All five matched an independently authenticated media-server file range.
