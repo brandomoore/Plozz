@@ -370,6 +370,10 @@ swipes. Left at an unresolved content edge opens the sidebar; Right at an
 unresolved sidebar edge returns to the page. Both paths wait for native focus to
 settle and do nothing if it moved or the sidebar's focus state changed. The Home
 hero disables this fallback and requests entry at its own logical leading edge.
+Return-focus capture uses the same content eligibility rules as fresh entry:
+the hero's one-point directional guards are never saved as return destinations.
+Otherwise Hero + Showcase can restore its Left guard and immediately reopen the
+sidebar instead of returning to the hero action row.
 Unchanged focus is not sufficient evidence of unused input. Focus environments
 conforming to `HorizontalNavigationInputOwning` keep horizontal adjustments,
 and presented screens keep input away from the background rail. The native
