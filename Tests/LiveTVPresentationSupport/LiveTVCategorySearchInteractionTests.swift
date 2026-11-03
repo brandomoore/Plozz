@@ -29,7 +29,7 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         XCTAssertTrue(
             abs(frame.minY - filters.maxY - 8) <= 2 || frame.maxX <= filters.minX,
             "The video must sit 8 pt below a horizontal toolbar or clear a vertical toolbar. "
-                + "Video: \(frame); More: \(filters); Source: \(app.buttons["live-tv-source"].frame); "
+                + "Video: \(frame); More: \(filters); "
                 + "Category: \(app.buttons["live-tv-category"].frame)"
         )
         XCTAssertFalse(app.buttons["Watch channel"].exists)
@@ -395,6 +395,7 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
             XCTAssertLessThanOrEqual(button.frame.height, 48)
         }
         XCTAssertFalse(app.navigationBars.buttons["live-tv-filters"].exists)
+        capture("live-tv-root-source-title", in: app)
         openBrowseAction("live-tv-filters", in: app)
         let close = app.buttons["live-tv-close-sheet"]
         XCTAssertTrue(close.waitForExistence(timeout: 5), app.debugDescription)
@@ -411,8 +412,12 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         let category = app.navigationBars.buttons["live-tv-category"]
         XCTAssertTrue(channel("Local Music", in: app).waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertTrue(channel("Arena One", in: app).exists)
-        XCTAssertEqual(source.label, "Source")
-        XCTAssertEqual(source.value as? String, "All")
+        if app.buttons["live-tv-categories"].exists {
+            XCTAssertFalse(source.exists)
+        } else {
+            XCTAssertEqual(source.label, "Source")
+            XCTAssertEqual(source.value as? String, "All")
+        }
         XCTAssertEqual(category.value as? String, "All channels")
         channel("Arena One", in: app).tap()
         let preview = app.otherElements["category-search-playback"]
@@ -421,20 +426,14 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         let engine = app.staticTexts["category-preview-engine"].label
         let loads = app.staticTexts["category-preview-loads"].label
 
-        source.tap()
-        XCTAssertTrue(app.buttons["All"].waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertFalse(app.buttons["Paused TV"].exists)
-        app.buttons["Sample TV"].tap()
-        XCTAssertEqual(source.value as? String, "Sample TV")
+        selectBrowseSource("Sample TV", in: app)
         XCTAssertTrue(channel("Local Music", in: app).waitForNonExistence(timeout: 5))
         category.tap()
         capture("live-tv-category-menu", in: app)
         app.collectionViews.buttons["Sports"].tap()
         XCTAssertEqual(category.value as? String, "Sports")
         XCTAssertTrue(channel("Daily News", in: app).waitForNonExistence(timeout: 5))
-        source.tap()
-        app.buttons["Local TV"].tap()
-        XCTAssertEqual(source.value as? String, "Local TV")
+        selectBrowseSource("Local TV", in: app)
         XCTAssertEqual(category.value as? String, "Sports")
         XCTAssertTrue(channel("Local Sport", in: app).waitForExistence(timeout: 5))
         XCTAssertFalse(channel("Arena One", in: app).exists)
@@ -445,12 +444,10 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         category.tap()
         app.collectionViews.buttons["Music"].tap()
         XCTAssertTrue(channel("Local Music", in: app).waitForExistence(timeout: 5))
-        source.tap()
-        app.buttons["Sample TV"].tap()
+        selectBrowseSource("Sample TV", in: app)
         XCTAssertEqual(category.value as? String, "All channels", "An unavailable category must not strand the new source.")
         XCTAssertTrue(channel("Daily News", in: app).waitForExistence(timeout: 5))
-        source.tap()
-        app.buttons["All"].tap()
+        selectBrowseSource("All", in: app)
         XCTAssertTrue(channel("Local Music", in: app).waitForExistence(timeout: 5))
         XCTAssertTrue(channel("Arena One", in: app).exists)
         XCTAssertEqual(app.staticTexts["category-preview-loads"].label, loads)
@@ -459,27 +456,42 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
 
     func testLongSourceAndCategoryNamesKeepNavigationAccessible() {
         XCUIDevice.shared.orientation = .portrait
-        let app = launch(guideFirst: true, longSourceName: true)
+        let app = launch(longSourceName: true)
         defer { app.terminate() }
-        XCTAssertTrue(channel("Arena One", in: app).waitForExistence(timeout: 15))
         let source = app.navigationBars.buttons["live-tv-source"]
+        XCTAssertTrue(source.waitForExistence(timeout: 15))
         source.tap()
         app.buttons["Sample Television International Network"].tap()
+        XCTAssertEqual(source.value as? String, "Sample Television International Network")
+        let more = app.navigationBars.buttons["live-tv-more"]
+        XCTAssertTrue(source.isHittable)
+        XCTAssertLessThanOrEqual(source.frame.maxX, more.frame.minX)
+        capture("live-tv-root-long-source-title", in: app)
+        let tile = app.buttons["live-tv-browse-category-International Sports"]
+        if tile.exists { tile.tap() }
         let category = app.navigationBars.buttons["live-tv-category"]
+        XCTAssertTrue(category.waitForExistence(timeout: 5))
         category.tap()
         app.collectionViews.buttons["International Sports"].tap()
-        XCTAssertEqual(source.value as? String, "Sample Television International Network")
         XCTAssertEqual(category.value as? String, "International Sports")
-        let more = app.navigationBars.buttons["live-tv-more"]
-        for control in [source, category, more] {
+        for control in [category, more] {
             XCTAssertTrue(control.isHittable, app.debugDescription)
         }
         capture("live-tv-long-navigation-labels", in: app)
         XCTAssertGreaterThanOrEqual(category.frame.width, 44)
-        XCTAssertLessThanOrEqual(source.frame.maxX, category.frame.minX)
         XCTAssertLessThanOrEqual(category.frame.maxX, more.frame.minX)
         let back = app.buttons["live-tv-categories"]
-        if back.exists { XCTAssertTrue(back.isHittable) }
+        if back.exists {
+            XCTAssertFalse(source.exists)
+            XCTAssertTrue(back.isHittable)
+            XCTAssertLessThanOrEqual(back.frame.maxX, category.frame.minX)
+            back.tap()
+            XCTAssertTrue(source.waitForExistence(timeout: 5))
+            XCTAssertEqual(source.value as? String, "Sample Television International Network")
+        } else {
+            XCTAssertTrue(source.isHittable)
+            XCTAssertLessThanOrEqual(source.frame.maxX, category.frame.minX)
+        }
     }
 
     func testSourceMenuUpdatesCategoryCountsWhenPlaybackUnavailable() {
@@ -515,6 +527,11 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         app.buttons["live-tv-category"].tap()
         capture("live-tv-category-dropdown", in: app)
         app.collectionViews.buttons["All channels"].tap()
+        let back = app.buttons["live-tv-categories"]
+        if back.exists {
+            XCTAssertFalse(app.buttons["live-tv-source"].exists)
+            back.tap()
+        }
         app.buttons["live-tv-source"].tap()
         XCTAssertTrue(app.buttons["live-tv-add-source"].waitForExistence(timeout: 5))
         capture("live-tv-source-dropdown", in: app)
@@ -583,6 +600,10 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
             for: [XCTNSPredicateExpectation(predicate: ready, object: nil)], timeout: 15
         ), .completed, app.debugDescription)
         let usesSidebar = sidebar.exists
+        #if os(iOS)
+        let source = app.navigationBars.buttons["live-tv-source"]
+        XCTAssertTrue(source.isHittable)
+        #endif
         let sports = usesSidebar ? sidebar : tile
         XCTAssertEqual(sports.value as? String, "2 channels")
         let originalX = usesSidebar ? sidebar.frame.minX : 0
@@ -601,6 +622,9 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         XCTAssertTrue(channel("Stadium Live", in: app).exists)
         XCTAssertFalse(channel("Daily News", in: app).exists)
         capture("category-browser-guide", in: app)
+        #if os(iOS)
+        XCTAssertEqual(source.exists, usesSidebar, "Only the root directory or split view owns the source title.")
+        #endif
         if usesSidebar {
             XCTAssertTrue(sidebar.exists)
             XCTAssertEqual(sidebar.frame.minX, originalX, accuracy: 1)
@@ -625,6 +649,7 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
             XCTAssertTrue(close.waitForNonExistence(timeout: 5))
             app.buttons["live-tv-categories"].tap()
             XCTAssertTrue(tile.waitForExistence(timeout: 5))
+            XCTAssertTrue(source.isHittable)
             XCTAssertTrue(profile.isHittable)
             XCTAssertFalse(channel("Arena One", in: app).exists)
             XCTAssertFalse(app.keyboards.firstMatch.exists)
@@ -683,6 +708,7 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         let app = launchSearch(guideFirst: true)
         defer { app.terminate() }
         #if os(iOS)
+        XCTAssertFalse(app.navigationBars.buttons["live-tv-source"].exists)
         if UIDevice.current.userInterfaceIdiom == .phone {
             XCTAssertFalse(app.navigationBars.buttons["live-tv-profile"].exists)
         }
@@ -758,6 +784,28 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
     }
 
     #if os(iOS)
+    private func selectBrowseSource(_ name: String, in app: XCUIApplication) {
+        let category = app.navigationBars.buttons["live-tv-category"]
+        let previousCategory = category.value as? String
+        let back = app.buttons["live-tv-categories"]
+        let returnsToDirectory = back.exists
+        if returnsToDirectory { back.tap() }
+        let source = app.navigationBars.buttons["live-tv-source"]
+        XCTAssertTrue(source.waitForExistence(timeout: 5))
+        source.tap()
+        XCTAssertTrue(app.buttons["All"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["Paused TV"].exists)
+        app.buttons[name].tap()
+        XCTAssertEqual(source.value as? String, name)
+        if returnsToDirectory {
+            let tile = app.buttons["live-tv-browse-category-\(previousCategory ?? "")"]
+            if tile.exists { tile.tap() }
+            else { app.buttons["live-tv-category-all"].tap() }
+            XCTAssertTrue(category.waitForExistence(timeout: 5))
+            XCTAssertFalse(source.exists)
+        }
+    }
+
     private func videoFrame(in app: XCUIApplication) -> CGRect {
         // The playback accessibility container also includes the decorative top reflection.
         app.otherElements["category-preview-video-bounds"].frame

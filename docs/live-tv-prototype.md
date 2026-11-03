@@ -152,12 +152,15 @@ Navigation uses the plain **Live TV** label in every style. The source-setup
 introduction carries a small, secondary **Experimental** note on both platforms,
 without a warning dialog or an extra confirmation step.
 
-On iPhone and iPad, the browse header instead shows **All** or the selected
-source's name. Its native menu filters the combined lineup without disabling a
+On iPhone and iPad, the initial category directory shows **All** or the selected
+source's name in headline weight. The source menu stays on that first screen,
+not the category guide or search page; wide iPad layouts keep it on their
+single root split view. Its native menu filters the combined lineup without disabling a
 source or stopping an already playing channel; it lists only enabled, authorized
 playlist and server sources. Switching sources retains a category when it is
 available in the new lineup, otherwise returns to all channels. The guide's
-category menu changes categories in place. **Add Source** in the source menu
+category menu changes categories in place and is a nested guide's only title.
+**Add Source** in the source menu
 opens the existing authorized IPTV/playlist and media-server setup choices.
 Guide/search, filters, Multiviews and source management are contextual actions in
 the **More** menu; the existing

@@ -170,43 +170,46 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
                     .accessibilityIdentifier("live-tv-categories")
                     .disabled(isDisabled)
             }
-            Menu {
-                Picker("Source", selection: Binding(
-                    get: { model.configuredSourceID }, set: selectSource
-                )) {
-                    Text("All").tag(String?.none)
-                    ForEach(configuration.playlists.filter(\.isEnabled)) { source in
-                        Text(verbatim: source.name).tag(Optional(source.id))
+            if (showsDirectory || hasSidebar) && !isSearching {
+                Menu {
+                    Picker("Source", selection: Binding(
+                        get: { model.configuredSourceID }, set: selectSource
+                    )) {
+                        Text("All").tag(String?.none)
+                        ForEach(configuration.playlists.filter(\.isEnabled)) { source in
+                            Text(verbatim: source.name).tag(Optional(source.id))
+                        }
+                        ForEach(configuration.servers.filter(\.isEnabled)) { source in
+                            Text(verbatim: source.name).tag(Optional(source.id))
+                        }
                     }
-                    ForEach(configuration.servers.filter(\.isEnabled)) { source in
-                        Text(verbatim: source.name).tag(Optional(source.id))
+                    .pickerStyle(.inline)
+                    Divider()
+                    Button(action: addSource) {
+                        Label {
+                            Text(SettingsCopy.addSource)
+                        } icon: {
+                            Image(systemName: "plus")
+                        }
                     }
-                }
-                .pickerStyle(.inline)
-                Divider()
-                Button(action: addSource) {
-                    Label {
-                        Text(SettingsCopy.addSource)
-                    } icon: {
-                        Image(systemName: "plus")
+                    .accessibilityIdentifier("live-tv-add-source")
+                } label: {
+                    HStack(spacing: 6) {
+                        sourceLabel
+                            .font(.headline)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Image(systemName: "chevron.down").font(.caption.weight(.semibold))
                     }
+                    .frame(maxWidth: 220)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
-                .accessibilityIdentifier("live-tv-add-source")
-            } label: {
-                HStack(spacing: 6) {
-                    sourceLabel
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Image(systemName: "chevron.down").font(.caption)
-                }
-                .frame(maxWidth: (!showsDirectory || isSearching) && sizeClass == .compact ? 100 : 220)
-                .fixedSize(horizontal: false, vertical: true)
+                .menuOrder(.fixed)
+                .accessibilityLabel("Source")
+                .accessibilityValue(sourceLabel)
+                .accessibilityIdentifier("live-tv-source")
+                .disabled(isDisabled)
             }
-            .menuOrder(.fixed)
-            .accessibilityLabel("Source")
-            .accessibilityValue(sourceLabel)
-            .accessibilityIdentifier("live-tv-source")
-            .disabled(isDisabled)
         }
         ToolbarItem(placement: .principal) {
             if !showsDirectory && !isSearching {
@@ -224,7 +227,7 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
                         Image(systemName: "chevron.down").font(.caption)
                     }
                     .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: sizeClass == .compact ? 120 : 320)
+                    .frame(maxWidth: sizeClass == .compact ? 220 : 320)
                 }
                 .menuOrder(.fixed)
                 .accessibilityLabel("Category")
