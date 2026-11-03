@@ -52893,45 +52893,9 @@
     },
     "%lld channels with current listings" : {
       "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld channel with current listings"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld channels with current listings"
-                }
-              }
-            }
-          }
-        },
         "ar" : {
           "variations" : {
             "plural" : {
-              "zero" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "قنوات ببيانات برامج حالية: %lld"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "قنوات ببيانات برامج حالية: %lld"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "قنوات ببيانات برامج حالية: %lld"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -52944,7 +52908,25 @@
                   "value" : "قنوات ببيانات برامج حالية: %lld"
                 }
               },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "قنوات ببيانات برامج حالية: %lld"
+                }
+              },
               "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "قنوات ببيانات برامج حالية: %lld"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "قنوات ببيانات برامج حالية: %lld"
+                }
+              },
+              "zero" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "قنوات ببيانات برامج حالية: %lld"
@@ -52974,16 +52956,16 @@
         "ca" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld canal amb programació actual"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld canals amb programació actual"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld canal amb programació actual"
                 }
               },
               "other" : {
@@ -52998,12 +52980,6 @@
         "cs" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld kanál s aktuálním programem"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -53014,6 +52990,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld kanálu s aktuálním programem"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld kanál s aktuálním programem"
                 }
               },
               "other" : {
@@ -53079,19 +53061,37 @@
             }
           }
         },
-        "es" : {
+        "en" : {
           "variations" : {
             "plural" : {
               "one" : {
                 "stringUnit" : {
                   "state" : "needs_review",
-                  "value" : "%lld canal con programación actual"
+                  "value" : "%lld channel with current listings"
                 }
               },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld channels with current listings"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld canales con programación actual"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld canal con programación actual"
                 }
               },
               "other" : {
@@ -53142,16 +53142,16 @@
         "fr" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld chaîne avec une programmation à jour"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld chaînes avec une programmation à jour"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld chaîne avec une programmation à jour"
                 }
               },
               "other" : {
@@ -53172,13 +53172,13 @@
                   "value" : "ערוצים עם תוכניות עדכניות: %lld"
                 }
               },
-              "two" : {
+              "other" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "ערוצים עם תוכניות עדכניות: %lld"
                 }
               },
-              "other" : {
+              "two" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "ערוצים עם תוכניות עדכניות: %lld"
@@ -53208,16 +53208,16 @@
         "hr" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld kanal s aktualnim programom"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld kanala s aktualnim programom"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld kanal s aktualnim programom"
                 }
               },
               "other" : {
@@ -53262,16 +53262,16 @@
         "it" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld canale con palinsesto aggiornato"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld canali con palinsesto aggiornato"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld canale con palinsesto aggiornato"
                 }
               },
               "other" : {
@@ -53358,12 +53358,6 @@
         "pl" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld kanał z aktualnym programem TV"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -53374,6 +53368,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld kanałów z aktualnym programem TV"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld kanał z aktualnym programem TV"
                 }
               },
               "other" : {
@@ -53388,16 +53388,16 @@
         "pt-BR" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld canal com programação atual"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld canais com programação atual"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld canal com programação atual"
                 }
               },
               "other" : {
@@ -53412,16 +53412,16 @@
         "ro" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld canal cu program actual"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld canale cu program actual"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld canal cu program actual"
                 }
               },
               "other" : {
@@ -53436,12 +53436,6 @@
         "ru" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld канал с актуальной программой"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -53452,6 +53446,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld каналов с актуальной программой"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld канал с актуальной программой"
                 }
               },
               "other" : {
@@ -53466,12 +53466,6 @@
         "sk" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld kanál s aktuálnym programom"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -53482,6 +53476,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld kanála s aktuálnym programom"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld kanál s aktuálnym programom"
                 }
               },
               "other" : {
@@ -53496,28 +53496,28 @@
         "sl" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld kanal z aktualnim sporedom"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld kanala z aktualnim sporedom"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld kanali z aktualnim sporedom"
                 }
               },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld kanal z aktualnim sporedom"
+                }
+              },
               "other" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld kanalov z aktualnim sporedom"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld kanala z aktualnim sporedom"
                 }
               }
             }
@@ -53526,16 +53526,16 @@
         "sr-Latn" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld kanal sa aktuelnim TV programom"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld kanala sa aktuelnim TV programom"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld kanal sa aktuelnim TV programom"
                 }
               },
               "other" : {
@@ -53598,12 +53598,6 @@
         "uk" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld канал з актуальною програмою"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -53614,6 +53608,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld каналів з актуальною програмою"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld канал з актуальною програмою"
                 }
               },
               "other" : {
@@ -73873,45 +73873,9 @@
     },
     "%lld listings processed" : {
       "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld listing processed"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld listings processed"
-                }
-              }
-            }
-          }
-        },
         "ar" : {
           "variations" : {
             "plural" : {
-              "zero" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "إدخالات البرامج المعالَجة: %lld"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "إدخالات البرامج المعالَجة: %lld"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "إدخالات البرامج المعالَجة: %lld"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -73924,7 +73888,25 @@
                   "value" : "إدخالات البرامج المعالَجة: %lld"
                 }
               },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إدخالات البرامج المعالَجة: %lld"
+                }
+              },
               "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إدخالات البرامج المعالَجة: %lld"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إدخالات البرامج المعالَجة: %lld"
+                }
+              },
+              "zero" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "إدخالات البرامج المعالَجة: %lld"
@@ -73954,16 +73936,16 @@
         "ca" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld entrada de programació processada"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld entrades de programació processades"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld entrada de programació processada"
                 }
               },
               "other" : {
@@ -73978,12 +73960,6 @@
         "cs" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Zpracována %lld položka programu"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -73994,6 +73970,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Zpracováno %lld položky programu"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Zpracována %lld položka programu"
                 }
               },
               "other" : {
@@ -74059,19 +74041,37 @@
             }
           }
         },
-        "es" : {
+        "en" : {
           "variations" : {
             "plural" : {
               "one" : {
                 "stringUnit" : {
                   "state" : "needs_review",
-                  "value" : "%lld programa procesado"
+                  "value" : "%lld listing processed"
                 }
               },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld listings processed"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld programas procesados"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld programa procesado"
                 }
               },
               "other" : {
@@ -74122,16 +74122,16 @@
         "fr" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld programme traité"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld programmes traités"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld programme traité"
                 }
               },
               "other" : {
@@ -74152,13 +74152,13 @@
                   "value" : "תוכניות שעובדו: %lld"
                 }
               },
-              "two" : {
+              "other" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "תוכניות שעובדו: %lld"
                 }
               },
-              "other" : {
+              "two" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "תוכניות שעובדו: %lld"
@@ -74188,16 +74188,16 @@
         "hr" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Obrađena %lld emisija"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Obrađene %lld emisije"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Obrađena %lld emisija"
                 }
               },
               "other" : {
@@ -74242,16 +74242,16 @@
         "it" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld programma elaborato"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld programmi elaborati"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld programma elaborato"
                 }
               },
               "other" : {
@@ -74338,12 +74338,6 @@
         "pl" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Przetworzono %lld pozycję programu"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -74354,6 +74348,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Przetworzono %lld pozycji programu"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Przetworzono %lld pozycję programu"
                 }
               },
               "other" : {
@@ -74368,16 +74368,16 @@
         "pt-BR" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld entrada de programação processada"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld entradas de programação processadas"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld entrada de programação processada"
                 }
               },
               "other" : {
@@ -74392,16 +74392,16 @@
         "ro" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld emisiune procesată"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld emisiuni procesate"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld emisiune procesată"
                 }
               },
               "other" : {
@@ -74416,12 +74416,6 @@
         "ru" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Обработана %lld запись"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -74432,6 +74426,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Обработано %lld записей"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Обработана %lld запись"
                 }
               },
               "other" : {
@@ -74446,12 +74446,6 @@
         "sk" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Spracovaná %lld položka"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -74462,6 +74456,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld spracovanej položky"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Spracovaná %lld položka"
                 }
               },
               "other" : {
@@ -74476,28 +74476,28 @@
         "sl" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld obdelan vnos"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld obdelana vnosa"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld obdelani vnosi"
                 }
               },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld obdelan vnos"
+                }
+              },
               "other" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld obdelanih vnosov"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld obdelana vnosa"
                 }
               }
             }
@@ -74506,16 +74506,16 @@
         "sr-Latn" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Obrađena %lld stavka"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Obrađene %lld stavke"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Obrađena %lld stavka"
                 }
               },
               "other" : {
@@ -74578,12 +74578,6 @@
         "uk" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Оброблено %lld програму"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -74594,6 +74588,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Оброблено %lld програм"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Оброблено %lld програму"
                 }
               },
               "other" : {
@@ -74645,45 +74645,9 @@
     },
     "%lld listings scanned" : {
       "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld listing scanned"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld listings scanned"
-                }
-              }
-            }
-          }
-        },
         "ar" : {
           "variations" : {
             "plural" : {
-              "zero" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "إدخالات البرامج المفحوصة: %lld"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "إدخالات البرامج المفحوصة: %lld"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "إدخالات البرامج المفحوصة: %lld"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -74696,7 +74660,25 @@
                   "value" : "إدخالات البرامج المفحوصة: %lld"
                 }
               },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إدخالات البرامج المفحوصة: %lld"
+                }
+              },
               "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إدخالات البرامج المفحوصة: %lld"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إدخالات البرامج المفحوصة: %lld"
+                }
+              },
+              "zero" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "إدخالات البرامج المفحوصة: %lld"
@@ -74726,16 +74708,16 @@
         "ca" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld entrada de programació examinada"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld entrades de programació examinades"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld entrada de programació examinada"
                 }
               },
               "other" : {
@@ -74750,12 +74732,6 @@
         "cs" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Prohledána %lld položka programu"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -74766,6 +74742,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Prohledáno %lld položky programu"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Prohledána %lld položka programu"
                 }
               },
               "other" : {
@@ -74831,19 +74813,37 @@
             }
           }
         },
-        "es" : {
+        "en" : {
           "variations" : {
             "plural" : {
               "one" : {
                 "stringUnit" : {
                   "state" : "needs_review",
-                  "value" : "%lld programa analizado"
+                  "value" : "%lld listing scanned"
                 }
               },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld listings scanned"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld programas analizados"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld programa analizado"
                 }
               },
               "other" : {
@@ -74894,16 +74894,16 @@
         "fr" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld programme analysé"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld programmes analysés"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld programme analysé"
                 }
               },
               "other" : {
@@ -74924,13 +74924,13 @@
                   "value" : "תוכניות שנסרקו: %lld"
                 }
               },
-              "two" : {
+              "other" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "תוכניות שנסרקו: %lld"
                 }
               },
-              "other" : {
+              "two" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "תוכניות שנסרקו: %lld"
@@ -74960,16 +74960,16 @@
         "hr" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Pregledana %lld emisija"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Pregledane %lld emisije"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Pregledana %lld emisija"
                 }
               },
               "other" : {
@@ -75014,16 +75014,16 @@
         "it" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld programma analizzato"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld programmi analizzati"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld programma analizzato"
                 }
               },
               "other" : {
@@ -75110,12 +75110,6 @@
         "pl" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Przeskanowano %lld pozycję programu"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -75126,6 +75120,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Przeskanowano %lld pozycji programu"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Przeskanowano %lld pozycję programu"
                 }
               },
               "other" : {
@@ -75140,16 +75140,16 @@
         "pt-BR" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld entrada de programação analisada"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld entradas de programação analisadas"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld entrada de programação analisada"
                 }
               },
               "other" : {
@@ -75164,16 +75164,16 @@
         "ro" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld emisiune scanată"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld emisiuni scanate"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld emisiune scanată"
                 }
               },
               "other" : {
@@ -75188,12 +75188,6 @@
         "ru" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Просканирована %lld запись"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -75204,6 +75198,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Просканировано %lld записей"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Просканирована %lld запись"
                 }
               },
               "other" : {
@@ -75218,12 +75218,6 @@
         "sk" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Preskenovaná %lld položka"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -75234,6 +75228,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld preskenovanej položky"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Preskenovaná %lld položka"
                 }
               },
               "other" : {
@@ -75248,28 +75248,28 @@
         "sl" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld pregledan vnos"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld pregledana vnosa"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld pregledani vnosi"
                 }
               },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld pregledan vnos"
+                }
+              },
               "other" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld pregledanih vnosov"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld pregledana vnosa"
                 }
               }
             }
@@ -75278,16 +75278,16 @@
         "sr-Latn" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Skenirana %lld stavka"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Skenirane %lld stavke"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Skenirana %lld stavka"
                 }
               },
               "other" : {
@@ -75350,12 +75350,6 @@
         "uk" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Проскановано %lld програму"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -75366,6 +75360,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Проскановано %lld програм"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Проскановано %lld програму"
                 }
               },
               "other" : {
@@ -82726,34 +82726,6 @@
     },
     "%lld of %lld channels" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "%1$lld of %#@arg2@"
-          },
-          "substitutions" : {
-            "arg2" : {
-              "argNum" : 2,
-              "formatSpecifier" : "lld",
-              "variations" : {
-                "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld channel"
-                    }
-                  },
-                  "other" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld channels"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -82765,24 +82737,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "zero" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld"
-                    }
-                  },
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld"
-                    }
-                  },
-                  "two" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -82795,7 +82749,25 @@
                       "value" : "%lld"
                     }
                   },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
                   "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
+                  "two" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
+                  "zero" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld"
@@ -82845,16 +82817,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld canal"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld canals"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld canal"
                     }
                   },
                   "other" : {
@@ -82879,12 +82851,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld kanálu"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -82892,6 +82858,12 @@
                     }
                   },
                   "many" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld kanálu"
+                    }
+                  },
+                  "one" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld kanálu"
@@ -82992,6 +82964,34 @@
             }
           }
         },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$lld of %#@arg2@"
+          },
+          "substitutions" : {
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld channel"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld channels"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -83003,16 +83003,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld canal"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld canales"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld canal"
                     }
                   },
                   "other" : {
@@ -83093,16 +83093,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld chaîne"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld chaînes"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld chaîne"
                     }
                   },
                   "other" : {
@@ -83133,13 +83133,13 @@
                       "value" : "%lld"
                     }
                   },
-                  "two" : {
+                  "other" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld"
                     }
                   },
-                  "other" : {
+                  "two" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld"
@@ -83189,13 +83189,13 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
+                  "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld kanala"
                     }
                   },
-                  "few" : {
+                  "one" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld kanala"
@@ -83273,16 +83273,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld canale"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld canali"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld canale"
                     }
                   },
                   "other" : {
@@ -83429,12 +83429,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld kanału"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -83445,6 +83439,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld kanałów"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld kanału"
                     }
                   },
                   "other" : {
@@ -83469,16 +83469,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld canal"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld canais"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld canal"
                     }
                   },
                   "other" : {
@@ -83503,16 +83503,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld canal"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld canale"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld canal"
                     }
                   },
                   "other" : {
@@ -83537,12 +83537,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld канала"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -83553,6 +83547,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld каналов"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld канала"
                     }
                   },
                   "other" : {
@@ -83577,12 +83577,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld kanála"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -83590,6 +83584,12 @@
                     }
                   },
                   "many" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld kanála"
+                    }
+                  },
+                  "one" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld kanála"
@@ -83617,25 +83617,25 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld kanala"
-                    }
-                  },
-                  "two" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld kanalov"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld kanalov"
                     }
                   },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld kanala"
+                    }
+                  },
                   "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld kanalov"
+                    }
+                  },
+                  "two" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld kanalov"
@@ -83657,13 +83657,13 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
+                  "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld kanala"
                     }
                   },
-                  "few" : {
+                  "one" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld kanala"
@@ -83769,12 +83769,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld каналу"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -83785,6 +83779,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld каналів"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld каналу"
                     }
                   },
                   "other" : {
@@ -89760,34 +89760,6 @@
     },
     "%lld of %lld listings" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "%1$lld of %#@arg2@"
-          },
-          "substitutions" : {
-            "arg2" : {
-              "argNum" : 2,
-              "formatSpecifier" : "lld",
-              "variations" : {
-                "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld listing"
-                    }
-                  },
-                  "other" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld listings"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -89799,24 +89771,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "zero" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld"
-                    }
-                  },
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld"
-                    }
-                  },
-                  "two" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -89829,7 +89783,25 @@
                       "value" : "%lld"
                     }
                   },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
                   "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
+                  "two" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
+                  "zero" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld"
@@ -89879,16 +89851,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld entrada de programació"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld entrades de programació"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld entrada de programació"
                     }
                   },
                   "other" : {
@@ -89913,12 +89885,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld položky programu"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -89926,6 +89892,12 @@
                     }
                   },
                   "many" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld položky programu"
+                    }
+                  },
+                  "one" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld položky programu"
@@ -90026,6 +89998,34 @@
             }
           }
         },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$lld of %#@arg2@"
+          },
+          "substitutions" : {
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld listing"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld listings"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -90037,16 +90037,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld programa"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld programas"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld programa"
                     }
                   },
                   "other" : {
@@ -90127,16 +90127,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld programme"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld programmes"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld programme"
                     }
                   },
                   "other" : {
@@ -90167,13 +90167,13 @@
                       "value" : "%lld"
                     }
                   },
-                  "two" : {
+                  "other" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld"
                     }
                   },
-                  "other" : {
+                  "two" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld"
@@ -90223,13 +90223,13 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
+                  "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld emisije"
                     }
                   },
-                  "few" : {
+                  "one" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld emisije"
@@ -90307,16 +90307,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld programma"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld programmi"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld programma"
                     }
                   },
                   "other" : {
@@ -90463,12 +90463,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld pozycji programu"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -90476,6 +90470,12 @@
                     }
                   },
                   "many" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld pozycji programu"
+                    }
+                  },
+                  "one" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld pozycji programu"
@@ -90503,16 +90503,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld entrada de programação"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld entradas de programação"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld entrada de programação"
                     }
                   },
                   "other" : {
@@ -90537,16 +90537,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld emisiune"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld emisiuni"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld emisiune"
                     }
                   },
                   "other" : {
@@ -90571,12 +90571,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld записи"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -90587,6 +90581,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld записей"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld записи"
                     }
                   },
                   "other" : {
@@ -90611,12 +90611,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld položky"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -90624,6 +90618,12 @@
                     }
                   },
                   "many" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld položky"
+                    }
+                  },
+                  "one" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld položky"
@@ -90651,25 +90651,25 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld vnosa"
-                    }
-                  },
-                  "two" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld vnosov"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld vnosov"
                     }
                   },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld vnosa"
+                    }
+                  },
                   "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld vnosov"
+                    }
+                  },
+                  "two" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld vnosov"
@@ -90691,13 +90691,13 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
+                  "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld stavke"
                     }
                   },
-                  "few" : {
+                  "one" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld stavke"
@@ -90803,12 +90803,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld програми"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -90819,6 +90813,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld програм"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld програми"
                     }
                   },
                   "other" : {
@@ -161732,6 +161732,227 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "自動預覽"
+          }
+        }
+      }
+    },
+    "Auto-Move Away from Controls" : {
+      "comment" : "Subtitle positioning switch. When enabled, subtitles move only enough to avoid visible playback controls. Turning it off keeps their chosen position.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تحريك تلقائي بعيدًا عن عناصر التحكم"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Автоматично отместване от контролите"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Allunyar automàticament dels controls"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatický posun mimo ovládací prvky"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Flyt automatisk væk fra betjeningselementer"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bedienelementen automatisch ausweichen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αυτόματη μετακίνηση μακριά από τα χειριστήρια"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alejar automáticamente de los controles"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "دور شدن خودکار از کنترل‌ها"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Siirrä automaattisesti pois säätimien tieltä"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Éloigner automatiquement des commandes"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הזזה אוטומטית הרחק מהפקדים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "कंट्रोल से अपने आप दूर खिसकाएँ"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatsko odmicanje od kontrola"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatikus elmozdítás a vezérlőktől"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geser otomatis menjauh dari kontrol"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Allontana automaticamente dai controlli"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "再生コントロールを避けて自動移動"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "재생 컨트롤을 피해 자동 이동"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alihkan secara automatik menjauhi kawalan"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Flytt automatisk bort fra kontrollene"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatisch van bedieningselementen wegschuiven"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatycznie odsuwaj od elementów sterujących"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Afastar automaticamente dos controles"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Îndepărtare automată de comenzile de redare"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Автоматически отодвигать от элементов управления"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatický posun mimo ovládacích prvkov"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Samodejni odmik od kontrolnikov"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatsko odmicanje od kontrola"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Flytta automatiskt bort från reglagen"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เลื่อนอัตโนมัติให้พ้นส่วนควบคุม"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kontrollerden otomatik uzaklaştır"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Автоматично відсувати від елементів керування"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tự động di chuyển tránh vùng điều khiển"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自动移动以避开控件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自動移動以避開控制項"
           }
         }
       }
@@ -1119763,6 +1119984,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "字幕外觀 自訂 樣式"
+          }
+        }
+      }
+    },
+    "subtitles captions automatic movement move position playback controls progress bar play button overlap" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ترجمات ترجمة نصية شرح مكتوب تلقائي حركة تحريك موضع عناصر التحكم بالتشغيل شريط التقدم زر التشغيل تداخل"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "субтитри надписи автоматично движение преместване позиция контроли за възпроизвеждане лента за напредък бутон за възпроизвеждане застъпване"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "subtítols subtítols accessibles automàtic moviment moure posició controls de reproducció barra de progrés botó de reproducció superposició"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "titulky skryté titulky automatický pohyb posun poloha ovládání přehrávání ukazatel průběhu tlačítko přehrávání překrývání"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "undertekster tekstning automatisk bevægelse flyt position afspilningskontroller betjeningselementer statuslinje afspilningsknap overlap"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Untertitel Hörgeschädigtenuntertitel automatisch Bewegung verschieben Position Wiedergabesteuerung Bedienelemente Fortschrittsbalken Wiedergabetaste Überlappung"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "υπότιτλοι υπότιτλοι προσβασιμότητας αυτόματα κίνηση μετακίνηση θέση χειριστήρια αναπαραγωγής γραμμή προόδου κουμπί αναπαραγωγής επικάλυψη"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "subtítulos subtítulos accesibles automático movimiento mover posición controles de reproducción barra de progreso botón de reproducción superposición"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "زیرنویس زیرنویس ناشنوایان خودکار حرکت جابه‌جایی موقعیت کنترل‌های پخش نوار پیشرفت دکمه پخش هم‌پوشانی"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tekstitykset kuulovammaistekstitys automaattinen liike siirrä sijainti toistosäätimet etenemispalkki toistopainike päällekkäisyys"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sous-titres sous-titrage malentendants automatique mouvement déplacer position commandes de lecture barre de progression bouton de lecture chevauchement"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "כתוביות כתוביות נגישות אוטומטי תנועה הזזה מיקום פקדי ניגון פס התקדמות לחצן ניגון חפיפה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "सबटाइटल उपशीर्षक कैप्शन अपने आप स्वचालित गति खिसकाना स्थिति प्लेबैक कंट्रोल प्रगति पट्टी प्ले बटन ओवरलैप"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "titlovi titlovi za gluhe automatski pomicanje pomak položaj kontrole reprodukcije traka napretka gumb za reprodukciju preklapanje"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "feliratok akadálymentes feliratok automatikus mozgás mozgatás pozíció lejátszásvezérlők folyamatjelző sáv lejátszás gomb átfedés"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "subtitle takarir takarir untuk tunarungu otomatis gerakan geser posisi kontrol pemutaran bilah progres tombol putar tumpang tindih"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sottotitoli sottotitoli per non udenti automatico movimento spostare posizione controlli di riproduzione barra di avanzamento pulsante di riproduzione sovrapposizione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕 キャプション 自動 移動 動かす 位置 再生コントロール 進行状況バー シークバー 再生ボタン 重なり"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "자막 캡션 자동 이동 움직임 위치 재생 컨트롤 진행 막대 재생 버튼 겹침"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sari kata kapsyen automatik pergerakan alih kedudukan kawalan main balik bar kemajuan butang main pertindihan"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "undertekster teksting automatisk bevegelse flytt posisjon avspillingskontroller fremdriftslinje avspillingsknapp overlapping"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ondertitels ondertiteling voor slechthorenden automatisch beweging verplaatsen positie afspeelbediening bedieningselementen voortgangsbalk afspeelknop overlap"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "napisy napisy dla niesłyszących automatycznie ruch przesunięcie pozycja sterowanie odtwarzaniem pasek postępu przycisk odtwarzania nakładanie się"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "legendas legendas ocultas automático movimento mover posição controles de reprodução barra de progresso botão de reprodução sobreposição"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "subtitrări subtitrări pentru hipoacuzici automat mișcare mutare poziție comenzi de redare bară de progres buton de redare suprapunere"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "субтитры субтитры для слабослышащих автоматически движение перемещение положение элементы управления воспроизведением полоса прогресса кнопка воспроизведения перекрытие"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "titulky skryté titulky automatický pohyb posun poloha ovládanie prehrávania ukazovateľ priebehu tlačidlo prehrávania prekrývanie"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "podnapisi podnapisi za gluhe samodejno premikanje premik položaj kontrolniki predvajanja vrstica napredka gumb za predvajanje prekrivanje"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "titlovi titlovi za gluve automatski pomeranje pomeri položaj kontrole reprodukcije traka napretka dugme za reprodukciju preklapanje"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "undertexter textning automatiskt rörelse flytta position uppspelningsreglage förloppsindikator uppspelningsknapp överlappning"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "คำบรรยาย คำบรรยายแทนเสียง อัตโนมัติ การเคลื่อนที่ เลื่อน ตำแหน่ง ส่วนควบคุมการเล่น แถบความคืบหน้า ปุ่มเล่น ซ้อนทับ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "altyazılar işitme engelliler için altyazılar otomatik hareket taşı konum oynatma kontrolleri ilerleme çubuğu oynat düğmesi örtüşme"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "субтитри субтитри для людей із порушеннями слуху автоматично рух переміщення положення елементи керування відтворенням смуга прогресу кнопка відтворення перекриття"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "phụ đề phụ đề hỗ trợ người khiếm thính tự động chuyển động di chuyển vị trí điều khiển phát lại thanh tiến trình nút phát chồng lấp"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕 隐藏式字幕 自动 移动 移开 位置 播放控件 进度条 播放按钮 重叠"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕 隱藏式字幕 自動 移動 移開 位置 播放控制項 進度列 播放按鈕 重疊"
           }
         }
       }

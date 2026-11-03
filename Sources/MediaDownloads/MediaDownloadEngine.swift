@@ -113,6 +113,10 @@ public struct MediaTransportByteSourceOpener: DownloadByteSourceOpening {
     public func open(_ source: DirectShareDownloadSource) async throws -> any DownloadByteReader {
         let locator = try source.makeLocator()
         let resolved = try await resolver.resolve(locator)
+        guard resolved.sourceLease.supportsPersistentByteReuse else {
+            await resolved.waitForFinalShutdown()
+            throw MediaDownloadError.unsupportedSource
+        }
         guard let cursor = resolved.sourceLease.makeCursor() else {
             await resolved.waitForFinalShutdown()
             throw MediaDownloadError.cannotOpenSource

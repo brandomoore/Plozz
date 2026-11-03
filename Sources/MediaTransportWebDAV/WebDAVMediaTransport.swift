@@ -251,6 +251,7 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
             // Without DAV metadata, only that exact resource is comparable
             // across opens; signed delivery URLs must not become locator state.
             guard probe.resourceURL.absoluteString == url.absoluteString else {
+                HandoffDiagnostics.emit("webdav OPEN_REJECTED check=redirected-file-without-dav-validator")
                 throw MediaTransportError.unsupportedRange(
                     reason: "redirected WebDAV files require a stable DAV metadata validator"
                 )
@@ -341,6 +342,7 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
         guard locator.representation.consistency == .changeDetecting,
               locator.representation.identity.kind == .strongETag
                 || locator.representation.identity.kind == .modificationTime else {
+            HandoffDiagnostics.emit("webdav OPEN_REJECTED check=unsupported-locator-validator")
             throw MediaTransportError.unsupportedRange(
                 reason: "WebDAV playback requires an ETag or modification-time representation"
             )
@@ -386,11 +388,15 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
             probe = try await probeFile(
                 url, prefetch: sessionKey.role == .playback
                     && locator.representation.size >= RangeProbe.initialReadByteCount,
-                reportDeliveryConnectionFailure: reportDeliveryConnectionFailure
+                reportDeliveryConnectionFailure: reportDeliveryConnectionFailure,
+                allowUnvalidatedPlayback: sessionKey.role == .playback
             )
         }
         guard probe.totalLength == locator.representation.size else {
             throw MediaTransportError.sourceChanged(reason: "WebDAV representation changed since scan")
+        }
+        if probe.validator == .unvalidatedPlayback {
+            HandoffDiagnostics.emit("webdav PLAYBACK_COMPATIBILITY mode=unvalidated-delivery persistentReuse=false")
         }
         // A delivery host can use a different validator namespace. Only
         // compare DAV/GET validators when they describe the same origin.
@@ -427,12 +433,14 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
     }
 
     private func probeFile(
-        _ url: URL, prefetch: Bool = false, reportDeliveryConnectionFailure: Bool = false
+        _ url: URL, prefetch: Bool = false, reportDeliveryConnectionFailure: Bool = false,
+        allowUnvalidatedPlayback: Bool = false
     ) async throws -> RangeProbeResult {
         try await client.probeRange(
             root: root, url: url, sessionKey: sessionKey, credential: credential,
             trustPolicy: trustPolicy, prefetch: prefetch,
-            reportDeliveryConnectionFailure: reportDeliveryConnectionFailure
+            reportDeliveryConnectionFailure: reportDeliveryConnectionFailure,
+            allowUnvalidatedPlayback: allowUnvalidatedPlayback
         )
     }
 

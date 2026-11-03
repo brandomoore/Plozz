@@ -14,7 +14,7 @@ extension EnvironmentValues {
     }
 }
 
-/// Home's loaded and placeholder rails share the same viewport-based poster sizes.
+/// Home's loaded and placeholder rails share the same platform-specific poster sizes.
 struct PlozziOSHomeRailLayout<Content: View>: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var cardStyle
@@ -37,6 +37,9 @@ struct PlozziOSHomeRailLayout<Content: View>: View {
     static func posterMetrics(
         in width: CGFloat, inset: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle
     ) -> PlozzMetrics {
+        if metrics.usesDesktopSizing {
+            return metrics.fittingDesktopRail(in: width, cardStyle: cardStyle)
+        }
         guard width > 0 else { return metrics }
         let gap = PlozziOSMediaRailLayout.visibleSpacing + (cardStyle == .framed ? 2 * metrics.cardInset : 0)
         // Phones get three complete pictures plus a 28% preview. Wider windows

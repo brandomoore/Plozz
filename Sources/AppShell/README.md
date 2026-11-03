@@ -79,6 +79,48 @@ registry.
   items, artwork/provider preferences, spoilers and presentation restart that
   window; disabled prefetch performs no source preparation.
 
+- **Home adapts to Mac windows without changing iPad layouts.** When running
+  the iOS app on macOS, the regular-width Home hero follows the window height,
+  leaving space for the next row. Its still artwork is top-aligned so wide
+  crops preserve the top of the picture, including during carousel slides and
+  sidebar reflections. Skeletons and trailer-pause thresholds use the same
+  height. Compact layouts, detail pages, and video framing retain their existing
+  behavior.
+
+- **Mac navigation leaves the artwork uncovered.** The iOS-on-Mac tab shell
+  hides the tab-bar background and, on iOS 26 and later, the top scroll-edge
+  effect. Native sidebar, tab, and profile controls remain available with their
+  system appearance. iPhone/iPad backgrounds and other scroll edges are unchanged.
+
+- **Mac rails fit complete cards plus a next-card preview.** Home, library
+  recommendations, related titles, extras, episodes, and cast derive widths from
+  their actual content viewport. `DesktopMediaRailLayout` chooses a whole-card
+  count below density-scaled width limits, then distributes the width while
+  preserving a gap-sized trailing peek. Featured rows use the same inset and
+  heading style, with 4:5 cards; they do not inherit the fixed mobile width.
+  Loading and loaded rows share this geometry. Profile density and Dynamic Type
+  still apply. Hero actions keep their original native large control size and
+  48-point minimum in both glass and reduced-effects presentations.
+  iPhone/iPad and TV retain their existing sizes.
+
+- **Mac hero paging controls** sit at the left/right midpoint only when the
+  carousel has multiple titles. Native buttons use explicit hover recognition
+  and a configured subtle background, since the system pointer highlight is not
+  drawn in iPad-on-Mac. There is no permanent pill. They share the
+  swipe/auto-advance transition path and are disabled during a swipe or transition.
+  iPhone/iPad retain swipe-only manual paging.
+  The compact chevrons are tall and narrow, with a slim rounded hover background.
+  Their lighter glyphs retain 44-by-64-point hit targets and spoken labels;
+  Increase Contrast raises their opacity and Bold Text strengthens their stroke.
+  Increase Contrast and Reduce Transparency make the hovered background opaque.
+  Mouse movement over the Mac hero freezes automatic paging and its gauge until
+  1.5 seconds of pointer inactivity (or pointer exit). Trailers keep playing;
+  trailer-end paging waits until the pause ends. Manual paging remains available.
+  Left/Right keys also page the Mac hero while Home is frontmost and the hero
+  remains in its visible region. Scrolling past that region releases the keys.
+  Editing text or presenting a dialog prevents the hero from taking keyboard
+  input; player keyboard commands remain independent.
+
 - **Preference sync is not a profile switch.** Mobile cloud apply rebuilds active
   settings and track/version preferences without restarting downloads, provider
   caches, identity indexing, or tracker/watchlist imports. Inactive-profile

@@ -7,6 +7,7 @@ private final class BlockingByteSource: MediaTransportByteSource, @unchecked Sen
     private let lock = NSLock()
     private var shutdownCountStorage = 0
     let byteSize: Int64 = 1
+    let supportsPersistentByteReuse = false
     var shutdownCount: Int { lock.withLock { shutdownCountStorage } }
 
     func read(at offset: Int64, length: Int) async throws -> Data {
@@ -118,6 +119,26 @@ private final class NeverDrainsResource: MediaIOScannerResource, @unchecked Send
 }
 
 final class SourceLeaseAndArbiterTests: XCTestCase {
+    func testPersistentReusePolicySurvivesPreparationAndCursorCloning() async throws {
+        let sources: [any MediaTransportByteSource] = [
+            BlockingByteSource(), FakeByteSource(data: Data())
+        ]
+        for source in sources {
+            let lease = MediaTransportSourceLease(source: source)
+            XCTAssertEqual(lease.supportsPersistentByteReuse, source.supportsPersistentByteReuse)
+            let borrow = try lease.makePreparationBorrow()
+            XCTAssertEqual(borrow.supportsPersistentByteReuse, source.supportsPersistentByteReuse)
+            await borrow.shutdown()
+            let cursor = try XCTUnwrap(lease.makeCursor())
+            let clone = try XCTUnwrap(cursor.clone())
+            XCTAssertEqual(cursor.supportsPersistentByteReuse, source.supportsPersistentByteReuse)
+            XCTAssertEqual(clone.supportsPersistentByteReuse, source.supportsPersistentByteReuse)
+            cursor.close()
+            clone.close()
+            await lease.waitForFinalShutdown()
+        }
+    }
+
     func testBackgroundAdmissionTracksScannerAndPlayback() async throws {
         let arbiter = MediaIOArbiter(accountID: "account")
         var allowed = await arbiter.permitsBackgroundWork()

@@ -1,3 +1,4 @@
+import CoreModels
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -122,7 +123,8 @@ public struct WebDAVClient: Sendable {
         credential: WebDAVCredential,
         trustPolicy: TrustPolicy,
         prefetch: Bool = false,
-        reportDeliveryConnectionFailure: Bool = false
+        reportDeliveryConnectionFailure: Bool = false,
+        allowUnvalidatedPlayback: Bool = false
     ) async throws -> RangeProbeResult {
         let (result, anonymous) = try await executeMediaGET(
             requestBuilder: { RangeProbe.probeRequest(url: $0, prefetch: prefetch) },
@@ -152,7 +154,9 @@ public struct WebDAVClient: Sendable {
             headers: headers,
             bodyLength: data.count,
             resourceURL: resourceURL,
-            prefetch: prefetch
+            prefetch: prefetch,
+            allowUnvalidatedPlayback: allowUnvalidatedPlayback && anonymous
+                && sessionKey.role == .playback && TransportOrigin(url: resourceURL) != root.origin
         ) {
         case .success(let result):
             return RangeProbeResult(
@@ -164,6 +168,12 @@ public struct WebDAVClient: Sendable {
                 initialData: prefetch ? data : Data()
             )
         case .failure(let error):
+            HandoffDiagnostics.emit(
+                "webdav PROBE_REJECTED failure=\(error) anonymous=\(anonymous) prefetch=\(prefetch) "
+                    + RangeProbe.diagnosticSummary(
+                        status: response.statusCode, headers: headers, bodyLength: data.count
+                    )
+            )
             throw error
         }
     }
@@ -182,6 +192,11 @@ public struct WebDAVClient: Sendable {
         trustPolicy: TrustPolicy,
         maxReadBytes: Int64 = RangeProbe.defaultMaxReadBytes
     ) async throws -> Data {
+        if representation.validator == .unvalidatedPlayback {
+            guard representation.usesAnonymousSession, sessionKey.role == .playback else {
+                throw TransportError.seekableRequiresValidator
+            }
+        }
         let builtRequest: URLRequest
         guard url.absoluteString == representation.resourceURL.absoluteString else {
             throw TransportError.sourceChanged(reason: "read URL did not match the probed resource")
@@ -252,6 +267,12 @@ public struct WebDAVClient: Sendable {
         case .success:
             return data
         case .failure(let error):
+            HandoffDiagnostics.emit(
+                "webdav READ_REJECTED failure=\(error) anonymous=\(representation.usesAnonymousSession) "
+                    + RangeProbe.diagnosticSummary(
+                        status: response.statusCode, headers: headers, bodyLength: data.count
+                    )
+            )
             throw error
         }
     }

@@ -43,7 +43,9 @@ final class SettingsSearchTests: XCTestCase {
             "bottom of video": "subtitle-reference",
             "bottom of screen": "subtitle-reference",
             "vertical offset": "subtitle-position",
-            "position on screen": "subtitle-position"
+            "position on screen": "subtitle-position",
+            "auto move away from controls": "subtitle-avoid-controls",
+            "live auto move away from controls": "live-subtitle-avoid-controls"
         ]
         for (query, id) in queries {
             XCTAssertEqual(index.results(for: query).first?.id, id, query)

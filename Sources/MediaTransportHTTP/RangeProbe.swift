@@ -63,6 +63,9 @@ struct ContentRange: Equatable {
 public enum RangeValidator: Equatable, Sendable {
     case strongETag(ETag)
     case lastModified(Date)
+    /// One anonymous delivery lease only. Range/size checks still apply, but
+    /// same-size byte changes cannot be detected or safely reused on disk.
+    case unvalidatedPlayback
 }
 
 /// Result of successfully probing a resource for range/seek support.
@@ -114,6 +117,34 @@ public struct RangeProbeResult: Equatable, Sendable {
 /// I/O, so it is exhaustively unit-testable against hand-built
 /// status/header/body-length fixtures without a real server.
 public enum RangeProbe {
+    /// Only classifications and byte counts leave the HTTP boundary; header
+    /// values may contain identifiers, credentials, or signed delivery URLs.
+    static func diagnosticSummary(status: Int, headers: [String: String], bodyLength: Int) -> String {
+        let normalized = HTTPHeaderUtilities.normalizedHeaders(from: headers)
+        let etag: String
+        if let raw = normalized["etag"] {
+            if let parsed = ETag(headerValue: raw) {
+                etag = parsed.isWeak ? "weak" : "strong"
+            } else {
+                etag = "invalid"
+            }
+        } else {
+            etag = "missing"
+        }
+        let modified = normalized["last-modified"].map {
+            HTTPDate.parse($0) == nil ? "invalid" : "valid"
+        } ?? "missing"
+        let range = normalized["content-range"].map {
+            ContentRange.parse($0) == nil ? "invalid" : "valid"
+        } ?? "missing"
+        let encoding = normalized["content-encoding"].map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "identity"
+                ? "identity" : "other"
+        } ?? "missing"
+        return "status=\(status) bytes=\(bodyLength) etag=\(etag) "
+            + "lastModified=\(modified) contentRange=\(range) encoding=\(encoding)"
+    }
+
     // MARK: - Probe (establishes seekability)
 
     // Some SabreDAV servers interpret an end offset of zero as an open-ended range.
@@ -136,13 +167,15 @@ public enum RangeProbe {
     /// server that ignores `Range` and returns the whole body is not
     /// seekable by this module's definition), a strong `ETag` or valid
     /// `Last-Modified`, a matching `Content-Range`, and the entire requested prefix,
-    /// clamped only at EOF.
+    /// clamped only at EOF. Explicit streaming compatibility permits both
+    /// validator headers to be absent, never malformed or weak-only validators.
     public static func validateProbe(
         status: Int,
         headers: [String: String],
         bodyLength: Int,
         resourceURL: URL,
-        prefetch: Bool = false
+        prefetch: Bool = false,
+        allowUnvalidatedPlayback: Bool = false
     ) -> Result<RangeProbeResult, TransportError> {
         if status == 412 {
             return .failure(.sourceChanged(reason: "412 Precondition Failed during range probe"))
@@ -165,6 +198,9 @@ public enum RangeProbe {
             validator = .strongETag(etag)
         } else if let date = lastModified {
             validator = .lastModified(date)
+        } else if allowUnvalidatedPlayback,
+                  normalized["etag"] == nil, normalized["last-modified"] == nil {
+            validator = .unvalidatedPlayback
         } else {
             return .failure(.seekableRequiresValidator)
         }
@@ -247,6 +283,8 @@ public enum RangeProbe {
                 return .failure(.seekableRequiresValidator)
             }
             request.setValue(HTTPDate.string(from: date), forHTTPHeaderField: "If-Unmodified-Since")
+        case .unvalidatedPlayback:
+            break
         }
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         return .success(request)
@@ -314,6 +352,8 @@ public enum RangeProbe {
             guard let raw = normalized["last-modified"], HTTPDate.parse(raw) == expectedDate else {
                 return .failure(.sourceChanged(reason: "Last-Modified missing or changed since the resource was probed"))
             }
+        case .unvalidatedPlayback:
+            break
         }
         guard let contentRangeHeader = normalized["content-range"], let contentRange = ContentRange.parse(contentRangeHeader) else {
             return .failure(.rangeValidationFailed(reason: "missing/malformed Content-Range on bounded read"))

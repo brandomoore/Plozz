@@ -204,13 +204,21 @@ final class SystemCaptionStyle {
     }
 
     /// Both TV hosts and the mobile editor enter here *before* changing a value.
-    /// An actual edit freezes the entire effective look, not stale custom fields.
+    /// An appearance edit freezes the entire effective look, not stale custom fields.
+    /// Control avoidance is independent of the device's caption appearance.
     /// A no-op (including a slider reaching an endpoint) must not stop matching.
     func editing(_ style: SubtitleStyle, _ mutate: (inout SubtitleStyle) -> Void) -> SubtitleStyle {
         let effective = resolved(style)
         var next = effective
         mutate(&next)
         guard next != effective else { return style }
+        var controlsOnly = effective
+        controlsOnly.avoidsPlayerControls = next.avoidsPlayerControls
+        if next == controlsOnly {
+            var saved = style
+            saved.avoidsPlayerControls = next.avoidsPlayerControls
+            return saved
+        }
         if next.followsSystemStyle != effective.followsSystemStyle {
             return next.followsSystemStyle ? appearance.applied(to: next) : next
         }

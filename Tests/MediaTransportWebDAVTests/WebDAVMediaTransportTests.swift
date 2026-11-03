@@ -1288,6 +1288,97 @@ final class WebDAVMediaTransportTests: XCTestCase {
         XCTAssertEqual(data.count, 10)
     }
 
+    func testValidatorFreeDeliveryStreamsWithinOneLeaseWithoutPersistentReuse() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let cdn = URL(string: "https://cdn.example.com/movie?signature=ephemeral")!
+        queueStat(size: 300000)
+        StubURLProtocol.queue(redirect: StubRedirect(location: cdn), for: url)
+        let prefix = Data(repeating: 7, count: RangeProbe.initialReadByteCount)
+        StubURLProtocol.queue(
+            StubResponse(statusCode: 206, headers: ["Content-Range": "bytes 0-262143/300000"], body: prefix),
+            for: cdn
+        )
+        let session = try await makeAdapter(credential: .bearerToken("dav-secret")).connect(
+            for: makeKey(revision: revision, role: .playback)
+        )
+        let lease = try await session.fileSystem.openSource(for: strongETagLocator(size: 300000, revision: revision))
+        XCTAssertFalse(lease.supportsPersistentByteReuse)
+        let cursor = try XCTUnwrap(lease.makeCursor())
+        let opening = try await cursor.read(at: 0, length: 16)
+        XCTAssertEqual(opening, prefix.prefix(16))
+        for offset in [Int64(290000), 270000] {
+            StubURLProtocol.queue(
+                StubResponse(
+                    statusCode: 206, headers: ["Content-Range": "bytes \(offset)-\(offset + 9)/300000"],
+                    body: Data(repeating: 8, count: 10),
+                    onRequest: {
+                        XCTAssertEqual($0.value(forHTTPHeaderField: "Range"), "bytes=\(offset)-\(offset + 9)")
+                        XCTAssertNil($0.value(forHTTPHeaderField: "If-Match"))
+                        XCTAssertNil($0.value(forHTTPHeaderField: "If-Unmodified-Since"))
+                        XCTAssertNil($0.value(forHTTPHeaderField: "Authorization"))
+                        XCTAssertNil($0.value(forHTTPHeaderField: "Cookie"))
+                        XCTAssertNil($0.value(forHTTPHeaderField: "Referer"))
+                    }
+                ), for: cdn
+            )
+            let bytes = try await cursor.read(at: offset, length: 10)
+            XCTAssertEqual(bytes, Data(repeating: 8, count: 10))
+        }
+        StubURLProtocol.queue(
+            StubResponse(statusCode: 206, headers: ["Content-Range": "bytes 280000-280009/300001"],
+                         body: Data(repeating: 0, count: 10)), for: cdn
+        )
+        do {
+            _ = try await cursor.read(at: 280000, length: 10)
+            XCTFail("Changed size must remain terminal")
+        } catch let error as MediaTransportError {
+            guard case .sourceChanged = error else { return XCTFail("unexpected \(error)") }
+        }
+        let replacement = URL(string: "https://cdn.example.com/replacement")!
+        StubURLProtocol.queue(redirect: StubRedirect(location: replacement), for: cdn)
+        do {
+            _ = try await cursor.read(at: 280000, length: 10)
+            XCTFail("An active lease cannot follow a new delivery URL")
+        } catch let error as MediaTransportError {
+            guard case .sourceChanged = error else { return XCTFail("unexpected \(error)") }
+        }
+        XCTAssertTrue(StubURLProtocol.requests(for: replacement).isEmpty)
+        StubURLProtocol.queue(StubResponse(statusCode: 403), for: cdn)
+        do {
+            _ = try await cursor.read(at: 280000, length: 10)
+            XCTFail("Expired delivery grants cannot refresh within the lease")
+        } catch let error as MediaTransportError {
+            guard case .permissionDenied = error else { return XCTFail("unexpected \(error)") }
+        }
+        XCTAssertEqual(StubURLProtocol.requests(for: url).map(\.httpMethod), ["PROPFIND", "GET"])
+        cursor.close()
+        await lease.waitForFinalShutdown()
+        await session.shutdown()
+    }
+
+    func testValidatorFreeDeliveryIsNotEnabledForOtherTransportRoles() async throws {
+        for role in MediaTransportRole.allCases where role != .playback {
+            let revision = CredentialRevision()
+            let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+            let cdn = URL(string: "https://cdn.example.com/movie")!
+            queueStat()
+            StubURLProtocol.queue(redirect: StubRedirect(location: cdn), for: url)
+            StubURLProtocol.queue(
+                StubResponse(statusCode: 206, headers: ["Content-Range": "bytes 0-1/1000"], body: Data([0, 0])),
+                for: cdn
+            )
+            let session = try await makeAdapter().connect(for: makeKey(revision: revision, role: role))
+            do {
+                _ = try await session.fileSystem.openSource(for: strongETagLocator(revision: revision))
+                XCTFail("Non-playback opens must retain validator requirements")
+            } catch let error as MediaTransportError {
+                guard case .unsupportedRange = error else { return XCTFail("unexpected \(error)") }
+            }
+            await session.shutdown()
+        }
+    }
+
     func testPlaybackRecoversOneDeliveryConnectionFailureAndPinsTheRecoveredLease() async throws {
         let revision = CredentialRevision()
         let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
