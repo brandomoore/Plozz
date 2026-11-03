@@ -150,7 +150,11 @@ Guides are bot-authored, so the existing bridge excludes the entire guide thread
 including replies, without relying on user-editable tags or titles. Publishing
 again verifies or updates the same bot-owned starter instead of making another
 post. A conflicting human-owned title or multiple matching guides stops the
-operation. Ambiguous creation failures are not retried immediately; a later run
+operation. Renamed bot-owned or pinned guides are also recognized by their public
+notice and guide-specific closing paragraph; their custom titles and pins are
+preserved. Archived guides are restored to their prior archive state after an
+edit, including a failed edit, and locked guides are never unlocked.
+Ambiguous creation failures are not retried immediately; a later run
 rediscovers a successfully created guide.
 
 ### TestFlight information channel

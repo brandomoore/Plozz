@@ -1127,6 +1127,61 @@ class PostingGuideTests(unittest.TestCase):
         ))
         self.assertEqual(self.discord.writes[-1][2]["allowed_mentions"], {"parse": []})
 
+    def test_renamed_pinned_guides_are_updated_without_creating_posts_or_changing_titles(self):
+        self.publish()
+        names = ["BUG TEMPLATE HERE - VOTE ON BUGS PLEASE",
+                 "[VOTE AND SEARCH FIRST] Start here: How to request a feature"]
+        for guide, name in zip(self.discord.threads, names):
+            guide.update(name=name, owner_id=BRIDGE.BOT, flags=2)
+            content = self.discord.messages[guide["id"]][0]["content"]
+            self.discord.messages[guide["id"]][0]["content"] = (
+                "Old introduction. " + BRIDGE.PUBLIC_NOTICE + "\n\n" + content.rsplit("\n\n", 1)[1]
+            )
+        self.discord.writes.clear()
+        self.publish()
+        self.assertEqual([t["name"] for t in self.discord.threads], names)
+        self.assertEqual(len(self.discord.writes), 2)
+        self.assertTrue(all(method == "PATCH" and "/messages/" in path
+                            for method, path, _ in self.discord.writes))
+        self.assertTrue(all(t["flags"] == 2 for t in self.discord.threads))
+
+    def test_renamed_human_owned_guide_is_not_replaced(self):
+        self.publish()
+        guide = self.discord.threads[0]
+        guide.update(name="Pinned template", flags=2)
+        self.discord.messages[guide["id"]][0]["author"] = {"id": PERSON, "bot": False}
+        self.discord.writes.clear()
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "not owned"):
+            self.publish()
+        self.assertEqual(self.discord.writes, [])
+
+    def test_archived_guide_is_restored_after_message_edit_failure(self):
+        self.publish()
+        guide = self.discord.threads[0]
+        guide["thread_metadata"]["archived"] = True
+        self.discord.messages[guide["id"]][0]["content"] = "Previous guide."
+        original = self.discord.call
+
+        def fail_edit(method, path, data=None, query=None):
+            if method == "PATCH" and "/messages/" in path:
+                raise BRIDGE.BridgeError("Message edit failed")
+            return original(method, path, data, query)
+
+        with patch.object(self.discord, "call", side_effect=fail_edit):
+            with self.assertRaisesRegex(BRIDGE.BridgeError, "Message edit failed"):
+                self.publish()
+        self.assertTrue(guide["thread_metadata"]["archived"])
+
+    def test_locked_guide_is_not_unlocked_or_edited(self):
+        self.publish()
+        guide = self.discord.threads[0]
+        guide["thread_metadata"]["locked"] = True
+        self.discord.messages[guide["id"]][0]["content"] = "Previous guide."
+        self.discord.writes.clear()
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "locked"):
+            self.publish()
+        self.assertEqual(self.discord.writes, [])
+
     def test_human_owned_title_stops_all_writes_before_creating_other_guide(self):
         forum = list(BRIDGE.FORUMS)[1]
         guide = thread(parent_id=forum, name=BRIDGE.POSTING_GUIDES[BRIDGE.FORUMS[forum]][0])

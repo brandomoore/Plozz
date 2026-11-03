@@ -30,6 +30,7 @@ GITHUB_BOT = "github-actions[bot]"
 MODEL = "gpt-6.1-sol"
 EFFORT = "high"
 MATCHING_CONTEXT_LIMIT = 180000
+PINNED_THREAD = 1 << 1
 THUMBS_UP = "\U0001f44d"
 PUBLIC_NOTICE = "Posts and replies automatically sync to GitHub"
 POSTING_GUIDE_NOTICE = (
@@ -536,13 +537,23 @@ def publish_guides(discord, channels):
     plans = []
     for forum, kind in FORUMS.items():
         title, content = POSTING_GUIDES[kind]
-        matches = [t for t in threads if t["parent_id"] == forum and t["name"] == title]
+        closing = content.rsplit("\n\n", 1)[1]
+        matches = []
+        for candidate in threads:
+            if candidate["parent_id"] != forum:
+                continue
+            named = candidate["name"] == title
+            if not named and candidate.get("owner_id") != BOT and not candidate.get("flags", 0) & PINNED_THREAD:
+                continue
+            starter = discord.call("GET", f"/channels/{candidate['id']}/messages/{candidate['id']}")
+            recognized = PUBLIC_NOTICE in starter.get("content", "") and starter.get("content", "").endswith(closing)
+            if not named and not recognized:
+                continue
+            matches.append((candidate, starter))
         if len(matches) > 1:
             raise BridgeError(f"Forum {forum} has multiple posting guides; refusing an ambiguous update.")
-        starter = None
-        existing = matches[0] if matches else None
+        existing, starter = matches[0] if matches else (None, None)
         if existing:
-            starter = discord.call("GET", f"/channels/{existing['id']}/messages/{existing['id']}")
             author = starter.get("author", {})
             if author.get("id") != BOT or author.get("bot") is not True:
                 raise BridgeError(f"Forum {forum}'s guide is not owned by this bot; refusing to replace it.")
@@ -555,9 +566,18 @@ def publish_guides(discord, channels):
                 "message": {"content": content, "allowed_mentions": {"parse": []}},
             })
         elif starter.get("content") != content:
-            discord.call("PATCH", f"/channels/{existing['id']}/messages/{existing['id']}", {
-                "content": content, "allowed_mentions": {"parse": []},
-            })
+            if existing.get("thread_metadata", {}).get("locked"):
+                raise BridgeError("The posting guide is locked; it was not edited or unlocked.")
+            was_archived = existing.get("thread_metadata", {}).get("archived", False)
+            try:
+                if was_archived:
+                    set_thread_archived(discord, existing, False)
+                discord.call("PATCH", f"/channels/{existing['id']}/messages/{existing['id']}", {
+                    "content": content, "allowed_mentions": {"parse": []},
+                })
+            finally:
+                if was_archived and not existing.get("thread_metadata", {}).get("archived"):
+                    set_thread_archived(discord, existing, True)
         identifier = snowflake(existing["id"])
         actual = discord.call("GET", f"/channels/{identifier}/messages/{identifier}")
         if actual.get("author", {}).get("id") != BOT or actual.get("author", {}).get("bot") is not True or actual.get("content") != content:
@@ -816,6 +836,13 @@ class GitHubIndex:
         self.upsert(number, kind, content, thread["id"], message["id"])
 
 
+def set_thread_archived(discord, thread, archived):
+    updated = discord.call("PATCH", f"/channels/{snowflake(thread['id'])}", {"archived": archived})
+    if not isinstance(updated, dict) or updated.get("thread_metadata", {}).get("archived") is not archived:
+        raise BridgeError("Discord did not confirm the thread's requested archive state.")
+    thread.setdefault("thread_metadata", {})["archived"] = archived
+
+
 def discord_upsert(discord, thread, messages, key, embed):
     footer = FOOTER + key
     embed = {**embed, "footer": {"text": footer}}
@@ -833,10 +860,7 @@ def discord_upsert(discord, thread, messages, key, embed):
         print(f"WARNING: thread {thread['id']} is locked; GitHub-to-Discord updates remain pending.")
         return False
     if thread.get("thread_metadata", {}).get("archived"):
-        updated = discord.call("PATCH", f"/channels/{snowflake(thread['id'])}", {"archived": False})
-        if not isinstance(updated, dict) or updated.get("thread_metadata", {}).get("archived") is not False:
-            raise BridgeError("Discord did not confirm that the thread was unarchived; no message was changed.")
-        thread["thread_metadata"]["archived"] = False
+        set_thread_archived(discord, thread, False)
     payload = {"embeds": [embed], "allowed_mentions": {"parse": [], "replied_user": False}}
     path = f"/channels/{thread['id']}/messages"
     if existing:
@@ -926,10 +950,7 @@ def sync_issue_to_discord(discord, thread, messages, index, number):
                 was_archived = True
     finally:
         if was_archived and not thread.get("thread_metadata", {}).get("archived"):
-            updated = discord.call("PATCH", f"/channels/{snowflake(thread['id'])}", {"archived": True})
-            if not isinstance(updated, dict) or updated.get("thread_metadata", {}).get("archived") is not True:
-                raise BridgeError("Discord did not confirm archival; the post remains pending.")
-            thread.setdefault("thread_metadata", {})["archived"] = True
+            set_thread_archived(discord, thread, True)
 
 
 def sync_release_resolutions(discord, github, *, publish=False):
