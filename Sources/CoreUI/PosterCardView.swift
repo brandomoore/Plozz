@@ -486,8 +486,10 @@ public struct PosterCardView: View {
 
     private var landscapeCard: some View {
         VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
-            artwork
-                .frame(width: size.width, height: size.height)
+            Color.clear
+                .aspectRatio(borderlessAspectRatio, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .overlay { artwork }
                 .overlay(alignment: .topLeading) { statusCue(inset: 8) }
                 .overlay {
                     MediaCardPlaybackIndicators(
@@ -518,7 +520,7 @@ public struct PosterCardView: View {
             if showsCaption {
                 captionBlock(inset: metrics.landscapeCaptionHorizontalInset, spacing: 4)
                     .padding(.bottom, metrics.landscapeCaptionInset)
-                    .frame(width: size.width, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .plozzFramedMediaCard(

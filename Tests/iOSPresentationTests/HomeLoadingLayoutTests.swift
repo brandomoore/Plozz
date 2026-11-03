@@ -12,6 +12,32 @@ import XCTest
 
 @MainActor
 final class HomeLoadingLayoutTests: XCTestCase {
+    func testFramedLandscapeCardsFitNarrowGridAndNormalRailSlots() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let metrics = PlozzMetrics.touch(density: .standard)
+        for width: CGFloat in [169, metrics.landscapeCardSlotWidth, 360] {
+            var cardSize = CGSize.zero
+            fixture.mount(
+                ScrollView {
+                    PosterCardView(
+                        item: fixture.items[0], style: .landscape, action: {}
+                    )
+                    .environment(\.plozzCardStyle, .framed)
+                    .environment(\.plozzCardCaptionSettings, CardCaptionSettings(showsLabels: false))
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { cardSize = $0 }
+                    .frame(width: width)
+                }
+            )
+            try await fixture.settle()
+            XCTAssertEqual(cardSize.width, width, accuracy: 0.5)
+            XCTAssertEqual(
+                cardSize.height, (width - 2 * metrics.cardInset) * 9 / 16 + 2 * metrics.cardInset,
+                accuracy: 0.5
+            )
+        }
+    }
+
     func testLandscapeBrowseColumnsUseWideCardsOnPhoneTabletAndMac() {
         for density in UIDensity.allCases {
             for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
