@@ -134,9 +134,17 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(app.buttons["No PIN"].waitForExistence(timeout: 10),
                     "Expected the new profile's optional lock offer")
         try tapVisible(app.buttons["No PIN"])
-        try waitForExpectedProfile()
-        try require(app.buttons["Settings for \(name)"].waitForExistence(timeout: 30),
+        try testRevealCompletedShareProfileHome()
+    }
+
+    func testRevealCompletedShareProfileHome() throws {
+        let name = try isolatedShareProfileName()
+        try require(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"] == name,
+                    "Inspect only the newly configured test profile")
+        let settings = app.buttons["Settings for \(name)"]
+        try require(settings.waitForExistence(timeout: 30),
                     "Expected the isolated profile's actual Home")
+        try openTabRoot(app.buttons["Home"].firstMatch, anchor: settings)
     }
 
     func testSwitchToSelectedTestProfile() throws {
@@ -662,6 +670,26 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testManualKeyPasteConnection() async throws {
         let code = try beginReplacementEntry()
+        try await pasteManualKeyAndConnect(code: code)
+    }
+
+    func testConnectNewShareProfileWithManualKey() async throws {
+        let name = try isolatedShareProfileName()
+        try require(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"] == name,
+                    "Connect only the explicitly selected isolated test profile")
+        try openSettings()
+        try tapVisible(app.buttons["settings-category-trackers"])
+        try assertDisconnectedConnection()
+        try tapVisible(app.buttons["publicmetadb.pair"])
+        let codeLabel = app.staticTexts["publicmetadb.pair.code"]
+        try require(codeLabel.waitForExistence(timeout: 50), "Expected normal profile-scoped connection entry")
+        let code = codeLabel.label.replacingOccurrences(of: " ", with: "")
+        try require(code.range(of: "^[A-HJ-NP-Z2-9]{8}$", options: .regularExpression) != nil,
+                    "Expected the actual production relay code")
+        try await pasteManualKeyAndConnect(code: code)
+    }
+
+    private func pasteManualKeyAndConnect(code: String) async throws {
         let field = app.secureTextFields["publicmetadb.key"]
         try tapVisible(field)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
