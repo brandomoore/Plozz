@@ -2828,6 +2828,35 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try testInspectRejectedHistoryImport()
     }
 
+    func testRejectChangedTrackerHistoryImport() throws {
+        XCTAssertEqual(app.buttons["tracker-history.apply"].label, "Apply 1 selected changes")
+        let confirm = app.buttons["Apply selected changes"]
+        try require(confirm.exists && confirm.isHittable, "Expected the original reviewed import confirmation")
+        confirm.tap()
+        try require(confirm.waitForNonExistence(timeout: 5), "Expected confirmation to close")
+        try tapVisible(app.buttons["Compare again"], tapping: false, maximumSwipes: 32)
+        let finished = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND enabled == true"),
+            object: app.buttons["Compare again"]
+        )
+        try require(XCTWaiter.wait(for: [finished], timeout: 75) == .completed,
+                    "Expected tracker revalidation to finish")
+        let failure = app.staticTexts[
+            "Tracker or server history changed after the comparison. Compare again before applying changes."
+        ]
+        for _ in 0..<32 {
+            if failure.exists && failure.isHittable { break }
+            let scroll = app.collectionViews.allElementsBoundByIndex.last ?? app
+            scroll.swipeDown(velocity: .slow)
+        }
+        try require(failure.exists && failure.isHittable, "Expected rejection before any import is dispatched")
+        try tapVisible(failure, tapping: false, maximumSwipes: 32)
+        try tapVisible(importSelection, tapping: false, maximumSwipes: 32)
+        XCTAssertEqual(importSelection.value as? String, "1")
+        XCTAssertFalse(app.staticTexts["Confirmed on server"].exists)
+        XCTAssertFalse(app.staticTexts["Queued for verification"].exists)
+    }
+
     func testInspectRejectedHistoryImport() throws {
         let row = try revealHistoryImportRow(status: "Not confirmed. Compare again before retrying.")
         XCTAssertTrue(row.staticTexts["Not confirmed. Compare again before retrying."].waitForExistence(timeout: 60))

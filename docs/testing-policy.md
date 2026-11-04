@@ -452,6 +452,10 @@ missing sources must not silently reduce the scope of an acceptance run.
 Native share watch-state actions also require the declared share account and
 content type. Revocation checks should use a fresh remote change against an
 eligible local state, not a conflict that would already prevent delivery.
+Tracker snapshot changes reject imports before dispatch with a page-level error;
+destination changes detected during dispatch have per-row outcomes. Native race
+checks must assert the appropriate rejection and independently verify that the
+destination history stayed unchanged.
 
 ## App-hosted focus integration
 
