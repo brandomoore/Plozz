@@ -14,7 +14,7 @@ import MediaTransportHTTP
 /// a cancelled read cancels only its own `URLSessionTask`, and the owning
 /// ``WebDAVMediaTransportSession`` drains the shared ephemeral session on
 /// shutdown.
-final class WebDAVByteSource: MediaTransportPreparationFinalizingByteSource, @unchecked Sendable {
+final class WebDAVByteSource: MediaTransportPreparationFinalizingByteSource, MediaTransportWholeFileByteSource, @unchecked Sendable {
     struct PreparedRange: Sendable {
         let offset: Int64
         let data: Data
@@ -196,6 +196,16 @@ final class WebDAVByteSource: MediaTransportPreparationFinalizingByteSource, @un
 
     func finishPreparation() {
         preparedCache?.finishPreparation()
+    }
+
+    func readWholeFile(consume: @escaping @Sendable (Data) async throws -> Void) async throws {
+        do {
+            try await client.streamWholeDelivery(
+                representation: representation, sessionKey: sessionKey, consume: consume
+            )
+        } catch {
+            throw mapWebDAVError(error)
+        }
     }
 
     func shutdown() async {
