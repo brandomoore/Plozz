@@ -1019,7 +1019,13 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   the adjacent ratings group. Missing summary content reserves no column.
   Section headings sit above full-width fact groups, never in an empty side column.
   Ordered facts use up to four columns, with balanced rows and fewer columns at
-  narrower widths or larger mobile text sizes. Playback uses quieter type, and
+  narrower widths or larger mobile text sizes. Regular-width mobile information
+  is centered within a 960pt maximum, without narrowing the hero or media rails.
+  Short scalar facts use compact tracks; genres, titles, and names share the
+  remaining width. A track stays wide when any of its rows contains longer-form
+  content, and compact-only groups remain leading-aligned rather than spreading
+  across the whole band. Compact mobile and TV retain equal-width fact tracks.
+  Playback uses quieter type, and
   its filename spans the group rather than wrapping in one narrow column.
   On TV, each group owns one native focus surface rather than a card per fact;
   selecting an expandable group opens its full values. Mobile keeps inline

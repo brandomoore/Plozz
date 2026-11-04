@@ -29,6 +29,7 @@ enum DetailInformationLayout {
     static let sectionSpacing = PlozzTheme.Spacing.xLarge
     static let headingSpacing = PlozzTheme.Spacing.small
     static let cornerRadius: CGFloat = 16
+    static let maximumMobileContentWidth: CGFloat = 960
     #endif
 }
 
@@ -81,16 +82,19 @@ public struct DetailInformationSections: View {
         Group {
             if let url = item.metadataProvenance.wetrakrWatchlistURL {
                 WetrakrWatchlistLink(url: url)
+                    .frame(maxWidth: maximumContentWidth, alignment: .leading)
                     .padding(.horizontal, horizontalInset)
+                    .frame(maxWidth: .infinity)
             }
             if hasContent {
                 sectionBody
                     .environment(\.plozzNativeInformationFocus, true)
                     .plozzAdaptiveCardSurface(fillOpacity: ThemePalette.detailGradientSurfaceFillOpacity)
+                    .frame(maxWidth: maximumContentWidth, alignment: .leading)
                     .padding(.horizontal, horizontalInset)
                     .padding(.top, bandTopPadding)
                     .padding(.bottom, bandBottomPadding)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity)
                     .background {
                         palette.informationSurface
                             .opacity(gradientEnabled && !reduceTransparency ? Self.bandFillOpacity : 1)
@@ -139,6 +143,14 @@ public struct DetailInformationSections: View {
     /// behind the content and below the last of it, so there is nothing for the
     /// overshoot to cover up.
     private static let backgroundBleed: CGFloat = 400
+
+    private var maximumContentWidth: CGFloat {
+        #if os(tvOS)
+        .infinity
+        #else
+        horizontalSizeClass == .regular ? DetailInformationLayout.maximumMobileContentWidth : .infinity
+        #endif
+    }
 
     private var sectionBody: some View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
@@ -987,6 +999,9 @@ private struct DetailInformationGroup: View {
     let valueFont: Font
     let onExpand: () -> Void
     @State private var expandableFacts: Set<String> = []
+    #if !os(tvOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     private var hasMore: Bool {
         group.hasOmittedFacts || group.previewFacts.contains {
@@ -1025,14 +1040,10 @@ private struct DetailInformationGroup: View {
     private var facts: some View {
         VStack(alignment: .leading, spacing: DetailInformationLayout.gutter) {
             if !regularFacts.isEmpty {
-                ProportionalWrapLayout(
-                    preferredColumns: preferredColumns,
-                    minimumCellWidth: minimumCellWidth,
-                    spacing: DetailInformationLayout.sectionSpacing,
-                    rowSpacing: DetailInformationLayout.gutter
-                ) {
+                factLayout {
                     ForEach(regularFacts) { fact in
                         factCell(fact)
+                            .layoutValue(key: DetailCompactFactKey.self, value: fact.prefersCompactColumn)
                     }
                 }
             }
@@ -1062,6 +1073,25 @@ private struct DetailInformationGroup: View {
         return max(1, min(4, count > 4 ? (count + 1) / 2 : count))
     }
 
+    private var factLayout: AnyLayout {
+        #if !os(tvOS)
+        if horizontalSizeClass == .regular {
+            return AnyLayout(DetailFactLayout(
+                preferredColumns: preferredColumns,
+                minimumCellWidth: minimumCellWidth,
+                spacing: DetailInformationLayout.sectionSpacing,
+                rowSpacing: DetailInformationLayout.gutter
+            ))
+        }
+        #endif
+        return AnyLayout(ProportionalWrapLayout(
+            preferredColumns: preferredColumns,
+            minimumCellWidth: minimumCellWidth,
+            spacing: DetailInformationLayout.sectionSpacing,
+            rowSpacing: DetailInformationLayout.gutter
+        ))
+    }
+
     private func factCell(_ fact: InformationFact) -> some View {
         InformationFactCell(
             fact: fact, labelFont: labelFont, valueFont: valueFont,
@@ -1076,6 +1106,71 @@ private struct DetailInformationGroup: View {
                 }
             }
         )
+    }
+}
+
+struct DetailCompactFactKey: LayoutValueKey {
+    static let defaultValue = false
+}
+
+/// Short facts keep compact tracks; prose shares the remaining width. A track
+/// stays wide if any row needs it, keeping multi-row groups aligned.
+struct DetailFactLayout: Layout {
+    let preferredColumns: Int
+    let minimumCellWidth: CGFloat
+    let spacing: CGFloat
+    let rowSpacing: CGFloat
+
+    private func columnWidths(for width: CGFloat, subviews: Subviews) -> [CGFloat] {
+        guard !subviews.isEmpty else { return [] }
+        for count in stride(from: min(preferredColumns, subviews.count), through: 2, by: -1) {
+            let compact = (0..<count).map { column in
+                stride(from: column, to: subviews.count, by: count)
+                    .allSatisfy { subviews[$0][DetailCompactFactKey.self] }
+            }
+            let minimums = compact.map { minimumCellWidth * ($0 ? 0.8 : 1) }
+            let remaining = width - minimums.reduce(0, +) - CGFloat(count - 1) * spacing
+            if remaining >= 0 {
+                let flexibleCount = compact.filter { !$0 }.count
+                return zip(minimums, compact).map { minimum, isCompact in
+                    minimum + (isCompact ? 0 : remaining / CGFloat(flexibleCount))
+                }
+            }
+        }
+        return [max(0, width)]
+    }
+
+    private func rowHeights(widths: [CGFloat], subviews: Subviews) -> [CGFloat] {
+        guard !widths.isEmpty else { return [] }
+        var heights = Array(repeating: CGFloat.zero, count: (subviews.count + widths.count - 1) / widths.count)
+        for (index, subview) in subviews.enumerated() {
+            let height = subview.sizeThatFits(.init(width: widths[index % widths.count], height: nil)).height
+            heights[index / widths.count] = max(heights[index / widths.count], height)
+        }
+        return heights
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? minimumCellWidth * CGFloat(preferredColumns)
+        let widths = columnWidths(for: width, subviews: subviews)
+        let heights = rowHeights(widths: widths, subviews: subviews)
+        return CGSize(width: width, height: heights.reduce(0, +) + CGFloat(max(0, heights.count - 1)) * rowSpacing)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let widths = columnWidths(for: bounds.width, subviews: subviews)
+        let heights = rowHeights(widths: widths, subviews: subviews)
+        var origin = bounds.origin
+        for (index, subview) in subviews.enumerated() {
+            let column = index % widths.count
+            let row = index / widths.count
+            if column == 0 {
+                origin.x = bounds.minX
+                if row > 0 { origin.y += heights[row - 1] + rowSpacing }
+            }
+            subview.place(at: origin, anchor: .topLeading, proposal: .init(width: widths[column], height: heights[row]))
+            origin.x += widths[column] + spacing
+        }
     }
 }
 
@@ -1211,6 +1306,13 @@ struct InformationFact: Identifiable {
     /// as the fallback when a logo is missing.
     var logos: [WatchProviderLogo] = []
     var isRequiredAttribution = false
+
+    var prefersCompactColumn: Bool {
+        switch id {
+        case "year", "released", "runtime", "content-rating", "bitrate", "size": true
+        default: false
+        }
+    }
 
     var hasOmittedValues: Bool {
         if !logos.isEmpty {

@@ -9,6 +9,77 @@ import XCTest
 
 @MainActor
 final class DetailCardSurfacePresentationTests: XCTestCase {
+    func testDetailFactTracksReserveRoomForProseAndWrapWithoutGaps() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let cases: [(width: CGFloat, minimum: CGFloat, compact: [Bool], expected: [CGFloat])] = [
+            (960, 200, [true, true, true, false], [160, 160, 160, 384]),
+            (800, 200, [true, true, true, false], [160, 160, 160, 224]),
+            (768, 200, [true, true, true, false], [384, 160, 160]),
+            (507, 200, [true, true, true, false], [160, 315]),
+            (340, 200, [true, true, true, false], [340]),
+            (960, 200, [true, true, true], [160, 160, 160]),
+            (960, 200, [true], [960]),
+            (960, 200, [false, false, false], [896 / 3, 896 / 3, 896 / 3]),
+            (960, 200, [true, true, true, false, false, false], [896 / 3, 896 / 3, 896 / 3]),
+            (960, 400, [true, true, true, false], [320, 608]),
+            (507, 400, [true, true, true, false], [507])
+        ]
+        for (caseIndex, fixture) in cases.enumerated() {
+            window.frame = CGRect(x: 0, y: 0, width: fixture.width, height: 600)
+            var frames: [Int: CGRect] = [:]
+            let count = fixture.compact.count
+            host.rootView = AnyView(
+                DetailFactLayout(
+                    preferredColumns: min(4, count > 4 ? (count + 1) / 2 : count),
+                    minimumCellWidth: fixture.minimum, spacing: 32, rowSpacing: 16
+                ) {
+                    ForEach(0..<count, id: \.self) { index in
+                        Color.white.frame(minHeight: index.isMultiple(of: 2) ? 40 : 64, maxHeight: .infinity)
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("facts")) } action: {
+                                frames[index] = $0
+                            }
+                            .layoutValue(key: DetailCompactFactKey.self, value: fixture.compact[index])
+                    }
+                }
+                .coordinateSpace(name: "facts")
+                .frame(maxHeight: .infinity, alignment: .top)
+                .id(caseIndex)
+            )
+            window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(frames.count, count)
+            let columns = fixture.expected.count
+            var rowY: CGFloat = 0
+            for row in 0..<((count + columns - 1) / columns) {
+                let indices = Array((row * columns)..<min(count, (row + 1) * columns))
+                let rowHeight: CGFloat = indices.contains { !$0.isMultiple(of: 2) } ? 64 : 40
+                var columnX: CGFloat = 0
+                for index in indices {
+                    let frame = try XCTUnwrap(frames[index])
+                    let width = fixture.expected[index % columns]
+                    XCTAssertEqual(frame.minX, columnX, accuracy: 0.5)
+                    XCTAssertEqual(frame.minY, rowY, accuracy: 0.5)
+                    XCTAssertEqual(frame.width, width, accuracy: 0.5)
+                    XCTAssertEqual(frame.height, rowHeight, accuracy: 0.5)
+                    XCTAssertLessThanOrEqual(frame.maxX, fixture.width + 0.5)
+                    columnX += width + 32
+                }
+                rowY += rowHeight + 16
+            }
+        }
+    }
+
     func testRatingUnitsBalanceVisibleMarginsOnPhoneAndTablet() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)

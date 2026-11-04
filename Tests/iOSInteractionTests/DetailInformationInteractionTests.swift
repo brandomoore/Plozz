@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 @MainActor
 final class DetailInformationInteractionTests: XCTestCase {
@@ -73,8 +74,21 @@ final class DetailInformationInteractionTests: XCTestCase {
         launch(["--detail-layout-ratings-5-guide"])
         let guide = app.buttons["family-guidance-tile"]
         reveal(guide)
-        XCTAssertEqual(guide.frame.maxX, app.frame.maxX - 24, accuracy: 1,
+        let width = min(960, app.frame.width - 48)
+        XCTAssertEqual(guide.frame.maxX, app.frame.midX + width / 2, accuracy: 1,
                        "The last grid row must reach the same trailing inset as the other sections.")
+    }
+
+    func testLandscapeInformationUsesReadableWidthAndCompactFacts() throws {
+        try checkInformationLayout(orientation: .landscapeLeft, cases: [
+            "discover", "rich", "ratings-1-guide", "ratings-5-guide"
+        ])
+    }
+
+    func testPortraitSparseAndReleaseInformationUseTheSameGrid() throws {
+        try checkInformationLayout(orientation: .portrait, cases: [
+            "discover", "personal", "upcoming"
+        ])
     }
 
     func testSpoilerProtectionCoversTheEntireRatingGridUntilRevealed() {
@@ -102,6 +116,63 @@ final class DetailInformationInteractionTests: XCTestCase {
         sheet.buttons["Done"].tap()
         XCTAssertTrue(sheet.waitForNonExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(tile.isHittable)
+    }
+
+    private func checkInformationLayout(orientation: UIDeviceOrientation, cases: [String]) throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "Regular-width iPad layout coverage.")
+        let previous = XCUIDevice.shared.orientation
+        defer { XCUIDevice.shared.orientation = previous }
+        XCUIDevice.shared.orientation = orientation
+        for fixture in cases {
+            launch(["--detail-layout-\(fixture)"])
+            let oriented = NSPredicate { _, _ in
+                (self.app.frame.width > self.app.frame.height) == orientation.isLandscape
+            }
+            expectation(for: oriented, evaluatedWith: nil)
+            waitForExpectations(timeout: 5)
+            let heading = app.staticTexts[fixture == "personal" ? "Playback" : "About"].firstMatch
+            XCTAssertTrue(heading.waitForExistence(timeout: 10), app.debugDescription)
+            let contentWidth = min(960, app.frame.width - 48)
+            XCTAssertEqual(heading.frame.minX, app.frame.midX - contentWidth / 2, accuracy: 1)
+            if fixture == "discover" || fixture.hasPrefix("ratings-") {
+                let year = app.staticTexts["Year"].firstMatch
+                let runtime = app.staticTexts["Runtime"].firstMatch
+                let genres = app.staticTexts["Genres"].firstMatch
+                XCTAssertEqual(year.frame.minX, heading.frame.minX, accuracy: 1)
+                if contentWidth >= 776 {
+                    XCTAssertEqual(runtime.frame.minX - year.frame.minX, 192, accuracy: 1)
+                    XCTAssertEqual(genres.frame.minX - year.frame.minX, 576, accuracy: 1)
+                } else {
+                    XCTAssertGreaterThan(genres.frame.minY, year.frame.minY,
+                                         "Narrow iPads must wrap rather than squeeze prose into a fourth track.")
+                    XCTAssertLessThanOrEqual(genres.frame.maxX, app.frame.midX + contentWidth / 2 + 1)
+                }
+            }
+            if fixture.hasPrefix("ratings-") {
+                let guide = app.buttons["family-guidance-tile"]
+                reveal(guide)
+                XCTAssertEqual(guide.frame.maxX, app.frame.midX + contentWidth / 2, accuracy: 1)
+            }
+            if fixture == "discover" {
+                XCTAssertFalse(app.staticTexts["Playback"].exists)
+            }
+            let image = XCUIScreen.main.screenshot().image
+            let screen = app.frame
+            let upright = UIGraphicsImageRenderer(size: screen.size).image { context in
+                if screen.width > screen.height, let source = image.cgImage, source.width < source.height {
+                    context.cgContext.translateBy(x: 0, y: screen.height)
+                    context.cgContext.rotate(by: -.pi / 2)
+                    UIImage(cgImage: source).draw(in: CGRect(x: 0, y: 0, width: screen.height, height: screen.width))
+                } else {
+                    image.draw(in: CGRect(origin: .zero, size: screen.size))
+                }
+            }
+            let attachment = XCTAttachment(image: upright)
+            attachment.name = "detail-readable-\(orientation.isLandscape ? "landscape" : "portrait")-\(fixture)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            app.terminate()
+        }
     }
 
     private func launch(_ options: [String] = []) {
