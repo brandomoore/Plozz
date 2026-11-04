@@ -1035,9 +1035,6 @@ private struct DetailInformationGroup: View {
     let labelFont: Font
     let valueFont: Font
     let onExpand: () -> Void
-    #if os(tvOS)
-    @FocusState private var moreIsFocused: Bool
-    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: DetailInformationLayout.headingSpacing) {
@@ -1059,14 +1056,11 @@ private struct DetailInformationGroup: View {
             if group.hasOmittedFacts {
                 Button(action: onExpand) {
                     DetailMoreLabel()
-                        #if os(tvOS)
-                        .environment(\.settingsRowIsFocused, moreIsFocused)
-                        .environment(\.settingsRowFocusForeground, .black)
-                        #endif
                 }
-                    .buttonStyle(.plain)
                     #if os(tvOS)
-                    .focused($moreIsFocused)
+                    .modifier(DetailInformationFocus())
+                    #else
+                    .buttonStyle(.plain)
                     #endif
                     .frame(minHeight: 44, alignment: .leading)
                     .accessibilityIdentifier("detail-\(group.id)-more")
@@ -1083,6 +1077,38 @@ private struct DetailInformationGroup: View {
         )
     }
 }
+
+#if os(tvOS)
+private struct DetailInformationFocus: ViewModifier {
+    @FocusState private var isFocused: Bool
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        content
+            .buttonStyle(.borderless)
+            .environment(\.settingsRowIsFocused, isFocused && reduceTransparency)
+            .environment(\.settingsRowFocusForeground, .black)
+            .focused($isFocused)
+            .background {
+                // Keep the effect out of text fitting, and inside the 24pt row gutters.
+                if reduceTransparency {
+                    if isFocused {
+                        Color.clear
+                            .plozzGlassCard(cornerRadius: DetailInformationLayout.cornerRadius, isFocused: true)
+                            .padding(-8)
+                            .allowsHitTesting(false)
+                    }
+                } else {
+                    Color.clear
+                        .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: DetailInformationLayout.cornerRadius))
+                        .hoverEffect(.highlight, isEnabled: isFocused)
+                        .padding(-8)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+}
+#endif
 
 /// Whole sections occupy readable columns; subsequent sections use the shortest
 /// column without stretching their neighbors or reserving missing content.
@@ -1294,16 +1320,13 @@ private struct InformationFactCell: View {
     let accessibilityID: String
     let onExpand: () -> Void
     @State private var textTruncated = false
-    #if os(tvOS)
-    @FocusState private var isFocused: Bool
-    #endif
 
     private var hasMore: Bool { fact.needsExpansion(textTruncated: textTruncated) }
 
     @ViewBuilder
     var body: some View {
         #if os(tvOS)
-        // A stable plain control preserves remote scrolling and inline expansion
+        // A stable borderless control preserves remote scrolling and inline expansion
         // without turning metadata into a permanently filled card.
         cardButton
             .accessibilityRemoveTraits(hasMore ? [] : .isButton)
@@ -1321,14 +1344,11 @@ private struct InformationFactCell: View {
             if hasMore { onExpand() }
         } label: {
             label
-                #if os(tvOS)
-                .environment(\.settingsRowIsFocused, isFocused)
-                .environment(\.settingsRowFocusForeground, .black)
-                #endif
         }
-        .buttonStyle(.plain)
         #if os(tvOS)
-        .focused($isFocused)
+        .modifier(DetailInformationFocus())
+        #else
+        .buttonStyle(.plain)
         #endif
         .accessibilityIdentifier(accessibilityID)
     }

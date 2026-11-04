@@ -6,6 +6,22 @@ struct DetailInformationFixture: View {
     @State private var selectedPerson = ""
     @State private var backdropScope = NSObject()
 
+    private struct Example: Decodable {
+        let item: MediaItem
+        let availability: ExternalTitleAvailability?
+        let source: MediaSourceRef?
+        let version: MediaVersion?
+    }
+
+    private static let example: Example? = {
+        guard let path = ProcessInfo.processInfo.environment["PLOZZ_DETAIL_EXAMPLE_PATH"] else { return nil }
+        do {
+            return try JSONDecoder().decode(Example.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        } catch {
+            preconditionFailure("Unable to load requested detail example: \(error)")
+        }
+    }()
+
     static let longTitle = String(repeating: "A very long original title ", count: 40)
         .trimmingCharacters(in: .whitespacesAndNewlines)
     private var singleValue: Bool {
@@ -24,6 +40,7 @@ struct DetailInformationFixture: View {
     }
 
     private var item: MediaItem {
+        if let example = Self.example { return example.item }
         if let layoutCase {
             if layoutCase == "personal" {
                 return MediaItem(id: "personal", title: "Summer holiday", kind: .video)
@@ -171,6 +188,7 @@ struct DetailInformationFixture: View {
     }
 
     private var availability: ExternalTitleAvailability? {
+        if let example = Self.example { return example.availability }
         guard layoutCase == "upcoming" else { return nil }
         var events: [TitleReleaseEvent] = [
             .init(kind: .theatrical, date: Date(timeIntervalSince1970: 1_787_875_200), regionCode: "US"),
@@ -192,11 +210,33 @@ struct DetailInformationFixture: View {
         )
     }
 
+    private var selectedSource: MediaSourceRef? {
+        if let example = Self.example { return example.source }
+        guard layoutCase != nil, !isUnowned else { return nil }
+        return MediaSourceRef(
+            accountID: "fixture", itemID: item.id, providerKind: .jellyfin,
+            serverName: "Living room server", accountName: "Household", locality: .local
+        )
+    }
+
+    private var selectedVersion: MediaVersion? {
+        if let example = Self.example { return example.version }
+        guard layoutCase != nil, !isUnowned else { return nil }
+        return MediaVersion(
+            id: "file",
+            fileName: layoutCase == "personal" ? "Summer holiday.mov"
+                : "\(item.title) (\(item.productionYear ?? 2026)) - [WEBDL-2160p][DV HDR10Plus][EAC3 5.1][h265].mkv",
+            width: 3840, height: 2160, bitrate: 25_300_000,
+            sizeBytes: 17_800_000_000, videoCodec: "hevc",
+            videoRange: "DOVI", audioCodec: "eac3", audioChannels: 6
+        )
+    }
+
     var body: some View {
         ScrollViewReader { scroll in
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if !singleValue && layoutCase == nil {
+                    if Self.example == nil && !singleValue && layoutCase == nil {
                         Text(selectedPerson)
                             .accessibilityIdentifier("selected-cast-person")
                         CastRowView(people: cast, leadingInset: 24)
@@ -204,18 +244,8 @@ struct DetailInformationFixture: View {
                     }
                     DetailInformationSections(
                         item: item, horizontalInset: horizontalInset,
-                        selectedSource: layoutCase == nil || isUnowned ? nil : MediaSourceRef(
-                            accountID: "fixture", itemID: item.id, providerKind: .jellyfin,
-                            serverName: "Living room server", accountName: "Household", locality: .local
-                        ),
-                        selectedVersion: layoutCase == nil || isUnowned ? nil : MediaVersion(
-                            id: "file",
-                            fileName: layoutCase == "personal" ? "Summer holiday.mov"
-                                : "\(item.title) (\(item.productionYear ?? 2026)) - [WEBDL-2160p][DV HDR10Plus][EAC3 5.1][h265].mkv",
-                            width: 3840, height: 2160, bitrate: 25_300_000,
-                            sizeBytes: 17_800_000_000, videoCodec: "hevc",
-                            videoRange: "DOVI", audioCodec: "eac3", audioChannels: 6
-                        ),
+                        selectedSource: selectedSource,
+                        selectedVersion: selectedVersion,
                         externalAvailability: availability,
                         spoilerSettings: .init(hideRatingsUntilWatched:
                             ProcessInfo.processInfo.arguments.contains("--detail-layout-hide-ratings"))
@@ -224,7 +254,7 @@ struct DetailInformationFixture: View {
                 .id("detail-fixture-top")
             }
             .task {
-                if layoutCase != nil {
+                if layoutCase != nil || Self.example != nil {
                     do {
                         try await Task.sleep(for: .milliseconds(600))
                         if ProcessInfo.processInfo.arguments.contains("--detail-layout-bottom") {

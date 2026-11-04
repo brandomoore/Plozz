@@ -3,6 +3,96 @@ import UIKit
 
 @MainActor
 final class FamilyGuidanceRemoteTests: XCTestCase {
+    func testUnboxedFocusIsVisibleWithoutMovingOrCoveringNeighbors() throws {
+        try checkUnboxedFocus(extra: [], name: "gradient")
+    }
+
+    func testUnboxedFocusKeepsLightThemeContrastAndClearance() throws {
+        try checkUnboxedFocus(extra: ["--detail-layout-light"], name: "light")
+    }
+
+    func testUnboxedFocusKeepsOpaqueFallbackContrastAndClearance() throws {
+        try checkUnboxedFocus(extra: ["--detail-layout-reduced-transparency"], name: "opaque")
+    }
+
+    func testUnboxedFocusKeepsFlatBackgroundContrastAndClearance() throws {
+        try checkUnboxedFocus(extra: ["--detail-layout-flat"], name: "flat")
+    }
+
+    func testCapturedDiscoverExamplePreservesOffersAndAttribution() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        let example: [String: Any] = [
+            "item": ["id": "captured", "title": "Captured movie", "kind": "movie",
+                     "overview": "An example with regional availability."],
+            "availability": [
+                "regionCode": "US", "releaseEvents": [],
+                "watchOffers": [
+                    ["providerID": 1, "providerName": "Stream service", "kind": "subscription", "regionCode": "US"],
+                    ["providerID": 2, "providerName": "Rental service", "kind": "rent", "regionCode": "US"],
+                    ["providerID": 3, "providerName": "Purchase service", "kind": "buy", "regionCode": "US"]
+                ]
+            ]
+        ]
+        try JSONSerialization.data(withJSONObject: example).write(to: url)
+        defer { XCTAssertNoThrow(try FileManager.default.removeItem(at: url)) }
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--detail-information-fixture"]
+        app.launchEnvironment["PLOZZ_DETAIL_EXAMPLE_PATH"] = url.path
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Stream service"].waitForExistence(timeout: 15))
+        for label in ["Streaming", "Rent", "Buy", "Stream service", "Rental service", "Purchase service", "JustWatch"] {
+            XCTAssertTrue(app.staticTexts[label].exists, label)
+        }
+        XCTAssertFalse(app.staticTexts["Playback"].exists)
+        XCTAssertFalse(app.staticTexts["Cast"].exists, "Captured examples must not inherit unrelated synthetic people.")
+    }
+
+    private func checkUnboxedFocus(extra: [String], name: String) throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--detail-information-fixture", "--detail-layout-rich"] + extra
+        app.launch()
+        defer { app.terminate() }
+        let year = app.descendants(matching: .any)["detail-details-year-more"].firstMatch
+        let directors = app.descendants(matching: .any)["detail-crew-directors-more"].firstMatch
+        XCTAssertTrue(year.waitForExistence(timeout: 15))
+        for _ in 0..<8 where !isFocused(year) { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(isFocused(year))
+        let neighbors = ["Runtime", "Content Rating", "Written By", "Server", "Details", "Crew"]
+            .map { app.staticTexts[$0].firstMatch }
+        let frames = neighbors.map(\.frame)
+        let yearFrame = year.frame
+        let directorsFrame = directors.frame
+        let text = [year, directors].flatMap { element in
+            [element.staticTexts.element(boundBy: 0), element.staticTexts.element(boundBy: 1)]
+        }
+        let textFrames = text.map(\.frame)
+        let before = try XCTUnwrap(app.screenshot().image.cgImage)
+        try assertFocusedFactContrast(year, in: app)
+        recordScreenshot(app, name: "contained-focus-\(name)-year")
+        XCUIRemote.shared.press(.right)
+        XCTAssertTrue(isFocused(directors))
+        let after = try XCTUnwrap(app.screenshot().image.cgImage)
+        try assertFocusedFactContrast(directors, in: app)
+        recordScreenshot(app, name: "contained-focus-\(name)-directors")
+
+        for frame in [yearFrame, directorsFrame] {
+            let region = frame.insetBy(dx: -10, dy: -10)
+            let change = try changedPixelFraction(before, after, frame: region, app: app)
+            // A native rim changes a perimeter, not a fixed percentage of a large text area.
+            let minimumChange = 0.5 * (region.width + region.height) / (region.width * region.height)
+            XCTAssertGreaterThan(change, minimumChange, "Logical focus without a visible highlight is not sufficient.")
+        }
+        for (element, frame) in zip(text, textFrames) {
+            XCTAssertEqual(element.frame, frame, "Focus must not move or scale the text keyline.")
+        }
+        for (neighbor, frame) in zip(neighbors, frames) {
+            XCTAssertEqual(neighbor.frame, frame, "Focus must not reflow a sibling.")
+            let change = try changedPixelFraction(before, after, frame: frame, app: app)
+            XCTAssertLessThan(change, 0.02, "The highlight must not paint over \(neighbor.label).")
+        }
+    }
+
     func testUnboxedSectionMoreRetainsFocusContrastAndExpandsOmittedFacts() throws {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = ["--detail-information-fixture", "--detail-layout-upcoming",
@@ -415,8 +505,37 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
     private func assertFocusedFactContrast(_ element: XCUIElement, in app: XCUIApplication) throws {
         let label = element.staticTexts.firstMatch
         let image = try XCTUnwrap(app.screenshot().image.cgImage)
-        let scale = CGFloat(image.width) / app.frame.width
         let frame = label.exists ? label.frame : element.frame
+        let pixels = try pixels(image, frame: frame, app: app)
+        let luminances = stride(from: 0, to: pixels.count, by: 4).map { offset -> Double in
+            let channels = (0..<3).map { channel -> Double in
+                let value = Double(pixels[offset + channel]) / 255
+                return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+            }
+            return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+        }.sorted()
+        XCTAssertFalse(luminances.isEmpty)
+        guard !luminances.isEmpty else { return }
+        let contrast = (luminances[luminances.count * 95 / 100] + 0.05)
+            / (luminances[luminances.count * 5 / 100] + 0.05)
+        XCTAssertGreaterThan(contrast, 3, "Focused metadata must remain readable in both native and opaque highlights.")
+    }
+
+    private func changedPixelFraction(
+        _ before: CGImage, _ after: CGImage, frame: CGRect, app: XCUIApplication
+    ) throws -> Double {
+        let first = try pixels(before, frame: frame, app: app)
+        let second = try pixels(after, frame: frame, app: app)
+        XCTAssertEqual(first.count, second.count)
+        guard first.count == second.count, !first.isEmpty else { return 1 }
+        let changed = stride(from: 0, to: first.count, by: 4).filter { offset in
+            (0..<3).reduce(0) { $0 + abs(Int(first[offset + $1]) - Int(second[offset + $1])) } > 24
+        }.count
+        return Double(changed) / Double(first.count / 4)
+    }
+
+    private func pixels(_ image: CGImage, frame: CGRect, app: XCUIApplication) throws -> [UInt8] {
+        let scale = CGFloat(image.width) / app.frame.width
         let region = frame.applying(CGAffineTransform(scaleX: scale, y: scale)).integral
         let crop = try XCTUnwrap(image.cropping(to: region))
         var pixels = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
@@ -429,10 +548,7 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
             ))
             context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
         }
-        let darkPixels = stride(from: 0, to: pixels.count, by: 4).filter {
-            pixels[$0] < 140 && pixels[$0 + 1] < 140 && pixels[$0 + 2] < 140
-        }.count
-        XCTAssertGreaterThan(darkPixels, 20, "Every focused fact needs dark, readable text on the native highlight.")
+        return pixels
     }
 
     private func recordScreenshot(_ app: XCUIApplication, name: String) {

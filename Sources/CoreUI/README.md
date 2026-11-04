@@ -1027,8 +1027,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   heights do not stretch neighboring sections. A lone section keeps its reading
   width rather than filling the page. Compact phones use one column.
   Playback uses quieter type, including a bounded filename preview.
-  TV facts use stable plain native buttons for scroll-by-focus, with no resting
-  fill and contrast-correct text on the native focus highlight. Only truncated
+  TV facts use stable borderless native buttons for scroll-by-focus, with no resting
+  fill. A focus-only native highlight sits in a non-sizing underlay, extending
+  8pt into the 24pt row gutters without moving text keylines. Reduce Transparency
+  retains the shared opaque surface and semantic text contrast. Only truncated
   facts open their group's full values. Full-value rows remain focusable for remote
   scrolling through long lists. Mobile keeps inline expansion targets.
   Section gaps, gutters, and padding come from `DetailInformationLayout`.
@@ -1063,6 +1065,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   The fixture uses the production page-scoped gradient host; `--detail-layout-flat`
   and `--detail-layout-reduced-transparency` cover its opaque fallbacks.
   `--detail-layout-bottom` reveals Playback.
+  The test hosts also accept `PLOZZ_DETAIL_EXAMPLE_PATH`, an explicit JSON file
+  containing a `MediaItem` under `item` and optional `availability`, `source`, and
+  `version` values. Invalid input fails rather than substituting fixture metadata.
+  Keep captured server data private; label captures with their source, region,
+  and whether enrichment was applied. This input is not part of the production app.
 - **Detail information focus** — the tvOS About/Ratings cards use
   native focus with at most 2% growth and 6pt of expansion per edge, leaving
   clearance within the shared grid gutters. Focused read-only cards and card buttons draw
