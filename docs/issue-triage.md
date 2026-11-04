@@ -51,6 +51,12 @@ oldest/unassessed reports reserved space. Initial backfill can therefore take
 multiple runs. This is eventual refresh, not an instantaneous completeness
 guarantee.
 
+GitHub reads are restricted to `brandomoore/Plozz` with `min-integrity: none`,
+so reports and replies from new community members are included. The default
+public-repository `approved` integrity filter silently omits some of them.
+This explicitly broadens readable input, not write authority or trust:
+all report content remains untrusted, and output safety review stays required.
+
 Only the four `triage:` labels and the workflow's own assessment comments can
 be changed. Source, release state, issue state, assignments, milestones and
 existing human labels are outside its write capabilities. A separate
@@ -83,12 +89,16 @@ invoice.
 The generated comment footer includes the workflow identity and a link to the
 evidence run. The comment's **Structured data** JSON is the durable record.
 Consumers must require the `github-actions[bot]` author and `issue-triage`
-workflow marker, validate schema version 1 and matching issue number, and
+workflow marker, validate supported schema versions and matching issue number, and
 treat all strings as untrusted text. Render text safely, never as raw HTML.
 
 Records include `checked_sha`, `checked_at`, reported and last-reported app
 builds, `last_report_at`, `status`, `assessment`, relevant source paths, public
-evidence URLs and `next_action`. Paths and URLs are newline-separated strings.
+evidence URLs and `next_action`. Version 2 uses arrays of individual strings for paths and
+URLs. Version 1 used newline-separated strings; valid legacy records remain
+readable, but malformed JSON must be reassessed, not guessed or repaired by
+parsing fragments. Multiple escaped-newline-separated URLs can be misread by
+the v1.0.1 publication sanitizer, so new records must use version 2 arrays.
 A new issue with no record is **Not assessed**, not implicitly confirmed or
 fixed. Show assessment age and the inspected source revision. New substantive
 replies or relevant code changes mean **Awaiting reassessment** until checked;

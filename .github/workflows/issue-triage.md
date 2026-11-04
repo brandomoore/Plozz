@@ -50,6 +50,8 @@ checkout:
 tools:
   github:
     mode: gh-proxy
+    allowed-repos: [brandomoore/plozz]
+    min-integrity: none
     toolsets: [repos, issues, pull_requests]
   bash:
     - "git log:*"
@@ -95,8 +97,12 @@ safe-outputs:
     last_report_at: string
     status: string
     assessment: string
-    relevant_paths: string
-    evidence_urls: string
+    relevant_paths:
+      type: array
+      items: string
+    evidence_urls:
+      type: array
+      items: string
     next_action: string
   threat-detection:
     engine:
@@ -134,6 +140,8 @@ to other agents or select another model.
 Temporary working files under `/tmp/gh-aw/agent/` belong to this disposable
 runner and are removed with it. Do not request deletion permissions or report
 the absence of a cleanup command as a missing capability.
+Use supported direct `gh` reads, `jq`, and the listed read-only shell commands.
+Do not execute Python helpers or shell loops that are not in the tool grants.
 
 The existing TestFlight issue-resolution workflow exclusively owns `awaiting
 release` and delivery-based closure. Do not add/remove that label, duplicate its
@@ -147,7 +155,8 @@ issue. Treat a later affected-build report as new evidence, even after a fix.
    backlog. Read release metadata and delivery receipts where relevant.
 2. Read previous triage comments only when authored by `github-actions[bot]`
    and marked by this `issue-triage` workflow. Parse their `Structured data:`
-   JSON; schema version must be 1, issue number must match, checked SHA must be
+   JSON; accept schema version 1 (newline-separated paths/URLs) or 2 (arrays of
+   individual path/URL strings). Issue number must match, checked SHA must be
    a valid ancestor of HEAD, and dates/paths must be valid. Missing, malformed,
    or conflicting records are unassessed, never authoritative.
 3. Process at most 20 issues. Prioritize a triggering open issue, then crashes,
@@ -215,14 +224,15 @@ against the structured evidence URLs and use the issue URL without a fragment
 if the exact comment URL is unavailable.
 
 Supply the structured `data` object alongside the body:
-`schema_version: 1`, numeric `issue_number`, full `checked_sha`, ISO8601 UTC
+`schema_version: 2`, numeric `issue_number`, full `checked_sha`, ISO8601 UTC
 `checked_at`, `reported_build`, `last_reported_build`, ISO8601
-`last_report_at` (or `unknown`), `status`, `assessment`, newline-separated
-repository-relative `relevant_paths`, newline-separated public GitHub
+`last_report_at` (or `unknown`), `status`, `assessment`, arrays of individual
+repository-relative `relevant_paths` and individual public GitHub
 `evidence_urls`, and a short `next_action`. No personal names, account/server
 addresses, raw logs, tokens, or private URLs. Do not claim to have checked
-anything you did not inspect. Leave paths/evidence empty rather than inventing
-citations.
+anything you did not inspect. Use empty arrays rather than inventing citations.
+Never put multiple URLs in one string: escaped newlines between URLs can be
+misread by the publication sanitizer and corrupt the JSON record.
 
 Maintain only the four workflow-owned `triage:` labels. Map `needs-evidence`,
 `investigate`, `verify`, and `backlog` to their corresponding allowed label,
