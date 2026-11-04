@@ -1111,18 +1111,32 @@ private struct InformationFactCell: View {
 
     private var hasMore: Bool { fact.needsExpansion(textTruncated: textTruncated) }
 
+    @ViewBuilder
     var body: some View {
-        Group {
-            if hasMore {
-                Button(action: onExpand) { label }
-                    .plozzCardButton(
-                        cornerRadius: 12, focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale
-                    )
-                    .accessibilityIdentifier(accessibilityID)
-            } else {
-                label.plozzFocusableCard(cornerRadius: 12)
-            }
+        #if os(tvOS)
+        // Native fitting probes can briefly truncate even short values. Replacing
+        // the host on that result restarts the probes and never lets layout settle.
+        cardButton
+            .accessibilityRemoveTraits(hasMore ? [] : .isButton)
+        #else
+        if hasMore {
+            cardButton
+        } else {
+            label.plozzFocusableCard(cornerRadius: 12)
         }
+        #endif
+    }
+
+    private var cardButton: some View {
+        Button {
+            if hasMore { onExpand() }
+        } label: {
+            label
+        }
+        .plozzCardButton(
+            cornerRadius: 12, focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale
+        )
+        .accessibilityIdentifier(accessibilityID)
     }
 
     private var label: some View {

@@ -9,6 +9,58 @@ import XCTest
 
 @MainActor
 final class NativeInformationCardHostedTests: XCTestCase {
+    func testFactTruncationUpdatesKeepTheSameNativeCards() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let model = NativeInformationRefreshModel()
+        model.item = MediaItem(
+            id: "facts", title: "Series", originalTitle: "Original title", kind: .series,
+            productionYear: 2026, genres: ["Drama"],
+            people: [MediaPerson(id: "director", name: "Director", kind: "Director")],
+            studios: ["Studio"]
+        )
+        let host = UIHostingController(rootView: NativeInformationFactFixture(model: model))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        let original = nativeCards(in: window)
+        XCTAssertEqual(original.count, 5)
+        let identities = Set(original.map(ObjectIdentifier.init))
+        let studios = try XCTUnwrap(original.max {
+            let first = $0.convert($0.bounds, to: window)
+            let second = $1.convert($1.bounds, to: window)
+            return abs(first.minY - second.minY) > 1 ? first.minY < second.minY : first.minX < second.minX
+        })
+        // Every initial value fits. Read-only cards remain focusable but must
+        // not open an expansion sheet when Select is pressed.
+        for card in original { card.sendActions(for: .primaryActionTriggered) }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertNil(host.presentedViewController)
+
+        for expanded in [true, false, true, false] {
+            model.item.originalTitle = expanded
+                ? String(repeating: "A very long original title ", count: 40) : "Original title"
+            model.item.studios = expanded ? ["First Studio", "Second Studio", "Third Studio", "Fourth Studio"] : ["Studio"]
+            try await Task.sleep(for: .milliseconds(350))
+            XCTAssertEqual(Set(nativeCards(in: window).map(ObjectIdentifier.init)), identities)
+            XCTAssertTrue(original.allSatisfy { $0.contentSize.width > 100 && $0.contentSize.height > 0 })
+        }
+        model.item.studios = ["First Studio", "Second Studio", "Third Studio", "Fourth Studio"]
+        try await Task.sleep(for: .milliseconds(350))
+        studios.sendActions(for: .primaryActionTriggered)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertNotNil(host.presentedViewController, "More must still expand after the card's content changes.")
+        host.dismiss(animated: false)
+    }
+
     func testEagerInformationRowsIncludeTheirLastNativeCard() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -597,6 +649,19 @@ final class NativeInformationCardHostedTests: XCTestCase {
                 .plozzForeground(.primary)
                 .onAppear { observe(palette, scheme) }
         }
+    }
+}
+
+private struct NativeInformationFactFixture: View {
+    let model: NativeInformationRefreshModel
+
+    var body: some View {
+        ScrollView {
+            DetailInformationSections(item: model.item, horizontalInset: 80)
+        }
+        .environment(\.plozzCardFocusStyle, .system)
+        .environment(\.themePalette, .dark)
+        .environment(\.colorScheme, .dark)
     }
 }
 

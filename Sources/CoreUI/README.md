@@ -1009,6 +1009,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   treatment beside each truncated value. Cast expansion sits beneath its rail.
   Fact grids are eagerly measured before native TV focus hosting; a lazy grid
   inside a single native card can report an incomplete multi-row height.
+  A fact keeps the same native TV card when truncation changes; only its More
+  action and accessibility role change. Switching between separate read-only
+  and button hosts restarts minimum-size probes and can loop during first layout.
   Required availability attribution stays visible even when release facts are
   capped. These presentation limits do not change provider metadata precedence.
 - **Detail information focus** — the tvOS About/Ratings/Information band uses
