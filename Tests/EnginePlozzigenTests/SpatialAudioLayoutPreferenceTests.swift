@@ -6,11 +6,16 @@ import XCTest
 
 @MainActor
 final class SpatialAudioLayoutPreferenceTests: XCTestCase {
-    func testRetiredComponentsAreExcludedWhileDolbyVisionStillsRemainAvailable() {
+    func testOptionalEngineComponentsAreExcluded() {
         XCTAssertFalse(AetherEngine.OptionalComponent.trueHDObjectAudio.isBuiltIn)
         XCTAssertFalse(AetherEngine.OptionalComponent.dtsxObjectAudio.isBuiltIn)
         XCTAssertFalse(AetherEngine.OptionalComponent.dualLayerDolbyVision.isBuiltIn)
-        XCTAssertTrue(AetherEngine.OptionalComponent.dolbyVisionStillReshaping.isBuiltIn)
+        XCTAssertFalse(AetherEngine.OptionalComponent.dolbyVisionStillReshaping.isBuiltIn)
+    }
+
+    func testStillExtractionRequiresAnOrdinaryBaseLayer() {
+        XCTAssertFalse(FrameDecodeContext.yieldsStill(dolbyVisionNoBaseLayer: true))
+        XCTAssertTrue(FrameDecodeContext.yieldsStill(dolbyVisionNoBaseLayer: false))
     }
 
     func testLegacyLayoutsCannotEnableHeightConversionAcrossProvidersAndDownloads() throws {

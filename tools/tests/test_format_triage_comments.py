@@ -28,6 +28,17 @@ def comment(version=2):
 
 
 class FormatTriageCommentsTests(unittest.TestCase):
+    def test_public_prose_uses_validated_content_without_metadata_or_footer(self):
+        for version in (1, 2):
+            original = comment(version)
+            for body in (original["body"], APP.collapsed_body(original)):
+                self.assertEqual(APP.public_prose({**original, "body": body}),
+                                 "**Assessment:** Keep this exact prose.")
+        with self.assertRaises(ValueError):
+            APP.public_prose({**comment(), "user": {"login": "someone", "type": "User"}})
+        with self.assertRaises(ValueError):
+            APP.public_prose({**comment(), "body": APP.MARKER})
+
     def test_both_versions_preserve_record_prose_and_footer_exactly(self):
         for version in (1, 2):
             with self.subTest(version=version):

@@ -199,9 +199,13 @@ Movie Browse follows the server's library collection policy and per-collection
 overrides automatically under All + Name sorting. Its existing section query
 sends `includeCollections=1`; Plex supplies the mixed rows and authoritative
 total, without a client membership scan or a second global collection listing.
-Stream enrichment uses `includeOptionalElements` so collection containers survive
-response customization. Other sorts, filters, background inventories and feeds
-request individual titles. There is no new setting or persistent Browse control.
+Grouped Browse omits both `includeElements=Stream` and
+`includeOptionalElements=Stream`: some servers return HTTP 200 with collection
+cards silently removed and a reduced total even for optional enrichment, while
+their members remain hidden. This can reduce stream-derived badges on the mixed
+grid; detail and playback still fetch full item metadata. Other sorts, filters,
+background inventories and feeds retain stream enrichment and request individual
+titles. There is no new setting or persistent Browse control.
 For grouped Browse, A-Z targets resolve against the actual paged mixed result
 on demand, not the movie-only `firstCharacter` facet. Ordinary paging does not
 enumerate the library; a late-letter jump can read multiple cancellable pages.

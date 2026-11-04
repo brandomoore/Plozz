@@ -5,8 +5,11 @@ on:
     paths:
       - .github/workflows/discord-bridge.yml
       - tools/discord-bridge.py
+      - tools/format-triage-comments.py
       - tools/run-bounded.py
       - tools/tests/test_discord_bridge.py
+      - tools/tests/test_testflight_resolutions.py
+      - tools/tests/test_format_triage_comments.py
   schedule:
     - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
@@ -45,7 +48,7 @@ jobs:
         with:
           node-version: "22"
       - name: Regression tests
-        run: python3 -m unittest discover -s tools/tests -p 'test_discord_bridge.py'
+        run: PYTHONPATH=tools/tests python3 -m unittest test_discord_bridge test_testflight_resolutions test_format_triage_comments
       - name: Install pinned Copilot CLI
         run: npm install --global --ignore-scripts @github/copilot@1.0.91
       - name: Read-only connection and model check
@@ -98,7 +101,7 @@ jobs:
       (github.event_name == 'schedule' ||
        (github.event_name == 'workflow_dispatch' && inputs.mode == 'sync'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
       issues: write
@@ -119,4 +122,16 @@ jobs:
           DISCORD_BRIDGE_ENABLED: ${{ vars.DISCORD_BRIDGE_ENABLED }}
           DISCORD_PUBLIC_SINCE: ${{ vars.DISCORD_PUBLIC_SINCE }}
           TESTFLIGHT_RESOLUTION_ENABLED: ${{ vars.TESTFLIGHT_RESOLUTION_ENABLED }}
-        run: python3 tools/discord-bridge.py --mode sync
+        run: |
+          for attempt in 1 2; do
+            if python3 tools/discord-bridge.py --mode sync; then
+              exit 0
+            else
+              status=$?
+            fi
+            if [ "$status" -ne 75 ] || [ "$attempt" -eq 2 ]; then
+              exit "$status"
+            fi
+            echo "::warning::Transient bridge failure; rediscovering remote state before one recovery attempt."
+            sleep 20
+          done

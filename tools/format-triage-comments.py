@@ -48,6 +48,14 @@ def collapsed_body(comment):
     return before + OPEN + match[0] + CLOSE + after
 
 
+def public_prose(comment):
+    if not owned(comment):
+        raise ValueError("Expected a bot-owned triage assessment")
+    collapsed_body(comment)
+    before = comment["body"][:RECORD.search(comment["body"]).start()]
+    return before.removesuffix(OPEN).replace(MARKER, "").strip()
+
+
 def api(path, *, body=None, paginate=False):
     args = ["gh", "api", path]
     if paginate:
