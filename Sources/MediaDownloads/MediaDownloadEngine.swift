@@ -19,6 +19,11 @@ public protocol DownloadByteReader: Sendable {
     func close() async
 }
 
+public protocol WholeFileDownloadByteReader: DownloadByteReader {
+    var requiresWholeFileTransfer: Bool { get }
+    func readWholeFile(consume: @escaping @Sendable (Data) async throws -> Void) async throws
+}
+
 /// Opens a ``DownloadByteReader`` for a direct-share source. The production
 /// implementation composes the transport resolver; tests inject a fake.
 public protocol DownloadByteSourceOpening: Sendable {
@@ -113,7 +118,7 @@ public struct MediaTransportByteSourceOpener: DownloadByteSourceOpening {
     public func open(_ source: DirectShareDownloadSource) async throws -> any DownloadByteReader {
         let locator = try source.makeLocator()
         let resolved = try await resolver.resolve(locator)
-        guard resolved.sourceLease.supportsPersistentByteReuse else {
+        guard resolved.sourceLease.supportsPersistentByteReuse || resolved.sourceLease.supportsWholeFileRead else {
             await resolved.waitForFinalShutdown()
             throw MediaDownloadError.unsupportedSource
         }
@@ -127,7 +132,7 @@ public struct MediaTransportByteSourceOpener: DownloadByteSourceOpening {
 
 /// Cursor-backed reader that keeps the resolved transport source alive until the
 /// download closes it.
-final class TransportCursorByteReader: DownloadByteReader, @unchecked Sendable {
+final class TransportCursorByteReader: WholeFileDownloadByteReader, @unchecked Sendable {
     private let resolved: MediaTransportResolvedSource
     private let cursor: MediaTransportSourceCursor
 
@@ -137,6 +142,11 @@ final class TransportCursorByteReader: DownloadByteReader, @unchecked Sendable {
     }
 
     var byteSize: Int64 { cursor.byteSize }
+    var requiresWholeFileTransfer: Bool { !cursor.supportsPersistentByteReuse }
+
+    func readWholeFile(consume: @escaping @Sendable (Data) async throws -> Void) async throws {
+        try await cursor.readWholeFile(consume: consume)
+    }
 
     func read(at offset: Int64, length: Int) async throws -> Data {
         try await cursor.read(at: offset, length: length)
@@ -212,6 +222,16 @@ public struct TransportCursorDownloadEngine:
         let reader = try await opener.open(source)
         do {
             try Task.checkCancellation()
+            if let whole = reader as? any WholeFileDownloadByteReader, whole.requiresWholeFileTransfer {
+                HandoffDiagnostics.emit(
+                    "download TRANSFER key=\(HandoffDiagnostics.correlationID(record.identityKey)) mode=wholeResponse restart=true"
+                )
+                let total = try await copyWholeFile(
+                    from: whole, to: destination, onProgress: onProgress
+                )
+                await reader.close()
+                return total
+            }
             let total = try await copyBytes(
                 from: reader,
                 to: destination,
@@ -223,6 +243,74 @@ public struct TransportCursorDownloadEngine:
         } catch {
             await reader.close()
             throw error
+        }
+    }
+
+    private func copyWholeFile(
+        from reader: any WholeFileDownloadByteReader,
+        to destination: URL,
+        onProgress: @escaping @Sendable (Int64, Int64) async -> Void
+    ) async throws -> Int64 {
+        try truncate(destination, to: 0)
+        let writer = try WholeFileWriter(
+            destination: destination, expected: reader.byteSize,
+            rateLimiter: rateLimiter, onProgress: onProgress
+        )
+        await onProgress(0, reader.byteSize)
+        do {
+            try await reader.readWholeFile { data in try await writer.append(data) }
+            try Task.checkCancellation()
+            return try await writer.finish()
+        } catch {
+            // The transport joins its consumer before throwing, so no late
+            // write can race this discard or a subsequent retry.
+            try await writer.discard()
+            await onProgress(0, reader.byteSize)
+            throw error
+        }
+    }
+
+    private actor WholeFileWriter {
+        private let handle: FileHandle
+        private let expected: Int64
+        private let rateLimiter: DownloadRateLimiter
+        private let onProgress: @Sendable (Int64, Int64) async -> Void
+        private var bytes: Int64 = 0
+
+        init(
+            destination: URL, expected: Int64, rateLimiter: DownloadRateLimiter,
+            onProgress: @escaping @Sendable (Int64, Int64) async -> Void
+        ) throws {
+            handle = try FileHandle(forWritingTo: destination)
+            self.expected = expected
+            self.rateLimiter = rateLimiter
+            self.onProgress = onProgress
+        }
+
+        func append(_ data: Data) async throws {
+            try Task.checkCancellation()
+            guard Int64(data.count) <= expected - bytes else {
+                throw MediaDownloadError.invalidChunk(expectedMaximum: Int(max(0, expected - bytes)), actual: data.count)
+            }
+            try await rateLimiter.waitToTransfer(byteCount: data.count)
+            try Task.checkCancellation()
+            try handle.write(contentsOf: data)
+            bytes += Int64(data.count)
+            await onProgress(bytes, expected)
+        }
+
+        func finish() throws -> Int64 {
+            guard bytes == expected else {
+                throw MediaDownloadError.unexpectedEndOfFile(expected: expected, actual: bytes)
+            }
+            try handle.synchronize()
+            try handle.close()
+            return bytes
+        }
+
+        func discard() throws {
+            defer { try? handle.close() }
+            try handle.truncate(atOffset: 0)
         }
     }
 

@@ -2261,6 +2261,14 @@ with `Library/Application Support/Plozz/Diagnostics/playback.json` for typed
 failure details. These are cache files, not a crash-proof archive: queued writes
 can be lost at termination and the OS can evict caches.
 
+Offline-download diagnostics use the same gated journal. Filter `download ` for
+attempts, managed-source resolution, transfer mode, Plex rendition validation,
+and failures. Keys are hashed; URLs and credential assignments in error details
+are redacted. Failure records include native error domain/code and one underlying
+error code. The mobile catalog also records existing failed entries once when
+loaded, so inspecting an earlier failure does not require restarting its transfer.
+These markers do not change download retries, persistence, or network policy.
+
 The existing in-process text snapshot remains limited to 64 KiB. This larger
 local retention does not change diagnostic consent, enable persistent text in
 non-diagnostic builds, or attach raw traces to Sentry/manual structured reports.

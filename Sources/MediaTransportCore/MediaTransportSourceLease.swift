@@ -3,7 +3,8 @@ import Foundation
 public protocol MediaTransportByteSource: AnyObject, Sendable {
     var byteSize: Int64 { get }
     /// False for streaming compatibility without a content-change validator.
-    /// Such bytes may be buffered within this lease, not persisted for reuse.
+    /// Ranged bytes may be buffered within this lease, not persisted for reuse.
+    /// Whole-response downloads require the separate whole-file contract below.
     var supportsPersistentByteReuse: Bool { get }
     /// Efficient bounded request size. Larger values opt readers into adaptive
     /// sequential read-ahead; the source still enforces its own protocol limits.
@@ -18,6 +19,12 @@ public protocol MediaTransportByteSource: AnyObject, Sendable {
 public extension MediaTransportByteSource {
     var preferredReadSize: Int { 1024 * 1024 }
     var supportsPersistentByteReuse: Bool { true }
+}
+
+/// A separate persistence contract: one complete response may be saved, but
+/// partial/ranged bytes must never be reused across attempts.
+public protocol MediaTransportWholeFileByteSource: MediaTransportByteSource {
+    func readWholeFile(consume: @escaping @Sendable (Data) async throws -> Void) async throws
 }
 
 /// Optional lock-only transition from preparation to playback. Called after all
@@ -85,6 +92,16 @@ public final class MediaTransportSourceLease: @unchecked Sendable {
     public var byteSize: Int64 { source.byteSize }
     public var preferredReadSize: Int { source.preferredReadSize }
     public var supportsPersistentByteReuse: Bool { source.supportsPersistentByteReuse }
+    public var supportsWholeFileRead: Bool { source is any MediaTransportWholeFileByteSource }
+
+    fileprivate func readWholeFile(
+        consume: @escaping @Sendable (Data) async throws -> Void
+    ) async throws {
+        guard let source = source as? any MediaTransportWholeFileByteSource else {
+            throw MediaTransportError.invalidInput(reason: "whole-file transfer unavailable")
+        }
+        try await source.readWholeFile(consume: consume)
+    }
 
     func finishPreparation() {
         (source as? any MediaTransportPreparationFinalizingByteSource)?.finishPreparation()
@@ -331,15 +348,30 @@ public final class MediaTransportSourceCursor: @unchecked Sendable {
         guard offset >= 0, length > 0 else {
             throw MediaTransportError.invalidInput(reason: "invalid byte range")
         }
+        return try await performRead { [lease, id] in
+            try await lease.read(cursorID: id, at: offset, length: length)
+        }
+    }
+
+    public func readWholeFile(
+        consume: @escaping @Sendable (Data) async throws -> Void
+    ) async throws {
+        _ = try await performRead { [lease] in
+            try await lease.readWholeFile(consume: consume)
+            return Data()
+        }
+    }
+
+    private func performRead(_ operation: @escaping @Sendable () async throws -> Data) async throws -> Data {
+        try Task.checkCancellation()
         guard lease.beginOperation(cursorID: id) else {
             throw MediaTransportError.cancelled
         }
         let operationID = UUID()
-        let cursorID = id
         let task = lock.withLock { () -> Task<Data, Error>? in
             guard !state.isClosed else { return nil }
-            let task = Task.detached(priority: .userInitiated) { [lease] in
-                try await lease.read(cursorID: cursorID, at: offset, length: length)
+            let task = Task.detached(priority: .userInitiated) {
+                try await operation()
             }
             state.reads[operationID] = task
             return task

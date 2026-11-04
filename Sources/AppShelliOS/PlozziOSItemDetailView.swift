@@ -2006,6 +2006,14 @@ private struct PlozziOSSeriesDownloadPicker: View {
         )
     }
 
+    private var isPreparingBulkDownload: Bool {
+        isBusy && prompt?.isBulk != false
+    }
+
+    private var preparingEpisodeIDs: Set<String> {
+        prompt?.preparingEpisodeIDs ?? []
+    }
+
     var body: some View {
         let seasonList = self.seasonList
         NavigationStack {
@@ -2023,7 +2031,7 @@ private struct PlozziOSSeriesDownloadPicker: View {
                 ) {
                     PlozziOSShowDownloadAction(
                         series: series, seasons: seasons, looseEpisodes: looseEpisodes,
-                        viewModel: viewModel, isBusy: isBusy, onDownload: beginShowDownload
+                        viewModel: viewModel, isBusy: isPreparingBulkDownload, onDownload: beginShowDownload
                     )
                 }
 
@@ -2052,12 +2060,15 @@ private struct PlozziOSSeriesDownloadPicker: View {
 
                 if !seasonList.unassignedEpisodes.isEmpty {
                     Section("Episodes") {
-                        ForEach(seasonList.unassignedEpisodes, id: \.stablePresentationID) { episode in
-                            PlozziOSEpisodeDownloadRow(
-                                episode: episode,
-                                isBusy: isBusy,
-                                onDownload: startEpisodeDownload
-                            )
+                        let groups = EpisodeDownloadSelection.groupedItems(seasonList.unassignedEpisodes)
+                        ForEach(groups.indices, id: \.self) { index in
+                            if let episode = groups[index].first {
+                                PlozziOSEpisodeDownloadRow(
+                                    episode: episode, alternatives: groups[index],
+                                    preparingEpisodeIDs: preparingEpisodeIDs,
+                                    isBusy: isBusy, onDownload: beginEpisodeDownload
+                                )
+                            }
                         }
                     }
                 }
@@ -2086,52 +2097,16 @@ private struct PlozziOSSeriesDownloadPicker: View {
             }
         }
         .interactiveDismissDisabled(isBusy)
-        .confirmationDialog(
-            downloadConfirmationTitle,
-            isPresented: Binding(
-                get: { prompt != nil },
-                set: {
-                    if !$0 {
-                        prompt = nil
-                    }
-                }
-            ),
-            titleVisibility: .visible
-        ) {
+        .background {
             if let prompt {
-                Button("Original • Episodes: \(prompt.count.formatted())") {
-                    self.prompt = nil
-                    performDownload(prompt, quality: .original)
+                PlozziOSDownloadSelectionSheet(
+                    title: prompt.title, items: prompt.batches.flatMap(\.episodes),
+                    resolvesSingleItem: !prompt.isBulk, isBulk: prompt.isBulk,
+                    onFinish: { self.prompt = nil }
+                ) { options, quality in
+                    try await performDownload(prompt, options: options, quality: quality)
                 }
-                if appModel.downloads.supportsReducedQuality(for: series) {
-                    Button("1080p • 20 Mbps") {
-                        self.prompt = nil
-                        performDownload(prompt, quality: .hd1080)
-                    }
-                    Button("720p • 4 Mbps") {
-                        self.prompt = nil
-                        performDownload(prompt, quality: .hd720)
-                    }
-                    Button("480p • 1.5 Mbps") {
-                        self.prompt = nil
-                        performDownload(prompt, quality: .sd480)
-                    }
-                    if let custom = appModel.downloads.customDownloadQuality,
-                       let title = appModel.downloads.customDownloadQualityTitle {
-                        Button(title) {
-                            self.prompt = nil
-                            performDownload(prompt, quality: custom)
-                        }
-                    }
-                }
-                Button("Cancel", role: .cancel) {
-                    self.prompt = nil
-                }
-            }
-        } message: {
-            if let prompt {
-                Text(prompt.message)
-                    + Text(" Reduced qualities are transcoded by your media server.")
+                .id(prompt.id)
             }
         }
         .alert(
@@ -2145,13 +2120,6 @@ private struct PlozziOSSeriesDownloadPicker: View {
         } message: {
             Text(verbatim: errorMessage ?? "")
         }
-    }
-
-    private var downloadConfirmationTitle: Text {
-        if let prompt {
-            return prompt.title
-        }
-        return Text("Download?")
     }
 
     @ViewBuilder
@@ -2214,6 +2182,8 @@ private struct PlozziOSSeriesDownloadPicker: View {
             selection: selection,
             viewModel: viewModel,
             isBusy: isBusy,
+            isPreparingBulkDownload: isPreparingBulkDownload,
+            preparingEpisodeIDs: preparingEpisodeIDs,
             canRequestSeasons: presentation.canRequestSeasons,
             requestState: seasonList.rows.first { $0.id == row.id }?.requestState,
             isRequestingSeasons: isRequestingSeasons,
@@ -2227,11 +2197,12 @@ private struct PlozziOSSeriesDownloadPicker: View {
             onDownloadSeason: {
                 beginSeasonDownload(container, title: row.title, episodes: $0)
             },
-            onDownloadEpisode: startEpisodeDownload
+            onDownloadEpisode: beginEpisodeDownload
         )
     }
 
     private func beginShowDownload() {
+        guard prompt == nil, !isBusy else { return }
         if let batchID = activeShowBatchID {
             Task { await appModel.downloads.pauseBatch(batchID) }
             return
@@ -2242,15 +2213,18 @@ private struct PlozziOSSeriesDownloadPicker: View {
         }
         isBusy = true
         Task {
+            let profileID = appModel.profiles.activeProfileID
+            defer { isBusy = false }
             var batches: [PlozziOSSeasonDownloadPrompt.Batch] = []
             var seen = Set<String>()
             for season in seasons where season.locallyValidatedPlayableSource {
                 await viewModel.loadEpisodes(for: season.id)
+                guard appModel.profiles.activeProfileID == profileID,
+                      appModel.isActiveProfileAuthorized, !Task.isCancelled else { return }
                 guard let episodes = viewModel.seasonLoadState(for: season.id)
                     .authoritativeEpisodes else {
                     errorMessage =
                         "Couldn’t load \(season.title). Check the server and try again."
-                    isBusy = false
                     return
                 }
                 let available = SeasonEpisodeList.downloadableEpisodes(from: episodes, for: series)
@@ -2265,17 +2239,11 @@ private struct PlozziOSSeriesDownloadPicker: View {
                 batches.append(.init(season: series, episodes: availableLoose))
             }
 
-            isBusy = false
+            guard appModel.profiles.activeProfileID == profileID,
+                  appModel.isActiveProfileAuthorized, !Task.isCancelled else { return }
             guard !batches.isEmpty else {
                 errorMessage = "This show has no episodes available to download."
                 return
-            }
-            if let episode = batches.first?.episodes.first,
-               let provider = appModel.provider(for: episode) {
-                await appModel.downloads.refreshReducedQualitySupport(
-                    for: episode,
-                    provider: provider
-                )
             }
             prompt = PlozziOSSeasonDownloadPrompt(
                 scope: .show(series.title),
@@ -2289,81 +2257,76 @@ private struct PlozziOSSeriesDownloadPicker: View {
         title: SeriesDownloadSeasonTitle,
         episodes: [MediaItem]
     ) {
-        guard !episodes.isEmpty else { return }
-        if episodes.count == 1, let episode = episodes.first {
-            startEpisodeDownload(
-                episode,
-                quality: appModel.downloads.downloadQuality
-            )
-        } else {
-            Task {
-                if let episode = episodes.first,
-                   let provider = appModel.provider(for: episode) {
-                    await appModel.downloads.refreshReducedQualitySupport(
-                        for: episode,
-                        provider: provider
-                    )
-                }
-                prompt = PlozziOSSeasonDownloadPrompt(
-                    scope: .season(title),
-                    batches: [.init(season: season, episodes: episodes)]
-                )
-            }
-        }
+        guard !episodes.isEmpty, prompt == nil else { return }
+        prompt = PlozziOSSeasonDownloadPrompt(
+            scope: .season(title), batches: [.init(season: season, episodes: episodes)]
+        )
     }
 
-    private func startEpisodeDownload(
-        _ episode: MediaItem,
-        quality: DownloadQuality
-    ) {
-        isBusy = true
-        Task {
-            do {
-                try await onDownloadEpisode(episode, quality)
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-            isBusy = false
-        }
+    private func beginEpisodeDownload(_ episodes: [MediaItem]) {
+        guard let episode = episodes.first, prompt == nil else { return }
+        let spoilers = appModel.settings.spoilers.settings
+        let title = spoilers.shouldHideText(for: episode)
+            ? String(localized: spoilers.maskedTitle(for: episode)) // l10n:content - stored prompt title
+            : episode.title
+        prompt = PlozziOSSeasonDownloadPrompt(
+            scope: .episode(title),
+            batches: [.init(season: series, episodes: episodes)]
+        )
     }
 
     private func performDownload(
         _ prompt: PlozziOSSeasonDownloadPrompt,
+        options: [EpisodeDownloadSelection.Option],
         quality: DownloadQuality
-    ) {
-        isBusy = true
-        Task {
-            let batchID = UUID().uuidString
-            let batchKind: DownloadBatchKind
-            let batchTitle: String
-            switch prompt.scope {
-            case .season(let title):
-                batchKind = .season
-                switch title {
-                case .content(let value):
-                    batchTitle = value
-                case .localized(var resource):
-                    resource.locale = locale
-                    batchTitle = String(localized: resource) // l10n:content - persisted batch label, resolved only on confirmation
-                }
-            case .show(let title):
-                batchKind = .show
-                batchTitle = title
-            }
-            do {
-                _ = try await onDownloadBatch(
-                    prompt.batches,
-                    batchID,
-                    batchKind,
-                    batchTitle,
-                    prompt.count,
-                    quality
-                )
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-            isBusy = false
+    ) async throws {
+        guard !options.isEmpty else {
+            throw PlozziOSDownloadError.unavailable("Select at least one version.")
         }
+        isBusy = true
+        defer { isBusy = false }
+        if case .episode = prompt.scope, options.count == 1, let option = options.first {
+            try await onDownloadEpisode(option.item, quality)
+            return
+        }
+        let batchKind: DownloadBatchKind
+        let batchTitle: String
+        switch prompt.scope {
+        case .season(let title):
+            batchKind = .season
+            switch title {
+            case .content(let value):
+                batchTitle = value
+            case .localized(var resource):
+                resource.locale = locale
+                batchTitle = String(localized: resource) // l10n:content - persisted batch label
+            }
+        case .episode(let title):
+            batchKind = .season
+            batchTitle = title
+        case .show(let title):
+            batchKind = .show
+            batchTitle = title
+        }
+        var seen = Set<String>()
+        let batches: [PlozziOSSeasonDownloadPrompt.Batch]
+        if case .episode = prompt.scope, let batch = prompt.batches.first {
+            batches = [.init(season: batch.season, episodes: options.map(\.item))]
+        } else {
+            batches = prompt.batches.compactMap { batch -> PlozziOSSeasonDownloadPrompt.Batch? in
+                let origins = Set(batch.episodes.map(\.stablePresentationID))
+                let episodes = options.filter {
+                    origins.contains($0.originID) && seen.insert($0.id).inserted
+                }.map(\.item)
+                return episodes.isEmpty ? nil : .init(season: batch.season, episodes: episodes)
+            }
+        }
+        guard batches.reduce(0, { $0 + $1.episodes.count }) == options.count else {
+            throw PlozziOSDownloadError.unavailable("The episode selection changed. Open Downloads and try again.")
+        }
+        _ = try await onDownloadBatch(
+            batches, UUID().uuidString, batchKind, batchTitle, options.count, quality
+        )
     }
 
     private var showBatchRecords: [DownloadedMediaRecord] {
@@ -2418,7 +2381,8 @@ private struct PlozziOSShowDownloadAction: View {
         let state = downloadCollectionBadgeState(
             records: records,
             expectedCount: episodes?.count,
-            scopeKind: .show
+            scopeKind: .show,
+            allEpisodesDownloaded: episodes.map { allDownloadEpisodesCompleted($0, downloads: appModel.downloads) }
         )
         let allRecords = matchingDownloadRecords(
             downloads: appModel.downloads, episodes: nil, seriesID: series.id,
@@ -2512,7 +2476,8 @@ private struct PlozziOSSeasonDownloadRow: View {
         downloadCollectionBadgeState(
             records: downloadRecords,
             expectedCount: episodes?.count,
-            scopeKind: .season
+            scopeKind: .season,
+            allEpisodesDownloaded: episodes.map { allDownloadEpisodesCompleted($0, downloads: appModel.downloads) }
         )
     }
 
@@ -2529,11 +2494,13 @@ private enum PlozziOSSeasonDownloadSelection: Equatable {
 
 private enum PlozziOSSeasonEpisodeEntry: Identifiable {
     case roster(SeasonEpisodeRow)
+    case library([MediaItem])
     case unavailable(MediaItem)
 
     var id: String {
         switch self {
         case .roster(let row): "roster:\(row.id)"
+        case .library(let items): "library:\(items.first?.stablePresentationID ?? "")"
         case .unavailable(let episode): "unavailable:\(episode.stablePresentationID)"
         }
     }
@@ -2541,6 +2508,7 @@ private enum PlozziOSSeasonEpisodeEntry: Identifiable {
     var episodeNumber: Int? {
         switch self {
         case .roster(let row): row.episodeNumber
+        case .library(let items): items.first?.episodeNumber
         case .unavailable(let episode): episode.episodeNumber
         }
     }
@@ -2557,6 +2525,8 @@ private struct PlozziOSSeasonDownloadPicker: View {
     let selection: PlozziOSSeasonDownloadSelection
     let viewModel: ItemDetailViewModel
     let isBusy: Bool
+    let isPreparingBulkDownload: Bool
+    let preparingEpisodeIDs: Set<String>
     let canRequestSeasons: Bool
     let requestState: MediaSeasonRequestState?
     let isRequestingSeasons: Bool
@@ -2566,7 +2536,7 @@ private struct PlozziOSSeasonDownloadPicker: View {
     let onRefreshSeasonRequests: () -> Void
     let onRequestSeason: () -> Void
     let onDownloadSeason: ([MediaItem]) -> Void
-    let onDownloadEpisode: (MediaItem, DownloadQuality) -> Void
+    let onDownloadEpisode: ([MediaItem]) -> Void
 
     private var selectedLibrarySeasons: [MediaItem] {
         switch selection {
@@ -2694,7 +2664,7 @@ private struct PlozziOSSeasonDownloadPicker: View {
                                 seasonNumber: season.number,
                                 title: Text(season.title),
                                 episodeCount: episodes.coverage?.total ?? entries.count,
-                                isBusy: isBusy,
+                                isBusy: isPreparingBulkDownload,
                                 isRefreshing: isRefreshingEpisodes,
                                 onDownload: onDownloadSeason
                             )
@@ -2738,9 +2708,19 @@ private struct PlozziOSSeasonDownloadPicker: View {
                                 PlozziOSSeasonEpisodeRow(
                                     row: row,
                                     selectedEpisodeIDs: selectedEpisodeIDs,
+                                    preparingEpisodeIDs: preparingEpisodeIDs,
                                     isBusy: isBusy || isRefreshingEpisodes,
                                     onDownload: onDownloadEpisode
                                 )
+                            case .library(let items):
+                                if let episode = items.first {
+                                    PlozziOSEpisodeDownloadRow(
+                                        episode: episode, alternatives: items,
+                                        preparingEpisodeIDs: preparingEpisodeIDs,
+                                        isBusy: isBusy || isRefreshingEpisodes,
+                                        onDownload: onDownloadEpisode
+                                    )
+                                }
                             case .unavailable(let episode):
                                 PlozziOSUnavailableEpisodeRow(episode: episode)
                             }
@@ -2789,7 +2769,15 @@ private struct PlozziOSSeasonDownloadPicker: View {
     }
 
     private func episodeEntries(in list: SeasonEpisodeList) -> [PlozziOSSeasonEpisodeEntry] {
-        let entries = list.rows.map(PlozziOSSeasonEpisodeEntry.roster)
+        let libraryRows: [PlozziOSSeasonEpisodeEntry]
+        if list.coverage == nil {
+            libraryRows = EpisodeDownloadSelection.groupedItems(
+                downloadableEpisodes(in: list)
+            ).map(PlozziOSSeasonEpisodeEntry.library)
+        } else {
+            libraryRows = list.rows.map(PlozziOSSeasonEpisodeEntry.roster)
+        }
+        let entries = libraryRows
             + upcomingPlaceholders(in: list).map(PlozziOSSeasonEpisodeEntry.unavailable)
         return entries.sorted {
             let lhs = $0.episodeNumber ?? Int.max
@@ -2870,7 +2858,8 @@ private struct PlozziOSSeasonDownloadAction: View {
             : activeBatchID != nil ? .pause
             : pausedBatchID != nil ? .resume : .download
         let state = downloadCollectionBadgeState(
-            records: records, expectedCount: episodes.count, scopeKind: .season
+            records: records, expectedCount: episodes.count, scopeKind: .season,
+            allEpisodesDownloaded: allDownloadEpisodesCompleted(episodes, downloads: appModel.downloads)
         )
         PlozziOSSeasonDownloadActionLabel(title: title, episodeCount: episodeCount) {
             PlozziOSDownloadThumbnail(item: artworkItem, style: .season)
@@ -2990,7 +2979,10 @@ struct PlozziOSBulkDownloadActionControl: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            PlozziOSDownloadControl(state: state, isPreparing: action == .preparing)
+            PlozziOSDownloadControl(
+                state: state, isPreparing: action == .preparing,
+                showsPauseIcon: action == .pause, showsResumeIcon: action == .resume
+            )
             Group {
                 if state == .completed, action != .preparing {
                     Text("Downloaded")
@@ -3019,8 +3011,9 @@ private struct PlozziOSSeasonEpisodeRow: View {
     @Environment(PlozziOSAppModel.self) private var appModel
     let row: SeasonEpisodeRow
     let selectedEpisodeIDs: Set<String>
+    let preparingEpisodeIDs: Set<String>
     let isBusy: Bool
-    let onDownload: (MediaItem, DownloadQuality) -> Void
+    let onDownload: ([MediaItem]) -> Void
 
     var body: some View {
         let selected = row.libraryEpisodes.filter { selectedEpisodeIDs.contains($0.stablePresentationID) }
@@ -3046,11 +3039,16 @@ private struct PlozziOSSeasonEpisodeRow: View {
             } accessory: {}
         } else {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(selected, id: \.stablePresentationID) { episode in
-                    PlozziOSEpisodeDownloadRow(
-                        episode: episode, displayedEpisodeNumber: row.episodeNumber,
-                        isBusy: isBusy, onDownload: onDownload
-                    )
+                let groups = EpisodeDownloadSelection.groupedItems(selected)
+                ForEach(groups.indices, id: \.self) { index in
+                    if let episode = groups[index].first {
+                        PlozziOSEpisodeDownloadRow(
+                            episode: episode, alternatives: groups[index],
+                            displayedEpisodeNumber: row.episodeNumber,
+                            preparingEpisodeIDs: preparingEpisodeIDs,
+                            isBusy: isBusy, onDownload: onDownload
+                        )
+                    }
                 }
             }
         }
@@ -3085,38 +3083,45 @@ private struct PlozziOSUnavailableEpisodeRow: View {
 
 private struct PlozziOSEpisodeDownloadRow: View {
     @Environment(PlozziOSAppModel.self) private var appModel
-    @State private var showsDownloadConfirmation = false
-
     let episode: MediaItem
+    var alternatives: [MediaItem] = []
     var displayedEpisodeNumber: Int? = nil
+    var preparingEpisodeIDs: Set<String> = []
     let isBusy: Bool
-    let onDownload: (MediaItem, DownloadQuality) -> Void
+    let onDownload: ([MediaItem]) -> Void
 
     var body: some View {
         let record = currentDownloadRecord
+        let isPreparing = downloadItems.contains { preparingEpisodeIDs.contains($0.stablePresentationID) }
         SeasonEpisodeRowContent(
             number: displayedEpisodeNumber ?? episode.episodeNumber,
-            title: appModel.settings.spoilers.settings.shouldHideText(for: episode) ? nil : episode.title
+            title: appModel.settings.spoilers.settings.shouldHideText(for: episode) ? nil : episode.title,
+            reservesStatusSpace: true,
+            showsStatus: isPreparing || record != nil
         ) {
             PlozziOSDownloadThumbnail(
                 item: episode,
                 style: .episode
             )
         } status: {
-            if let record {
+            if isPreparing {
+                Text("Preparing Download")
+            } else if let record {
                 downloadStatusText(for: record)
             } else {
                 SeasonEpisodeAvailabilityLabel(availability: .inLibrary)
             }
         } accessory: {
-            if let record {
+            if isPreparing {
+                PlozziOSDownloadControl(isPreparing: true)
+            } else if let record {
                 if record.status == .queued
                     || record.status == .preparing
                     || record.status == .downloading {
                     Button {
                         Task { await appModel.downloads.pause(record) }
                     } label: {
-                        PlozziOSDownloadControl(state: record.badgeState)
+                        PlozziOSDownloadControl(state: record.badgeState, showsPauseIcon: true)
                     }
                     .buttonStyle(.plain)
                     .disabled(isBusy)
@@ -3127,6 +3132,7 @@ private struct PlozziOSEpisodeDownloadRow: View {
                     } label: {
                         PlozziOSDownloadControl(
                             state: record.badgeState,
+                            showsResumeIcon: true,
                             fallbackSystemImage: "arrow.clockwise"
                         )
                     }
@@ -3134,53 +3140,30 @@ private struct PlozziOSEpisodeDownloadRow: View {
                     .disabled(isBusy)
                     .accessibilityLabel("Resume Download")
                 } else if let state = record.badgeState {
-                    PlozziOSDownloadControl(state: state)
+                    let profileID = appModel.profiles.activeProfileID
+                    PlozziOSRemoveDownloadButton {
+                        Task { await appModel.removeConfirmedDownload(record, profileID: profileID) }
+                    } label: {
+                        PlozziOSDownloadControl(state: state)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isBusy)
+                    .id("\(profileID):\(record.identityKey)")
+                    .contextMenu {
+                        if alternatives.count > 1 || episode.hasMultipleVersions {
+                            Button("Choose Versions") { onDownload(downloadItems) }
+                        }
+                    }
                 }
             } else {
                 Button {
-                    if appModel.downloads.asksBeforeDownloading {
-                        showsDownloadConfirmation = true
-                    } else {
-                        onDownload(
-                            episode,
-                            appModel.downloads.downloadQuality
-                        )
-                    }
+                    onDownload(downloadItems)
                 } label: {
                     PlozziOSDownloadControl()
                 }
                 .buttonStyle(.plain)
                 .disabled(isBusy)
                 .accessibilityLabel(Text("Download \(displayTitle)"))
-                .confirmationDialog(
-                    Text("Download \(displayTitle)?"),
-                    isPresented: $showsDownloadConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button("Original") {
-                        onDownload(episode, .original)
-                    }
-                    if appModel.downloads.supportsReducedQuality(for: episode) {
-                        Button("1080p • 20 Mbps") {
-                            onDownload(episode, .hd1080)
-                        }
-                        Button("720p • 4 Mbps") {
-                            onDownload(episode, .hd720)
-                        }
-                        Button("480p • 1.5 Mbps") {
-                            onDownload(episode, .sd480)
-                        }
-                        if let custom = appModel.downloads.customDownloadQuality,
-                           let title = appModel.downloads.customDownloadQualityTitle {
-                            Button(title) {
-                                onDownload(episode, custom)
-                            }
-                        }
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("Reduced qualities are transcoded by your media server.")
-                }
             }
         }
         .task(id: "\(episode.sourceAccountID ?? "")|\(episode.id)") {
@@ -3206,8 +3189,12 @@ private struct PlozziOSEpisodeDownloadRow: View {
     }
 
     private var currentDownloadRecord: DownloadedMediaRecord? {
-        appModel.downloads.cachedRecord(forSelectedVersionOf: episode)
+        downloadItems.lazy.compactMap {
+            appModel.downloads.cachedRecord(forSelectedVersionOf: $0)
+        }.first
     }
+
+    private var downloadItems: [MediaItem] { alternatives.isEmpty ? [episode] : alternatives }
 
     @ViewBuilder
     private func downloadStatusText(
@@ -3242,21 +3229,20 @@ private struct PlozziOSEpisodeDownloadRow: View {
     ) -> some View {
         // Metrics are formatted data, not another translatable status template.
         if let fraction = record.fractionCompleted {
-            Text(MediaDownloadDestination.current.downloadingTitle)
-                + Text(verbatim: " ")
-                + Text(fraction, format: .percent.precision(.fractionLength(0)))
-                + transferMetricsText(for: record)
+            Text(fraction, format: .percent.precision(.fractionLength(0)))
+                + (transferMetricsText(for: record, includesSeparator: true) ?? Text(verbatim: ""))
         } else {
-            Text(MediaDownloadDestination.current.downloadingTitle) + transferMetricsText(for: record)
+            transferMetricsText(for: record, includesSeparator: false) ?? Text("Downloading")
         }
     }
 
     private func transferMetricsText(
-        for record: DownloadedMediaRecord
-    ) -> Text {
+        for record: DownloadedMediaRecord,
+        includesSeparator: Bool
+    ) -> Text? {
         guard let metrics = appModel.downloads.transferMetrics(for: record),
               metrics.bytesPerSecond > 0 else {
-            return Text(verbatim: "")
+            return nil
         }
         var detail = metrics.bytesPerSecond.formatted(
             .byteCount(style: .file)
@@ -3270,7 +3256,7 @@ private struct PlozziOSEpisodeDownloadRow: View {
                 )
             ) + " remaining"
         }
-        return Text(verbatim: " • \(detail)")
+        return Text(verbatim: (includesSeparator ? " • " : "") + detail)
     }
 }
 
@@ -3330,6 +3316,8 @@ struct PlozziOSDownloadThumbnail: View {
 struct PlozziOSDownloadControl: View {
     var state: MediaDownloadBadgeState?
     var isPreparing = false
+    var showsPauseIcon = false
+    var showsResumeIcon = false
     var fallbackSystemImage = "arrow.down"
 
     var body: some View {
@@ -3341,6 +3329,19 @@ struct PlozziOSDownloadControl: View {
                     .accessibilityLabel("Preparing Download")
             } else if let state {
                 statusIcon(state)
+                    .overlay {
+                        if showsPauseIcon, case .inProgress = state {
+                            Image(systemName: "pause.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .accessibilityHidden(true)
+                        } else if showsResumeIcon, case .paused = state {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .accessibilityHidden(true)
+                        }
+                    }
             } else {
                 Image(systemName: "\(fallbackSystemImage).circle")
                     .font(.system(size: 25, weight: .regular))
@@ -3370,6 +3371,11 @@ struct PlozziOSDownloadControl: View {
                             format: .percent.precision(.fractionLength(0))
                         )
                     )
+            } else if showsPauseIcon {
+                Circle()
+                    .stroke(Color.primary.opacity(0.25), lineWidth: 3)
+                    .frame(width: 25, height: 25)
+                    .accessibilityLabel(Text(MediaDownloadDestination.current.downloadingTitle))
             } else {
                 ProgressView()
                     .controlSize(.small)
@@ -3378,7 +3384,7 @@ struct PlozziOSDownloadControl: View {
             }
         case .paused(let fraction):
             if let fraction {
-                progressRing(fraction: fraction, color: .orange)
+                progressRing(fraction: fraction, color: .primary)
                     .accessibilityLabel("Download Paused")
                     .accessibilityValue(
                         Text(
@@ -3387,10 +3393,17 @@ struct PlozziOSDownloadControl: View {
                         )
                     )
             } else {
-                Image(systemName: "pause.circle.fill")
-                    .font(.system(size: 25, weight: .regular))
-                    .foregroundStyle(.orange)
-                    .accessibilityLabel("Download Paused")
+                if showsResumeIcon {
+                    Circle()
+                        .stroke(Color.primary.opacity(0.25), lineWidth: 3)
+                        .frame(width: 25, height: 25)
+                        .accessibilityLabel("Download Paused")
+                } else {
+                    Image(systemName: "pause.circle.fill")
+                        .font(.system(size: 25, weight: .regular))
+                        .foregroundStyle(.primary)
+                        .accessibilityLabel("Download Paused")
+                }
             }
         case .failed:
             Image(systemName: "exclamationmark.circle")
@@ -3429,9 +3442,15 @@ private func matchingDownloadRecords(
     seasonNumber: Int?
 ) -> [DownloadedMediaRecord] {
     if let episodes {
-        return episodes.compactMap {
-            downloads.cachedRecord(forSelectedVersionOf: $0)
+        let candidates = episodes.flatMap { episode in
+            [episode] + PlayerVersionSelection.versions(for: episode).compactMap {
+                PlayerVersionSelection.selecting($0.id, in: episode)
+            }
         }
+        var seen = Set<String>()
+        return candidates.compactMap {
+            downloads.cachedRecord(forSelectedVersionOf: $0)
+        }.filter { seen.insert($0.identityKey).inserted }
     }
     guard let seriesID else { return [] }
     return downloads.records.filter { record in
@@ -3443,10 +3462,24 @@ private func matchingDownloadRecords(
     }
 }
 
+@MainActor
+private func allDownloadEpisodesCompleted(
+    _ episodes: [MediaItem], downloads: PlozziOSDownloadsModel
+) -> Bool {
+    let groups = EpisodeDownloadSelection.groupedItems(episodes)
+    return !groups.isEmpty && groups.allSatisfy {
+        matchingDownloadRecords(
+            downloads: downloads, episodes: $0, seriesID: nil,
+            sourceAccountID: nil, seasonNumber: nil
+        ).contains { $0.status == .completed }
+    }
+}
+
 private func downloadCollectionBadgeState(
     records: [DownloadedMediaRecord],
     expectedCount: Int?,
-    scopeKind: DownloadBatchKind
+    scopeKind: DownloadBatchKind,
+    allEpisodesDownloaded: Bool? = nil
 ) -> MediaDownloadBadgeState? {
     guard !records.isEmpty else { return nil }
     let explicitBatch = records.filter {
@@ -3494,7 +3527,10 @@ private func downloadCollectionBadgeState(
     if progressRecords.contains(where: { $0.status == .paused }) {
         return .paused(fraction: fraction)
     }
-    if let expectedCount,
+    if allEpisodesDownloaded == true, records.allSatisfy({ $0.status == .completed }) {
+        return .completed
+    }
+    if allEpisodesDownloaded == nil, let expectedCount,
        expectedCount > 0,
        records.count == expectedCount,
        records.allSatisfy({ $0.status == .completed }) {
@@ -3504,7 +3540,17 @@ private func downloadCollectionBadgeState(
 }
 
 /// Backing data for a bulk season/show download confirmation.
-private struct PlozziOSSeasonDownloadPrompt: Identifiable {
+struct PlozziOSSeasonDownloadPrompt: Identifiable {
+    var isBulk: Bool {
+        if case .episode = scope { return false }
+        return true
+    }
+
+    var preparingEpisodeIDs: Set<String> {
+        guard !isBulk else { return [] }
+        return Set(batches.flatMap(\.episodes).map(\.stablePresentationID))
+    }
+
     struct Batch {
         let season: MediaItem
         let episodes: [MediaItem]
@@ -3513,48 +3559,23 @@ private struct PlozziOSSeasonDownloadPrompt: Identifiable {
     enum Scope {
         case season(SeriesDownloadSeasonTitle)
         case show(String)
+        case episode(String)
     }
 
     let scope: Scope
     let batches: [Batch]
 
     var id: String { batches.map(\.season.id).joined(separator: "|") }
-    var count: Int { batches.reduce(0) { $0 + $1.episodes.count } }
 
     var title: Text {
         switch scope {
         case .season(let title):
-            Text("Download \(Text(title))?")
-        case .show(let title):
-            Text("Download all of \(title)?")
+            Text(title)
+        case .show(let title), .episode(let title):
+            Text(verbatim: title)
         }
     }
 
-    var message: LocalizedStringResource {
-        guard let free = Self.freeSpaceText() else {
-            return """
-                This downloads all \(count) episodes at original quality and can use \
-                significant storage and data. You can remove them anytime from Downloads.
-                """
-        }
-        return """
-            This downloads all \(count) episodes at original quality and can use \
-            significant storage and data. You can remove them anytime from Downloads.
-
-            \(free) free on this device.
-            """
-    }
-
-    /// Best-effort human-readable free space so a bulk grab shows headroom
-    /// awareness. Returns `nil` when the capacity can't be read.
-    private static func freeSpaceText() -> String? {
-        let url = URL.documentsDirectory
-        guard let capacity = try? DownloadStorageCapacity.device.availableBytes(at: url)
-        else {
-            return nil
-        }
-        return capacity.formatted(.byteCount(style: .file))
-    }
 }
 
 struct PlozziOSInlineEpisodeRail: View {

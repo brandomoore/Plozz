@@ -30,8 +30,10 @@ public extension DownloadStorageLocating {
     }
 
     func replacementBackupFolderURL(forKey identityKey: String) throws -> URL {
-        try pinnedFolderURL(forKey: identityKey)
-            .appendingPathExtension("replacement-backup")
+        let suffix = ".replacement-backup"
+        let name = MediaIdentityKey.folderName(forKey: identityKey, maximumLength: 255 - suffix.utf8.count)
+        return try pinnedMediaDirectory()
+            .appendingPathComponent(name + suffix, isDirectory: true)
     }
 
     func replacementBackupRecordURL(forKey identityKey: String) throws -> URL {

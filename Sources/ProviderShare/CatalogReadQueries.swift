@@ -604,7 +604,8 @@ struct CatalogReadQueries {
               bind: { self.bindText($0, 1, library.rawValue) }) { total = Int(sqlite3_column_int64($0, 0)) }
         var items: [MediaItem] = []
         query("""
-        SELECT rel_path, title, kind, library, year, series_title, series_key, season, episode
+        SELECT rel_path, title, kind, library, year, series_title, series_key, season, episode,
+               basename, size
         FROM assets WHERE library=? AND kind='episode'
         ORDER BY series_key, season, episode, rel_path LIMIT ? OFFSET ?;
         """, bind: {
@@ -809,7 +810,8 @@ struct CatalogReadQueries {
         guard db != nil else { return [] }
         var out: [MediaItem] = []
         query("""
-        SELECT rel_path, title, series_title, season, episode, library, year FROM assets
+        SELECT rel_path, title, kind, library, year, series_title, series_key, season, episode,
+               basename, size FROM assets
         WHERE series_key=? AND kind='episode' AND COALESCE(season,1)=?
         ORDER BY COALESCE(episode, 999999), sort_title, rel_path;
         """, bind: { self.bindText($0, 1, seriesKey); sqlite3_bind_int64($0, 2, Int64(season)) }) { stmt in

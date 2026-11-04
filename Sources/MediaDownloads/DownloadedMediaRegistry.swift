@@ -92,6 +92,11 @@ public actor DownloadedMediaRegistry {
     /// A `nil` `versionID` means "the caller has no particular version in mind",
     /// which falls back to the any-version lookup.
     public func record(for item: MediaItem, versionID: String?) -> DownloadedMediaRecord? {
+        if item.kind == .episode, item.explicitSourceSelection {
+            return DownloadMediaIdentity.selectedRecord(
+                for: item.selectingVersion(versionID), in: Array(state.records.values)
+            )
+        }
         guard let versionID, !versionID.isEmpty else { return record(for: item) }
         for identity in MediaItemIdentity.identities(for: item) {
             if let record = state.records[
@@ -153,7 +158,8 @@ public actor DownloadedMediaRegistry {
             }
             return source.hasPrefix(DownloadMediaIdentity.accountSourcePrefix)
         }
-        return sourceScopedMatches.count == 1 ? sourceScopedMatches[0] : nil
+        guard expectedAccountSource != nil || sourceScopedMatches.count == 1 else { return nil }
+        return sourceScopedMatches.sorted { $0.identityKey < $1.identityKey }.first
     }
 
     /// All matching copies in this profile, with the requested version first.

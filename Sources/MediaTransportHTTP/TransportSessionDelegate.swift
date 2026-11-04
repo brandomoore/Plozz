@@ -11,6 +11,82 @@ struct TransportDataResponse {
     let response: HTTPURLResponse
 }
 
+/// One bounded, backpressured response. The consumer must finish before the
+/// request can succeed; cancellation drains pending writes before returning.
+final class TransportResponseStream: @unchecked Sendable {
+    private let lock = NSLock()
+    private let consume: @Sendable (Data) async throws -> Void
+    private var tail: Task<Void, Never>?
+    private var pending: [UUID: Task<Void, Never>] = [:]
+    private var pendingBytes = 0
+    private var consumedBytes: Int64 = 0
+    private var failure: (any Error)?
+    private var cancelled = false
+    private static let maximumBufferedBytes = 4 * 1024 * 1024
+
+    init(consume: @escaping @Sendable (Data) async throws -> Void) {
+        self.consume = consume
+    }
+
+    func append(_ data: Data, task: URLSessionDataTask) {
+        guard !data.isEmpty else { return }
+        let accepted = lock.withLock {
+            guard failure == nil, !cancelled else { return false }
+            guard data.count <= Self.maximumBufferedBytes - pendingBytes, pending.count < 64 else {
+                failure = TransportError.responseTooLarge(limitBytes: Self.maximumBufferedBytes)
+                return false
+            }
+            task.suspend()
+            pendingBytes += data.count
+            let predecessor = tail
+            let id = UUID()
+            let work = Task { [self] in
+                await predecessor?.value
+                do {
+                    try Task.checkCancellation()
+                    if lock.withLock({ failure == nil && !cancelled }) {
+                        try await consume(data)
+                        lock.withLock { consumedBytes += Int64(data.count) }
+                    }
+                } catch {
+                    lock.withLock { if failure == nil { failure = error } }
+                    task.cancel()
+                }
+                lock.withLock {
+                    pendingBytes -= data.count
+                    pending.removeValue(forKey: id)
+                    if pending.isEmpty { tail = nil }
+                }
+                task.resume()
+            }
+            tail = work
+            pending[id] = work
+            return true
+        }
+        if !accepted { task.cancel() }
+    }
+
+    func cancel() {
+        let work = lock.withLock {
+            cancelled = true
+            return Array(pending.values)
+        }
+        work.forEach { $0.cancel() }
+    }
+
+    func finish(expectedBytes: Int64? = nil) async throws {
+        let work = lock.withLock { tail }
+        await work?.value
+        try lock.withLock {
+            if let failure { throw failure }
+            if cancelled { throw CancellationError() }
+            if let expectedBytes, consumedBytes != expectedBytes {
+                throw TransportError.rangeValidationFailed(reason: "incomplete whole response")
+            }
+        }
+    }
+}
+
 enum PasswordChallengeDecision {
     case performDefaultHandling
     case useCredential(URLCredential)
@@ -25,17 +101,24 @@ final class TransportSessionDelegate: NSObject, URLSessionDataDelegate, @uncheck
         var policyError: TransportError?
         var redirectCount = 0
         var returnsErrorResponseOnCancellation = false
+        var receivedBytes = 0
         let maxResponseBytes: Int
         let followRedirects: Bool
+        let stream: TransportResponseStream?
+        let validateResponse: (@Sendable (HTTPURLResponse) throws -> Void)?
         let completion: @Sendable (Result<TransportDataResponse, TransportError>) -> Void
 
         init(
             maxResponseBytes: Int,
             followRedirects: Bool,
+            stream: TransportResponseStream?,
+            validateResponse: (@Sendable (HTTPURLResponse) throws -> Void)?,
             completion: @escaping @Sendable (Result<TransportDataResponse, TransportError>) -> Void
         ) {
             self.maxResponseBytes = maxResponseBytes
             self.followRedirects = followRedirects
+            self.stream = stream
+            self.validateResponse = validateResponse
             self.completion = completion
         }
     }
@@ -66,12 +149,16 @@ final class TransportSessionDelegate: NSObject, URLSessionDataDelegate, @uncheck
         task: URLSessionDataTask,
         maxResponseBytes: Int,
         followRedirects: Bool = true,
+        stream: TransportResponseStream? = nil,
+        validateResponse: (@Sendable (HTTPURLResponse) throws -> Void)? = nil,
         completion: @escaping @Sendable (Result<TransportDataResponse, TransportError>) -> Void
     ) {
         lock.lock()
         tasks[task.taskIdentifier] = TaskState(
             maxResponseBytes: max(0, maxResponseBytes),
             followRedirects: followRedirects,
+            stream: stream,
+            validateResponse: validateResponse,
             completion: completion
         )
         lock.unlock()
@@ -339,6 +426,7 @@ final class TransportSessionDelegate: NSObject, URLSessionDataDelegate, @uncheck
             }
         }
         let returnsHeadersOnly = tasks[dataTask.taskIdentifier]?.returnsErrorResponseOnCancellation == true
+        let validateResponse = tasks[dataTask.taskIdentifier]?.validateResponse
         lock.unlock()
 
         guard let maximum else {
@@ -346,6 +434,16 @@ final class TransportSessionDelegate: NSObject, URLSessionDataDelegate, @uncheck
             return
         }
         if returnsHeadersOnly {
+            completionHandler(.cancel)
+            return
+        }
+        do {
+            try validateResponse?(response)
+        } catch {
+            recordError(
+                (error as? TransportError) ?? .rangeValidationFailed(reason: "invalid streamed response"),
+                for: dataTask.taskIdentifier
+            )
             completionHandler(.cancel)
             return
         }
@@ -359,20 +457,27 @@ final class TransportSessionDelegate: NSObject, URLSessionDataDelegate, @uncheck
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         var shouldCancel = false
+        var stream: TransportResponseStream?
 
         lock.lock()
         if let state = tasks[dataTask.taskIdentifier],
            state.policyError == nil,
            !state.returnsErrorResponseOnCancellation {
-            if data.count > state.maxResponseBytes - state.data.count {
+            if data.count > state.maxResponseBytes - state.receivedBytes {
                 state.policyError = .responseTooLarge(limitBytes: state.maxResponseBytes)
                 shouldCancel = true
             } else {
-                state.data.append(data)
+                state.receivedBytes += data.count
+                if let sink = state.stream {
+                    stream = sink
+                } else {
+                    state.data.append(data)
+                }
             }
         }
         lock.unlock()
 
+        stream?.append(data, task: dataTask)
         if shouldCancel {
             dataTask.cancel()
         }

@@ -202,6 +202,28 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   a compact Download All, Pause All, or Resume All control. Show headers retain
   completed download counts without inventing an unknown total episode count.
   When space is tight, the action moves below the details before its label wraps.
+  With Ask Before Downloading enabled, every new download opens a confirmation.
+  With it disabled, a single movie or episode with one version starts immediately
+  using the saved quality, without opening a preparation sheet. Multiple versions and season/show downloads still
+  open the selection sheet before queueing.
+  Single-episode downloads show version choices directly. Season/show downloads
+  use season sections with one row per episode and nested version lists.
+  Version rows identify their server and, for network shares, their relative folder.
+  Tap a downloaded episode's button to confirm removing that offline copy;
+  other saved versions remain available.
+  Individual episode preparation appears on that episode's row; bulk preparation
+  stays with the season or show action.
+  Episode download rows reserve one caption line to keep ordinary progress
+  updates from shifting the list, while allowing larger text to expand.
+  Visible episode text stays vertically centered and gently repositions when
+  status appears or disappears, unless Reduce Motion is enabled.
+  Tappable download progress indicators include a pause symbol while downloading
+  and a resume triangle when paused, keeping the same neutral progress ring.
+  One version is preselected using the existing explicit,
+  remembered-series, and device-compatible version selection rules. You can
+  exclude episodes or deliberately select multiple versions, which keep separate
+  saved files and download controls. Equal filenames
+  or sizes do not prove files are identical, so alternatives remain available.
 - **Choose download quality separately** — streaming preferences don't change
   your saved download settings. Available renditions and background-transfer
   behavior depend on the provider. Apple TV does not offer offline downloads.

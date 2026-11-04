@@ -4,6 +4,165 @@ import XCTest
 @testable import TestSupportNetworking
 
 final class WebDAVMediaDeliveryTests: XCTestCase {
+    private actor StreamedBody {
+        var data = Data()
+        func append(_ chunk: Data) { data.append(chunk) }
+    }
+
+    func testWholeDeliveryUsesOneAnonymousUnconditionalResponse() async throws {
+        let body = StreamedBody()
+        let payload = Data(repeating: 7, count: 1000)
+        StubURLProtocol.queue(
+            StubResponse(statusCode: 200, headers: ["Content-Length": "1000"], body: payload, onRequest: {
+                XCTAssertEqual($0.httpMethod, "GET")
+                for header in ["Range", "If-Match", "If-Unmodified-Since", "Authorization", "Cookie", "Referer"] {
+                    XCTAssertNil($0.value(forHTTPHeaderField: header))
+                }
+
+                XCTAssertEqual($0.value(forHTTPHeaderField: "Accept-Encoding"), "identity")
+            }), for: delivery
+        )
+        try await client().streamWholeDelivery(
+            representation: .init(validator: .unvalidatedPlayback, totalLength: 1000,
+                                  resourceURL: delivery, usesAnonymousSession: true),
+            sessionKey: key()
+        ) { await body.append($0) }
+        let actual = await body.data
+        XCTAssertEqual(actual, payload)
+        XCTAssertEqual(StubURLProtocol.requests(for: delivery).count, 1)
+    }
+
+    func testWholeDeliveryCancellationDrainsConsumerBeforeReturning() async throws {
+        let started = expectation(description: "Consumer started")
+        let finished = expectation(description: "Consumer exited")
+        StubURLProtocol.queue(StubResponse(statusCode: 200, body: Data(repeating: 1, count: 1000)), for: delivery)
+        let client = client()
+        let representation = RangeProbeResult(
+            validator: .unvalidatedPlayback, totalLength: 1000,
+            resourceURL: delivery, usesAnonymousSession: true
+        )
+        let key = try key()
+        let task = Task {
+            try await client.streamWholeDelivery(representation: representation, sessionKey: key) { _ in
+                started.fulfill()
+                defer { finished.fulfill() }
+                try await Task.sleep(for: .seconds(30))
+                XCTFail("Cancelled consumer must not finish its write")
+            }
+        }
+        await fulfillment(of: [started], timeout: 3)
+        task.cancel()
+        do {
+            try await task.value
+            XCTFail("Cancelled transfer must not succeed")
+        } catch is CancellationError {
+        } catch let error as TransportError { XCTAssertEqual(error, .cancelled) }
+        await fulfillment(of: [finished], timeout: 1)
+    }
+
+    func testWholeDeliveryAccountRetirementCancelsItsNetworkRequest() async throws {
+        let started = expectation(description: "Request started")
+        let registry = TransportSessionRegistry(testProtocolClasses: [StubURLProtocol.self])
+        let client = WebDAVClient(registry: registry)
+        let key = try key()
+        let representation = RangeProbeResult(
+            validator: .unvalidatedPlayback, totalLength: 1000,
+            resourceURL: delivery, usesAnonymousSession: true
+        )
+        StubURLProtocol.queue(
+            StubResponse(statusCode: 200, body: Data(repeating: 1, count: 1000),
+                         delay: .seconds(30), onRequest: { _ in started.fulfill() }), for: delivery
+        )
+        let task = Task {
+            try await client.streamWholeDelivery(representation: representation, sessionKey: key) { _ in
+                XCTFail("Retired account must not deliver bytes")
+            }
+        }
+        await fulfillment(of: [started], timeout: 3)
+        await registry.invalidate(key)
+        do {
+            try await task.value
+            XCTFail("Retired request must fail")
+        } catch let error as TransportError { XCTAssertEqual(error, .cancelled) }
+    }
+
+    func testWholeDeliveryPreservesHTTPRefusalAndCooldown() async throws {
+        let client = client()
+        let key = try key()
+        StubURLProtocol.queue(
+            StubResponse(statusCode: 429, headers: ["Retry-After": "30"]), for: delivery
+        )
+        for _ in 0..<2 {
+            do {
+                try await client.streamWholeDelivery(
+                    representation: .init(validator: .unvalidatedPlayback, totalLength: 1000,
+                                          resourceURL: delivery, usesAnonymousSession: true),
+                    sessionKey: key
+                ) { _ in XCTFail("HTTP refusal cannot deliver media") }
+                XCTFail("Expected cooldown")
+            } catch let error as TransportError {
+                guard case .protocolError(status: 429, detail: _) = error else {
+                    return XCTFail("Lost HTTP refusal: \(error)")
+                }
+            }
+        }
+        XCTAssertEqual(StubURLProtocol.requests(for: delivery).count, 1)
+    }
+
+    func testWholeDeliveryRejectsInvalidOrIncompleteResponses() async throws {
+        for (status, headers, count) in [
+            (206, ["Content-Range": "bytes 0-999/1000"], 1000),
+            (200, ["Content-Encoding": "gzip"], 1000),
+            (200, ["Content-Length": "999"], 999),
+            (200, [:], 999),
+            (200, [:], 1001),
+            (403, [:], 0)
+        ] {
+            StubURLProtocol.queue(
+                StubResponse(statusCode: status, headers: headers, body: Data(repeating: 1, count: count)),
+                for: delivery
+            )
+            do {
+                try await client().streamWholeDelivery(
+                    representation: .init(validator: .unvalidatedPlayback, totalLength: 1000,
+                                          resourceURL: delivery, usesAnonymousSession: true),
+                    sessionKey: key()
+                ) { _ in }
+                XCTFail("Accepted invalid whole response: \(status), \(headers), \(count)")
+            } catch is TransportError {
+            }
+        }
+    }
+
+    func testWholeDeliveryDoesNotFollowRedirectOrUseOtherRoles() async throws {
+        let replacement = URL(string: "https://replacement.example.net/file")!
+        StubURLProtocol.queue(redirect: StubRedirect(location: replacement), for: delivery)
+        do {
+            try await client().streamWholeDelivery(
+                representation: .init(validator: .unvalidatedPlayback, totalLength: 1000,
+                                      resourceURL: delivery, usesAnonymousSession: true),
+                sessionKey: key()
+            ) { _ in XCTFail("Redirect body is not media") }
+            XCTFail("Active delivery URL must not change")
+        } catch is TransportError {}
+        XCTAssertTrue(StubURLProtocol.requests(for: replacement).isEmpty)
+        for role in TransportRole.allCases where role != .playback {
+            let other = try TransportSessionKey(
+                accountID: "account", credentialRevision: UUID(), origin: root.origin,
+                trustRevision: UUID(), role: role
+            )
+            do {
+                try await client().streamWholeDelivery(
+                    representation: .init(validator: .unvalidatedPlayback, totalLength: 1000,
+                                          resourceURL: delivery, usesAnonymousSession: true),
+                    sessionKey: other
+                ) { _ in XCTFail("Non-playback role must not receive media") }
+                XCTFail("Expected role rejection")
+            } catch let error as TransportError { XCTAssertEqual(error, .seekableRequiresValidator) }
+        }
+        XCTAssertEqual(StubURLProtocol.requests(for: delivery).count, 1)
+    }
+
     private let source = URL(string: "https://dav.example.com/files/movie.mkv")!
     private let delivery = URL(string: "https://cdn.example.net/video?signature=short-lived")!
 

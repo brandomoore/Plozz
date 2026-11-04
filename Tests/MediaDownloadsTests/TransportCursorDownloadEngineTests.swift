@@ -51,6 +51,54 @@ private struct CancellationInsensitiveOpener: DownloadByteSourceOpening {
 }
 
 final class TransportCursorDownloadEngineTests: XCTestCase {
+    private struct WholeReader: WholeFileDownloadByteReader {
+        let byteSize: Int64 = 100
+        let requiresWholeFileTransfer = true
+        var count = 100
+        var cancellation = false
+        func read(at offset: Int64, length: Int) async throws -> Data {
+            XCTFail("Unvalidated download must not use range reads")
+            throw MediaDownloadError.unsupportedSource
+        }
+        func readWholeFile(consume: @escaping @Sendable (Data) async throws -> Void) async throws {
+            try await consume(Data(repeating: 7, count: count))
+            if cancellation { throw CancellationError() }
+        }
+        func close() async {}
+    }
+
+    private struct WholeOpener: DownloadByteSourceOpening {
+        let reader: WholeReader
+        func open(_ source: DirectShareDownloadSource) async throws -> any DownloadByteReader { reader }
+    }
+
+    func testWholeResponseRestartsInsteadOfCombiningPersistedBytes() async throws {
+        let dir = DownloadTestFactory.tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let destination = dir.appendingPathComponent("media.mkv")
+        try Data(repeating: 9, count: 50).write(to: destination)
+        let engine = TransportCursorDownloadEngine(opener: WholeOpener(reader: WholeReader()))
+        let count = try await engine.download(record: DownloadTestFactory.record(), to: destination) { _, _ in }
+        XCTAssertEqual(count, 100)
+        XCTAssertEqual(try Data(contentsOf: destination), Data(repeating: 7, count: 100))
+    }
+
+    func testIncompleteCancelledAndOversizedWholeResponsesDiscardPartialBytes() async throws {
+        let dir = DownloadTestFactory.tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let destination = dir.appendingPathComponent("media.mkv")
+        for reader in [WholeReader(count: 50), WholeReader(count: 101), WholeReader(count: 50, cancellation: true)] {
+            try Data(repeating: 9, count: 50).write(to: destination)
+            let engine = TransportCursorDownloadEngine(opener: WholeOpener(reader: reader))
+            do {
+                _ = try await engine.download(record: DownloadTestFactory.record(), to: destination) { _, _ in }
+                XCTFail("Partial response cannot complete a download")
+            } catch is MediaDownloadError {
+            } catch is CancellationError {
+            }
+            XCTAssertEqual(try Data(contentsOf: destination).count, 0)
+        }
+    }
 
     func testProductionOpenerRejectsStreamingOnlyBytesBeforeWritingOrResuming() async throws {
         for persistentReuse in [false, true] {
@@ -91,7 +139,7 @@ final class TransportCursorDownloadEngineTests: XCTestCase {
         Data((0..<count).map { UInt8($0 % 251) })
     }
 
-    private final class PersistenceTestSession:
+    private class PersistenceTestSession:
         MediaTransportSession, MediaTransportFileSystem, MediaTransportByteSource, @unchecked Sendable
     {
         let key: MediaTransportSessionKey
@@ -131,6 +179,37 @@ final class TransportCursorDownloadEngineTests: XCTestCase {
         func readSmallFile(relativePath: String, maximumBytes: Int) async throws -> Data {
             throw MediaTransportError.unsupportedCapability("unused fixture operation")
         }
+    }
+
+    private final class WholeResponseSession: PersistenceTestSession, MediaTransportWholeFileByteSource, @unchecked Sendable {
+        func readWholeFile(consume: @escaping @Sendable (Data) async throws -> Void) async throws {
+            try await consume(Data(repeating: 7, count: 40))
+            try await consume(Data(repeating: 8, count: 60))
+        }
+    }
+
+    func testProductionOpenerUsesWholeResponseCapabilityWithoutEnablingRangeReuse() async throws {
+        let record = try DownloadTestFactory.record()
+        let source = try XCTUnwrap(record.directShareSource)
+        let key = MediaTransportSessionKey(
+            accountID: source.accountID, credentialRevision: source.credentialRevision,
+            endpoint: try MediaTransportEndpointIdentity(transportIdentifier: "https", host: "dav.example.com"),
+            trustRevision: UUID(), role: .playback
+        )
+        let session = WholeResponseSession(key: key, supportsPersistentByteReuse: false)
+        let registry = MediaTransportResolverRegistry()
+        try await registry.register(session: session)
+        let resolver = MediaTransportNetworkFileResolver(registry: registry) { _ in key }
+        let engine = TransportCursorDownloadEngine(resolver: resolver)
+        let dir = DownloadTestFactory.tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let destination = dir.appendingPathComponent("media.mkv")
+        try Data(repeating: 1, count: 80).write(to: destination)
+        let bytes = try await engine.download(record: record, to: destination) { _, _ in }
+        XCTAssertEqual(bytes, 100)
+        XCTAssertEqual(try Data(contentsOf: destination), Data(repeating: 7, count: 40) + Data(repeating: 8, count: 60))
+        XCTAssertEqual(session.readCount, 0)
+        XCTAssertTrue(session.didShutdown)
     }
 
     func testDownloadsWholeFile() async throws {

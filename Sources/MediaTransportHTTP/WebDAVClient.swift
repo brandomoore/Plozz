@@ -401,6 +401,70 @@ public struct WebDAVClient: Sendable {
 
     // MARK: - Shared execution path
 
+    /// Downloads a validator-free delivery grant as one response, never ranges.
+    /// The caller discards every incomplete attempt instead of reusing its bytes.
+    public func streamWholeDelivery(
+        representation: RangeProbeResult,
+        sessionKey: TransportSessionKey,
+        consume: @escaping @Sendable (Data) async throws -> Void
+    ) async throws {
+        guard representation.validator == .unvalidatedPlayback,
+              representation.usesAnonymousSession, sessionKey.role == .playback,
+              let origin = TransportOrigin(url: representation.resourceURL), origin.isSecure,
+              origin != sessionKey.origin,
+              representation.totalLength > 0, representation.totalLength <= Int64(Int.max) else {
+            throw TransportError.seekableRequiresValidator
+        }
+        let expected = representation.totalLength
+        let url = representation.resourceURL
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        let session = try await registry.mediaSession(for: sessionKey, origin: origin)
+        let stream = TransportResponseStream(consume: consume)
+        try await withTaskCancellationHandler {
+            do {
+                let result = try await session.data(
+                    for: request, maxResponseBytes: Int(expected), followRedirects: false, stream: stream
+                ) { response in
+                    guard response.url?.absoluteString == url.absoluteString else {
+                        throw TransportError.sourceChanged(reason: "whole response URL changed")
+                    }
+                    guard response.statusCode == 200 else {
+                        throw TransportError.protocolError(status: response.statusCode, detail: "expected a whole-file response")
+                    }
+                    if let encoding = response.value(forHTTPHeaderField: "Content-Encoding"),
+                       encoding.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != "identity" {
+                        throw TransportError.rangeValidationFailed(reason: "whole response used content encoding")
+                    }
+                    if response.expectedContentLength >= 0, response.expectedContentLength != expected {
+                        throw TransportError.sourceChanged(reason: "whole response size changed")
+                    }
+                    guard response.value(forHTTPHeaderField: "Content-Range") == nil else {
+                        throw TransportError.rangeValidationFailed(reason: "unexpected partial response")
+                    }
+                }
+                guard result.response.statusCode == 200 else {
+                    throw TransportError.protocolError(status: result.response.statusCode, detail: "whole response refused")
+                }
+                try await stream.finish(expectedBytes: expected)
+                try Task.checkCancellation()
+            } catch {
+                stream.cancel()
+                // Join admitted writes before the caller discards its partial file.
+                // Preserve consumer failures (e.g. disk full) over URL cancellation.
+                do { try await stream.finish() } catch is CancellationError {
+                } catch {
+                    throw error
+                }
+                throw error
+            }
+        } onCancel: {
+            stream.cancel()
+        }
+    }
+
     private func executeMediaGET(
         requestBuilder: (URL) -> URLRequest,
         root: WebDAVRoot,
