@@ -54,7 +54,9 @@ final class DetailInformationInteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Details"].waitForExistence(timeout: 5), app.debugDescription)
         let value = String(repeating: "A very long original title ", count: 40)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        XCTAssertTrue(app.staticTexts[value].exists, app.debugDescription)
+        let expandedValue = app.collectionViews.staticTexts
+            .matching(NSPredicate(format: "label == %@", value)).firstMatch
+        XCTAssertTrue(expandedValue.waitForExistence(timeout: 5), app.debugDescription)
     }
 
     private func launch(_ options: [String] = []) {

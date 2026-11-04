@@ -328,7 +328,7 @@ public struct RatingTile: View {
     public var body: some View {
         HStack(spacing: valueSpacing) {
             RatingSourceIcon(rating: rating, size: iconSize)
-                .frame(width: iconRowHeight, height: iconRowHeight)
+                .frame(width: iconSize * 1.85, height: iconRowHeight)
             VStack(alignment: .leading, spacing: 4) {
                 Text(rating.displayValue)
                     .font(valueFont)
@@ -372,7 +372,7 @@ public struct RatingTile: View {
 
     private var iconSize: CGFloat {
         #if os(tvOS)
-        return 38
+        return 32
         #else
         return horizontalSizeClass == .compact ? 24 : 28
         #endif
@@ -382,7 +382,7 @@ public struct RatingTile: View {
 
     private var valueFont: Font {
         #if os(tvOS)
-        return .system(size: 32, weight: .semibold)
+        return .system(size: 28, weight: .semibold)
         #else
         return horizontalSizeClass == .compact
             ? .title2.weight(.semibold)
@@ -402,34 +402,22 @@ public struct RatingTile: View {
 
     private var valueSpacing: CGFloat {
         #if os(tvOS)
-        return 10
+        return PlozzTheme.Spacing.small
         #else
         return 6
         #endif
     }
 
     private var verticalPadding: CGFloat {
-        #if os(tvOS)
-        return 16
-        #else
-        return 12
-        #endif
+        DetailInformationLayout.cellPadding
     }
 
     private var horizontalPadding: CGFloat {
-        #if os(tvOS)
-        return 20
-        #else
-        return 14
-        #endif
+        DetailInformationLayout.cellPadding
     }
 
     private var cornerRadius: CGFloat {
-        #if os(tvOS)
-        return 18
-        #else
-        return 14
-        #endif
+        DetailInformationLayout.cornerRadius
     }
 }
 

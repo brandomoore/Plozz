@@ -997,10 +997,16 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Featured cards use compact visual metadata and full accessible classifications.
   Title-information facts retain the full original classification when visible.
 - **Detail information layout** — TV and mobile share ordered, full-width
-  information sections with adaptive fact columns on common keylines. About
-  keeps a stable line cap and reading width; scores never determine its height.
-  Numeric ratings flow alongside the short Details facts rather than reserving
-  their own section, with family guidance in a wider row below. Revealing one
+  information sections. Every fact group uses the same four-column grid,
+  wrapping to fewer columns at narrow widths and larger mobile text sizes.
+  Cells share padded text insets, label spacing, and equal heights within each
+  row; section gaps, gutters, and padding come from `DetailInformationLayout`.
+  About and Ratings share the summary row wherever four readable columns fit.
+  A single score uses the fourth column; larger score groups and family guidance
+  use the last two columns. About occupies the remaining columns. They stack
+  at narrower widths rather than squeezing either section. Missing summary sections
+  consume no space. About keeps a stable line cap; scores never determine its height.
+  Ratings stay separate from editorial facts, with family guidance below. Revealing one
   protected score reveals the shared score group, never the surrounding facts.
   Missing sections leave no reserved grid cells. Cast previews show 12 people
   on both platforms; More opens the complete supplied cast and keeps person
@@ -1014,9 +1020,13 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   and button hosts restarts minimum-size probes and can loop during first layout.
   Required availability attribution stays visible even when release facts are
   capped. These presentation limits do not change provider metadata precedence.
+  Both presentation hosts expose `--detail-information-fixture` with
+  `--detail-layout-sparse`, `--detail-layout-rich`, `--detail-layout-episode`,
+  `--detail-layout-discover`, or `--detail-layout-personal` for native review of
+  the shared layout without server access. `--detail-layout-bottom` reveals Playback.
 - **Detail information focus** — the tvOS About/Ratings/Information band uses
   native focus with at most 2% growth and 6pt of expansion per edge, leaving
-  clearance in its 18pt gutters. Focused read-only cards and card buttons draw
+  clearance within the shared grid gutters. Focused read-only cards and card buttons draw
   above their peers. This policy does not change ordinary media-card growth,
   custom focus styles, or touch layouts.
 - **Native artwork focus comparison** — launch the separate tvOS focus host

@@ -10,7 +10,7 @@ final class DetailInformationPreviewTests: XCTestCase {
         XCTAssertEqual(DetailInformationSections(item: empty, horizontalInset: 24).sectionIDs, [])
         var rated = empty
         rated.ratings = [.init(source: .tmdb, value: 8, scale: .outOfTen)]
-        XCTAssertEqual(DetailInformationSections(item: rated, horizontalInset: 24).sectionIDs, ["details"])
+        XCTAssertEqual(DetailInformationSections(item: rated, horizontalInset: 24).sectionIDs, ["ratings"])
     }
 
     func testSectionsKeepOneReadingOrder() {
@@ -21,7 +21,7 @@ final class DetailInformationPreviewTests: XCTestCase {
         )
         XCTAssertEqual(
             DetailInformationSections(item: item, horizontalInset: 24).sectionIDs,
-            ["about", "details", "crew"]
+            ["about", "ratings", "details", "crew"]
         )
     }
 

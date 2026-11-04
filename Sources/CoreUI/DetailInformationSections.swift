@@ -15,6 +15,24 @@ private struct OverviewCardHeightKey: PreferenceKey {
     }
 }
 
+enum DetailInformationLayout {
+    static let columns = 4
+    static let labelSpacing = PlozzTheme.Spacing.xSmall
+    #if os(tvOS)
+    static let cellPadding = PlozzTheme.Spacing.large
+    static let gutter = PlozzTheme.Spacing.large
+    static let sectionSpacing = PlozzTheme.Spacing.xxLarge
+    static let headingSpacing = PlozzTheme.Spacing.medium
+    static let cornerRadius: CGFloat = 20
+    #else
+    static let cellPadding = PlozzTheme.Spacing.medium
+    static let gutter = PlozzTheme.Spacing.medium
+    static let sectionSpacing = PlozzTheme.Spacing.xLarge
+    static let headingSpacing = PlozzTheme.Spacing.small
+    static let cornerRadius: CGFloat = 16
+    #endif
+}
+
 public struct DetailInformationSections: View {
     static let bandFillOpacity = 0.4
 
@@ -125,19 +143,49 @@ public struct DetailInformationSections: View {
 
     private var sectionBody: some View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
-            ForEach(sectionIDs, id: \.self) { id in
-                if id == "about" {
-                    detailSection(title: LocalizedStringResource(
-                        "mediaDetail.section.about",
-                        defaultValue: "About",
-                        comment: "Header of the synopsis section on a movie or series detail page. A noun meaning 'about this title', not the Settings > About page."
-                    )) {
-                        aboutContent
-                            .frame(maxWidth: overviewReadingWidth, alignment: .leading)
+            if hasAbout || hasRatings {
+                DetailSummaryLayout(
+                    secondaryColumns: sortedRatings.count > 1 || familyGuidanceSummary != nil ? 2 : 1,
+                    sideBySideMinimumWidth: summaryMinimumWidth
+                ) {
+                    if hasAbout {
+                        detailSection(title: LocalizedStringResource(
+                            "mediaDetail.section.about",
+                            defaultValue: "About",
+                            comment: "Header of the synopsis section on a movie or series detail page. A noun meaning 'about this title', not the Settings > About page."
+                        )) {
+                            aboutContent
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .id("about")
                     }
-                } else if let group = informationGroups.first(where: { $0.id == id }) {
-                    informationGroup(group)
+                    if hasRatings {
+                        detailSection(title: "Ratings") {
+                            if !sortedRatings.isEmpty {
+                                ProportionalWrapLayout(
+                                    preferredColumns: DetailInformationLayout.columns,
+                                    minimumCellWidth: informationColumnMinimumWidth,
+                                    spacing: informationColumnSpacing,
+                                    rowSpacing: informationRowSpacing
+                                ) {
+                                    ForEach(sortedRatings) { rating in
+                                        protectedRating { RatingTile(rating: rating) }
+                                    }
+                                }
+                            }
+                            if let summary = familyGuidanceSummary {
+                                protectedRating {
+                                    FamilyGuidanceTile(item: item, summary: summary)
+                                        .id(item.stablePresentationID)
+                                }
+                            }
+                        }
+                        .id("ratings")
+                    }
                 }
+            }
+            ForEach(informationGroups) { group in
+                informationGroup(group)
             }
         }
     }
@@ -145,8 +193,8 @@ public struct DetailInformationSections: View {
     var sectionIDs: [String] {
         var result: [String] = []
         if hasAbout { result.append("about") }
-        if informationGroups.contains(where: { $0.id == "details" }) { result.append("details") }
-        result += informationGroups.filter { $0.id != "details" }.map(\.id)
+        if hasRatings { result.append("ratings") }
+        result += informationGroups.map(\.id)
         return result
     }
 
@@ -168,6 +216,7 @@ public struct DetailInformationSections: View {
 
     #if !os(tvOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @ScaledMetric(relativeTo: .body) private var mobileColumnMinimumWidth: CGFloat = 160
     #endif
 
     private func protectedRating<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -513,17 +562,11 @@ public struct DetailInformationSections: View {
             Text(group.title)
                 .font(group.id == "playback" ? technicalTitleFont : sectionTitleFont)
             ProportionalWrapLayout(
-                preferredColumns: group.id == "details"
-                    ? max(4, min(6, group.previewFacts.count + sortedRatings.count)) : 4,
-                minimumCellWidth: group.id == "details" ? shortFactMinimumWidth : informationColumnMinimumWidth,
+                preferredColumns: DetailInformationLayout.columns,
+                minimumCellWidth: informationColumnMinimumWidth,
                 spacing: informationColumnSpacing,
                 rowSpacing: informationRowSpacing
             ) {
-                if group.id == "details" {
-                    ForEach(sortedRatings) { rating in
-                        protectedRating { RatingTile(rating: rating) }
-                    }
-                }
                 ForEach(group.previewFacts) { fact in
                     InformationFactCell(
                         fact: fact, labelFont: factLabelFont,
@@ -541,12 +584,6 @@ public struct DetailInformationSections: View {
                     .frame(minHeight: 44, alignment: .leading)
                     .accessibilityIdentifier("detail-\(group.id)-more")
             }
-            if group.id == "details", let summary = familyGuidanceSummary {
-                protectedRating {
-                    FamilyGuidanceTile(item: item, summary: summary)
-                        .id(item.stablePresentationID)
-                }
-            }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .contain)
@@ -554,7 +591,7 @@ public struct DetailInformationSections: View {
 
     private func detailSection<Content: View>(
         title: LocalizedStringResource,
-        contentSpacing: CGFloat = 14,
+        contentSpacing: CGFloat = DetailInformationLayout.headingSpacing,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: contentSpacing) {
@@ -576,7 +613,7 @@ public struct DetailInformationSections: View {
             ),
             InformationGroup(id: "playback", title: "Playback", facts: playbackFacts)
         ]
-        .filter { !$0.facts.isEmpty || ($0.id == "details" && hasRatings) }
+        .filter { !$0.facts.isEmpty }
     }
 
     var sortedRatings: [ExternalRating] {
@@ -861,14 +898,6 @@ public struct DetailInformationSections: View {
         #endif
     }
 
-    private var overviewReadingWidth: CGFloat {
-        #if os(tvOS)
-        1180
-        #else
-        900
-        #endif
-    }
-
     private var moreFadeHeight: CGFloat {
         #if os(tvOS)
         34
@@ -926,67 +955,84 @@ public struct DetailInformationSections: View {
     }
 
     private var sectionSpacing: CGFloat {
-        #if os(tvOS)
-        36
-        #else
-        28
-        #endif
+        DetailInformationLayout.sectionSpacing
     }
 
     private var informationColumnSpacing: CGFloat {
-        #if os(tvOS)
-        54
-        #else
-        24
-        #endif
+        DetailInformationLayout.gutter
     }
 
     private var informationRowSpacing: CGFloat {
-        #if os(tvOS)
-        36
-        #else
-        28
-        #endif
+        DetailInformationLayout.gutter
     }
 
     private var informationGroupSpacing: CGFloat {
-        #if os(tvOS)
-        22
-        #else
-        16
-        #endif
+        DetailInformationLayout.headingSpacing
     }
 
     private var cardPadding: CGFloat {
-        #if os(tvOS)
-        22
-        #else
-        16
-        #endif
+        DetailInformationLayout.cellPadding
     }
 
     private var cardCornerRadius: CGFloat {
-        #if os(tvOS)
-        20
-        #else
-        16
-        #endif
+        DetailInformationLayout.cornerRadius
     }
 
     private var informationColumnMinimumWidth: CGFloat {
         #if os(tvOS)
-        380
+        320
         #else
-        220
+        mobileColumnMinimumWidth
         #endif
     }
 
-    private var shortFactMinimumWidth: CGFloat {
-        #if os(tvOS)
-        280
-        #else
-        180
-        #endif
+    private var summaryMinimumWidth: CGFloat {
+        let columns = CGFloat(DetailInformationLayout.columns)
+        return columns * informationColumnMinimumWidth + (columns - 1) * informationColumnSpacing
+    }
+}
+
+/// Summary and scores share the first row only when both retain a useful width.
+/// Natural heights are independent: wrapping ratings never stretches the synopsis.
+private struct DetailSummaryLayout: Layout {
+    let secondaryColumns: Int
+    let sideBySideMinimumWidth: CGFloat
+
+    private func widths(for width: CGFloat, count: Int) -> [CGFloat] {
+        let gutter = DetailInformationLayout.gutter
+        if count == 2, width >= sideBySideMinimumWidth {
+            let column = (width - 3 * gutter) / 4
+            let secondary = CGFloat(secondaryColumns)
+            let primary = 4 - secondary
+            return [primary * column + (primary - 1) * gutter,
+                    secondary * column + (secondary - 1) * gutter]
+        }
+        return Array(repeating: width, count: count)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? sideBySideMinimumWidth
+        let widths = widths(for: width, count: subviews.count)
+        let heights = zip(subviews, widths).map { $0.sizeThatFits(.init(width: $1, height: nil)).height }
+        let horizontal = subviews.count == 2 && width >= sideBySideMinimumWidth
+        let height = horizontal ? (heights.max() ?? 0)
+            : heights.reduce(0, +) + DetailInformationLayout.sectionSpacing * CGFloat(max(0, subviews.count - 1))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let widths = widths(for: bounds.width, count: subviews.count)
+        let horizontal = subviews.count == 2 && bounds.width >= sideBySideMinimumWidth
+        var origin = bounds.origin
+        for (subview, width) in zip(subviews, widths) {
+            let size = subview.sizeThatFits(.init(width: width, height: nil))
+            subview.place(at: origin, proposal: .init(width: width, height: size.height))
+            if horizontal {
+                origin.x += width + DetailInformationLayout.gutter
+            } else {
+                origin.y += size.height + DetailInformationLayout.sectionSpacing
+            }
+        }
     }
 }
 
@@ -1122,7 +1168,7 @@ private struct InformationFactCell: View {
         if hasMore {
             cardButton
         } else {
-            label.plozzFocusableCard(cornerRadius: 12)
+            label.plozzFocusableCard(cornerRadius: DetailInformationLayout.cornerRadius)
         }
         #endif
     }
@@ -1134,13 +1180,14 @@ private struct InformationFactCell: View {
             label
         }
         .plozzCardButton(
-            cornerRadius: 12, focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale
+            cornerRadius: DetailInformationLayout.cornerRadius,
+            focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale
         )
         .accessibilityIdentifier(accessibilityID)
     }
 
     private var label: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: DetailInformationLayout.labelSpacing) {
             Text(fact.label)
                 .font(labelFont)
                 .plozzForeground(.secondary)
@@ -1154,8 +1201,8 @@ private struct InformationFactCell: View {
                 if hasMore { DetailMoreLabel() }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding(8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(DetailInformationLayout.cellPadding)
         .multilineTextAlignment(.leading)
     }
 }

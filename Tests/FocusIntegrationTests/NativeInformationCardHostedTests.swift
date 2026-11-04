@@ -9,6 +9,93 @@ import XCTest
 
 @MainActor
 final class NativeInformationCardHostedTests: XCTestCase {
+    func testDetailFactsShareKeylinesRowHeightsAndReadableInsets() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let item = MediaItem(
+            id: "layout", title: "A film", kind: .movie, productionYear: 2026,
+            officialRating: "R", genres: ["Horror", "Science Fiction", "Adventure"],
+            people: [
+                .init(id: "director", name: "One Director", kind: "Director"),
+                .init(id: "writer", name: "One Writer", kind: "Writer")
+            ],
+            studios: ["First Studio", "Second Studio", "Third Studio", "Fourth Studio"],
+            runtime: 5_700
+        )
+        window.rootViewController = UIHostingController(rootView:
+            ScrollView {
+                DetailInformationSections(
+                    item: item, horizontalInset: 80,
+                    selectedSource: MediaSourceRef(
+                        accountID: "fixture", itemID: item.id, providerKind: .jellyfin,
+                        serverName: "Living room server", accountName: "Household", locality: .local
+                    ),
+                    selectedVersion: MediaVersion(
+                        id: "file", fileName: "A film (2026) - [WEBDL-2160p][DV HDR10Plus][EAC3 5.1][h265].mkv",
+                        width: 3840, height: 2160, bitrate: 25_300_000, sizeBytes: 17_800_000_000,
+                        videoCodec: "hevc", videoRange: "DOVI", audioCodec: "eac3", audioChannels: 6
+                    )
+                )
+            }
+            .environment(\.plozzCardFocusStyle, .system)
+            .environment(\.themePalette, .dark)
+            .environment(\.colorScheme, .dark)
+        )
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(600))
+        let unsorted = try nativeCards(in: window).map { card -> (card: TVCardView, frame: CGRect) in
+            let container = try XCTUnwrap(card.superview)
+            return (card, container.convert(container.bounds, to: window))
+        }
+        let slots = unsorted.sorted { first, second in
+            if abs(first.frame.minY - second.frame.minY) > 1 {
+                return first.frame.minY < second.frame.minY
+            }
+            return first.frame.minX < second.frame.minX
+        }
+        XCTAssertEqual(slots.count, 14)
+        guard slots.count == 14 else { return }
+        for row in [0..<4, 4..<7, 7..<11, 11..<14] {
+            for (column, index) in row.enumerated() {
+                XCTAssertEqual(slots[index].frame.minX, slots[column].frame.minX, accuracy: 1)
+                XCTAssertEqual(slots[index].card.contentSize.width, slots[0].card.contentSize.width, accuracy: 1)
+                XCTAssertEqual(slots[index].card.contentSize.height, slots[row.lowerBound].card.contentSize.height, accuracy: 1)
+            }
+        }
+        let image = DetailTransitionSnapshot.image(of: window)
+        for slot in slots.prefix(4) {
+            let frame = slot.frame.applying(CGAffineTransform(scaleX: image.scale, y: image.scale))
+            let crop = try XCTUnwrap(image.cgImage?.cropping(to: frame))
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = false
+            try VNImageRequestHandler(cgImage: crop).perform([request])
+            let observations = try XCTUnwrap(request.results)
+            XCTAssertFalse(observations.isEmpty)
+            for text in observations {
+                let width = slot.frame.width
+                let height = slot.frame.height
+                // Vision's normalized coordinates introduce subpixel rounding.
+                XCTAssertGreaterThanOrEqual(text.boundingBox.minX * width + 0.01, 20)
+                XCTAssertGreaterThanOrEqual((1 - text.boundingBox.maxX) * width + 0.01, 20)
+                XCTAssertGreaterThanOrEqual((1 - text.boundingBox.maxY) * height + 0.01, 20)
+                XCTAssertGreaterThanOrEqual(text.boundingBox.minY * height + 0.01, 20)
+            }
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "detail-fact-keylines-and-insets"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testFactTruncationUpdatesKeepTheSameNativeCards() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
