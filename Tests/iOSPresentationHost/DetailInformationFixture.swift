@@ -172,13 +172,20 @@ struct DetailInformationFixture: View {
 
     private var availability: ExternalTitleAvailability? {
         guard layoutCase == "upcoming" else { return nil }
+        var events: [TitleReleaseEvent] = [
+            .init(kind: .theatrical, date: Date(timeIntervalSince1970: 1_787_875_200), regionCode: "US"),
+            .init(kind: .digital, date: Date(timeIntervalSince1970: 1_793_059_200), regionCode: "US"),
+            .init(kind: .physical, date: Date(timeIntervalSince1970: 1_796_083_200), regionCode: "US")
+        ]
+        if ProcessInfo.processInfo.arguments.contains("--detail-many-release-events") {
+            events += (1...9).map {
+                .init(kind: .theatrical, date: Date(timeIntervalSince1970: 1_787_875_200 + Double($0) * 86_400),
+                      regionCode: "US")
+            }
+        }
         return ExternalTitleAvailability(
             regionCode: "US",
-            releaseEvents: [
-                .init(kind: .theatrical, date: Date(timeIntervalSince1970: 1_787_875_200), regionCode: "US"),
-                .init(kind: .digital, date: Date(timeIntervalSince1970: 1_793_059_200), regionCode: "US"),
-                .init(kind: .physical, date: Date(timeIntervalSince1970: 1_796_083_200), regionCode: "US")
-            ],
+            releaseEvents: events,
             watchOffers: ["Prime Video", "Apple TV", "Fandango at Home"].enumerated().map {
                 .init(providerID: $0.offset, providerName: $0.element, kind: .rent, regionCode: "US")
             }

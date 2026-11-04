@@ -55,7 +55,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
             window.makeKeyAndVisible()
             try await Task.sleep(for: .milliseconds(500))
             let cards = nativeCards(in: window)
-            let expectedCount = count + (hasGuidance ? 1 : 0) + 2
+            let expectedCount = count + (hasGuidance ? 1 : 0) + 1
             XCTAssertEqual(cards.count, expectedCount,
                            "Each score owns a tile; guidance participates in the same grid.")
             guard cards.count == expectedCount else { continue }
@@ -64,7 +64,10 @@ final class NativeInformationCardHostedTests: XCTestCase {
                 return container.convert(container.bounds, to: window)
             }
             let about = frames[0]
-            let ratings = Array(frames[1..<(expectedCount - 1)])
+            let ratings = Array(frames.dropFirst())
+            let contentWidth = window.bounds.inset(by: window.safeAreaInsets).width - 160
+            XCTAssertEqual(about.width, (contentWidth - 80) / 3, accuracy: 1,
+                           "TV prose must stay within one third-width column.")
             XCTAssertEqual(ratings[0].minY, about.minY, accuracy: 1)
             XCTAssertGreaterThan(ratings[0].minX, about.maxX)
             XCTAssertEqual(try XCTUnwrap(ratings.map(\.maxY).max()), about.maxY, accuracy: 1,
@@ -72,9 +75,12 @@ final class NativeInformationCardHostedTests: XCTestCase {
             if hasGuidance {
                 let guide = try XCTUnwrap(ratings.last)
                 let columns = min(4, max(2, count + 1))
-                let rightEdge = ratings[0].minX + CGFloat(columns) * 220
-                    + CGFloat(columns - 1) * DetailInformationLayout.gutter
+                let column = count % columns
+                let span = min(2, columns - column)
+                let rightEdge = ratings[0].minX + CGFloat(column) * 244
+                    + CGFloat(span) * 220 + CGFloat(span - 1) * DetailInformationLayout.gutter
                 XCTAssertEqual(guide.maxX, rightEdge, accuracy: 1)
+                XCTAssertLessThanOrEqual(guide.width, 560)
                 if count > 0 {
                     let lastScore = ratings[count - 1]
                     if count % columns == 0 {
@@ -216,7 +222,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
         }
     }
 
-    func testDetailFactsShareKeylinesRowHeightsAndReadableInsets() async throws {
+    func testDetailFactsUseUnboxedThirdWidthColumns() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -262,37 +268,19 @@ final class NativeInformationCardHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         try await Task.sleep(for: .milliseconds(600))
-        let unsorted = try nativeCards(in: window).map { card -> (card: TVCardView, frame: CGRect) in
-            let container = try XCTUnwrap(card.superview)
-            return (card, container.convert(container.bounds, to: window))
-        }
-        let slots = unsorted.sorted { first, second in
-            if abs(first.frame.minY - second.frame.minY) > 1 {
-                return first.frame.minY < second.frame.minY
-            }
-            return first.frame.minX < second.frame.minX
-        }
-        XCTAssertEqual(slots.count, 3, "Details, Crew and Playback each own one native surface.")
-        guard slots.count == 3 else { return }
-        for (index, slot) in slots.enumerated() {
-            XCTAssertGreaterThan(slot.frame.width, window.bounds.width * 0.8,
-                                 "Information must not reserve a heading-only column.")
-            XCTAssertEqual(slot.frame.minX, slots[0].frame.minX, accuracy: 1)
-            XCTAssertEqual(slot.card.contentSize.width, slots[0].card.contentSize.width, accuracy: 1)
-            XCTAssertLessThanOrEqual(slot.frame.maxY, window.bounds.maxY)
-            if index > 0 {
-                XCTAssertGreaterThanOrEqual(slot.frame.minY - slots[index - 1].frame.maxY, 39)
-            }
-        }
+        XCTAssertTrue(nativeCards(in: window).isEmpty,
+                      "Lower metadata must not acquire permanent card surfaces.")
         let image = DetailTransitionSnapshot.image(of: window)
         let attachment = XCTAttachment(image: image)
         attachment.name = "detail-fact-keylines-and-insets"
         attachment.lifetime = .keepAlways
         add(attachment)
-        let pixels = try informationPixels(window)
-        for (index, slot) in slots.enumerated() {
-            let surface = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: slot.card.contentView, in: window))
-            let frame = surface.applying(CGAffineTransform(scaleX: image.scale, y: image.scale))
+        var headingYs: [CGFloat] = []
+        let contentFrame = window.bounds.inset(by: window.safeAreaInsets).insetBy(dx: 80, dy: 0)
+        let columnWidth = (contentFrame.width - 80) / 3
+        for (index, heading) in ["Details", "Crew", "Playback"].enumerated() {
+            let frame = CGRect(x: contentFrame.minX + CGFloat(index) * (columnWidth + 40),
+                               y: 0, width: columnWidth, height: 1080)
             let crop = try XCTUnwrap(image.cgImage?.cropping(to: frame))
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
@@ -301,6 +289,9 @@ final class NativeInformationCardHostedTests: XCTestCase {
             let observations = try XCTUnwrap(request.results)
             XCTAssertFalse(observations.isEmpty)
             let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            let title = try XCTUnwrap(observations.first { $0.topCandidates(1).first?.string == heading })
+            XCTAssertLessThanOrEqual(title.boundingBox.minX * columnWidth, 3)
+            headingYs.append((1 - title.boundingBox.maxY) * 1080)
             if index == 0 {
                 XCTAssertFalse(text.contains("MORE"), "Short facts must not inherit truncation from a fitting probe: \(text)")
                 XCTAssertTrue(text.contains("TV-MA"), "The complete classification must remain visible: \(text)")
@@ -308,11 +299,8 @@ final class NativeInformationCardHostedTests: XCTestCase {
                     ["Year", "Runtime", "Content Rating"].contains($0.topCandidates(1).first?.string ?? "")
                 }
                 XCTAssertEqual(labels.count, 3)
-                for label in labels {
-                    XCTAssertEqual(label.boundingBox.midY * surface.height,
-                                   labels[0].boundingBox.midY * surface.height, accuracy: 3,
-                                   "Recognized label centers must share a row; glyph tops vary with the text.")
-                }
+                XCTAssertEqual(Set(labels.map { Int($0.boundingBox.midY * 1080) }).count, 3,
+                               "Facts stack under their section instead of stretching across the page.")
             }
             if index == 1 {
                 let writerLabel = try XCTUnwrap(observations.first {
@@ -321,27 +309,17 @@ final class NativeInformationCardHostedTests: XCTestCase {
                 let directors = try XCTUnwrap(observations.first {
                     $0.topCandidates(1).first?.string.contains("Saul Metzstein") == true
                 })
-                XCTAssertLessThanOrEqual(directors.boundingBox.maxX * surface.width + 20,
-                                         writerLabel.boundingBox.minX * surface.width,
-                                         "Neighboring text columns need a readable gap.")
+                XCTAssertGreaterThan(directors.boundingBox.minY, writerLabel.boundingBox.maxY)
             }
             if index == 2 {
                 let filename = try XCTUnwrap(observations.first {
                     $0.topCandidates(1).first?.string.contains(".mkv") == true
                 })
-                XCTAssertGreaterThan(filename.boundingBox.width, 0.35,
-                                     "The filename must use more than one narrow fact column.")
+                XCTAssertLessThanOrEqual(filename.boundingBox.maxX, 1)
             }
-            // Vision can overestimate glyph bounds. Measure painted text for exact insets,
-            // excluding the native card's border rather than relaxing the padding requirement.
-            let interior = surface.intersection(window.bounds).insetBy(dx: 8, dy: 8).integral
-            let textBounds = paintedTextBounds(pixels, in: interior)
-            XCTAssertFalse(textBounds.isNull)
-            XCTAssertGreaterThanOrEqual(textBounds.minX - surface.minX, 20)
-            XCTAssertGreaterThanOrEqual(surface.maxX - textBounds.maxX, 20)
-            XCTAssertGreaterThanOrEqual(textBounds.minY - surface.minY, 20)
-            XCTAssertGreaterThanOrEqual(surface.maxY - textBounds.maxY, 20)
         }
+        XCTAssertEqual(headingYs[0], headingYs[1], accuracy: 3)
+        XCTAssertEqual(headingYs[0], headingYs[2], accuracy: 5)
     }
 
     private func paintedTextBounds(_ pixels: [UInt8], in region: CGRect) -> CGRect {
@@ -416,7 +394,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
         add(attachment)
     }
 
-    func testFactTruncationUpdatesKeepTheSameNativeCards() async throws {
+    func testUnboxedFactTruncationUpdatesSettleWithoutCreatingCards() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -438,47 +416,19 @@ final class NativeInformationCardHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         try await Task.sleep(for: .milliseconds(500))
-        let original = nativeCards(in: window)
-        XCTAssertEqual(original.count, 2)
-        let identities = Set(original.map(ObjectIdentifier.init))
-        let studios = try XCTUnwrap(original.max {
-            let first = $0.convert($0.bounds, to: window)
-            let second = $1.convert($1.bounds, to: window)
-            return abs(first.minY - second.minY) > 1 ? first.minY < second.minY : first.minX < second.minX
-        })
-        // Every initial value fits. Read-only cards remain focusable but must
-        // not open an expansion sheet when Select is pressed.
-        for card in original { card.sendActions(for: .primaryActionTriggered) }
-        try await Task.sleep(for: .milliseconds(100))
-        XCTAssertNil(host.presentedViewController)
-        host.target = studios
-        host.setNeedsFocusUpdate()
-        host.updateFocusIfNeeded()
-        try await Task.sleep(for: .milliseconds(300))
-        XCTAssertTrue(studios.isFocused)
-        XCTAssertEqual(studios.cardBackgroundColor, UIColor(ThemePalette.dark.raised.fill))
-        let next = try XCTUnwrap(original.first { $0 !== studios })
-        host.target = next
-        host.setNeedsFocusUpdate()
-        host.updateFocusIfNeeded()
-        try await Task.sleep(for: .milliseconds(300))
-        XCTAssertTrue(next.isFocused)
-        XCTAssertFalse(studios.isFocused)
-
         for expanded in [true, false, true, false] {
             model.item.originalTitle = expanded
                 ? String(repeating: "A very long original title ", count: 40) : "Original title"
             model.item.studios = expanded ? (1...30).map { "Production Studio \($0)" } : ["Studio"]
             try await Task.sleep(for: .milliseconds(350))
-            XCTAssertEqual(Set(nativeCards(in: window).map(ObjectIdentifier.init)), identities)
-            XCTAssertTrue(original.allSatisfy { $0.contentSize.width > 100 && $0.contentSize.height > 0 })
+            XCTAssertTrue(nativeCards(in: window).isEmpty)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            try VNImageRequestHandler(cgImage: XCTUnwrap(DetailTransitionSnapshot.image(of: window).cgImage))
+                .perform([request])
+            let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            XCTAssertEqual(text.contains("MORE"), expanded, text)
         }
-        model.item.studios = (1...30).map { "Production Studio \($0)" }
-        try await Task.sleep(for: .milliseconds(350))
-        studios.sendActions(for: .primaryActionTriggered)
-        try await Task.sleep(for: .milliseconds(400))
-        XCTAssertNotNil(host.presentedViewController, "More must still expand after the card's content changes.")
-        host.dismiss(animated: false)
     }
 
     func testEagerInformationRowsIncludeTheirLastNativeCard() async throws {
@@ -660,7 +610,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(600))
         let cards = nativeCards(in: window)
-        XCTAssertEqual(cards.count, 9, "About, four scores, guidance, Details, Crew and Playback each own a surface.")
+        XCTAssertEqual(cards.count, 6, "Only About, four scores and guidance own permanent card surfaces.")
         var samples: [String] = []
         for (index, card) in cards.enumerated() {
             host.target = card
@@ -741,7 +691,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
         window.layoutIfNeeded()
         try await Task.sleep(for: .seconds(1))
         let cards = nativeCards(in: window).filter { !$0.isFocused }
-        XCTAssertGreaterThanOrEqual(cards.count, 4)
+        XCTAssertGreaterThanOrEqual(cards.count, 3)
         let frames = cards.map { $0.contentView.convert($0.contentView.bounds, to: window).insetBy(dx: 12, dy: 12) }
         let baseline = try informationPixels(window)
         var changes: [Int] = []
@@ -866,7 +816,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
         model.showsInformation = true
         try await Task.sleep(for: .seconds(3))
         let cards = nativeCards(in: window).filter { !$0.isFocused }
-        XCTAssertGreaterThanOrEqual(cards.count, 4)
+        XCTAssertGreaterThanOrEqual(cards.count, 3)
         let frames = cards.map { $0.contentView.convert($0.contentView.bounds, to: window).insetBy(dx: 12, dy: 12) }
         let baseline = try informationPixels(window)
         var counts: [Int] = []

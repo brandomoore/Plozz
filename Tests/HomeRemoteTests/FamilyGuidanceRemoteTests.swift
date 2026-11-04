@@ -1,7 +1,74 @@
 import XCTest
+import UIKit
 
 @MainActor
 final class FamilyGuidanceRemoteTests: XCTestCase {
+    func testUnboxedSectionMoreRetainsFocusContrastAndExpandsOmittedFacts() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--detail-information-fixture", "--detail-layout-upcoming",
+                               "--detail-many-release-events", "--detail-layout-flat"]
+        app.launch()
+        defer { app.terminate() }
+        let year = app.descendants(matching: .any)["detail-details-year-more"].firstMatch
+        let more = app.buttons["detail-availability-more"]
+        XCTAssertTrue(year.waitForExistence(timeout: 15))
+        for _ in 0..<8 where !isFocused(year) { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(isFocused(year))
+        XCUIRemote.shared.press(.right)
+        XCUIRemote.shared.press(.right)
+        for _ in 0..<16 where !isFocused(more) { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(isFocused(more), app.debugDescription)
+        try assertFocusedFactContrast(more, in: app)
+        recordScreenshot(app, name: "unboxed-section-more-focused")
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 5))
+    }
+
+    func testUnboxedDetailColumnsSupportRemoteExpansionAndScrolling() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--detail-information-fixture", "--detail-layout-rich", "--detail-layout-flat"]
+        app.launch()
+        defer { app.terminate() }
+        let year = app.descendants(matching: .any)["detail-details-year-more"].firstMatch
+        let directors = app.descendants(matching: .any)["detail-crew-directors-more"].firstMatch
+        let filename = app.descendants(matching: .any)["detail-playback-filename-more"].firstMatch
+        XCTAssertTrue(year.waitForExistence(timeout: 15))
+        for _ in 0..<8 where !isFocused(year) { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(isFocused(year), app.debugDescription)
+        XCUIRemote.shared.press(.up)
+        XCTAssertTrue(isFocused(app.descendants(matching: .any)["detail-about"].firstMatch),
+                      "Up must return from facts to About.")
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(isFocused(year))
+        try assertFocusedFactContrast(year, in: app)
+        recordScreenshot(app, name: "unboxed-detail-reading-stop")
+        XCUIRemote.shared.press(.select)
+        XCTAssertFalse(app.buttons["Done"].exists, "A complete fact is a reading stop, not an expansion action.")
+
+        XCUIRemote.shared.press(.right)
+        XCTAssertTrue(isFocused(directors), "Right must enter the neighboring unboxed column.")
+        try assertFocusedFactContrast(directors, in: app)
+        recordScreenshot(app, name: "unboxed-detail-directors-focused")
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 5))
+        let lastDirector = app.staticTexts["Director 20"]
+        for _ in 0..<25 where !lastDirector.exists || !lastDirector.isHittable { XCUIRemote.shared.press(.down) }
+        recordScreenshot(app, name: "unboxed-detail-full-crew")
+        XCTAssertTrue(lastDirector.isHittable, "More retains the complete list: \(app.debugDescription)")
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(directors.waitForExistence(timeout: 5))
+        XCTAssertTrue(isFocused(directors))
+
+        XCUIRemote.shared.press(.right)
+        let initialTop = year.frame.minY
+        for _ in 0..<12 where !isFocused(filename) { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(isFocused(filename), app.debugDescription)
+        XCTAssertTrue(filename.isHittable)
+        try assertFocusedFactContrast(filename, in: app)
+        XCTAssertLessThan(year.frame.minY, initialTop, "Focus must scroll lower technical facts into view.")
+        recordScreenshot(app, name: "unboxed-detail-playback-scrolled")
+    }
+
     func testHeaderAgeIsSeparateFromTwoReviewScores() {
         let app = launch()
         defer { app.terminate() }
@@ -345,15 +412,40 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
             .matching(NSPredicate(format: "hasFocus == true")).firstMatch.exists)
     }
 
+    private func assertFocusedFactContrast(_ element: XCUIElement, in app: XCUIApplication) throws {
+        let label = element.staticTexts.firstMatch
+        let image = try XCTUnwrap(app.screenshot().image.cgImage)
+        let scale = CGFloat(image.width) / app.frame.width
+        let frame = label.exists ? label.frame : element.frame
+        let region = frame.applying(CGAffineTransform(scaleX: scale, y: scale)).integral
+        let crop = try XCTUnwrap(image.cropping(to: region))
+        var pixels = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: crop.width, height: crop.height,
+                bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        }
+        let darkPixels = stride(from: 0, to: pixels.count, by: 4).filter {
+            pixels[$0] < 140 && pixels[$0 + 1] < 140 && pixels[$0 + 2] < 140
+        }.count
+        XCTAssertGreaterThan(darkPixels, 20, "Every focused fact needs dark, readable text on the native highlight.")
+    }
+
     private func recordScreenshot(_ app: XCUIApplication, name: String) {
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = name
         screenshot.lifetime = .keepAlways
         add(screenshot)
-        let doneFrame = XCTAttachment(string: app.buttons["Done"].firstMatch.frame.debugDescription)
-        doneFrame.name = "\(name)-button-frame"
-        doneFrame.lifetime = .keepAlways
-        add(doneFrame)
+        if app.buttons["Done"].exists {
+            let doneFrame = XCTAttachment(string: app.buttons["Done"].firstMatch.frame.debugDescription)
+            doneFrame.name = "\(name)-button-frame"
+            doneFrame.lifetime = .keepAlways
+            add(doneFrame)
+        }
     }
 
     private func launch(extra: String? = nil) -> XCUIApplication {

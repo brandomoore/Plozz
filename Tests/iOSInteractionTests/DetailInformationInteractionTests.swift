@@ -70,16 +70,22 @@ final class DetailInformationInteractionTests: XCTestCase {
         checkGuidanceSheet()
     }
 
-    func testStackedRatingGridUsesTheFullContentWidth() {
-        launch(["--detail-layout-ratings-5-guide"])
-        let guide = app.buttons["family-guidance-tile"]
-        reveal(guide)
-        let width = min(960, app.frame.width - 48)
-        XCTAssertEqual(guide.frame.maxX, app.frame.midX + width / 2, accuracy: 1,
-                       "The last grid row must reach the same trailing inset as the other sections.")
+    func testRatingGridUsesItsAllocatedColumnWidth() {
+        for fixture in ["rich", "ratings-1-guide", "ratings-5-guide"] {
+            launch(["--detail-layout-\(fixture)"])
+            let trailingTile = app.descendants(matching: .any)[
+                fixture == "rich" ? "detail-rating-tmdb" : "family-guidance-tile"
+            ].firstMatch
+            XCTAssertTrue(trailingTile.waitForExistence(timeout: 10))
+            if fixture != "rich" { reveal(trailingTile) }
+            let width = min(1120, app.frame.width - 48)
+            XCTAssertEqual(trailingTile.frame.maxX, app.frame.midX + width / 2, accuracy: 1,
+                           "Every multi-tile grid must reach its reading column's trailing edge.")
+            app.terminate()
+        }
     }
 
-    func testLandscapeInformationUsesReadableWidthAndCompactFacts() throws {
+    func testLandscapeInformationUsesReadableSectionColumns() throws {
         try checkInformationLayout(orientation: .landscapeLeft, cases: [
             "discover", "rich", "ratings-1-guide", "ratings-5-guide"
         ])
@@ -132,20 +138,29 @@ final class DetailInformationInteractionTests: XCTestCase {
             waitForExpectations(timeout: 5)
             let heading = app.staticTexts[fixture == "personal" ? "Playback" : "About"].firstMatch
             XCTAssertTrue(heading.waitForExistence(timeout: 10), app.debugDescription)
-            let contentWidth = min(960, app.frame.width - 48)
+            let contentWidth = min(1120, app.frame.width - 48)
             XCTAssertEqual(heading.frame.minX, app.frame.midX - contentWidth / 2, accuracy: 1)
+            let columnWidth = contentWidth >= 632 ? (contentWidth - 32) / 2 : contentWidth
+            if fixture != "personal" {
+                let about = app.descendants(matching: .any)["detail-about"].firstMatch
+                XCTAssertTrue(about.exists)
+                XCTAssertEqual(about.frame.width, columnWidth, accuracy: 1)
+            }
             if fixture == "discover" || fixture.hasPrefix("ratings-") {
                 let year = app.staticTexts["Year"].firstMatch
                 let runtime = app.staticTexts["Runtime"].firstMatch
                 let genres = app.staticTexts["Genres"].firstMatch
                 XCTAssertEqual(year.frame.minX, heading.frame.minX, accuracy: 1)
-                if contentWidth >= 776 {
-                    XCTAssertEqual(runtime.frame.minX - year.frame.minX, 192, accuracy: 1)
-                    XCTAssertEqual(genres.frame.minX - year.frame.minX, 576, accuracy: 1)
+                XCTAssertEqual(runtime.frame.minX, year.frame.minX, accuracy: 1)
+                XCTAssertEqual(genres.frame.minX, year.frame.minX, accuracy: 1)
+                XCTAssertGreaterThan(runtime.frame.minY, year.frame.maxY)
+                let crew = app.staticTexts["Crew"].firstMatch
+                if columnWidth < contentWidth {
+                    XCTAssertEqual(crew.frame.minX, heading.frame.minX + columnWidth + 32, accuracy: 1)
+                    XCTAssertEqual(crew.frame.minY, app.staticTexts["Details"].firstMatch.frame.minY, accuracy: 1)
                 } else {
-                    XCTAssertGreaterThan(genres.frame.minY, year.frame.minY,
-                                         "Narrow iPads must wrap rather than squeeze prose into a fourth track.")
-                    XCTAssertLessThanOrEqual(genres.frame.maxX, app.frame.midX + contentWidth / 2 + 1)
+                    XCTAssertEqual(crew.frame.minX, heading.frame.minX, accuracy: 1)
+                    XCTAssertGreaterThan(crew.frame.minY, genres.frame.maxY)
                 }
             }
             if fixture.hasPrefix("ratings-") {

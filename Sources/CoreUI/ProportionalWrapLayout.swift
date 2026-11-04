@@ -26,6 +26,8 @@ public struct ProportionalWrapLayout: Layout {
     public var rowSpacing: CGFloat?
     /// Let a trailing information/action tile complete the final row.
     public var lastSubviewFillsRemainingColumns: Bool
+    /// Optional reading-width limit for a trailing prose tile.
+    public var maximumLastSubviewSpan: Int?
     public var fillsProposedHeight: Bool
     /// A floor on the layout's own height, so it can be made to match a sibling
     /// column without depending on the container stretching it. Rows divide any
@@ -44,6 +46,7 @@ public struct ProportionalWrapLayout: Layout {
         minimumHeight: CGFloat = 0,
         rowSpacing: CGFloat? = nil,
         lastSubviewFillsRemainingColumns: Bool = false,
+        maximumLastSubviewSpan: Int? = nil,
         fillsProposedHeight: Bool = false
     ) {
         self.preferredColumns = max(1, preferredColumns)
@@ -52,6 +55,7 @@ public struct ProportionalWrapLayout: Layout {
         self.minimumHeight = max(0, minimumHeight)
         self.rowSpacing = rowSpacing.map { max(0, $0) }
         self.lastSubviewFillsRemainingColumns = lastSubviewFillsRemainingColumns
+        self.maximumLastSubviewSpan = maximumLastSubviewSpan.map { max(1, $0) }
         self.fillsProposedHeight = fillsProposedHeight
     }
 
@@ -128,7 +132,8 @@ public struct ProportionalWrapLayout: Layout {
     }
 
     private func itemWidth(at index: Int, count: Int, columns: Int, cellWidth: CGFloat) -> CGFloat {
-        let span = lastSubviewFillsRemainingColumns && index == count - 1 ? columns - index % columns : 1
+        let span = lastSubviewFillsRemainingColumns && index == count - 1
+            ? min(columns - index % columns, maximumLastSubviewSpan ?? columns) : 1
         return CGFloat(span) * cellWidth + CGFloat(span - 1) * spacing
     }
 }

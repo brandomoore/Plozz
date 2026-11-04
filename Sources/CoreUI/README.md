@@ -1007,7 +1007,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   and a consistent gap measured from the mark's visible edge. Rows start at the
   leading grid line. A lone score keeps a compact tile rather than stretching.
   Family guidance completes the remaining columns of the final score row, or
-  spans the next row when the score row is full. A narrow guidance tile shows
+  starts the next row when the score row is full. On TV it spans at most two
+  score columns, keeping its prose within a reading column. A narrow guidance tile shows
   its age recommendation and source; wider tiles include a left-aligned overview.
   Opening either presentation retains the full guidance and source authorization.
   The grid's accessibility container stays inside its spoiler-protection wrapper,
@@ -1017,21 +1018,20 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   balance into two rows when there is no family guidance.
   About keeps its stable line cap when its surface grows to match
   the adjacent ratings group. Missing summary content reserves no column.
-  Section headings sit above full-width fact groups, never in an empty side column.
-  Ordered facts use up to four columns, with balanced rows and fewer columns at
-  narrower widths or larger mobile text sizes. Regular-width mobile information
-  is centered within a 960pt maximum, without narrowing the hero or media rails.
-  Short scalar facts use compact tracks; genres, titles, and names share the
-  remaining width. A track stays wide when any of its rows contains longer-form
-  content, and compact-only groups remain leading-aligned rather than spreading
-  across the whole band. Compact mobile and TV retain equal-width fact tracks.
-  Playback uses quieter type, and
-  its filename spans the group rather than wrapping in one narrow column.
-  On TV, each group owns one native focus surface rather than a card per fact;
-  selecting an expandable group opens its full values. Mobile keeps inline
-  expansion targets without individual filled cards.
-  They share group insets, label spacing, and equal heights within each
-  row; section gaps, gutters, and padding come from `DetailInformationLayout`.
+  About occupies one reading column instead of absorbing leftover space.
+  Supporting sections are unboxed, with headings above vertically stacked facts.
+  TV prefers three columns and regular-width mobile prefers two, falling back
+  when the window or text size cannot support readable widths. Regular-width mobile
+  information is centered within a 1120pt maximum, without narrowing the hero or
+  media rails. Additional sections flow into the shortest column; their intrinsic
+  heights do not stretch neighboring sections. A lone section keeps its reading
+  width rather than filling the page. Compact phones use one column.
+  Playback uses quieter type, including a bounded filename preview.
+  TV facts use stable plain native buttons for scroll-by-focus, with no resting
+  fill and contrast-correct text on the native focus highlight. Only truncated
+  facts open their group's full values. Full-value rows remain focusable for remote
+  scrolling through long lists. Mobile keeps inline expansion targets.
+  Section gaps, gutters, and padding come from `DetailInformationLayout`.
   Ratings stay separate from editorial facts. Revealing one
   protected score reveals the shared score group, never the surrounding facts.
   Missing sections leave no reserved grid cells. Cast previews show 12 people
@@ -1045,9 +1045,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   the current font size, leaving the previous line intact. Truncation compares
   full and visible text at the same allocated width, so native fitting probes
   do not prematurely mask short values. Cast expansion sits beneath its rail.
-  Fact grids are eagerly measured before native TV focus hosting; a lazy grid
-  inside a single native card can report an incomplete multi-row height.
-  About and each group keep the same native TV card when truncation changes; only
+  Sections are eagerly measured so lower facts participate in scrollable height.
+  About and TV fact controls keep the same native owner when truncation changes; only
   their More action and accessibility role change. Switching between separate read-only
   and button hosts restarts minimum-size probes and can loop during first layout.
   Required availability attribution stays visible even when release facts are
@@ -1064,7 +1063,7 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   The fixture uses the production page-scoped gradient host; `--detail-layout-flat`
   and `--detail-layout-reduced-transparency` cover its opaque fallbacks.
   `--detail-layout-bottom` reveals Playback.
-- **Detail information focus** — the tvOS About/Ratings/Information band uses
+- **Detail information focus** — the tvOS About/Ratings cards use
   native focus with at most 2% growth and 6pt of expansion per edge, leaving
   clearance within the shared grid gutters. Focused read-only cards and card buttons draw
   above their peers. This policy does not change ordinary media-card growth,
