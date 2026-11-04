@@ -924,6 +924,37 @@ final class DownloadPresentationTests: XCTestCase {
         }
     }
 
+    func testPausedDownloadAddsResumeInsideTheUnchangedRing() throws {
+        let fractions: [Double?] = [nil, 0, 0.6]
+        for fraction in fractions {
+            var centers: [Data] = []
+            var ringTops: [Data] = []
+            for showsResume in [false, true] {
+                let renderer = ImageRenderer(content:
+                    PlozziOSDownloadControl(state: .paused(fraction: fraction), showsResumeIcon: showsResume)
+                        .background(.black)
+                        .environment(\.colorScheme, .dark)
+                )
+                renderer.scale = 3
+                let image = try XCTUnwrap(renderer.cgImage)
+                XCTAssertEqual(image.width, 132)
+                XCTAssertEqual(image.height, 132)
+                let center = try XCTUnwrap(image.cropping(to: CGRect(x: 54, y: 54, width: 24, height: 24)))
+                centers.append(try XCTUnwrap(UIImage(cgImage: center).pngData()))
+                let ringTop = try XCTUnwrap(image.cropping(to: CGRect(x: 20, y: 20, width: 92, height: 28)))
+                ringTops.append(try XCTUnwrap(UIImage(cgImage: ringTop).pngData()))
+                let attachment = XCTAttachment(image: UIImage(cgImage: image))
+                attachment.name = "download-resume-\(showsResume)-\(fraction.map(String.init(describing:)) ?? "unknown")"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+            XCTAssertNotEqual(centers[0], centers[1], "The resume glyph must be visible inside the paused ring.")
+            if fraction != nil {
+                XCTAssertEqual(ringTops[0], ringTops[1], "Adding resume must preserve the progress ring.")
+            }
+        }
+    }
+
     func testProgressDoesNotInvalidateUnrelatedEpisodeLookups() async throws {
         let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
         var active = record(id: "active")

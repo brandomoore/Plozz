@@ -2980,7 +2980,8 @@ struct PlozziOSBulkDownloadActionControl: View {
     var body: some View {
         HStack(spacing: 0) {
             PlozziOSDownloadControl(
-                state: state, isPreparing: action == .preparing, showsPauseIcon: action == .pause
+                state: state, isPreparing: action == .preparing,
+                showsPauseIcon: action == .pause, showsResumeIcon: action == .resume
             )
             Group {
                 if state == .completed, action != .preparing {
@@ -3131,6 +3132,7 @@ private struct PlozziOSEpisodeDownloadRow: View {
                     } label: {
                         PlozziOSDownloadControl(
                             state: record.badgeState,
+                            showsResumeIcon: true,
                             fallbackSystemImage: "arrow.clockwise"
                         )
                     }
@@ -3315,6 +3317,7 @@ struct PlozziOSDownloadControl: View {
     var state: MediaDownloadBadgeState?
     var isPreparing = false
     var showsPauseIcon = false
+    var showsResumeIcon = false
     var fallbackSystemImage = "arrow.down"
 
     var body: some View {
@@ -3331,6 +3334,11 @@ struct PlozziOSDownloadControl: View {
                             Image(systemName: "pause.fill")
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(.primary)
+                                .accessibilityHidden(true)
+                        } else if showsResumeIcon, case .paused = state {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.orange)
                                 .accessibilityHidden(true)
                         }
                     }
@@ -3385,10 +3393,17 @@ struct PlozziOSDownloadControl: View {
                         )
                     )
             } else {
-                Image(systemName: "pause.circle.fill")
-                    .font(.system(size: 25, weight: .regular))
-                    .foregroundStyle(.orange)
-                    .accessibilityLabel("Download Paused")
+                if showsResumeIcon {
+                    Circle()
+                        .stroke(Color.orange.opacity(0.25), lineWidth: 3)
+                        .frame(width: 25, height: 25)
+                        .accessibilityLabel("Download Paused")
+                } else {
+                    Image(systemName: "pause.circle.fill")
+                        .font(.system(size: 25, weight: .regular))
+                        .foregroundStyle(.orange)
+                        .accessibilityLabel("Download Paused")
+                }
             }
         case .failed:
             Image(systemName: "exclamationmark.circle")
