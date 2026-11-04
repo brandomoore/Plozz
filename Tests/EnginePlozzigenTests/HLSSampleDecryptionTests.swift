@@ -198,7 +198,7 @@ final class LiveHLSScrubNetworkingTests: XCTestCase {
         request.setValue("https://fixture.invalid/", forHTTPHeaderField: "Referer")
         request.setValue("bytes=0-31", forHTTPHeaderField: "Range")
 
-        let local = LiveHLSScrubRedirects.redirect(request, to: URL(string: "https://fixture.invalid/next")!)
+        let local = LiveHLSScrubRedirects.redirect(request, from: origin, to: URL(string: "https://fixture.invalid/next")!)
         XCTAssertEqual(local?.url?.absoluteString, "https://fixture.invalid/next")
         XCTAssertEqual(local?.value(forHTTPHeaderField: "Authorization"), "Bearer fixture")
         XCTAssertEqual(local?.value(forHTTPHeaderField: "X-Token"), "fixture")
@@ -206,7 +206,7 @@ final class LiveHLSScrubNetworkingTests: XCTestCase {
 
         // Providers hand segments and keys to a CDN by redirect, as AVPlayer follows.
         for url in ["https://cdn.invalid/next", "https://fixture.invalid:444/next"] {
-            let foreign = LiveHLSScrubRedirects.redirect(request, to: URL(string: url)!)
+            let foreign = LiveHLSScrubRedirects.redirect(request, from: origin, to: URL(string: url)!)
             XCTAssertEqual(foreign?.url?.absoluteString, url)
             XCTAssertNil(foreign?.value(forHTTPHeaderField: "Authorization"), url)
             XCTAssertNil(foreign?.value(forHTTPHeaderField: "X-Token"), url)
@@ -215,8 +215,46 @@ final class LiveHLSScrubNetworkingTests: XCTestCase {
             XCTAssertEqual(foreign?.value(forHTTPHeaderField: "Range"), "bytes=0-31", url)
         }
         for url in ["http://fixture.invalid/next", "ftp://fixture.invalid/next", "https://user:pass@cdn.invalid/next"] {
-            XCTAssertNil(LiveHLSScrubRedirects.redirect(request, to: URL(string: url)!), url)
+            XCTAssertNil(LiveHLSScrubRedirects.redirect(request, from: origin, to: URL(string: url)!), url)
         }
+    }
+
+    func testRedirectCannotDowngradeAfterAnHTTPOriginUpgradesToHTTPS() throws {
+        let origin = URL(string: "http://fixture.invalid/start")!
+        let secure = URL(string: "https://cdn.invalid/playlist")!
+        var request = URLRequest(url: origin)
+        request.setValue("fixture-token", forHTTPHeaderField: "Authorization")
+        let upgrade = try XCTUnwrap(LiveHLSScrubRedirects.redirect(request, from: origin, to: secure))
+        XCTAssertNil(upgrade.value(forHTTPHeaderField: "Authorization"))
+        for target in ["http://cdn.invalid/next", "http://fixture.invalid/return"] {
+            XCTAssertNil(LiveHLSScrubRedirects.redirect(request, from: secure, to: URL(string: target)))
+        }
+        let next = LiveHLSScrubRedirects.redirect(
+            request, from: secure, to: URL(string: "https://second-cdn.invalid/next")
+        )
+        XCTAssertNotNil(next)
+        XCTAssertNil(next?.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    @MainActor
+    func testCancelledVariantFetchDoesNotAbandonThePreviewRendition() async {
+        let started = expectation(description: "Preferred variant request started")
+        let fixture = LiveHLSScrubHTTPStub.CancellationFixture(started: started)
+        let source = LiveHLSScrubHTTPStub.register(fixture)
+        defer { LiveHLSScrubHTTPStub.unregister(source) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveHLSScrubHTTPStub.self]
+        let thumbnails = LiveHLSScrubThumbnails(
+            playlistURL: source, headers: [:], configuration: configuration,
+            playingMediaPlaylist: { source.deletingLastPathComponent().appendingPathComponent("playing.m3u8") }
+        )
+        let cancelled = Task { await thumbnails.thumbnail(secondsIntoWindow: 0, maxWidth: 180) }
+        await fulfillment(of: [started], timeout: 3)
+        cancelled.cancel()
+        _ = await cancelled.value
+        _ = await thumbnails.thumbnail(secondsIntoWindow: 0, maxWidth: 180)
+        XCTAssertEqual(fixture.paths.filter { $0 == "preview.m3u8" }.count, 2)
+        XCTAssertFalse(fixture.paths.contains("playing.m3u8"))
     }
 
     func testPrefixReadIsBoundedWhenOriginIgnoresRange() async throws {
@@ -283,10 +321,59 @@ final class LiveHLSScrubNetworkingTests: XCTestCase {
 }
 
 private final class LiveHLSScrubHTTPStub: URLProtocol, @unchecked Sendable {
+    final class CancellationFixture: @unchecked Sendable {
+        let started: XCTestExpectation
+        private let lock = NSLock()
+        private var requests: [String] = []
+        init(started: XCTestExpectation) { self.started = started }
+        var paths: [String] { lock.withLock { requests } }
+        func record(_ path: String) -> Int {
+            lock.withLock {
+                requests.append(path)
+                return requests.filter { $0 == path }.count
+            }
+        }
+    }
+
+    private final class Registry: @unchecked Sendable {
+        let lock = NSLock()
+        var fixtures: [String: CancellationFixture] = [:]
+    }
+    private static let registry = Registry()
+
+    static func register(_ fixture: CancellationFixture) -> URL {
+        let host = "\(UUID().uuidString.lowercased()).invalid"
+        registry.lock.withLock { registry.fixtures[host] = fixture }
+        return URL(string: "https://\(host)/master.m3u8")!
+    }
+
+    static func unregister(_ source: URL) {
+        _ = registry.lock.withLock { registry.fixtures.removeValue(forKey: source.host!) }
+    }
+
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let path = request.url!.lastPathComponent
+        if let fixture = Self.registry.lock.withLock({ Self.registry.fixtures[request.url!.host!] }) {
+            let count = fixture.record(path)
+            if path == "preview.m3u8", count == 1 {
+                fixture.started.fulfill()
+                return
+            }
+            let text = path == "master.m3u8"
+                ? "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1200000,RESOLUTION=640x360\npreview.m3u8\n"
+                : "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nsegment.ts\n"
+            let body = Data(text.utf8)
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: path == "segment.ts" ? 403 : 200, httpVersion: nil,
+                headerFields: ["Content-Length": String(body.count)]
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: body)
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
         if path == "redirected.m3u8" {
             if request.url!.host == "fixture.invalid" {
                 // A provider handing its master to a CDN, as some IPTV hosts do.

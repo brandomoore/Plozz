@@ -259,6 +259,7 @@ final class LiveHLSScrubThumbnails {
             return playlist
         }
         guard let (text, base) = await text(of: target) else {
+            guard !Task.isCancelled else { return nil }
             // A variant read from the master that its origin refuses: follow
             // the media playlist AVPlayer plays instead.
             if target == thumbnailVariant, playingMediaPlaylist() != nil { thumbnailVariant = nil }
@@ -545,17 +546,19 @@ final class LiveHLSScrubRedirects: NSObject, URLSessionTaskDelegate, @unchecked 
         willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
-        completionHandler(Self.redirect(task.originalRequest, to: request.url))
+        completionHandler(Self.redirect(task.originalRequest, from: response.url, to: request.url))
     }
 
     /// Providers commonly hand a channel's playlist, segments or keys to a CDN
     /// by redirect, as AVPlayer follows them. A redirect within the origin keeps
     /// every header; one to another origin keeps the client identity and the
     /// byte range but drops credentials, and never downgrades to plain HTTP.
-    static func redirect(_ original: URLRequest?, to destination: URL?) -> URLRequest? {
-        guard let original, let origin = original.url, let destination,
+    static func redirect(_ original: URLRequest?, from responseURL: URL?, to destination: URL?) -> URLRequest? {
+        guard let original, let origin = original.url, let responseURL, let destination,
+              HDR10PlusHTTPRangeSource.sameOrigin(responseURL, responseURL),
               HDR10PlusHTTPRangeSource.sameOrigin(destination, destination),
-              !(origin.scheme?.lowercased() == "https" && destination.scheme?.lowercased() == "http")
+              !((origin.scheme?.lowercased() == "https" || responseURL.scheme?.lowercased() == "https")
+                && destination.scheme?.lowercased() == "http")
         else { return nil }
         var redirected = original
         redirected.url = destination
