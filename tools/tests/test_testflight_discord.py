@@ -124,13 +124,13 @@ def github_fixture(catalog):
     )
 
 
-def sync(discord, apple, publish=True, github=None, catalog=None):
+def sync(discord, apple, publish=True, github=None, catalog=None, roadmap_enabled=False):
     github = github or github_fixture(catalog_fixture())
     with redirect_stdout(io.StringIO()):
         APP.synchronize(
             discord, apple, github,
             catalog if catalog is not None else catalog_fixture(),
-            (56, 0, 0), publish=publish,
+            (56, 0, 0), publish=publish, roadmap_enabled=roadmap_enabled,
         )
 
 
@@ -230,6 +230,68 @@ class AvailabilityTests(unittest.TestCase):
     def test_duplicate_platform_identity_fails(self):
         with self.assertRaisesRegex(APP.Error, "Duplicate available"):
             APP.available_builds(Apple(build(), build()), (56, 0, 0))
+
+
+class RoadmapLinkTests(unittest.TestCase):
+    def test_every_announcement_variant_includes_link_only_after_activation(self):
+        for number in ("56", "56.5"):
+            catalog = catalog_fixture(number)
+            for platforms in ({"TV_OS"}, {"IOS"}, {"TV_OS", "IOS"}):
+                release = {"build": number, "marketing": "2026.9.25", "platforms": platforms}
+                for source in (catalog, {"releases": []}):
+                    for published in (False, True):
+                        if published and not source["releases"]:
+                            continue
+                        github_releases = [
+                            {"tag_name": APP.NOTES.release_tag(number), "draft": False}
+                        ] if published else []
+                        with self.subTest(number=number, platforms=platforms, published=published, source=source):
+                            baseline = APP.announcement(release, source, github_releases)
+                            self.assertNotIn(APP.ROADMAP, baseline["description"])
+                            self.assertEqual(baseline, APP.announcement(
+                                release, source, github_releases, roadmap_enabled=False,
+                            ))
+                            enabled = APP.announcement(release, source, github_releases, roadmap_enabled=True)
+                            self.assertEqual(enabled["description"].count(f"[Roadmap]({APP.ROADMAP})"), 1)
+                            self.assertEqual(enabled["title"], baseline["title"])
+                            self.assertEqual(enabled["url"], baseline["url"])
+
+    def test_activation_and_disabling_edit_existing_message_once(self):
+        discord, apple = Discord(), Apple(build(), build("IOS"))
+        sync(discord, apple)
+        original = copy.deepcopy(discord.messages[0])
+        discord.writes.clear()
+        sync(discord, apple, roadmap_enabled=True)
+        sync(discord, apple, roadmap_enabled=True)
+        self.assertEqual([write[0] for write in discord.writes], ["PATCH"])
+        self.assertEqual(len(discord.messages), 1)
+        self.assertEqual(discord.messages[0]["id"], original["id"])
+        self.assertEqual(discord.messages[0]["embeds"][0]["footer"], original["embeds"][0]["footer"])
+        self.assertEqual(discord.writes[0][2]["allowed_mentions"]["parse"], [])
+        discord.writes.clear()
+        sync(discord, apple)
+        sync(discord, apple)
+        self.assertEqual([write[0] for write in discord.writes], ["PATCH"])
+        self.assertEqual(discord.messages[0]["embeds"], original["embeds"])
+
+    def test_enabled_preview_does_not_write(self):
+        discord = Discord()
+        sync(discord, Apple(build()), publish=False, roadmap_enabled=True)
+        self.assertEqual(discord.writes, [])
+
+    def test_cli_uses_only_the_separate_explicit_link_activation(self):
+        for value in (None, "", "false", "TRUE", "true"):
+            environment = {"TESTFLIGHT_DISCORD_MIN_BUILD": "56", "DISCORD_ROADMAP_ENABLED": "true"}
+            if value is not None:
+                environment["DISCORD_ROADMAP_LINK_ENABLED"] = value
+            with self.subTest(value=value), patch.dict(os.environ, environment, clear=True), \
+                    patch.object(APP.sys, "argv", ["script", "--mode", "check"]), \
+                    patch.object(APP.BRIDGE, "API"), patch.object(APP, "apple_token"), \
+                    patch.object(APP.NOTES, "load_catalog"), patch.object(APP, "synchronize") as synchronize:
+                self.assertEqual(APP.main(), 0)
+                self.assertEqual(synchronize.call_args.kwargs["roadmap_enabled"], value == "true")
+                self.assertFalse(synchronize.call_args.kwargs["publish"])
+        self.assertIn("DISCORD_ROADMAP_LINK_ENABLED: ${{ vars.DISCORD_ROADMAP_LINK_ENABLED }}", WORKFLOW)
 
 
 class ReleaseIdentityTests(unittest.TestCase):
@@ -392,7 +454,7 @@ class InlineNotesTests(unittest.TestCase):
         bullets = [f"Change {index}: " + "\U0001f3ac" * 150 + " Complete." for index in range(25)]
         catalog["releases"][0]["sections"] = [{"category": "Updated", "items": bullets}]
         discord = Discord()
-        sync(discord, Apple(build(), build("IOS")), github=github_fixture(catalog))
+        sync(discord, Apple(build(), build("IOS")), github=github_fixture(catalog), roadmap_enabled=True)
         embed = discord.messages[0]["embeds"][0]
         description = embed["description"]
         self.assertLessEqual(len(description.encode("utf-16-le")) // 2, 4096)
@@ -404,7 +466,8 @@ class InlineNotesTests(unittest.TestCase):
         self.assertEqual(included, bullets[:len(included)])
         self.assertIn("Notes shortened to fit Discord.", description)
         self.assertIn("/releases/tag/release/056", description)
-        sync(discord, Apple(build(), build("IOS")), github=github_fixture(catalog))
+        self.assertIn(f"[Roadmap]({APP.ROADMAP})", description)
+        sync(discord, Apple(build(), build("IOS")), github=github_fixture(catalog), roadmap_enabled=True)
         self.assertEqual(len(discord.writes), 1)
 
     def test_one_oversized_bullet_is_not_cut_or_replaced_with_a_later_note(self):
